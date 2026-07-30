@@ -21,6 +21,41 @@ function defaultCacheRoot() {
 
 const cacheRoot = process.env.STARNET_MODEL_CACHE || defaultCacheRoot();
 const state = { asr: 'cold', tts: 'cold', progress: null, error: '', cacheRoot };
+/* THE SPOKEN VOICE OF THE STATION — male by default. The written station voice is "a low, smooth American
+   male with a subtle gravelly rasp" (personas.js STATION_VOICE) and the crew sprites read male, so a female
+   default was simply wrong. These ids are the engine's own voice files (node_modules/kokoro-js/voices):
+   `am_` American male, `bm_` British male, `af_`/`bf_` the female sets. Listed male-first because that is the
+   station's character; every one of them is selectable. */
+const DEFAULT_LOCAL_VOICE = 'am_onyx';
+const LOCAL_VOICES = [
+  { id: 'am_onyx', label: 'ONYX', sex: 'male', accent: 'American' },
+  { id: 'am_michael', label: 'MICHAEL', sex: 'male', accent: 'American' },
+  { id: 'am_adam', label: 'ADAM', sex: 'male', accent: 'American' },
+  { id: 'am_eric', label: 'ERIC', sex: 'male', accent: 'American' },
+  { id: 'am_liam', label: 'LIAM', sex: 'male', accent: 'American' },
+  { id: 'am_fenrir', label: 'FENRIR', sex: 'male', accent: 'American' },
+  { id: 'am_echo', label: 'ECHO', sex: 'male', accent: 'American' },
+  { id: 'am_puck', label: 'PUCK', sex: 'male', accent: 'American' },
+  { id: 'bm_george', label: 'GEORGE', sex: 'male', accent: 'British' },
+  { id: 'bm_lewis', label: 'LEWIS', sex: 'male', accent: 'British' },
+  { id: 'bm_daniel', label: 'DANIEL', sex: 'male', accent: 'British' },
+  { id: 'bm_fable', label: 'FABLE', sex: 'male', accent: 'British' },
+  { id: 'af_heart', label: 'HEART', sex: 'female', accent: 'American' },
+  { id: 'af_bella', label: 'BELLA', sex: 'female', accent: 'American' },
+  { id: 'af_nova', label: 'NOVA', sex: 'female', accent: 'American' },
+  { id: 'af_sarah', label: 'SARAH', sex: 'female', accent: 'American' },
+  { id: 'bf_emma', label: 'EMMA', sex: 'female', accent: 'British' },
+  { id: 'bf_alice', label: 'ALICE', sex: 'female', accent: 'British' }
+];
+const localVoiceIds = new Set(LOCAL_VOICES.map(v => v.id));
+// Validated, never passed through: an unknown id would fail deep inside the engine with a stack trace
+// instead of simply speaking in the default voice.
+function normalizeLocalVoice(id) {
+  const v = String(id || '').trim();
+  return localVoiceIds.has(v) ? v : '';
+}
+
+
 
 // ---- installation probe -------------------------------------------------------------------------
 // Offline speech needs two npm packages (`@huggingface/transformers` + `kokoro-js`, which drags in
@@ -214,7 +249,7 @@ async function synthesize(text, options = {}) {
     try {
       const model = await loadTts();
       const audio = await model.generate(String(text || '').slice(0, 1200), {
-        voice: options.voice || 'af_heart',
+        voice: normalizeLocalVoice(options.voice) || DEFAULT_LOCAL_VOICE,
         speed: Number(options.speed) || 1
       });
       return Buffer.from(await audio.toBlob().arrayBuffer());
@@ -239,6 +274,8 @@ function status() {
     progress: ready ? state.progress : null,
     error: ready ? state.error : UNAVAILABLE_REASON,
     cacheRoot: state.cacheRoot,
+    voice: DEFAULT_LOCAL_VOICE,
+    voices: LOCAL_VOICES.slice(),
     asrBusy,
     lastAsrMs,
     ttsBusy,
@@ -246,4 +283,4 @@ function status() {
   };
 }
 
-module.exports = { warm, transcribe, synthesize, status };
+module.exports = { warm, transcribe, synthesize, status, voices: () => LOCAL_VOICES.slice(), defaultVoice: () => DEFAULT_LOCAL_VOICE, normalizeLocalVoice };

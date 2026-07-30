@@ -13557,7 +13557,7 @@ async function handleTts(req, res) {
   // provider ladder, so this experimental path cannot silently change an existing persona.
   if (body && body.local) {
     try {
-      const localVoiceId = String(body.localVoice || 'af_heart');
+      const localVoiceId = String(body.localVoice || localVoice.defaultVoice());
       const localSpeed = Number(body.speed) || 1;
       const ck = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
       const cachePath = path.join(VOICE_CACHE_DIR, `local-${ck}.wav`);

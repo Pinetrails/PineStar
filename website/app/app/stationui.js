@@ -2417,36 +2417,30 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     function wireLiveVoice(host) {
       const wrap = host && host.querySelector ? host.querySelector('#set-lv-voices') : null;
       if (!wrap) return;
-      const paint = (cap, current) => {
-        const list = (cap && cap.voices) || [];
-        if (!cap || !cap.connected) { wrap.innerHTML = '<span class="dim">connect a provider first &mdash; live voice uses the one you already connected</span>'; return; }
-        if (cap.mode !== 'native' || !list.length) {
-          wrap.innerHTML = '<span class="dim">' + String(cap.provider || 'this provider').toUpperCase() + ' has no native voice endpoint, so its voice is not selectable here</span>';
-          return;
-        }
-        const chosen = current || cap.voice || '';
-        wrap.innerHTML = list.map(v =>
-          '<button class="set-theme ' + (v === chosen ? 'sel' : '') + '" aria-pressed="' + (v === chosen ? 'true' : 'false') +
-          '" data-lv-voice="' + v + '">' + v.toUpperCase() + '</button>').join('');
+      const paint = (list, chosen) => {
+        if (!list.length) { wrap.innerHTML = '<span class="dim">the speech engine has not reported its voices yet</span>'; return; }
+        const group = sex => list.filter(v => v.sex === sex);
+        const row = v => '<button class="set-theme ' + (v.id === chosen ? 'sel' : '') + '" aria-pressed="' +
+          (v.id === chosen ? 'true' : 'false') + '" data-lv-voice="' + v.id + '" title="' + v.accent + ' ' + v.sex + '">' + v.label + '</button>';
+        wrap.innerHTML =
+          '<div class="dim" style="width:100%">MALE</div>' + group('male').map(row).join('') +
+          '<div class="dim" style="width:100%;margin-top:6px">FEMALE</div>' + group('female').map(row).join('');
         wrap.querySelectorAll('[data-lv-voice]').forEach(btn => {
           btn.onclick = () => {
             const want = btn.getAttribute('data-lv-voice');
-            let note = '';
-            if (typeof VoiceLive !== 'undefined' && VoiceLive.setVoice) note = (VoiceLive.setVoice(want) || {}).appliesOn || '';
+            if (typeof VoiceLive !== 'undefined' && VoiceLive.setVoice) VoiceLive.setVoice(want);
             wrap.querySelectorAll('[data-lv-voice]').forEach(b => {
               const on = b === btn;
               b.classList.toggle('sel', on);
               b.setAttribute('aria-pressed', String(on));
             });
             try { SFX.click(); } catch (_) {}
-            if (note && typeof toast === 'function') toast('Voice set to ' + want.toUpperCase() + ' — applies on ' + note + '.');
           };
         });
       };
-      let current = '';
-      try { current = String(localStorage.getItem('starnet.liveVoice.voice.v1') || ''); } catch (_) {}
       if (typeof VoiceLive !== 'undefined' && VoiceLive.voices) {
-        VoiceLive.voices().then(v => paint({ connected: true, mode: (v.available || []).length ? 'native' : 'composed', voices: v.available, voice: v.current }, current))
+        VoiceLive.voices()
+          .then(v => paint(v.available || [], v.current || ''))
           .catch(() => { wrap.innerHTML = '<span class="dim">voice list unavailable</span>'; });
       } else {
         wrap.innerHTML = '<span class="dim">live voice is not loaded on this page</span>';
@@ -4410,7 +4404,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        hardcoded here, so it can never drift from what the provider actually offers. */
     const secLiveVoice =
       '<h4 class="ms-h">SPOKEN VOICE</h4>' +
-      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Your provider supplies these &mdash; no extra key or account. A change applies to the <b>next</b> call, because the voice is fixed for the life of a live session.</p>' +
+      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Built in and keyless &mdash; the same on every provider. A change applies to the next thing spoken.</p>' +
       '<div class="set-themes" id="set-lv-voices"><span class="dim">reading the provider’s voice list…</span></div>';
 
     const secAppearance =

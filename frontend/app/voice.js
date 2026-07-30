@@ -609,6 +609,12 @@ const Voice = (() => {
      `speakSeq` (barge-in / teardown) invalidates every in-flight fetch + queued playback at once. */
   let jobs = [];          // queued chunks: { text, opts, seq, result(Promise), ac(AbortController) }
   let preferLocalTts = false;
+  /* Which built-in voice speaks. Saved per station; empty falls back to the engine's default (male).
+     Read at SPEAK time, not cached, so changing it in Settings takes effect on the very next line. */
+  const LOCAL_VOICE_KEY = 'starnet.liveVoice.localVoice.v1';
+  function localVoiceId() {
+    try { return String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) { return ''; }
+  }
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -636,7 +642,7 @@ const Voice = (() => {
       body: JSON.stringify({
         key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
         text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
-        local: preferLocalTts, localVoice: 'af_heart', speed: cfg.speed
+        local: preferLocalTts, localVoice: localVoiceId(), speed: cfg.speed
       })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';

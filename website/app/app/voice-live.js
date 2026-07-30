@@ -21,7 +21,7 @@ const VoiceLive = (() => {
   const $ = id => document.getElementById(id);
   const POSITION_KEY = 'starnet.liveVoice.position.v1';
   // Which of the provider's voices speaks. Empty = the provider descriptor's default.
-  const VOICE_KEY = 'starnet.liveVoice.voice.v1';
+  const LOCAL_VOICE_KEY = 'starnet.liveVoice.localVoice.v1';
   // SETTLED (Andrew, 2026-07-29): a small pop-up module with NO icon — a state line, the volume
   // indicator, and the transcript. The four-shape and four-icon switchers that got us here are
   // deleted; shipping the candidates was never the goal, choosing one was.
@@ -708,11 +708,15 @@ const VoiceLive = (() => {
     // first model import is how this panel used to show users a raw "Cannot find module" string.
     // Only a PROVEN `available:false` refuses; an unreachable sidecar falls through to the existing
     // offline handling below.
-    // FIRST CHOICE, ALWAYS: the provider's own live voice. This is the feature — connect a provider, talk to
-    // your agent in its voice, interrupt it, and have it drive your sessions. Everything below is what we fall
-    // back to for a provider that sells no voice endpoint.
-    const capability = await realtimeCapability();
-    if (capability && capability.available) return startRealtime(capability);
+    /* ONE ENGINE FOR EVERY STATION (Andrew, 2026-07-30). The provider-native realtime path is deliberately NOT
+       taken any more, even where it is available. It gave the smoothest turns but tied the feature to one
+       vendor, capped the personality behind that vendor's guardrails, and made the behaviour differ between
+       stations depending on who the Commander happened to connect. The built-in engine is slower per turn and
+       wins everything else: identical on every provider, no credential at all, and the persona speaks in its
+       own words with no third-party ceiling. `realtimeCapability()` and startRealtime() are kept, unreferenced
+       from here, so the choice is reversible without rebuilding it — but nothing routes to them.
+       ⛔ Do not "restore" the native branch as an optimisation: the divergence it caused IS the bug it looks
+       like a fix for. */
 
     const readiness = await probeAvailability();
     if (readiness && readiness.available === false) {
@@ -1056,7 +1060,7 @@ const VoiceLive = (() => {
       // The spoken voice is a CHOICE, not a constant. Stored per station; the server validates it against the
       // provider's real voice list (status().voices) and falls back to the descriptor default.
       let wantVoice = '';
-      try { wantVoice = String(localStorage.getItem(VOICE_KEY) || '').trim(); } catch (_) {}
+      try { wantVoice = String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) {}
       const q = '?' + [
         callProvider ? 'provider=' + encodeURIComponent(callProvider) : '',
         wantVoice ? 'voice=' + encodeURIComponent(wantVoice) : ''
@@ -1215,16 +1219,24 @@ const VoiceLive = (() => {
   /* Pick the spoken voice. Persisted, and applied on the NEXT call — a live WebRTC session's voice is fixed
      for its lifetime, so changing it mid-call would silently do nothing and that would be a lie. Returns the
      names the provider actually offers, read from status() rather than a list copied here. */
+  /* The voice picker now describes the BUILT-IN engine, because that is the only engine live voice uses.
+     Read from the sidecar's own catalogue rather than a list copied here, so it cannot drift from the voice
+     files actually present. Applies to the next thing spoken — no restart needed. */
   async function voices() {
-    const cap = await realtimeCapability();
-    let current = '';
-    try { current = String(localStorage.getItem(VOICE_KEY) || '').trim(); } catch (_) {}
-    return { available: (cap && cap.voices) || [], current: current || (cap && cap.voice) || '', appliesOn: 'next call' };
+    let cur = '';
+    try { cur = String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) {}
+    try {
+      const r = await fetch('/api/local-voice/status', { cache: 'no-store' });
+      const j = await r.json();
+      return { available: j.voices || [], current: cur || j.voice || '', engine: 'built-in', appliesOn: 'the next reply' };
+    } catch (_) {
+      return { available: [], current: cur, engine: 'built-in', appliesOn: 'the next reply' };
+    }
   }
-  function setVoice(name) {
-    const want = String(name || '').trim().toLowerCase();
-    try { if (want) localStorage.setItem(VOICE_KEY, want); else localStorage.removeItem(VOICE_KEY); } catch (_) {}
-    return { voice: want, appliesOn: active ? 'the next call — restart live voice to hear it' : 'the next call' };
+  function setVoice(id) {
+    const want = String(id || '').trim();
+    try { if (want) localStorage.setItem(LOCAL_VOICE_KEY, want); else localStorage.removeItem(LOCAL_VOICE_KEY); } catch (_) {}
+    return { voice: want, appliesOn: 'the next reply' };
   }
 
   return { init, start, end, isActive: () => active, statusSnapshot, voices, setVoice };
