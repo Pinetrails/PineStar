@@ -3,6 +3,8 @@
 
 const VoiceLive = (() => {
   let active = false, ending = false, failed = false, taskTimer = null, modelTimer = null;
+  // true while running on the keyless dictation ladder instead of the offline models (see startDictation).
+  let dictation = false;
   let sessionSeq = 0;
   let stream = null, context = null, source = null, processor = null, sink = null;
   let calibratedUntil = 0, noiseFloor = 0.006, speechFrames = 0, silenceMs = 0;
@@ -277,6 +279,17 @@ const VoiceLive = (() => {
   async function probeAvailability() {
     try {
       const response = await fetch('/api/local-voice/status', { cache: 'no-store' });
+      return await response.json();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // The keyless listening ladder: Windows System.Speech, driven by the sidecar, needing no npm package and
+  // no transcription credential. It ships inside the bundle where the offline models cannot.
+  async function probeNativeStt() {
+    try {
+      const response = await fetch('/api/stt/native/status', { cache: 'no-store' });
       return await response.json();
     } catch (_) {
       return null;
@@ -685,11 +698,16 @@ const VoiceLive = (() => {
     // offline handling below.
     const readiness = await probeAvailability();
     if (readiness && readiness.available === false) {
+      // The offline models are absent — the normal case in a packaged build, which ships no node_modules.
+      // That is NOT a reason to refuse: listening has a keyless ladder (Windows dictation through the
+      // sidecar) and speaking already works through the Edge floor. Only refuse when neither exists.
+      const native = await probeNativeStt();
+      if (native && native.available) return startDictation();
       $('live-voice-panel').hidden = false;
       setState('unavailable');
       if ($('lv-model')) $('lv-model').textContent = 'LOCAL MODELS: NOT INSTALLED';
       caption('user', 'Local Live is unavailable in this build.');
-      caption('agent', 'The offline speech models are not bundled with the installer, so hands-free listening cannot start. The standard voice controls are unaffected.');
+      caption('agent', 'The offline speech models are not bundled with the installer, and this platform has no keyless dictation engine, so hands-free listening cannot start. The standard voice controls are unaffected.');
       // The sidecar's `reason` carries a source-checkout hint ("run npm install") that is noise to a user
       // of the installer — it stays in the API and the log, not in the panel's error row.
       setUnrecoverableError('Offline speech models are not installed in this build.');
@@ -749,6 +767,56 @@ const VoiceLive = (() => {
     }
   }
 
+  /* DICTATION MODE — Local Live without the offline models.
+     Differences from the model path, all deliberate:
+       - THIS side never opens the microphone. On the native leg System.Speech listens on the default
+         device from inside the sidecar, and two consumers on one microphone fight. (The browser-speech
+         leg does open a mic, but the browser engine owns it — we still don't.) Either way there is no
+         level meter here, and the native leg has no interim partials: it returns one finished utterance
+         per call.
+       - local TTS stays OFF (Kokoro is absent too), so speech goes down the normal ladder and lands
+         on the keyless Edge floor.
+       - `startCoordinator`, not `attachCoordinator`: only the former SELECTS an stt provider, and with
+         no browser SpeechRecognition (the WebView2 case) it picks the native dictation provider. This is
+         the ladder that already existed and that nothing was calling. */
+  function startDictation() {
+    const seq = ++sessionSeq;
+    setError('');
+    resetLevel();
+    warmupNotice = false;
+    caption('agent', '');
+    $('live-voice-panel').hidden = false;
+    active = true;
+    dictation = true;
+    ending = false;
+    failed = false;
+    reflectButton(true);
+    if (typeof Voice !== 'undefined') {
+      if (Voice.inVoiceMode && Voice.inVoiceMode() && Voice.stopConvo) Voice.stopConvo();
+      if (Voice.setLocalTts) Voice.setLocalTts(false);
+      if (Voice.startCoordinator) Voice.startCoordinator({ onState, onAssistant, onOutputLevel });
+    }
+    if (!active || seq !== sessionSeq) return;
+    setState('listening');
+    // Name the engine the ladder ACTUALLY chose, read back from Voice rather than re-derived here. In the
+    // packaged WebView2 shell there is no SpeechRecognition so this is the sidecar's Windows dictation; in a
+    // plain browser the same ladder picks the browser engine, and calling that "Windows dictation" would be
+    // a lie of exactly the kind this panel is not allowed to tell.
+    const engine = (typeof Voice !== 'undefined' && Voice.sttEngine) ? Voice.sttEngine() : '';
+    // Names are voice.js's own provider ids — 'native' | 'web-speech' | 'recorder'. Verified by reading them
+    // back live, not assumed: guessing 'web' here rendered "ASR UNKNOWN" in a browser.
+    const engineLabel = engine === 'native' ? 'WINDOWS DICTATION'
+      : engine === 'web-speech' ? 'BROWSER SPEECH'
+      : engine === 'recorder' ? 'SERVER WHISPER'
+      : 'UNKNOWN';
+    if ($('lv-model')) $('lv-model').textContent = `ASR ${engineLabel} · VOICE EDGE`;
+    if ($('lv-heard')) $('lv-heard').textContent = 'Speak naturally — the transcript lands in COMMS.';
+    caption('agent', 'The offline speech models are not in this build, so Local Live is listening through Windows dictation — one utterance at a time, no live preview.');
+    refreshTask();
+    clearInterval(taskTimer);
+    taskTimer = setInterval(refreshTask, 500);
+  }
+
   function finish(stopVoice) {
     if (ending) return;
     ending = true;
@@ -763,9 +831,13 @@ const VoiceLive = (() => {
     closeMicrophone();
     if (typeof Voice !== 'undefined') {
       if (stopVoice && Voice.stopSpeaking) Voice.stopSpeaking();
+      // Dictation mode STARTED the coordinator (which armed a listen loop), so detaching the hooks is not
+      // enough — that loop has to be stopped or the sidecar keeps being asked to dictate after the panel closes.
+      if (dictation && Voice.stopCoordinator) Voice.stopCoordinator();
       if (Voice.detachCoordinator) Voice.detachCoordinator();
       if (Voice.setLocalTts) Voice.setLocalTts(false);
     }
+    dictation = false;
     if ($('live-voice-panel')) $('live-voice-panel').hidden = true;
     reflectButton(false);
     ending = false;
@@ -778,14 +850,16 @@ const VoiceLive = (() => {
     if (button) button.onclick = () => active ? end() : start(false);
     window.addEventListener('resize', () => clampPanel($('live-voice-panel')));
     document.addEventListener('visibilitychange', () => {
-      if (!active || document.hidden) return;
+      // Dictation mode holds no browser mic, so `stream`/`context` are null by design — the checks below
+      // would read that as "microphone lost" and fire a reconnect that opens a device we must not touch.
+      if (!active || dictation || document.hidden) return;
       if (context && context.state === 'suspended') context.resume().catch(() => scheduleReconnect('Audio session was suspended.'));
       const track = stream && stream.getAudioTracks()[0];
       if (!track || track.readyState === 'ended') scheduleReconnect('Microphone connection was lost.');
     });
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
       navigator.mediaDevices.addEventListener('devicechange', () => {
-        if (!active) return;
+        if (!active || dictation) return;   // no browser mic in dictation mode — see visibilitychange above
         const track = stream && stream.getAudioTracks()[0];
         if (!track || track.readyState === 'ended') scheduleReconnect('Audio device changed.');
       });
