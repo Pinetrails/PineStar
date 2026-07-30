@@ -133,6 +133,14 @@ function countingFetch(state, reason) {
 }
 
 const tick = (n = 12) => new Promise(r => setTimeout(r, n));
+// Wait for an OUTCOME, never a fixed sleep. The recorder's stop -> onstop -> finish -> transcribe().then
+// chain is several await hops deep, and inside the full gate it competes with hundreds of other node
+// processes for the event loop — a fixed budget that passes alone becomes a coin flip under load. This
+// exits the instant the condition holds, so the ceiling is free on a green run.
+async function until(pred, ms) {
+  for (let waited = 0; waited < ms; waited += 10) { if (pred()) return true; await tick(10); }
+  return pred();
+}
 // Did the mic open at ANY point inside the window? The rig compresses the listen hard cap to 20ms, so a
 // healthy hands-free loop is a rapid open/close cycle — a single sample lands in a gap half the time.
 async function opensWithin(t, ms) {
@@ -436,7 +444,8 @@ async function opensWithin(t, ms) {
     const t = boot({ recorder: true, fetch: sttFail });
     t.Voice.startListening(); await tick(30);
     mrInstances[mrInstances.length - 1].ondataavailable({ data: { size: 1 } });   // some audio got recorded
-    t.Voice.stopListening(); await tick(60);
+    t.Voice.stopListening();
+    await until(() => /restarted|reload/i.test(String(t.nodes['chat-status'].textContent || '')), 5000);
     A.eq(t.sandbox.__sent.length, 0, 'stt 403: nothing is sent (there is no transcript)');
     A.ok(t.statusLog.some(s => /restarted|reload/i.test(String(s))), 'stt 403: the failure is NAMED, not silently dropped');
     A.ok(/restarted|reload/i.test(String(t.nodes['chat-status'].textContent || '')),
@@ -450,7 +459,8 @@ async function opensWithin(t, ms) {
     const t = boot({ recorder: true, fetch: sttDegrade });
     t.Voice.startListening(); await tick(30);
     mrInstances[mrInstances.length - 1].ondataavailable({ data: { size: 1 } });
-    t.Voice.stopListening(); await tick(60);
+    t.Voice.stopListening();
+    await until(() => /whisper-large-v3-turbo 500/.test(String(t.nodes['chat-status'].textContent || '')), 5000);
     A.ok(/whisper-large-v3-turbo 500/.test(String(t.nodes['chat-status'].textContent || '')),
       'stt degrade: the reason is the status the user is left looking at, not a zero-frame flash');
   }
@@ -459,7 +469,8 @@ async function opensWithin(t, ms) {
     const t = boot({ recorder: true });
     t.Voice.startListening(); await tick(30);
     mrInstances[mrInstances.length - 1].ondataavailable({ data: { size: 1 } });
-    t.Voice.stopListening(); await tick(60);
+    t.Voice.stopListening();
+    await until(() => t.sandbox.__sent.length === 1, 5000);
     A.eq(t.sandbox.__sent.length, 1, 'a successful listen still sends the transcript');
     A.ok(!/unreachable|restarted/i.test(String(t.nodes['chat-status'].textContent || '')), 'and leaves no diagnostic behind');
   }
@@ -489,7 +500,7 @@ async function opensWithin(t, ms) {
       if (mute) t.Voice.setSpeakReplies(false);                   // the user mutes 🔊 mid-reply
       // The rig time-compresses the 30s hard cap to 20ms, so a re-opened listen closes again almost at once.
       // Poll for the OPEN rather than sampling one instant, or the assertion measures scheduling luck.
-      const opened = await opensWithin(t, 900);
+      const opened = await opensWithin(t, 4000);
       return { t, opened };
     };
     // Control: with no mute the reply is still draining, so the mic legitimately stays shut — this is what
