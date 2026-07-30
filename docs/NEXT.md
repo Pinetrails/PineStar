@@ -29,6 +29,21 @@ General reported `tabIndex:0`, `role:button`, and `aria-keyshortcuts:Shift+F10`;
 one menu with Rename focused; Escape removed it and restored General. Regression:
 `session-power-tools.test` 118→124 assertions; website mirror 8 assertions; claims planning PASS
 (37 claims / 184 files); `test:fast` 429/429 green. No merge, push, deploy, publish, or PR.
+## 2026-07-29 — CODEX OAUTH MIGRATION ROOT BOUNDARY (`agent/quality-loop-0729c`)
+
+READY TO MERGE. The 07-29 token-leak fix rejected ordinary temporary workspaces, but its fallback
+still trusted any path whose tail was `StarNet/workspaces`; an isolated boot could therefore pull
+the Commander's ChatGPT OAuth token from a real legacy app-data home by choosing that directory
+shape. Reproduction returned `recognized:true`, four migration candidates, and the legacy token
+path for `C:\tmp\attacker\StarNet\workspaces`. Migration authority now requires an exact match
+against enumerated Local/Roaming/XDG app-data roots (plus the existing injected legacy/install
+roots), while both Windows app-data locations remain valid migration sources.
+
+Regression: `provider.codex-auth.test` 65→68 assertions; the escape test failed 3 ways before the
+fix and now proves a branded isolated root sees only its own token file. Real sidecar proof with
+fake credentials: full-app HTTP 200, provider stayed `openrouter`, legacy fixture remained, and no
+token file appeared in the isolated root. Final verification: `test:fast` 432/432 and full
+`test:http` green. No merge, push, deploy, publish, PR, production-data, credential, or secret change.
 
 ## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
 
