@@ -154,4 +154,25 @@ A.ok(/\+ taskDoctrineNote/.test(sidecar), 'the task doctrine is actually wired i
   A.ok(btn && /RECONNECT CHATGPT/.test(btn.label), 'the RECONNECT CHATGPT chip is offered on the pre-stream path');
 }
 
+/* S5 source-lock — an ERRORED skillbase read must never become a confident zero.
+   agentSkills() collapses every failure to [] for its list callers, which is fine for "no skills yet" copy but
+   a lie for a COUNTER: "you have none" and "I could not ask" are different claims. agentSkillsRead() keeps the
+   outcome, and the PRACTICE meter reads through it. Source-locked here because harness.js is browser-flow. */
+{
+  const read = /async function agentSkillsRead\(agentId, opts\)\s*\{[\s\S]*?\n  \}/.exec(src);
+  A.ok(read, 'harness exposes agentSkillsRead()');
+  A.ok(/return \{ ok: false, skills: \[\] \}/.test(read[0]), 'a failed read reports ok:false rather than an empty list');
+  A.ok(/if \(!r\.ok\) return \{ ok: false, skills: \[\] \}/.test(read[0]), 'a non-2xx response is a failed read');
+  A.ok(/catch \(e\) \{ return \{ ok: false, skills: \[\] \}; \}/.test(read[0]), 'a thrown fetch is a failed read');
+  A.ok(/Array\.isArray\(j\.skills\)/.test(read[0]), 'a malformed body is a failed read, not an empty skillbase');
+  A.ok(/\n\s*agentSkills, agentSkillsRead, agentSkillManage/.test(src), 'agentSkillsRead sits on the public Harness surface');
+  // the legacy wrapper still returns a plain array, so every existing caller is untouched.
+  A.ok(/async function agentSkills\(agentId, opts\) \{\s*return \(await agentSkillsRead\(agentId, opts\)\)\.skills;/.test(src), 'agentSkills() still returns a bare array, delegating to the read');
+  // and the counter surface reads through the outcome-preserving one.
+  const ui = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
+  A.ok(/Harness\.agentSkillsRead\(agentId/.test(ui), 'the PRACTICE meter reads through agentSkillsRead');
+  A.ok(/if \(!r \|\| !r\.ok\) return fail\('could not read the skillbase'\)/.test(ui), 'a failed read renders UNREAD, never a 0');
+  A.ok(/if \(!now \|\| now\.id !== agentId\) return;/.test(ui), 'a late read never paints a different agent’s dossier');
+}
+
 A.report('harness-internal.test');

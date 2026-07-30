@@ -95,9 +95,19 @@
     return (jobs || []).map(j => (j && j.id === id ? fn(j) : j));
   }
 
-  // the next-fire ISO for an enabled, fireable schedule re-anchored at `now`, else null.
-  function armAt(schedule, lastRunIso, now) {
-    const ms = cron.nextFireAt(schedule, lastRunIso, now);
+  /* the next-fire ISO for an enabled, fireable schedule re-anchored at `now`, else null.
+
+     `defaultTz` is NOT optional decoration. cron.js resolves a tz-less schedule against
+     tzFor(schedule, defaultTz), which falls back to 'UTC' when nothing is injected — and this helper is
+     what stamps nextRunAt in makeJob, updateJob's re-anchor, resumeJob and markRun's error re-arm. The
+     DRIVER plans with the real host zone (CRON_HOST_TZ, from Intl), and planTick's dueAtOf PREFERS the
+     persisted nextRunAt, so a UTC-anchored stamp became the real FIRST fire instant: on America/New_York,
+     "every morning" (0 9 * * *) was promised for today 09:00 by the preview and persisted as tomorrow
+     05:00 local. It fired ~20 hours late at 5am, and only settled onto the correct local 09:00 from the
+     SECOND fire onward. Every tz-less creation path hit it — the marketplace MAKE ROUTINE, routine.create
+     without `timezone`, the /routine slash action — plus every un-pause and every terminal-error re-arm. */
+  function armAt(schedule, lastRunIso, now, defaultTz) {
+    const ms = cron.nextFireAt(schedule, lastRunIso, now, defaultTz ? { defaultTz: defaultTz } : undefined);
     return ms != null ? iso(ms) : null;
   }
 
@@ -134,7 +144,7 @@
       state: enabled ? 'scheduled' : 'paused',
       repeat: { times: times, completed: 0 },
       createdAt: iso(now),
-      nextRunAt: (enabled && fireable) ? armAt(schedule, null, now) : null,
+      nextRunAt: (enabled && fireable) ? armAt(schedule, null, now, ctx.defaultTz) : null,
       lastRunAt: null, lastRunId: null, lastStatus: null, lastError: null, lastReason: null,
       retryCount: 0,
       // misfire policy for a recurring job (see normMisfire above). null -> schedule-derived default.
@@ -204,7 +214,7 @@
       if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
         next.schedule = patch.schedule || null;
         next.scheduleDisplay = next.schedule && next.schedule.display ? next.schedule.display : '';
-        if (next.enabled) next.nextRunAt = armAt(next.schedule, null, now);   // re-anchor at now
+        if (next.enabled) next.nextRunAt = armAt(next.schedule, null, now, ctx && ctx.defaultTz);   // re-anchor at now
       }
       return next;
     });
@@ -217,7 +227,7 @@
   function resumeJob(jobs, id, ctx) {
     const now = (ctx && ctx.now) || 0;
     return mapJob(jobs, id, (job) =>
-      Object.assign({}, job, { enabled: true, state: 'scheduled', nextRunAt: armAt(job.schedule, null, now) }));
+      Object.assign({}, job, { enabled: true, state: 'scheduled', nextRunAt: armAt(job.schedule, null, now, ctx && ctx.defaultTz) }));
   }
 
   /* triggerJob — make a job DUE on the very next scheduler tick, without running it inline.
@@ -342,7 +352,7 @@
       if (ok) {
         next.state = 'scheduled';              // nextRunAt left as planTick advanced it (advance-before-run)
       } else {
-        next.nextRunAt = armAt(job.schedule, next.lastRunAt, now) || job.nextRunAt;  // re-arm defensively
+        next.nextRunAt = armAt(job.schedule, next.lastRunAt, now, ctx && ctx.defaultTz) || job.nextRunAt;  // re-arm defensively
         next.state = 'error';                  // visible, but enabled stays true
       }
       return next;

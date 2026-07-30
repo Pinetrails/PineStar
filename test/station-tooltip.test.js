@@ -96,4 +96,71 @@ A.ok(clampedR.arrowX <= tip.width - 10 && clampedR.arrowX >= 10,
   'the arrow stays inside the card after clamping (it must keep pointing at the anchor, not off the corner)');
 A.ok(T.adopt(null) === '', 'adopt() tolerates a null element');
 
-A.report('station-tooltip.test');
+/* ---- 5. the DELAY/CANCEL path: no ghost card beside a control the pointer already left ------------
+   `anchor` is only assigned inside show(), so for the whole 320ms pending window the pointerout handler's
+   opening `if (!anchor) return` bailed BEFORE hide() — and hide() holds the only clearTimeout. Brush a tipped
+   control and flick away and the card still appeared ~200ms later next to a control you had left, then stayed
+   until the next element boundary / click / scroll / keypress. This drives init()'s real pointer handlers,
+   which no test did before, so the delay/cancel path was entirely uncovered. */
+{
+  const listeners = new Map();
+  function mkEl(attrs, text) {
+    const a = Object.assign({}, attrs || {});
+    const el = {
+      isConnected: true, style: { setProperty() {}, removeProperty() {} }, textContent: text || '', hidden: false,
+      classList: (() => { const s = new Set(); return { add: c => s.add(c), remove: c => s.delete(c), toggle: (c, on) => { if (on === undefined) { s.has(c) ? s.delete(c) : s.add(c); } else { on ? s.add(c) : s.delete(c); } }, contains: c => s.has(c) }; })(),
+      getAttribute: k => (k in a ? a[k] : null),
+      setAttribute: (k, v) => { a[k] = String(v); },
+      removeAttribute: k => { delete a[k]; },
+      hasAttribute: k => k in a,
+      getBoundingClientRect: () => ({ left: 100, top: 100, width: 40, height: 20 }),
+      appendChild() {}, contains(other) { return other === el; }, closest(sel) { return (/\[title\]|\[data-tip\]/.test(sel) && ('title' in a || 'data-tip' in a)) ? el : null; },
+      _attrs: a
+    };
+    return el;
+  }
+  const body = mkEl({}, '');
+  const doc = {
+    body,
+    createElement: () => mkEl({}, ''),
+    addEventListener: (name, fn) => { if (!listeners.has(name)) listeners.set(name, []); listeners.get(name).push(fn); }
+  };
+  const fire = (name, ev) => (listeners.get(name) || []).forEach(fn => fn(ev));
+
+  const T2 = require('../frontend/app/tooltip.js');
+  T2.init._wired = false;                       // init() is once-only by design; this is a fresh rig
+  global.window = { innerWidth: 1000, innerHeight: 700, addEventListener() {} };
+  T2.init(doc);
+  const tipped = mkEl({ title: 'Halt every run' }, '');
+  const plain = mkEl({}, 'not tipped');
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  (async () => {
+    // brush it, then flick away well inside the 320ms delay
+    fire('pointerover', { target: tipped });
+    await sleep(80);
+    fire('pointerout', { target: tipped, relatedTarget: body });
+    await sleep(400);                            // past SHOW_DELAY — the ghost used to appear here
+    A.ok(!tipped.getAttribute('aria-describedby'),
+      'a tip cancelled DURING the show delay never appears (no aria-describedby stamped on the control you left)');
+
+    // and moving onto UNTIPPED background is the same cancel (enter() returns early there, so hide() is the
+    // only thing that could have cleared the timer)
+    fire('pointerover', { target: tipped });
+    await sleep(80);
+    fire('pointerout', { target: tipped, relatedTarget: plain });
+    fire('pointerover', { target: plain });
+    await sleep(400);
+    A.ok(!tipped.getAttribute('aria-describedby'), 'flicking onto untipped background also cancels the pending tip');
+
+    // the HAPPY path still works: rest on it past the delay and the tip shows
+    fire('pointerover', { target: tipped });
+    await sleep(420);
+    A.eq(tipped.getAttribute('aria-describedby'), 'station-tip', 'resting on a tipped control past the delay DOES show the tip');
+    // ...and leaving now hides it
+    fire('pointerout', { target: tipped, relatedTarget: body });
+    A.ok(!tipped.getAttribute('aria-describedby'), 'leaving a SHOWN tip still hides it');
+
+    A.report('station-tooltip.test');
+  })().catch(e => { console.log('FAIL: tooltip rig threw — ' + (e && e.stack || e)); process.exit(1); });
+}

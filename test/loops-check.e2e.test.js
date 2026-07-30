@@ -24,6 +24,17 @@ const { bootToken } = require('./_httpToken.js');
 const HOST = '127.0.0.1';
 const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function gitSyncRetry(repo, args, attempts) {
+  const max = attempts || 40;
+  for (let i = 0; i < max; i++) {
+    try { return execFileSync('git', ['-C', repo].concat(args), { stdio: 'pipe' }); }
+    catch (e) {
+      const detail = String((e && e.stderr) || '') + String((e && e.stdout) || '') + String((e && e.message) || '');
+      if (!/index\.lock|another git process/i.test(detail) || i === max - 1) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+}
 
 function startMock(defaultReply) {
   const prompts = [], script = [];
@@ -206,10 +217,10 @@ function makeRepo() {
        pass was in flight when this test dirtied the repo, the harvest has already committed these files and
        `git commit` exits non-zero with "nothing to commit". The precondition this line exists to establish is
        "the tree is clean", and both paths establish it — only an unexpected git failure should fail the test. */
-    execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' });
-    try { execFileSync('git', ['-C', repo, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'accept'], { stdio: 'pipe' }); }
+    gitSyncRetry(repo, ['add', '-A']);
+    try { gitSyncRetry(repo, ['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'accept']); }
     catch (e) { /* nothing to commit — the harvest got there first */ }
-    A.eq(execFileSync('git', ['-C', repo, 'status', '--porcelain'], { stdio: 'pipe' }).toString().trim(), '',
+    A.eq(gitSyncRetry(repo, ['status', '--porcelain']).toString().trim(), '',
       'the working tree is clean before the trusted-green run, however it got there');
     const fresh = await mk({
       name: 'already green', objective: 'keep the project check passing', workdir: repo,

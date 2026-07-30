@@ -390,24 +390,63 @@ async function run() {
   }
 
   // ---- 5E. a tap that lost the race is reported honestly, never as a success ----
+  // The PERMANENT RECORD matters as much as the follow-up: the ack toast and the message stamp both assert the
+  // decision took effect, and both used to be written BEFORE resolveConsent was asked. A late tap therefore
+  // rewrote the permission message to end "▸ ✅ Allow once" on a request the harness had DENIED — the thing a
+  // Commander scrolls back to said the opposite of what happened. So this case records the edits and the acks;
+  // stubbing editMessage without a recorder (and asserting only the follow-up) is what let it hide.
   {
-    const sends = [], acks = []; const store = fakeStore({ 555: { agentId: 'tg_555', approvals: true } });
+    const sends = [], acks = [], edits = []; const store = fakeStore({ 555: { agentId: 'tg_555', approvals: true } });
     const host = makeHostConsent(20);
-    const runOnce = async (o) => { await o.prompt({ name: 'fs.write', args: {} }, { scope: 'write' }); o.emit('agent.token', { delta: 'done' }); o.emit('agent.run.end', { reason: 'done' }); };
+    let decision = null;
+    const runOnce = async (o) => { decision = await o.prompt({ name: 'fs.write', args: {} }, { scope: 'write' }); o.emit('agent.token', { delta: 'done' }); o.emit('agent.run.end', { reason: 'done' }); };
     const reg = makePromptRegistry({ newId: idGen('tok') });
     const hub = makeChannelHub({
       runOnce, store, prompts: reg,
       send: (c, t, opts) => { sends.push({ c, t, opts }); return Promise.resolve({ ok: true, messageId: 'm1' }); },
       answerCallback: (id, text) => { acks.push(text); return Promise.resolve({ ok: true }); },
-      editMessage: () => Promise.resolve({ ok: true }),
+      editMessage: (c, mid, text) => { edits.push({ c, mid, text }); return Promise.resolve({ ok: true }); },
       askConsent: host.ask, resolveConsent: host.resolve,
       secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen('run')
     });
     await hub.onInbound(dm('write it'));   // the ask times out during this await
     const kb = lastKeyboard(sends);
     A.ok(!!kb, 'the consent keyboard was sent');
+    A.eq(decision, 'deny', 'the RUN was denied by the fail-closed timer');
     await hub.onCallback({ chatId: '555', userId: 'u1', data: kb[0][0].callback_data, callbackId: 'late', messageId: 'm1' });
     A.ok(sends.some(s => /already expired/.test(s.t)), 'a late tap is told the request expired and was denied — never a false "approved"');
+    A.eq(edits.length, 1, 'the original permission message is stamped exactly once');
+    A.ok(/DENIED/.test(edits[0].text), 'the PERMANENT record states the decision the broker applied');
+    A.ok(!/▸ ✅ Allow/.test(edits[0].text), 'and never stamps the button as though the grant landed');
+    A.ok(acks.every(a => !/^✓|Allow once/.test(String(a || ''))), 'the ack toast does not read as a success either');
+    A.ok(acks.some(a => /expired/i.test(String(a || ''))), 'the ack toast names the expiry');
+  }
+
+  // ---- 5E2. a tap that WINS the race is still stamped with the button it granted ----
+  // The control for 5E: reordering the settle ahead of the writes must not change the happy path.
+  {
+    const sends = [], acks = [], edits = []; const store = fakeStore({ 555: { agentId: 'tg_555', approvals: true } });
+    const host = makeHostConsent(5000);   // long enough that the tap lands first
+    let decision = null;
+    const runOnce = async (o) => { decision = await o.prompt({ name: 'fs.write', args: {} }, { scope: 'write' }); o.emit('agent.run.end', { reason: 'done' }); };
+    const reg = makePromptRegistry({ newId: idGen('tok') });
+    const hub = makeChannelHub({
+      runOnce, store, prompts: reg,
+      send: (c, t, opts) => { sends.push({ c, t, opts }); return Promise.resolve({ ok: true, messageId: 'm1' }); },
+      answerCallback: (id, text) => { acks.push(text); return Promise.resolve({ ok: true }); },
+      editMessage: (c, mid, text) => { edits.push({ c, mid, text }); return Promise.resolve({ ok: true }); },
+      askConsent: host.ask, resolveConsent: host.resolve,
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen('run')
+    });
+    const running = hub.onInbound(dm('write it'));
+    await new Promise(r => setTimeout(r, 10));
+    const kb = lastKeyboard(sends);
+    await hub.onCallback({ chatId: '555', userId: 'u1', data: kb[0][0].callback_data, callbackId: 'live', messageId: 'm1' });
+    await running;
+    A.ok(decision && decision !== 'deny', 'the tap that won the race really granted (decision: ' + decision + ')');
+    A.eq(edits.length, 1, 'the message is stamped once');
+    A.ok(/▸ /.test(edits[0].text) && !/DENIED/.test(edits[0].text), 'a granted tap is stamped with its own button, not an expiry');
+    A.ok(!sends.some(s => /already expired/.test(s.t)), 'and no expiry correction is sent');
   }
 
   // ---- 5G. an UNDELIVERABLE keyboard denies AT ONCE instead of stalling out the consent timeout ----

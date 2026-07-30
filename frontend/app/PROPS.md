@@ -45,6 +45,68 @@ lightmap** (so they're lit) — never baked.
 - `world.js` (live): props drawn in the existing y-sorted item pass, in LOCAL coords from
   `geo.props`.
 
+## Mount axis — standing on a table
+
+Three states, declared per catalog row and enforced by `checkProp`:
+
+| row flag | meaning |
+| --- | --- |
+| `surface: true` | this prop IS a table — other props may stand on it (`sidetable`/`loungetable`/`longtable`) |
+| `mount: 'surface'` | REQUIRES a table; refused on bare deck with `NEEDS_SURFACE` |
+| `stack: true` | MAY use a table, equally at home on the deck |
+| *(none)* | deck only — a table is a solid obstacle like any other prop |
+
+A mounted prop's footprint must lie **wholly** on ONE host, and that host alone is exempt from the
+overlap check. Mount is **resolved per frame, never stored on the prop doc** — reclaim the table and
+the prop drops back to the deck, which is why no saved station needs migrating.
+
+`stack` was added 2026-07-29: without it the only two props that could ever be placed on a table were
+the two that were *forced* to, so a mug, a plant or a stack of printouts hit `OVERLAP` the moment a
+table sat under it, and tables read as unusable. A required-mount flag cannot express "belongs on the
+floor OR on a table", and forcing `plant`/`coffee` onto tables would have broken the agents that place
+their own decor on open deck (`world.js AGENT_DECOR`). What earns the flag is what the **art draws**,
+never the name: an object whose contact is its own base (mug, pot, papers, tote, speaker cab) stacks;
+anything drawing legs, a stand or a `deckPlate` is floor furniture (`arc_microfiche` is a reader DESK,
+`comms_inbox` is bolted down, `tank`/`monstera` are explicitly floor pieces).
+
+**Renderers must ask `station.mountOf(prop)` and nothing else** — it folds both halves of the question
+(may this type mount, AND is a host under it right now) and re-resolves the prop from the doc by id, so
+it is frame-proof. Both halves had already gone wrong independently: `build.js` resolved neither, so in
+REFIT — the view you place props in — a table-top prop drew `SURFACE_RISE` px low and with a sort key
+tied to its table's; and `world.js` passed the LOCAL props `projectGeometry()` emits into a lookup that
+compared them against WORLD-tile tables, so on any station whose origin wasn't (0,0) the live world
+never lifted anything at all. A mounted prop also sorts **+0.5** after its host (same tiles = equal sort
+keys, so array order would otherwise decide). Locked by `test/prop-mount.test.js`.
+
+## Leisure — `use` makes a prop a DESTINATION
+
+A catalog row may carry `use: {kind, sit, approach}`. That is what makes an idle agent walk to a prop
+and dwell there (`world.js planProp` → `PropAnchor.deriveAnchor` → `goal:'use'`). Without it a prop is
+scenery an agent will never touch, which is what 102 of the 108 props were until 2026-07-29 — the
+station was full of pool tables and vending machines nobody used.
+
+- `kind` is a free string. Only three values are special-cased anywhere: `couch`/`tv` (paired by
+  `tryLounge` into the sit-and-watch beat) and `arcade` (the clickable minigame hit-test). **Every
+  other kind needs no engine change at all** — `planProp` handles any of them generically, so adding a
+  leisure prop is a catalog edit. `world.js USE_LINE` optionally maps a kind to a flavour thought; a
+  kind with no entry simply says nothing.
+- `sit: true` seats the body; `approach` biases which edge it walks to (`'auto'` tries all four).
+- **`kind: 'bed'` is also the power-down target.** `planBedSleep` claims the mattress through the same
+  `occupiedSeats` + `pendSeat` machinery a couch cushion uses (one sleeper per bed) and `sleep()` falls
+  back to going dormant standing when no bed is reachable in-zone. Anything that wakes a sleeper must
+  `releaseSeat()`/`seizeFromIdle()` or the bed is blocked for the session — there are four such sites.
+
+## Drawing a new prop — the two things that bite
+
+1. **`w` and `h` arrive in PIXELS**, not tiles: `draw()` multiplies the footprint by `TILE` before
+   calling. Writing `w * TILE` inside a draw function puts the body hundreds of pixels off-canvas, and
+   every other check still passes (the row exists, `has(id)` is true, the module parses). Three props
+   shipped invisible this way. `test/prop-render-smoke.test.js` walks the whole catalog through a
+   recording context stub and fails on both "painted nothing" and "painted off its own footprint".
+2. **Scale.** A tile is 12px and an agent is ~35px, so a tabletop object that fills its tile is the
+   size of a torso. Author smalls 5–9px wide with margin around them — the margin is what reads as
+   "small object", and it is what lets several sit along one LONG TABLE without merging into a mass.
+
 ## Blocking vs decor
 
 `CATALOG[].blocks` decides whether a prop occupies its tiles for pathfinding. Solid furniture

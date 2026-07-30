@@ -351,5 +351,67 @@ const call = (name, args) => ({ id: 'c1', name, args: args || {}, argsRaw: JSON.
     A.eq(removed, 1, 'approved routine.manage reaches the store verb');
   }
 
-  A.report('routine-tools');
+    /* ---- an E-STOP is a SECOND, independent fact the tool must disclose ------------------------------
+     `schedulerArmed` reports the arm INTENT, which E-STOP deliberately leaves true. So every readout said
+     "armed" about a scheduler the Commander had durably stood down, and run_now told the model the routine
+     "fires on its next tick (within ~1 minute)" when no tick was coming. The old harness could not see this
+     at all: its fake armScheduler had no halt concept, which is exactly why the arm-by-default assertion
+     passed while the real injected one silently cleared the halt. */
+  {
+    let armedH = true, haltedH = true, armCalls = [];
+    const hJobs = [{ id: 'job_h', name: 'Daily brief', prompt: 'summarize the standup', agentId: 'agent', schedule: { kind: 'cron', expr: '0 9 * * *' }, enabled: true }];
+    const hTools = makeRoutineTools({
+      roster: () => roster,
+      listJobs: () => hJobs,
+      schedulerState: () => armedH,
+      schedulerHalted: () => haltedH,
+      normalizeProvider: (p) => p,
+      // the REAL injected one records the arm intent and never restarts a halted timer
+      armScheduler: (enabled) => { armCalls.push(enabled); armedH = enabled === true; return armedH; },
+      createRoutine: (spec) => ({ id: 'job_h', name: spec.name, prompt: spec.prompt, agentId: spec.agentId, schedule: { kind: 'cron', expr: spec.schedule }, enabled: true }),
+      updateRoutine: async () => hJobs[0],
+      triggerRoutine: async () => hJobs[0],
+      parseSchedule: (x) => ({ kind: 'cron', expr: x })
+    });
+
+    const created = JSON.parse((await hTools.createTool.run({ name: 'Daily brief', prompt: 'summarize the standup', schedule: '0 9 * * *' }, { agentId: 'agent' })).content);
+    A.eq(created.schedulerHalted, true, 'create REPORTS that the scheduler is halted');
+    A.ok(/E-STOP/.test(String(created.schedulerNote || '')), 'and names the E-STOP so the model cannot promise a daily run: ' + created.schedulerNote);
+
+    const listed = JSON.parse((await hTools.listTool.run({}, { agentId: 'agent' })).content);
+    A.eq(listed.schedulerHalted, true, 'list reports it too');
+    A.ok(/E-STOP/.test(String(listed.schedulerNote || '')), 'with the same note');
+
+    const ran = JSON.parse((await hTools.manageTool.run({ action: 'run_now', id: hJobs[0].id }, { agentId: 'agent' })).content);
+    A.ok(/E-STOP/.test(String(ran.note || '')), 'run_now says the E-STOP is why nothing will fire: ' + ran.note);
+    A.ok(!/within ~1 minute/.test(String(ran.note || '')), 'and never promises a tick that is not coming');
+
+    // with the halt LIFTED the copy returns to normal
+    haltedH = false;
+    const ran2 = JSON.parse((await hTools.manageTool.run({ action: 'run_now', id: hJobs[0].id }, { agentId: 'agent' })).content);
+    A.ok(/within ~1 minute/.test(String(ran2.note || '')), 'once resumed, run_now promises the tick again');
+    A.ok(!/E-STOP/.test(String(ran2.note || '')), 'and stops mentioning the E-STOP');
+  }
+
+/* ---- and the INJECTED armScheduler must not lift the durable E-STOP --------------------------------
+   The old one did the full resume unconditionally, and its caller is a MODEL-FACING DEFAULT (`arm` is
+   "Default true", so the agent never has to think about it). A Commander who pressed E-STOP and later asked
+   for "a daily brief" had their emergency stop silently cleared by approving that one create — cron.halt.json
+   rewritten to halted:false, the tick timer restarted, every previously-halted routine resuming, and nothing in
+   the transcript, the approval card or any panel saying so. index.js is not node-loadable in isolation, so this
+   is a source lock (the pattern channels.sse.test.js uses). */
+{
+  const fs = require('fs'); const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  const at = src.indexOf('armScheduler: (enabled) =>');
+  A.ok(at > 0, 'index.js injects armScheduler into the routine tools');
+  const seg = src.slice(at, at + 1800);
+  A.ok(/if \(want\) \{ if \(!cronHalted\) armCron\(\); \}/.test(seg),
+    'the tool-facing arm records the INTENT but never restarts a timer the Commander paused');
+  A.ok(!/cronHalted = false/.test(seg), 'and it never clears the durable halt itself');
+  A.ok(/schedulerHalted: \(\) => !!cronHalted/.test(seg), 'the halt is exposed to the tool so its response can disclose it');
+  A.ok(/function liftCronHalt/.test(src), 'liftCronHalt is still the one documented lift seam');
+}
+
+A.report('routine-tools');
 })().catch(e => { console.log('FAIL: routine-tools threw -- ' + (e && e.stack || e)); process.exit(1); });

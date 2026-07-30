@@ -323,4 +323,34 @@ const F = (err, status, opts) => friendlyError(err, status, opts);
   A.eq(R(new Error('the model refused: content_filter triggered')).reason, 'content_policy_blocked', 'and so does a status-less refusal');
 }
 
+/* ---- QUOTA EXHAUSTION is not a rate limit -------------------------------------------------------
+   A 429 fires in step 2 (HTTP status), strictly before the step-4 message patterns, so a body saying
+   "you've hit your usage limit, resets in 3 days" could never reach a terminal class: it came back
+   rate_limit (retryable, shouldRotateCredential) and codex.js burned RETRY_DELAYS while loop.js burned
+   MAX_STREAM_RETRIES against an allowance that resets in DAYS. Status-before-message precedence is
+   deliberate, so the fix is a distinct class WITHIN the 429. */
+{
+  const quota = R(httpErr(429, "codex http 429 — You've hit your usage limit. Resets in 3 days"));
+  A.eq(quota.reason, 'quota_exhausted', 'a spent weekly allowance is quota_exhausted, not rate_limit');
+  A.eq(quota.retryable, false, 'and it is NOT retryable — every retry inside the window is doomed');
+  A.eq(quota.shouldRotateCredential, true, 'another credential may have its own allowance');
+  A.eq(quota.shouldFallback, true, 'and another provider can pick the work up now');
+  A.eq(R(httpErr(429, 'usage_limit_reached')).reason, 'quota_exhausted', 'the structured type is recognized too');
+  A.eq(R(httpErr(429, 'weekly quota exceeded for this plan')).reason, 'quota_exhausted', 'so is a weekly quota');
+  A.eq(R({ status: 429, code: 'plan_limit', message: 'nope' }).reason, 'quota_exhausted', 'and an error CODE saying plan_limit');
+
+  // ...but a SHORT-window limit stays exactly what it was. Gemini answers a per-minute limit with
+  // "Quota exceeded for quota metric", which a bare /quota/ test would have swallowed.
+  A.eq(R(httpErr(429, 'Quota exceeded for quota metric: generate_requests per minute')).reason, 'rate_limit',
+    'a PER-MINUTE quota is still a plain rate limit');
+  A.eq(R(httpErr(429, 'slow down')).reason, 'rate_limit', 'a bare 429 is unchanged');
+  A.eq(R(httpErr(429, 'Rate limit exceeded, retry in 1.5s')).reason, 'rate_limit', 'so is a seconds-scale one');
+
+  // an out-of-money account also arrives as 429 from OpenAI (insufficient_quota), and no wait fixes that
+  const spent = R(httpErr(429, 'openai http 429 — insufficient_quota: You exceeded your current quota'));
+  A.eq(spent.reason, 'billing', 'a 429 carrying insufficient_quota is BILLING, not a busy provider');
+  A.eq(spent.retryable, false, 'and it is not retryable either');
+  A.eq(R({ status: 429, code: 'insufficient_quota', message: 'x' }).reason, 'billing', 'the code form too');
+}
+
 A.report('errorclass.test');

@@ -1531,7 +1531,7 @@
          · never silent. The caller reports that it recovered, because an action the agent believes it aimed
            at ref b7 and which actually landed on a re-found node is a different claim. */
     function nodeIdentity(n) {
-      return (n && n.role ? String(n.role) : '') + ' ' + String((n && n.text) || '').trim().slice(0, 120);
+      return (n && n.role ? String(n.role) : '') + '\u0000' + String((n && n.text) || '').trim().slice(0, 120);
     }
     async function withRefRecovery(refList, act) {
       const list = Array.isArray(refList) ? refList : [refList];

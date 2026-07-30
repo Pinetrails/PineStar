@@ -533,6 +533,28 @@
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage connectors.</div>'; }
     }
     const postJSON = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+
+    /* ⛔ AN ERRORED ENDPOINT IS NOT AN EMPTY ONE, AND A REFUSAL IS NOT AN OFFLINE STATION.
+       `(await fetch(u)).json()` resolves on 4xx/5xx: a JSON error body parses fine, `j.groups` comes back
+       undefined, and the panel prints "no platform directory available" / "No keyed platform connected yet" —
+       a CONFIRMED EMPTY over a read that never succeeded. A non-JSON error (the plain-text `forbidden token`
+       a 403 returns) throws instead, and the catch printed "sidecar offline — start it", which is the opposite
+       of true: the station answered, it just refused. Both readings send a Commander to fix the wrong thing —
+       or to re-add a key they already have.
+
+       Returns {ok, json, status, offline} so a caller can say which of the three actually happened. */
+    async function readJSON(path) {
+      let r;
+      try { r = await fetch(path, { cache: 'no-store' }); }
+      catch (_) { return { ok: false, offline: true, status: 0, json: null }; }
+      if (!r.ok) return { ok: false, offline: false, status: r.status, json: null };
+      try { return { ok: true, offline: false, status: r.status, json: await r.json() }; }
+      catch (_) { return { ok: false, offline: false, status: r.status, json: null }; }
+    }
+    // the one honest sentence for a failed read: offline vs the station refusing/erroring.
+    const readFailLine = (res, offlineMsg) => res.offline
+      ? '<div class="mc-detail">' + esc(offlineMsg) + '</div>'
+      : '<div class="mc-detail">couldn\'t read this from the station' + (res.status ? ' (HTTP ' + res.status + ')' : '') + ' — it is running, so this is not a start-it problem. Retry, and check the station log if it persists.</div>';
     listEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-act]'); if (!btn) return;
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
@@ -648,7 +670,11 @@
             '<div class="mc-hint">Stored locally by the sidecar, sent as <code>Authorization: Bearer …</code>, never displayed again.</div></div>'
         : '';
       const home = e.homepage ? ' <a class="cc-home dim" href="' + esc(e.homepage) + '" target="_blank" rel="noopener">site ↗</a>' : '';
-      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '" style="--ci:' + (ci || 0) + '">' +
+      // data-search: the console search box (stationui.js doFilter) matches textContent + this attribute, so a
+      // Commander typing "google drive" reaches the Google Workspace card even though those words are only in
+      // its blurb by luck. Off-screen matching text only — never rendered.
+      const alias = (Array.isArray(e.aliases) && e.aliases.length) ? ' data-search="' + esc(e.aliases.join(' ')) + '"' : '';
+      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '"' + alias + ' style="--ci:' + (ci || 0) + '">' +
           '<div class="cc-head"><b>' + esc(e.name) + '</b> ' + origin +
             '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + (chip[0] ? chip[0] + ' ' : '') + esc(chip[1]) + '</span></div>' +
           '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + keyField +
@@ -788,10 +814,11 @@
     // we never see (or show) the value. OAuth connectors are keyless by design and stay off this list.
     async function kyPlatformsRefresh() {
       try {
-        const [cj, gj] = await Promise.all([
-          (await fetch('/api/connectors')).json(),
-          (await fetch('/api/connectors/catalog')).json()
-        ]);
+        const [cRes, gRes] = await Promise.all([readJSON('/api/connectors'), readJSON('/api/connectors/catalog')]);
+        // The CONNECTORS read is what decides "you have none" — if it failed, say so instead of asserting zero.
+        // The catalog is only display sugar (names); a failed catalog degrades labels, never the count.
+        if (!cRes.ok) { kyPlatEl.innerHTML = readFailLine(cRes, 'sidecar offline — start it to see connected platforms.'); return; }
+        const cj = cRes.json, gj = gRes.json;
         const byId = {};
         for (const e of ((gj && gj.connectors) || [])) byId[e.id] = e;
         const keyed = ((cj && cj.connectors) || []).filter(c => c.hasToken && !c.oauth);
@@ -893,13 +920,17 @@
     async function kyCatalogRefresh() {
       if (!kyCatEl) return;
       try {
-        const j = await (await fetch('/api/servicekeys/catalog')).json();
+        const res = await readJSON('/api/servicekeys/catalog');
+        if (!res.ok) { kyCatEl.innerHTML = readFailLine(res, 'sidecar offline — start it to browse platforms.'); return; }
+        const j = res.json;
         const groups = (j && j.groups) || [];
+        // Only reachable now when the station genuinely served an empty directory — a real (if odd) answer.
         if (!groups.length) { kyCatEl.innerHTML = '<div class="mc-detail">no platform directory available.</div>'; return; }
         kyCatEl.innerHTML = groups.map(g =>
           '<div class="cc-group"><div class="cc-cat">' + esc(g.category) + '</div>' +
           g.platforms.map(p =>
-            '<div class="cc-card' + (p.installed ? ' added' : '') + '" data-ky-pick="' + esc(p.id) + '">' +
+            '<div class="cc-card' + (p.installed ? ' added' : '') + '" data-ky-pick="' + esc(p.id) + '"' +
+              ((Array.isArray(p.aliases) && p.aliases.length) ? ' data-search="' + esc(p.aliases.join(' ')) + '"' : '') + '>' +
               '<div class="cc-top"><b>' + esc(p.name) + '</b>' +
                 (p.installed ? '<span class="cc-tier cc-lg-none">✓ ADDED</span>' : '<span class="cc-tier cc-lg-key">API key</span>') + '</div>' +
               '<div class="cc-blurb dim">' + esc(p.blurb || '') + '</div>' +
@@ -913,7 +944,16 @@
       if (ev.target.closest('a')) return;                       // the docs link is a real link, not a pick
       const card = ev.target.closest('[data-ky-pick]'); if (!card) return;
       try {
-        const j = await (await fetch('/api/servicekeys/catalog')).json();
+        const res = await readJSON('/api/servicekeys/catalog');
+        // A silent `return` on a failed read looks like a dead click. Say why the card did nothing.
+        if (!res.ok) {
+          kyMsgEl.classList.remove('ok');
+          kyMsgEl.textContent = res.offline
+            ? 'sidecar offline — start it to pick a platform.'
+            : 'couldn\'t read the platform directory' + (res.status ? ' (HTTP ' + res.status + ')' : '') + ' — retry.';
+          return;
+        }
+        const j = res.json;
         const p = ((j && j.groups) || []).flatMap(g => g.platforms).find(x => x.id === card.dataset.kyPick);
         if (!p) return;
         kyNameEl.value = p.name;

@@ -68,4 +68,65 @@ L.fold(ev('s5', 'done'), 2000);
 v = L.list(2000);
 A.eq(v.overflow, 2, 'a dissolving overflow helper drops out of the +N count');
 
+/* ---- THE LOST-EVENT NET: a helper whose terminal `task` frame never arrived -----------------------
+   The fold is the ledger's ONLY writer, and the SSE stream emits no `id:` lines — so a done/failed frame
+   sent while the socket was down is gone for good. prune() drops only 'dying' rows and list() renders a
+   'live' row at alpha 1 forever, so the sprite haunted the desk (and World.dbg().helpers kept counting it)
+   until reload. Every other paired state in world.js already had a net; the ledger did not. Reconcile
+   against the authoritative live set (GET /api/subagents?status=running) instead of a TTL — nothing
+   re-emits 'running', so a clock would kill a legitimately long sub-agent. */
+{
+  const R = SS.makeLedger();
+  R.fold(ev('lost', 'running'), 0, 'lead1');
+  R.fold(ev('still', 'running'), 0, 'lead1');
+  A.eq(R.count(), 2, 'two helpers are live');
+  // the socket drops; 'lost' finishes server-side; on reconnect the server reports only 'still'
+  const out = R.reconcile([{ id: 'still', leadId: 'lead1', title: 'sub still' }], 5000);
+  A.eq(out.dropped, 1, 'the helper the server no longer reports is dropped');
+  A.eq(R.count(), 1, 'only the genuinely live helper is still counted');
+  const lost = R.list(5000).shown.find(s => s.id === 'lost');
+  A.eq(lost.phase, 'dissolve', 'and it DISSOLVES like a normal completion rather than blinking out');
+  R.prune(5000 + SS.DISSOLVE_MS);
+  A.eq(R.list(6000).total, 1, 'after its dissolve it is pruned');
+
+  // the other half of the IFF: a helper that STARTED while the socket was down is added
+  const add = R.reconcile([{ id: 'still', leadId: 'lead1' }, { id: 'new', leadId: 'lead2', title: 'sub new' }], 7000);
+  A.eq(add.added, 1, 'a live sub-agent the browser never saw is added');
+  A.eq(R.count(), 2, 'both live helpers are now counted');
+  A.eq(R.list(7000).shown.find(s => s.id === 'new').leadId, 'lead2', 'the added helper carries its lead');
+
+  // a reconcile that agrees with the ledger changes nothing (it runs every 30s — it must not churn)
+  const noop = R.reconcile([{ id: 'still' }, { id: 'new' }], 8000);
+  A.eq(noop.dropped, 0, 'an agreeing reconcile drops nothing');
+  A.eq(noop.added, 0, 'an agreeing reconcile adds nothing');
+  A.eq(R.list(8000).shown.every(s => s.phase === 'materialize'), true, 'and nothing starts dissolving');
+
+  // a row we mis-inferred as terminal is revived when the server still reports it running
+  R.fold(ev('still', 'done'), 9000);
+  A.eq(R.list(9000).shown.find(s => s.id === 'still').phase, 'dissolve', 'a terminal frame starts the dissolve');
+  R.reconcile([{ id: 'still' }, { id: 'new' }], 9100);
+  A.eq(R.list(9100).shown.find(s => s.id === 'still').phase, 'materialize', 'server truth revives a helper we wrongly buried');
+
+  // an empty live set clears everything — the state after a sidecar restart with no sub-agents
+  R.reconcile([], 10000);
+  A.eq(R.count(), 0, 'an empty authoritative set leaves no live helpers');
+  // ...and a missing/failed endpoint must never be read as "none live" (world.js only calls reconcile on a
+  // well-formed records array). Guard the shape here so the ledger itself is safe either way.
+  const S = SS.makeLedger();
+  S.fold(ev('x', 'running'), 0);
+  S.reconcile(null, 100);
+  A.eq(S.count(), 0, 'reconcile(null) is an EMPTY set by definition — callers must not pass a failed fetch');
+}
+
+/* ---- clear() drops every row: NEW AGENT must not inherit the previous Commander's helpers ---- */
+{
+  const C = SS.makeLedger();
+  C.fold(ev('h1', 'running'), 0, 'oldLead');
+  C.fold(ev('h2', 'running'), 0, 'oldLead');
+  A.eq(C.count(), 2, 'two helpers belong to the outgoing agent');
+  C.clear();
+  A.eq(C.count(), 0, 'clear() leaves no live helpers');
+  A.eq(C.list(0).total, 0, 'and nothing at all to draw — not even a dissolve');
+}
+
 A.report('subagentsprites');

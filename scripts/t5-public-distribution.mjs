@@ -131,7 +131,19 @@ function checkPlan(loop) {
   const missing = required.filter(term => text.indexOf(term.toLowerCase()) < 0);
   return step('t5.0-loop-spec', 'T5.0', 'T5 public distribution loop is documented', existsSync(file) && !missing.length ? 'pass' : 'fail', missing.length ? 'Missing terms: ' + missing.join(', ') : 'T5 public distribution spec exists.', { loop, evidenceFile: file });
 }
-function checkPrereqs(loop) {
+/* The installer sha256/bytes a prereq rung actually TESTED, dug out of its own status document. Every rung
+   records `results[].artifacts.installer` — t3.2 already pulls T0's out and refuses unless it matches the
+   installer on disk. Returns null when a rung records no installer at all (an older status shape), which is
+   treated as "cannot bind" rather than a failure. */
+function gateInstallerHash(status) {
+  const results = (status && status.results) || [];
+  for (const r of results) {
+    const got = r && r.artifacts && r.artifacts.installer;
+    if (got && got.sha256) return { sha256: String(got.sha256).toLowerCase(), bytes: Number(got.bytes || 0) };
+  }
+  return null;
+}
+function checkPrereqs(loop, installerInfo) {
   const gates = {
     t0: readGate('T0'),
     t1: readGate('T1'),
@@ -146,13 +158,35 @@ function checkPrereqs(loop) {
   if (gates.t2.status && !readyValue(gates.t2.status, 'stateSafetyReady')) notReady.push('T2 state safety is not green');
   if (gates.t3.status && !readyValue(gates.t3.status, 'releaseSmokeReady')) notReady.push('T3 release smoke is not green');
   if (gates.t4.status && !readyValue(gates.t4.status, 'updateDeliveryReady')) notReady.push('T4 update delivery is not green');
-  const problems = missing.concat(notReady);
-  return step('t5.1-prerequisite-gates', 'T5.1', 'Replacement and public-signing gates are green', problems.length ? 'blocked' : 'pass', problems.length ? problems.join('; ') : 'T0, T1 public, T2, T3, and T4 are green.', {
+  /* BIND THE VERDICTS TO THE BINARY. This gate read only verdict/ready booleans, and copyLatest()
+     unconditionally re-stamps the `-latest` dirs on every run of every rung, so those verdicts persist across
+     rebuilds indefinitely. Build installer A, take t0–t4 green, rebuild, then run only t5: T5.1 passed on A's
+     leftover evidence while T5.2 hashed the NEW installer, and the lane stamped publicDistributionReady=true
+     for a binary that was never clean-installed, never state-safety tested and never update-delivery tested.
+     On the LAST gate before publishing to real users, that is the false green this lane's governing law calls
+     the worst outcome in the repo. t3.2 already binds T0's recorded hash to the installer on disk; do the same
+     for all five, and record WHICH binary each verdict was about so the status document can be audited. */
+  const stale = [];
+  const bound = {};
+  for (const [k, g] of Object.entries(gates)) {
+    const h = gateInstallerHash(g.status);
+    bound[k] = h;
+    if (!g.status || !installerInfo || !h) continue;      // nothing to compare — reported below as unbound
+    const hashSame = sameHash(h.sha256, installerInfo.sha256);
+    const bytesSame = !h.bytes || h.bytes === installerInfo.bytes;
+    if (!hashSame) stale.push(k.toUpperCase() + ' is green for a DIFFERENT installer (sha256 ' + h.sha256.slice(0, 12) + '… vs ' + String(installerInfo.sha256 || '').slice(0, 12) + '…) — re-run it against this build');
+    else if (!bytesSame) stale.push(k.toUpperCase() + ' is green for a DIFFERENT installer (same sha256 but ' + h.bytes + ' bytes vs ' + installerInfo.bytes + ') — re-run it against this build');
+  }
+  const problems = missing.concat(notReady).concat(stale);
+  return step('t5.1-prerequisite-gates', 'T5.1', 'Replacement and public-signing gates are green FOR THIS INSTALLER', problems.length ? 'blocked' : 'pass', problems.length ? problems.join('; ') : 'T0, T1 public, T2, T3, and T4 are green for the current installer.', {
     loop,
+    installer: installerInfo || null,
     gates: Object.fromEntries(Object.entries(gates).map(([k, g]) => [k, {
       file: g.file,
       verdict: g.status && g.status.verdict || '',
-      ready: g.status && (g.status.cleanInstallProofReady ?? g.status.publicReleaseReady ?? g.status.stateSafetyReady ?? g.status.releaseSmokeReady ?? g.status.updateDeliveryReady)
+      ready: g.status && (g.status.cleanInstallProofReady ?? g.status.publicReleaseReady ?? g.status.stateSafetyReady ?? g.status.releaseSmokeReady ?? g.status.updateDeliveryReady),
+      // the binary that verdict was actually about — null when the rung recorded none (cannot bind)
+      installer: bound[k]
     }]))
   });
 }
@@ -285,7 +319,8 @@ function checkEvidence(loop, proofState) {
 function runOnce(loop) {
   const results = [];
   results.push(checkPlan(loop));
-  results.push(checkPrereqs(loop));
+  const installerNow = currentInstallerInfo();
+  results.push(checkPrereqs(loop, installerNow));
   results.push(checkArtifacts(loop));
   const proofState = loadProof(currentInstallerInfo(), currentManifest());
   results.push(checkHosting(loop, proofState));

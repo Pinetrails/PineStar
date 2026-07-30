@@ -1,4 +1,4 @@
-/* sidecar/index.js — the Node host. The ONLY module with ambient I/O (http / fs / fetch /
+    botUsername: () => String((rec && rec.username) || ''),/* sidecar/index.js — the Node host. The ONLY module with ambient I/O (http / fs / fetch /
    process.env). It (1) serves the static frontend/ and (2) exposes POST /api/run, which
    assembles the EXISTING proven seams — registry + web/fs/notebook tools + capability gate +
    cost engine + the real OpenRouter provider — runs the unchanged agentic loop, and streams the
@@ -22,6 +22,7 @@ const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) 
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
+const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
@@ -67,6 +68,7 @@ const { summarizeCapabilities } = require('./capability/capsummary.js');   // tr
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
+const localVoice = require('./local-voice.js');
 const {
   selectProvider,
   listProviderProfiles,
@@ -212,6 +214,8 @@ const cronGuard = require('./cron-guard.js');                        // routine 
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
+const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser WebRTC voice coordinator; API key never leaves this process
+const { makeNativeStt } = require('./native-stt.js');                // keyless Windows dictation fallback for OAuth Live voice
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
 // the specialist classes as {id, tagline}, composed from the shared catalog so team.summon's class list +
@@ -959,7 +963,12 @@ function replaceAgentRoster(list) {
       // Class Loadouts S1 (additive): the agent's class SKILL PACKAGE + applied reasoning effort. Old rosters
       // without these load unchanged (skills -> [], reasoningEffort -> null). skills are slugs, deduped + capped.
       skills: Array.isArray(a && a.skills) ? [...new Set(a.skills.map(s => String(s || '').trim()).filter(Boolean))].slice(0, 40) : [],
-      reasoningEffort: (a && a.reasoningEffort) ? String(a.reasoningEffort) : null
+      reasoningEffort: (a && a.reasoningEffort) ? String(a.reasoningEffort) : null,
+      // S3 (additive): the agent's EARNED track record, already coarsened + phrased by the browser
+      // (frontend/app/xp.js credential()). Rendered on the lead's [ORCHESTRATION] dispatch list so delegation
+      // is an informed pick, never a gated one. '' for an agent that has proved nothing yet — old rosters
+      // without the field load to '' and the briefing stays byte-identical to before.
+      track: String((a && a.track) || '').slice(0, 120)
     });
   }
 }
@@ -977,7 +986,7 @@ function loadAgentRoster() {
 // P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
 // key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
 // re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
-const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort'];
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort', 'track'];
 // saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
 // (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
 // stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
@@ -987,7 +996,7 @@ function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => {
-      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null };   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
       // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
       // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
       const rawRec = agentRosterRaw.get(agentId);
@@ -1480,6 +1489,13 @@ function providerHasCredential(provider, key, baseUrl) {
   if (providerRequiresKey(id) && !String(key || '').trim()) return false;
   return true;
 }
+
+const realtimeVoice = makeRealtimeVoice({
+  fetch: globalThis.fetch,
+  resolveKey: () => providerRuntimeKey('openai', ''),
+  safetySeed: API_TOKEN
+});
+const nativeStt = makeNativeStt({ platform: process.platform, execFile });
 function providerCredentialError(provider) {
   const id = normalizeProvider(provider);
   const profile = getProviderProfile(id);
@@ -2210,6 +2226,18 @@ const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET s
 // Optional Bot API base override. Production defaults to Telegram; tests point this at a local fake server so the
 // real sidecar polling/send path can be validated without network or a live bot token.
 const TELEGRAM_API_BASE = String(ENV('TELEGRAM_API_BASE') || '').trim() || undefined;
+/* TELEGRAM_STATUS_INDICATOR — write "the station is up" into the bot's PROFILE short-description line (a bot
+   has no presence dot; this is the closest Bot API surface). OFF unless asked, matching the reference harness
+   and for the same reason: it overwrites a public profile field the member may have written themselves.
+   TELEGRAM_STATUS_ONLINE / _OFFLINE override the text. */
+const TELEGRAM_STATUS_INDICATOR = /^(1|true|on|yes)$/i.test(String(ENV('TELEGRAM_STATUS_INDICATOR') || '').trim());
+const TELEGRAM_STATUS_ONLINE = String(ENV('TELEGRAM_STATUS_ONLINE') || '').trim() || 'online — the station is listening';
+const TELEGRAM_STATUS_OFFLINE = String(ENV('TELEGRAM_STATUS_OFFLINE') || '').trim() || 'offline — the station is not running';
+// Best-effort, never awaited by a connect/disconnect path: a status line must not delay or fail either.
+function telegramStatusLine(ad, up) {
+  if (!TELEGRAM_STATUS_INDICATOR || !ad || typeof ad.setShortDescription !== 'function') return;
+  try { Promise.resolve(ad.setShortDescription(up ? TELEGRAM_STATUS_ONLINE : TELEGRAM_STATUS_OFFLINE)).catch(() => {}); } catch (_) {}
+}
 const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
 try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
 let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
@@ -3123,6 +3151,24 @@ function liveChannelFor(channel) {
   if (typeof channel === 'string' && channel.indexOf('telegram:') === 0) return telegramBots.get(channel.slice('telegram:'.length)) || null;
   if (!channel || channel === 'telegram') return telegram;
   return genericChannels[channel] || null;
+}
+/* The HONEST health bit for a channel, beside the handle. A live handle is not reachability: the handle is
+   nulled only by an explicit teardown (start / shutdown / the disconnect route), so a revoked token, a
+   Discord 4004, or a second poller stealing the token breaks the poll loop and leaves the object alive —
+   adapter.js reports { state: 'error' } and breaks, and that is the ONLY place the failure is recorded.
+   Deriving reachability from the handle therefore told an agent "reachable now" about a channel the panel
+   was simultaneously showing as errored, and it also said so during the honest 'connecting' phase, before
+   any round-trip had been proved. Each status object already requires state === 'up' AND its own live
+   handle, so this is the bit to read. DEV is genuinely always reachable — its send is a local capture. */
+function channelLiveHealth(channel) {
+  if (channel === 'dev') return { connected: !!DEV_MODE, state: DEV_MODE ? 'up' : 'down' };
+  if (channel === 'discord') return discordStatus || { connected: false, state: 'down' };
+  if (typeof channel === 'string' && channel.indexOf('telegram:') === 0) {
+    const w = telegramBots.get(channel.slice('telegram:'.length));
+    return (w && w.status) || { connected: false, state: 'down' };
+  }
+  if (!channel || channel === 'telegram') return telegramStatus || { connected: false, state: 'down' };
+  return genericStatus[channel] || { connected: false, state: 'down' };
 }
 const autoNotifier = makeAutoNotifier({
   send: (chatId, text, channel) => {
@@ -5413,6 +5459,10 @@ const workspaceLease = makeWorkspaceLease(Object.assign(
   { now: () => Date.now() },
   (_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {}
 ));
+const agentLifecycle = makeAgentLifecycle({
+  workspaceLease,
+  isActive: (agentId) => concurrencyGate.inFlight(agentId) > 0
+});
 // NAME IS LOAD-BEARING: a second module-scope `function runGit(root, args, timeoutMs)` (the night-shift /
 // loop-harvest one) is declared further down this file. Two function declarations in one CommonJS scope do not
 // error — the LAST one silently wins for the whole module, including for hoisted references ABOVE it. When this
@@ -5445,6 +5495,17 @@ const checkpointEmit = (name, payload) => { try { return checkpointEmitValidated
 
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
+// The station bot's own @username, learned from getMe() at connect. The group mention gate (channels/adapter.js)
+// reads it LAZILY through a function, so it arms as soon as this is populated and never captures the empty
+// startup value. Empty = "we don't know our own name", which the gate treats as "do not silence the room".
+let stationBotUsername = '';
+// The bot's DISPLAY name, learned from the same getMe. It is the wake word: "@thebot check the logs" is how
+// you address a bot, "StarNet, check the logs" is how people actually type it.
+let stationBotName = '';
+// Telegram PRIVACY MODE, from the same getMe. null until we are told. With it ON (the default) a group
+// delivers us only commands, @mentions and replies to us — so wake words and observe-mode are promises we
+// cannot keep, and /mention says so instead of pretending.
+let stationBotSeesAll = null;
 let discord = null;                                     // H6.2: { adapter, hub } when connected, else null
 let discordStatus = { connected: false, state: 'down', detail: '' };
 const channelRegistry = makeChannelRegistry();          // H6.2: telegram + discord descriptors
@@ -5499,13 +5560,19 @@ function startTelegram(token, key, model, agentCfg) {
     userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
-    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // INLINE KEYBOARDS (C6): multiple-choice answers and — for chats that ran /approvals on — approve/deny.
     // The registry is per-BOT (its tokens address this bot's messages only). askConsent/resolveConsent keep the
     // pause/resolve in the host; the hub only renders the keyboard and routes the tap back.
     prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
     answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
+    setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
+    // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
+    deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    canReadAllGroupMessages: () => stationBotSeesAll,
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -5535,6 +5602,14 @@ function startTelegram(token, key, model, agentCfg) {
     // image/text blocks by the SAME expandUserAttachments the interactive run host calls — so "send the bot a
     // photo" behaves exactly like attaching it in COMMS, no extra vision key needed.
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
+    // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
+    // failure degrades to a note naming the saved .ogg, exactly the old behaviour.
+    transcribe: async (buffer, mime) => {
+      const fmt = /ogg|opus/.test(String(mime || '')) ? 'ogg' : (/(webm|wav|mp3|mpeg|m4a|mp4)/.exec(String(mime || '')) || [, 'ogg'])[1];
+      try { return await transcribeAudioBuffer(buffer, fmt === 'mpeg' ? 'mp3' : fmt, runtimeKey); }
+      catch (e) { return { ok: false, reason: (e && e.message) || 'transcribe failed' }; }
+    },
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
     // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
@@ -5546,6 +5621,23 @@ function startTelegram(token, key, model, agentCfg) {
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission: the first DM claims the bot; persist that userId so it survives restarts.
+    // GROUP DISCIPLINE (adapter.js): only run on a group message that ADDRESSES us, never answer another bot.
+    // Read lazily — the username is resolved by getMe below, after this object is built.
+    botUsername: () => stationBotUsername,
+    // …and the gate is the CHAT's to set: /mention off writes requireMention:false onto the chat record, and
+    // this reads it per message so the flip lands on the very next one. Anything but an explicit false keeps
+    // the safe default (answer only when addressed).
+    requireMention: (chatId) => {
+      try { const r = channelStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
+      catch (_) { return true; }
+    },
+    // Being called by NAME is being addressed. Read lazily: the name arrives with getMe, after this is built.
+    mentionPatterns: () => [stationBotName],
+    // /mention observe — follow the room without answering it. Off unless the chat asked for it.
+    observeUnmentioned: (chatId) => {
+      try { const r = channelStore.getChatRecord(String(chatId)); return !!(r && r.observeUnmentioned); }
+      catch (_) { return false; }
+    },
     ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
     onOwnerClaim: (uid) => { try { persistOwnerClaim('telegram', uid); } catch (_) {} },
     onInbound: (m) => {
@@ -5599,6 +5691,9 @@ function startTelegram(token, key, model, agentCfg) {
     },
 
     onCallback: hub.onCallback,
+    // being blocked/kicked used to be invisible — the notifier kept posting into a chat that could never
+    // receive it. The hub marks the chat unreachable and drops its queued backlog.
+    onMembership: hub.onMembership,
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
       // Truthful telemetry: CONNECTED only when the transport actually proved 'up' AND we still hold a live adapter.
@@ -5613,8 +5708,19 @@ function startTelegram(token, key, model, agentCfg) {
   // start HONEST: 'connecting' (not an optimistic 'up') — the adapter's onStatus flips it to 'up' the moment its
   // first getUpdates round-trip succeeds, or to 'error' if the token is bad. The panel derives CONNECTED from this.
   telegramStatus = { connected: false, state: 'connecting', detail: '' };
+  /* Learn our own @username so the GROUP MENTION GATE can answer "was I addressed?". Best-effort and
+     non-blocking: the adapter reads this lazily, so the gate arms the moment getMe answers and until then
+     admits everything (we must never silence a room because we could not prove we were not addressed). */
+  Promise.resolve(makeTelegramTransport({ fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE }).getMe())
+    .then(me => {
+      if (me && me.ok && me.username) stationBotUsername = String(me.username);
+      if (me && me.ok && me.name) stationBotName = String(me.name);
+      if (me && me.ok && typeof me.seesAllGroupMessages === 'boolean') stationBotSeesAll = me.seesAllGroupMessages;
+    })
+    .catch(() => {});
   adapter.connect();
   publishCommandMenu(adapter, 'telegram');
+  telegramStatusLine(adapter, true);
   console.log('  · telegram channel connecting…');
   return { secretsPersisted };
 }
@@ -5630,6 +5736,8 @@ function publishCommandMenu(adapter, label) {
     .catch(() => {});
 }
 function stopTelegram() {
+  // Say we are going BEFORE the transport is torn down — after disconnect there is nothing left to say it with.
+  if (telegram && telegram.adapter) telegramStatusLine(telegram.adapter, false);
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
   telegram = null;
   telegramStatus = { connected: false, state: 'down', detail: '' };
@@ -5675,12 +5783,15 @@ function startTelegramBot(botId) {
   if (!token) throw new Error('bot ' + botId + ' has no saved token');
   let adapterRef = null;
   const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '' } };
+  // hoisted: the adapter's mention gate reads the SAME per-bot store the hub's /mention writes to. Two separate
+  // instances would leave the command reporting success while the gate never changed.
+  const botStore = makeBotScopedStore(botId);
   const hub = makeChannelHub({
-    channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
+    channel: 'telegram:' + botId, runOnce: runOnce, store: botStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
-    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
     // model and provider come from the LIVE roster entry first — a dossier edit or model switch applies to the
     // bot's next message with no reconnect, and two bots bound to different agents stay genuinely different
@@ -5706,6 +5817,14 @@ function startTelegramBot(botId) {
     resolveAgent: () => (recOf().agentId || null),
     resolveStation: (agentId) => router.stationFor(agentId),
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
+    // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
+    // failure degrades to a note naming the saved .ogg, exactly the old behaviour.
+    transcribe: async (buffer, mime) => {
+      const fmt = /ogg|opus/.test(String(mime || '')) ? 'ogg' : (/(webm|wav|mp3|mpeg|m4a|mp4)/.exec(String(mime || '')) || [, 'ogg'])[1];
+      try { return await transcribeAudioBuffer(buffer, fmt === 'mpeg' ? 'mp3' : fmt, runtimeKey); }
+      catch (e) { return { ok: false, reason: (e && e.message) || 'transcribe failed' }; }
+    },
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
     // INLINE KEYBOARDS (C6) — same wiring as the station bot, with its OWN registry so tokens minted for this
@@ -5713,11 +5832,35 @@ function startTelegramBot(botId) {
     prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
     answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
+    setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
+    // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
+    deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    canReadAllGroupMessages: () => { const v = (recOf() || {}).seesAllGroupMessages; return (typeof v === 'boolean') ? v : null; },
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission per bot (trust-on-first-use): each contact is claimed independently.
+    // GROUP DISCIPLINE (adapter.js): this bot's own  is already persisted on its record.
+    // recOf() re-reads the LIVE record, so a bot renamed in BotFather (and re-probed by getMe on the next
+    // connect flow) starts being recognised without a restart. `rec` is the connect-time snapshot and would
+    // pin the old name forever.
+    botUsername: () => String((recOf() || {}).username || ''),
+    // per-chat mention gate, same as the station bot — read live from this bot's own scoped store.
+    requireMention: (chatId) => {
+      try { const r = botStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
+      catch (_) { return true; }
+    },
+    // An agent-bound bot answers to BOTH names people would use for it: the bot's own display name and the
+    // agent's. recOf() re-reads the live record, so a rename in BotFather or in the roster takes effect without
+    // a restart. Anything under three characters is refused inside the adapter.
+    mentionPatterns: () => { const r = recOf() || {}; return [r.botName, r.name]; },
+    observeUnmentioned: (chatId) => {
+      try { const r = botStore.getChatRecord(String(chatId)); return !!(r && r.observeUnmentioned); }
+      catch (_) { return false; }
+    },
     ownerUserId: rec.ownerId || '',
     onOwnerClaim: (uid) => {
       const ok = saveTelegramBotRecord(botId, { ownerId: String(uid) });
@@ -5725,6 +5868,7 @@ function startTelegramBot(botId) {
     },
     onInbound: (m) => { Promise.resolve(hub.onInbound(m)).catch(e => console.warn('[telegram:' + botId + '] inbound error:', (e && e.message) || e)); },
     onCallback: hub.onCallback,
+    onMembership: hub.onMembership,   // same unreachable consumer, per bot
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
       entry.status = { connected: state === 'up' && telegramBots.get(botId) === entry, state: state, detail: (s && s.detail) || '' };
@@ -6187,6 +6331,13 @@ const TG_BOT_RX = {
 };
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
+  { m: 'GET', exact: '/api/realtime/status', h: handleRealtimeStatus },
+  { m: 'POST', exact: '/api/realtime/session', h: handleRealtimeSession },
+  { m: 'GET', exact: '/api/stt/native/status', h: handleNativeSttStatus },
+  { m: 'POST', exact: '/api/stt/native', h: handleNativeStt },
+  { m: 'GET', exact: '/api/local-voice/status', h: handleLocalVoiceStatus },
+  { m: 'POST', exact: '/api/local-voice/warm', h: handleLocalVoiceWarm },
+  { m: 'POST', exact: '/api/local-voice/transcribe', h: handleLocalVoiceTranscribe },
   { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
   { m: 'POST', exact: '/api/tts', h: handleTts, errorPolicy: ttsFailOpenPolicy },
   // stt: qsplit == the old (url === '/api/stt' || url.indexOf('/api/stt?') === 0) disjunction, verbatim.
@@ -6745,6 +6896,70 @@ async function handleBudgetCaps(req, res) {
 function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true }));
+}
+function handleRealtimeStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(realtimeVoice.status()));
+}
+async function handleRealtimeSession(req, res) {
+  let offer;
+  try { offer = await readBody(req, 1 << 20, res); }
+  catch (e) {
+    if (!res.headersSent) {
+      res.writeHead(e && e.tooLarge ? 413 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: e && e.tooLarge ? 'SDP offer too large' : 'invalid SDP offer' }));
+    }
+    return;
+  }
+  const out = await realtimeVoice.createCall(offer);
+  res.writeHead(out.status, { 'Content-Type': out.contentType, 'Cache-Control': 'no-store' });
+  res.end(out.body);
+}
+function handleNativeSttStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(nativeStt.status()));
+}
+async function handleNativeStt(req, res) {
+  const ac = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) ac.abort(); });
+  const out = await nativeStt.recognize({ signal: ac.signal });
+  if (res.destroyed || res.writableEnded) return;
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+function handleLocalVoiceStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(localVoice.status()));
+}
+async function handleLocalVoiceWarm(req, res) {
+  const json = (code, value) => {
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(value));
+  };
+  // A build without the offline model packages can never warm — say so outright rather than 202-ing a
+  // load that will only surface as a module-not-found string in the panel.
+  const current = localVoice.status();
+  if (!current.available) return json(501, current);
+  // Loading continues on the server even if the panel closes. The client polls status for download progress.
+  localVoice.warm().catch(error => console.error('[local-voice] warm failed:', error && error.message || error));
+  json(202, current);
+}
+async function handleLocalVoiceTranscribe(req, res) {
+  const json = (code, value) => {
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(value));
+  };
+  let pcm;
+  try { pcm = await readBodyBuffer(req, 4 * 16000 * 30, res); }
+  catch (error) { if (!res.headersSent) json(error && error.tooLarge ? 413 : 400, { error: 'invalid audio payload' }); return; }
+  try {
+    const text = await localVoice.transcribe(pcm);
+    json(200, { ok: true, text });
+  } catch (error) {
+    // 501 (not 503) when the packages are simply absent: 503 invites the client to retry a capability
+    // this build will never have.
+    json(error && error.unavailable ? 501 : 503, { ok: false, error: String(error && error.message || error) });
+  }
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
    base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */
@@ -7779,7 +7994,7 @@ async function createCronJobFromSpec(body) {
       // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
       // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
       meta: body.meta
-    }, { id: id, now: Date.now() }));
+    }, { id: id, now: Date.now(), defaultTz: CRON_HOST_TZ }));
   } catch (e) { return out(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
   recordMint(agentId, { name: body.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
   return out(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
@@ -7800,8 +8015,16 @@ function handleCronUpdate(req, res) {
       if (!scan.ok) return json(400, { error: scan.error, blocked: scan.patternId });
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
-      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+      /* CARRY THE TIMEZONE. This route parsed the schedule patch with NO tz, so editing any field of a routine
+         that WAS created with an explicit zone silently stripped it and re-anchored the job in UTC — the
+         routine.manage tool path (updateRoutine) already passed patch.timezone; only the HTTP route dropped it.
+         Prefer an explicitly supplied zone, else keep the one the job is already on, so a plain field edit never
+         moves a routine's wall-clock. */
+      let keepTz = patch.timezone || patch.tz || '';
+      if (!keepTz) { try { const cur = cronStore.getJob(cronJobs, id); keepTz = (cur && cur.schedule && cur.schedule.tz) || ''; } catch (_) {} }
+      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), keepTz || undefined); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
+    delete patch.timezone; delete patch.tz;   // the zone lives on schedule.tz — never as a loose editable field
     if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
       try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
@@ -7814,8 +8037,8 @@ function handleCronUpdate(req, res) {
       // G4.3: the full edit (updateJob + optional pause/resume) is ONE re-read-modify-write under the lock,
       // so it cannot clobber a concurrent advance and the pause/resume sees the just-updated job.
       await withCronWrite(jobs => {
-        let next = cronStore.updateJob(jobs, id, patch, { now: Date.now() });
-        if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now() });
+        let next = cronStore.updateJob(jobs, id, patch, { now: Date.now(), defaultTz: CRON_HOST_TZ });
+        if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now(), defaultTz: CRON_HOST_TZ });
         else if (enabled === false) next = cronStore.pauseJob(next, id);
         return next;
       });
@@ -7927,7 +8150,7 @@ async function handleCronRun(req, res) {
     try { out = await runSlashRoutine(String(job.prompt), { agentId: job.agentId, runId: runIdC, emit: emitC }); }
     catch (e) { out = { ok: false, text: 'that command failed: ' + ((e && e.message) || e) }; }
     try {
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runIdC, outcome: out.ok ? 'ok' : 'failed', reason: out.ok ? 'done' : 'error' }); } catch (_) {}
     try { res.end(); } catch (_) {}
@@ -8022,7 +8245,7 @@ async function handleCronRun(req, res) {
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
       // concurrent advance/CRUD save with a stale in-memory snapshot).
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     kaOff();
@@ -8244,7 +8467,7 @@ async function armWorkshopShift(agentId) {
     await withCronWrite(jobs => cronStore.createJob(jobs, {
       id: jobId, name: 'Away workshop — ' + id, prompt: WORKSHOP_MARK, schedule: schedule,
       agentId: id, enabled: true, meta: { workshop: true }
-    }, { id: jobId, now: Date.now() }));
+    }, { id: jobId, now: Date.now(), defaultTz: CRON_HOST_TZ }));
   } catch (e) { console.warn('[workshop] arm routine failed:', (e && e.message) || e); return false; }
   // arming the shift needs the tick timer running so it actually fires unattended; arm cron if it isn't already.
   // Respect a durable E-STOP halt: record the arm INTENT but never silently restart the timer the Commander
@@ -9151,7 +9374,13 @@ async function handleCheckpointRestore(req, res) {
   const snapshotId = String(body.snapshotId || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'bad agentId' });
   if (!checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
-  let ok; try { ok = await checkpointStore.restore(agentId, snapshotId); } catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
+  const operationId = 'restore-' + crypto.randomUUID();
+  const lifecycle = await agentLifecycle.acquireMutation(agentId, operationId);
+  if (!lifecycle.ok) return json(409, { error: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
+  let ok;
+  try { ok = await checkpointStore.restore(agentId, snapshotId); }
+  catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
+  finally { lifecycle.release(); }
   if (!ok) return json(404, { error: 'no such snapshot for that agent' });
   try { checkpointEmit('checkpoint.restored', { agentId: agentId, runId: '', toSnapshotId: snapshotId, reason: 'manual' }); } catch (_) {}
   json(200, { ok: true });
@@ -9249,6 +9478,11 @@ async function handleAgentDelete(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'invalid agentId' });   // same id regex as roster/fs-jail surfaces
   if (agentId === 'agent') return json(400, { error: 'cannot delete the hero agent' });   // the founder is undeletable (resume depends on it)
 
+  const deletion = await agentLifecycle.beginDelete(agentId, 'delete-' + crypto.randomUUID());
+  if (!deletion.ok) {
+    return json(409, { error: deletion.active ? 'agent is active; stop its runs before deleting' : 'agent lifecycle is busy' });
+  }
+  try {
   const archived = [];
   try {
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -9298,6 +9532,9 @@ async function handleAgentDelete(req, res) {
     latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
   } catch (_) {}
   return json(200, { ok: true, agentId, rosterRemoved: removed, archived, cronRemoved });
+  } finally {
+    deletion.finish();
+  }
 }
 
 // POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,
@@ -9369,7 +9606,7 @@ const slashActions = slashActionsMod.makeSlashActions({
       if (!cronStore.getJob(cronJobs, id)) return { ok: false, error: 'no such routine' };
       const want = on === true;
       try {
-        await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now() }) : cronStore.pauseJob(jobs, id));
+        await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ }) : cronStore.pauseJob(jobs, id));
       } catch (e) { return { ok: false, error: (e && e.message) || 'the write failed' }; }
       return { ok: true, job: cronStore.getJob(cronJobs, id) };
     },
@@ -9645,7 +9882,10 @@ function serveAgentSkills(req, res) {
        the reviewer; they cannot approve what they cannot read. What it gains is the truth about what
        the MODEL sees: withheld/approvable/digest, so a card can say "withheld, needs your approval"
        instead of implying the agent is using a skill it was never given. */
-    skills = skillGate.annotate(skills).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
+    /* verify (not decide) whenever bodies were loaded: the panel is where "Approved by you for this
+       exact content" is printed, and only a re-digest of the delivered bytes can tell whether that is
+       still true. Without it the card blesses a package whose SKILL.md was rewritten after review. */
+    skills = skillGate.annotate(skills, { verify: includeBody }).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
     json(200, { agentId, skills, withheld: skills.filter(s => s.withheld).length });
   } catch (e) { json(200, { skills: [] }); }
 }
@@ -9684,7 +9924,12 @@ async function handleAgentSkillAllow(req, res) {
   }
   const decision = skillGate.decide(skill);
   if (decision.action === 'block') return json(400, { error: 'the skill guard blocked this skill outright - it cannot be approved. Edit the skill to remove the flagged content.', findings: decision.categories });
-  const digest = skillGate.stampOf(skill);
+  /* Key the approval to the digest of the bytes the Commander JUST READ. `skill` here is the HYDRATED
+     record (view() hydrates by default), so on a package whose SKILL.md has drifted from the JSONL the
+     stored stamp describes bytes nobody reviewed — and verify() re-decides against the live digest, so a
+     stamp-keyed approval could never clear the drift. Fall back to the lifecycle stamp only when there is
+     no body to digest. */
+  const digest = typeof skill.body === 'string' ? skillGate.digestOf(skill) : skillGate.stampOf(skill);
   skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
   persistSkillApprovals();
   const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
@@ -10024,6 +10269,12 @@ async function runOnce(o) {
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
   // admitted agent always passes (no new slot). On refusal emit the same start→error→end shape every other
   // up-front refusal uses (Codex sign-in / non-tool model), reason 'error', transient (a slot may free up).
+  if (!agentLifecycle.canStart(agentId)) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'This agent is being deleted and cannot start new work.' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;
+  }
   if (!concurrencyGate.tryEnter(agentId)) {
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
     emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise STARNET_MAX_CONCURRENT_AGENTS.' });
@@ -10293,6 +10544,9 @@ async function runOnce(o) {
     listJobs: () => cronJobs,
     schedulerState: () => cronArmed,
     normalizeProvider: normalizeProviderId,
+    // the LIVE provider set drives the tool schema's `provider` enum — a hardcoded pair meant an agent on a
+    // Kimi/Grok/Ollama/custom station was schema-refused when it pinned the provider the station actually runs.
+    providerIds: () => listProviderProfiles({ includeInactive: true, public: false }).map(p => p.id),
     createRoutine: (spec) => {
       spec = spec || {};
       // INJECTION TRIPWIRE — the agent-authored path, and the one that matters most: an agent that just read a
@@ -10318,7 +10572,7 @@ async function runOnce(o) {
           id: id, name: spec.name, prompt: spec.prompt, schedule: schedule,
           agentId: spec.agentId, model: spec.model, provider: spec.provider,
           deliver: spec.deliver, enabled: spec.enabled, repeat: spec.repeat
-        }, { id: id, now: Date.now() });
+        }, { id: id, now: Date.now(), defaultTz: CRON_HOST_TZ });
         created = cronStore.getJob(next, id);
         return next;
       }).catch(e => console.warn('[cron] routine.create persist failed:', (e && e.message) || e));
@@ -10351,7 +10605,7 @@ async function runOnce(o) {
       if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
         next.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), patch.timezone);
       }
-      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
       return cronStore.getJob(cronJobs, id);
     },
     removeRoutine: async (id) => {
@@ -10364,7 +10618,7 @@ async function runOnce(o) {
     },
     setRoutineEnabled: async (id, enabled) => {
       await withCronWrite(jobs => enabled
-        ? cronStore.resumeJob(jobs, id, { now: Date.now() })
+        ? cronStore.resumeJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ })
         : cronStore.pauseJob(jobs, id));
       return cronStore.getJob(cronJobs, id);
     },
@@ -10374,18 +10628,27 @@ async function runOnce(o) {
     // cronStore.triggerJob, NOT resumeJob — resume RE-ANCHORS the schedule, which for `0 9 * * *` lands on 09:00
     // TOMORROW and fires nothing now (caught by test/routine-manage.e2e.test.js, which read the time back).
     triggerRoutine: async (id) => {
-      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
       return cronStore.getJob(cronJobs, id);
     },
     armScheduler: (enabled) => {
       const want = enabled === true;
       saveCronArmed(want);
       cronArmed = want;
-      // same resume semantics as POST /api/cron/arm: a deliberate arm write lifts a durable E-STOP halt.
-      if (cronHalted) { cronHalted = false; saveCronHalted(false); }
-      if (want) armCron(); else disarmCron();
+      /* RESPECT A DURABLE E-STOP. This is a MODEL-FACING DEFAULT, not a deliberate human resume: routine.create's
+         `arm` schema says "Default true", so the agent never has to think about it — and a Commander who pressed
+         E-STOP and later asked for "a daily brief" had their emergency stop silently lifted by approving that one
+         create, with every previously-halted routine resuming and nothing in the transcript, the card or any panel
+         saying so. The halt "lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write)",
+         and there is a documented single seam for that (liftCronHalt) whose callers are exactly those paths. So
+         record the arm INTENT and never restart the timer the Commander paused — the same rule the workshop
+         auto-arm already states and implements. */
+      if (want) { if (!cronHalted) armCron(); } else disarmCron();
       return cronArmed;
-    }
+    },
+    // ...and tell the tool, so its response can say the scheduler is still stood down rather than implying the
+    // routine will fire. A caller that cannot see the halt cannot disclose it.
+    schedulerHalted: () => !!cronHalted
   }).register(registry);
   /* channel.targets / channel.send — OUTBOUND messaging reach (see tools/builtin/comms.js for the security
      rationale on known-targets-only). Both hang off the placed DISH under their own 'comms' capId. */
@@ -10410,7 +10673,9 @@ async function runOnce(o) {
             channel: channel,
             chatId: String(rec.chatId || key),
             agentId: String(rec.agentId || ''),
-            connected: !!(live && live.adapter)
+            // A handle is not a heartbeat — see channelLiveHealth. Both must hold: something to send THROUGH,
+            // and a transport that has actually proved a round-trip and not since failed.
+            connected: !!(live && live.adapter) && !!channelLiveHealth(channel).connected
           };
         });
       } catch (_) { return []; }
@@ -10436,6 +10701,38 @@ async function runOnce(o) {
       const n = desc && Number(desc.maxMessageLength);
       // stay just under the true ceiling: the transport may add its own prefix/footer to a chunk.
       return (isFinite(n) && n > 200) ? (n - 100) : 1900;
+    },
+    /* OUTBOUND FILES (2026-07-29). readFile is the JAIL PROOF and it lives here, not in the tool: comms.js is
+       pure and must not learn about the filesystem. resolveInside is the same proof the fs.* tools and user
+       attachments use, so an agent can only attach something inside its OWN workspace — `../` or an absolute
+       path is a refusal, not a traversal. Never throws: a miss is { ok:false, error } the tool reports honestly. */
+    readFile: async (agentId, rel) => {
+      try {
+        // resolveInside THROWS on a jail violation ('illegal path' / 'path escapes workspace') and otherwise
+        // answers { base, abs } — the catch below turns a violation into an honest refusal, never a traversal.
+        const r = await fsJail.resolveInside(String(agentId || ''), String(rel || ''), { scope: 'read' });
+        const abs = r && r.abs;
+        if (!abs) return { ok: false, error: 'that path is outside your workspace' };
+        const st = await fsp.stat(abs).catch(() => null);
+        if (!st || !st.isFile()) return { ok: false, error: 'not a file' };
+        if (st.size > CHANNEL_UPLOAD_MAX_BYTES) return { ok: false, error: 'file is ' + Math.round(st.size / (1024 * 1024)) + 'MB (limit ' + Math.round(CHANNEL_UPLOAD_MAX_BYTES / (1024 * 1024)) + 'MB)' };
+        const buffer = await fsp.readFile(abs);
+        if (!buffer.length) return { ok: false, error: 'file is empty' };
+        return { ok: true, buffer: buffer, name: path.basename(abs), mime: mimeForPath(abs) };
+      } catch (e) { return { ok: false, error: (e && e.message) || 'read failed' }; }
+    },
+    // Upload through the SAME target-key resolution sendTo uses, so an agent can attach a file exactly where it
+    // may already send words — known-targets-only is unchanged by this feature.
+    sendMediaTo: (target, item) => {
+      let rec = null;
+      try { rec = channelStore.getChatRecord(String(target)) || null; } catch (_) { rec = null; }
+      if (!rec) return Promise.resolve({ ok: false, error: 'unknown chat target' });
+      const channel = String(rec.channel || 'telegram');
+      const live = liveChannelFor(channel);
+      if (!(live && live.adapter)) return Promise.resolve({ ok: false, error: channel + ' is not connected' });
+      if (typeof live.adapter.sendMedia !== 'function') return Promise.resolve({ ok: false, error: channel + ' cannot carry files' });
+      return Promise.resolve(live.adapter.sendMedia(String(rec.chatId || target), item))
+        .catch(e => ({ ok: false, error: (e && e.message) || 'upload failed' }));
     },
     redact: redact,
     emit: chanEmit
@@ -10526,7 +10823,13 @@ async function runOnce(o) {
   // — only a watched, interactive lead can let a worker write/run shell, and only with a human's click.
   const consent = o.consent || makeConsentBroker({
     bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
-    grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
+    grantsSession, grantsPermanent, persist: persistAllowlist,
+    /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
+       is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
+       a watched session also blessed that agent's Telegram / cron / night-shift file and memory writes until the
+       sidecar exited, with no readout and no revoke anywhere. A watched click is consent for the watched surface;
+       widening unattended reach is a separate, explicit decision everywhere else in this product. */
+    grantsBlanket: surface === 'interactive' ? blanketSetFor(agentId) : null,
     networkOf: (call) => !!resolved.networkCaps[call.name],
     // AWAY WORKSHOP (W1): the Commander's recorded per-agent grant. The broker only consults it for an autonomous
     // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
@@ -10635,11 +10938,34 @@ async function runOnce(o) {
   // is key-independent → cost stays correct) tagged with credKey so the loop's onFallback can cool it on failure.
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
+  let activePrimaryKey = runKey;
   const primaryProfile = getProviderProfile(providerId);
   if (!usingCodex && !usingDeviceOAuth && primaryProfile && primaryProfile.credentialPool) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== runKey);
-    rotationFallbacks = credPool.order(pool).map(rk => ({
+    /* THE COOLDOWN HAS TO REACH THE PRIMARY KEY. penalize() is called with the OUTGOING key, which on the first
+       rotation is the run's PRIMARY — but the only consumer of a cooldown is credPool.order(), and the list
+       handed to it has just had the primary filtered out (it is the key we are already on). The next run's
+       primary is re-derived from providerRuntimeKey(), not from this ordering, so the cooldown recorded for the
+       key MOST likely to be rate-limited — the one always tried first — could never affect anything, and every
+       run inside the 5-minute window opened on it again and burned a wasted round-trip plus one of the loop's
+       bounded recovery slots. Cooldowns for ALTERNATE keys always worked; only the primary was inert.
+       So: if the primary is cooling and the pool holds a key that is NOT, start on that one instead and demote
+       the cooling primary into the rotation list — still available, just no longer first. */
+    const ordered = credPool.order(pool);
+    const nowMs = Date.now();
+    const primaryCooling = credPool.coolingUntil(runKey) > nowMs;
+    if (primaryCooling) {
+      const warm = ordered.find(rk => credPool.coolingUntil(rk) <= nowMs);
+      if (warm) {
+        activePrimaryKey = warm;
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key: warm, baseUrl, reasoningEffort });
+        auxVisionProvider = provider;
+        ordered.splice(ordered.indexOf(warm), 1);
+        ordered.push(runKey);   // the cooling primary becomes the LAST resort rather than the first try
+      }
+    }
+    rotationFallbacks = ordered.map(rk => ({
       provider: selectProvider({ provider: providerId, fetch: globalThis.fetch, key: rk, baseUrl, reasoningEffort }),
       model, credKey: rk
     }));
@@ -10683,7 +11009,18 @@ async function runOnce(o) {
   // spend stays visible; that event deliberately OMITS tokensIn/tokensOut so the context-occupancy gauge (which
   // reads agent.cost.tokensIn as "current prompt size") is not transiently corrupted by the summarizer's small
   // prompt. The loop owns the accounting; this emit is for the cost stream only.
-  async function summarize(older, prevSummary) {
+  /* `live` carries the loop's CURRENT provider/model/cost. This closure is built BEFORE the loop starts and
+     captured index.js's own `provider` and `model`, neither of which is ever reassigned — so after a credential
+     rotation or a cross-provider fallback the summarizer still called the DEAD credential / failed endpoint.
+     Two failures flip compactionOff (loop.js), which makes the later shouldCompress recovery a no-op, so the
+     run then dies 'error' on a context_overflow it could have folded and survived; on a rate-limited key it
+     also kept hammering the exact credential credPool had just cooled. The failover was fixed at one producer
+     and did not generalize to the injected summarizer. Optional and additive: a caller that passes nothing
+     (every existing test's fake summarizer) behaves exactly as before. */
+  async function summarize(older, prevSummary, live) {
+    const sProvider = (live && live.provider) || provider;
+    const sModel = (live && live.model) || model;
+    const sCost = (live && live.cost) || cost;
     // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
     // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
     // transcript at all — the run-end append can only see what SURVIVED the fold. Draining here keeps the durable
@@ -10706,17 +11043,17 @@ async function runOnce(o) {
     const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
     const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
     const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
-    const req = { model, stream: true, signal, messages: [
+    const req = { model: sModel, stream: true, signal, messages: [
       { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
       { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
-    for await (const ev of provider.stream(req)) {
+    for await (const ev of sProvider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
       else if (ev && ev.type === 'usage') usage = ev.usage;
     }
-    const c = cost.reconcile(usage, model);
-    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model, reconciled: true });   // display-only; no token fields (gauge-safe)
+    const c = sCost.reconcile(usage, sModel);
+    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: sModel, reconciled: true });   // display-only; no token fields (gauge-safe)
     const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
     if (c.unpriced) r.unpricedUsage = [{ model, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
     return r;
@@ -11019,9 +11356,23 @@ async function runOnce(o) {
   if (o.lead) {
     teamNote = '\n\n[ORCHESTRATION] You are the lead orchestrator. You can build and direct a crew for the Commander:';
     const lines = [];
-    for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
+    // S3: each crew line carries that specialist's EARNED track record when it has one (browser-computed,
+    // coarse — see frontend/app/xp.js credential()). It INFORMS the pick, it never gates it: an agent that has
+    // proved nothing simply has no track clause, exactly as before, and nothing here forbids delegating to it.
+    let anyTrack = false;
+    for (const [aid, ident] of agentRoster) {
+      if (aid === agentId) continue;
+      const track = String((ident && ident.track) || '').trim();
+      if (track) anyTrack = true;
+      lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '') + (track ? ' [' + track + ']' : ''));
+    }
     if (lines.length) teamNote += '\n• DELEGATE to your existing specialist crew with team.dispatch — call it with '
-      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n')
+      // only explain the bracket when at least one is actually present — a station with no proven crew stays
+      // byte-identical to the pre-S3 briefing (no dangling legend for a notation nothing uses).
+      + (anyTrack ? '\n  A [bracketed] note is that specialist\'s REAL track record on this station — earned from work the '
+        + 'Commander rated and runs the harness watched finish. Use it to pick the right worker; it is evidence, not a '
+        + 'permission level, and an agent without one is simply new, not worse.' : '');
     teamNote += '\n• SPAWN temporary same-identity subagents with team.spawn for one-off parallel subtasks when no named specialist is needed. '
       + 'Use background:true for watchable long-running spawned workers, then inspect/control them with team.subagents, team.interrupt, and team.resume.';
     // Class Loadouts S1: the class list here is composed from the SHARED catalog (id + tagline), never hardcoded,
@@ -11278,7 +11629,9 @@ async function runOnce(o) {
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
-      credKey: providerUnmetered ? null : runKey,
+      // activePrimaryKey, NOT runKey: when the run's own key was still cooling we STARTED on a warm pool key,
+      // and penalizing the key we never called would cool the wrong credential.
+      credKey: providerUnmetered ? null : activePrimaryKey,
       onFallback: ({ rotate, credKey, retryAfterMs, resetAtMs }) => {
         if (!rotate || !credKey) return;
         // H6.1: honor a server-stated wait — a relative Retry-After directly, or an absolute reset_at minus now.
@@ -11541,8 +11894,17 @@ async function handleConsentAck(req, res) {
 // (honest — includes any non-curated class blessed via a past prompt) + the curated catalog the panel may add.
 // Privileged: behind the same x-starnet-token + loopback gate as every other /api route (apiauth, not TOKEN_EXEMPT).
 function handlePermissionsList(req, res) {
+  /* The panel's own header promises "every capability it may use unattended … and a REVOKE for each", and the
+     mid-run "Full access" wildcard appeared in NEITHER: consent.snapshot() returns only { permanent, session },
+     so one click bought a per-agent '*' that no surface listed and no action could withdraw — only restarting
+     the sidecar cleared it. Report it beside the durable grants, keyed so the existing revoke can take it. */
+  const snap = grantManager.snapshot() || {};
+  const blanket = [];
+  for (const [aid, set] of grantsBlanketByAgent) {
+    if (set && set.has('*')) blanket.push({ key: 'blanket:' + aid, agentId: aid, scope: 'watched sessions, until the app restarts' });
+  }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(grantManager.snapshot()));
+  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket })));
 }
 // POST /api/permissions/grant { key } — proactively PRE-BLESS a curated, LOCAL-only capability (cabinet:write)
 // so an autonomous run can use it with no mid-run prompt. Refuses any non-curated/exec/network class; fail-closed
@@ -11557,6 +11919,15 @@ async function handlePermissionsGrant(req, res) {
 // non-curated class). Fail-closed: a torn persist keeps the grant rather than reporting a phantom revoke.
 async function handlePermissionsRevoke(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  // the mid-run full-access wildcard is revocable through the same door as any other standing grant
+  const rawKey = String((body && body.key) || '');
+  if (rawKey.indexOf('blanket:') === 0) {
+    const aid = rawKey.slice('blanket:'.length);
+    const had = grantsBlanketByAgent.has(aid) && grantsBlanketByAgent.get(aid).has('*');
+    grantsBlanketByAgent.delete(aid);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ok: true, key: rawKey, revoked: had }));
+  }
   const r = grantManager.revoke(body && body.key);
   res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(r));
@@ -11776,8 +12147,11 @@ async function handleAutonomyWrite(req, res) {
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20 }, redact }).register(reg);
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
-  const sessionKey = 'autowrite-' + Date.now();
-  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId), surface: 'autonomous' });
+  const sessionKey = 'autowrite-' + crypto.randomUUID();
+  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce
+  const lifecycle = await agentLifecycle.acquireMutation(agentId, sessionKey);
+  if (!lifecycle.ok) return sendJson(409, { ok: false, reason: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
+  try {
   // CHECKPOINT NET: snapshot BEFORE the write (mirrors the runOnce dispatch wrapper) so it's one rollback away.
   // Keep the snapshot id EVEN when created:false — an unchanged workspace returns the existing HEAD, which is a
   // valid, restorable PRE-write rollback point (the common case for a fresh drafts/* write). Discarding it on
@@ -11788,6 +12162,9 @@ async function handleAutonomyWrite(req, res) {
   const r = await reg.dispatch(call, { agentId: agentId, consent: consent, emit: function () {}, timeoutMs: 10000 });
   if (r && r.ok) return sendJson(200, { ok: true, path: rel, snapshot: snapshot, summary: r.summary });
   return sendJson((r && r.summary === 'denied') ? 403 : 400, { ok: false, path: rel, reason: (r && (r.content || r.summary)) || 'write failed' });
+  } finally {
+    lifecycle.release();
+  }
 }
 
 // POST /api/autonomy/posture { posture:{ initiative, reach, leashPerDay }, beliefs?:{ known, beliefs } } — the
@@ -11848,7 +12225,7 @@ async function handleActivityBeacon(req, res) {
   res.end(JSON.stringify({ ok: true, at: lastUserActivityAt }));
 }
 // GET /api/nightshift/status — truthful telemetry for a later UI lane. Every field is provable from server state:
-// active (timer armed), away + awaySince (the away clock), beatsUsedToday/leashPerDay (the enforced leash),
+// active (timer armed), away + awaySince/awayAt (the away clock: window opened, and when it flips),
 // lastBeatAt, nextEligibleAt (cooldown clears), and `binding` (the gate currently blocking a beat, or null when
 // one would fire this instant). Reads the pure planner's decision so status == what the tick would actually do.
 function handleNightshiftStatus(req, res) {
@@ -11860,12 +12237,21 @@ function handleNightshiftStatus(req, res) {
   const summary = commanderPosture.summary() || {};
   const rolled = nightshift.rollDay(nightshiftState, now);
   // presence truth mirrors the driver's lastActivity dep: a LIVE interactive run counts as activity-now.
-  const awaySince = (interactiveRunInFlight() ? now : lastUserActivityAt) + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
+  /* TWO DIFFERENT INSTANTS, AND THE OLD FIELD NAME CLAIMED THE WRONG ONE. `awaySince` used to carry
+     lastActivity + AWAY_MS — i.e. the instant away BECOMES true, a timestamp in the FUTURE while the Commander
+     is present. That value is correct and deliberate (test/nightshift-presence.e2e.test.js proves telemetry
+     agrees with the driver), but "since" names a PAST boundary, and frontend/app/nightreport.js documents its
+     own `awaySince` parameter as "ms epoch the away window OPENED" and filters `ts >= awaySince` with it. Same
+     word, opposite ends of the window: the first consumer to wire this route into the morning report would have
+     scoped every night-shift decision out of its own report and shown a blank morning.
+     So: `awayAt` carries the future instant under a name that says so, and `awaySince` now means what it says. */
+  const awayWindowOpenedAt = interactiveRunInFlight() ? now : lastUserActivityAt;
   const out = {
     active: !!nightshiftTimer,
     halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
     away: decision ? !!decision.away : false,
-    awaySince: awaySince,
+    awaySince: awayWindowOpenedAt,        // PAST: when the idle window opened — the boundary a report scopes from
+    awayAt: awayWindowOpenedAt + NIGHTSHIFT_AWAY_MS,   // FUTURE (while present): when `away` flips true
     // the REAL "away" rule, so the UI can say "no input for N min" instead of the ambiguous "while you're away"
     // (users read that as "app closed" — it isn't; the app stays open, away = idle). Provable: the exact knob used.
     awayAfterMs: NIGHTSHIFT_AWAY_MS,
@@ -12380,6 +12766,8 @@ async function handleTelegramBotAdd(req, res) {
   const prev = telegramBotRecords()[botId] || {};
   const persisted = saveTelegramBotRecord(botId, {
     token: token, username: me.username || '', botName: me.name || '',
+    // privacy mode, learned once at connect — /mention reads it to tell the truth about what it can hear
+    seesAllGroupMessages: (typeof me.seesAllGroupMessages === 'boolean') ? me.seesAllGroupMessages : undefined,
     // persist the provider KEY on the record (like the station/generic channels do) — without it the bot only
     // works while a runtime/station key happens to exist and dies on restart with "no provider configured"
     // even though the add-flow validated a key. Codex/OAuth providers carry no key by design.
@@ -13128,6 +13516,44 @@ async function handleTts(req, res) {
   // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
   // namespace; the provider chain below is irrelevant there, so dispatch BEFORE the no-key gate.
   if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
+  // Local Live explicitly opts into the downloaded voice. Other voice surfaces retain their configured
+  // provider ladder, so this experimental path cannot silently change an existing persona.
+  if (body && body.local) {
+    try {
+      const localVoiceId = String(body.localVoice || 'af_heart');
+      const localSpeed = Number(body.speed) || 1;
+      const ck = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
+      const cachePath = path.join(VOICE_CACHE_DIR, `local-${ck}.wav`);
+      try {
+        const cached = await fsp.readFile(cachePath);
+        res.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'Cache-Control': 'no-store',
+          'X-Voice-Provider': 'local-kokoro',
+          'X-Voice-Cache': 'hit'
+        });
+        return res.end(cached);
+      } catch (_) {}
+      const buf = await localVoice.synthesize(text, {
+        voice: localVoiceId,
+        speed: localSpeed
+      });
+      try {
+        const tmp = `${cachePath}.${crypto.randomUUID()}.tmp`;
+        await fsp.writeFile(tmp, buf);
+        await fsp.rename(tmp, cachePath);
+      } catch (_) {}
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Cache-Control': 'no-store',
+        'X-Voice-Provider': 'local-kokoro',
+        'X-Voice-Cache': 'miss'
+      });
+      return res.end(buf);
+    } catch (error) {
+      console.error('[tts] local Kokoro failed, falling through:', error && error.message || error);
+    }
+  }
 
   // WHICH credential speaks: an explicit key from the page (tagged with its provider) wins; otherwise
   // the first provider in the chain the sidecar itself holds a credential for (runtime push / keychain
@@ -13162,7 +13588,13 @@ async function handleTts(req, res) {
   // Cache key: model+voice+STYLE+text (pacing is client-side, so it stays out of the key for better hits).
   // OpenRouter and native Gemini SHARE a key (same model + prebuilt voice ⇒ same clip); OpenAI is a different
   // vendor voice, so it gets its own namespace (like elevenlabs/) and can never collide.
-  let keyedReason = ttsKey ? '' : 'no key';
+  /* 'no key' is a STRUCTURAL fact about the keyed tier, never a diagnosis of the failure that actually
+     happened. With the free keyless Edge floor enabled, a station holding no credential still has working
+     voice — so reporting an Edge blip as "no key" tells the user to go buy an API key to fix a network
+     hiccup, and the client (which classifies by substring and takes the terminal class first) then treats
+     the whole composite as terminal: no retry, and a 60s dead-voice cold-off instead of 4s. Carry it into
+     the reason only when the floor cannot serve either — there the credential really is what is missing. */
+  let keyedReason = '';
   if (ttsKey) {
     const ck = (ttsProvider === 'openai')
       ? crypto.createHash('sha1').update('openai/' + OPENAI_TTS_MODEL + '|' + OPENAI_TTS_VOICE + '|' + style + '|' + text).digest('hex')
@@ -13199,7 +13631,9 @@ async function handleTts(req, res) {
     let ebuf;
     try { ebuf = await edgetts.synth(text, { voice: edgeVoice, nowMs: Date.now() }); }   // clock injected here (index.js = ambient composition root)
     catch (e) { return fallback(keyedReason ? (keyedReason + '; edge: ' + ((e && e.message) || e)) : ('edge: ' + ((e && e.message) || e))); }
-    if (!ebuf || !ebuf.length) return fallback(keyedReason || 'edge: empty audio');
+    // APPEND the edge detail, never let the keyed reason swallow it: the client needs the transient leg to
+    // pick a 4s cool-off over a 60s one, and 'edge: empty audio' is the only leg that names what just failed.
+    if (!ebuf || !ebuf.length) return fallback(keyedReason ? (keyedReason + '; edge: empty audio') : 'edge: empty audio');
     try { const tmp = path.join(VOICE_CACHE_DIR, eck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, ebuf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, eck + '.mp3')); } catch (_) {}
     res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
     res.end(ebuf); sweepMaybe(); return;
@@ -13323,6 +13757,74 @@ async function sttTranscribe(baseUrl, apiKey, whisperModel, audioBuf, filename, 
   let j; try { j = await r.json(); } catch (e) { return { ok: false, reason: 'bad json from ' + whisperModel }; }
   return { ok: true, text: String((j && j.text) || '').trim() };
 }
+/* The THREE transcription tiers, extracted from handleStt so a caller that is not an HTTP request can use them.
+   Telegram voice notes are the second caller (channels/hub.js): a member sends a voice message and we owned an
+   STT engine the whole time while telling the model "saved to <path>", which it cannot hear.
+
+   Resolves its own credentials exactly as handleStt did — env / runtime-pushed provider keys — so there is ONE
+   answer to "can this station transcribe", not two that drift. Returns { ok:true, text } (an EMPTY string is a
+   valid "no speech heard" result, not a failure) or { ok:false, reason }. Never throws. */
+async function transcribeAudioBuffer(audioBuf, format, apiKey) {
+  if (!audioBuf || !audioBuf.length) return { ok: false, reason: 'no audio' };
+  const key = String(apiKey || runtimeKey || '');
+  const groqKey = providerRuntimeKey('groq', '');
+  const openaiKey = providerRuntimeKey('openai', '');
+  if (!groqKey && !openaiKey && !key) return { ok: false, reason: 'no key' };
+  format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
+  const sttFilename = 'audio.' + format;
+  const sttContentType = 'audio/' + format;
+  let lastReason = 'no transcription';
+
+  // TIER 1 — Groq whisper-large-v3-turbo (very fast + cheap), dedicated speech model over the OpenAI-compatible
+  // multipart /audio/transcriptions endpoint. A non-2xx/timeout/parse failure falls through to the next tier.
+  if (groqKey) {
+    const base = STT_GROQ_BASE || providerRuntimeBaseUrl('groq', '') || 'https://api.groq.com/openai/v1';
+    const g = await sttTranscribe(base, groqKey, STT_GROQ_MODEL, audioBuf, sttFilename, sttContentType);
+    if (g.ok) return { ok: true, text: String(g.text || '') };
+    lastReason = 'groq: ' + g.reason;
+  }
+
+  // TIER 2 — OpenAI whisper-1. Same dedicated-ASR shape; key via providerRuntimeKey (page/runtime/env).
+  if (openaiKey) {
+    const base = STT_OPENAI_BASE || providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1';
+    const o = await sttTranscribe(base, openaiKey, STT_OPENAI_MODEL, audioBuf, sttFilename, sttContentType);
+    if (o.ok) return { ok: true, text: String(o.text || '') };
+    lastReason = 'openai: ' + o.reason;
+  }
+
+  // TIER 3 — the chat-model chain (OpenRouter/Gemini) as the final fallback. Only worth trying when an
+  // OpenRouter chat key is present (otherwise it is a guaranteed 401).
+  if (key) {
+    const audioB64 = audioBuf.toString('base64');
+    const payload = (model) => ({
+      model,
+      messages: [{ role: 'user', content: [
+        { type: 'input_audio', input_audio: { data: audioB64, format } },
+        { type: 'text', text: STT_PROMPT }
+      ] }]
+    });
+    for (const model of STT_MODELS) {
+      let r;
+      try {
+        r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
+          body: JSON.stringify(payload(model))
+        }, 120000));
+      } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
+      if (!r.ok) {
+        let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
+        lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
+        continue;
+      }
+      let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
+      const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
+      return { ok: true, text: text };
+    }
+  }
+  return { ok: false, reason: lastReason };
+}
+
 async function handleStt(req, res) {
   const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
   const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
@@ -13348,73 +13850,12 @@ async function handleStt(req, res) {
     }
   } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
 
-  key = key || runtimeKey;   // desktop: the OpenRouter chat-chain key lives in the keychain-seeded env, not the request
-  // Dedicated ASR credentials, resolved the same way handleTts resolves its provider keys (env / runtime push).
-  // Groq is env-only for now (GROQ_API_KEY); OpenAI reuses providerRuntimeKey so a page-supplied or sidecar
-  // runtime OpenAI key is honored — exactly like the openai TTS branch.
-  const groqKey = providerRuntimeKey('groq', '');
-  const openaiKey = providerRuntimeKey('openai', '');
-  // No-key ONLY when NONE of the three transcription paths has a credential — a Groq/OpenAI-only station must
-  // still transcribe (that's the whole decoupling point), so the old "no OpenRouter key ⇒ no key" gate is gone.
-  if (!groqKey && !openaiKey && !key) return degrade('no key');
   if (!audioB64) return degrade('no audio');
-  // Normalize the container name: 'webm' (opus) and 'wav' are what we produce; x-wav/wave → wav.
-  format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
-  const audioBuf = Buffer.from(audioB64, 'base64');
-  const sttFilename = 'audio.' + format;
-  const sttContentType = 'audio/' + format;
-
-  let lastReason = 'no transcription';
-
-  // TIER 1 — Groq whisper-large-v3-turbo (very fast + cheap). Dedicated speech model over the OpenAI-compatible
-  // multipart /audio/transcriptions endpoint. A non-2xx/timeout/parse failure falls through silently to the next tier.
-  if (groqKey) {
-    const base = STT_GROQ_BASE || providerRuntimeBaseUrl('groq', '') || 'https://api.groq.com/openai/v1';
-    const g = await sttTranscribe(base, groqKey, STT_GROQ_MODEL, audioBuf, sttFilename, sttContentType);
-    if (g.ok) return ok(g.text);   // empty string is a valid "no speech heard" result — deliver it
-    lastReason = 'groq: ' + g.reason;
-  }
-
-  // TIER 2 — OpenAI whisper-1. Same dedicated-ASR shape; key resolved via providerRuntimeKey (page/runtime/env).
-  if (openaiKey) {
-    const base = STT_OPENAI_BASE || providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1';
-    const o = await sttTranscribe(base, openaiKey, STT_OPENAI_MODEL, audioBuf, sttFilename, sttContentType);
-    if (o.ok) return ok(o.text);
-    lastReason = 'openai: ' + o.reason;
-  }
-
-  // TIER 3 — the EXISTING chat-model chain (OpenRouter/Gemini), unchanged, as the final fallback. Only worth
-  // trying when an OpenRouter chat key is present (otherwise it's a guaranteed 401).
-  if (key) {
-    const payload = (model) => ({
-      model,
-      messages: [{ role: 'user', content: [
-        { type: 'input_audio', input_audio: { data: audioB64, format } },
-        { type: 'text', text: STT_PROMPT }
-      ] }]
-    });
-    for (const model of STT_MODELS) {
-      let r;
-      try {
-        r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
-          body: JSON.stringify(payload(model))
-        }, 120000));
-      } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
-      if (!r.ok) {
-        let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
-        lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
-        // a 4xx that names the model/modality is "this model can't do audio" — try the next candidate. Other
-        // errors (auth, rate) will repeat on every model, but the loop is short so it's cheap either way.
-        continue;
-      }
-      let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
-      const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
-      return ok(text);   // empty string is a valid "no speech heard" result — deliver it, don't fall through
-    }
-  }
-  return degrade(lastReason);
+  // The three tiers (and their credential resolution) live in transcribeAudioBuffer so the Telegram voice-note
+  // path uses the SAME engine chain rather than a second implementation that drifts. An empty transcript is a
+  // valid "no speech heard" result and is delivered as-is, never treated as a failure.
+  const r = await transcribeAudioBuffer(Buffer.from(audioB64, 'base64'), format, key);
+  return r.ok ? ok(r.text) : degrade(r.reason);
 }
 
 function readBody(req, max, res) {
@@ -13467,6 +13908,16 @@ const MIME = {
   '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
 };
+// OUTBOUND CHANNEL FILES (channel.send `files`): the ceiling we enforce BEFORE reading a file into memory, and
+// the mime the platform is told. 20MB sits under Telegram's 50MB bot-upload cap with headroom for the multipart
+// framing, and it is a size a phone on mobile data can actually receive. `MIME` is the same table the static
+// server uses — one source of truth, so a type served correctly on the station is typed correctly in the chat.
+const CHANNEL_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+function mimeForPath(abs) {
+  const m = MIME[path.extname(String(abs || '')).toLowerCase()];
+  // strip the charset — the Bot API wants a bare content-type on a form part
+  return m ? String(m).split(';')[0].trim() : 'application/octet-stream';
+}
 const ACTIVE_DELIVERABLE_EXTS = new Set([
   '.html', '.htm', '.xhtml', '.js', '.mjs', '.cjs', '.svg', '.xml', '.xsl', '.xslt', '.wasm'
 ]);
@@ -14273,7 +14724,10 @@ async function serveStatic(req, res) {
       let boot = '<script>window.__STARNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
       // DEV fast-path: hand the page a model + provider hint so a fresh origin auto-resumes the seeded
       // save with no setup. No secret crosses here — the key stays server-side in runtimeKey.
-      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
+      // `hasKey` is the honest half: the page's credential badge assumed a DEV boot meant the host HELD a
+      // runtime key for `prov`, so a seeded station with no key at all still rendered "● KEY SAVED". Say
+      // whether one actually exists — still no secret crosses, only the boolean.
+      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter', hasKey: !!runtimeKey }) + ';';
       boot += '</script>';
       data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
     }

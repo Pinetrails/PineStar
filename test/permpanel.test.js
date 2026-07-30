@@ -48,12 +48,12 @@ eq(P.grantableKeys().slice().sort(), GRANTABLE.slice().sort(), 'panel catalog ke
 // --- effectiveness (object=capability): a grant only takes EFFECT once its station object is placed ---
 eq(P.grantObject('cabinet:write'), 'cabinet', 'cabinet:write needs the cabinet object placed to take effect');
 eq(P.grantObject('net:send'), null, 'a grant with no object requirement → null');
-ok(/Filing Cabinet/i.test(P.objectHint('cabinet:write')), 'objectHint names the Filing Cabinet to place');
+ok(/INTEL CAB/i.test(P.objectHint('cabinet:write')), 'objectHint names the INTEL CAB to place (the real palette prop name)');
 ok(P.grantEffective('cabinet:write', ['cabinet', 'workbench']) === true, 'effective when the cabinet is placed');
 ok(P.grantEffective('cabinet:write', ['workbench']) === false, 'NOT effective without the cabinet (so the panel never claims a silent no-op writes files)');
 ok(P.grantEffective('cabinet:write', null) === true, 'unknown caps → assumed effective (no false alarm)');
 ok(P.grantEffective('net:send', ['cabinet']) === true, 'a no-object grant is always effective');
-ok(/Filing Cabinet|cabinet/i.test(P.describeLevel('full')) || /Filing Cabinet/i.test(P.catalogEntry('cabinet:write').desc), 'the full-level / catalog copy is honest about needing a cabinet');
+ok(/INTEL CAB/i.test(P.describeLevel('full')) || /INTEL CAB/i.test(P.catalogEntry('cabinet:write').desc), 'the full-level / catalog copy is honest about needing an INTEL CAB');
 
 // --- normalizeGrants ---
 eq(P.normalizeGrants(['cabinet:write', 'cabinet:write', 'BAD', 42, null, 'net:send']), ['cabinet:write', 'net:send'], 'normalizeGrants filters junk, dedups, sorts');

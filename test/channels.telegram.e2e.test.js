@@ -56,8 +56,21 @@ function startMockOpenRouter() {
         let body = '';
         req.on('data', d => { body += d; });
         req.on('end', async () => {
-          try { requests.push(JSON.parse(body)); } catch (_) {}
+          let parsed = null;
+          try { parsed = JSON.parse(body); requests.push(parsed); } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          /* ONE scripted tool call, so a run can ask the harness what it can actually reach (channel.targets has
+             no HTTP surface of its own). Only on the FIRST turn of such a run — once a tool result is in the
+             messages the model answers plainly, or the run would loop forever. */
+          const msgs = (parsed && parsed.messages) || [];
+          const lastUser = [...msgs].reverse().find(m => m && m.role === 'user');
+          if (/who can you reach/i.test(String((lastUser && lastUser.content) || '')) && !msgs.some(m => m && m.role === 'tool')) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_t', type: 'function', function: { name: 'channel.targets', arguments: '{}' } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Telegram answer' } }] }) + '\n\n');
           if (gate.armed) {
             gate.armed = false;   // hold only the FIRST completion after arming
@@ -82,6 +95,7 @@ function startMockTelegram() {
   const waiters = [];
   let updateId = 1000;
   let messageId = 2000;
+  let fatal = false;
 
   function respond(res, obj) {
     try {
@@ -109,6 +123,10 @@ function startMockTelegram() {
         return;
       }
       if (method === 'getUpdates') {
+        // REVOKED TOKEN. 401 is fatal in channels/adapter.js: it reports { state:'error' } and BREAKS the poll
+        // loop, leaving the module-level handle alive — which is exactly the state that used to be reported to
+        // an agent as "reachable now".
+        if (fatal) { respond(res, { ok: false, error_code: 401, description: 'Unauthorized' }); return; }
         if (body.offset === -1) {
           respond(res, { ok: true, result: [] });
           return;
@@ -150,6 +168,7 @@ function startMockTelegram() {
           });
           flush();
         },
+        revokeToken() { fatal = true; while (waiters.length) respond(waiters.shift().res, { ok: false, error_code: 401, description: 'Unauthorized' }); },
         close(done) {
           while (waiters.length) respond(waiters.shift().res, { ok: true, result: [] });
           server.close(done || (() => {}));
@@ -441,6 +460,77 @@ async function waitUntil(fn, ms, label) {
       // The race is timing-sensitive; if the slot happened to free before #2's admission, the message still got its
       // real answer above (the invariant that matters). Note it so the run log is honest about what was exercised.
       console.log('  · supersede race did not fire this run; #2 still delivered its real answer (invariant holds)');
+    }
+    /* ---- REACHABILITY IS A HEARTBEAT, NOT A HANDLE -------------------------------------------------
+       listTargets derived `connected` from the mere existence of the composition-root handle, and that handle
+       is nulled ONLY by an explicit teardown (start / shutdown / the disconnect route). A revoked token is
+       fatal in adapter.js: it reports { state:'error' } and BREAKS the poll loop, leaving the object alive. So
+       the CHANNELS panel showed the channel errored while an agent asking "can you reach me on Telegram?" was
+       told "1 of 1 known chat(s) reachable now" — and channel.send's own honest refusal was unreachable.
+       Driven over /api/run because channel.targets has no HTTP surface of its own. */
+    {
+      const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+      const runTargets = async () => {
+        const res = await fetch(B + '/api/run', {
+          method: 'POST', headers,
+          body: JSON.stringify({
+            model: 'test/model', provider: 'openrouter', agentId: 'agent',
+            messages: [{ role: 'user', content: 'who can you reach' }],
+            placed: [{ objectType: 'dish' }, { objectType: 'computer' }]
+          })
+        });
+        A.eq(res.status, 200, 'the targets run stream opens');
+        const reader = res.body.getReader(); const dec = new TextDecoder();
+        let buf = '', last = null, runId = null;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+            if (!line) continue;
+            let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
+            if (ev.name === 'agent.run.start') runId = ev.payload && ev.payload.runId;
+            if (ev.name === 'agent.tool_result') last = ev.payload;
+            // Fire-and-forget: the run is BLOCKED on this answer, so awaiting here deadlocks.
+            if (ev.name === 'permission.prompt') {
+              fetch(B + '/api/consent', {
+                method: 'POST', headers,
+                body: JSON.stringify({ runId: runId, promptId: ev.payload.promptId, decision: 'once' })
+              }).catch(() => {});
+            }
+          }
+        }
+        return last;
+      };
+
+      // Control: the token still works and a human really has messaged this station, so the chat IS reachable.
+      const up = await runTargets();
+      A.ok(up && /reachable now/.test(String(up.summary || '')), 'while the token works the chat is reported reachable: ' + (up && up.summary));
+      A.ok(!/0 of/.test(String(up.summary || '')), 'and not as zero-of-N');
+
+      // Now revoke the token, exactly as @BotFather would.
+      tg.revokeToken();
+      await waitUntil(async () => {
+        const st = await (await fetch(B + '/api/channels/status', { headers })).json();
+        const t = (st && (st.telegram || (st.channels || []).find(c => c && c.id === 'telegram'))) || {};
+        return t.state === 'error' || t.connected === false;
+      }, 12000, 'the sidecar noticed the revoked token (status error)');
+
+      const st = await (await fetch(B + '/api/channels/status', { headers })).json();
+      const tstat = (st && (st.telegram || (st.channels || []).find(c => c && c.id === 'telegram'))) || {};
+      A.eq(!!tstat.connected, false, 'GET /api/channels/status honestly reports the channel as not connected');
+
+      const down = await runTargets();
+      A.ok(down, 'channel.targets still answers after the token was revoked');
+      // "N of N reachable" for any nonzero N is the lie — assert on the SHAPE, not on one chat count, or the
+      // assertion goes vacuous the moment the fixture holds a different number of chats.
+      const claimsAllReachable = /(\d+) of (\d+) known chat/.exec(String(down.summary || ''));
+      A.ok(!(claimsAllReachable && claimsAllReachable[1] !== '0'),
+        'an ERRORED channel is NOT counted as reachable to the agent: ' + (down && down.summary));
+      A.ok(/0 of|not connected|none reachable/i.test(String(down.summary || '')),
+        'and the readout says so plainly: ' + (down && down.summary));
     }
   } finally {
     if (sse) sse.close();
