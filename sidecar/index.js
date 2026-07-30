@@ -215,6 +215,7 @@ const { execFile, spawn: childSpawn } = require('node:child_process');   // shad
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser WebRTC voice coordinator; API key never leaves this process
+const { makeStationBridge } = require('./station-bridge.js');   // page-side command channel for station tools
 const { makeNativeStt } = require('./native-stt.js');                // keyless Windows dictation fallback for OAuth Live voice
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
@@ -2727,6 +2728,11 @@ const chanBus = { emit: (name, payload) => {
   try { if (DEBUG_CHANNEL_LOGS) console.log('[channel]', name, JSON.stringify(payload)); } catch (_) {}
   try { sse.broadcast(name, payload); } catch (_) {}
 } };
+/* THE STATION BRIDGE — how a sidecar tool asks the live page to do a page thing (open a session, switch
+   agent, delegate). Rides the SAME SSE hub the HUD already listens on, so there is no second channel to keep
+   alive. Fails visibly when no page is attached: see sidecar/station-bridge.js for why that matters. */
+const stationBridge = makeStationBridge({ emit: (name, payload) => { try { sse.broadcast(name, payload); } catch (_) {} } });
+
 const chanEmitValidated = makeEmitter(chanBus, e => console.warn('[channel-event]', e.kind, e.event, (e.errors || []).join(';')));
 const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redact(payload)); } catch (_) {} };
 
@@ -6357,6 +6363,7 @@ const TG_BOT_RX = {
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
   // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
+  { m: 'POST', exact: '/api/station/ack', h: handleStationAck },
   { m: 'GET', qsplit: '/api/realtime/status', h: handleRealtimeStatus },
   { m: 'POST', qsplit: '/api/realtime/session', h: handleRealtimeSession },
   { m: 'GET', exact: '/api/stt/native/status', h: handleNativeSttStatus },
@@ -6926,6 +6933,20 @@ function handleApiSession(req, res) {
 /* The page asks about the provider IT is running on (?provider=), because the Commander can switch providers
    without restarting the sidecar. No provider named = fall back to the station's own current one, so a plain
    GET still answers truthfully. */
+/* POST /api/station/ack { id, ok, result?, error? } — the page reporting the outcome of a station.command.
+   Answers whether the id was still in flight rather than a blanket 200: an ack for a command that already
+   timed out is a real condition the page should be able to see, not something to paper over. */
+async function handleStationAck(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 18) || '{}') || {}; }
+  catch (_) { return json(400, { error: 'bad json' }); }
+  const id = String(body.id || '');
+  if (!id) return json(400, { error: 'missing id' });
+  const matched = stationBridge.ack(id, body);
+  return json(matched ? 200 : 409, { matched, inFlight: stationBridge.inFlight() });
+}
+
 function handleRealtimeStatus(req, res) {
   let provider = '';
   try { provider = String(new URL(req.url, 'http://x').searchParams.get('provider') || '').trim(); } catch (_) {}

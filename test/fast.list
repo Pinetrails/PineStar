@@ -461,3 +461,4 @@ test/website-app-sync.test.js
 test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js
+test/station-bridge.test.js
