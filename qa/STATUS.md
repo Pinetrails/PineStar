@@ -727,7 +727,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-30 06:09Z @ 724c5470 | RED | 4 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-30 08:07Z @ 1dd76bf9 | RED | 4 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-29T13:01:43.120Z · ui-only · 100781ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -1455,3 +1455,49 @@ The "We couldn't authorize this device" message is **OpenAI's own copy** — tha
 in this repo — and pending device logins live in an in-memory `Map`, so **restarting the sidecar
 voids an in-flight sign-in**. RELEASE_NOTES.md was rewritten: it had claimed the panel simply
 refuses, which stopped being true the moment this landed.
+
+## 2026-07-30 — the voice fallback fired agent runs from room noise (my regression, gated)
+
+Merged `agent/voice-noise-gate` as `ba323292`. Full `npm test`: **NPM_EXIT=0 read FROM THE LOG,
+`run-fast-tests: OK — 462 step(s) green`**, zero FAIL.
+
+⛔⛔ **WIRING DEAD CODE INHERITS ITS UNTESTED FLAWS.** The previous digest wired
+`nativeSpeechProvider` because it had no caller. It also had no noise gate — harmless while nothing
+invoked it, a live defect the moment something did. The leg turned **any** non-empty transcript into
+a full agent run, and a `DictationGrammar` answers a cough or a fan with a real-looking short word.
+**Proven from the user's own workspace, not theorised:** `runs.jsonl` carried a COMPLETED run
+`{"reason":"done","turns":1,"tokens":10706,"title":"Mm."}` — ten thousand tokens spent on a noise
+burst — and the diagnostics showed **five provider failures in 50 seconds**, an unattended burst that
+earned a genuine upstream rate-limit. **The Whisper path never had this problem because it gates on
+audio energy (`rms < 0.0025`) before transcribing; the native leg had no gate at all.**
+
+THE FIX: capture System.Speech's own `Confidence` (it was being thrown away — the script read only
+`$x.Text`) and threshold it, plus drop non-lexical noise tokens and punctuation-only text.
+⛔ **Confidence crosses the wire as an INTEGER PER-MILLE on purpose: PowerShell's `{0:N3}` is
+culture-sensitive, so a decimal-comma machine emits "0,842" and every parse of it reads as 0 —
+silently muting the entire gate on exactly the machines hardest to debug.** A missing separator means
+UNKNOWN confidence, never zero, so an older or future script cannot have every utterance dropped.
+A dropped utterance returns `ok:true` with empty text and **no `error` field**, which the caller
+already reads as "silence, listen again" — an `error` there would paint a red failure for a quiet
+room. It composes with the pre-existing `MAX_EMPTY = 3`, so a noisy room now ends with a **cold mic
+and "tap 🎤 when ready"** instead of a burst of runs. Real one-word commands ("stop", "yes") still pass.
+
+⛔ **DIAGNOSING THIS REQUIRED ABANDONING TWO WRONG THEORIES, AND BOTH LOOKED GOOD ON PAPER.**
+(1) "codex cannot serve `gpt-5.6-sol`" — the model appears nowhere in the repo and `CODEX_MODELS`
+excludes it, which read as conclusive. It was wrong: the user round-tripped the model and the same
+slug worked. ⛔ **The give-away I ignored: the failure arrived as an SSE `error` EVENT mid-stream, not
+an HTTP status — an unservable model would have been a 400 on the status path.** (2) `ratelimits.js`
+caching a per-model cooldown — refuted by its own header ("a pure store… decides nothing and blocks
+nothing") and by the diagnostics line saying no quota headers were ever observed.
+**What settled it was reading `runs.jsonl` and `diag.errors.json` out of the live workspace.**
+⛔ **LAW: when a provider error resists two good theories, stop reasoning about the request and read
+the run records.**
+
+STILL TRUE AND STILL UNFIXED, worth its own lane: the station save carries **two disagreeing values
+for the same setting, twice** — `doc.prov: "codex"` vs `agent.provider: "openrouter"`, and
+`doc.reasoningEffort: "high"` vs `agent.reasoningEffort: "medium"`. Resume only fills a value when one
+is MISSING (`if (!agent.provider && saved.prov)`), so it never reconciles a conflict, and which value
+takes effect depends on which path reads it. That split-brain is why a manual model round-trip
+"fixed" things — it rewrote both sides. ⛔ **Also: `agent.save.json` was still stamped 21:17 the
+previous evening while the app ran, so an in-app settings fix had not reached disk and a restart
+would resume the failing combination.**
