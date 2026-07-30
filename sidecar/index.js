@@ -13806,7 +13806,13 @@ async function transcribeAudioBuffer(audioBuf, format, apiKey) {
   const key = String(apiKey || runtimeKey || '');
   const groqKey = providerRuntimeKey('groq', '');
   const openaiKey = providerRuntimeKey('openai', '');
-  if (!groqKey && !openaiKey && !key) return { ok: false, reason: 'no key' };
+  /* NO EARLY "no key" DEAD END. This line used to end the chain before any keyless engine could be reached,
+     which is why a station whose brain is a ChatGPT/Codex or Anthropic subscription had NO EARS AT ALL: none of
+     those credentials is a transcription key, every keyed tier missed, and there was nothing underneath. Voice
+     is a STATION subsystem, not a property of whichever model you picked
+     (docs/REF_HARNESS_VOICE_ANALYSIS_2026-07-14) — so the local floor gets its turn before we report failure. */
+  const localReady = (() => { try { return !!localVoice.status().available; } catch (_) { return false; } })();
+  if (!groqKey && !openaiKey && !key && !localReady) return { ok: false, reason: 'no key' };
   format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
   const sttFilename = 'audio.' + format;
   const sttContentType = 'audio/' + format;
@@ -13859,7 +13865,70 @@ async function transcribeAudioBuffer(audioBuf, format, apiKey) {
       return { ok: true, text: text };
     }
   }
+  /* TIER 4 — THE LOCAL FLOOR. Keyless, private, and the reason a station with no transcription credential can
+     still hear. It is the LAST tier on purpose: a dedicated cloud Whisper is faster and more accurate when the
+     Commander has one, so this catches the stations that would otherwise be deaf rather than competing.
+
+     Format note, stated rather than hidden: the local engine takes raw 16 kHz mono Float32 PCM, so it can serve
+     WAV directly but cannot decode a compressed container (webm/ogg) without a decoder we do not ship. A caller
+     that may land here should record WAV; one that sends webm gets an honest reason instead of silence. */
+  if (localReady) {
+    if (/^wav$/i.test(format)) {
+      try {
+        const pcm = wavToMono16kFloat32(audioBuf);
+        if (pcm) {
+          const text = await localVoice.transcribe(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+          return { ok: true, text: String(text || '') };
+        }
+        lastReason = 'local: unreadable wav';
+      } catch (e) { lastReason = 'local: ' + ((e && e.message) || e); }
+    } else {
+      lastReason = lastReason === 'no transcription'
+        ? 'local engine needs wav (got ' + format + ')'
+        : lastReason + '; local engine needs wav (got ' + format + ')';
+    }
+  }
   return { ok: false, reason: lastReason };
+}
+
+/* Decode a RIFF/WAVE buffer to mono 16 kHz Float32 — what the local ASR engine expects. Handles 16-bit PCM and
+   32-bit float, any sample rate, mono or interleaved multi-channel. Returns null if it is not a WAV we can read
+   (never throws, never guesses: an unreadable clip must degrade honestly rather than transcribe noise). */
+function wavToMono16kFloat32(buf) {
+  if (!buf || buf.length < 44) return null;
+  if (buf.toString('latin1', 0, 4) !== 'RIFF' || buf.toString('latin1', 8, 12) !== 'WAVE') return null;
+  let pos = 12, fmt = null, dataOff = 0, dataLen = 0;
+  while (pos + 8 <= buf.length) {
+    const id = buf.toString('latin1', pos, pos + 4);
+    const size = buf.readUInt32LE(pos + 4);
+    if (id === 'fmt ') fmt = { audioFormat: buf.readUInt16LE(pos + 8), ch: buf.readUInt16LE(pos + 10), rate: buf.readUInt32LE(pos + 12), bits: buf.readUInt16LE(pos + 22) };
+    else if (id === 'data') { dataOff = pos + 8; dataLen = Math.min(size, buf.length - dataOff); break; }
+    pos += 8 + size + (size % 2);
+  }
+  if (!fmt || !dataOff || !dataLen || !fmt.ch || !fmt.rate) return null;
+  const bytesPer = fmt.bits / 8;
+  if (bytesPer !== 2 && bytesPer !== 4) return null;
+  const frames = Math.floor(dataLen / bytesPer / fmt.ch);
+  if (!frames) return null;
+  const mono = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) {
+    let sum = 0;
+    for (let c = 0; c < fmt.ch; c++) {
+      const off = dataOff + (i * fmt.ch + c) * bytesPer;
+      sum += bytesPer === 4 ? buf.readFloatLE(off) : buf.readInt16LE(off) / 32768;
+    }
+    mono[i] = sum / fmt.ch;
+  }
+  if (fmt.rate === 16000) return mono;
+  const ratio = fmt.rate / 16000;
+  const out = new Float32Array(Math.floor(mono.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const start = Math.floor(i * ratio), end = Math.min(mono.length, Math.floor((i + 1) * ratio));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += mono[j];
+    out[i] = sum / Math.max(1, end - start);
+  }
+  return out;
 }
 
 async function handleStt(req, res) {
