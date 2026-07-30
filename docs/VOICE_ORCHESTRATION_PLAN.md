@@ -103,3 +103,26 @@ Commander explicitly named was ignored.
 Speak: "make a session called research", "add a research agent", "have them summarise X **in the
 research session**" → the run appears in `research`, attributed to that agent, and nowhere else.
 Then the same request naming a session that does not exist must say so, not pick one.
+
+### Exactly where the fix goes (located 2026-07-30, not yet built)
+
+`sidecar/tools/builtin/orchestration.js` → `team.dispatch` (schema at ~L166):
+
+```
+workers: [{ agentId, prompt }]   // ← add: streamId (optional)
+parallel, background
+```
+
+The schema is the easy half. The load-bearing half is **where a delegated run gets attributed to a
+workstream**, and that is NOT in this file: `team.dispatch` only forwards child lifecycle/cost events
+onto the lead's bus (`FORWARD` + `childEmit`, ~L198), and the PAGE decides placement from
+`agent.run.start`. So the target has to ride those events — add it to the child run context, let it
+reach the emitted lifecycle payload, and have the page place by it instead of by "the lead's current
+stream".
+
+⛔ **Do not add `streamId` to the schema alone.** A tool that ACCEPTS a session target and quietly
+ignores it is worse than one that never offered it: the model will report the work went where it was
+asked. Schema and attribution land together or not at all.
+
+Check before building: `agent.run.start` is a registered event in `shared/events.js` (owned,
+additive-only) — carrying a stream id may need an additive field there, with the owner told.
