@@ -5,7 +5,10 @@ Date: 2026-06-26
 Scope: Phase 0.0 through the local safe-cell gate for background fan-out. This audit covers the StarNet execution surfaces that can touch the host filesystem or run code:
 
 - `fs.read`, `fs.write`, `fs.append`, `fs.edit`, `fs.list`, `fs.search`
-- `shell.exec`, `shell.exec background:true`, `shell.bg.status`, `shell.bg.kill`
+- `shell.exec`, `shell.exec background:true`, `shell.bg.status`, `shell.bg.read`, `shell.bg.kill`
+- `shell.bg.write` — stdin to a process the agent started. Consent-gated and screened by the same
+  `commandSafetyRisk` guard as `shell.exec`, because a line sent to a shell or REPL executes like a command;
+  leaving it unscreened would have made `background:true` a route around that screen.
 - `verify.run`
 - checkpoint snapshot/restore
 - global halt

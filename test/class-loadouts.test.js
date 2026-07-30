@@ -523,7 +523,11 @@ A.ok(/return baseModel \|\|/.test(rtm), 'an unpinned tier still falls back to th
 A.ok(/CLASS TIER MODELS/.test(sui), 'SETTINGS surfaces a CLASS TIER MODELS mapping');
 A.ok(/TIER_MODELS_KEY = 'starnet\.tierModels\.v1'/.test(sui), 'the settings writer uses the SAME key app.js reads (no new plumbing)');
 A.ok(/function wireTierModels\(body\)/.test(sui) && /wireTierModels\(host\)/.test(sui), 'the tier-model picker is wired into buildSettings');
-A.ok(/models\/openrouter/.test(sui.slice(sui.indexOf('function wireTierModels'))), 'the tier-model selects are filled from the live model catalog');
+// The selects are still filled from the LIVE catalog, now through the shared `openRouterCatalog()` memo: the
+// fallback-chain picker wants the same list, and fetching it per-picker per-rebuild meant one SETTINGS open
+// fetched the catalog 12 times (a call the sidecar may proxy upstream). Assert the seam, not the URL literal.
+A.ok(/openRouterCatalog\(\)/.test(sui.slice(sui.indexOf('function wireTierModels'))), 'the tier-model selects are filled from the live model catalog');
+A.ok(/function openRouterCatalog\(\)[\s\S]{0,400}models\/openrouter/.test(sui), 'and that shared accessor is the live /api/models/openrouter catalog');
 const tmSeg = sui.slice(sui.indexOf('function wireTierModels'), sui.indexOf('function wireTierModels') + 2200);
 A.ok(/writeTierModels\(map\)/.test(tmSeg), 'a tier-model pick persists to the store on change');
 

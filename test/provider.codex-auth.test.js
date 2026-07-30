@@ -183,6 +183,23 @@ function jwt(claims) {
     A.eq(loaded.access_token, 'acc', 'loads a valid token from the legacy workspace');
     A.eq(saved.file, currentFile, 'persists migrated tokens into the active workspace');
     A.eq(migrated, legacyFile, 'reports the legacy source used for migration');
+
+    /* ⛔ A CREDENTIAL MUST NOT CROSS AN ISOLATION BOUNDARY. Every test boot, dev seed and QA journey points
+       SKYNET_WORKSPACES at a fresh temp dir. The candidate scan used to run there too, so booting the sidecar
+       with a temp workspace COPIED the Commander's live ChatGPT refresh token into os.tmpdir() — and a
+       "clean-room" boot silently inherited their real sign-in, so a fresh-install test was never fresh. */
+    const tempRoot = pathMod.join(pathMod.sep === '\\' ? 'C:\\' : '/', 'tmp', 'sk-probe-abc123');
+    const tempFiles = tokenStore.candidateCodexTokenFiles({
+      pathMod, currentWorkspaces: tempRoot, defaultWorkspaces: () => legacyRoot, sidecarDir,
+      env: { LOCALAPPDATA: pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local') }
+    });
+    A.eq(tempFiles.length, 1, 'an unrecognized workspace root scans ONLY its own token file');
+    A.eq(tempFiles[0], pathMod.join(tempRoot, 'codex', 'tokens.json'), 'and that one file is its own');
+    A.ok(!tokenStore.isRecognizedWorkspaceRoot(tempRoot, { pathMod }), 'a temp dir is not an app home');
+    A.ok(tokenStore.isRecognizedWorkspaceRoot(currentRoot, { pathMod }),
+      'but <...>/ai.skynet.harness/workspaces IS an app home, so the real version-rename migration still runs');
+    A.ok(tokenStore.isRecognizedWorkspaceRoot(pathMod.join('D:\\', 'apps', 'StarNet', 'workspaces'), { pathMod }),
+      'a StarNet home on any drive is recognized by shape');
   }
 
   // ---- persistCodexTokensVerified (EL-5b F4): rotated tokens must reach disk with READ-BACK PROOF ----

@@ -169,6 +169,10 @@
       { capId: 'workbench', tool: 'browser.test_input', scope: 'execute', requiresConsent: false, network: false, deferred: true },
       { capId: 'workbench', tool: 'browser.test_state', scope: 'read', requiresConsent: false, network: false, deferred: true },
       { capId: 'workbench', tool: 'shell.bg.status', scope: 'read', requiresConsent: false, network: false },   // H2.2: inspect your background processes
+      { capId: 'workbench', tool: 'shell.bg.read', scope: 'read', requiresConsent: false, network: false },     // H2.3: page/search its output past the short tail
+      // H2.3: stdin. CONSENT-GATED unlike its bg siblings — a line sent to a shell or REPL executes like a
+      // command, so it carries shell.exec's gate, not shell.bg.status's.
+      { capId: 'workbench', tool: 'shell.bg.write', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
     ],
     // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,

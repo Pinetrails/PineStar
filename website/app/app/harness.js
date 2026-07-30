@@ -231,7 +231,11 @@ const Harness = (() => {
     if (p === 'custom' && !getKey(p)) return false;        // a keyless custom endpoint must not manufacture a key row
     if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
     if (!!readScoped(LS.key, p)) return true;              // a real key is stored in this browser
-    if (DEVMODE && DEV && normalizeProviderId(DEV.prov) === p) return true;  // server-held runtime key for the seeded provider
+    // DEV seed: the host may hold a server-side runtime key for the seeded provider. It is not a given —
+    // a seeded station with no key at all still boots in DEV mode, and ASSUMING the key existed made the
+    // settings row render "● KEY SAVED" over nothing (an agent live-verifying a change reads that badge as
+    // proof it can run). `hasKey` is the sidecar's own answer; an older boot payload without it reads false.
+    if (DEVMODE && DEV && DEV.hasKey === true && normalizeProviderId(DEV.prov) === p) return true;
     return false;
   }
 
@@ -697,17 +701,25 @@ const Harness = (() => {
 
   // Cortex (M-mem.6) — the Memory Core: the FULL provenance-bearing §5.2 records (kind/sourceRunId/useCount/
   // trust/pinned/timestamps), which the slim /api/notebook view drops. [] on any failure.
-  async function agentSkills(agentId, opts) {
+  /* The same read, with the OUTCOME kept: { ok, skills }. agentSkills() below collapses every failure to []
+     for its existing callers, which is fine for a list that renders "no skills yet" — but a COUNTER must never
+     turn an errored read into a confident zero ("you have none" is a different claim from "I could not ask").
+     Any surface that states a number reads through this one. */
+  async function agentSkillsRead(agentId, opts) {
     opts = opts || {};
     try {
       const q = '?agent=' + encodeURIComponent(agentId || 'agent')
         + (opts.archived ? '&archived=1' : '')
         + (opts.body ? '&body=1' : '');
       const r = await fetch('/api/agent-skills' + q, { cache: 'no-store' });
-      if (!r.ok) return [];
+      if (!r.ok) return { ok: false, skills: [] };
       const j = await r.json();
-      return Array.isArray(j.skills) ? j.skills : [];
-    } catch (e) { return []; }
+      if (!j || !Array.isArray(j.skills)) return { ok: false, skills: [] };
+      return { ok: true, skills: j.skills };
+    } catch (e) { return { ok: false, skills: [] }; }
+  }
+  async function agentSkills(agentId, opts) {
+    return (await agentSkillsRead(agentId, opts)).skills;
   }
   async function agentSkillManage(o) {
     try {
@@ -794,7 +806,7 @@ const Harness = (() => {
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,
-    agentSkills, agentSkillManage, agentSkillAllow,
+    agentSkills, agentSkillsRead, agentSkillManage, agentSkillAllow,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

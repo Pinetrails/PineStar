@@ -147,8 +147,19 @@
       if (digestOf(skill) === stamped) return base;
       const live = liveScan(skill);
       const action = worseAction(base.action, live ? live.action : 'ask');   // unscannable tamper => at least ask
-      const merged = decide(Object.assign({}, skill, { guardAction: action, scan: (live && live.scan) || skill.scan }));
+      /* Re-decide against the LIVE digest, never the stamped one. decide()'s 'ask' branch calls
+         isApproved(), which compares the approval record to stampOf(skill) === skill.contentDigest — the
+         digest written at PERSIST time, which a write into the package dir never moves. Handing decide()
+         the stale stamp here let a prior approval clear the very tamper this branch just proved it does
+         not cover, and the live re-scan can never save it: liveScan passes source 'user'/'agent-created'
+         and both TRUST rows map dangerous -> 'ask', never 'block', so worseAction('ask','ask') is 'ask'
+         and the approved branch made it visible. That laundered whatever is now in SKILL.md into the
+         model on the one seam that hands over a real body. */
+      const merged = decide(Object.assign({}, skill, {
+        guardAction: action, scan: (live && live.scan) || skill.scan, contentDigest: digestOf(skill)
+      }));
       merged.tampered = true;
+      merged.approved = false;   // an approval of other bytes is not an approval of these
       merged.reason = merged.visible ? merged.reason
         : (merged.action === 'block' ? 'the package on disk no longer matches what was reviewed, and re-scanning it blocked'
           : 'the package on disk was changed after it was reviewed — re-approve it in ABILITIES > SKILLS');
@@ -156,13 +167,21 @@
     }
 
     /* annotate — stamp the decision onto a metadata list without mutating the input. Consumers
-       (prompt index, skill.list, the SKILLS panel) all read the same three fields. */
-    function annotate(skills) {
+       (prompt index, skill.list, the SKILLS panel) all read the same fields.
+
+       With { verify: true } AND a body present, the DELIVERY decision is used instead of the
+       metadata-only one. decide() cannot re-digest, so a caller that holds real bytes would otherwise
+       keep printing "Approved by you for this exact content" about a package whose SKILL.md no longer
+       matches what was reviewed — the panel asserting a content binding the backend does not hold.
+       Callers with metadata only (the prompt index, skill.list) get decide() exactly as before. */
+    function annotate(skills, opts) {
+      const useVerify = !!(opts && opts.verify);
       return (Array.isArray(skills) ? skills : []).map(s => {
-        const d = decide(s);
+        const d = (useVerify && s && typeof s.body === 'string') ? verify(s) : decide(s);
         return Object.assign({}, s, {
           withheld: !d.visible, withheldReason: d.visible ? '' : d.reason,
-          guardDecision: d.action, guardApprovable: !!d.approvable, guardCategories: d.categories
+          guardDecision: d.action, guardApprovable: !!d.approvable, guardCategories: d.categories,
+          guardTampered: !!d.tampered
         });
       });
     }

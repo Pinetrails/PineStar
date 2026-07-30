@@ -588,6 +588,51 @@ async function run() {
     A.eq(typed.length, 0, 'a control command never lights the typing bubble (no run happens)');
   }
 
+  // ---- V. E-STOP is not a supersede: the chat is TOLD it was stopped on purpose ----------------------
+  // Both set `superseded` so the stale partial is abandoned, but they mean opposite things about what happens
+  // next: a supersede has a newer message already running its replacement, an E-STOP has nothing coming. On a
+  // phone — no floor, no browser, no other signal — the shared silent return made a deliberate stop
+  // byte-identical to a crashed bot, while /stop typed in the same chat answers "Stopped the run in progress."
+  {
+    const { killAll } = require('../sidecar/halt.js');
+    const store = fakeStore(); const sends = [];
+    const runOnce = async (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'half an answ' });
+      await new Promise(res => { if (o.signal.aborted) return res(); o.signal.addEventListener('abort', () => res(), { once: true }); });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'cancelled', turns: 0, usd: 0 });
+    };
+    const hub = makeChannelHub({ runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen() });
+    const parked = hub.onInbound(dm('do the long thing'));
+    await new Promise(r => setTimeout(r, 10));
+    const aborted = killAll(null, hub._internals.inflight);   // exactly what handleHalt does
+    A.eq(aborted, 1, 'E-STOP aborted the one in-flight channel run');
+    await parked;
+    A.ok(!sends.some(s => /half an answ/.test(s)), 'the stale partial is still abandoned');
+    A.ok(sends.some(s => /E-STOP/.test(s)), 'the chat is TOLD the run was stopped from the station');
+    A.eq(sends.filter(s => /E-STOP/.test(s)).length, 1, 'the stop notice is delivered exactly once');
+  }
+
+  // ---- V2. a supersede by a NEWER message stays silent (the control for V) ---------------------------
+  {
+    const store = fakeStore(); const sends = []; let call = 0;
+    const runOnce = async (o) => {
+      call++;
+      if (call === 1) {
+        o.emit('agent.token', { delta: 'stale partial' });
+        await new Promise(res => { if (o.signal.aborted) return res(); o.signal.addEventListener('abort', () => res(), { once: true }); });
+        return;
+      }
+      o.emit('agent.token', { delta: 'second-reply' });
+      o.emit('agent.run.end', { reason: 'done' });
+    };
+    const hub = makeChannelHub({ runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen() });
+    const p1 = hub.onInbound(dm('first'));
+    await hub.onInbound(dm('second'));
+    await p1;
+    A.eq(sends, ['second-reply'], 'a supersede by a newer message is still SILENT — no stop notice, no stale partial');
+  }
+
   A.report('channels.hub.test');
 }
 

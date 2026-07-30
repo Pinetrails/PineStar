@@ -191,9 +191,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         document.body.style.setProperty('--ph-glow2', 'rgba(' + rgb + ', ' + (base[1] * gm).toFixed(3) + ')');
       }
     }
-    // THE BACKDROP — what the station floats in. SpaceBG owns the registry and falls back to
-    // its own default for an unknown id, so a hand-edited or future-version save can never
-    // blank the sky. Applied here (not only in the picker) so it survives a reload.
+    // WHERE THE STATION IS. One saved value spans two layers that work opposite ways: a SKY is
+    // screen-space and must not zoom, a GROUND is world-space and must. Both modules resolve the
+    // id themselves — Terrain turns OFF for anything that is not a known ground, SpaceBG falls
+    // back to its default — so an unknown or future-version id can never blank the frame.
+    // Applied here rather than only in the picker so it survives a reload.
+    if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
     // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
     // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
@@ -1029,10 +1032,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           pane.classList.remove('con-sec-hidden');
           pane.classList.add('con-sec-searchshow');
           // a "row" = a labelled control block. We match on visible text of these granular blocks.
-          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row, .con-sec-body .ts-row');
+          // `.cc-card` is the CATALOG / KEYS platform card (windows/connectors.js) — it was missing from this
+          // allowlist, so typing the NAME OF A PLATFORM into the box above the catalog matched nothing at all:
+          // 48 connectable platforms were rendered on screen and indexed by zero of them ("google" → 0 hits
+          // while a Google Workspace card was visible). A search box a user types a platform name into must
+          // index the platforms. Locked by test/connectors-ui.test.js.
+          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row, .con-sec-body .ts-row, .con-sec-body .cc-card');
           let hits = 0;
           rows.forEach(r => {
-            const hit = (r.textContent || '').toLowerCase().indexOf(q) >= 0;
+            // `data-search` carries ALIASES that are deliberately not on screen (a Google Workspace card says
+            // "Gmail, Calendar, Drive…" in its blurb but never "gdrive"/"g suite"). Searching a name the user
+            // actually types must not depend on that name happening to appear in marketing copy.
+            const hay = ((r.textContent || '') + ' ' + (r.dataset ? (r.dataset.search || '') : '')).toLowerCase();
+            const hit = hay.indexOf(q) >= 0;
             r.classList.toggle('con-hit', hit);
             r.classList.toggle('con-miss', !hit);
             if (hit) hits++;
@@ -1343,6 +1355,44 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="gx-well' + (g.bonus ? ' gold' : '') + '"><span class="gx-lbl">Feedback bonus</span><span class="v">' + (g.bonus ? '+' + g.bonus + '%' : '—') + '</span></div>' +
       '</div>';
 
+    /* S2 RELIABILITY — the harness's OWN read, sitting under Satisfaction so the pair reads as what it is:
+       B is what the Commander SAID, B2 is what the station OBSERVED. Deliberately not merged into one score
+       (a well-liked agent that keeps hitting its ceiling must be able to show both truths at once), and
+       deliberately dossier-only — it is a number that can look bad, and the always-visible chrome is not where
+       an honest bad number belongs. Excluded runs are NAMED, not silently dropped from the denominator. */
+    const rl = Xp.reliability ? Xp.reliability(a.stats) : null;
+    const excludedNote = rl && rl.excluded
+      ? '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">' + rl.excluded + ' run' + (rl.excluded === 1 ? '' : 's') + ' set aside — ' +
+        (rl.faulted ? rl.faulted + ' the provider failed' : '') + (rl.faulted && rl.neutral ? ', ' : '') +
+        (rl.neutral ? rl.neutral + ' you stopped or it asked a question' : '') + ' — never charged to this agent</div>'
+      : '';
+    const reliabilityBlk = !rl ? '' :
+      // spans both columns of the existing .gx-2 grid (no CSS change; still correct under the 1-col media query)
+      '<div style="grid-column:1/-1;">' +
+      '<div class="gx-sec"><span class="gx-ref">B2</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
+        (rl.known ? 'runs it finished, of the runs it owned (' + Xp.MIN_RUNS + '+ runs)' : 'calibrating &middot; ' + rl.attempted + ' of ' + Xp.MIN_RUNS + ' attributable runs so far') + '</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+        '<span class="gx-confnum' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.pct + '<span style="font-size:18px;color:var(--ph-dim);">%</span>' : '—') + '</span>' +
+        '<span class="gx-band' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
+      '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + (rl.known ? rl.pct : 0) + '%;"></div></div>' +
+      '<div class="gx-well"><span class="gx-lbl">Finished / owned</span><span class="v">' + rl.completed + ' <span class="gx-dim">/</span> ' + rl.attempted + '</span></div>' +
+      // the honest distinction from Satisfaction — these two meters measure different things and may disagree.
+      '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">what the station observed — Satisfaction above is what you said</div>' +
+      excludedNote +
+      '</div>';
+
+    /* S5 PRACTICE — the fourth meter, and the only one that is not folded from the event bus: what this agent
+       has actually LEARNED (procedures it distilled from real work and has used since). The skillbase is a
+       per-agent sidecar read, so the block mounts as a host and loadPractice() fills it — the same
+       render-placeholder-then-fetch shape the SKILLS pane already uses. Until it resolves it says "reading",
+       never a zero: an unread skillbase is not an empty one. */
+    const practiceBlk =
+      '<div id="gx-practice" style="grid-column:1/-1;">' +
+      '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+      '<span class="gx-tag">reading the skillbase&hellip;</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
+      '<span class="gx-band cal">READING</span></div></div>';
+
     const tros = cat.map(m =>
       '<div class="gx-tro ' + (m.earned ? 'on' : 'off') + '">' +
       '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (m.earned ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + m.label + '</span></div>' +
@@ -1372,9 +1422,49 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return '<div class="gx">' +
       '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // GROWTH READOUT</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
       '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">CLEARANCE</div><span class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></span></div></div>' +
-      '<div class="gx-2">' + progression + confidence + '</div>' +
+      '<div class="gx-2">' + progression + confidence + reliabilityBlk + practiceBlk + '</div>' +
       trophies + station +
       '</div>';
+  }
+
+  /* Fill the B3 PRACTICE block for `agentId`. Reads through Harness.agentSkillsRead so a FAILED read renders
+     as an unknown, never as a confident zero — "you have none" and "I could not ask" are different claims, and
+     the plain agentSkills() wrapper collapses both to []. The resolve is re-checked against the agent still
+     selected, so a slow read for one agent can never paint another agent's dossier. */
+  function loadPractice(agentId) {
+    const host = $('#gx-practice');
+    if (!host || typeof Xp === 'undefined' || !Xp.practice) return;
+    const fail = (why) => {
+      const h = $('#gx-practice'); if (!h) return;
+      h.innerHTML = '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+        '<span class="gx-tag">' + why + '</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
+        '<span class="gx-band cal">UNREAD</span></div>';
+    };
+    if (!(typeof Harness === 'object' && Harness.agentSkillsRead)) return fail('skillbase unavailable');
+    Harness.agentSkillsRead(agentId, { archived: true }).then(r => {
+      const h = $('#gx-practice'); if (!h) return;
+      const now = present[sel]; if (!now || now.id !== agentId) return;   // the Commander moved on — never paint the wrong agent
+      if (!r || !r.ok) return fail('could not read the skillbase');
+      const p = Xp.practice(r.skills);
+      // every exclusion is NAMED rather than silently shrinking the count (the same rule B2 follows for the
+      // runs it sets aside) — a withheld or never-used procedure is a real thing the Commander can act on.
+      const aside = [];
+      if (p.withheld) aside.push(p.withheld + ' withheld pending your approval');
+      if (p.idle) aside.push(p.idle + ' written but never used yet');
+      if (p.given) aside.push(p.given + ' you wrote yourself');
+      h.innerHTML =
+        '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span><span class="gx-tag">' +
+          (p.count ? 'procedures it worked out and has actually used' : 'nothing distilled from real work yet') + '</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+          '<span class="gx-confnum' + (p.count ? '' : ' cal') + '">' + p.count + '</span>' +
+          '<span class="gx-band' + (p.count ? '' : ' cal') + '">' + p.band.toUpperCase() + '</span></div>' +
+        '<div class="gx-well"><span class="gx-lbl">Learned / held</span><span class="v">' + p.count + ' <span class="gx-dim">/</span> ' + p.authored + '</span></div>' +
+        // the anti-farm line, said out loud: writing a skill is not learning one.
+        '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">what it taught itself from your work — writing one counts for nothing until it is used</div>' +
+        // (every aside is a count plus a fixed literal — no agent- or user-supplied text reaches this markup)
+        (aside.length ? '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">' + aside.join(' &middot; ') + '</div>' : '');
+    }).catch(() => fail('could not read the skillbase'));
   }
 
   function agSkills(agentId) {
@@ -2176,6 +2266,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireConfig(host);
     wireMemoryLive();
     loadMemoryCore(a);
+    loadPractice(a && a.id ? a.id : 'agent');   // S5: fill the GROWTH tab's B3 meter from the agent's real skillbase
     drawPortrait(host.querySelector('#ag-portrait'), a);
   }
   function drawPortrait(cv, a) {
@@ -2295,7 +2386,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       skills.map((s, i) => {
         const lockable = !s.on && s.cap;
         return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
-          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place a ' + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
+          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place ' + skArt(SK_OBJ_NAME[s.cap] || s.cap) + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
           ' style="--ci:' + i + '">' +
           '<div class="perk-icon">' + s.icon + '</div>' +
           '<div class="perk-name">' + s.name + '</div>' +
@@ -2381,11 +2472,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       });
   }
 
-  const SK_OBJ_NAME = { cabinet: 'CABINET', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
+  // The gear names here are the REFIT palette's own labels (the cabinet cap's representative prop is the INTEL CAB),
+  // so a "place a …" nudge names something the Commander can actually find in the palette. skArt keeps the article
+  // right for a vowel-initial label ("place an INTEL CAB", not "a INTEL CAB").
+  const SK_OBJ_NAME = { cabinet: 'INTEL CAB', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
   // Each capability objectType → the representative placeable prop (CAP_PROP_MAP) and the REFIT palette category tab
   // that holds it. Lets a locked skill's "PLACE" button land the user on the exact gear in the real build surface.
+  const skArt = (label) => (/^[AEIOU]/.test(String(label || '')) ? 'an ' : 'a ');
   const SK_PLACE = {
-    cabinet:  { prop: 'safe',      cat: 'capability' },
+    cabinet:  { prop: 'war_intelcab', cat: 'capability' },
     dish:     { prop: 'comms_dish', cat: 'capability' },
     workbench:{ prop: 'workbench', cat: 'workstation' },
     studio:   { prop: 'studio',    cat: 'capability' },
@@ -2399,15 +2494,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const spot = SK_PLACE[objType];
     const label = SK_OBJ_NAME[objType] || String(objType).toUpperCase();
     if (typeof Build === 'undefined' || !(Build.open || Build.toggle)) {
-      notify('Open ⚒ BUILD and place a ' + label + ' to unlock this skill', 'warn'); return;
+      notify('Open ⚒ BUILD and place ' + skArt(label) + label + ' to unlock this skill', 'warn'); return;
     }
     try { if (open.skills) minimizeTerm('skills'); } catch (_) {}
     try {
       if (Build.isOpen && Build.isOpen()) { /* already in REFIT */ }
       else if (Build.open) Build.open();
       else Build.toggle();
-    } catch (_) { notify('Could not open REFIT — open ⚒ BUILD and place a ' + label, 'warn'); return; }
-    notify('Place a ' + label + ' at ' + (agentName || 'the agent') + '’s desk to unlock this skill', 'good');
+    } catch (_) { notify('Could not open REFIT — open ⚒ BUILD and place ' + skArt(label) + label, 'warn'); return; }
+    notify('Place ' + skArt(label) + label + ' at ' + (agentName || 'the agent') + '’s desk to unlock this skill', 'good');
     if (!spot) return;   // no known prop mapping — REFIT is open, the toast named the gear; that's the floor of acceptable
     // Drive the palette to the PROP tool → FUNCTIONAL tier → the missing cap's category tab → its prop tile so the
     // very next floor-click drops it. REFIT builds its DOM synchronously in open(), so the FIRST pass runs inline
@@ -2470,7 +2565,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       : '<span class="sk-badge free">no gear needed</span>';
     // one PLACE button per missing object → the real REFIT placement surface (placeGearForSkill).
     const placeBtns = (missing) => missing.map(r =>
-      '<button class="sk-place" data-place="' + esc(r) + '" title="Open REFIT to place a ' + esc(objLabel(r)) + '">→ PLACE ' + esc(objLabel(r)) + '</button>').join('');
+      '<button class="sk-place" data-place="' + esc(r) + '" title="Open REFIT to place ' + skArt(objLabel(r)) + esc(objLabel(r)) + '">→ PLACE ' + esc(objLabel(r)) + '</button>').join('');
     let ci = 0;
     const card = (s) => {
       const missing = (s.requires || []).filter(r => !placedSet[r]);
@@ -2844,6 +2939,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const tail = k.length > head.length + 4 ? k.slice(-4) : '';
     return head + '••••••••' + tail;
   }
+  /* ⛔ A FULL PANE REBUILD IS NOT A CHEAP REPAINT. Every SETTINGS rebuild re-fires the pane's whole
+     fan-out — credits, budget, fallback chain, knobs, scout, night shift, subagents, permissions AND two
+     model-catalog fetches, which the sidecar may proxy to a LIVE upstream. The async status/probe callbacks
+     below each land separately (3 OAuth statuses + one probe per configured provider) and each forced its own
+     rebuild, so the rebuilds re-fired the very fetches whose callbacks caused them. MEASURED on a seeded
+     station: ONE open of SETTINGS = 86 requests, with `/api/models/openrouter` fetched 12 TIMES.
+     Coalesce instead: any number of triggers in the same turn collapse into ONE repaint. Deliberately NOT
+     applied to the click handlers — those repaint synchronously so the DOM they then read is current. */
+  // 120ms, not 0: the triggers are independent network round-trips that land MILLISECONDS apart, not in one
+  // turn, so a microtask-sized window merges almost nothing. It is far below the threshold at which an
+  // asynchronously-arriving status feels laggy, and each merged trigger saves a whole pane fan-out.
+  const SETTINGS_REPAINT_COALESCE_MS = 120;
+  let settingsRepaintQueued = false;
+  function scheduleSettingsRepaint() {
+    if (settingsRepaintQueued || !open.settings) return;
+    settingsRepaintQueued = true;
+    setTimeout(() => { settingsRepaintQueued = false; if (open.settings) rerender('settings'); }, SETTINGS_REPAINT_COALESCE_MS);
+  }
+
   // the REAL connected providers: OpenRouter from the BYOK store, Codex from sidecar OAuth status.
   // They are additive, so signing into ChatGPT must not occupy the OpenRouter key slot.
   function refreshCodexConnectionStatus() {
@@ -2855,9 +2969,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // carry the WHOLE truth shape: `connected` alone can't distinguish "never signed in" from the
         // consumed-refresh-token death (`expired` + `reason`) — the row must render those differently.
         const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
-        const prev = codexStatusKnown;
+        // Compare the RENDERED truth, not the raw cache: before the first answer these read through a fallback
+        // (getProv()==='codex'), so `prev === null` is not by itself a change — it used to force a rebuild on
+        // every cold open even when the row ended up drawing exactly the same thing.
+        const wasConnected = codexConnected(), wasExpired = codexExpired();
         codexStatusKnown = next;
-        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+        if (codexConnected() !== wasConnected || codexExpired() !== wasExpired) scheduleSettingsRepaint();
       })
       .catch(() => {})
       .finally(() => { codexConnectionChecking = false; });
@@ -2890,9 +3007,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // carry the WHOLE truth shape (connected + expired + reason), exactly like codex — a lone bool can't
         // distinguish "never signed in" from the dead-refresh-token death the row must render differently.
         const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
-        const prev = oauthStatus[pid];
+        // Same rule as codex above: compare what the row will actually DRAW, so a cold "not connected" answer
+        // that matches the fallback does not force a full pane rebuild (and its fan-out) for nothing.
+        const wasConnected = oauthProvConnected(pid), wasExpired = oauthProvExpired(pid);
         oauthStatus[pid] = next;
-        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+        if (oauthProvConnected(pid) !== wasConnected || oauthProvExpired(pid) !== wasExpired) scheduleSettingsRepaint();
       })
       .catch(() => {})
       .finally(() => { oauthChecking[pid] = false; });
@@ -2944,8 +3063,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .catch(() => { providerHealth[provider] = null; })
       .finally(() => {
         delete providerProbePending[provider];
-        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop.
-        if (open.settings) rerender('settings');
+        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop,
+        // and the coalescer folds several providers' probes finishing together into a single rebuild.
+        scheduleSettingsRepaint();
       });
   }
   function queueProviderHealthRefresh() {
@@ -3742,6 +3862,24 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   // MODELS panel (P0-3) — the ordered FALLBACK CHAIN the loop walks when the primary model fails mid-run.
   // Server-persisted (/api/fallback/chain) + applied live; env SKYNET_FALLBACK_MODELS stays the default until
+  /* ONE catalog fetch, shared. The fallback-chain picker and the class-tier picker both want the same
+     OpenRouter model list, and each used to GET /api/models/openrouter itself on EVERY settings build — so a
+     pane that rebuilt three times fetched the catalog six times, and the sidecar may proxy that to a LIVE
+     upstream call. Memoize the in-flight/last promise for a short window; a picker list going a few minutes
+     stale is invisible, a burst of duplicate catalog fetches is not. Failures are not cached (the next open
+     retries), so an offline sidecar never poisons the picker for the session. */
+  const MODEL_CATALOG_TTL_MS = 5 * 60 * 1000;
+  let modelCatalogAt = 0, modelCatalogPromise = null;
+  function openRouterCatalog() {
+    const now = Date.now();
+    if (modelCatalogPromise && (now - modelCatalogAt) < MODEL_CATALOG_TTL_MS) return modelCatalogPromise;
+    modelCatalogAt = now;
+    modelCatalogPromise = Harness.api.get('/api/models/openrouter')
+      .then(j => (j && Array.isArray(j.models)) ? j.models : [])
+      .catch(e => { modelCatalogPromise = null; throw e; });   // never cache a failure
+    return modelCatalogPromise;
+  }
+
   // saved. Editing is local (add from catalog / remove / reorder) until SAVE posts the whole ordered list.
   function wireFallbackChain(body) {
     const form = body.querySelector('#fbc-form');
@@ -3793,10 +3931,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });   // never paint an error body as an empty chain
     // catalog for the ADD picker — the same warmed OpenRouter catalog the model dock uses. Best-effort: an empty
     // catalog just leaves the picker with its placeholder (the chain itself still paints + saves fine).
-    Harness.api.get('/api/models/openrouter').then(j => {
-      if (!addSel || !j || !Array.isArray(j.models)) return;
+    openRouterCatalog().then(models => {
+      if (!addSel || !Array.isArray(models)) return;
       const frag = document.createDocumentFragment();
-      j.models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
+      models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
         if (!m || !m.id) return;
         const o = document.createElement('option');
         o.value = m.id; o.textContent = (m.name && m.name !== m.id) ? (m.name + '  ·  ' + m.id) : m.id;
@@ -3855,9 +3993,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
     paint();
     // fill the model catalog into all three selects (same warmed catalog the fallback picker uses).
-    Harness.api.get('/api/models/openrouter').then(j => {
-      if (!j || !Array.isArray(j.models)) return;
-      const opts = j.models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    openRouterCatalog().then(models => {
+      if (!Array.isArray(models)) return;
+      const opts = models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
       TM_TIERS.forEach(tier => {
         const sel = selOf(tier); if (!sel) return;
         const frag = document.createDocumentFragment();
@@ -4243,10 +4381,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // THE BACKDROP — what the station floats in. Swatches are painted by the REAL backdrop
       // renderer below (SpaceBG.paintSample), never by a stand-in gradient, so a preview can
       // not promise a sky the station won't deliver — the same law the deck/wall swatches follow.
-      '<h4 class="ms-h">BACKDROP <span class="dim">— where the station is parked</span></h4>' +
-      '<p class="set-about">The station holds position somewhere. Change where. Each one is drawn live, not a picture — so the swatch is exactly what you get.</p>' +
+      '<h4 class="ms-h">BACKDROP <span class="dim">— where the station is</span></h4>' +
+      '<p class="set-about">The station is somewhere. Change where — in orbit, over open country, or landed on it. Each one is drawn live, not a picture, so the swatch is exactly what you get.</p>' +
       '<div class="set-backdrops" id="set-backdrop">' +
-      (typeof SpaceBG === 'undefined' ? '' : SpaceBG.list().map(b => {
+      (typeof SpaceBG === 'undefined' ? '' : []
+        .concat(SpaceBG.list())
+        .concat(typeof Terrain === 'undefined' || !Terrain.list ? [] : Terrain.list())
+        .map(b => {
         const on = (s.backdrop || 'void') === b.id;
         return '<button class="set-bd' + (on ? ' sel' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" data-bd="' + esc(b.id) + '" title="' + esc(b.blurb) + '">' +
           '<canvas class="set-bd-cv" width="112" height="63" aria-hidden="true"></canvas>' +
@@ -4419,8 +4560,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       bdChips.forEach(b => {
         const cv = b.querySelector('canvas');
         if (!cv) return;
-        try { SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000); }
-        catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
+        // route each swatch to the layer that actually owns that id — a ground painted by the
+        // sky renderer would just be a black chip, and vice versa.
+        const isGround = typeof Terrain !== 'undefined' && Terrain.GROUNDS && Terrain.GROUNDS[b.dataset.bd];
+        try {
+          if (isGround) Terrain.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd);
+          else SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000);
+        } catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
       });
       const syncBackdrop = () => bdChips.forEach(x => {
         const on = x.dataset.bd === (s.backdrop || 'void');
@@ -4428,9 +4574,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         x.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
       bdChips.forEach(b => b.addEventListener('click', () => {
-        // trust SpaceBG's resolution rather than the button: it is the thing that decides what
-        // actually renders, so the saved value can never drift from what is on screen.
-        s.backdrop = SpaceBG.setBackdrop(b.dataset.bd);
+        // Offer the id to BOTH layers and save whichever one claimed it. Terrain answers with the
+        // ground id or null; SpaceBG resolves to a sky. Trusting the layers rather than the button
+        // is what keeps the saved value from ever drifting out of step with what is on screen.
+        const asGround = (typeof Terrain !== 'undefined' && Terrain.setGround) ? Terrain.setGround(b.dataset.bd) : null;
+        const asSky = SpaceBG.setBackdrop(b.dataset.bd);
+        s.backdrop = asGround || asSky;
         save(); sfx('click');
         syncBackdrop();
         flashSaved(appMsg());
@@ -4887,6 +5036,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         : 'No standing approvals yet — when you answer ALWAYS to a permission prompt, it appears here.';
       const renderGrants = (snap) => {
         const curated = pcurated(); const caps = heroCapsNow(); const rows = [];
+        /* THE MID-RUN "FULL ACCESS" WILDCARD. One click on a consent card wrote a per-agent '*' that short-circuits
+           EVERY danger class, and this ledger — whose header promises "every capability it may use unattended …
+           and a REVOKE for each" — listed nothing, because consent.snapshot() only ever returned
+           { permanent, session }. Nothing in the app could withdraw it either; only restarting the sidecar did.
+           It rides at the TOP because it outranks every row below it. */
+        const blanket = Array.isArray(snap.blanket) ? snap.blanket : [];
+        blanket.forEach(b => {
+          rows.push('<div class="set-row"><span>⚠ <b>FULL ACCESS</b> — you clicked "Full access" on a permission card for ' +
+            esc(String(b.agentId || 'this agent')) + ', so it may use EVERY capability with no further prompts' +
+            (b.scope ? ' <span class="dim">(' + esc(String(b.scope)) + ')</span>' : '') +
+            '</span> <button class="bb sm danger" data-perm-revoke="' + esc(String(b.key)) + '">✕ REVOKE</button></div>');
+        });
         // THE LEDGER (P0-5) — every capability ACTUALLY blessed right now: what, WHEN, and a per-row REVOKE. A held
         // CURATED cap shows its friendly label + object-effect hint; a NON-curated class (blessed via a past "always"
         // prompt) shows its raw danger key — so nothing the agent can do unattended is ever hidden or irrevocable.
@@ -4906,10 +5067,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             rows.push('<div class="set-row"><span>✓ ' + esc(plabel(k)) + (hint ? ' <span class="dim">— ' + esc(hint) + '</span>' : '') + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span>' + earnedTxt + '</span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
           });
           held.filter(k => curated.indexOf(k) < 0).forEach(k => {
-            rows.push('<div class="set-row"><span class="dim">' + esc(k) + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
+            // A raw danger key (`path:C:\…`, `mcp:<id>`) is truthful but asks the reader to know the grammar on
+            // the one surface whose job is to make a standing permission revocable ON SIGHT. Show the plain
+            // meaning AND the exact key — never one without the other.
+            const r = (typeof Permissions !== 'undefined' && Permissions.grantRow) ? Permissions.grantRow(k) : { title: k, detail: '', note: '' };
+            const head = r.detail ? (esc(r.title) + ' <span class="dim">' + esc(r.detail) + '</span>') : esc(r.title);
+            rows.push('<div class="set-row"><span>' + head +
+              (r.note ? ' <span class="dim">— ' + esc(r.note) + '</span>' : '') +
+              ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span>' +
+              ' <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
           });
-        } else {
-          // teaching empty state (P0-5): explains how a row lands here instead of looking broken.
+        } else if (!blanket.length) {
+          // teaching empty state (P0-5): explains how a row lands here instead of looking broken. Suppressed when a
+          // FULL ACCESS wildcard is standing — "no standing approvals" over the broadest grant in the product
+          // would be the exact lie this ledger exists to prevent.
           rows.push('<p class="set-about">' + esc(pempty()) + '</p>');
         }
         // BELOW the ledger: the curated capabilities NOT yet granted — an explicit "pre-bless this" offer (GRANT).

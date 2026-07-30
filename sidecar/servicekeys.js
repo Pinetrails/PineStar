@@ -221,12 +221,20 @@
      always ends in _API_KEY, so 100% of KEYS-tab entries were stripped while promptBlock still told the
      model the variable was there (the model expanded empty and got a 401). This map is merged back into
      the child env per call; the VALUE still never enters the prompt. */
+  /* ⛔ THE UNATTENDED GRANT APPLIES HERE TOO (bug-sweep P0). `opts.surface` is the RUN's surface, exactly as in
+     resolveForRequest: on any non-interactive surface a key is handed over ONLY if the Commander flipped its
+     unattended grant (`autonomous === true`). Without this, the KEYS tab enforced that grant on web_request
+     while a scheduled / night-shift / channel shell child silently received EVERY enabled key — the same
+     secret, the same run, two different answers. An ABSENT surface means the caller never wired one; treat it
+     as interactive so an un-updated caller behaves exactly as before. */
   function runEnv(list, hostEnv, opts) {
     const src = hostEnv || {};
     const reserved = reservedSet(opts);
+    const surface = (opts && opts.surface) || 'interactive';
     const out = {};
     for (const r of cleanList(list)) {
       if (r.enabled === false) continue;
+      if (surface !== 'interactive' && r.autonomous !== true) continue;   // no unattended grant -> no key for an unattended run
       if (!r.envVar || reserved.has(r.envVar)) continue;   // never let a paste shadow a provider/billing key
       const v = src[r.envVar];
       if (v != null && v !== '') out[r.envVar] = String(v);

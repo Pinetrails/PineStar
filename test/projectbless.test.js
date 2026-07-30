@@ -14,22 +14,35 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 
 // a fake fs/promises whose directory tree + .git markers are declared inline. abs paths use forward slashes so
 // the test is platform-neutral (path.resolve on POSIX leaves them; on win32 they normalize the same either way).
-function fakeFsp(tree) {
+function fakeFsp(tree, links) {
   // tree: { '<abs>': { dir:true } | { file:true } }  — a missing key => ENOENT.
+  // links: { '<abs prefix>': '<real abs prefix>' } — a junction / symlinked ancestor, which the old identity
+  // realpath could not express at all. That is why the un-canonical grant key hid here.
   const norm = (p) => path.resolve(String(p));
+  const resolveLinks = (p) => {
+    let out = norm(p);
+    for (const from of Object.keys(links || {})) {
+      const f = path.resolve(from);
+      if (out === f || out.startsWith(f + path.sep) || out.startsWith(f + '/')) {
+        out = path.resolve(links[from] + out.slice(f.length));
+        break;
+      }
+    }
+    return out;
+  };
   return {
     async stat(p) {
-      const e = tree[norm(p)];
+      const e = tree[norm(p)] || tree[resolveLinks(p)];
       if (!e) { const err = new Error('ENOENT'); err.code = 'ENOENT'; throw err; }
       return { isDirectory: () => !!e.dir, isFile: () => !!e.file };
     },
-    async realpath(p) { return norm(p); },
+    async realpath(p) { return resolveLinks(p); },
     async lstat(p) { return this.stat(p); }
   };
 }
 
-function coreOver(tree, blessSink) {
-  const fsp = fakeFsp(tree);
+function coreOver(tree, blessSink, links) {
+  const fsp = fakeFsp(tree, links);
   const pt = makePathTrust({ fsp, pathMod: path, roots: () => [], isGitRepoOf: async () => false });
   return makeProjectBless({
     fsp, pathMod: path,
@@ -179,6 +192,36 @@ function coreOver(tree, blessSink) {
     // An unreadable file is a file this project does not have — never a failed run.
     r = await makeProjectInstructions({ fsp: { readFile: async () => { throw new Error('EACCES'); } }, pathMod: fakePath }).load('/p', true);
     ok(r.text === '', 'an unreadable instruction file degrades to empty instead of throwing');
+  }
+
+  /* ---- THE GRANT KEY MUST BE CANONICAL --------------------------------------------------------------
+     normalizeRoot is only P.resolve, so a folder reached through a junction or a symlinked ancestor (a Windows
+     junction, a OneDrive-redirected known folder, ~/code -> /mnt/data/code) was recorded UN-canonical while the
+     run guard compares against the realpath. The two could never match: the rail said 'added "<folder>"' and
+     drew a trusted row, then the agent was denied on every file in it — a watched session re-raised the
+     folder-trust card on EVERY file touch, an unattended run hard-denied. pathtrust.js was fixed for exactly
+     this on 2026-07-27 ("BLESS THE REAL PATH"); this sibling doorway was not. */
+  {
+    const links = { '/home/me/code': '/mnt/data/code' };
+    const tree = {
+      [path.resolve('/mnt/data/code')]: { dir: true },
+      [path.resolve('/mnt/data/code/proj')]: { dir: true },
+      [path.resolve('/mnt/data/code/proj/.git')]: { dir: true },
+      [path.resolve('/mnt/data/code/proj/src')]: { dir: true }
+    };
+    let blessed = null;
+    const core = coreOver(tree, async (r) => { blessed = r; return true; }, links);
+    const r = await core.blessPath({ path: '/home/me/code/proj/src', surface: 'interactive' });
+    ok(r.ok === true, 'a folder reached through a symlinked ancestor still blesses');
+    ok(blessed === path.resolve('/mnt/data/code/proj'), 'the RECORDED root is the canonical realpath, not the typed link path (got ' + blessed + ')');
+    ok(r.root === path.resolve('/mnt/data/code/proj'), 'and the response reports that same canonical root, so the rail row and the guard agree');
+    ok(r.typedRoot === path.resolve('/home/me/code/proj'), 'the path the Commander recognizes is still available for the notice');
+
+    // ...and the un-linked case is byte-identical to before
+    let blessed2 = null;
+    const core2 = coreOver(tree, async (x) => { blessed2 = x; return true; });
+    const r2 = await core2.blessPath({ path: '/mnt/data/code/proj/src', surface: 'interactive' });
+    ok(r2.ok === true && blessed2 === path.resolve('/mnt/data/code/proj'), 'a plain path is unchanged');
   }
 
   console.log('projectbless.test: ' + n + ' assertions passed');

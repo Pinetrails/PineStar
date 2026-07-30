@@ -289,4 +289,77 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.eq(skillGuard.worse('safe', 'safe'), 'safe', 'two safes stay safe');
 }
 
+// ---- R. the view->markUsed cycle is a FIXED POINT on a skill with setup + support files ----
+// Regression for the hydrate-then-bump re-append: view() hydrates the RENDERED SKILL.md (setup block +
+// support-file pointer list) and used to bump that whole document into `latest` as the skill's `body`.
+// markUsed() runs on every run and persists from `latest`, so each cycle re-rendered '## Setup' in front
+// of a body that already had one — unbounded growth in RAM, in skills.jsonl and on disk, and a moving
+// contentDigest that invalidated the Commander's approval forever.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-skills-fp-'));
+  const packages = makePackageStore({ fs, pathMod: path, root });
+  const skillGate = require('../sidecar/skills/gate.js');
+  const s = makeSkillStore({ io: memIo(), clock, redact, guard: skillGuard, digest: skillGate.digestOf, packageStore: packages });
+  s.write({ agentId: 'a', name: 'Deploy', body: '1. npm ci\n2. npm test', setup: 'Node 20 and a clean tree.' });
+  s.manage({ agentId: 'a', action: 'write_file', target: 'Deploy', path: 'references/notes.md', content: 'hello' });
+  const id = s.list('a')[0].id;
+  const sizes = [], digests = [];
+  for (let i = 0; i < 4; i++) {
+    clk += 10;
+    s.view('a', id);                 // the skill.view TOOL passes no opts — bump AND hydrate default ON
+    s.markUsed('a', [id]);           // every run does this for every indexed skill id
+    const stored = s.view('a', id, { bump: false, hydrate: false });
+    sizes.push(String(stored.body).length);
+    digests.push(stored.contentDigest);
+  }
+  A.eq(sizes.join(','), [sizes[0], sizes[0], sizes[0], sizes[0]].join(','), 'the stored body does NOT grow across view+markUsed cycles');
+  A.eq(digests.join(','), [digests[0], digests[0], digests[0], digests[0]].join(','), 'contentDigest is stable, so an approval is not invalidated every run');
+  const stored = s.view('a', id, { bump: false, hydrate: false });
+  A.ok(/npm test/.test(stored.body), 'the real steps survive');
+  A.ok(!/## Setup/.test(stored.body), 'the RENDERED setup block never enters the stored body');
+  A.ok(!/## Support Files/.test(stored.body), 'the RENDERED pointer list never enters the stored body');
+  A.eq(stored.setup, 'Node 20 and a clean tree.', 'setup stays its own field');
+  const md = fs.readFileSync(path.join(packages.packageDir({ agentId: 'a', id }), 'SKILL.md'), 'utf8');
+  A.eq((md.match(/## Setup/g) || []).length, 1, 'SKILL.md on disk holds exactly ONE Setup block');
+  A.eq((md.match(/## Support Files/g) || []).length, 1, 'SKILL.md on disk holds exactly ONE Support Files list');
+  // The hydrated copy the model receives still carries the counters the bump just made.
+  const seen = s.view('a', id, { bump: false });
+  A.eq(seen.viewCount, 4, 'the hydrated view still reports the bumped viewCount');
+}
+
+// ---- S. splitRendered inverts renderSkillMd, and heals a package already corrupted by the re-append ----
+{
+  const P = require('../sidecar/skills/package.js');
+  const one = P.splitRendered('## Setup\nDo this first.\n\n1. step one\n2. step two\n\n## Support Files\n- `references/a.md`', { setup: 'Do this first.' });
+  A.eq(one.setup, 'Do this first.', 'the rendered Setup block is claimed off the KNOWN value');
+  A.eq(one.body, '1. step one\n2. step two', 'the pointer list and the Setup block are stripped from the body');
+  // A setup that itself contains a blank line is exactly why the boundary cannot be guessed from text.
+  const multi = P.splitRendered('## Setup\npara one\n\npara two\n\n1. step one', { setup: 'para one\n\npara two' });
+  A.eq(multi.setup, 'para one\n\npara two', 'a MULTI-PARAGRAPH setup round-trips — the known value fixes the boundary');
+  A.eq(multi.body, '1. step one', 'and the body after it is not swallowed');
+  const heal = P.splitRendered('## Setup\nSame.\n\n## Setup\nSame.\n\n## Setup\nSame.\n\nreal steps', { setup: 'Same.' });
+  A.eq(heal.setup, 'Same.', 'repeated rendered Setup blocks collapse to one — the re-append signature');
+  A.eq(heal.body, 'real steps', 'the healed body is just the real steps');
+  const edited = P.splitRendered('## Setup\nHAND EDITED on disk.\n\nreal steps', { setup: 'Node 20.' });
+  A.eq(edited.setup, '', 'a Setup block we cannot claim exactly is NOT guessed at');
+  A.eq(edited.body, '## Setup\nHAND EDITED on disk.\n\nreal steps', 'the hand-edited text stays in the body — nothing is dropped');
+  const absent = P.splitRendered('just steps', { setup: 'Node 20.' });
+  A.eq(absent.setup, 'Node 20.', 'a document with no Setup heading at all keeps the setup we hold');
+  const authored = P.splitRendered('1. run it\n\n## Support Files\nsee the notes in references/', {});
+  A.eq(authored.body, '1. run it\n\n## Support Files\nsee the notes in references/', 'a Support Files section that is PROSE, not a pointer list, is left alone');
+  // render -> split -> render must be a fixed point, on both branches
+  const fixedPoint = (skill) => {
+    const md1 = P.renderSkillMd(skill);
+    const split = P.splitRendered(P.parseFrontmatter(md1).body, skill);
+    const next = Object.assign({}, skill, { setup: split.setup, body: split.body });
+    const md2 = P.renderSkillMd(next);
+    const split2 = P.splitRendered(P.parseFrontmatter(md2).body, next);
+    return md2 === md1 && split2.body === split.body && split2.setup === split.setup;
+  };
+  A.ok(fixedPoint({ name: 'X', setup: 'S', body: 'B', files: [{ path: 'references/a.md', content: 'c' }] }), 'render/split is a FIXED POINT with setup + support files');
+  A.ok(fixedPoint({ name: 'X', setup: 'a\n\nb', body: 'B' }), 'render/split is a FIXED POINT with a multi-paragraph setup');
+  A.ok(fixedPoint({ name: 'X', body: '## Setup\nthe author typed this themselves' }), 'render/split is a FIXED POINT when the BODY itself opens with a Setup heading');
+  A.ok(fixedPoint({ name: 'X', setup: 'S', body: '' }), 'render/split is a FIXED POINT for a setup-only skill');
+}
+
 A.report('skills.test');

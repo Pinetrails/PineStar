@@ -161,8 +161,13 @@ const WorldModel = (() => {
     hex:   { label: 'HEX',    pitch: [1, 1], suggest: 'sterile' },
     plank: { label: 'PLANK',  pitch: [5, 1], suggest: 'walnut' },
     turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'meadow' },
+    // v6 CORRIDOR candidates — decks sized and surfaced for a passage rather than a room.
+    // See the note above deckRunner in stationbake.js.
+    runner:   { label: 'RUNNER',   pitch: [2, 2], suggest: null },
+    treadway: { label: 'TREADWAY', pitch: [3, 2], suggest: null },
+    meshway:  { label: 'MESHWAY',  pitch: [3, 3], suggest: null },
   };
-  const MAT_ORDER = ['spine', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
+  const MAT_ORDER = ['spine', 'runner', 'treadway', 'meshway', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
 
   /* the WALL material catalog — the deck's opposite number. Walls carry the same two axes as the
      floor (hue × recipe) and read from the same FLOOR_STYLES hue catalog, because a room should be
@@ -221,8 +226,21 @@ const WorldModel = (() => {
      carries wallMat null, so this reaches stations already built, deliberately, for the same reason
      the deck default moved. `plating` stays in the palette as the classic. */
   const wallMatOfRoom = rm => (rm && WALL_MATERIALS[rm.wallMat]) ? rm.wallMat : 'bulkhead';
+  /* A CORRIDOR'S WALL IS THE STATION'S BULKHEAD, NOT ITS DECKING (2026-07-29, Andrew: "light
+     doesn't seem to reflect on the walls of the hallway"). Following the deck is right for a ROOM —
+     wall and floor are the same room's finish — but a corridor's floor style is DECKING #2c2924,
+     the DARKEST entry in the table, and its wall inherited that on top of two other deliberate
+     dimmings (corUp 8 vs up 14, LIGHT.corridor 0.42 vs room 0.6). Stacked, they put a hallway wall
+     face at luma 26.5 where a room's reads 39.5 — BELOW what a room wall measures after its own
+     ambient, so no amount of light could ever bring it back. That is why the wall read as unlit
+     next to a deck that had just been fixed.
+     Same law stationbake's sideCap note already states for the wall's top surface: a hallway's
+     bulkhead is the same slab of station as the rooms it connects. A wall's HEIGHT may differ
+     between space types — that is the tunnel read and it stays — its MATERIAL may not.
+     Default only: an explicitly painted wallStyle still wins. */
   const wallStyleOfRoom = rm => {
     if (rm && FLOOR_STYLES[rm.wallStyle]) return rm.wallStyle;
+    if (rm && rm.kind === 'corridor') return 'hull';
     if (rm && FLOOR_STYLES[rm.floorStyle]) return rm.floorStyle;
     return 'hull';
   };
@@ -524,12 +542,23 @@ const WorldModel = (() => {
        must not overlap another prop, and the type tag must be a non-empty string.
 
        MOUNT RULES (2026-07-26) are the one exception, and they are injected rather than imported so
-       the layering holds: setPropRules() hands the model a lookup from prop type to {mount, surface}.
-       With no lookup installed (plain node tests, older callers) nothing changes and every prop is
-       placeable on bare deck exactly as before. There is exactly ONE rule:
-         mount 'surface' — the footprint must lie wholly on ONE prop whose catalog row says
-                           surface:true (a table), and that host is exempt from the overlap check,
+       the layering holds: setPropRules() hands the model a lookup from prop type to
+       {mount, stack, surface}. With no lookup installed (plain node tests, older callers) nothing
+       changes and every prop is placeable on bare deck exactly as before.
+
+       The mount axis has THREE states, and a prop's catalog row picks one:
+         mount 'surface' — REQUIRES a table. The footprint must lie wholly on ONE prop whose catalog
+                           row says surface:true, and that host is exempt from the overlap check,
                            because standing on a table is the entire point.
+         stack:true      — MAY use a table. Same host rule when one is found; otherwise it places on
+                           bare deck like any other prop. (2026-07-29: without this state the only
+                           two props in the whole catalog that could go on a table were the two that
+                           were FORCED to, so every other small object — a mug, a plant, a stack of
+                           printouts — was rejected with OVERLAP the moment a table was under it.
+                           A required-mount flag cannot express "a plant belongs on the floor OR on
+                           a table", and forcing plant/coffee onto tables would have broken the
+                           agents that place their own decor on open deck.)
+         neither         — deck only; a table is an obstacle like any other prop.
 
        There was briefly a mount 'wall' rule too (hang a prop on the face the bake raises along a
        room's north edge). Andrew rejected the look outright and every wall-only prop was retired with
@@ -552,11 +581,13 @@ const WorldModel = (() => {
       for (let y = foot.y1; y <= foot.y2; y++) for (let x = foot.x1; x <= foot.x2; x++) {
         if (!roomAt(x, y)) return fail('OFF_DECK', 'must sit on a deck');
       }
-      const mount = ruleOf(type).mount || null;
+      const rule = ruleOf(type);
       let host = null;
-      if (mount === 'surface') {
+      if (rule.mount === 'surface') {
         host = surfaceHostFor(foot, ignoreId);
         if (!host) return fail('NEEDS_SURFACE', 'must stand on a table');
+      } else if (rule.stack) {
+        host = surfaceHostFor(foot, ignoreId);   // optional: on a table if there is one, else plain deck
       }
       for (const p of doc.props) {
         if (p.id === ignoreId) continue;
@@ -1228,10 +1259,26 @@ const WorldModel = (() => {
       // surfaceHostOf is the read surface the world layer uses to decide whether a placed prop is
       // ACTUALLY standing on a table right now — a prop whose table was reclaimed renders back on the
       // deck rather than floating, so no save ever needs migrating.
+      // FRAME-PROOF: both readers below re-resolve the prop from the DOC by id before measuring it.
+      // A renderer holds whatever frame it draws in — build.js has WORLD props, world.js has the
+      // LOCAL ones projectGeometry() emits (same ids, shifted by the hull margin) — and the doc's
+      // tables are only ever in WORLD tiles. Measuring the caller's copy compared a local footprint
+      // against world footprints, so a station whose origin wasn't (0,0) — i.e. every real one —
+      // found no host and the live world silently never lifted a single table-top prop.
       surfaceHostOf: (p) => {
-        if (!p) return null;
-        const host = surfaceHostFor(propFootprint(p), p.id);
+        const host = p ? surfaceHostFor(propFootprint(propById(p.id) || p), p.id) : null;
         return host ? host.id : null;
+      },
+      // mountOf is the ONE question a renderer asks: "is this prop standing on a table RIGHT NOW?"
+      // -> 'surface' | null. It folds both halves — the type may mount at all (mount/stack) AND a host
+      // is actually under it — so the live world and the REFIT editor cannot answer it differently.
+      // They did: build.js resolved neither half, so every table-top prop drew SURFACE_RISE px low
+      // (sunk into its table) and with a sort key tied to the table's, i.e. sometimes behind it too.
+      mountOf: (p) => {
+        if (!p) return null;
+        const rule = ruleOf(p.t);
+        if (rule.mount !== 'surface' && !rule.stack) return null;
+        return surfaceHostFor(propFootprint(propById(p.id) || p), p.id) ? 'surface' : null;
       },
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, paintTiles, renameRoom,

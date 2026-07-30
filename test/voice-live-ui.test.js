@@ -1,0 +1,51 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.join(__dirname, '..');
+const index = fs.readFileSync(path.join(root, 'frontend', 'index.html'), 'utf8');
+const source = fs.readFileSync(path.join(root, 'frontend', 'app', 'voice-live.js'), 'utf8');
+const voiceSource = fs.readFileSync(path.join(root, 'frontend', 'app', 'voice.js'), 'utf8');
+const chatSource = fs.readFileSync(path.join(root, 'frontend', 'app', 'chat.js'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'frontend', 'css', 'app.css'), 'utf8');
+
+assert.doesNotMatch(index, /id="voice-mode"/, 'legacy hands-free button is removed from COMMS');
+assert.equal((index.match(/id="voice-live"/g) || []).length, 1, 'Local Live is the one hands-free control');
+assert.match(index, /aria-label="Start Local Live hands-free voice"/, 'the canonical hands-free control has an explicit accessible name');
+assert.match(source, /document\.body\.appendChild\(panel\)/, 'live controller is app-global, not mounted inside COMMS');
+assert.doesNotMatch(source, /insertBefore\(panel,\s*chatLog\)/, 'live controller must not consume transcript space');
+assert.match(source, /button\.onclick\s*=\s*\(\)\s*=>\s*active\s*\?\s*end\(\)\s*:\s*start\(false\)/, 'live button toggles the session off');
+assert.match(source, /addEventListener\('pointermove'/, 'floating controller supports pointer dragging');
+assert.match(source, /POSITION_KEY/, 'floating position is remembered');
+assert.match(source, /seq\s*!==\s*sessionSeq/, 'late microphone permission cannot resurrect a closed session');
+assert.match(source, /requestPartial\(utterance,\s*utteranceSeq\)/, 'long turns surface local partial transcription');
+assert.match(source, /function endpointSilenceMs\(durationMs,\s*text\)/, 'turn endpointing has a dedicated hesitation-aware policy');
+assert.match(source, /durationMs\s*<\s*1200\s*\?\s*1350\s*:\s*durationMs\s*<\s*3200\s*\?\s*1150\s*:\s*950/, 'thinking pauses receive at least 950–1350ms before submission');
+assert.match(source, /Math\.min\(1750,\s*wait\s*\+\s*450\)/, 'incomplete partial transcripts receive an additional hesitation grace period');
+assert.match(source, /partialText\s*=\s*text/, 'semantic pause handling is grounded in the real partial transcript');
+assert.doesNotMatch(source, /durationMs\s*<\s*900\s*\?\s*850/, 'the former aggressive sub-second endpoint policy is removed');
+assert.match(source, /scheduleReconnect\(/, 'lost microphones enter the reconnect state machine');
+assert.match(source, /approvalCommand\(lower\)/, 'run-scoped approvals can be answered by an explicit voice command');
+assert.match(source, /agentCommand\(value,\s*lower\)/, 'voice can select the active Starnet agent without provider coupling');
+assert.match(source, /Harness\.getProv/, 'the controller reports the active Starnet provider');
+assert.doesNotMatch(source, /CODEX OAUTH/, 'provider-agnostic voice UI does not claim Codex is required');
+assert.match(source, /attachCoordinator\(\{\s*onState,\s*onAssistant,\s*onOutputLevel\s*\}\)/, 'live controller subscribes to real agent output levels');
+assert.match(source, /bar\.dataset\.src\s*=\s*cell\.src/, 'wave history preserves which side of the conversation produced each sample');
+assert.match(source, /setAttribute\('aria-busy'/, 'working voice states are exposed to assistive technology');
+assert.match(source, /Agent speaking — press to interrupt and speak/, 'barge-in control names the active agent-speaking state');
+assert.match(source, /Stop Local Live hands-free voice/, 'active Local Live button truthfully advertises its stop action');
+assert.match(source, /Voice\.inVoiceMode\(\)[\s\S]*?Voice\.stopConvo\(\)/, 'Local Live closes any legacy hands-free loop before opening');
+assert.match(chatSource, /VoiceLive\.start\(false\)/, '/voice live opens the canonical Local Live system');
+assert.match(chatSource, /Local Live voice stopped\./, '/voice live toggles the canonical system off');
+assert.doesNotMatch(chatSource, /Hands-free voice mode toggled\./, 'slash command no longer activates the legacy hands-free loop');
+assert.match(voiceSource, /const endFailed\s*=\s*\(\)\s*=>[\s\S]*?onSpeakEnd\(\)[\s\S]*?onFail/, 'media failures clear speaking and meter state before the queue advances');
+assert.match(voiceSource, /currentAudioCleanup/, 'interrupted blob playback has an explicit URL cleanup path');
+assert.match(css, /\.live-voice-panel\s*\{[^}]*position:\s*fixed/s, 'controller follows the user across StarNet views');
+assert.match(css, /\.lv-head\s*\{[^}]*cursor:\s*grab/s, 'header advertises the drag affordance');
+assert.match(css, /\.lv-wave i\[data-src="self"\]/, 'the user side of the shared waveform has an explicit visual contract');
+assert.match(css, /\.lv-wave i\[data-src="agent"\]/, 'the agent side of the shared waveform has an explicit visual contract');
+assert.match(css, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.lv-x\s*\{[^}]*pointer-events:\s*auto/, 'touch users always have a reachable close control');
+
+console.log('voice-live-ui.test.js: ok');

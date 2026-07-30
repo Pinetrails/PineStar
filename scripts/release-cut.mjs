@@ -44,6 +44,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runBoundedCommand } from './lib/run-command.mjs';
+import { resolvePubkeyText, verifySignature } from './minisign-verify.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -182,6 +183,31 @@ async function main() {
     const sigAge = statSync(sig).mtimeMs;
     const exeAge = statSync(installer).mtimeMs;
     if (sigAge < exeAge - 1000) fail('.sig is older than the installer — stale signature. Rebuild.');
+
+    /* CRYPTOGRAPHICALLY VERIFY THE SIGNATURE, against the pubkey every INSTALLED app trusts.
+       Existence + mtime freshness say a .sig file is there and recent; they cannot say it was made with the
+       right KEY. A cut with the wrong updater private key (a restored/regenerated
+       ~/.tauri/starnet-updater.key, or STARNET_UPDATER_KEY_FILE pointing at a different file) passed T1
+       signing, T5 public-distribution and verify-update-host completely green, published, and then hard-failed
+       the update for EVERY installed app — the exact failure minisign-verify.mjs was written to prevent, and
+       whose own header names this gap. The fix was wired into ONE producer (release-assemble-manifest, the CI
+       train + canary) and not into this one, which is the local one-command Windows cutter the launch checklist
+       says to run LAST, immediately before upload. Downstream cannot save it either: t5 only text-compares the
+       manifest against the .sig, t1 checks existsSync + mtime, verify-update-host checks length > 40. */
+    try {
+      const pubkeyText = resolvePubkeyText(argVal('--pubkey', ''), ROOT);
+      const v = verifySignature(readFileSync(installer), readText(sig), pubkeyText);
+      if (!v.ok) {
+        fail('UPDATER SIGNATURE DOES NOT VERIFY against the public key baked into src-tauri/tauri.conf.json:' +
+          '\n  ' + v.reason +
+          '\n  Publishing this would hard-fail the update for EVERY installed app.' +
+          '\n  Re-sign with the release updater key (~/.tauri/starnet-updater.key or STARNET_UPDATER_KEY_FILE) and cut again.');
+      }
+      log('  updater signature VERIFIED against the baked pubkey (' + (v.alg || 'ed') + ')');
+    } catch (e) {
+      fail('could not verify the updater signature: ' + ((e && e.message) || e) +
+        '\n  A cut that cannot prove its signature must not be published.');
+    }
   }
 
   // Stage into release/ and build latest.json pointing at the GitHub Releases asset.

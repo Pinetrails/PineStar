@@ -21,15 +21,15 @@ const resolvedTools = (capIds, tools) => ({
   const none = summarizeCapabilities(resolvedWith(), { surface: 'interactive' });
   A.ok(/think and reply/.test(none), 'compute-only: says it can still think and reply');
   A.ok(/do NOT have/.test(none), 'compute-only: declares missing powers');
-  A.ok(/place a DISH/.test(none) && /place a CABINET/.test(none) && /place a WORKBENCH/.test(none),
-    'compute-only: names DISH + CABINET + WORKBENCH to place');
+  A.ok(/place a DISH/.test(none) && /place an INTEL CAB/.test(none) && /place a WORKBENCH/.test(none),
+    'compute-only: names DISH + INTEL CAB + WORKBENCH to place');
   A.ok(/do NOT claim, promise, or pretend/.test(none), 'compute-only: explicit no-over-promising instruction');
 
   // 2) interactive, a DISH placed (web/browser) -> web/browser in CAN, not in the lack list
   const web = summarizeCapabilities(resolvedWith('web'), { surface: 'interactive' });
   A.ok(/You CAN:.*search\/fetch the web and use the controlled browser/.test(web), 'web present: listed under CAN');
   A.ok(!/web.*-> place a DISH/.test(web), 'web present: not nagged to place a DISH');
-  A.ok(/place a CABINET/.test(web) && /place a WORKBENCH/.test(web), 'web present: still flags files + shell');
+  A.ok(/place an INTEL CAB/.test(web) && /place a WORKBENCH/.test(web), 'web present: still flags files + shell');
 
   // 3) interactive, all core placed -> no "do NOT have" section at all
   const full = summarizeCapabilities(resolvedWith('web', 'cabinet', 'workbench', 'memory'), { surface: 'interactive' });
@@ -43,7 +43,7 @@ const resolvedTools = (capIds, tools) => ({
   const auto = summarizeCapabilities(resolvedWith(), { surface: 'autonomous' });
   A.ok(auto.length > 0, 'autonomous: emits a ground-truth note (silence let it over-promise)');
   A.ok(/UNATTENDED run/.test(auto), 'autonomous: names the unattended-run limit');
-  A.ok(!/place a DISH|place a CABINET|place a WORKBENCH/.test(auto),
+  A.ok(!/place a DISH|place an INTEL CAB|place a WORKBENCH/.test(auto),
     'autonomous: no placement advice (there is no placement UI on this surface)');
   A.ok(/state plainly what you could not do/.test(auto), 'autonomous: told to report the blocker, not pretend');
   A.ok(/do NOT blame missing credentials/.test(auto),
@@ -64,7 +64,7 @@ const resolvedTools = (capIds, tools) => ({
 
   // 8) the exact power -> object pairing is correct
   A.ok(/search\/fetch the web and use the controlled browser -> place a DISH/.test(none), 'pairing: web/browser -> DISH');
-  A.ok(/read and write files -> place a CABINET/.test(none), 'pairing: files -> CABINET');
+  A.ok(/read and write files -> place an INTEL CAB/.test(none), 'pairing: files -> INTEL CAB');
   A.ok(/run shell commands and verify code -> place a WORKBENCH/.test(none),
     'pairing: shell/verify -> WORKBENCH');
 

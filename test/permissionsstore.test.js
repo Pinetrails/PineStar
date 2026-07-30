@@ -163,5 +163,38 @@ const wire = (h) => PermissionsStore.init({ api: h.api, getPosture: h.getPosture
     ok(!/U\.bus\.(on|once|emit)\s*\(|require\(['"][^'"]*events/.test(src), 'permissionsstore makes no real U.bus calls / events require (read-only citizen)');
   }
 
+  /* --- the FULL ACCESS wildcard travels route -> store -> snapshot ---------------------------------
+     Found by driving the LIVE app, not by a test: the route reported `blanket` and the panel rendered it, but
+     THIS store sat between them building its own snapshot shape and dropped the field — so the ledger still
+     printed "No standing approvals yet" over the broadest grant in the product. A source lock on the renderer
+     could never see that; only the real path could. It is kept out of `grants` on purpose (a blanket is not a
+     danger key, so normalizeGrants would strip it — the same shape as the path:/mcp: bug). */
+  {
+    const h = harness([]);
+    h.api.load = async () => ({
+      grants: [], grantable: ['cabinet:write'],
+      blanket: [{ key: 'blanket:agent', agentId: 'agent', scope: 'watched sessions, until the app restarts' }]
+    });
+    wire(h);
+    const snap = await PermissionsStore.refresh();
+    ok(Array.isArray(snap.blanket), 'the snapshot carries a blanket array');
+    ok(snap.blanket.length === 1 && snap.blanket[0].key === 'blanket:agent', 'the wildcard reaches the panel');
+    ok(snap.blanket[0].scope === 'watched sessions, until the app restarts', 'with the scope the ledger prints');
+    eq(snap.grants, [], 'and it is NOT folded into the durable danger-key grants');
+
+    // a malformed / absent payload degrades to [] rather than poisoning the ledger
+    h.api.load = async () => ({ grants: [], grantable: [], blanket: [{ nokey: 1 }, null] });
+    ok((await PermissionsStore.refresh()).blanket.length === 0, 'malformed blanket rows are dropped');
+    h.api.load = async () => ({ grants: [], grantable: [] });
+    ok((await PermissionsStore.refresh()).blanket.length === 0, 'a server with no blanket field yields []');
+
+    // ...and RESET revokes it, or a "reset everything" would leave the broadest grant standing
+    h.api.load = async () => ({ grants: [], grantable: ['cabinet:write'], blanket: [{ key: 'blanket:agent', agentId: 'agent' }] });
+    await PermissionsStore.refresh();
+    h.calls.revoke.length = 0;
+    await PermissionsStore.reset();
+    ok(h.calls.revoke.indexOf('blanket:agent') >= 0, 'reset() revokes the FULL ACCESS wildcard too');
+  }
+
   console.log('permissionsstore.test.js OK —', n, 'assertions');
 })().catch(e => { console.error(e); process.exit(1); });

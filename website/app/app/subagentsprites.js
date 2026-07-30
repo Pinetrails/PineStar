@@ -75,7 +75,37 @@
     function count() { let n = 0; for (const r of rows.values()) if (r.state === 'live') n++; return n; }   // LIVE sub-agents (truthful gauge)
     function clear() { rows.clear(); }
 
-    return { fold, prune, list, count, clear, _rows: rows, MATERIALIZE_MS, DISSOLVE_MS, cap };
+    /* THE LOST-EVENT NET. The fold is driven ENTIRELY by `task` frames, and a terminal frame emitted while the
+       SSE socket is down is gone for good — the stream sends no `id:` lines, so there is no Last-Event-ID
+       replay. A 'live' row is then rendered at alpha 1 forever and prune() never touches it (it drops only
+       'dying' rows), so a helper sprite haunted the desk long after its sub-agent finished. Every other paired
+       state in world.js already has this net (sweepStaleStates degrades the run clock; reconcileFromSnapshot
+       rebuilds runs/tools/serverLit from server truth) — the ledger was the one that did not, which breaks the
+       law in this module's own header: a helper sprite exists IFF a real sub-agent is live.
+
+       A TTL is the WRONG net here: nothing re-emits `running`, so a clock would kill a legitimately long
+       sub-agent. Reconcile against the authoritative live set instead (GET /api/subagents?status=running —
+       the same truth the LIVE HELPERS panel paints from). Rows the server no longer reports begin their normal
+       dissolve, so the correction still LOOKS like a completion rather than a sprite blinking out. Rows the
+       server reports that we never saw are ADDED, which is the other half of the IFF (a helper that started
+       while the socket was down). Returns what changed, for tests and dbg. */
+    function reconcile(liveIds, now) {
+      const want = new Set((Array.isArray(liveIds) ? liveIds : []).map(v => String(v && v.id != null ? v.id : v)).filter(Boolean));
+      let dropped = 0, added = 0;
+      for (const r of rows.values()) {
+        if (r.state === 'live' && !want.has(r.id)) { r.state = 'dying'; r.diedAt = now; dropped++; }
+      }
+      for (const v of (Array.isArray(liveIds) ? liveIds : [])) {
+        const id = String(v && v.id != null ? v.id : v);
+        if (!id) continue;
+        const row = rows.get(id);
+        if (!row) { rows.set(id, { id, leadId: (v && v.leadId) || null, title: String((v && v.title) || ''), state: 'live', bornAt: now, diedAt: 0 }); added++; }
+        else if (row.state === 'dying') { row.state = 'live'; row.diedAt = 0; }   // a terminal we mis-inferred
+      }
+      return { dropped, added };
+    }
+
+    return { fold, prune, list, count, clear, reconcile, _rows: rows, MATERIALIZE_MS, DISSOLVE_MS, cap };
   }
 
   return { makeLedger, LIVE, MATERIALIZE_MS, DISSOLVE_MS, DEFAULT_CAP };

@@ -126,6 +126,23 @@
     return out;
   }
 
+  /* ⛔ A TYPED SKIP IS A SKIP. The interview's own opening line invites it — "answer or tap, 'skip' anything" —
+     and the chip is literally labelled `skip`, so typing the word is the behaviour the copy TEACHES. But a
+     skip was recognised only from the CHIP (`explicitSkip`) or an empty string, so the typed word fell through
+     as the Commander's own words and was written to the dossier at weight 'stated' — the strongest belief the
+     station holds, the one that opens the readiness gate and rides every prompt. The Commander's stated goal
+     for the month became "skip".
+     WHOLE-ANSWER MATCH ONLY, never a substring: "skip the standup prep" is a real answer about a real
+     recurring task and must land untouched. Punctuation and case are stripped first so "Skip." counts. */
+  const SKIP_ANSWERS = new Set([
+    'skip', 'skip for now', 'skip this', 'pass', 'next', 'later', 'no', 'nope', 'none', 'nothing',
+    'na', 'n a', 'nil', 'idk', 'dunno', 'i dont know', 'i do not know', 'no idea', 'no comment', 'prefer not to say'
+  ]);
+  function isSkipAnswer(text) {
+    const t = String(text == null ? '' : text).trim().toLowerCase().replace(/[.,!?/\-–—'’"]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return t === '' || SKIP_ANSWERS.has(t);
+  }
+
   // turn an answer into a durable dossier belief, or null for a blank/skip (never store an empty belief).
   // source:'interview' is the provenance the dossier panel shows ("from the intake interview").
   // V3 §5 (interim until the S4 scene-register bank rewrite): an answer that IS a canned chip string is
@@ -134,7 +151,7 @@
   function beliefFromAnswer(question, text) {
     if (!question) return null;
     const t = String(text == null ? '' : text).trim();
-    if (!t) return null;
+    if (!t || isSkipAnswer(t)) return null;   // a typed "skip"/"none"/"idk" is a refusal to answer, never a belief
     const canned = Array.isArray(question.chips) && question.chips.some(c => c && c.value && String(c.value) === t);
     return { dim: question.dim, text: t, source: 'interview', weight: canned ? 'seed' : 'stated' };
   }
@@ -143,5 +160,5 @@
   // about ONE blank dimension without running the whole interview.
   function questionFor(dim) { return QUESTIONS.find(q => q.dim === dim) || null; }
 
-  return { QUESTIONS, plan, beliefFromAnswer, questionFor };
+  return { QUESTIONS, plan, beliefFromAnswer, questionFor, isSkipAnswer };
 });

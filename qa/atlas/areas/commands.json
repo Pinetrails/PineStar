@@ -1451,14 +1451,15 @@
       "kind": "command",
       "area": "commands",
       "name": "/voice — show or toggle spoken replies",
-      "purpose": "Show or toggle spoken (TTS) replies and hands-free voice mode, reflecting real browser speech/listen capability.",
-      "promise": "Typing /voice status reports whether replies are on, hands-free is on, and whether the browser supports listen/speak; on|off|handsfree toggle those via the Voice module's safe setters — the status reflects real capability, never a claimed one.",
+      "purpose": "Show or toggle spoken replies and the canonical Local Live hands-free system, reflecting real browser speech/listen capability.",
+      "promise": "Typing /voice status reports whether replies and Local Live are on and whether the browser supports listen/speak; on|off control spoken replies while live (and legacy handsfree aliases) toggle VoiceLive rather than the retired hands-free loop.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
           "sidecar/index.js",
           "frontend/app/chat.js",
-          "frontend/app/voice.js"
+          "frontend/app/voice.js",
+          "frontend/app/voice-live.js"
         ],
         "events": []
       },
@@ -1478,7 +1479,7 @@
         "date": "2026-07-18T01:12:00.000Z"
       },
       "findings": [],
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /voice status → 'Voice: replies off, hands-free off, listening support yes, speech support yes.' — reflects real browser speech/listen capability probes.",
+      "notes": "Local Live is the sole hands-free target. /voice handsfree remains as a compatibility alias for /voice live; it no longer activates the retired legacy loop.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
