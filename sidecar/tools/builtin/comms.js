@@ -43,6 +43,19 @@
   const TEXT_CHARS = 8000;        // the most an agent may hand one send call (chunked below the platform floor)
   const DEFAULT_MAX_LEN = 1900;   // Discord's 2000 is the lowest real ceiling — the safe default when unknown
   const MAX_CHUNKS = 8;           // a send is a message, not a file transfer: refuse to spray a chat
+  const MAX_FILES = 4;            // attachments per send — a report plus its charts, not a directory dump
+  const CAPTION_CHARS = 900;      // under Telegram's 1024 media-caption cap, with room for the platform's own trim
+
+  // mime -> how the platform should RENDER it. An unknown type is a document: the one form that carries any
+  // bytes intact, so a new file type degrades to "delivered, openable" instead of a refusal.
+  function kindForMime(mime, name) {
+    const m = String(mime || '').toLowerCase();
+    const ext = String(name || '').split('.').pop().toLowerCase();
+    if (m.indexOf('image/') === 0) return (m.indexOf('image/svg') === 0 || ext === 'svg') ? 'document' : 'photo';
+    if (m.indexOf('video/') === 0) return 'video';
+    if (m.indexOf('audio/') === 0) return 'audio';
+    return 'document';
+  }
 
   function clean(s, n) {
     s = String(s == null ? '' : s).trim();
@@ -117,6 +130,12 @@
     // carry a key-shaped string, and this is the one tool that would hand it to a third party.
     const redact = typeof deps.redact === 'function' ? deps.redact : function (t) { return t; };
     const emit = typeof deps.emit === 'function' ? deps.emit : function () {};
+    // OUTBOUND FILES (2026-07-29). Both injected: readFile proves the path stays in the agent's own workspace
+    // jail (the host owns that proof), sendMediaTo uploads through the channel's transport. Absent either one,
+    // `files` is refused with a reason rather than silently ignored — an agent told "sent" about a file that
+    // never moved is the exact lie this file exists to prevent.
+    const readFile = typeof deps.readFile === 'function' ? deps.readFile : null;
+    const sendMediaTo = typeof deps.sendMediaTo === 'function' ? deps.sendMediaTo : null;
 
     const targetsTool = {
       name: 'channel.targets', capability: 'comms', scope: 'read', requiresConsent: false,
@@ -136,13 +155,18 @@
 
     const sendTool = {
       name: 'channel.send', capability: 'comms', scope: 'execute', requiresConsent: true, timeoutMs: 30000,
-      description: 'Send a message from this station to a connected messaging chat (Telegram, Discord, Slack, Matrix, Signal). Use this when the Commander asks to be told, pinged, notified, or messaged somewhere, or to report a result outside the station. The target must be a chat channel.targets lists — an agent cannot message a new id.',
+      description: 'Send a message from this station to a connected messaging chat (Telegram, Discord, Slack, Matrix, Signal), optionally with files attached. Use this when the Commander asks to be told, pinged, notified, or messaged somewhere, or to report a result outside the station — including sending them an image, chart, or document you produced. The target must be a chat channel.targets lists — an agent cannot message a new id.',
       schema: {
         type: 'object',
         required: ['target', 'text'],
         properties: {
           target: { type: 'string', description: 'A target token from channel.targets (a channel name or chat id also works when it matches exactly one).' },
-          text: { type: 'string', maxLength: TEXT_CHARS, description: 'The message body. Plain text; it is split into platform-sized parts automatically.' }
+          text: { type: 'string', maxLength: TEXT_CHARS, description: 'The message body. Plain text; it is split into platform-sized parts automatically.' },
+          files: {
+            type: 'array', maxItems: MAX_FILES,
+            items: { type: 'string' },
+            description: 'Optional workspace-relative paths of files to attach (images send inline, everything else as a document). Up to ' + MAX_FILES + '. On a channel that cannot carry files the message still sends and names the path instead.'
+          }
         }
       },
       run: async (args, ctx) => {
@@ -180,6 +204,46 @@
           sent++;
         }
 
+        /* ---- ATTACHMENTS ------------------------------------------------------------------------------
+           THE TEXT GOES FIRST, ALWAYS, and files are attempted after it. It would read prettier to hang a
+           short message off the first photo as its caption — but then a channel that cannot upload would have
+           swallowed the words along with the file. The floor is delivery: the message lands even when every
+           upload fails, and a failed file degrades to a line naming where it is in the workspace, which the
+           Commander can still open on the station.
+
+           Each file is reported truthfully in the result: the model must be able to tell "sent with 2 files"
+           from "sent, and the files did not go". */
+        const wanted = Array.isArray(args && args.files) ? args.files.filter(x => typeof x === 'string' && x.trim()) : [];
+        const fileNotes = [], attached = [];
+        if (wanted.length && !error) {
+          if (wanted.length > MAX_FILES) {
+            fileNotes.push(wanted.length + ' files requested (limit ' + MAX_FILES + ') — only the first ' + MAX_FILES + ' were attempted');
+          }
+          for (const rel of wanted.slice(0, MAX_FILES)) {
+            if (!readFile || !sendMediaTo) { fileNotes.push('"' + rel + '" was not sent — attaching files is not wired on this host'); continue; }
+            let got;
+            try { got = await readFile(String((ctx && ctx.agentId) || ''), rel); }
+            catch (e) { got = { ok: false, error: (e && e.message) || 'read threw' }; }
+            if (!got || got.ok === false || !got.buffer || !got.buffer.length) {
+              fileNotes.push('"' + rel + '" could not be read from your workspace (' + ((got && got.error) || 'not found') + ') — nothing was attached');
+              continue;
+            }
+            const item = { kind: kindForMime(got.mime, got.name || rel), buffer: got.buffer, filename: String(got.name || rel).split(/[\\/]/).pop(), mime: got.mime || '' };
+            let r;
+            try { r = await sendMediaTo(t.target, item); } catch (e) { r = { ok: false, error: (e && e.message) || 'upload threw' }; }
+            if (r && r.ok) { attached.push(rel); continue; }
+            fileNotes.push('"' + rel + '" could not be delivered (' + ((r && r.error) || 'upload failed') + ')');
+          }
+          // Say so IN THE CHAT, not just in the tool result: the human is the one who wanted the file, and a
+          // silent omission would leave them waiting for an attachment that is never coming.
+          const missed = wanted.slice(0, MAX_FILES).filter(f => attached.indexOf(f) === -1);
+          if (missed.length) {
+            const note = 'Note: ' + (missed.length === 1 ? 'this file' : 'these files') + ' could not be attached here — '
+              + missed.map(f => '"' + f + '"').join(', ') + '. ' + (missed.length === 1 ? 'It is' : 'They are') + ' saved in the workspace on the station.';
+            try { await sendTo(t.target, note); } catch (_) { /* the note is a courtesy; never fail the send over it */ }
+          }
+        }
+
         /* OUTBOUND TELEMETRY on the existing contract event, so the station floor pulses the sending agent's
            dish for an agent-initiated message exactly as it does for a hub reply. Never fabricated: `ok`
            reflects whether every part actually landed, and `chunks` is what landed, not what was attempted.
@@ -201,8 +265,11 @@
             + ' part(s): ' + error);
         }
         return {
-          content: JSON.stringify({ ok: true, target: t.target, channel: t.channel, parts: sent }),
+          content: JSON.stringify({ ok: true, target: t.target, channel: t.channel, parts: sent,
+            filesAttached: attached, filesFailed: fileNotes }),
           summary: 'sent to ' + t.target + (parts.length > 1 ? ' in ' + parts.length + ' parts' : '')
+            + (attached.length ? ' with ' + attached.length + ' file(s)' : '')
+            + (fileNotes.length ? ' — ' + fileNotes.length + ' file(s) NOT attached' : '')
         };
       }
     };

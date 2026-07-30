@@ -65,6 +65,32 @@
     return !!transient && SUPERSEDE_REFUSAL_RE.test(String(message == null ? '' : message));
   }
 
+  /* Re-open a fenced code block that a chunk boundary cut in half.
+
+     A reply longer than the platform's limit is split into messages, and a ``` block straddling the cut left
+     chunk 2 with an UNPAIRED opening fence: the formatter (which only converts what it can prove is balanced
+     within its own string) correctly declines to make it code, so the second half of a script or a log lands as
+     raw prose with a stray ``` in it. Close the block at the end of the chunk that opened it and re-open at the
+     top of the next, so both halves render as code and neither carries a dangling marker.
+
+     Counting is by LINES beginning with ```, which is what a fence actually is — a ``` inside a line of prose
+     ("use ```js to fence it") is not a block delimiter and must not flip the state. The reserve below is why
+     the split is given less room: the two markers we add have to fit under the same limit. */
+  const FENCE_RESERVE = 8;   // '\n```' opening + '```\n' closing, with slack
+  function reopenFences(chunks) {
+    let open = false;
+    const out = [];
+    for (let i = 0; i < chunks.length; i++) {
+      let c = chunks[i];
+      if (open) c = '```\n' + c;                          // continue the block this chunk starts inside
+      const fences = (c.match(/^[ \t]{0,3}```/gm) || []).length;
+      if (fences % 2 === 1) { c = c.replace(/\s*$/, '') + '\n```'; open = true; }
+      else open = false;
+      out.push(c);
+    }
+    return out;
+  }
+
   // split text into <=max-length pieces, preferring to break at the last newline/space so words/lines stay whole.
   function chunkText(text, max) {
     const s = String(text == null ? '' : text);
@@ -73,21 +99,60 @@
     // one bad config away.
     max = (typeof max === 'number' && isFinite(max) && max > 0) ? Math.floor(max) : 4096;
     if (s.length <= max) return s.length ? [s] : [];
+    // Leave room for the fence markers reopenFences may add, but ONLY when there is a fence to worry about —
+    // an ordinary long reply keeps the exact old boundaries.
+    const fenced = /^[ \t]{0,3}```/m.test(s);
+    const room = fenced ? Math.max(1, max - FENCE_RESERVE) : max;
     const out = [];
     let i = 0;
     while (i < s.length) {
-      let end = Math.min(i + max, s.length);
+      let end = Math.min(i + room, s.length);
       if (end < s.length) {
         const slice = s.slice(i, end);
         const nl = slice.lastIndexOf('\n');
         const sp = slice.lastIndexOf(' ');
-        const cut = nl > max * 0.5 ? nl : (sp > max * 0.5 ? sp : -1);
+        const cut = nl > room * 0.5 ? nl : (sp > room * 0.5 ? sp : -1);
         if (cut > 0) end = i + cut + 1;
       }
       out.push(s.slice(i, end));
       i = end;
     }
-    return out;
+    return fenced ? reopenFences(out) : out;
+  }
+
+  /* Render an inbound message's `replyTo` as the preamble that goes ABOVE the member's own words in the turn.
+
+     WHY THIS EXISTS: long-press a message, hit Reply, ask "what is this?" is the most natural gesture on the
+     platform, and until now the model received exactly three words with the referent missing — so it either
+     guessed or asked the member to repeat themselves. The quoted text goes here; the quoted message's MEDIA is
+     ingested separately by the caller (that is the "reply to a photo" half).
+
+     THE FENCE IS DELIBERATE and it is NOT a refusal. The quote is text the member is POINTING AT, which may be
+     another person's words or the bot's own earlier reply — so the preamble names who wrote it and says plainly
+     which part is the live request. It must not tell the model to ignore instructions inside the quote: a member
+     replying to their own "write the summary" with "do it now" means exactly that, and refusing would be its own
+     bug. Attribute, don't forbid.
+
+     Bounded on purpose: a reply to a 4000-character message must not push the member's actual sentence out of
+     the model's attention (or the turn out of the context window). Pure — no clock, no I/O. */
+  const REPLY_QUOTE_MAX = 500;
+  function replyPreamble(replyTo) {
+    if (!replyTo || typeof replyTo !== 'object') return '';
+    let quoted = String(replyTo.text == null ? '' : replyTo.text).replace(/\s+$/, '');
+    const nMedia = Array.isArray(replyTo.media) ? replyTo.media.length : 0;
+    if (!quoted && !nMedia) return '';
+    if (quoted.length > REPLY_QUOTE_MAX) quoted = quoted.slice(0, REPLY_QUOTE_MAX).replace(/\s+\S*$/, '') + ' […quoted message truncated]';
+    const who = String(replyTo.userName == null ? '' : replyTo.userName).trim();
+    const bot = !!replyTo.fromBot;
+    const label = who ? (who + (bot ? ' (a bot)' : '')) : (bot ? 'a bot' : 'someone');
+    const out = ['[The message below is a REPLY to an earlier message from ' + label
+      + '. That earlier message is quoted between the markers — it is what the user is pointing at, and their'
+      + ' actual request is the text AFTER the end marker.]',
+      '--- quoted message ---'];
+    if (quoted) out.push(quoted);
+    if (nMedia) out.push('(' + nMedia + ' file(s) attached to that quoted message are included with this turn)');
+    out.push('--- end quoted message ---');
+    return out.join('\n');
   }
 
   // Map a TYPED reply onto a live choice keyboard: "2" / "2." / "2)" pick by position, and an exact
@@ -131,6 +196,7 @@
     { command: 'routine', description: 'List, create or pause scheduled routines', usage: '/routine [list|add <schedule> | <task>|pause N|rm N]', slash: true },
     { command: 'away', description: 'Queue work to build on the away shift', usage: '/away [<what to build>|list|on|off]', slash: true },
     { command: 'approvals', description: 'Approve/deny buttons for this chat (on or off)', usage: '/approvals [on|off]' },
+    { command: 'mention', description: 'In a group: when I answer, and whether I follow the rest', usage: '/mention [on|observe|off]' },
     { command: 'whoami', description: 'Show which agent this chat is talking to' },
     { command: 'help', description: 'List these commands', menu: false },
     // Telegram sends this when a fresh chat's START button is pressed. menu:false — the client offers it on an
@@ -252,6 +318,10 @@
     //   expandAttachments(messages, agentId) -> messages with refs expanded into provider content blocks (the
     //                                         SAME expandUserAttachments the interactive run host calls)
     const fetchMedia = typeof o.fetchMedia === 'function' ? o.fetchMedia : null;
+    // INJECTED STT (2026-07-29). transcribe(buffer, mime, name) -> { ok, text } | { ok:false, reason }. Absent,
+    // a voice note degrades to exactly the old behaviour (saved file + a note naming its path) — the feature is
+    // additive and a host that wires no engine is unchanged.
+    const transcribe = typeof o.transcribe === 'function' ? o.transcribe : null;
     const saveAttachmentFn = typeof o.saveAttachment === 'function' ? o.saveAttachment : null;
     const expandAttachments = typeof o.expandAttachments === 'function' ? o.expandAttachments : null;
     // TYPING INDICATOR (Hermes parity): chatAction(chatId) fires ONE platform "typing…" action (adapter.chatAction
@@ -336,6 +406,7 @@
       })().catch(function () {});
     }
     const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
+    const MAX_REPLY_MEDIA = 4;                       // files lifted off a QUOTED message — context, never the bulk
     const MAX_MEDIA_BYTES = 8 * 1024 * 1024;         // mirrors attachments.js MAX_BYTES (saveAttachment re-enforces)
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
     if (!store || typeof store.loadHistory !== 'function') throw new Error('makeChannelHub: a channel store is required');
@@ -360,6 +431,186 @@
       return agentPrefix + (tail || '0');
     }
 
+    /* ---- ROUTE: answer WHERE the question was asked -------------------------------------------------------
+       Two facts arrive with an inbound message and were both thrown away: which sub-conversation it came from
+       (`threadId` — a Telegram forum topic today), and which message it was (`messageId`). Without the first,
+       every answer in a forum supergroup lands in **General instead of the topic the member is sitting in** —
+       the last remaining case of this channel delivering to the wrong place rather than merely doing less. Without
+       the second, a reply in a busy group floats loose from its question.
+
+       Ambient per chat rather than threaded through ~40 deliver() call-sites: the route is a property of the
+       CONVERSATION, so /status, a consent card and the run's answer should all land in the same topic without
+       each having to know it. Bounded (MAX_ROUTES, oldest evicted) because chatIds are unbounded.
+
+       The quote is CONSUMED on first use; the thread is not. A quote answers one specific message, so a routine
+       firing six hours later must not reach back and reply to it — but it should still land in the right topic.
+       Fields are neutral ({ threadId, replyTo }); only telegram.transport.js knows the Bot API's names, and the
+       other four transports ignore opts they do not recognise, so their behaviour is byte-identical. */
+    const MAX_ROUTES = 500;
+    const routes = new Map();   // chatId -> { threadId, replyTo, lastMessageId }
+    function noteRoute(msg) {
+      const chatId = String(msg.chatId);
+      const threadId = (msg.threadId == null || msg.threadId === '') ? '' : String(msg.threadId);
+      // Quoting in a DM is noise — there is only one other person and nothing to disambiguate. Groups only,
+      // which is also where a detached answer actually costs the reader something.
+      const replyTo = (msg.chatType === 'group' && msg.messageId != null && msg.messageId !== '') ? String(msg.messageId) : '';
+      const lastMessageId = (msg.messageId == null || msg.messageId === '') ? '' : String(msg.messageId);
+      routes.delete(chatId);                        // re-insert so Map iteration order is least-recently-used first
+      routes.set(chatId, { threadId: threadId, replyTo: replyTo, lastMessageId: lastMessageId });
+      while (routes.size > MAX_ROUTES) { const k = routes.keys().next().value; routes.delete(k); }
+    }
+
+    /* IS THIS EDIT WORTH A FRESH RUN?
+       Telegram now delivers `edited_message`, which closes a real gap — fixing a typo used to change nothing and
+       the bot went on answering the typo. But "an edit is just another message" is too blunt: editing something
+       from last week would fire a run out of nowhere, and it would be spend the member never asked for.
+
+       The bound is the narrowest one that still fixes the case people actually hit: an edit counts only when it
+       edits the LAST message we saw in that chat. Anything older is somebody tidying history, not asking again.
+       No record (a fresh boot) also declines — we cannot tell an ancient edit from a fresh one, and inventing a
+       run is worse than doing nothing. When it IS accepted, the supersede rule downstream does the rest: a
+       correction made while the bot is still thinking aborts the stale run and re-answers the corrected text. */
+    function editIsCurrent(msg) {
+      const r = routes.get(String(msg.chatId));
+      if (!r || !r.lastMessageId) return false;
+      return String(msg.messageId || '') === r.lastMessageId;
+    }
+    /* The topic this chat was bound to no longer exists — the transport already saved the message by resending
+       to the chat root, but the binding itself must go too, or every later send repeats that failed call and
+       its retry. Dropped rather than remembered as "dead": the next inbound message re-learns the real topic. */
+    function forgetThread(chatId) {
+      const r = routes.get(String(chatId));
+      if (r && r.threadId) r.threadId = '';
+    }
+    // first=true asks for the quote as well (and spends it). Returns null when this chat has no route, so the
+    // send call is byte-identical to before on every platform that never sets one.
+    function routeOpts(chatId, first) {
+      const r = routes.get(String(chatId));
+      if (!r) return null;
+      const out = {};
+      if (r.threadId) out.threadId = r.threadId;
+      if (first && r.replyTo) { out.replyTo = r.replyTo; r.replyTo = ''; }
+      return (out.threadId || out.replyTo) ? out : null;
+    }
+
+    /* ---- REACTION ACK: "I heard you", for the price of one API call -----------------------------------------
+       The typing bubble answers "is it working?" only while you are looking at the chat. A reaction is durable:
+       put 👀 on the question when the run starts, take it off when the answer lands. It costs no message, adds
+       nothing to scroll past, and it is the one acknowledgement that still reads correctly when the member comes
+       back twenty minutes later — a run that is still thinking is still marked.
+
+       Purely cosmetic, and it must stay that way: transport-optional (a channel without reactions returns
+       ok:false and we never try again for that run), every failure swallowed, and the clear is best-effort. The
+       emoji is a CONSTANT, not a setting — bots may only use Telegram's fixed reaction set and an unlisted emoji
+       is a 400 that would make the ack look broken. */
+    const ACK_EMOJI = '👀';
+    const setReaction = typeof o.setReaction === 'function' ? o.setReaction : null;
+    const reactionAck = o.reactionAck !== false;   // opt-out for a host that finds it noisy; on by default
+    function startAck(chatId, messageId) {
+      if (!setReaction || !reactionAck || messageId == null || messageId === '') return function () {};
+      let armed = false, cleared = false;
+      const set = Promise.resolve()
+        .then(() => setReaction(chatId, messageId, ACK_EMOJI))
+        .then(r => { armed = !!(r && r.ok); })
+        .catch(() => {});
+      return function () {
+        if (cleared) return;
+        cleared = true;
+        // Wait for the SET to resolve before clearing: a clear that overtakes its own set leaves the 👀 stuck on
+        // a question that was answered ages ago — the exact "the app asserts state the harness can't prove" bug.
+        set.then(() => { if (armed) return setReaction(chatId, messageId, ''); }).catch(() => {});
+      };
+    }
+
+    /* ---- LIVE STREAMING: the reply is written in front of you ------------------------------------------------
+       Until now a long answer was a typing bubble followed, thirty seconds later, by a wall of text. This grows
+       the reply in place: the first sentences go out as a real message, and each subsequent throttle window
+       edits that same message with everything produced so far.
+
+       THE INVARIANT, and the only one that matters: **exactly one complete reply, whatever fails.** Streaming is
+       an optimisation on top of the existing deliver() path, never a replacement for it. Every failure mode
+       converges on the same place:
+         · cannot seed (send failed, channel cannot edit) -> streaming is dead for this run, deliver() sends
+           normally, and nothing was left behind because nothing was sent;
+         · an intermediate edit fails (429, a blip) -> skipped, the next window tries again, the final edit
+           still carries the whole text;
+         · the FINAL edit fails -> the stale partial is DELETED and the reply is sent whole, so the member never
+           ends up reading half an answer sitting above the real one;
+         · the reply outgrows one message -> streaming stops at the limit and deliver() chunks as it always did,
+           with chunk 0 replacing the streamed message in place;
+         · the run is superseded or E-STOPped -> the partial is deleted, because it answers a question that has
+           been withdrawn.
+
+       Both editMessage AND deleteMessage must be wired: arming the grow without the clean-up is what turns a
+       failed edit into a duplicate reply. That pairing is also what keeps this Telegram-only for now — no other
+       transport supplies either, so their behaviour is byte-identical. */
+    /* Can this bot hear a group at all? true / false / null when we have not been told. Read through a function
+       because it is learned from getMe, after this hub is built — the same late-binding the bot's own name needs.
+       A throwing or absent source answers null, and null means SAY NOTHING: inventing a limitation is as
+       dishonest as hiding one. */
+    const privacyFn = typeof o.canReadAllGroupMessages === 'function' ? o.canReadAllGroupMessages : null;
+    function privacyOk() {
+      if (!privacyFn) return null;
+      try { const v = privacyFn(); return (v === true || v === false) ? v : null; } catch (_) { return null; }
+    }
+    const deleteMessage = typeof o.deleteMessage === 'function' ? o.deleteMessage : null;
+    const streamOk = !!(editMessage && deleteMessage) && o.streamReplies !== false;
+    const STREAM_MIN_MS = Number.isFinite(o.streamMinMs) ? Math.max(250, o.streamMinMs) : 1500;   // Telegram edits: ~1/s is safe
+    const STREAM_MIN_CHARS = Number.isFinite(o.streamMinChars) ? Math.max(1, o.streamMinChars) : 60;   // don't seed on "Su"
+    const notModified = (e) => /not modified/i.test(String(e || ''));
+
+    function startStream(chatId) {
+      if (!streamOk) return null;
+      let seedId = '', shown = '', lastAt = -Infinity, dead = false, inFlight = false, done = false;
+      const clockNow = () => (now ? now() : 0);
+      return {
+        get messageId() { return seedId; },
+        // Fire-and-forget: called on every token delta with the FULL text so far. Never awaited by the run, and
+        // it drops any delta that arrives while an edit is in flight — the next one carries that text anyway.
+        push(full) {
+          if (dead || done || inFlight) return;
+          const text = String(full == null ? '' : full);
+          if (!text.trim() || text === shown) return;
+          /* NEVER STREAM A PROTOCOL MARKER. The reply that reaches the member is not always `state.buf`: a
+             `TASK_QUESTION: …` answer is parsed, stripped and re-rendered as a numbered list with a keyboard
+             under it. Streaming the raw buffer would put the internal marker on the member's screen for a few
+             seconds before it turned into the real thing — the app showing something the harness never meant to
+             assert. Cheap and general: an opening ALL-CAPS token followed by a colon is a marker, not prose, so
+             this run simply does not stream. It still delivers, in full, the ordinary way. */
+          if (/^\s*[A-Z][A-Z_]{3,}:/.test(text)) { dead = true; return; }
+          // Past the single-message limit there is nothing left to stream INTO. Stop, and let deliver() chunk —
+          // it will still replace this message in place with chunk 0.
+          if (text.length > maxMessageLength) { dead = true; return; }
+          const t = clockNow();
+          if (seedId && (t - lastAt) < STREAM_MIN_MS) return;
+          if (!seedId && text.length < STREAM_MIN_CHARS) return;
+          inFlight = true;
+          const p = seedId
+            ? editMessage(chatId, seedId, text, {})
+            : send(chatId, text, routeOpts(chatId, true) || undefined);
+          Promise.resolve(p).then((r) => {
+            if (r && r.ok) {
+              shown = text; lastAt = clockNow();
+              if (!seedId) { seedId = String(r.messageId || ''); if (!seedId) dead = true; }   // no id back = nothing to edit
+            } else if (!seedId) {
+              dead = true;   // could not even start — one probe, then leave the run entirely alone
+            }
+          }).catch(() => { if (!seedId) dead = true; })
+            .then(() => { inFlight = false; });
+        },
+        // deliver() takes it from here: '' means "send normally", an id means "replace that message in place".
+        seal() { done = true; return seedId; },
+        // The question was withdrawn (superseded / E-STOP). A partial answer to a question nobody is waiting for
+        // is worse than no answer, so remove it.
+        abandon() {
+          done = true;
+          const id = seedId; seedId = '';
+          if (!id) return;
+          try { Promise.resolve(deleteMessage(chatId, id)).catch(() => {}); } catch (_) {}
+        }
+      };
+    }
+
     // ---- typing keep-alive: refresh the platform's "typing…" bubble while a run is in flight ---------------
     // Returns a stop() closure. The loop is detached (fire-and-forget) and PURELY cosmetic: any failure degrades
     // to no bubble, never touches the reply path. Backoff mirrors send(): a 429's retry_after (capped 30s) is
@@ -373,7 +624,7 @@
       (async () => {
         while (!stopped) {
           let r;
-          try { r = await chatAction(chatId); } catch (e) { r = { ok: false, retryable: true }; }
+          try { r = await chatAction(chatId, routeOpts(chatId, false)); } catch (e) { r = { ok: false, retryable: true }; }
           if (stopped) break;
           if (r && r.ok === false && !r.retryable) break;
           const waitMs = (r && r.ok === false && Number(r.retryAfter) > 0)
@@ -391,13 +642,40 @@
     // sendOpts (optional) rides ONLY on the FINAL chunk — a keyboard must land under the last thing the user
     // reads, and Telegram would otherwise render one set of buttons per chunk of a long reply. Returns the final
     // chunk's messageId too, which is what a keyboard needs in order to be edited/stripped once it is tapped.
-    async function deliver(chatId, text, runId, reason, agentId, sendOpts) {
+    async function deliver(chatId, text, runId, reason, agentId, sendOpts, seedId) {
       const chunks = chunkText(text, maxMessageLength);
       let ok = true, failedAt = -1, messageId = '';
+      // A message the stream already put in the chat. Chunk 0 REPLACES it rather than being sent again — that
+      // replacement is the whole difference between "streamed" and "streamed, then repeated".
+      let seed = (seedId && editMessage) ? String(seedId) : '';
       for (let i = 0; i < chunks.length; i++) {
         const last = i === chunks.length - 1;
+        // The route rides EVERY chunk (all of a split reply belongs in one topic) while the quote and the
+        // keyboard each ride exactly one: the quote the first chunk, the keyboard the last. A fresh object every
+        // time — the caller's sendOpts is theirs and must not grow a stale reply id.
+        const rt = routeOpts(chatId, i === 0);
+        const terminal = (last && sendOpts) ? sendOpts : null;
+        const opts = (rt || terminal) ? Object.assign({}, terminal || {}, rt || {}) : undefined;
         let r;
-        try { r = await send(chatId, chunks[i], (last && sendOpts) ? sendOpts : undefined); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+        if (i === 0 && seed) {
+          // Replace the streamed partial with the finished chunk. "message is not modified" means the text we
+          // streamed was already the final text — a success wearing a 400.
+          try { r = await editMessage(chatId, seed, chunks[0], opts || {}); } catch (e) { r = { ok: false, error: (e && e.message) || 'editMessage threw' }; }
+          if (r && r.ok === false && notModified(r.error)) r = { ok: true, messageId: seed };
+          if (!r || r.ok === false) {
+            /* The partial is stranded: we cannot update it and we are about to send the real answer. Remove it
+               first, or the member reads half an answer immediately above the whole one. The delete is
+               best-effort — if it fails too, delivering the reply still matters more than the duplicate. */
+            try { await deleteMessage(chatId, seed); } catch (_) {}
+            seed = '';
+            try { r = await send(chatId, chunks[0], opts); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+          } else if (!r.messageId) {
+            r = { ok: true, messageId: seed };   // an edit answers with no id of its own; it is still that message
+          }
+        } else {
+          try { r = await send(chatId, chunks[i], opts); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+        }
+        if (r && r.threadGone) forgetThread(chatId);   // the topic is gone; stop aiming at it
         if (!r || r.ok === false) { ok = false; failedAt = i; break; }
         if (last && r.messageId) messageId = String(r.messageId);
       }
@@ -410,7 +688,18 @@
       // 'prompt' joins 'command' as ephemeral: a permission ask whose keyboard failed to send is answered by the
       // host's fail-closed timer within seconds — redelivering that dead question hours later would invite a tap
       // on a run that ended long ago.
-      if (!ok && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function') {
+      // …unless the chat is KNOWN unreachable. Queueing for a chat that blocked us is not resilience, it is a
+      // pile of retries that can only ever fail — and every one of them is an API call. See onMembership.
+      // Read the record only on the failure path: this runs on every delivered message, and the happy path must
+      // not pay a store read to answer a question that only matters when a send has already failed.
+      let unreachable = false;
+      if (!ok) {
+        try { const r0 = typeof store.getChatRecord === 'function' ? store.getChatRecord(String(chatId)) : null; unreachable = !!(r0 && r0.unreachable); } catch (_) {}
+      }
+      if (!ok && unreachable) {
+        try { console.error('[' + channel + '] reply for chat ' + chatId + ' NOT queued — this chat has blocked or removed the bot'); } catch (_) {}
+      }
+      if (!ok && !unreachable && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function') {
         try {
           const remainder = '⌛ delayed reply — the channel was unreachable when this was first sent:\n' + chunks.slice(failedAt).join('');
           store.pushOutbox({ channel: channel, chatId: String(chatId), text: remainder, runId: runId || '', agentId: agentId ? String(agentId) : '', reason: reason || '' });
@@ -438,11 +727,18 @@
       try {
         const items = store.loadOutbox(channel);
         for (const it of items) {
+          // A chat that blocked us cannot be redelivered to. onMembership already drops its backlog, but a flush
+          // racing that drop would otherwise spend a failed send per item and then stop the whole pass.
+          let dead = false;
+          try { const r0 = typeof store.getChatRecord === 'function' ? store.getChatRecord(String(it.chatId)) : null; dead = !!(r0 && r0.unreachable); } catch (_) {}
+          if (dead) { try { store.removeOutbox(it.id); } catch (_) {} continue; }
           const chunks = chunkText(it.text, maxMessageLength);
           let ok = true;
           for (const c of chunks) {
             let r;
-            try { r = await send(it.chatId, c); } catch (e) { r = { ok: false }; }
+            // Thread only, never the quote: a delayed reply still belongs in its topic, but the message it was
+            // answering is hours old and quoting it now would read as a bot talking to the past.
+            try { r = await send(it.chatId, c, routeOpts(it.chatId, false) || undefined); } catch (e) { r = { ok: false }; }
             if (!r || r.ok === false) { ok = false; break; }
           }
           if (ok) {
@@ -476,7 +772,9 @@
     // Handle a parsed control command. Every reply states what ACTUALLY happened (truthful telemetry): a rebind
     // only claims success after saveChatRecord returns; a model change only confirms after setModel reports ok.
     // boundRec is this chat's persisted record (or null) — /approvals reads its opt-in flag and writes it back.
-    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec) {
+    // chatType (optional, additive) — only /mention needs it, to say honestly that the setting is group-only
+    // rather than storing a value that can never apply in a DM.
+    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec, chatType) {
       const cmd = parsed.cmd, arg = parsed.arg;
       // rosterFn is an INJECTED callback (Discord/other wire-ups pass it straight through); a throwing roster must
       // degrade to a logged error + polite reply, never an unhandled rejection that swallows the whole inbound.
@@ -607,6 +905,63 @@
         return;
       }
 
+      /* GROUP MENTION GATE — the escape hatch for the discipline that shipped with P3.
+         "Answer only when addressed" is the right default (a room with traffic is otherwise a model call per
+         message the member is not part of), but it is still a POLICY, and shipping a policy with no way to
+         change it is how a helpful bot becomes a mute one with no explanation. The gate itself lives in
+         adapter.js and reads this record per message, so a flip takes effect on the very next one.
+         DM-only chats say so rather than silently storing a setting that can never apply — a control that
+         appears to work and does nothing is worse than one that is honest about being irrelevant. */
+      if (cmd === 'mention') {
+        const isGroup = String(chatType || '') === 'group';
+        const on = !(boundRec && boundRec.requireMention === false);
+        const observing = !!(boundRec && boundRec.observeUnmentioned);
+        const state = !on ? 'off' : (observing ? 'observe' : 'on');
+        const describe = { on: 'answer only when addressed, and forget everything else',
+                           observe: 'answer only when addressed, but follow the conversation',
+                           off: 'answer every message' };
+        /* PRIVACY MODE IS THE HARNESS TELLING US WHAT WE CANNOT HEAR, and two of these three states are a
+           promise we cannot keep without it. With privacy ON (Telegram's default) a group delivers us ONLY
+           slash commands, @username mentions and replies to our own messages — so "answer everything" and
+           "follow the conversation" would both be claims about messages that never arrive, and being called by
+           NAME cannot work either, because a name is not an @mention. Say so, with the fix, rather than let the
+           member conclude the bot is broken. Silent when we do not know (null): never invent a limitation. */
+        const seesAll = privacyOk();
+        const blind = (seesAll === false && isGroup)
+          ? '\n\n⚠ Telegram is only sending me messages that address me directly (@' + 'mention, a reply to me, or a slash command) — '
+            + 'privacy mode is ON for this bot, so I never receive ordinary chatter and cannot be woken by name. '
+            + 'Open @BotFather → /setprivacy → Disable to change that.'
+          : '';
+        if (!arg) {
+          await deliver(chatId, isGroup
+            ? ('In this group I ' + describe[state] + '.\n\n'
+               + '/mention on — only when addressed (@ me, reply to me, call me by name, or use a command)\n'
+               + '/mention observe — the same, but I read the rest so I know what you were talking about\n'
+               + '/mention off — answer everything here (a real run, and real spend, per message)' + blind)
+            : 'This setting only applies to groups — in a direct chat I always answer you.', '', 'command');
+          return;
+        }
+        const want = /^(on|yes|enable|enabled|true|1)$/i.test(arg) ? 'on'
+          : (/^(off|no|disable|disabled|false|0)$/i.test(arg) ? 'off'
+          : (/^(observe|watch|listen|follow|context)$/i.test(arg) ? 'observe' : null));
+        if (want === null) { await deliver(chatId, 'Usage: /mention on  ·  /mention observe  ·  /mention off', '', 'command'); return; }
+        // requireMention and observeUnmentioned are written TOGETHER, always. Two independent toggles would let a
+        // chat end up "answer everything AND observe", which would file every message twice.
+        const patch = { requireMention: want !== 'off', observeUnmentioned: want === 'observe' };
+        let saved = false;
+        try { if (typeof store.saveChatRecord === 'function') { store.saveChatRecord(chatId, patch); saved = true; } } catch (_) { saved = false; }
+        if (!saved) { await deliver(chatId, '⚠ Could not save that — I still ' + describe[state] + ' here.', '', 'command'); return; }
+        const confirm = {
+          on: 'From now on I answer only when addressed here — @-mention me, reply to me, call me by name, or use a slash command. I will not keep any of the other messages.',
+          observe: 'From now on I still answer only when addressed, but I read the rest of the room so I know what you were talking about. Those messages cost nothing — no model call, just context.',
+          off: 'From now on I answer every message in this chat. Each one is a real run, so watch the spend.'
+        };
+        // The caveat rides the two states that actually depend on hearing unaddressed messages. "on" is exactly
+        // what privacy mode already enforces, so warning about it there would be noise.
+        await deliver(chatId, confirm[want] + ((want === 'observe' || want === 'off') ? blind : ''), '', 'command');
+        return;
+      }
+
       if (cmd === 'agents' || cmd === 'whoami') {
         if (!roster || !roster.length) { await deliver(chatId, 'No roster is available to this channel yet.', '', 'command'); return; }
         if (cmd === 'whoami') {
@@ -663,20 +1018,41 @@
     // crashed inbound. Videos/audio/documents get a note naming their saved workspace path so the agent can reach
     // the file with its tools; a photo needs no note (the model literally sees it as an image block).
     async function ingestMedia(agentId, media) {
-      const refs = [], notes = [];
+      const refs = [], notes = [], transcripts = [];
       const items = media.slice(0, MAX_MEDIA_PER_MESSAGE);
       if (media.length > items.length) notes.push('[' + (media.length - items.length) + ' additional file(s) in this message were not ingested — resend them separately]');
       for (const it of items) {
         const kind = String((it && it.kind) || 'file'), name = String((it && it.name) || 'file');
-        if (!fetchMedia || !saveAttachmentFn) { notes.push('[the user sent a ' + kind + ' ("' + name + '") but media ingest is not wired on this channel]'); continue; }
-        if (Number(it.size) > MAX_MEDIA_BYTES) { notes.push('[' + kind + ' "' + name + '" is too large to ingest (' + Math.round(Number(it.size) / (1024 * 1024)) + 'MB > 8MB) — ask the user for a smaller version]'); continue; }
+        // Provenance: an item lifted off the message the user REPLIED TO must say so, or the model reads a photo
+        // from three messages ago as something just sent and answers the wrong question.
+        const from = (it && it.fromReply) ? ' (from the quoted message they replied to)' : '';
+        if (!fetchMedia || !saveAttachmentFn) { notes.push('[the user sent a ' + kind + ' ("' + name + '")' + from + ' but media ingest is not wired on this channel]'); continue; }
+        if (Number(it.size) > MAX_MEDIA_BYTES) { notes.push('[' + kind + ' "' + name + '"' + from + ' is too large to ingest (' + Math.round(Number(it.size) / (1024 * 1024)) + 'MB > 8MB) — ask the user for a smaller version]'); continue; }
         let got; try { got = await fetchMedia(Object.assign({}, it, { maxBytes: MAX_MEDIA_BYTES })); } catch (e) { got = { ok: false, error: (e && e.message) || 'download threw' }; }
-        if (!got || got.ok === false || !got.buffer || !got.buffer.length) { notes.push('[could not download the ' + kind + ' "' + name + '" from ' + channel + ': ' + ((got && got.error) || 'unknown error') + ']'); continue; }
+        if (!got || got.ok === false || !got.buffer || !got.buffer.length) { notes.push('[could not download the ' + kind + ' "' + name + '"' + from + ' from ' + channel + ': ' + ((got && got.error) || 'unknown error') + ']'); continue; }
         const dataUrl = 'data:' + (String(it.mime || '') || 'application/octet-stream') + ';base64,' + Buffer.from(got.buffer).toString('base64');
         let saved; try { saved = await saveAttachmentFn(agentId, name, dataUrl); } catch (e) { saved = { ok: false, error: (e && e.message) || 'save threw' }; }
-        if (!saved || saved.ok === false) { notes.push('[could not store the ' + kind + ' "' + name + '": ' + ((saved && saved.error) || 'unknown error') + ']'); continue; }
+        if (!saved || saved.ok === false) { notes.push('[could not store the ' + kind + ' "' + name + '"' + from + ': ' + ((saved && saved.error) || 'unknown error') + ']'); continue; }
         refs.push({ id: saved.id, name: saved.name, path: saved.path, mediaType: saved.mediaType, kind: saved.kind, srcKind: kind });
-        if (saved.kind !== 'image') notes.push('[' + kind + ' "' + name + '" received and saved to ' + saved.path + ' in your workspace]');
+        if (saved.kind !== 'image') notes.push('[' + kind + ' "' + name + '"' + from + ' received and saved to ' + saved.path + ' in your workspace]');
+        else if (from) notes.push('[the image "' + name + '"' + from + ' is attached to this turn]');
+
+        /* VOICE NOTES WERE DEAD INPUT. We saved the .ogg and told the model "saved to <path>" — a path it
+           cannot hear — while the station has owned an STT engine the whole time. Transcribe here, where the
+           bytes already are, so a member can hold the button and talk to their agent from a phone.
+
+           Only a real voice note (it.voice, set by the platform's normalize) is transcribed: a forwarded music
+           file is audio too, and burning an STT call on it would be spend with no meaning. A failure is a NOTE,
+           never a lost turn — the file is already saved and referenced, so the run continues exactly as before
+           this feature existed. */
+        if (it.voice && transcribe) {
+          let tr;
+          try { tr = await transcribe(got.buffer, String(it.mime || 'audio/ogg'), name); }
+          catch (e) { tr = { ok: false, reason: (e && e.message) || 'transcribe threw' }; }
+          if (tr && tr.ok && String(tr.text || '').trim()) transcripts.push(String(tr.text).trim());
+          else if (tr && tr.ok) notes.push('[the voice message "' + name + '" contained no speech we could make out — ask them to resend it]');
+          else notes.push('[the voice message "' + name + '" could not be transcribed (' + ((tr && tr.reason) || 'no transcription engine configured') + ') — the audio file is saved at ' + saved.path + ', and you can ask them to type it instead]');
+        }
       }
       // truthful cross-reference: only claim a visible video still when BOTH the clip and its frame actually saved
       if (refs.some(r => r.srcKind === 'video') && refs.some(r => r.kind === 'image' && /preview-frame/.test(String(r.name)))) {
@@ -690,7 +1066,35 @@
         notes.push('[the image(s) are attached inside this message — look at them directly; no vision tool or extra API key is needed]');
       }
       for (const r of refs) delete r.srcKind;   // keep the stored/history reference shape identical to browser uploads
-      return { attachments: refs, notes: notes };
+      return { attachments: refs, notes: notes, transcripts: transcripts };
+    }
+
+    /* One or more voice notes, rendered as the words the member actually said.
+
+       FENCED AND LABELLED, on purpose. A transcript is a MACHINE's reading of speech: it mishears names, it
+       drops negations, and an agent that quotes it back as verbatim user text will eventually put words in the
+       Commander's mouth. Naming it as a transcription is what lets the model hedge when the text reads oddly —
+       and it is the difference between "you said X" and "I heard X". */
+    function transcriptBlock(list) {
+      const arr = (Array.isArray(list) ? list : []).filter(t => String(t || '').trim());
+      if (!arr.length) return '';
+      const head = arr.length === 1
+        ? '[voice message, transcribed automatically — this is what they said, but transcription can mishear]'
+        : '[' + arr.length + ' voice messages, transcribed automatically — this is what they said, but transcription can mishear]';
+      return head + '\n' + arr.map(t => '"' + String(t).trim() + '"').join('\n');
+    }
+
+    /* File an overheard group message in the transcript the agent will replay next time it IS addressed.
+       Attributed exactly like a real group turn ("Ana: …"), because the whole value is knowing who said what.
+       Bounded for free: the store's appendTurn trims by turn count and characters, so a busy room cannot grow
+       the history without limit. A message with no words (a bare photo, a sticker) teaches the room nothing and
+       is skipped rather than filed as an empty turn. */
+    function observeTurn(chatId, msg, boundAgentId, sec) {
+      const body = String(msg.text || '').trim();
+      if (!body) return;
+      const who = String(msg.userName || '').trim();
+      const agentId = currentBoundAgent(chatId, boundAgentId, sec);
+      try { store.appendTurn(agentId, 'user', who ? (who + ': ' + body) : body); } catch (_) {}
     }
 
     // ---- ALBUM (media-group) BATCHING --------------------------------------------------------------------
@@ -705,7 +1109,11 @@
     async function onInbound(msg) {
       const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
         ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
-      if (!gid) return processInbound(msg);
+      if (gid) return albumInbound(msg, gid);
+      return processInbound(msg);
+    }
+
+    async function albumInbound(msg, gid) {
       let rec = albums.get(gid);
       if (!rec) {
         rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), seq: 0, resolve: null, done: null };
@@ -727,6 +1135,26 @@
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
+      // An edit is only a question if it edits the thing we last heard — checked BEFORE noteRoute overwrites the
+      // record it reads. Declining is silent by design: the member sees their own edit, and a bot that pipes up
+      // about a two-week-old correction is worse than one that stays out of it.
+      if (msg.edited && !editIsCurrent(msg)) {
+        try { console.log('[' + channel + '] ignoring an edit of an older message in chat ' + chatId); } catch (_) {}
+        return;
+      }
+      // Remember where this came from BEFORE anything can reply — the very first deliver() below (a command
+      // answer, a config error) must already land in the right topic, not just the run's final reply.
+      noteRoute(msg);
+      /* THEY ARE BACK. A chat marked unreachable (we were blocked or kicked) has just spoken, which is proof the
+         block is over — clear the flag here rather than waiting for a `my_chat_member` we may never be sent.
+         A stale unreachable flag would suppress this chat's outbox forever, which is the failure mode that made
+         the flag worth having in the first place, pointed the other way. */
+      if (typeof store.getChatRecord === 'function' && typeof store.saveChatRecord === 'function') {
+        try {
+          const rec0 = store.getChatRecord(chatId);
+          if (rec0 && rec0.unreachable) store.saveChatRecord(chatId, { unreachable: false });
+        } catch (_) {}
+      }
 
       // Runtime config (live each message): { key?, model, provider?, agentId?, system? }. When the app supplies the
       // REAL agentId + composed system prompt at connect, Telegram runs as the SAME agent as in the app —
@@ -745,6 +1173,16 @@
       let boundRec = null;
       try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
+
+      /* OBSERVE-ONLY: heard, filed, never answered. The mention gate stopped the bot replying to a room it was
+         not addressed in, and in doing so gave it amnesia — asked later to "summarise that", it had never seen
+         "that". This puts the chatter in the transcript and returns, before ANY of the machinery below: no
+         command parsing, no belt crate, no typing bubble, no reaction, no model call. Zero spend by
+         construction, not by a check somewhere further down.
+
+         The command parse in particular must stay BELOW this line. An unmentioned "/deploy@someotherbot" is an
+         observe verdict, and letting it fall through would have us execute a command aimed at a different bot. */
+      if (msg.observeOnly) { observeTurn(chatId, msg, boundAgentId, sec); return; }
       // Per-chat opt-in for approve/deny buttons (/approvals; default OFF). Requires BOTH the user's opt-in AND a
       // channel that can actually render and resolve a keyboard — a chat that opted in but is now running over a
       // transport without buttons must fall back to the safe autonomous floor, never stall on a prompt that
@@ -755,7 +1193,7 @@
       // through the SAME deliver() path so chunking/limits apply. Channel-agnostic: this lives in the hub, so
       // Telegram/Discord/any future adapter get identical behavior.
       const parsed = parseCommand(msg.text);
-      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec); return; }
+      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec, msg.chatType); return; }
 
       // COMMANDER-DEFINED commands are not in this hub's table (the sidecar owns them), so a "/standup" would
       // otherwise fall through and be answered by the MODEL — spending a turn to say it doesn't understand.
@@ -814,7 +1252,11 @@
       // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only
       // for a real task directive; "hello" gets a reply and NOTHING on the floor. Same classifier that gates
       // the desk walk + the task tool suffix below, so the body and the belt tell one story.
-      const isTask = !!classify(msg.text);
+      // `let`, because a VOICE note carries no text yet: its transcript only exists after media ingest below,
+      // and a spoken "research the competitors" must still earn the task suffix. Re-evaluated once the words
+      // exist. (The belt crate + onResolved fire here, before the audio is downloaded, so a spoken directive
+      // still visualizes as talk — visualization only; the RUN gets the right prompt.)
+      let isTask = !!classify(msg.text);
       if (onResolved) { try { onResolved({ chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask }); } catch (_) {} }
 
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
@@ -834,6 +1276,11 @@
       // the finally BEFORE deliver() so the bubble can expire rather than linger past the answer. The wrapper
       // try/finally does not re-indent the body (matches this file's existing low-indent try style below).
       const stopTyping = startTyping(chatId);
+      // …and mark the QUESTION itself, which survives the member closing the app. Cleared in the same finally.
+      const clearAck = startAck(chatId, msg.messageId);
+      // …and write the ANSWER in front of them as it is produced. Null on every channel that cannot edit, in
+      // which case every path below behaves exactly as it did before streaming existed.
+      const stream = startStream(chatId);
       // hoisted OUT of the typing try-block: deliver() below the finally reads all three.
       let state = null;          // the LAST attempt's assembled state (buf/errMsg/reason/transient)
       let lastRunId = '';        // the runId actually delivered under (the last attempt's)
@@ -841,17 +1288,50 @@
       let choiceEntry = null;    // the registered choice keyboard for a TASK_QUESTION reply (null = plain text)
       let finalAgentId = agentId;   // WHO produced the delivered reply — the LAST stage of the work line, not the first
       let firstStageText = null;    // what the ENTRY dock itself said, when a work line went on to replace it
+      // Hoisted for the finally below: `myRec` lives in the attempt scope, but the stream's clean-up decision
+      // (finish in place vs. delete the partial) is taken out here, after every return path has run.
+      let withdrawn = false;
       try {
 
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
       // so the model's view of this message carries the real pixels/files instead of a blind spot it has to
       // apologize for. ingestMedia never throws by contract; the belt-and-suspenders catch degrades to a note.
+      // REPLY MEDIA rides in the SAME ingest as the message's own: "what is this?" sent as a reply to a photo is
+      // one turn that needs those pixels. Tagged with fromReply so every note it produces says where it came
+      // from, and bounded separately so a quoted album can never crowd out what the member just sent.
+      const ownMedia = Array.isArray(msg.media) ? msg.media : [];
+      const replyMedia = (msg.replyTo && Array.isArray(msg.replyTo.media))
+        ? msg.replyTo.media.slice(0, MAX_REPLY_MEDIA).map(it => Object.assign({}, it, { fromReply: true })) : [];
+      const allMedia = ownMedia.concat(replyMedia);
       let mediaIngest = { attachments: [], notes: [] };
-      if (hasMedia) {
-        try { mediaIngest = await ingestMedia(agentId, msg.media); }
+      if (allMedia.length) {
+        try { mediaIngest = await ingestMedia(agentId, allMedia); }
         catch (e) { mediaIngest = { attachments: [], notes: ['[media ingest failed: ' + ((e && e.message) || e) + ']'] }; }
       }
-      const turnText = String(msg.text || '') + (mediaIngest.notes.length ? ((msg.text ? '\n' : '') + mediaIngest.notes.join('\n')) : '');
+      // The quoted preamble goes ABOVE the member's own words — it is the context their sentence refers back to.
+      // It is built from msg.replyTo only, never from msg.text, so routing/classification/commands (which all ran
+      // on the RAW text above) are untouched by it.
+      const replyLead = replyPreamble(msg.replyTo);
+      // A voice note usually carries NO caption, so the transcript IS the message — it goes where the typed
+      // words would have gone, above the media notes, not buried among them.
+      const spoken = transcriptBlock(mediaIngest.transcripts);
+      const written = String(msg.text || '');
+      /* GROUP ATTRIBUTION. `userName` was captured on every inbound message and never reached the model, so in
+         a group the agent read a merged stream with no idea who said what — it would answer one person using
+         another person's context, and could not honour "ask Ana" because it never learned Ana was in the room.
+         DM is left alone: there is exactly one human there and a name prefix would just be noise in every turn. */
+      const speaker = (msg.chatType === 'group') ? String(msg.userName || '').trim() : '';
+      const attributed = speaker ? (speaker + ': ' + written) : written;
+      const bodyText = spoken ? (attributed ? attributed + '\n' + spoken : spoken) : attributed;
+      // The words only became available just now — classify them, or a spoken task runs without the task prompt.
+      if (spoken && !isTask) { try { isTask = !!classify(mediaIngest.transcripts.join(' ')); } catch (_) {} }
+      /* AN EDIT IS A CORRECTION, AND IT MUST SAY SO. The original text is already in history — replaying it
+         followed by a near-identical turn reads to the model as the member saying two slightly different things
+         and can have it answer both, or split the difference. One line naming what happened is the difference
+         between "they repeated themselves" and "the earlier version is void". */
+      const editLead = msg.edited ? '[the previous message was edited — this is the corrected version, treat it as replacing what came before]' : '';
+      const turnText = (editLead ? editLead + '\n' : '') + (replyLead ? replyLead + '\n\n' : '') + bodyText
+        + (mediaIngest.notes.length ? ((bodyText ? '\n' : '') + mediaIngest.notes.join('\n')) : '');
 
       // durable transcript: load prior turns, persist the new user turn, build the replay messages. The persisted
       // turn carries the media notes (with saved .attachments/ paths), so an agent in a LATER turn can still reach
@@ -931,7 +1411,9 @@
         const sink = (name, payload) => {
           let p; try { p = redact(payload); } catch (_) { p = payload; }
           if (name === 'agent.run.start') state.runId = p.runId || state.runId;
-          else if (name === 'agent.token') state.buf += (p.delta || '');
+          // The reply is already being assembled here, delta by delta — so this is also where it can be SHOWN.
+          // stream.push is fire-and-forget and throttled; it can never delay or fail the run.
+          else if (name === 'agent.token') { state.buf += (p.delta || ''); if (stream) stream.push(state.buf); }
           else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
           else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
           else if (name === 'agent.run.end') { state.reason = p.reason; state.budgetScope = p.budgetScope || null; state.budgetCapUsd = (typeof p.budgetCapUsd === 'number' && isFinite(p.budgetCapUsd)) ? p.budgetCapUsd : null; }
@@ -977,8 +1459,10 @@
 
         // a newer message (or E-STOP) took over this chat — abandon this run's (now stale) partial reply, and do
         // NOT retry (the newer message owns the conversation now and is running its own replacement). On an
-        // E-STOP nothing is coming, so abandoned() says so instead of returning the same silence.
-        if (await abandoned()) return;
+        // E-STOP nothing is coming, so abandoned() says so instead of returning the same silence. `withdrawn`
+        // is what tells the finally to DELETE the streamed partial: a half answer to a question that has been
+        // taken back is worse than no answer, and the E-STOP notice must not appear underneath one.
+        if (await abandoned()) { withdrawn = true; return; }
 
         // Retry ONLY the same-agent workspace-mutex race, and only while attempts remain. On the final failed
         // attempt fall through so the loop exits and the honest "still busy" reply below is delivered.
@@ -988,7 +1472,7 @@
           // to release the shared workspace slot. Injected sleep so tests run instantly with a fake clock. The
           // record stays in `inflight` across this wait so a mid-backoff message can supersede us (checked next).
           await sleep(supersedeBackoffMs * Math.pow(2, attempt - 1));
-          if (await abandoned()) return;
+          if (await abandoned()) { withdrawn = true; return; }
           continue;
         }
         break;
@@ -1043,7 +1527,7 @@
           state.buf = state.buf + chain.stopNote(line);   // stage one answered but the line never got going — say so
         }
       }
-      if (await abandoned()) return;
+      if (await abandoned()) { withdrawn = true; return; }
       } finally {
         // release the (single) inflight record exactly once — but only if a NEWER message hasn't already replaced it
         // (the supersede path installs its own record under this chatId; clobbering it would drop the live run).
@@ -1108,9 +1592,13 @@
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason, state);
       }
 
-      } finally { stopTyping(); }   // cease refreshes BEFORE deliver — the bubble must die with the reply, not after
+      // all three die BEFORE deliver — none of them may outlive the reply it announced. The stream is ABANDONED
+      // (its partial deleted) only when the run was withdrawn; on every other path deliver() finishes it in place.
+      } finally { stopTyping(); clearAck(); if (stream && withdrawn) stream.abandon(); }
+      // seal() hands deliver() the streamed message so chunk 0 replaces it in place. It also closes the stream,
+      // so a late token delta can never race the final text back out of order.
       const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), finalAgentId,
-        choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined);
+        choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined, stream ? stream.seal() : '');
       // Stitch the delivered message onto the keyboard's registry entry so a tap can edit THAT message in place.
       // A send that failed retires the token immediately: leaving it would let a phantom keyboard (buttons the
       // user can see from a partially-sent reply) resolve against a question they never fully received.
@@ -1207,11 +1695,42 @@
       if (s && s.state === 'up') { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }
     }
 
+    /* OUR OWN MEMBERSHIP CHANGED — we were blocked, kicked, or let back in.
+       This was invisible before: the notifier went on posting into a chat that could never receive it, every
+       send failed, every failure queued another retry, and nothing in the product ever said why. The DETECTION
+       was deliberately not built alone — a stamped field with no reader is one of this project's named bug
+       classes — so it lands here with its consumer:
+
+         · the chat is marked `unreachable`, which stops deliver() queueing anything new for it;
+         · its already-queued backlog is dropped NOW, each with the same honest `redelivery-gave-up` delivery
+           event a repeatedly-failed item gets. It is the same fact — we are not going to deliver this — and
+           inventing a new event name would mean editing the owned shared/events.js contract.
+
+       Clearing is not done here: `left` can arrive for reasons that are not a block, so the flag is lifted by
+       the chat actually speaking again (processInbound), which is proof rather than inference. */
+    function onMembership(ev) {
+      const chatId = String((ev && ev.chatId) || '');
+      const status = String((ev && ev.status) || '');
+      if (!chatId || !status) return;
+      const gone = status === 'kicked' || status === 'left';
+      if (!gone) return;                                    // added/promoted/restricted: nothing to stop doing
+      try { if (typeof store.saveChatRecord === 'function') store.saveChatRecord(chatId, { unreachable: true }); } catch (_) {}
+      try { console.error('[' + channel + '] chat ' + chatId + ' has ' + (status === 'kicked' ? 'blocked or banned' : 'removed') + ' this bot — queued replies for it are being dropped'); } catch (_) {}
+      if (typeof store.loadOutbox !== 'function' || typeof store.removeOutbox !== 'function') return;
+      let items = [];
+      try { items = store.loadOutbox(channel) || []; } catch (_) { items = []; }
+      for (const it of items) {
+        if (String(it.chatId) !== chatId) continue;
+        try { store.removeOutbox(it.id); } catch (_) {}
+        try { emit('channel.delivery', { channel, chatId: chatId, runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-gave-up' }); } catch (_) {}
+      }
+    }
+
     return {
-      onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk }
+      onInbound, onCallback, onStatus, onMembership,
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
     };
   }
 
-  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, COMMANDS, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, COMMANDS } };
+  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, replyPreamble, REPLY_QUOTE_MAX, COMMANDS, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, replyPreamble, COMMANDS } };
 });

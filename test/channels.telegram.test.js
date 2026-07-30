@@ -55,6 +55,17 @@ async function run() {
     const t409 = makeTelegramTransport({ fetch: fakeFetch(() => resp(409, { ok: false, error_code: 409, description: 'Conflict: terminated by other getUpdates request' })), token: 'TKN' });
     e = null; try { await t409.getUpdates({ offset: 0 }); } catch (x) { e = x; }
     A.ok(e && e.fatal === true && /another instance|webhook/i.test(e.message), '409 -> fatal with actionable detail');
+    /* THE REAL WORDING, captured live from api.telegram.org on 2026-07-29 by running two pollers on one token.
+       The abbreviated fixture above would keep passing even if Telegram's phrasing drifted past our regex — an
+       invented string can only prove the code matches itself. This one is the sentence the platform actually
+       sends, so a future tightening of the pattern cannot silently stop recognising a conflict and leave the
+       channel looping against a token another instance owns. */
+    const LIVE_409 = 'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running';
+    const tLive = makeTelegramTransport({ fetch: fakeFetch(() => resp(409, { ok: false, error_code: 409, description: LIVE_409 })), token: 'TKN' });
+    e = null; try { await tLive.getUpdates({ offset: 0 }); } catch (x) { e = x; }
+    A.eq(e && e.fatal, true, "Telegram's ACTUAL conflict sentence is recognised as fatal (live-captured fixture)");
+    A.eq(e && e.code, 409, 'and carries the code the poll loop reads');
+    A.ok(e && /stop the other poller/.test(e.message), 'and is rewritten into something the member can act on');
   }
 
   // ---- B7. getMe: token probe — id/username surfaced; bad token / network -> { ok:false }, never throws ----
@@ -62,6 +73,17 @@ async function run() {
     const f = fakeFetch(() => resp(200, { ok: true, result: { id: 7446, is_bot: true, first_name: 'Overseer Bot', username: 'OverseerBot' } }));
     const t = makeTelegramTransport({ fetch: f, token: 'TKN' });
     A.eq(await t.getMe(), { ok: true, id: '7446', username: 'OverseerBot', name: 'Overseer Bot' }, 'getMe surfaces the stable id + username');
+    /* PRIVACY MODE rides with the identity, because it decides what this bot can HEAR. With it on (Telegram's
+       default, confirmed live) a group delivers us only commands, @mentions and replies to us — so wake words
+       and observe-unmentioned receive nothing, and /mention has to say so instead of promising to follow a room
+       it is not being sent. A server that does not mention the field leaves it ABSENT: unknown, never "off". */
+    const withFlag = (v) => makeTelegramTransport({
+      fetch: fakeFetch(() => resp(200, { ok: true, result: { id: 1, is_bot: true, first_name: 'B', username: 'b', can_read_all_group_messages: v } })),
+      token: 'TKN'
+    }).getMe();
+    A.eq((await withFlag(false)).seesAllGroupMessages, false, 'privacy ON is reported as seesAllGroupMessages:false');
+    A.eq((await withFlag(true)).seesAllGroupMessages, true, 'and privacy disabled as true');
+    A.eq('seesAllGroupMessages' in (await t.getMe()), false, 'a server that never mentions it leaves the key ABSENT — unknown is not the same as "privacy is on"');
     A.eq(f.calls[0].url, 'https://api.telegram.org/botTKN/getMe', 'getMe hits the right method');
     const tbad = makeTelegramTransport({ fetch: fakeFetch(() => resp(401, { ok: false, error_code: 401, description: 'Unauthorized' })), token: 'BAD' });
     const rb = await tbad.getMe();
@@ -146,7 +168,9 @@ async function run() {
     A.eq(normalize({ update_id: 2, message: { message_id: 10, text: 'yo', chat: { id: -200, type: 'supergroup' }, from: { id: 6, first_name: 'X' } } }).message.userName, 'X', 'falls back to first_name when no username');
     A.eq(normalize({ update_id: 3, callback_query: { id: 'q1', data: 'approve:p1', from: { id: 7 }, message: { message_id: 11, chat: { id: 111 } } } }),
       { offset: 3, callback: { chatId: 111, userId: 7, data: 'approve:p1', callbackId: 'q1', messageId: 11 } }, 'callback_query -> callback');
-    A.eq(normalize({ update_id: 4, message: { message_id: 12, chat: { id: 111, type: 'private' }, sticker: {} } }), { offset: 4, message: null }, 'unknown/empty payload -> message:null (offset still advances)');
+    // A SERVICE message (someone joined) is the real "nothing to say" case — it must stay silent. (A sticker used
+    // to live here; it is user content and now arrives as a descriptor — see channels.telegram.context.test.js.)
+    A.eq(normalize({ update_id: 4, message: { message_id: 12, chat: { id: 111, type: 'private' }, new_chat_members: [{ id: 3 }] } }), { offset: 4, message: null }, 'service message -> message:null (offset still advances)');
     A.eq(normalize({ foo: 1 }), null, 'no update_id -> null (skipped, no offset advance)');
   }
 
@@ -179,7 +203,11 @@ async function run() {
     A.eq(doc.message.media[0], { kind: 'document', fileId: 'd1', name: 'report.pdf', mime: 'application/pdf', size: 0 }, 'document admitted with name+mime');
     // static sticker = viewable webp photo; animated/video stickers stay out
     A.eq(normalize({ update_id: 15, message: { message_id: 25, chat, from, sticker: { file_id: 's1' } } }).message.media[0].mime, 'image/webp', 'static sticker -> webp photo');
-    A.eq(normalize({ update_id: 16, message: { message_id: 26, chat, from, sticker: { file_id: 's2', is_animated: true } } }), { offset: 16, message: null }, 'animated sticker stays dropped');
+    // an animated sticker carries no frame any provider ingests, so it has no media — but it is NOT nothing:
+    // it now arrives as a descriptor instead of being dropped into silence (channels.telegram.context.test.js).
+    const anim = normalize({ update_id: 16, message: { message_id: 26, chat, from, sticker: { file_id: 's2', is_animated: true, emoji: '🔥' } } });
+    A.eq('media' in anim.message, false, 'animated sticker still carries no ingestible media');
+    A.ok(/animated sticker/.test(anim.message.text), 'animated sticker is described, not dropped');
     // text-only messages keep the EXACT old shape (no media field) — additive contract
     A.eq('media' in normalize({ update_id: 17, message: { message_id: 27, chat, from, text: 'plain' } }).message, false, 'text-only message has no media field');
     // album parts carry media_group_id -> mediaGroupId (the hub's merge key)

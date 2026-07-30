@@ -404,6 +404,12 @@ test/consent-visibility.test.js
 test/channels.adapter.test.js
 test/channels.telegram.test.js
 test/channels.telegram.format.test.js
+test/channels.telegram.context.test.js
+test/channels.telegram.media.test.js
+test/channels.telegram.groups.test.js
+test/channels.telegram.threads.test.js
+test/channels.telegram.updates.test.js
+test/channels.telegram.stream.test.js
 test/channels.discord.test.js
 test/channels.discord-gateway.test.js
 test/channels.slack.test.js

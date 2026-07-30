@@ -1,4 +1,4 @@
-/* sidecar/index.js — the Node host. The ONLY module with ambient I/O (http / fs / fetch /
+    botUsername: () => String((rec && rec.username) || ''),/* sidecar/index.js — the Node host. The ONLY module with ambient I/O (http / fs / fetch /
    process.env). It (1) serves the static frontend/ and (2) exposes POST /api/run, which
    assembles the EXISTING proven seams — registry + web/fs/notebook tools + capability gate +
    cost engine + the real OpenRouter provider — runs the unchanged agentic loop, and streams the
@@ -2208,6 +2208,18 @@ const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET s
 // Optional Bot API base override. Production defaults to Telegram; tests point this at a local fake server so the
 // real sidecar polling/send path can be validated without network or a live bot token.
 const TELEGRAM_API_BASE = String(ENV('TELEGRAM_API_BASE') || '').trim() || undefined;
+/* TELEGRAM_STATUS_INDICATOR — write "the station is up" into the bot's PROFILE short-description line (a bot
+   has no presence dot; this is the closest Bot API surface). OFF unless asked, matching the reference harness
+   and for the same reason: it overwrites a public profile field the member may have written themselves.
+   TELEGRAM_STATUS_ONLINE / _OFFLINE override the text. */
+const TELEGRAM_STATUS_INDICATOR = /^(1|true|on|yes)$/i.test(String(ENV('TELEGRAM_STATUS_INDICATOR') || '').trim());
+const TELEGRAM_STATUS_ONLINE = String(ENV('TELEGRAM_STATUS_ONLINE') || '').trim() || 'online — the station is listening';
+const TELEGRAM_STATUS_OFFLINE = String(ENV('TELEGRAM_STATUS_OFFLINE') || '').trim() || 'offline — the station is not running';
+// Best-effort, never awaited by a connect/disconnect path: a status line must not delay or fail either.
+function telegramStatusLine(ad, up) {
+  if (!TELEGRAM_STATUS_INDICATOR || !ad || typeof ad.setShortDescription !== 'function') return;
+  try { Promise.resolve(ad.setShortDescription(up ? TELEGRAM_STATUS_ONLINE : TELEGRAM_STATUS_OFFLINE)).catch(() => {}); } catch (_) {}
+}
 const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
 try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
 let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
@@ -5465,6 +5477,17 @@ const checkpointEmit = (name, payload) => { try { return checkpointEmitValidated
 
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
+// The station bot's own @username, learned from getMe() at connect. The group mention gate (channels/adapter.js)
+// reads it LAZILY through a function, so it arms as soon as this is populated and never captures the empty
+// startup value. Empty = "we don't know our own name", which the gate treats as "do not silence the room".
+let stationBotUsername = '';
+// The bot's DISPLAY name, learned from the same getMe. It is the wake word: "@thebot check the logs" is how
+// you address a bot, "StarNet, check the logs" is how people actually type it.
+let stationBotName = '';
+// Telegram PRIVACY MODE, from the same getMe. null until we are told. With it ON (the default) a group
+// delivers us only commands, @mentions and replies to us — so wake words and observe-mode are promises we
+// cannot keep, and /mention says so instead of pretending.
+let stationBotSeesAll = null;
 let discord = null;                                     // H6.2: { adapter, hub } when connected, else null
 let discordStatus = { connected: false, state: 'down', detail: '' };
 const channelRegistry = makeChannelRegistry();          // H6.2: telegram + discord descriptors
@@ -5519,13 +5542,19 @@ function startTelegram(token, key, model, agentCfg) {
     userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
-    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // INLINE KEYBOARDS (C6): multiple-choice answers and — for chats that ran /approvals on — approve/deny.
     // The registry is per-BOT (its tokens address this bot's messages only). askConsent/resolveConsent keep the
     // pause/resolve in the host; the hub only renders the keyboard and routes the tap back.
     prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
     answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
+    setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
+    // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
+    deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    canReadAllGroupMessages: () => stationBotSeesAll,
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -5555,6 +5584,14 @@ function startTelegram(token, key, model, agentCfg) {
     // image/text blocks by the SAME expandUserAttachments the interactive run host calls — so "send the bot a
     // photo" behaves exactly like attaching it in COMMS, no extra vision key needed.
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
+    // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
+    // failure degrades to a note naming the saved .ogg, exactly the old behaviour.
+    transcribe: async (buffer, mime) => {
+      const fmt = /ogg|opus/.test(String(mime || '')) ? 'ogg' : (/(webm|wav|mp3|mpeg|m4a|mp4)/.exec(String(mime || '')) || [, 'ogg'])[1];
+      try { return await transcribeAudioBuffer(buffer, fmt === 'mpeg' ? 'mp3' : fmt, runtimeKey); }
+      catch (e) { return { ok: false, reason: (e && e.message) || 'transcribe failed' }; }
+    },
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
     // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
@@ -5566,6 +5603,23 @@ function startTelegram(token, key, model, agentCfg) {
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission: the first DM claims the bot; persist that userId so it survives restarts.
+    // GROUP DISCIPLINE (adapter.js): only run on a group message that ADDRESSES us, never answer another bot.
+    // Read lazily — the username is resolved by getMe below, after this object is built.
+    botUsername: () => stationBotUsername,
+    // …and the gate is the CHAT's to set: /mention off writes requireMention:false onto the chat record, and
+    // this reads it per message so the flip lands on the very next one. Anything but an explicit false keeps
+    // the safe default (answer only when addressed).
+    requireMention: (chatId) => {
+      try { const r = channelStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
+      catch (_) { return true; }
+    },
+    // Being called by NAME is being addressed. Read lazily: the name arrives with getMe, after this is built.
+    mentionPatterns: () => [stationBotName],
+    // /mention observe — follow the room without answering it. Off unless the chat asked for it.
+    observeUnmentioned: (chatId) => {
+      try { const r = channelStore.getChatRecord(String(chatId)); return !!(r && r.observeUnmentioned); }
+      catch (_) { return false; }
+    },
     ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
     onOwnerClaim: (uid) => { try { persistOwnerClaim('telegram', uid); } catch (_) {} },
     onInbound: (m) => {
@@ -5619,6 +5673,9 @@ function startTelegram(token, key, model, agentCfg) {
     },
 
     onCallback: hub.onCallback,
+    // being blocked/kicked used to be invisible — the notifier kept posting into a chat that could never
+    // receive it. The hub marks the chat unreachable and drops its queued backlog.
+    onMembership: hub.onMembership,
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
       // Truthful telemetry: CONNECTED only when the transport actually proved 'up' AND we still hold a live adapter.
@@ -5633,8 +5690,19 @@ function startTelegram(token, key, model, agentCfg) {
   // start HONEST: 'connecting' (not an optimistic 'up') — the adapter's onStatus flips it to 'up' the moment its
   // first getUpdates round-trip succeeds, or to 'error' if the token is bad. The panel derives CONNECTED from this.
   telegramStatus = { connected: false, state: 'connecting', detail: '' };
+  /* Learn our own @username so the GROUP MENTION GATE can answer "was I addressed?". Best-effort and
+     non-blocking: the adapter reads this lazily, so the gate arms the moment getMe answers and until then
+     admits everything (we must never silence a room because we could not prove we were not addressed). */
+  Promise.resolve(makeTelegramTransport({ fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE }).getMe())
+    .then(me => {
+      if (me && me.ok && me.username) stationBotUsername = String(me.username);
+      if (me && me.ok && me.name) stationBotName = String(me.name);
+      if (me && me.ok && typeof me.seesAllGroupMessages === 'boolean') stationBotSeesAll = me.seesAllGroupMessages;
+    })
+    .catch(() => {});
   adapter.connect();
   publishCommandMenu(adapter, 'telegram');
+  telegramStatusLine(adapter, true);
   console.log('  · telegram channel connecting…');
   return { secretsPersisted };
 }
@@ -5650,6 +5718,8 @@ function publishCommandMenu(adapter, label) {
     .catch(() => {});
 }
 function stopTelegram() {
+  // Say we are going BEFORE the transport is torn down — after disconnect there is nothing left to say it with.
+  if (telegram && telegram.adapter) telegramStatusLine(telegram.adapter, false);
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
   telegram = null;
   telegramStatus = { connected: false, state: 'down', detail: '' };
@@ -5695,12 +5765,15 @@ function startTelegramBot(botId) {
   if (!token) throw new Error('bot ' + botId + ' has no saved token');
   let adapterRef = null;
   const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '' } };
+  // hoisted: the adapter's mention gate reads the SAME per-bot store the hub's /mention writes to. Two separate
+  // instances would leave the command reporting success while the gate never changed.
+  const botStore = makeBotScopedStore(botId);
   const hub = makeChannelHub({
-    channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
+    channel: 'telegram:' + botId, runOnce: runOnce, store: botStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
-    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
     // model and provider come from the LIVE roster entry first — a dossier edit or model switch applies to the
     // bot's next message with no reconnect, and two bots bound to different agents stay genuinely different
@@ -5726,6 +5799,14 @@ function startTelegramBot(botId) {
     resolveAgent: () => (recOf().agentId || null),
     resolveStation: (agentId) => router.stationFor(agentId),
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
+    // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
+    // failure degrades to a note naming the saved .ogg, exactly the old behaviour.
+    transcribe: async (buffer, mime) => {
+      const fmt = /ogg|opus/.test(String(mime || '')) ? 'ogg' : (/(webm|wav|mp3|mpeg|m4a|mp4)/.exec(String(mime || '')) || [, 'ogg'])[1];
+      try { return await transcribeAudioBuffer(buffer, fmt === 'mpeg' ? 'mp3' : fmt, runtimeKey); }
+      catch (e) { return { ok: false, reason: (e && e.message) || 'transcribe failed' }; }
+    },
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
     // INLINE KEYBOARDS (C6) — same wiring as the station bot, with its OWN registry so tokens minted for this
@@ -5733,11 +5814,35 @@ function startTelegramBot(botId) {
     prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
     answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
+    setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
+    // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
+    deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    canReadAllGroupMessages: () => { const v = (recOf() || {}).seesAllGroupMessages; return (typeof v === 'boolean') ? v : null; },
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission per bot (trust-on-first-use): each contact is claimed independently.
+    // GROUP DISCIPLINE (adapter.js): this bot's own  is already persisted on its record.
+    // recOf() re-reads the LIVE record, so a bot renamed in BotFather (and re-probed by getMe on the next
+    // connect flow) starts being recognised without a restart. `rec` is the connect-time snapshot and would
+    // pin the old name forever.
+    botUsername: () => String((recOf() || {}).username || ''),
+    // per-chat mention gate, same as the station bot — read live from this bot's own scoped store.
+    requireMention: (chatId) => {
+      try { const r = botStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
+      catch (_) { return true; }
+    },
+    // An agent-bound bot answers to BOTH names people would use for it: the bot's own display name and the
+    // agent's. recOf() re-reads the live record, so a rename in BotFather or in the roster takes effect without
+    // a restart. Anything under three characters is refused inside the adapter.
+    mentionPatterns: () => { const r = recOf() || {}; return [r.botName, r.name]; },
+    observeUnmentioned: (chatId) => {
+      try { const r = botStore.getChatRecord(String(chatId)); return !!(r && r.observeUnmentioned); }
+      catch (_) { return false; }
+    },
     ownerUserId: rec.ownerId || '',
     onOwnerClaim: (uid) => {
       const ok = saveTelegramBotRecord(botId, { ownerId: String(uid) });
@@ -5745,6 +5850,7 @@ function startTelegramBot(botId) {
     },
     onInbound: (m) => { Promise.resolve(hub.onInbound(m)).catch(e => console.warn('[telegram:' + botId + '] inbound error:', (e && e.message) || e)); },
     onCallback: hub.onCallback,
+    onMembership: hub.onMembership,   // same unreachable consumer, per bot
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
       entry.status = { connected: state === 'up' && telegramBots.get(botId) === entry, state: state, detail: (s && s.detail) || '' };
@@ -10578,6 +10684,38 @@ async function runOnce(o) {
       // stay just under the true ceiling: the transport may add its own prefix/footer to a chunk.
       return (isFinite(n) && n > 200) ? (n - 100) : 1900;
     },
+    /* OUTBOUND FILES (2026-07-29). readFile is the JAIL PROOF and it lives here, not in the tool: comms.js is
+       pure and must not learn about the filesystem. resolveInside is the same proof the fs.* tools and user
+       attachments use, so an agent can only attach something inside its OWN workspace — `../` or an absolute
+       path is a refusal, not a traversal. Never throws: a miss is { ok:false, error } the tool reports honestly. */
+    readFile: async (agentId, rel) => {
+      try {
+        // resolveInside THROWS on a jail violation ('illegal path' / 'path escapes workspace') and otherwise
+        // answers { base, abs } — the catch below turns a violation into an honest refusal, never a traversal.
+        const r = await fsJail.resolveInside(String(agentId || ''), String(rel || ''), { scope: 'read' });
+        const abs = r && r.abs;
+        if (!abs) return { ok: false, error: 'that path is outside your workspace' };
+        const st = await fsp.stat(abs).catch(() => null);
+        if (!st || !st.isFile()) return { ok: false, error: 'not a file' };
+        if (st.size > CHANNEL_UPLOAD_MAX_BYTES) return { ok: false, error: 'file is ' + Math.round(st.size / (1024 * 1024)) + 'MB (limit ' + Math.round(CHANNEL_UPLOAD_MAX_BYTES / (1024 * 1024)) + 'MB)' };
+        const buffer = await fsp.readFile(abs);
+        if (!buffer.length) return { ok: false, error: 'file is empty' };
+        return { ok: true, buffer: buffer, name: path.basename(abs), mime: mimeForPath(abs) };
+      } catch (e) { return { ok: false, error: (e && e.message) || 'read failed' }; }
+    },
+    // Upload through the SAME target-key resolution sendTo uses, so an agent can attach a file exactly where it
+    // may already send words — known-targets-only is unchanged by this feature.
+    sendMediaTo: (target, item) => {
+      let rec = null;
+      try { rec = channelStore.getChatRecord(String(target)) || null; } catch (_) { rec = null; }
+      if (!rec) return Promise.resolve({ ok: false, error: 'unknown chat target' });
+      const channel = String(rec.channel || 'telegram');
+      const live = liveChannelFor(channel);
+      if (!(live && live.adapter)) return Promise.resolve({ ok: false, error: channel + ' is not connected' });
+      if (typeof live.adapter.sendMedia !== 'function') return Promise.resolve({ ok: false, error: channel + ' cannot carry files' });
+      return Promise.resolve(live.adapter.sendMedia(String(rec.chatId || target), item))
+        .catch(e => ({ ok: false, error: (e && e.message) || 'upload failed' }));
+    },
     redact: redact,
     emit: chanEmit
   }).register(registry);
@@ -12609,6 +12747,8 @@ async function handleTelegramBotAdd(req, res) {
   const prev = telegramBotRecords()[botId] || {};
   const persisted = saveTelegramBotRecord(botId, {
     token: token, username: me.username || '', botName: me.name || '',
+    // privacy mode, learned once at connect — /mention reads it to tell the truth about what it can hear
+    seesAllGroupMessages: (typeof me.seesAllGroupMessages === 'boolean') ? me.seesAllGroupMessages : undefined,
     // persist the provider KEY on the record (like the station/generic channels do) — without it the bot only
     // works while a runtime/station key happens to exist and dies on restart with "no provider configured"
     // even though the add-flow validated a key. Codex/OAuth providers carry no key by design.
@@ -13598,6 +13738,74 @@ async function sttTranscribe(baseUrl, apiKey, whisperModel, audioBuf, filename, 
   let j; try { j = await r.json(); } catch (e) { return { ok: false, reason: 'bad json from ' + whisperModel }; }
   return { ok: true, text: String((j && j.text) || '').trim() };
 }
+/* The THREE transcription tiers, extracted from handleStt so a caller that is not an HTTP request can use them.
+   Telegram voice notes are the second caller (channels/hub.js): a member sends a voice message and we owned an
+   STT engine the whole time while telling the model "saved to <path>", which it cannot hear.
+
+   Resolves its own credentials exactly as handleStt did — env / runtime-pushed provider keys — so there is ONE
+   answer to "can this station transcribe", not two that drift. Returns { ok:true, text } (an EMPTY string is a
+   valid "no speech heard" result, not a failure) or { ok:false, reason }. Never throws. */
+async function transcribeAudioBuffer(audioBuf, format, apiKey) {
+  if (!audioBuf || !audioBuf.length) return { ok: false, reason: 'no audio' };
+  const key = String(apiKey || runtimeKey || '');
+  const groqKey = providerRuntimeKey('groq', '');
+  const openaiKey = providerRuntimeKey('openai', '');
+  if (!groqKey && !openaiKey && !key) return { ok: false, reason: 'no key' };
+  format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
+  const sttFilename = 'audio.' + format;
+  const sttContentType = 'audio/' + format;
+  let lastReason = 'no transcription';
+
+  // TIER 1 — Groq whisper-large-v3-turbo (very fast + cheap), dedicated speech model over the OpenAI-compatible
+  // multipart /audio/transcriptions endpoint. A non-2xx/timeout/parse failure falls through to the next tier.
+  if (groqKey) {
+    const base = STT_GROQ_BASE || providerRuntimeBaseUrl('groq', '') || 'https://api.groq.com/openai/v1';
+    const g = await sttTranscribe(base, groqKey, STT_GROQ_MODEL, audioBuf, sttFilename, sttContentType);
+    if (g.ok) return { ok: true, text: String(g.text || '') };
+    lastReason = 'groq: ' + g.reason;
+  }
+
+  // TIER 2 — OpenAI whisper-1. Same dedicated-ASR shape; key via providerRuntimeKey (page/runtime/env).
+  if (openaiKey) {
+    const base = STT_OPENAI_BASE || providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1';
+    const o = await sttTranscribe(base, openaiKey, STT_OPENAI_MODEL, audioBuf, sttFilename, sttContentType);
+    if (o.ok) return { ok: true, text: String(o.text || '') };
+    lastReason = 'openai: ' + o.reason;
+  }
+
+  // TIER 3 — the chat-model chain (OpenRouter/Gemini) as the final fallback. Only worth trying when an
+  // OpenRouter chat key is present (otherwise it is a guaranteed 401).
+  if (key) {
+    const audioB64 = audioBuf.toString('base64');
+    const payload = (model) => ({
+      model,
+      messages: [{ role: 'user', content: [
+        { type: 'input_audio', input_audio: { data: audioB64, format } },
+        { type: 'text', text: STT_PROMPT }
+      ] }]
+    });
+    for (const model of STT_MODELS) {
+      let r;
+      try {
+        r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
+          body: JSON.stringify(payload(model))
+        }, 120000));
+      } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
+      if (!r.ok) {
+        let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
+        lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
+        continue;
+      }
+      let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
+      const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
+      return { ok: true, text: text };
+    }
+  }
+  return { ok: false, reason: lastReason };
+}
+
 async function handleStt(req, res) {
   const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
   const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
@@ -13623,73 +13831,12 @@ async function handleStt(req, res) {
     }
   } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
 
-  key = key || runtimeKey;   // desktop: the OpenRouter chat-chain key lives in the keychain-seeded env, not the request
-  // Dedicated ASR credentials, resolved the same way handleTts resolves its provider keys (env / runtime push).
-  // Groq is env-only for now (GROQ_API_KEY); OpenAI reuses providerRuntimeKey so a page-supplied or sidecar
-  // runtime OpenAI key is honored — exactly like the openai TTS branch.
-  const groqKey = providerRuntimeKey('groq', '');
-  const openaiKey = providerRuntimeKey('openai', '');
-  // No-key ONLY when NONE of the three transcription paths has a credential — a Groq/OpenAI-only station must
-  // still transcribe (that's the whole decoupling point), so the old "no OpenRouter key ⇒ no key" gate is gone.
-  if (!groqKey && !openaiKey && !key) return degrade('no key');
   if (!audioB64) return degrade('no audio');
-  // Normalize the container name: 'webm' (opus) and 'wav' are what we produce; x-wav/wave → wav.
-  format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
-  const audioBuf = Buffer.from(audioB64, 'base64');
-  const sttFilename = 'audio.' + format;
-  const sttContentType = 'audio/' + format;
-
-  let lastReason = 'no transcription';
-
-  // TIER 1 — Groq whisper-large-v3-turbo (very fast + cheap). Dedicated speech model over the OpenAI-compatible
-  // multipart /audio/transcriptions endpoint. A non-2xx/timeout/parse failure falls through silently to the next tier.
-  if (groqKey) {
-    const base = STT_GROQ_BASE || providerRuntimeBaseUrl('groq', '') || 'https://api.groq.com/openai/v1';
-    const g = await sttTranscribe(base, groqKey, STT_GROQ_MODEL, audioBuf, sttFilename, sttContentType);
-    if (g.ok) return ok(g.text);   // empty string is a valid "no speech heard" result — deliver it
-    lastReason = 'groq: ' + g.reason;
-  }
-
-  // TIER 2 — OpenAI whisper-1. Same dedicated-ASR shape; key resolved via providerRuntimeKey (page/runtime/env).
-  if (openaiKey) {
-    const base = STT_OPENAI_BASE || providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1';
-    const o = await sttTranscribe(base, openaiKey, STT_OPENAI_MODEL, audioBuf, sttFilename, sttContentType);
-    if (o.ok) return ok(o.text);
-    lastReason = 'openai: ' + o.reason;
-  }
-
-  // TIER 3 — the EXISTING chat-model chain (OpenRouter/Gemini), unchanged, as the final fallback. Only worth
-  // trying when an OpenRouter chat key is present (otherwise it's a guaranteed 401).
-  if (key) {
-    const payload = (model) => ({
-      model,
-      messages: [{ role: 'user', content: [
-        { type: 'input_audio', input_audio: { data: audioB64, format } },
-        { type: 'text', text: STT_PROMPT }
-      ] }]
-    });
-    for (const model of STT_MODELS) {
-      let r;
-      try {
-        r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
-          body: JSON.stringify(payload(model))
-        }, 120000));
-      } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
-      if (!r.ok) {
-        let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
-        lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
-        // a 4xx that names the model/modality is "this model can't do audio" — try the next candidate. Other
-        // errors (auth, rate) will repeat on every model, but the loop is short so it's cheap either way.
-        continue;
-      }
-      let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
-      const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
-      return ok(text);   // empty string is a valid "no speech heard" result — deliver it, don't fall through
-    }
-  }
-  return degrade(lastReason);
+  // The three tiers (and their credential resolution) live in transcribeAudioBuffer so the Telegram voice-note
+  // path uses the SAME engine chain rather than a second implementation that drifts. An empty transcript is a
+  // valid "no speech heard" result and is delivered as-is, never treated as a failure.
+  const r = await transcribeAudioBuffer(Buffer.from(audioB64, 'base64'), format, key);
+  return r.ok ? ok(r.text) : degrade(r.reason);
 }
 
 function readBody(req, max, res) {
@@ -13742,6 +13889,16 @@ const MIME = {
   '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
 };
+// OUTBOUND CHANNEL FILES (channel.send `files`): the ceiling we enforce BEFORE reading a file into memory, and
+// the mime the platform is told. 20MB sits under Telegram's 50MB bot-upload cap with headroom for the multipart
+// framing, and it is a size a phone on mobile data can actually receive. `MIME` is the same table the static
+// server uses — one source of truth, so a type served correctly on the station is typed correctly in the chat.
+const CHANNEL_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+function mimeForPath(abs) {
+  const m = MIME[path.extname(String(abs || '')).toLowerCase()];
+  // strip the charset — the Bot API wants a bare content-type on a form part
+  return m ? String(m).split(';')[0].trim() : 'application/octet-stream';
+}
 const ACTIVE_DELIVERABLE_EXTS = new Set([
   '.html', '.htm', '.xhtml', '.js', '.mjs', '.cjs', '.svg', '.xml', '.xsl', '.xslt', '.wasm'
 ]);
