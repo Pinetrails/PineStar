@@ -727,7 +727,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-30 00:10Z @ 48a5bc4c | RED | 4 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-30 04:06Z @ 6631734e | RED | 4 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-29T13:01:43.120Z · ui-only · 100781ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -1259,3 +1259,77 @@ while the merged tree passed 5 of 6 — not by `git stash`, which proves nothing
 above records (baseline blessed 2026-07-25, before the decor/grounds/hallway/XP lanes landed). This merge
 changes no rendered art — its only UI-visible additions are a tooltip CANCEL path and a PERMISSIONS row
 that appears solely when a full-access wildcard is standing, which no golden fixture holds.
+
+## 2026-07-30 — the unmerged-lane sweep: fourteen branches landed, three left for Andrew
+
+Trunk `74edf2ac` → `95b9d2a8`. Full `npm test` after the last merge: **NPM_EXIT=0 read FROM THE
+LOG, `run-fast-tests: OK — 462 step(s) green`**, whole http/e2e chain green, zero FAIL lines. The
+step count moved 449 → 458 → 462 as the merged branches brought their own tests with them, which is
+the cheapest proof that their tests actually joined the gate rather than sitting inert.
+
+LANDED — ten quality-loop one-fix branches: comms announces the model the selector actually shows;
+`missing key/model` classifies as **auth** instead of an unknown retryable fault (a doomed "Try
+again" loop); the Codex token migration recognises app homes by **enumerating LOCALAPPDATA/APPDATA/
+XDG exactly** rather than by directory *shape* — and because the root cause (only one app-data base
+was ever consulted) is fixed at source, the looser shape rule was correctly deleted rather than
+kept alongside; `purge-leaked-codex-tokens` now protects an explicitly configured workspace root;
+Windows background shells are reaped by letting `taskkill /T` see the LIVE root first, with
+`child.kill` only as a fallback, because killing the leader first races descendant discovery and
+leaves grandchildren running; the channels setup guide tracks `configured` in both directions and
+scopes its human-override detector to the summary's `click` (the old `toggle` listener mistook the
+code's own programmatic fold for a hand toggle); session rail search is isolated; browser `find`
+misses stay viewport-scoped; rail actions reach the keyboard.
+
+ALSO LANDED — **macOS hardened runtime + notarization entitlements** (`src-tauri/entitlements.plist`,
+`hardenedRuntime: true`, and the release-train signature proof). Notarization REQUIRES hardened
+runtime, and hardened runtime kills JIT processes unless entitled, so without this the app signs
+and notarizes fine and then dies on launch — a runtime failure, easy to ship broken. Its 11
+conflicts were **all** stale `website/docs` prose; trunk's site already carries the "damaged is not
+a warning you can click past" guidance, so every conflict was resolved to trunk's copy and only the
+signing change was taken. ⛔ **THE ENTITLEMENTS FILE ASSERTS "zero native .node addons (verified
+2026-07-24)" AND DELIBERATELY OMITS `disable-library-validation`** — that assertion is still true
+only because the bundle ships no node_modules. Anyone who bundles onnxruntime to make offline voice
+work in the installed build (see the local-voice digest above) **invalidates it and the macOS app
+will die at launch.** The two lanes are coupled; do not move one without the other.
+Plus three QA-tooling branches: the deterministic adversarial API sweep (`saboteur.mjs`), the
+Red-Green Closer (`closer.mjs`), and the durable bug register with its ten sweep lanes.
+
+MERGE MECHANICS WORTH KEEPING: `docs/NEXT.md` and `test/fast.list` are append-only, so their
+conflicts were resolved as a **union** (markers stripped, both sides kept) and then validated —
+`fast.list` was checked for duplicate entries and for every listed file actually existing, because
+a union resolution is exactly how a list acquires a phantom or doubled test. One conflict was
+genuinely semantic: `permissionsstore.js reset()`. Trunk revoked the standing FULL ACCESS wildcards
+but swallowed failures and cleared local state optimistically; the branch made the lockdown **fail
+closed** but did not know about wildcards. ⛔ **Taking either side alone was wrong** — trunk's loses
+fail-closed (the UI claims lockdown while the server still holds the grant, which is the lie the
+branch's own doc comment sitting directly above the function describes), the branch's leaves the
+broadest grant standing. Resolved by combining: curated keys **and** blanket wildcards both go
+through the local `revoke()` so a refusal lands in `error` and REJECTS, and **nothing is cleared
+optimistically** — `blanket` is only ever refreshed from the server, so wiping it locally is
+precisely the claim we cannot make. Both mirrors verified, `node --check` clean, and the merged
+files scanned for dropped/duplicated symbols (the two `addRoot` hits in `codex-token-store.js` are
+separate closures inside `knownWorkspaceRoots` and `candidateCodexTokenFiles`, not merge damage;
+`browser.js`'s repeats are per-tool handlers in distinct scopes).
+
+⛔ NOT MERGED, AND WHY — **`claude/onboarding-blitzproof-c268c1` IS GENUINELY UNLANDED, WHICH THE
+07-29 STALE-BRANCH AUDIT GOT WRONG.** That audit concluded only three pre-07-25 branches held
+unlanded work; this is a fourth. Proven by grepping trunk rather than trusting the audit: the
+branch's "chips are doors, not answers" interview carries 23 `drill` hits in `onboarding.js` and
+trunk has **zero**, with no `compose:`/`placeholder:` chips anywhere. It is NOT a blind merge —
+trunk has since rewritten those same files by **+734 lines**, and the trial merge conflicts on both
+`onboarding.js` and `wakemind.js`. Reconciling two divergent onboarding redesigns is a product
+decision about the first-run experience, not a conflict resolution, so it is left for Andrew.
+⛔ **LAW: a branch-age audit's "already landed" verdict is a hypothesis — re-grep the behaviour
+before you retire a branch on it.** Same category, also left: `admiring-bun-b5a798` (station
+lighting v2, awaiting the art verdict, and note it also re-blesses the 17 goldens),
+`prop-rotation-system-22983e` (7 props awaiting the verdict), and
+`messaging-connectors-expansion-87c457`, which measures **56% already on trunk** — half
+reimplemented, half not, so it needs reading rather than merging. The two subscriptions branches
+stay out **by design** (credits economics is not in the public repo).
+CONFIRMED NO-OPS, safe to retire: `upbeat-driscoll-54446f` is trunk's own `93c141b0` under a
+different hash, and `starnet-bug-investigation-1e39e6` is the known codex duplicate whose two
+unique keepers already landed as `c7ee22e8`.
+
+The Green Guardian's auto-updated last-run row is again committed alongside this digest rather than
+discarded, per the precedent above. `golden` remains RED on 4 frames and remains **not re-blessed** —
+still Andrew's call, and `admiring-bun-b5a798` would re-bless them as part of the lighting verdict.
