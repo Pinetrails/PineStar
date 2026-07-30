@@ -462,3 +462,4 @@ test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js
 test/station-bridge.test.js
+test/station-commands.test.js

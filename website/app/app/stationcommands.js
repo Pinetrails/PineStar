@@ -25,6 +25,59 @@ const StationCommands = (() => {
       return snap;
     },
 
+    /* The sessions that exist, by name. This is what turns "the research session" into a real workstream id:
+       the sidecar resolves against THIS list and refuses anything it cannot match uniquely, so the resolution
+       is only ever as good as the truth here — report ids and titles verbatim, never a guess or a default. */
+    'station.sessions': () => {
+      if (typeof Workstreams === 'undefined' || !Workstreams.list) throw new Error('sessions are not ready yet');
+      const rows = Workstreams.list() || [];
+      const activeId = Workstreams.activeId ? Workstreams.activeId() : null;
+      const generalId = Workstreams.generalId ? Workstreams.generalId() : null;
+      return {
+        count: rows.length,
+        activeId: activeId,
+        sessions: rows.map(w => ({
+          id: w.id,
+          // General is the untitled home stream; it has no name of its own, so give it the one the UI shows.
+          title: w.title != null ? w.title : (w.id === generalId ? 'General' : null),
+          agentId: w.agentId || 'agent',
+          lane: w.lane || null,
+          active: w.id === activeId
+        }))
+      };
+    },
+
+    /* Fold a finished delegated run's answer into the session it was filed under. APPENDS — a session usually
+       already holds the Commander's own conversation, and replacing that history (the way the cron auto-session
+       path can, because it OWNS its stream) would delete their thread. Idempotent by runId so a retry, a
+       duplicated command, or a re-delivered background worker can never double-post. */
+    'station.deliver': (a) => {
+      if (typeof Workstreams === 'undefined' || !Workstreams.get) throw new Error('sessions are not ready yet');
+      const id = String((a && a.streamId) || '');
+      const ws = id && Workstreams.get(id);
+      if (!ws) throw new Error('there is no session with id ' + (id || '(none given)') + ' on this station');
+      const text = String((a && a.text) || '').trim();
+      if (!text) throw new Error('nothing to deliver — the worker returned no text');
+      const runId = String((a && a.runId) || '');
+      if (runId && (ws.runIds || []).indexOf(runId) >= 0) return { folded: false, reason: 'already delivered', session: ws.title || 'General' };
+      const who = String((a && a.agentId) || 'agent');
+      const prompt = String((a && a.prompt) || '').trim();
+      if (!Array.isArray(ws.history)) ws.history = [];
+      /* The instruction goes in as a sys marker, not a user turn: the Commander did not type it here, and
+         chat.js excludes sys lines from historyWindow() so it is never replayed to the model as if they had. */
+      if (prompt) ws.history.push({ role: 'system', sys: true, content: '— delegated to ' + who + ': ' + prompt.slice(0, 400) + ' —', ts: Date.now() });
+      // agentId names the ACTUAL speaker so renderHistory attributes it to the worker, not the session's agent.
+      ws.history.push({ role: 'assistant', content: text, agentId: who, ts: Date.now() });
+      if (runId && Workstreams.appendRun) Workstreams.appendRun(ws.id, runId);
+      else if (Workstreams.touch) Workstreams.touch(ws.id);
+      if (Workstreams.markUnread) Workstreams.markUnread(ws.id);   // real new content the Commander has not seen
+      const isOpen = Workstreams.activeId && Workstreams.activeId() === ws.id;
+      if (isOpen && typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
+      try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      return { folded: true, session: ws.title || 'General', agentId: who };
+    },
+
     /* Who is on the roster and what each one is for — the list a delegate call has to choose from. */
     'station.crew': () => {
       if (typeof App === 'undefined' || !App.agents) throw new Error('the crew roster is not ready yet');

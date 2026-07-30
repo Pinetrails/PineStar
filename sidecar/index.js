@@ -10580,6 +10580,10 @@ async function runOnce(o) {
     approvalPosture: () => (FULL_ACCESS || ((agentRoster.get(agentId) || {}).approvalMode === 'full')) ? 'full' : 'ask',
     perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
+    // SESSION TARGETING: sessions are page state, so `session` on a worker is resolved — and the finished work
+    // delivered — over the station bridge. On a headless run (cron, Night Shift) nothing answers and the tool
+    // refuses the target instead of quietly running the work in the wrong place.
+    station: stationBridge,
     now: () => Date.now(),   // the dispatch wall clock divides this budget across sequential workers (injected: lint-determinism)
     // FAN-OUT CAPACITY: how many NEW distinct agents the admission gate can still accept. A parallel dispatch runs
     // in waves of this size instead of firing all workers at once — the lead holds a slot for the whole dispatch, so
