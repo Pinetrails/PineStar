@@ -1144,6 +1144,11 @@ const VoiceLive = (() => {
     failed = false;
     reflectButton(true);
     if (typeof Voice !== 'undefined') {
+      /* ⛔ THE SAME LEVER start() PULLS, AND THE PATH THAT ACTUALLY SHIPS. A packaged build carries no
+         node_modules, so the offline models are always absent there and hands-free ALWAYS lands here. Wiring
+         the speaker auto-enable only into the models path fixed it exclusively on a source checkout: every
+         installed station still opened Local Live muted, which is a room you talk into that never answers. */
+      if (Voice.forceSpeakOn) Voice.forceSpeakOn();
       if (Voice.inVoiceMode && Voice.inVoiceMode() && Voice.stopConvo) Voice.stopConvo();
       if (Voice.setLocalTts) Voice.setLocalTts(false);
       if (Voice.startCoordinator) Voice.startCoordinator({ onState, onAssistant, onOutputLevel });
