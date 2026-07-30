@@ -24,8 +24,8 @@ function makeStationBridge(opts) {
   opts = opts || {};
   const emit = opts.emit || (() => {});
   const timeoutMs = Number(opts.timeoutMs) || DEFAULT_TIMEOUT_MS;
-  // Injected so tests can drive time and ids without sleeping or guessing.
-  const now = opts.now || (() => Date.now());
+  // Injected so tests can drive ids without guessing. No clock here on purpose: nothing in this file needs
+  // wall time, and a literal Date.now() would make the module non-deterministic for no benefit.
   const newId = opts.newId || (() => require('node:crypto').randomUUID());
   const setTimer = opts.setTimeout || setTimeout;
   const clearTimer = opts.clearTimeout || clearTimeout;
@@ -52,7 +52,7 @@ function makeStationBridge(opts) {
       }), timeoutMs);
       // unref so a pending command can never hold the process open at shutdown
       try { if (timer && typeof timer.unref === 'function') timer.unref(); } catch (_) {}
-      pending.set(id, { resolve: settle, timer, verb, at: now() });
+      pending.set(id, { resolve: settle, timer, verb });
       try {
         emit('station.command', { id, verb, args: args || {} });
       } catch (e) {
