@@ -670,7 +670,11 @@
             '<div class="mc-hint">Stored locally by the sidecar, sent as <code>Authorization: Bearer …</code>, never displayed again.</div></div>'
         : '';
       const home = e.homepage ? ' <a class="cc-home dim" href="' + esc(e.homepage) + '" target="_blank" rel="noopener">site ↗</a>' : '';
-      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '" style="--ci:' + (ci || 0) + '">' +
+      // data-search: the console search box (stationui.js doFilter) matches textContent + this attribute, so a
+      // Commander typing "google drive" reaches the Google Workspace card even though those words are only in
+      // its blurb by luck. Off-screen matching text only — never rendered.
+      const alias = (Array.isArray(e.aliases) && e.aliases.length) ? ' data-search="' + esc(e.aliases.join(' ')) + '"' : '';
+      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '"' + alias + ' style="--ci:' + (ci || 0) + '">' +
           '<div class="cc-head"><b>' + esc(e.name) + '</b> ' + origin +
             '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + (chip[0] ? chip[0] + ' ' : '') + esc(chip[1]) + '</span></div>' +
           '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + keyField +
@@ -925,7 +929,8 @@
         kyCatEl.innerHTML = groups.map(g =>
           '<div class="cc-group"><div class="cc-cat">' + esc(g.category) + '</div>' +
           g.platforms.map(p =>
-            '<div class="cc-card' + (p.installed ? ' added' : '') + '" data-ky-pick="' + esc(p.id) + '">' +
+            '<div class="cc-card' + (p.installed ? ' added' : '') + '" data-ky-pick="' + esc(p.id) + '"' +
+              ((Array.isArray(p.aliases) && p.aliases.length) ? ' data-search="' + esc(p.aliases.join(' ')) + '"' : '') + '>' +
               '<div class="cc-top"><b>' + esc(p.name) + '</b>' +
                 (p.installed ? '<span class="cc-tier cc-lg-none">✓ ADDED</span>' : '<span class="cc-tier cc-lg-key">API key</span>') + '</div>' +
               '<div class="cc-blurb dim">' + esc(p.blurb || '') + '</div>' +

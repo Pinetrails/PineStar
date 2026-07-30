@@ -85,12 +85,14 @@
     // ── Automation — one API key, enormous reach ──────────────────────────────────────────────────────
     { id: 'zapier', name: 'Zapier', category: 'Automation', authType: 'apikey', transport: 'http',
       url: 'https://mcp.zapier.com/api/mcp/mcp', official: true, homepage: 'https://zapier.com',
+      aliases: ['google', 'google drive', 'gdrive', 'gmail', 'google sheets', 'google calendar', 'gsuite', 'g suite', 'automation'],
       blurb: 'Bridge to 7,000+ apps — including Gmail, Google Calendar, Drive, Sheets, and Slack — through one key.' },
     { id: 'apify', name: 'Apify', category: 'Automation', authType: 'apikey', transport: 'http',
       url: 'https://mcp.apify.com', official: true, homepage: 'https://apify.com',
       blurb: 'Run web-scraping and automation Actors, and pull structured data from the web.' },
     { id: 'composio', name: 'Composio', category: 'Automation', authType: 'apikey', transport: 'http',
       url: 'https://connect.composio.dev/mcp', official: true, homepage: 'https://composio.dev',
+      aliases: ['google', 'google drive', 'gdrive', 'gmail', 'twitter', 'x', 'slack', 'notion', 'google calendar', 'gsuite', 'g suite'],
       blurb: 'One key bridges 500+ apps — X, Slack, Gmail, Google Drive, Notion, GitHub, and more. The fastest way to reach the platforms that otherwise need their own sign-in.' },
 
     // ── Social — paste an API key (read access); posting needs OAuth ───────────────────────────────────
@@ -113,6 +115,7 @@
        The panel renders it as a live "VIA <name>" jump to that card instead of a mute disabled button. */
     { id: 'google-workspace', name: 'Google Workspace', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: '', official: true, homepage: 'https://workspace.google.com', via: 'zapier',
+      aliases: ['google', 'google drive', 'gdrive', 'drive', 'gmail', 'google docs', 'google sheets', 'google calendar', 'gsuite', 'g suite', 'google workspace'],
       blurb: 'Gmail, Calendar, Drive, Docs, and Sheets. Google ships no public MCP endpoint yet — reach it today through the Zapier connector (one API key).' },
     { id: 'notion', name: 'Notion', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://mcp.notion.com/mcp', official: true, homepage: 'https://notion.so',
@@ -122,6 +125,7 @@
       blurb: 'Create, search, and update Linear issues and projects. Needs Linear sign-in (OAuth).' },
     { id: 'atlassian', name: 'Jira & Confluence', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: '', official: true, homepage: 'https://atlassian.com', via: 'zapier',
+      aliases: ['atlassian', 'jira', 'confluence'],
       blurb: 'Atlassian Jira issues and Confluence pages. Their endpoint speaks Basic auth our transport can\'t drive — reach it today through the Zapier connector (one API key).' },
     /* apikey, NOT oauth: github.com/login/oauth exposes no RFC 7591 dynamic registration (live-probed
        2026-07-18 — discovery succeeds but registration_endpoint is absent), so our DCR sign-in flow can
@@ -204,7 +208,12 @@
     return {
       id: e.id, name: e.name, category: e.category, authType: e.authType, transport: e.transport,
       url: e.url || '', official: !!e.official, homepage: e.homepage || '', blurb: e.blurb || '',
-      via: e.via || '', installable: isInstallable(e)
+      via: e.via || '', installable: isInstallable(e),
+      // ALIASES — the names a Commander actually TYPES, which are frequently not the row's name and not in
+      // its blurb. "google drive" found nothing while a Google Workspace card sat on screen (2026-07-28);
+      // relying on a term happening to appear in marketing copy is not a search. Ride into the card's
+      // data-search attribute and into the agent's connect block, so the UI and the agent match the same words.
+      aliases: Array.isArray(e.aliases) ? e.aliases.slice() : []
     };
   }
 

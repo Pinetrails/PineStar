@@ -1032,10 +1032,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           pane.classList.remove('con-sec-hidden');
           pane.classList.add('con-sec-searchshow');
           // a "row" = a labelled control block. We match on visible text of these granular blocks.
-          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row, .con-sec-body .ts-row');
+          // `.cc-card` is the CATALOG / KEYS platform card (windows/connectors.js) — it was missing from this
+          // allowlist, so typing the NAME OF A PLATFORM into the box above the catalog matched nothing at all:
+          // 48 connectable platforms were rendered on screen and indexed by zero of them ("google" → 0 hits
+          // while a Google Workspace card was visible). A search box a user types a platform name into must
+          // index the platforms. Locked by test/connectors-ui.test.js.
+          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row, .con-sec-body .ts-row, .con-sec-body .cc-card');
           let hits = 0;
           rows.forEach(r => {
-            const hit = (r.textContent || '').toLowerCase().indexOf(q) >= 0;
+            // `data-search` carries ALIASES that are deliberately not on screen (a Google Workspace card says
+            // "Gmail, Calendar, Drive…" in its blurb but never "gdrive"/"g suite"). Searching a name the user
+            // actually types must not depend on that name happening to appear in marketing copy.
+            const hay = ((r.textContent || '') + ' ' + (r.dataset ? (r.dataset.search || '') : '')).toLowerCase();
+            const hit = hay.indexOf(q) >= 0;
             r.classList.toggle('con-hit', hit);
             r.classList.toggle('con-miss', !hit);
             if (hit) hits++;
