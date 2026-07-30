@@ -10,7 +10,7 @@
                        Default model: google/gemini-2.5-flash-image (override via args.model — e.g.
                        black-forest-labs/flux.2-pro, recraft/recraft-v4).
      image_analyze   : vision Q&A over a workspace image / http(s) URL. TWO routes, tried in order (the
-                       Hermes-style auxiliary-vision pattern — vision must never dead-end on one vendor key):
+                       reference harness's auxiliary-vision pattern — vision must never dead-end on one vendor key):
                          1. OpenRouter chat-completions with a dedicated vision model (when a key exists);
                          2. deps.auxVision — the RUN's OWN provider/model (injected by the run host), so a
                             session on Anthropic/Gemini/Codex/any vision-capable provider can look at images

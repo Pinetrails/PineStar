@@ -259,7 +259,7 @@
         }
       },
 
-      // sendChatAction — the "typing…" bubble (Hermes parity). Telegram shows it for ~5s per call; the hub's
+      // sendChatAction — the "typing…" bubble (ref-parity). Telegram shows it for ~5s per call; the hub's
       // keep-alive loop refreshes it while a run is in flight. NEVER throws — always { ok, error?, retryable?,
       // retryAfter? } (same normalized shape as send) so the hub's loop can back off on 429 or stop on a hard
       // error. Purely cosmetic: a failure here must never affect the real reply path.

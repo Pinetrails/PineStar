@@ -61,7 +61,7 @@ const SLEEP = process.platform === 'win32' ? 'ping -n 5 127.0.0.1 > NUL' : 'slee
     const r5 = await small.run({ cmd: 'echo hello world this is long' }, ctx());
     A.ok(/truncated/.test(r5.content), 'oversized output truncated');
 
-    /* ---- 5b. ANSI STRIP (Hermes parity). npm/git/cargo/pytest emit colour whenever they think a TTY is
+    /* ---- 5b. ANSI STRIP (ref-parity). npm/git/cargo/pytest emit colour whenever they think a TTY is
        attached, and the model reads the control bytes as tokens — '[32m' is billed content meaning
        "green" to nobody. Driven through a REAL child process so this proves the actual pipe, not a helper. ---- */
     const ESC = String.fromCharCode(27), BEL = String.fromCharCode(7);

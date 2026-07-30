@@ -147,7 +147,7 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
     A.eq(kFetch.calls[1].body.model, 'google/gemini-3-pro-image', 'an explicit per-call model still wins over the knob');
   }
 
-  // ---- I. AUX VISION: session-provider fallback (the Hermes-style route; kills the "give me a key" bug) ----
+  // ---- I. AUX VISION: session-provider fallback (the ref-style route; kills the "give me a key" bug) ----
   {
     // I1. NO key + auxVision -> analyze works through the session provider; no OpenRouter fetch fired
     const auxCalls = [];
