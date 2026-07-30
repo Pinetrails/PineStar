@@ -179,7 +179,10 @@
             '<span class="ch-state" id="' + c.pre + '-status">checking…</span>' +
           '</div>' +
           '<p class="set-about ch-tagline">' + c.tagline + '</p>' +
-          '<details class="ch-setup"><summary>SETUP GUIDE</summary>' +
+          // OPEN by default: the steps are the whole point of a card nobody has set up yet, and a folded
+          // <details> hides them at exactly the moment they are needed. paintCard folds it once this
+          // platform is actually configured (and never again after the Commander toggles it by hand).
+          '<details class="ch-setup" open data-autofold="1"><summary>SETUP GUIDE</summary>' +
             '<ol class="ch-steps"><li>' + c.steps.join('</li><li>') + '</li></ol>' +
             (c.note ? '<p class="ch-note">' + c.note + '</p>' : '') +
           '</details>' +
@@ -294,6 +297,15 @@
         sum.textContent = conn ? '● connected' : inFlight ? '◐ connecting…'
           : state === 'error' ? '✕ error' : configured ? '○ saved — offline' : '○ not connected';
       }
+      // SETUP GUIDE auto-fold — keyed off `configured` (a real saved config), never off `conn`: a platform
+      // that is saved-but-offline is set up, while a cold card still needs its steps in front of the user.
+      // One-shot: the first user toggle clears the flag, after which we never move it again.
+      const guide = body.querySelector('#ch-card-' + c.id + ' .ch-setup');
+      if (guide && !guide.dataset.foldWired) {
+        guide.dataset.foldWired = '1';
+        guide.addEventListener('toggle', () => { delete guide.dataset.autofold; });
+      }
+      if (guide && guide.dataset.autofold === '1' && configured) guide.open = false;
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
       if (card) card.classList.toggle('on', conn);
