@@ -93,6 +93,16 @@ reproduction sent five partial messages (reply count 2→7) while dropping the t
 the ceiling in its schema and refuses the whole call before target resolution or transport activity.
 Regression proof: 56 focused unit assertions, 35 real-sidecar assertions, and full `test:http` green.
 
+## 2026-07-29 — MODEL CHIP ACCESSIBLE STATE (`agent/quality-loop-0729`)
+
+READY TO MERGE — the freshly promoted COMMS model readout visually showed its selected model and
+reasoning tier, but its fixed accessible name was only `Model selector`. `ModelDock.reflect()` now
+derives the button name from the same live model/effort state as the visible chip. Live seeded proof:
+switching MED→HIGH produced visual `CLAUDE HAIKU 4.5 · HIGH`, selected effort `HIGH`, and accessible
+name `Model selector: claude haiku 4.5, High reasoning`. Regression: the focused model suite is
+58 assertions, website mirror is synced, syntax checks are green, and `test:fast` is 430/430 green.
+No push, merge, deploy, publish, PR, production-data, secret, or source-credential changes.
+
 ## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
 
 Getting the source repo release-shaped for the public flip (Andrew: "essentially ready for
