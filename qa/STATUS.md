@@ -1224,3 +1224,38 @@ Andrew's verdict, is his call and not this lane's.** The Guardian's own auto-upd
 was sitting uncommitted in the integration tree and is committed alongside this digest rather than
 discarded — it is real machine data and not this lane's finding, matching the precedent set by the
 crew-panel and leveling digests above.
+
+## 2026-07-29 — MERGE: the 07-29 bug sweep (`claude/starnet-bug-fixes-1b1a9f` → `0a6a14e1`, re-lock `556ed6f4`)
+
+**GATE: `test:fast` 449 steps green, `test:http` 54 suites / 0 FAIL — both `EXIT=0` READ FROM THE LOG.**
+
+Closes every defect in the `183a238d` register — 7 P0 / 15 P1 / 12 P2 — including the 7th P0 that pass 1
+confirmed but never reproduced (skill.view's hydrate-then-bump: `view()` bumped the HYDRATED record into
+`latest`, and since `hydrate()` returns the whole RENDERED SKILL.md as `body` and `markUsed()` persists from
+`latest` on EVERY run, each read re-appended `## Setup`; measured 99→177→255→333 bytes with the content
+digest moving each cycle, so a Commander approval was invalidated forever). Plus 7 defects found while
+fixing those. The register files still read `status: open` only because they live on the unmerged
+`claude/bug-sweep-system-120a0c`.
+
+Four content conflicts, every one resolved by KEEPING BOTH SIDES: `frontend/app/voice.js` (trunk's
+live-voice coordinator vs this lane's STT diagnostic — adjacent insertions), `sidecar/index.js` (trunk's
+uuid sessionKey + agent-lifecycle gate vs this lane's autonomous-broker blanket removal — all three kept,
+trunk's control flow verbatim), `test/voice.button.test.js` (one sandbox key, two needs — trunk injects a
+specific Audio class, this lane needs `canSpeak()` true), and `qa/product-perfect/claims.json`
+(REGENERATED; verified every non-surface key was already identical on both sides and that the recomputed
+189-file path set matches trunk's exactly, so `terrain.js` and `voice-live.js` stay in the ledger).
+
+`sidecar/loop.js` auto-merged — the known hotfile — and was audited per the ritual: parses, no duplicated
+or dropped function declarations, all 60 of trunk's added lines present, this lane's summarize-failover
+argument intact. `shared/events.js`/`shared/schema.js` untouched, no `package.json` change, no credential
+moved by the diff.
+
+Rehearsed end to end in a detached worktree BEFORE touching trunk, twice: trunk moved mid-rehearsal
+(`b733af86` → `dfa761c2`) so it was re-run against the tip. `loops.e2e`'s "a parked loop does not spend"
+flake was proven PRE-EXISTING by running it on trunk in that isolated worktree — trunk failed 2 of 6 runs
+while the merged tree passed 5 of 6 — not by `git stash`, which proves nothing about committed work.
+
+⛔ **NOT THIS LANE, AND STILL OPEN: trunk remains RED on `golden`** for the reasons the `48a5bc4c` digest
+above records (baseline blessed 2026-07-25, before the decor/grounds/hallway/XP lanes landed). This merge
+changes no rendered art — its only UI-visible additions are a tooltip CANCEL path and a PERMISSIONS row
+that appears solely when a full-access wildcard is standing, which no golden fixture holds.
