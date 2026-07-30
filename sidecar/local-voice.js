@@ -2,12 +2,67 @@
 
 const path = require('node:path');
 const os = require('node:os');
+const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 
-const cacheRoot = process.env.STARNET_MODEL_CACHE ||
-  path.join(process.env.LOCALAPPDATA || os.homedir(), 'Starnet', 'models');
+// Per-user model cache, alongside the rest of the app's data root (%LOCALAPPDATA%\StarNet on Windows,
+// ~/Library/Application Support/StarNet on macOS — the two platforms we ship). Never inside the repo:
+// these are ~150 MB of downloaded weights, and PRIVACY.md documents this path for manual removal.
+function defaultCacheRoot() {
+  if (process.platform === 'win32') {
+    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'StarNet', 'models');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'StarNet', 'models');
+  }
+  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'starnet', 'models');
+}
+
+const cacheRoot = process.env.STARNET_MODEL_CACHE || defaultCacheRoot();
 const state = { asr: 'cold', tts: 'cold', progress: null, error: '', cacheRoot };
+
+// ---- installation probe -------------------------------------------------------------------------
+// Offline speech needs two npm packages (`@huggingface/transformers` + `kokoro-js`, which drags in
+// onnxruntime-node's native binaries). The shipped desktop bundle carries `sidecar/`, `frontend/` and
+// `shared/` as Tauri resources and NO node_modules — the Node sidecar is otherwise dependency-free — so
+// in an installed build these imports cannot resolve. `status()` must therefore PROVE the packages are
+// present rather than assert it: claiming a capability the harness can't deliver is exactly the lie this
+// product forbids, and before this probe existed the panel showed users a raw "Cannot find module" string.
+const REQUIRED_PACKAGES = ['@huggingface/transformers', 'kokoro-js'];
+const UNAVAILABLE_REASON =
+  'offline speech models are not installed in this build (run "npm install" in a source checkout to enable them)';
+let installedCache = null;
+
+function packagePresent(name) {
+  try {
+    require.resolve(name);
+    return true;
+  } catch (error) {
+    // An ESM-only package whose exports map omits the `require` condition still PROVES it is on disk —
+    // resolution got far enough to read its package.json before rejecting the CommonJS condition.
+    const code = error && error.code;
+    if (code === 'ERR_PACKAGE_PATH_NOT_EXPORTED' || code === 'ERR_REQUIRE_ESM') return true;
+  }
+  // Fallback for any other resolver refusal: look for the package directory itself on the module paths.
+  for (const base of module.paths || []) {
+    if (fs.existsSync(path.join(base, ...name.split('/'), 'package.json'))) return true;
+  }
+  return false;
+}
+
+function installed() {
+  if (installedCache === null) installedCache = REQUIRED_PACKAGES.every(packagePresent);
+  return installedCache;
+}
+
+function requireInstalled() {
+  if (!installed()) {
+    const error = new Error(UNAVAILABLE_REASON);
+    error.unavailable = true;
+    throw error;
+  }
+}
 let transformersPromise = null;
 let transcriberPromise = null;
 let kokoroPromise = null;
@@ -106,6 +161,7 @@ async function loadTts() {
 }
 
 async function warm(options = {}) {
+  requireInstalled();
   const jobs = [];
   if (options.asr !== false) jobs.push(loadAsr());
   if (options.tts !== false) jobs.push(loadTts());
@@ -119,6 +175,9 @@ async function transcribe(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 4 || buffer.length % 4) {
     throw new Error('invalid 16 kHz Float32 PCM payload');
   }
+  // Availability is checked BEFORE the silence gate: a build that cannot hear must say so, never return
+  // an empty transcript that reads as "you said nothing".
+  requireInstalled();
   const samples = new Float32Array(
     buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
   );
@@ -148,6 +207,7 @@ async function transcribe(buffer) {
 }
 
 async function synthesize(text, options = {}) {
+  requireInstalled();
   const run = async () => {
     ttsBusy++;
     const started = monotonicMs();
@@ -169,12 +229,15 @@ async function synthesize(text, options = {}) {
 }
 
 function status() {
+  const ready = installed();
   return {
-    available: true,
-    asr: state.asr,
-    tts: state.tts,
-    progress: state.progress,
-    error: state.error,
+    available: ready,
+    reason: ready ? '' : UNAVAILABLE_REASON,
+    // 'unavailable' rather than 'cold': cold promises a warm-up that will never come.
+    asr: ready ? state.asr : 'unavailable',
+    tts: ready ? state.tts : 'unavailable',
+    progress: ready ? state.progress : null,
+    error: ready ? state.error : UNAVAILABLE_REASON,
     cacheRoot: state.cacheRoot,
     asrBusy,
     lastAsrMs,

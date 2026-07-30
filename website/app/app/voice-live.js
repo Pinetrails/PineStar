@@ -201,6 +201,12 @@ const VoiceLive = (() => {
     el.textContent = message || '';
     if ($('lv-retry')) $('lv-retry').hidden = !message;
   }
+  // A failure the user cannot retry away: same visible message, but no RETRY affordance — offering one
+  // for a capability this build does not carry would just loop them through the same refusal.
+  function setUnrecoverableError(message) {
+    setError(message);
+    if ($('lv-retry')) $('lv-retry').hidden = true;
+  }
   function setTransientError(message, ms = 4500) {
     setError(message);
     clearTimeout(transientErrorTimer);
@@ -264,6 +270,17 @@ const VoiceLive = (() => {
     el.title = pending ? `${pending.tool || 'Action'} needs approval${pending.argsSummary ? `: ${pending.argsSummary}` : ''}` : (Channels.statusOf(ws.id) || ws.title || 'Ready');
     el.classList.toggle('busy', busy);
     el.classList.toggle('pending', !!pending);
+  }
+
+  // One read of the sidecar's installation verdict. Returns null when the sidecar cannot be reached, so
+  // callers can tell "proven unavailable" apart from "don't know yet".
+  async function probeAvailability() {
+    try {
+      const response = await fetch('/api/local-voice/status', { cache: 'no-store' });
+      return await response.json();
+    } catch (_) {
+      return null;
+    }
   }
 
   async function pollModels() {
@@ -661,6 +678,24 @@ const VoiceLive = (() => {
     ensurePanel();
     if (active && !retry) { $('live-voice-panel').hidden = false; return; }
     if (retry) finish(true);
+    // Local Live rides on the offline speech packages, and the shipped desktop bundle carries no
+    // node_modules — so ASK the sidecar before opening the microphone. Going live first and failing on the
+    // first model import is how this panel used to show users a raw "Cannot find module" string.
+    // Only a PROVEN `available:false` refuses; an unreachable sidecar falls through to the existing
+    // offline handling below.
+    const readiness = await probeAvailability();
+    if (readiness && readiness.available === false) {
+      $('live-voice-panel').hidden = false;
+      setState('unavailable');
+      if ($('lv-model')) $('lv-model').textContent = 'LOCAL MODELS: NOT INSTALLED';
+      caption('user', 'Local Live is unavailable in this build.');
+      caption('agent', 'The offline speech models are not bundled with the installer, so hands-free listening cannot start. The standard voice controls are unaffected.');
+      // The sidecar's `reason` carries a source-checkout hint ("run npm install") that is noise to a user
+      // of the installer — it stays in the API and the log, not in the panel's error row.
+      setUnrecoverableError('Offline speech models are not installed in this build.');
+      reflectButton(false);
+      return;
+    }
     const seq = ++sessionSeq;
     setError('');
     setState('connecting');

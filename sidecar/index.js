@@ -6794,9 +6794,13 @@ async function handleLocalVoiceWarm(req, res) {
     res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(value));
   };
+  // A build without the offline model packages can never warm — say so outright rather than 202-ing a
+  // load that will only surface as a module-not-found string in the panel.
+  const current = localVoice.status();
+  if (!current.available) return json(501, current);
   // Loading continues on the server even if the panel closes. The client polls status for download progress.
   localVoice.warm().catch(error => console.error('[local-voice] warm failed:', error && error.message || error));
-  json(202, localVoice.status());
+  json(202, current);
 }
 async function handleLocalVoiceTranscribe(req, res) {
   const json = (code, value) => {
@@ -6810,7 +6814,9 @@ async function handleLocalVoiceTranscribe(req, res) {
     const text = await localVoice.transcribe(pcm);
     json(200, { ok: true, text });
   } catch (error) {
-    json(503, { ok: false, error: String(error && error.message || error) });
+    // 501 (not 503) when the packages are simply absent: 503 invites the client to retry a capability
+    // this build will never have.
+    json(error && error.unavailable ? 501 : 503, { ok: false, error: String(error && error.message || error) });
   }
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
