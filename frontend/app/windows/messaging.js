@@ -299,13 +299,16 @@
       }
       // SETUP GUIDE auto-fold — keyed off `configured` (a real saved config), never off `conn`: a platform
       // that is saved-but-offline is set up, while a cold card still needs its steps in front of the user.
-      // One-shot: the first user toggle clears the flag, after which we never move it again.
+      // One-shot: activating the SUMMARY clears the flag, after which we never move it again. Do not listen
+      // for `toggle` here: assigning guide.open below emits that event too, so the old listener mistook our
+      // automatic fold for a hand toggle and left a later cold/unconfigured card collapsed.
       const guide = body.querySelector('#ch-card-' + c.id + ' .ch-setup');
       if (guide && !guide.dataset.foldWired) {
         guide.dataset.foldWired = '1';
-        guide.addEventListener('toggle', () => { delete guide.dataset.autofold; });
+        const summary = guide.querySelector('summary');
+        if (summary) summary.addEventListener('click', () => { delete guide.dataset.autofold; });
       }
-      if (guide && guide.dataset.autofold === '1' && configured) guide.open = false;
+      if (guide && guide.dataset.autofold === '1') guide.open = !configured;
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
       if (card) card.classList.toggle('on', conn);
