@@ -1333,3 +1333,59 @@ unique keepers already landed as `c7ee22e8`.
 The Green Guardian's auto-updated last-run row is again committed alongside this digest rather than
 discarded, per the precedent above. `golden` remains RED on 4 frames and remains **not re-blessed** —
 still Andrew's call, and `admiring-bun-b5a798` would re-bless them as part of the lighting verdict.
+
+## 2026-07-30 — v0.8.0 cut prep: the last ready branch, and the version QUADRUPLE
+
+Trunk `3eec1d1e` → `b0c6d4e0`-era. Full `npm test`: **NPM_EXIT=0 read FROM THE LOG,
+`run-fast-tests: OK — 462 step(s) green`**, http chain green, zero FAIL lines.
+
+WHAT WAS ACTUALLY READY. Asked to ship everything ready (lighting and prop rotation explicitly set
+aside), the sweep found **exactly one** mergeable branch left:
+`panel-minimize-button-remove-0e75dd` — the header minimize button removed because it read as a
+duplicate ✕, with minimize-to-strip still reachable via header double-click and the dock. Merged
+clean; the surviving `term-min` hits are the `.term-min-hidden`/`.term-minimizing` state classes the
+strip mechanism needs, not the deleted button. ⛔ **THE MERGE LEFT THE WEBSITE MIRROR STALE** —
+`sync:website` wrote 2 files afterwards. A branch that predates the mirror convention does not carry
+its `website/app` counterpart, so **run the sync after merging any old frontend branch** or the
+generated copy silently diverges.
+
+TWO BRANCHES PROVEN TO BE NO-OPS, not judgement calls: `remove-crt-scanlines-toggle-b7e841` (trunk
+already has no toggle — `stationui.js` carries the comment "CRT scanlines are part of the fixed
+shipped look — no user toggle") and `agent/comms-attach` (trunk already ships the paperclip button,
+the file input and the attachment chips). ⛔ **`starnet-subscription-complete-e95ae8` carries a
+commit literally titled "docs: HOLD — this branch does not merge until Andrew says so"** — read the
+log before merging a branch, the hold may be inside it.
+
+EVERYTHING ELSE FAILED THE READY TEST FOR THE SAME REASON. Trial-merged eight candidates in a
+detached probe: seven conflict on the most-rewritten hotfiles in the repo — `world.js`, `app.js`,
+`stationui.js`, `index.html`, `frontend/js/util.js`. These are branches 2400–3800 commits behind
+(`chat-bubbles-styling`, `ui-number-format`, `starnet-open-now-link`, `comms-ui-redesign`,
+`starnet-launch-overseer-ux`, `meeseeks-subagents`). ⛔ **A 1-commit branch is not a small merge —
+measure the CONFLICT SET, not the commit count.** Each is a reconciliation against a rewritten file,
+which is design work, not conflict resolution. Also left: `agent/growth-t4` (its own commit says
+`wip`), `connector-spine` and `hermes-settings-audit` (both "rescue uncommitted tree" salvage
+commits), `parity-finish` (its own docs say the MCP half already landed), and
+`messaging-connectors-expansion` (56% already on trunk). ⛔ **DO NOT MERGE `agent/release-ready-loop`
+OR `installer-virus-warnings-cdf1de`: they are ancient claims RE-STAMPS, and merging one would
+overwrite the current lock with a surface from hundreds of commits ago.**
+
+⛔⛔ THE VERSION LIVES IN **FOUR** FILES, NOT THREE. `package.json`, `src-tauri/tauri.conf.json`,
+`src-tauri/Cargo.toml` — **and `package-lock.json`, which carries it TWICE** (`.version` and
+`.packages[""].version`). Bumping the first three left the gate **RED** at step 457/462 on
+`opensource-readiness.test.js` with a bare `'0.7.0' !== '0.8.0'`. ⛔ **`release-cut.mjs`'s preflight
+would never have caught it** — it only asserts tauri.conf ↔ Cargo agree and **never reads
+`package.json` at all**, let alone the lock. `opensource-readiness.test.js` is the only real guard,
+so **the gate is what proves a version bump, not the cut script.** All four now read `0.8.0` and
+agree.
+
+`RELEASE_NOTES.md` rewritten for v0.8.0 (it had still been the v0.7.0 copy, the standing trap).
+⛔ **`RELEASE_NOTES.md` IS in the 189-file measured surface** — `package.json` and `tauri.conf.json`
+are NOT — so the notes owed a claims re-lock and the manifests did not. Checked rather than assumed,
+both directions. The notes lead on Telegram conversational parity, the load-bearing XP record, the
+grounds/decor work, reach, macOS notarization, and the truthful-telemetry sweep, and they state
+plainly that upgrading is a no-op for user data — which this session verified by booting the build
+against a copy of a real v0.7.0 workspace rather than asserting it.
+
+STILL NOT DONE, and deliberately: `golden` remains RED on 4 frames and is **not re-blessed** (the
+lighting lane would re-bless them as part of its art verdict); the onboarding interview lane still
+needs Andrew's product call; nothing has been pushed or tagged.
