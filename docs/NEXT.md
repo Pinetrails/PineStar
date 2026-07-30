@@ -17,6 +17,18 @@ focused find/recovery contract is 39 assertions. `node --check` passed all three
 chain completed cleanly in 429 seconds. A seeded station reached NOVA/COMMS online with no visible
 alerts or browser warnings/errors. No push, merge, PR, deploy, publish, production-data, or source
 credential changes.
+## 2026-07-28 — SESSION RAIL KEYBOARD ACCESS (`agent/quality-loop-0728d`)
+
+READY TO MERGE — the session rail exposed open/export/archive only through pointer clicks:
+live reproduction found the General row was an unfocusable `<li>` (`tabIndex:-1`, no role), and
+its hidden actions button was explicitly removed from the tab order. Session rows are now named
+keyboard targets: Enter/Space opens the session and Shift+F10 opens the existing phosphor actions
+menu. Menu focus starts on Rename; Escape closes it and restores the row focus. The pointer-only
+kebab remains out of the tab order, so each session adds one keyboard stop. Live seeded proof:
+General reported `tabIndex:0`, `role:button`, and `aria-keyshortcuts:Shift+F10`; Shift+F10 produced
+one menu with Rename focused; Escape removed it and restored General. Regression:
+`session-power-tools.test` 118→124 assertions; website mirror 8 assertions; claims planning PASS
+(37 claims / 184 files); `test:fast` 429/429 green. No merge, push, deploy, publish, or PR.
 
 ## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
 
