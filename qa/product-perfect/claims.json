@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0909a69a3488f0c8b5d2e8319453338336fa6850",
+    "sourceCommit": "3247b44c19a04ecf786b5f96aba17b239a23fe09",
     "pathSetSha256": "887a13d8f2e1bb9da5377fbf9c21a32959e0e23373622a98ea6d4b77071cee23",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 300693,
-        "sha256": "26a081a470d297fae18b7bb5163a3e12b61b12c41b1b50a594992940355dda07"
+        "bytes": 302069,
+        "sha256": "3bb4facd7b3689f08fd3175d8fa2d7e3d43d292eeaaaafad9dda0f105a3b4ec7"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -243,8 +243,8 @@
       },
       {
         "path": "frontend/app/friendlyerror.js",
-        "bytes": 38633,
-        "sha256": "67be420bb058bbe7c8444a0e2f9740057fa564c2383b73aff85d122bcbb932aa"
+        "bytes": 38671,
+        "sha256": "aed8591f8ecff49f9e823a5179ca5e857d6e523cc87a54a3516f578616d55438"
       },
       {
         "path": "frontend/app/fullscreen.js",
@@ -358,8 +358,8 @@
       },
       {
         "path": "frontend/app/modeldock.js",
-        "bytes": 36992,
-        "sha256": "56823f7f63de2dd55a167d20604a94438ef3b99303576d4a4230b20f5bcae715"
+        "bytes": 37326,
+        "sha256": "f711b8d93c403add7d5d0aab4f1b0646e72ffc1deacf4ffb9aa3b7e2439c00b9"
       },
       {
         "path": "frontend/app/modelpicker.js",
@@ -398,8 +398,8 @@
       },
       {
         "path": "frontend/app/permissionsstore.js",
-        "bytes": 8850,
-        "sha256": "c7e9ea60b0c852427b7886d888610e1b0ffec4f0789491a7825d2f6a5d1968ad"
+        "bytes": 8851,
+        "sha256": "817b412d9401d0a55ed47df3747daec707b9b3cf215808f14adc1fc6f573ec95"
       },
       {
         "path": "frontend/app/personas.js",
@@ -798,8 +798,8 @@
       },
       {
         "path": "frontend/app/windows/messaging.js",
-        "bytes": 46204,
-        "sha256": "e682718ccbda2c3cb202448116458219415dab51bb58aa0435789829c2179ef6"
+        "bytes": 46483,
+        "sha256": "386a26cadafd6364f48d84f1a68862e435983870a0625e885c430867dff03412"
       },
       {
         "path": "frontend/app/windows/outbox.js",
