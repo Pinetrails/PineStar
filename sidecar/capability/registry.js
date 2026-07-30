@@ -200,7 +200,16 @@
       // same reason create is: an edit is the same surface as a create (a clean routine can be patched into a
       // standing payload), and pausing or deleting changes what the station does unattended. One action-shaped
       // tool rather than five verbs, because every schema here is re-sent on every turn (see the tool file).
-      { capId: 'orchestrator', tool: 'routine.manage', scope: 'write', requiresConsent: true, network: false }
+      { capId: 'orchestrator', tool: 'routine.manage', scope: 'write', requiresConsent: true, network: false },
+      // SESSIONS (2026-07-30): the lead's session verbs over the station bridge — list/create/focus a
+      // workstream by the name the Commander says, completing "make a session called X and have them work
+      // in it" (team.dispatch's `session` targets one; these are how it comes to exist). No consent: a
+      // session spends nothing and is reversible, and every unresolvable name REFUSES rather than guessing.
+      // ⛔ This registry is an ALLOWLIST — a tool registered but not declared here is exposed to NOBODY
+      // (that is how these three shipped invisible on the first pass; a live model probe caught it).
+      { capId: 'orchestrator', tool: 'session.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'session.create', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'session.focus', scope: 'write', requiresConsent: false, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so
