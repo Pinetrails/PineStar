@@ -609,6 +609,12 @@ const Voice = (() => {
      `speakSeq` (barge-in / teardown) invalidates every in-flight fetch + queued playback at once. */
   let jobs = [];          // queued chunks: { text, opts, seq, result(Promise), ac(AbortController) }
   let preferLocalTts = false;
+  /* Which built-in voice speaks. Saved per station; empty falls back to the engine's default (male).
+     Read at SPEAK time, not cached, so changing it in Settings takes effect on the very next line. */
+  const LOCAL_VOICE_KEY = 'starnet.liveVoice.localVoice.v1';
+  function localVoiceId() {
+    try { return String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) { return ''; }
+  }
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -636,7 +642,7 @@ const Voice = (() => {
       body: JSON.stringify({
         key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
         text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
-        local: preferLocalTts, localVoice: 'af_heart', speed: cfg.speed
+        local: preferLocalTts, localVoice: localVoiceId(), speed: cfg.speed
       })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
@@ -1444,6 +1450,21 @@ const Voice = (() => {
     canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
     canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
     setLocalTts: value => { preferLocalTts = !!value; },
+    /* LIVE VOICE MUST ARRIVE AUDIBLE. Opening a hands-free session with the speaker muted is a room where you
+       talk and nothing answers — the Commander then has to find a toggle to make the feature work at all.
+       Classic voice mode already force-enables the speaker in toggleVoiceMode(); the Local Live panel does not
+       route through that, so it needs the same lever. Reuses the SAME `forcedSpeak` bookkeeping, so a speaker
+       WE switched on is restored on exit while one the Commander chose themselves is left alone. */
+    forceSpeakOn: () => {
+      if (speakReplies) return false;          // already audible — nothing to restore later
+      speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle();
+      return true;
+    },
+    restoreSpeak: () => {
+      if (!forcedSpeak) return false;          // the Commander's own choice — never undo it
+      forcedSpeak = false; speakReplies = false; savePref(LS_SPEAK, false); reflectToggle();
+      return true;
+    },
     // Which transcription engine is ACTUALLY selected right now ('recorder' | 'web' | 'native'). A UI that
     // names the engine has to read it rather than re-derive the selection rule, or the label drifts from
     // the truth the moment the ladder changes.

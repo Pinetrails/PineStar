@@ -2410,6 +2410,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const secAgent =
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">loading agent skills…</div></div>';
+    /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
+       Truthful by construction: if the provider has no native voice endpoint we say so rather than
+       offering choices that would do nothing, and the note about WHEN a change takes effect is shown
+       because a live session cannot switch voice mid-call. */
+
     const frag = html => (el => { el.innerHTML = html; });
     mountConsole(body, 'skills', [
       { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
@@ -4362,6 +4367,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div>' +
       '<div id="tm-msg" class="msg"></div>';
     const customSw = deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph'];   // swatch tint for the CUSTOM chip
+    /* LIVE VOICE — which of the provider's voices speaks in hands-free mode. This lived only in a console
+       call, which is not a setting. The list is fetched from the sidecar (status().voices) rather than
+       hardcoded here, so it can never drift from what the provider actually offers. */
+    const secLiveVoice =
+      '<h4 class="ms-h">SPOKEN VOICE</h4>' +
+      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Built in and keyless &mdash; the same on every provider. A change applies to the next thing spoken.</p>' +
+      '<div class="set-themes" id="set-lv-voices"><span class="dim">reading the provider’s voice list…</span></div>';
+
     const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" aria-pressed="' + (s.theme === t ? 'true' : 'false') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
@@ -4471,6 +4484,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
 
     const frag = html => (el => { el.innerHTML = html; });  // curried: fill a pane element with a fragment
+    function wireLiveVoice(host) {
+      const wrap = host && host.querySelector ? host.querySelector('#set-lv-voices') : null;
+      if (!wrap) return;
+      const paint = (list, chosen) => {
+        if (!list.length) { wrap.innerHTML = '<span class="dim">the speech engine has not reported its voices yet</span>'; return; }
+        const group = sex => list.filter(v => v.sex === sex);
+        const row = v => '<button class="set-theme ' + (v.id === chosen ? 'sel' : '') + '" aria-pressed="' +
+          (v.id === chosen ? 'true' : 'false') + '" data-lv-voice="' + v.id + '" title="' + v.accent + ' ' + v.sex + '">' + v.label + '</button>';
+        wrap.innerHTML =
+          '<div class="dim" style="width:100%">MALE</div>' + group('male').map(row).join('') +
+          '<div class="dim" style="width:100%;margin-top:6px">FEMALE</div>' + group('female').map(row).join('');
+        wrap.querySelectorAll('[data-lv-voice]').forEach(btn => {
+          btn.onclick = () => {
+            const want = btn.getAttribute('data-lv-voice');
+            if (typeof VoiceLive !== 'undefined' && VoiceLive.setVoice) VoiceLive.setVoice(want);
+            wrap.querySelectorAll('[data-lv-voice]').forEach(b => {
+              const on = b === btn;
+              b.classList.toggle('sel', on);
+              b.setAttribute('aria-pressed', String(on));
+            });
+            try { SFX.click(); } catch (_) {}
+          };
+        });
+      };
+      if (typeof VoiceLive !== 'undefined' && VoiceLive.voices) {
+        VoiceLive.voices()
+          .then(v => paint(v.available || [], v.current || ''))
+          .catch(() => { wrap.innerHTML = '<span class="dim">voice list unavailable</span>'; });
+      } else {
+        wrap.innerHTML = '<span class="dim">live voice is not loaded on this page</span>';
+      }
+    }
+
     const sections = [
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
@@ -4478,6 +4524,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
+      // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
+      // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
+      { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
       { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
       { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }

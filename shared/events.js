@@ -220,6 +220,10 @@
     'workitem.superseded': obj(['workitemId'], { workitemId: str, agentId: str, ts: num }),
     // queue-depth telemetry for the backpressure HUD — emitted whenever a per-agent queue depth changes.
     'queue.status': obj(['queueId'], { queueId: str, depth: int, maxCapacity: int, nextAdvanceAt: num }),
+    /* STATION BRIDGE (additive, 2026-07-30): a sidecar tool asking the live page to perform a station action
+       that only the page can do — open a session, switch agent, delegate. `id` correlates the page's reply on
+       POST /api/station/ack. Carries no result: this is the REQUEST half only. */
+    'station.command': obj(['id', 'verb'], { id: str, verb: str, args: any }),
 
     // ---- reserved (P3 mutation API) ----
     'worldChange': obj(['seq'], { seq: int, dirtyTiles: { type: 'array' } }),

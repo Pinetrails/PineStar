@@ -48,4 +48,21 @@ assert.match(css, /\.lv-wave i\[data-src="self"\]/, 'the user side of the shared
 assert.match(css, /\.lv-wave i\[data-src="agent"\]/, 'the agent side of the shared waveform has an explicit visual contract');
 assert.match(css, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.lv-x\s*\{[^}]*pointer-events:\s*auto/, 'touch users always have a reachable close control');
 
+/* ⛔ LIVE VOICE OPENS AUDIBLE ON *BOTH* PATHS. Local Live has two entry points: start() when the offline
+   speech models are present (a source checkout) and startDictation() when they are not — which is EVERY
+   packaged build, because the installer ships no node_modules. Wiring the speaker auto-enable into start()
+   alone therefore fixed it only where nobody ships from: installed stations still opened muted, so the
+   Commander talked and heard nothing. Assert it per-function, not file-wide: a file-wide match would have
+   passed happily while the path that actually runs was missing it. */
+function bodyOf(name) {
+  const m = new RegExp('function ' + name + '\\([\\s\\S]*?\\n  \\}').exec(source);
+  assert.ok(m, 'voice-live.js still defines ' + name + '()');
+  return m[0];
+}
+for (const fn of ['start', 'startDictation']) {
+  assert.match(bodyOf(fn), /Voice\.forceSpeakOn\(\)/, fn + '() force-enables the speaker — hands-free is never opened muted');
+}
+assert.match(bodyOf('finish'), /Voice\.restoreSpeak\(\)/, 'leaving restores a mute we lifted (a hand-set speaker is left alone)');
+assert.match(voiceSource, /if \(!forcedSpeak\) return false;/, "restoreSpeak never undoes the Commander's own speaker choice");
+
 console.log('voice-live-ui.test.js: ok');

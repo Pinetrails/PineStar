@@ -6360,7 +6360,11 @@ const Chat = (() => {
   // streaming caret, so the newborn is SEEN assembling its first broken sentence rather than printing it.
   // Pass a string or an array of {text, cps, holdAfter} segments. onDone ALWAYS fires (try/finally) so a
   // missed timer can never leave the awakening stuck. Returns a force-finish handle.
-  function typeLine(segments, onDone) {
+  /* opts.silent — type the line WITHOUT the keystroke sound. Live voice needs this: the agent's words are
+     already being spoken aloud, so clacking a keyboard under them is a second, contradictory performance of
+     the same sentence. Default stays noisy; only a caller that owns the delivery turns it off. */
+  function typeLine(segments, onDone, opts) {
+    const silent = !!(opts && opts.silent);
     if (typeof segments === 'string') segments = [{ text: segments }];
     if (!log || !Array.isArray(segments)) { if (onDone) onDone(); return () => {}; }
     const out = streamingAgent();
@@ -6377,7 +6381,7 @@ const Chat = (() => {
       if (ci >= text.length) { si++; ci = 0; setTimeout(stepOne, seg.holdAfter != null ? seg.holdAfter : 0); return; }
       const ch = text[ci++];
       try { out.append(ch); } catch (_) { finish(); return; }
-      if (typeof SFX !== 'undefined' && SFX.type && ch !== ' ' && (ci % 2 === 0)) SFX.type();
+      if (!silent && typeof SFX !== 'undefined' && SFX.type && ch !== ' ' && (ci % 2 === 0)) SFX.type();
       const cps = seg.cps || 40;
       setTimeout(stepOne, (1000 / cps) * (0.6 + Math.random() * 0.8));
     }

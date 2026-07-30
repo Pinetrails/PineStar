@@ -114,6 +114,11 @@
     // the worker runs on the LEAD's provider+model (never a foreign model on the lead's wire) with an honest
     // note in the dispatch result.
     const providerAuth = (typeof deps.providerAuth === 'function') ? deps.providerAuth : null;
+    /* THE STATION BRIDGE (optional) — { request(verb, args) -> {ok, result|error} }. Sessions are PAGE state, so
+       resolving "the research session" to a stream id, and folding a worker's answer into that session's thread,
+       both have to ask the live page. Absent (headless run, bare unit caller) -> session targeting is refused
+       honestly rather than silently ignored. See sidecar/station-bridge.js. */
+    const station = (deps.station && typeof deps.station.request === 'function') ? deps.station : null;
     function workerWire(ident) {
       const wanted = (ident && ident.provider) ? String(ident.provider) : '';
       const ownModel = (ident && ident.model) ? String(ident.model) : '';
@@ -150,6 +155,74 @@
       return Math.max(1, Math.min(n, Math.floor(f))); // at least 1 (a full gate still tries, then the retry pass)
     }
 
+    /* SESSION TARGETING (2026-07-30). Delegation used to be agent-addressed only: the lead could say WHO, never
+       WHERE, so a worker's run was filed under whatever session the LEAD was in. The Commander asked for a session
+       called "research", got the researcher, and watched the work land somewhere else while the lead reported
+       success. `session` on a worker closes that: it resolves to a real workstream id, which rides into runOnce as
+       streamId (so runStore + transcriptStore file the run there for real) and back to the page as a delivery.
+
+       ⛔ AN UNMATCHED NAME NEVER FALLS BACK TO THE CURRENT SESSION. Unknown or ambiguous => that worker does NOT
+       run, and the row says why. Defaulting is the exact behaviour this closes: a wrong-but-plausible destination
+       is worse than a refusal, because the lead then truthfully reports work it cannot see was misfiled. A refusal
+       is legible — the model can create the session, or ask which one, and try again.
+
+       Mutates jobs in place: sets streamId + sessionTitle on success, or `error` (which runWorker returns as a row
+       without ever starting the worker). One bridge call for the whole dispatch, not one per worker. */
+    async function resolveSessions(jobs) {
+      const wanted = jobs.filter(j => !j.error && j.session);
+      if (!wanted.length) return;
+      const refuseAll = (why) => { for (const j of wanted) j.error = why(j); };
+      if (!station) {
+        return refuseAll(j => 'this run cannot target sessions — no live station page is attached to resolve "'
+          + j.session + '". Dispatch without `session` and the work runs in the current one.');
+      }
+      let list = null, why = '';
+      try {
+        const out = await station.request('station.sessions', {});
+        if (out && out.ok && out.result && Array.isArray(out.result.sessions)) list = out.result.sessions;
+        else why = String((out && out.error) || 'the station did not answer');
+      } catch (e) { why = String((e && e.message) || e); }
+      if (!list) return refuseAll(j => 'could not read this station\'s session list, so "' + j.session + '" could not be resolved — ' + why);
+      const named = list.filter(s => s && String(s.title || '').trim());
+      const nameList = named.map(s => String(s.title).trim());
+      for (const j of wanted) {
+        const want = String(j.session).trim();
+        const lower = want.toLowerCase();
+        // Three explicit tiers, each requiring a UNIQUE hit. Substring is last and still refuses when it matches
+        // two sessions — so "research" can find "Research plan" without ever silently picking between two.
+        const byId = list.filter(s => s && String(s.id) === want);
+        const byTitle = named.filter(s => String(s.title).trim().toLowerCase() === lower);
+        const byPart = lower ? named.filter(s => String(s.title).trim().toLowerCase().indexOf(lower) >= 0) : [];
+        const hits = byId.length ? byId : (byTitle.length ? byTitle : byPart);
+        if (hits.length === 1) { j.streamId = String(hits[0].id); j.sessionTitle = String(hits[0].title || want); continue; }
+        j.error = hits.length > 1
+          ? 'more than one session matches "' + want + '" (' + hits.map(h => String(h.title || h.id)).join(', ')
+            + ') — name it exactly, or pass the session id. This worker did NOT run.'
+          : 'there is no session called "' + want + '" on this station'
+            + (nameList.length ? '. Open sessions: ' + nameList.join(', ') : '')
+            + '. Create it first, or dispatch without `session` to run in the current one. This worker did NOT run.';
+      }
+    }
+
+    /* THE VISIBLE HALF. runOnce already filed the run under this streamId (runStore + transcriptStore), so the
+       durable record is true either way; this is what puts the worker's answer in front of the Commander, in the
+       session they named. Failure is REPORTED on the row, never swallowed: a lead that says "it's in research"
+       when the fold failed is the same lie as misfiling it. */
+    async function deliverToSession(job, row) {
+      if (!station || !job.streamId) return;
+      let out = null;
+      try {
+        out = await station.request('station.deliver', {
+          streamId: job.streamId, agentId: job.agentId, runId: row.runId || '',
+          prompt: job.prompt, text: row.result
+        });
+      } catch (e) { out = { ok: false, error: String((e && e.message) || e) }; }
+      if (out && out.ok) row.session = job.sessionTitle || job.streamId;
+      else row.sessionNote = 'the work ran and is filed under the "' + (job.sessionTitle || job.streamId)
+        + '" session, but the station could not show it there: ' + String((out && out.error) || 'no answer')
+        + '. Tell the Commander where it actually is.';
+    }
+
     const dispatchTool = {
       // The registry timeout is now only a BACKSTOP: it sits a minute above the dispatch's own budget so the
       // in-tool wall clock (which returns partial rows) always fires first. Letting the registry's timeout be the
@@ -162,13 +235,18 @@
       // user keeps the frictionless flow by choosing it. Lead-only conferral + budget caps + the concurrency
       // ceiling + autonomous workers (default-deny) all still stand underneath.
       name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: true,
-      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working. FILES: each worker saves into its OWN private workspace — you cannot fs.read another agent\'s files, so never "verify" a worker\'s file with your own file tools (absence in YOUR workspace proves nothing). The result\'s artifacts list is the proof of what each worker saved, and the Commander is shown those files as cards automatically — reference them as "<workerId>\'s workspace: <path>".',
+      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working. SESSIONS: pass `session` on a worker (the session\'s NAME, as the Commander says it) to make that subtask run in — and be filed under — that session instead of this one. Only pass it when the Commander named a session; a name that does not match one on this station is REFUSED, not guessed, and that worker does not run. FILES: each worker saves into its OWN private workspace — you cannot fs.read another agent\'s files, so never "verify" a worker\'s file with your own file tools (absence in YOUR workspace proves nothing). The result\'s artifacts list is the proof of what each worker saved, and the Commander is shown those files as cards automatically — reference them as "<workerId>\'s workspace: <path>".',
       schema: {
         type: 'object', required: ['workers'], properties: {
           workers: {
             type: 'array', items: {
               type: 'object', required: ['agentId', 'prompt'],
-              properties: { agentId: { type: 'string' }, prompt: { type: 'string' } }
+              properties: {
+                agentId: { type: 'string' }, prompt: { type: 'string' },
+                // WHERE the work lands. A session NAME (what the Commander calls it) or its exact id. Omit to run
+                // in the current session — see resolveSessions for why an unmatched name never falls back to that.
+                session: { type: 'string' }
+              }
             }
           },
           parallel: { type: 'boolean' },
@@ -201,11 +279,15 @@
         // validate every target up front: a real, live, OTHER worker (never self, never an unknown agentId).
         const jobs = reqs.map(w => {
           const aid = w && String(w.agentId || '');
+          const session = String((w && w.session) || '').trim().slice(0, 80);
           if (!ID_RE.test(aid)) return { agentId: aid, error: 'invalid agentId' };
           if (aid === leadId) return { agentId: aid, error: 'cannot delegate to yourself' };
           if (!crew.has(aid)) return { agentId: aid, error: 'no such live worker — summon them first, or check the agentId against YOUR TEAM' };
-          return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid) };
+          return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid), session: session };
         });
+        // WHERE before WHO does the work: an unresolvable session marks its job failed here, so that worker is
+        // never started in the wrong place (see resolveSessions). One bridge round-trip for the whole dispatch.
+        await resolveSessions(jobs);
 
         const runWorker = async (job, o2) => {
           o2 = o2 || {};
@@ -219,6 +301,9 @@
           // straggler is stopped ALONE and comes back as one honest `timeout` row while its siblings' work survives.
           // Background workers pass no wallMs — outliving the tool call is the whole point of background:true.
           const parentSignal = o2.signal || (ctx && ctx.signal);
+          // minted up front (not inline in the runOnce call) so the row can carry the SAME id the run was filed
+          // under — the page's delivery uses it to append the run to the session and to stay idempotent.
+          const workerRunId = o2.runId || newId();
           const wallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
           const ac = wallMs ? childAbort(parentSignal) : null;
           let timedOut = false, timer = null;
@@ -247,7 +332,11 @@
               agentId: job.agentId, isTask: true,
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
               signal: ac ? ac.signal : parentSignal,   // own controller when this worker has a wall clock (see above)
-              runId: o2.runId || newId(), trigger: 'directive', surface: 'autonomous',
+              runId: workerRunId, trigger: 'directive', surface: 'autonomous',
+              // SESSION TARGETING: the run host files a run under its streamId (runStore.record + the durable
+              // transcript) and scopes its working memory to that stream. Absent -> undefined, byte-identical to
+              // the pre-2026-07-30 call. This is the DURABLE half; deliverToSession is the visible one.
+              streamId: job.streamId || undefined,
               // Share the lead's consent broker so a worker's WRITES follow the lead's APPROVAL posture
               // (full-auto bypass, or a prompt forwarded to the watched lead) instead of the headless default-deny.
               // NOT "same access as the orchestrator" — a worker runs surface:'autonomous' (below), and
@@ -272,9 +361,14 @@
             agentId: job.agentId,
             reason: result.reason || 'done',
             result: lastAssistant(result.messages) || '(the worker returned no text)',
-            usd: result.usd || 0
+            usd: result.usd || 0,
+            runId: workerRunId
           };
           if (wire.note) row.note = wire.note;   // honest credential-fallback disclosure (never silent)
+          /* Show it where the Commander asked for it. Only a COMPLETED worker delivers: every other outcome
+             (error / refused / timeout) returned above, so a partial or failed run is reported to the lead but
+             never folded into a session as though it were finished work. */
+          await deliverToSession(job, row);
           // WORK VISIBILITY (ghost-file fix): what the worker PROVABLY produced (its runOnce artifact ledger),
           // stamped with the OWNING agentId. Files live in the WORKER's private workspace — the lead cannot
           // fs.read them and must reference them as the worker's (they are already shown to the Commander as

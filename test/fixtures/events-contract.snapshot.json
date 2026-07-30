@@ -595,6 +595,17 @@
       "truncated"
     ]
   },
+  "station.command": {
+    "required": [
+      "id",
+      "verb"
+    ],
+    "properties": [
+      "args",
+      "id",
+      "verb"
+    ]
+  },
   "stats": {
     "required": [],
     "properties": []

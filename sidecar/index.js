@@ -215,6 +215,7 @@ const { execFile, spawn: childSpawn } = require('node:child_process');   // shad
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser WebRTC voice coordinator; API key never leaves this process
+const { makeStationBridge } = require('./station-bridge.js');   // page-side command channel for station tools
 const { makeNativeStt } = require('./native-stt.js');                // keyless Windows dictation fallback for OAuth Live voice
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
@@ -1490,9 +1491,34 @@ function providerHasCredential(provider, key, baseUrl) {
   return true;
 }
 
+/* ONE BEARER RESOLVER FOR EVERY PROVIDER. Whatever the Commander connected IS the credential — an API key,
+   a ChatGPT subscription, or a device-OAuth subscription (Grok, Kimi). Nothing here names a provider: the
+   registry says how each one authenticates, so a new provider is a registry row, not a branch. Async because
+   an OAuth access token may need a refresh round-trip first. */
+async function resolveProviderCredential(provider) {
+  const id = normalizeProvider(provider);
+  if (registryProviderUsesCodex(id)) return await ensureCodexAccessToken();
+  if (registryProviderUsesDeviceOAuth(id)) {
+    const entry = oauthProviders[id];
+    return String((entry && entry.tokens && entry.tokens.access_token) || '');
+  }
+  return providerRuntimeKey(id, '');
+}
+
+/* Does THIS provider speak natively? The registry carries a `liveVoice` descriptor only where the endpoint
+   has been proven against the real service. Absent = we compose voice instead (their intelligence, our ears
+   and mouth) — never a guessed endpoint, and never a demand for a second key. */
+function liveVoiceProfileFor(provider) {
+  const profile = getProviderProfile(normalizeProvider(provider));
+  const lv = profile && profile.liveVoice;
+  return lv && lv.url ? lv : null;
+}
+
 const realtimeVoice = makeRealtimeVoice({
   fetch: globalThis.fetch,
-  resolveKey: () => providerRuntimeKey('openai', ''),
+  profileFor: liveVoiceProfileFor,
+  hasCredential: provider => providerHasCredential(provider, providerRuntimeKey(provider, ''), providerRuntimeBaseUrl(provider, '')),
+  resolveCredential: resolveProviderCredential,
   safetySeed: API_TOKEN
 });
 const nativeStt = makeNativeStt({ platform: process.platform, execFile });
@@ -2702,6 +2728,11 @@ const chanBus = { emit: (name, payload) => {
   try { if (DEBUG_CHANNEL_LOGS) console.log('[channel]', name, JSON.stringify(payload)); } catch (_) {}
   try { sse.broadcast(name, payload); } catch (_) {}
 } };
+/* THE STATION BRIDGE — how a sidecar tool asks the live page to do a page thing (open a session, switch
+   agent, delegate). Rides the SAME SSE hub the HUD already listens on, so there is no second channel to keep
+   alive. Fails visibly when no page is attached: see sidecar/station-bridge.js for why that matters. */
+const stationBridge = makeStationBridge({ emit: (name, payload) => { try { sse.broadcast(name, payload); } catch (_) {} } });
+
 const chanEmitValidated = makeEmitter(chanBus, e => console.warn('[channel-event]', e.kind, e.event, (e.errors || []).join(';')));
 const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redact(payload)); } catch (_) {} };
 
@@ -6331,8 +6362,10 @@ const TG_BOT_RX = {
 };
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
-  { m: 'GET', exact: '/api/realtime/status', h: handleRealtimeStatus },
-  { m: 'POST', exact: '/api/realtime/session', h: handleRealtimeSession },
+  // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
+  { m: 'POST', exact: '/api/station/ack', h: handleStationAck },
+  { m: 'GET', qsplit: '/api/realtime/status', h: handleRealtimeStatus },
+  { m: 'POST', qsplit: '/api/realtime/session', h: handleRealtimeSession },
   { m: 'GET', exact: '/api/stt/native/status', h: handleNativeSttStatus },
   { m: 'POST', exact: '/api/stt/native', h: handleNativeStt },
   { m: 'GET', exact: '/api/local-voice/status', h: handleLocalVoiceStatus },
@@ -6897,9 +6930,29 @@ function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true }));
 }
+/* The page asks about the provider IT is running on (?provider=), because the Commander can switch providers
+   without restarting the sidecar. No provider named = fall back to the station's own current one, so a plain
+   GET still answers truthfully. */
+/* POST /api/station/ack { id, ok, result?, error? } — the page reporting the outcome of a station.command.
+   Answers whether the id was still in flight rather than a blanket 200: an ack for a command that already
+   timed out is a real condition the page should be able to see, not something to paper over. */
+async function handleStationAck(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 18) || '{}') || {}; }
+  catch (_) { return json(400, { error: 'bad json' }); }
+  const id = String(body.id || '');
+  if (!id) return json(400, { error: 'missing id' });
+  const matched = stationBridge.ack(id, body);
+  return json(matched ? 200 : 409, { matched, inFlight: stationBridge.inFlight() });
+}
+
 function handleRealtimeStatus(req, res) {
+  let provider = '';
+  try { provider = String(new URL(req.url, 'http://x').searchParams.get('provider') || '').trim(); } catch (_) {}
+  if (!provider) provider = cronProviderFor(null);
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(realtimeVoice.status()));
+  res.end(JSON.stringify(realtimeVoice.status(provider)));
 }
 async function handleRealtimeSession(req, res) {
   let offer;
@@ -6911,7 +6964,12 @@ async function handleRealtimeSession(req, res) {
     }
     return;
   }
-  const out = await realtimeVoice.createCall(offer);
+  let provider = '';
+  try { provider = String(new URL(req.url, 'http://x').searchParams.get('provider') || '').trim(); } catch (_) {}
+  if (!provider) provider = cronProviderFor(null);
+  let wantVoice = '';
+  try { wantVoice = String(new URL(req.url, 'http://x').searchParams.get('voice') || '').trim(); } catch (_) {}
+  const out = await realtimeVoice.createCall(offer, provider, wantVoice);
   res.writeHead(out.status, { 'Content-Type': out.contentType, 'Cache-Control': 'no-store' });
   res.end(out.body);
 }
@@ -10522,6 +10580,10 @@ async function runOnce(o) {
     approvalPosture: () => (FULL_ACCESS || ((agentRoster.get(agentId) || {}).approvalMode === 'full')) ? 'full' : 'ask',
     perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
+    // SESSION TARGETING: sessions are page state, so `session` on a worker is resolved — and the finished work
+    // delivered — over the station bridge. On a headless run (cron, Night Shift) nothing answers and the tool
+    // refuses the target instead of quietly running the work in the wrong place.
+    station: stationBridge,
     now: () => Date.now(),   // the dispatch wall clock divides this budget across sequential workers (injected: lint-determinism)
     // FAN-OUT CAPACITY: how many NEW distinct agents the admission gate can still accept. A parallel dispatch runs
     // in waves of this size instead of firing all workers at once — the lead holds a slot for the whole dispatch, so
@@ -13520,7 +13582,7 @@ async function handleTts(req, res) {
   // provider ladder, so this experimental path cannot silently change an existing persona.
   if (body && body.local) {
     try {
-      const localVoiceId = String(body.localVoice || 'af_heart');
+      const localVoiceId = String(body.localVoice || localVoice.defaultVoice());
       const localSpeed = Number(body.speed) || 1;
       const ck = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
       const cachePath = path.join(VOICE_CACHE_DIR, `local-${ck}.wav`);
@@ -13769,7 +13831,13 @@ async function transcribeAudioBuffer(audioBuf, format, apiKey) {
   const key = String(apiKey || runtimeKey || '');
   const groqKey = providerRuntimeKey('groq', '');
   const openaiKey = providerRuntimeKey('openai', '');
-  if (!groqKey && !openaiKey && !key) return { ok: false, reason: 'no key' };
+  /* NO EARLY "no key" DEAD END. This line used to end the chain before any keyless engine could be reached,
+     which is why a station whose brain is a ChatGPT/Codex or Anthropic subscription had NO EARS AT ALL: none of
+     those credentials is a transcription key, every keyed tier missed, and there was nothing underneath. Voice
+     is a STATION subsystem, not a property of whichever model you picked
+     (docs/REF_HARNESS_VOICE_ANALYSIS_2026-07-14) — so the local floor gets its turn before we report failure. */
+  const localReady = (() => { try { return !!localVoice.status().available; } catch (_) { return false; } })();
+  if (!groqKey && !openaiKey && !key && !localReady) return { ok: false, reason: 'no key' };
   format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
   const sttFilename = 'audio.' + format;
   const sttContentType = 'audio/' + format;
@@ -13822,7 +13890,70 @@ async function transcribeAudioBuffer(audioBuf, format, apiKey) {
       return { ok: true, text: text };
     }
   }
+  /* TIER 4 — THE LOCAL FLOOR. Keyless, private, and the reason a station with no transcription credential can
+     still hear. It is the LAST tier on purpose: a dedicated cloud Whisper is faster and more accurate when the
+     Commander has one, so this catches the stations that would otherwise be deaf rather than competing.
+
+     Format note, stated rather than hidden: the local engine takes raw 16 kHz mono Float32 PCM, so it can serve
+     WAV directly but cannot decode a compressed container (webm/ogg) without a decoder we do not ship. A caller
+     that may land here should record WAV; one that sends webm gets an honest reason instead of silence. */
+  if (localReady) {
+    if (/^wav$/i.test(format)) {
+      try {
+        const pcm = wavToMono16kFloat32(audioBuf);
+        if (pcm) {
+          const text = await localVoice.transcribe(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+          return { ok: true, text: String(text || '') };
+        }
+        lastReason = 'local: unreadable wav';
+      } catch (e) { lastReason = 'local: ' + ((e && e.message) || e); }
+    } else {
+      lastReason = lastReason === 'no transcription'
+        ? 'local engine needs wav (got ' + format + ')'
+        : lastReason + '; local engine needs wav (got ' + format + ')';
+    }
+  }
   return { ok: false, reason: lastReason };
+}
+
+/* Decode a RIFF/WAVE buffer to mono 16 kHz Float32 — what the local ASR engine expects. Handles 16-bit PCM and
+   32-bit float, any sample rate, mono or interleaved multi-channel. Returns null if it is not a WAV we can read
+   (never throws, never guesses: an unreadable clip must degrade honestly rather than transcribe noise). */
+function wavToMono16kFloat32(buf) {
+  if (!buf || buf.length < 44) return null;
+  if (buf.toString('latin1', 0, 4) !== 'RIFF' || buf.toString('latin1', 8, 12) !== 'WAVE') return null;
+  let pos = 12, fmt = null, dataOff = 0, dataLen = 0;
+  while (pos + 8 <= buf.length) {
+    const id = buf.toString('latin1', pos, pos + 4);
+    const size = buf.readUInt32LE(pos + 4);
+    if (id === 'fmt ') fmt = { audioFormat: buf.readUInt16LE(pos + 8), ch: buf.readUInt16LE(pos + 10), rate: buf.readUInt32LE(pos + 12), bits: buf.readUInt16LE(pos + 22) };
+    else if (id === 'data') { dataOff = pos + 8; dataLen = Math.min(size, buf.length - dataOff); break; }
+    pos += 8 + size + (size % 2);
+  }
+  if (!fmt || !dataOff || !dataLen || !fmt.ch || !fmt.rate) return null;
+  const bytesPer = fmt.bits / 8;
+  if (bytesPer !== 2 && bytesPer !== 4) return null;
+  const frames = Math.floor(dataLen / bytesPer / fmt.ch);
+  if (!frames) return null;
+  const mono = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) {
+    let sum = 0;
+    for (let c = 0; c < fmt.ch; c++) {
+      const off = dataOff + (i * fmt.ch + c) * bytesPer;
+      sum += bytesPer === 4 ? buf.readFloatLE(off) : buf.readInt16LE(off) / 32768;
+    }
+    mono[i] = sum / fmt.ch;
+  }
+  if (fmt.rate === 16000) return mono;
+  const ratio = fmt.rate / 16000;
+  const out = new Float32Array(Math.floor(mono.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const start = Math.floor(i * ratio), end = Math.min(mono.length, Math.floor((i + 1) * ratio));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += mono[j];
+    out[i] = sum / Math.max(1, end - start);
+  }
+  return out;
 }
 
 async function handleStt(req, res) {

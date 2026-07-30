@@ -824,7 +824,20 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const sttNoKey = await j('POST', '/api/stt', { audio: Buffer.from('not real audio').toString('base64'), format: 'wav' });
     A.eq(sttNoKey.status, 200, 'POST /api/stt with audio but no key -> 200');
     A.eq(sttNoKey.body.text, '', 'no-key STT returns an empty transcript');
-    A.ok(/no key/i.test(sttNoKey.body.reason || ''), 'the STT degrade names the no-key reason');
+    /* ⛔ "no key" IS ONLY THE TRUTH WHEN THERE IS ALSO NO KEYLESS ENGINE. The STT ladder gained a LOCAL floor
+       (tier 4) so a station whose brain is a ChatGPT/Codex or Anthropic subscription is not simply deaf — none
+       of those credentials is a transcription key. Where that floor is installed, answering "no key" would name
+       the wrong cause: the station HAS ears, this clip was just undecodable. So ask the station what it can
+       actually do and hold it to the matching truth — asserting one fixed string would force a lie in whichever
+       world it was not written for, and dropping to "some reason exists" would guard nothing. */
+    const localVoice = await j('GET', '/api/local-voice/status');
+    const canHearKeyless = !!(localVoice.body && localVoice.body.available);
+    if (canHearKeyless) {
+      A.ok(/local/i.test(sttNoKey.body.reason || ''), 'with a keyless local engine the degrade names THAT tier failing, not a missing key');
+      A.ok(!/no key/i.test(sttNoKey.body.reason || ''), 'and never blames a key on a station that can transcribe without one');
+    } else {
+      A.ok(/no key/i.test(sttNoKey.body.reason || ''), 'with no engine and no key the STT degrade names the no-key reason');
+    }
     // raw-bytes shape (the recorder-provider default): a webm content-type body, still no key -> clean degrade.
     const sttRaw = await fetch(B + '/api/stt', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/webm' }, apiToken ? { 'X-StarNet-Token': apiToken } : {}), body: Buffer.from('fake opus bytes') });
     A.eq(sttRaw.status, 200, 'POST /api/stt raw audio bytes -> 200');
