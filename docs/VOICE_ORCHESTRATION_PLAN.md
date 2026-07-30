@@ -124,5 +124,29 @@ stream".
 ignores it is worse than one that never offered it: the model will report the work went where it was
 asked. Schema and attribution land together or not at all.
 
-Check before building: `agent.run.start` is a registered event in `shared/events.js` (owned,
-additive-only) — carrying a stream id may need an additive field there, with the owner told.
+### BUILT 2026-07-30 — and the earlier reading of "where attribution lives" was wrong
+
+The note above assumed attribution had to ride `agent.run.start` into the page, and therefore that
+this needed an additive field on the owned `shared/events.js`. **It did not.** `streamId` is already a
+first-class parameter of the run host: `runOnce({ streamId })` flows into `runStore.record({ streamId })`
+and `transcriptStore.appendNew(streamId, …)`, and it also scopes the run's working memory. The durable
+half of session attribution was therefore already built — `team.dispatch` simply never passed it.
+
+⛔ **A lifecycle event drives ANIMATION; the run host drives the RECORD.** Tracing `agent.run.start`
+through the page found dozens of subscribers — desks lighting, sprites, HUD tickers — and none of them
+files a run into a session. Reading the event's consumers made the change look like a contract change;
+reading the run host showed the seam was one argument. Grep where state is PERSISTED, not where it is
+rendered. `shared/events.js` was not touched.
+
+What shipped:
+- `session` on a worker in `team.dispatch`, resolved over the station bridge in three tiers (exact id,
+  exact title, unique substring) — each needing a UNIQUE hit.
+- Unknown or ambiguous ⇒ that worker **does not run**, and the row names what exists so the model can
+  correct itself. A failed page-fold is reported on the row too.
+- Two page verbs in `stationcommands.js`: `station.sessions` (resolution source) and `station.deliver`
+  (appends the finished answer, idempotent by runId, never replaces an existing thread).
+- Proof: `test/e2e.dispatch-session.test.js` boots the real sidecar and asserts against `/api/runs` and
+  `/api/transcript` — the sidecar's own durable state — rather than the tool's account of itself.
+
+Still open from the verb list: `new_session`, `switch_session`, `report`. `station.status` and
+`station.crew` exist; `delegate` is covered by the above.
