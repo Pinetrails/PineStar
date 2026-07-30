@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0a6a14e1fdf4be2da41ea95a6b5e5de825ac8dc2",
+    "sourceCommit": "d025dcffc436946a0dbbf8ac61ca6f2d765d7f9e",
     "pathSetSha256": "887a13d8f2e1bb9da5377fbf9c21a32959e0e23373622a98ea6d4b77071cee23",
     "files": [
       {
@@ -648,8 +648,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 442387,
-        "sha256": "245230a7ce9fa5dcaadc38707071b3d889f056d5c74adf615face2bdebdc408a"
+        "bytes": 443333,
+        "sha256": "1e068951129b95c792cd8a92f768e74b990710b4893ccdaff45ae1992feb3ed5"
       },
       {
         "path": "frontend/app/study.js",
@@ -783,8 +783,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 78780,
-        "sha256": "fae85b04197eb868207be1af84e912cb037fe8132a0d7d5bc495b6af20673c91"
+        "bytes": 79346,
+        "sha256": "4ee0725d5a22f2096eeeb9eacc882ed9dcfa9b03c1b6976d89cd51c43d5a2c60"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -798,8 +798,8 @@
       },
       {
         "path": "frontend/app/windows/messaging.js",
-        "bytes": 45220,
-        "sha256": "d90412abbe886119f0a3bc0ad9933eea33e44b45b69bbb533606543341836a5e"
+        "bytes": 46204,
+        "sha256": "e682718ccbda2c3cb202448116458219415dab51bb58aa0435789829c2179ef6"
       },
       {
         "path": "frontend/app/windows/outbox.js",
