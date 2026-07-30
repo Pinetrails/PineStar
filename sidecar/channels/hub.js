@@ -324,7 +324,7 @@
     const transcribe = typeof o.transcribe === 'function' ? o.transcribe : null;
     const saveAttachmentFn = typeof o.saveAttachment === 'function' ? o.saveAttachment : null;
     const expandAttachments = typeof o.expandAttachments === 'function' ? o.expandAttachments : null;
-    // TYPING INDICATOR (Hermes parity): chatAction(chatId) fires ONE platform "typing…" action (adapter.chatAction
+    // TYPING INDICATOR (ref-parity): chatAction(chatId) fires ONE platform "typing…" action (adapter.chatAction
     // -> Telegram sendChatAction). Optional — absent means the channel simply shows no typing bubble, exactly the
     // old behavior. Telegram's bubble expires ~5s after each action, so the keep-alive loop below refreshes every
     // typingRefreshMs (default 4s: safely inside the 5s window at half the API traffic of the reference's 2s).

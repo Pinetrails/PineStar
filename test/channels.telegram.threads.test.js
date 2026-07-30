@@ -5,7 +5,7 @@
      · WHICH FORUM TOPIC it came from. `message_thread_id` was read in exactly one place — to suppress the
        phantom-quote trap in replyOf — and never sent back. So in a forum supergroup every answer landed in
        **General instead of the topic the member was sitting in**. That is the last remaining case of this
-       channel delivering a message to the WRONG PLACE rather than merely doing less than Hermes does.
+       channel delivering a message to the WRONG PLACE rather than merely doing less than the reference harness does.
      · WHICH MESSAGE it was. A reply in a busy group floated loose from its question.
 
    The seam is the plan's capability seam turned inside out: the hub speaks a NEUTRAL route

@@ -10464,7 +10464,7 @@ async function runOnce(o) {
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
   // STARNET_IMAGE_MODEL overrides the studio's default text->image model (image.js picks the current-gen
   // fast default when unset; per-call args.model still wins over both).
-  // AUX VISION (Hermes-style): image_analyze / browser.vision fall back to the RUN's OWN provider+model when no
+  // AUX VISION (ref-style): image_analyze / browser.vision fall back to the RUN's OWN provider+model when no
   // OpenRouter key exists (or its call fails) — a session on Anthropic/Gemini/Codex/etc. can look at images with
   // zero extra keys. The provider object is constructed further down (codex/oauth token dance); this slot is
   // filled there, and every tool dispatch happens after the run starts, so the late bind is always resolved by
