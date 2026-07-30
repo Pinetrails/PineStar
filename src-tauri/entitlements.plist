@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS hardened-runtime entitlements. Notarization REQUIRES hardened runtime, and hardened
+  runtime kills JIT-compiling processes unless they are entitled for it. StarNet ships two:
+  the Tauri shell (WKWebView) and the bundled Node sidecar (V8). Without these the app
+  codesigns and notarizes fine and then dies on launch — the failure lands at runtime, not
+  at build time, so it is easy to ship broken.
+
+  Deliberately NOT included:
+    com.apple.security.cs.disable-library-validation — the sidecar is pure JS with zero
+      native .node addons (verified 2026-07-24), so nothing unsigned gets dlopen'd. Add it
+      only if a native module is ever bundled; it materially weakens the app's guarantees.
+    App Sandbox keys — Developer ID (non-App-Store) distribution is not sandboxed, so the
+      sidecar's 127.0.0.1 listener and outbound HTTPS need no network entitlement.
+-->
+<plist version="1.0">
+<dict>
+  <!-- V8 and WKWebView both generate and execute code at runtime. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- Node's V8 maps executable pages it wrote itself; allow-jit alone does not always
+       cover that path. Both are what Electron/Node-embedding apps ship. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>

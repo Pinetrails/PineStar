@@ -331,6 +331,96 @@ jobs:
             for s in $sigs; do echo "  sig: $s"; done
           done
 
+      # macOS trust proof. Signing can fail SILENTLY GREEN in three ways, each of which ships
+      # a build that looks fine in CI and is broken in the user's hands:
+      #   1. cert present but the bundler fell back to an ad-hoc signature -> Apple Silicon
+      #      users still get the false "damaged, move to Trash" dialog with NO override.
+      #   2. hardened runtime off -> Apple refuses to notarize, quietly.
+      #   3. the bundled node sidecar signed WITHOUT the JIT entitlement -> the app opens and
+      #      the sidecar is killed on V8's first codegen. Nothing in the build log says why.
+      # Tauri's docs do not state whether the DMG (vs the .app) gets stapled, so step 4
+      # validates first and only staples if it must, instead of assuming either way.
+      # Deliberately never re-signs the .app: the signed *.app.tar.gz updater artifact was
+      # already produced from it, and touching it now would desync that .sig.
+      # No Apple cert = exactly the prior behaviour (unsigned DMG), warning only.
+      - name: Verify macOS signing + notarization, staple DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            echo "::warning::[$TARGET] no Apple cert — DMG ships UNSIGNED. Apple Silicon users will hit the false 'damaged' dialog and need the xattr quarantine-clear. Skipping trust verification."
+            exit 0
+          fi
+          T="$RUNNER_TEMP"
+          app=$(find src-tauri/target -type d -name '*.app' -path '*/release/bundle/macos/*' | head -1)
+          dmg=$(find src-tauri/target -type f -name '*.dmg' -path '*/release/bundle/dmg/*' | head -1)
+          [ -n "${app:-}" ] && [ -d "$app" ] || { echo "::error::[$TARGET] no .app bundle found to verify."; exit 1; }
+          [ -n "${dmg:-}" ] && [ -f "$dmg" ] || { echo "::error::[$TARGET] no .dmg found to staple."; exit 1; }
+          echo "  app: $app"
+          echo "  dmg: $dmg"
+
+          # (1) real Developer ID authority, not ad-hoc — this is the actual bug being fixed.
+          codesign -dvvv "$app" > "$T/cs.txt" 2>&1 || true
+          if ! grep -q 'Authority=Developer ID Application' "$T/cs.txt"; then
+            echo "::error::[$TARGET] .app is NOT Developer ID signed — signing fell back silently. Silicon users would still see 'damaged'."
+            sed -n '1,25p' "$T/cs.txt"
+            exit 1
+          fi
+          # (2) hardened runtime — notarization is refused without it.
+          if ! grep -qi 'flags=.*runtime' "$T/cs.txt"; then
+            echo "::error::[$TARGET] hardened runtime NOT enabled on the .app (bundle.macOS.hardenedRuntime)."
+            grep -i '^CodeDirectory' "$T/cs.txt" || true
+            exit 1
+          fi
+          echo "::notice::[$TARGET] .app: Developer ID + hardened runtime ✓"
+
+          # (3) the bundled Node sidecar must carry allow-jit, or V8 dies at runtime.
+          side=$(find "$app/Contents" -type f -perm -u+x -name 'node*' | head -1)
+          if [ -z "${side:-}" ]; then
+            echo "::error::[$TARGET] bundled node sidecar not found inside the .app — externalBin did not land."
+            find "$app/Contents" -maxdepth 3 -type f -perm -u+x | head -20
+            exit 1
+          fi
+          echo "  sidecar: $side"
+          codesign -d --entitlements :- "$side" > "$T/ent.txt" 2>&1 || true
+          if ! grep -q 'allow-jit' "$T/ent.txt"; then
+            echo "::error::[$TARGET] sidecar has NO com.apple.security.cs.allow-jit entitlement — it will be killed under hardened runtime. Entitlements did not propagate to externalBin; sign the sidecar explicitly before bundling."
+            cat "$T/ent.txt"
+            exit 1
+          fi
+          echo "::notice::[$TARGET] sidecar signed with allow-jit ✓"
+
+          # (4) staple the DMG if the bundler did not. Unstapled = Gatekeeper phones Apple on
+          # first open, so an offline user is still blocked.
+          if xcrun stapler validate "$dmg" >/dev/null 2>&1; then
+            echo "::notice::[$TARGET] DMG already stapled by the bundler ✓"
+          else
+            echo "::notice::[$TARGET] DMG not stapled — submitting it to the notary service."
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
+            echo "::notice::[$TARGET] DMG notarized + stapled ✓"
+          fi
+
+          # (5) the verdict a real user's Mac will reach.
+          spctl -a -t exec -vv "$app" > "$T/spctl.txt" 2>&1 || true
+          cat "$T/spctl.txt"
+          if ! grep -qi 'accepted' "$T/spctl.txt"; then
+            echo "::error::[$TARGET] Gatekeeper REJECTS the .app — do not ship this build."
+            exit 1
+          fi
+          if ! grep -qi 'source=Notarized Developer ID' "$T/spctl.txt"; then
+            echo "::warning::[$TARGET] Gatekeeper accepts the app but not as 'Notarized Developer ID' — notarization may not have applied. Check before publishing."
+          fi
+          echo "::notice::[$TARGET] Gatekeeper accepts the .app ✓"
+
       # Tauri names the mac updater bundle "<App>.app.tar.gz" with NO arch marker — identical
       # for both mac legs. Release assets are a flat namespace, so without a rename the two
       # legs collide into one asset and one arch gets the wrong binary. Rename per-arch here.

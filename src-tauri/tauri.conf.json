@@ -39,6 +39,8 @@
     },
     "macOS": {
       "minimumSystemVersion": "10.15",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist",
       "dmg": {
         "background": "installer/dmg-background.png",
         "windowSize": {
