@@ -71,3 +71,35 @@ finished run is precisely the lie this product forbids.
   credibility once already.
 - A spoken task must remain indistinguishable downstream from a typed one: same approvals, same
   ledger, same visible transcript (`Chat.sendOrQueue`, as `start_starnet_task` already did).
+
+## Live finding (Andrew, 2026-07-30): delegation cannot target a session
+
+Tested on the built-in path: he asked for a session named "research", asked for a research agent, then
+asked for a task to run *in that session*. The session was created. The agent was created. The work
+was delegated — **into the wrong workstream**.
+
+⛔ **CORRECTION to the section above: orchestration is NOT absent on this path.** The agent's ordinary
+tools already create sessions and crew; that part works. The defect is narrower and sharper:
+
+**`sidecar/tools/builtin/orchestration.js` has no `streamId` / `workstream` / `sessionId` parameter at
+all** (grep: two incidental comment mentions of the word "session", zero plumbing). Delegation is
+**agent-addressed, not session-addressed** — the caller can say WHO, never WHERE. The run therefore
+lands in whatever workstream the delegating agent is currently in, which is why a session the
+Commander explicitly named was ignored.
+
+### What this changes about the plan
+
+`station.delegate` (verb 4) is no longer just "wire a bridge verb". Two halves:
+
+1. **Give the orchestration tool a session target.** Add an optional workstream/stream id to the
+   delegate/subagent params and thread it through to where the run is bound. Without this the bridge
+   verb would have the same hole one layer up.
+2. **Resolve a session by NAME.** The Commander speaks titles ("the research session"), not ids, so the
+   verb needs title → id resolution against the live list, and must REFUSE on an ambiguous or unknown
+   title rather than silently defaulting to the active one. ⛔ Defaulting is precisely the behaviour
+   that produced this bug; a wrong-but-plausible destination is worse than a refusal.
+
+### Acceptance for this slice
+Speak: "make a session called research", "add a research agent", "have them summarise X **in the
+research session**" → the run appears in `research`, attributed to that agent, and nowhere else.
+Then the same request naming a session that does not exist must say so, not pick one.
