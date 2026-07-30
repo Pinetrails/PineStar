@@ -111,11 +111,20 @@ async function until(B, headers, pred, label, ms) {
   };
   let child, port;
   try {
-    // Count only the LOOP's own model calls. The sidecar makes its own internal calls against the same mock
-    // (session titling, quest refresh, aux), so a raw prompt count would attribute those to the loop and make
-    // every "it spent nothing" assertion flaky-strict for the wrong reason.
+    /* Count only the LOOP's own model calls. The sidecar makes its own internal calls against the same mock
+       (the post-run aux passes: background skill review, scout interests extraction), and those prompts EMBED
+       the run's transcript / recent-activity titles — which contain the objective. So a substring match counted
+       them as loop spend, and that was this test's one flake: the skill-review pass launched at the end of the
+       FINAL pre-dormancy iteration is fire-and-forget, so ~8% of runs (worse under gate load) its mock hit
+       landed only AFTER the driver's settle had written 'dormant' and this test had snapshotted — reading as
+       "a dormant loop spent money" when the loop subsystem had provably stopped (instrumented timeline proof,
+       2026-07-30: the trailing prompt began "You are StarNet background skill review", never with the
+       objective or a <loop_ledger>). An iteration prompt is the ONLY prompt that BEGINS with the objective
+       (loopjob-driver buildMessages puts the objective first; every aux prompt opens with its own scaffolding),
+       so the counter anchors at position 0 — it still counts every real iteration, including any that would
+       illegally fire after dormancy/halt, which keeps the money guards below fully armed. */
     const OBJ = 'find and fix bugs in the portfolio site';
-    const loopCalls = () => mock.prompts.filter(p => p.indexOf(OBJ) >= 0).length;
+    const loopCalls = () => mock.prompts.filter(p => p.indexOf(OBJ) === 0).length;
 
     ({ child, port } = await boot(8990 + (process.pid % 25), env, 20));
     let B = 'http://' + HOST + ':' + port;
@@ -205,9 +214,19 @@ async function until(B, headers, pred, label, ms) {
     A.eq(st.loops[0].state, 'dormant', 'consecutive honest NOTHING-TO-DO passes park the loop');
     A.eq(st.loops[0].binding, 'dormant', 'and the binding says so');
     A.ok(/nothing left to do/.test(st.loops[0].stopReason || ''), 'in plain words');
+    /* THE 24/7 MONEY GUARD. Once STATUS reads 'dormant', no further loop iteration may spend. This is
+       deterministic, not a race: decide() gates state==='dormant' before anything else, the per-loop lease
+       means no pass can still be in flight when dormant is visible (dormant is written by the settle of the
+       last pass, and that pass's model call necessarily landed BEFORE its settle), and loopCalls() counts
+       ITERATION prompts only (see its comment) — so one extra count here would be a real product regression,
+       never test noise. Do NOT relax this assertion. */
     const callsAtDormant = loopCalls();
+    const itersAtDormant = st.loops[0].iterationCount;
     await sleep(3000);
     A.eq(loopCalls(), callsAtDormant, 'a dormant loop spends NOTHING — this is the 24/7 money guard');
+    const stillDormant = await (await fetch(B + '/api/loops', { headers })).json();
+    A.eq(stillDormant.loops[0].state, 'dormant', 'and it STAYED dormant through the wait');
+    A.eq(stillDormant.loops[0].iterationCount, itersAtDormant, 'with not one new iteration started');
 
     // ---- the record survives a restart --------------------------------------------------------------------
     const beforeRestart = (await (await fetch(B + '/api/loops', { headers })).json()).loops[0];
