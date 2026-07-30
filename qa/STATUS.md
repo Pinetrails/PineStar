@@ -727,7 +727,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-30 04:06Z @ 6631734e | RED | 4 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-30 06:09Z @ 724c5470 | RED | 4 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-29T13:01:43.120Z · ui-only · 100781ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -1389,3 +1389,69 @@ against a copy of a real v0.7.0 workspace rather than asserting it.
 STILL NOT DONE, and deliberately: `golden` remains RED on 4 frames and is **not re-blessed** (the
 lighting lane would re-bless them as part of its art verdict); the onboarding interview lane still
 needs Andrew's product call; nothing has been pushed or tagged.
+
+## 2026-07-30 — Local Live voice: the keyless ladder that nothing was calling
+
+Merged `agent/voice-listen-fallback` as `4bda2886` (+ notes/lock `9107ad8f`, claims re-lock). Full
+`npm test`: **NPM_EXIT=0 read FROM THE LOG, `run-fast-tests: OK — 462 step(s) green`**, zero FAIL.
+Merge clean, all four files `node --check` clean, both website mirrors byte-identical to source, and
+`function start` appearing twice was a grep artifact (`startDictation`), not merge damage.
+
+THE REPORT WAS "voice mode says nothing is available, it should use the model." The honest chain
+behind it, each link verified rather than assumed:
+
+1. **Local Live listened only through the offline models.** Its own mic capture →
+   `/api/local-voice/transcribe` → Whisper, which needs `@huggingface/transformers` + `kokoro-js`.
+   The Tauri bundle ships `sidecar/`, `frontend/`, `shared/` and **no node_modules**, confirmed by
+   inspecting the staged resource in the build. So it could never listen in an installed copy.
+2. ⛔ **A KEYLESS LADDER FOR EXACTLY THIS CASE EXISTED AND NOTHING CALLED IT.**
+   `nativeSpeechProvider` → `POST /api/stt/native` (Windows System.Speech, no key, pure PowerShell,
+   ships inside the bundle) is selected **only** inside `startCoordinator` — and `startCoordinator`
+   was **exported and never invoked by any frontend file**. Local Live called `attachCoordinator`,
+   which registers state hooks and never selects an stt provider. ⛔ **An exported function with no
+   caller is dead code, and `grep -c` on the export list will not tell you** — grep the call sites.
+3. **Speaking was never broken.** `edgetts.js` is a free keyless neural floor, on unless
+   `STARNET_EDGE_TTS` is off. The report named "voice" but only listening was down.
+4. **The user's premise was wrong in a checkable way, and checking it mattered.** A ChatGPT sub
+   cannot drive this: `TTS_KEY_PROVIDERS = ['openrouter','gemini','openai']` excludes codex, and the
+   `marin` realtime path resolves `providerRuntimeKey('openai')` with its own error string "OpenAI
+   API key required for live voice" — and has **no UI wiring at all** (`/api/realtime/*` is called by
+   zero frontend files). ⛔ **Three speech backends existed; the button reached one.**
+5. ⛔ **MY OWN EARLIER GREP WAS WRONG AND NEARLY FROZE A FALSE CONCLUSION.** I searched
+   `api/native-stt`; the routes are `/api/stt/native/status` and `/api/stt/native`. The wrong path
+   returned zero hits and I reported the fallback as entirely uncalled. **Confirm a route's real
+   path from the route table before concluding "nothing calls it."**
+
+THE FIX: when the models are absent, probe `/api/stt/native/status` and run dictation mode through
+`startCoordinator`; leave local TTS OFF there so speech takes the Edge floor; refuse honestly only
+when neither leg exists.
+
+⛔ THREE BUGS CAUGHT IN MY OWN FIX BY VERIFYING IT LIVE, NOT BY READING IT:
+- **The label lied.** It said `WINDOWS DICTATION` unconditionally, but in a browser the same ladder
+  picks the browser engine. Now read back from a new `Voice.sttEngine()`. ⛔ **And my guess at the
+  provider id (`'web'`) was wrong — it is `'web-speech'` — which rendered "ASR UNKNOWN" in the live
+  DOM. A label that names an engine must READ the selection, never re-derive it.**
+- **A bogus reconnect.** Dictation mode holds no browser stream, so the `visibilitychange` /
+  `devicechange` handlers read `stream == null` as "microphone lost" and fired a reconnect that would
+  seize the very device this mode must not touch. ⛔ **`active` is not one state — a second mode
+  under the same flag inherits every guard written for the first.**
+- **A leaked listen loop.** Teardown detached the hooks but never stopped the coordinator, so the
+  sidecar kept being asked to dictate after the panel closed. `stopCoordinator` on finish.
+
+VERIFIED LIVE: panel opens to `listening` with `ASR BROWSER SPEECH · VOICE EDGE`, no error row; the
+sidecar reports `{"available":true,"engine":"windows-system-speech"}`; closing leaves
+`inVoiceMode:false` / `isListening:false`. ⛔ **NOT VERIFIED: a real Windows-dictation utterance
+end-to-end.** The browser pane HAS SpeechRecognition, so it exercised the `web-speech` leg; the
+`native` leg is selected only where SR is absent, i.e. the packaged WebView2 shell. Driving
+`/api/stt/native` by hand opens the operator's real microphone for 15s, so it was left for the
+installed test rather than done unasked.
+
+ALSO FOUND, NOT A VOICE BUG: the awakening re-ran on every fresh client because
+`needsAwakening = !agent.onboarded` and the station save carried `onboarded: false`. Patched on a
+THROWAWAY COPY only to get a past-onboarding dev server; the live station was not touched. ⛔ **And
+a dev sidecar is the wrong place to sign into Codex: OAuth refresh rotation means two clients on one
+ChatGPT session consume each other's tokens, so signing in there can log the installed app out.**
+The "We couldn't authorize this device" message is **OpenAI's own copy** — that string exists nowhere
+in this repo — and pending device logins live in an in-memory `Map`, so **restarting the sidecar
+voids an in-flight sign-in**. RELEASE_NOTES.md was rewritten: it had claimed the panel simply
+refuses, which stopped being true the moment this landed.
