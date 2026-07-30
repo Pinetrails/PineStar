@@ -3147,8 +3147,11 @@ const App = (() => {
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'nothing to export in “' + ((w && w.title) || 'General') + '”', ok ? '' : 'warn');
   }
   function renderSessionSearch() {
-    const input = el('ws-search'), out = el('ws-search-results'); if (!input || !out) return;
+    const input = el('ws-search'), out = el('ws-search-results'), sessions = el('workstreams'); if (!input || !out) return;
     const q = input.value.trim(); out.innerHTML = '';
+    // Search results replace the ordinary rail rows; showing both made a no-match result claim "nothing
+    // matches" while unrelated sessions stayed selectable directly underneath it.
+    if (sessions) sessions.hidden = railView !== 'sessions' || !!q;
     if (!q) return;
     const hits = Workstreams.search(q);
     for (const hit of hits) {
@@ -3156,7 +3159,7 @@ const App = (() => {
       const title = document.createElement('b'); title.textContent = hit.title || 'General';
       const snippet = document.createElement('small'); snippet.textContent = hit.snippet;
       li.append(title, snippet);
-      const open = () => { switchWorkstream(hit.id); input.value = ''; out.innerHTML = ''; };
+      const open = () => { switchWorkstream(hit.id); input.value = ''; renderSessionSearch(); };
       li.onclick = open; li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
       out.appendChild(li);
     }
@@ -3406,8 +3409,9 @@ const App = (() => {
     SFX.click();
     const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', addBtn: view === 'projects' };
     const set = (id, show) => { const e = el(id); if (e) e.hidden = !show; };
+    const search = el('ws-search'), searchActive = view === 'sessions' && !!(search && search.value.trim());
     set('ws-rail-search', pan.sessionsList);   // search is a SESSIONS-view affordance; PROJECTS hides it with the list
-    set('workstreams', pan.sessionsList);
+    set('workstreams', pan.sessionsList && !searchActive);
     set('projects', pan.projectsList);
     set('ws-new', pan.newBtn);
     set('ws-addproject', pan.addBtn);

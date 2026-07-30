@@ -1883,3 +1883,17 @@ with exact evidence in the lane ledger. Final lane receipts: ledger 0 P0 / 0 P1 
 `test:fast` 364/364 green; full `test:http` green. `qa:ready` remains correctly NOT READY until this
 branch is merged and Guardian/journeys/beginner/installed receipts are regenerated on that exact
 integration commit. No merge or publish performed.
+
+# READY TO MERGE 2026-07-28 — SESSION RAIL SEARCH TRUTH (`agent/quality-loop-0728b`)
+
+The live SESSIONS rail rendered “No title or transcript matches” for an impossible query while
+leaving the unrelated General row visible and selectable underneath. Search results now replace
+the ordinary session list for the lifetime of a non-empty query; Escape and opening a hit restore
+the list, and a PROJECTS round-trip preserves active search isolation. The generated website mirror
+is synced and the existing session-power-tools gate now locks all three transitions.
+
+Live seeded proof at `:8892`: the no-match row measured 230×51.9 px while General measured 0×0 and
+`#workstreams.hidden === true`; Escape restored General at 230×27.1 px, cleared the query, and removed
+the no-match row. Browser warnings/errors: none. Focused gate: 121 assertions; website sync: 8;
+`test:fast`: 423/423 green. No backend seam changed, so `test:http` was not required. No merge, push,
+PR, deployment, publish, production-data, credential, or secret change was performed.
