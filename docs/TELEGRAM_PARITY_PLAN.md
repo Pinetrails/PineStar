@@ -460,13 +460,37 @@ limitation and the fix (@BotFather → `/setprivacy` → Disable). A second, sub
 an existing deep-equal on `getMe`'s shape: a **missing** field was being coerced to `false`, claiming a
 limitation we had not been told about. Absent now means unknown, and unknown says nothing.
 
-### Still unproven — needs a real chat
+### Proven live in a REAL chat (a DM, after the first inbound message)
 
-A bot cannot start a conversation, so every outbound path needs someone to message it first. Open:
-inbound admission end to end, **thread routing into a real forum topic** (the N1 fix), reply-quoting,
-reaction acks on a real run, **live streaming edits**, voice-note STT, album batching, `edited_message`,
-`channel_post` and its echo guard, and `my_chat_member` on a real block. Full end-to-end also needs a
-provider key, i.e. real spend.
+Every one of these was driven through `telegram.transport.js` against a real chat, not a fake:
+
+| Path | Result |
+|---|---|
+| `setReaction` 👀 on the member's own message, then cleared (N8) | `ok` / `ok` |
+| `sendChatAction` | `ok` |
+| **Reply-quote + markdown→HTML** (N2) | `ok`, quoting their message |
+| **Streaming (P4)**: seed → 3 in-place edits | all `ok`; the message visibly grew |
+| **`message is not modified`** on an identical re-edit | Telegram's real sentence — matched by our `notModified()` and treated as success, exactly as designed |
+| **Multipart photo** (P1) | `ok` once given a *valid* PNG — see below |
+| **Multipart document** | `ok` |
+| **`sendMediaGroup`**, 3 photos via `attach://` | `ok`, `count: 3` |
+| `deleteMessage` (N11) | `ok` |
+| **Thread fallback fired for real** | a `threadId` that cannot exist in a DM → first attempt refused, resent to the chat root, and the result carried **`ok:true, threadGone:true`** — the N1 fallback *and* the stale-binding prune, both live |
+
+**One false alarm worth recording:** the first photo attempt returned `IMAGE_PROCESS_FAILED`. That was a
+corrupt hand-written PNG fixture in the *probe*, not a transport bug — the document upload through the same
+encoder succeeded in the same run, and a properly built PNG then went through cleanly. The encoder is fine;
+the lesson is that a hand-rolled binary fixture is worth generating rather than typing.
+
+### Still unproven — needs the bot actually CONNECTED to a station
+
+The outbound half is now done. What remains is the inbound half, and it is blocked on something simpler than
+it looks: **nothing in StarNet is polling this token.** The bot has never been added to a station (no
+`telegram.token` in any channel-secrets file), so a message to it reaches no hub and gets no reply. Open until
+it is connected in the app's Messaging tab: inbound admission end to end, a real run and its reaction ack,
+streaming on real model output, voice-note STT, album batching, `edited_message`, `channel_post` + the echo
+guard, `my_chat_member` on a real block, and thread routing inside a real forum topic. That last one also
+needs a forum supergroup; the group features additionally need privacy mode disabled (§4.7).
 
 ## 4.8 N14 TEXT BATCHING — BUILT, THEN REVERTED ON PURPOSE
 
