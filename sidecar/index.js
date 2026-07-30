@@ -1490,9 +1490,34 @@ function providerHasCredential(provider, key, baseUrl) {
   return true;
 }
 
+/* ONE BEARER RESOLVER FOR EVERY PROVIDER. Whatever the Commander connected IS the credential — an API key,
+   a ChatGPT subscription, or a device-OAuth subscription (Grok, Kimi). Nothing here names a provider: the
+   registry says how each one authenticates, so a new provider is a registry row, not a branch. Async because
+   an OAuth access token may need a refresh round-trip first. */
+async function resolveProviderCredential(provider) {
+  const id = normalizeProvider(provider);
+  if (registryProviderUsesCodex(id)) return await ensureCodexAccessToken();
+  if (registryProviderUsesDeviceOAuth(id)) {
+    const entry = oauthProviders[id];
+    return String((entry && entry.tokens && entry.tokens.access_token) || '');
+  }
+  return providerRuntimeKey(id, '');
+}
+
+/* Does THIS provider speak natively? The registry carries a `liveVoice` descriptor only where the endpoint
+   has been proven against the real service. Absent = we compose voice instead (their intelligence, our ears
+   and mouth) — never a guessed endpoint, and never a demand for a second key. */
+function liveVoiceProfileFor(provider) {
+  const profile = getProviderProfile(normalizeProvider(provider));
+  const lv = profile && profile.liveVoice;
+  return lv && lv.url ? lv : null;
+}
+
 const realtimeVoice = makeRealtimeVoice({
   fetch: globalThis.fetch,
-  resolveKey: () => providerRuntimeKey('openai', ''),
+  profileFor: liveVoiceProfileFor,
+  hasCredential: provider => providerHasCredential(provider, providerRuntimeKey(provider, ''), providerRuntimeBaseUrl(provider, '')),
+  resolveCredential: resolveProviderCredential,
   safetySeed: API_TOKEN
 });
 const nativeStt = makeNativeStt({ platform: process.platform, execFile });
@@ -6331,8 +6356,9 @@ const TG_BOT_RX = {
 };
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
-  { m: 'GET', exact: '/api/realtime/status', h: handleRealtimeStatus },
-  { m: 'POST', exact: '/api/realtime/session', h: handleRealtimeSession },
+  // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
+  { m: 'GET', qsplit: '/api/realtime/status', h: handleRealtimeStatus },
+  { m: 'POST', qsplit: '/api/realtime/session', h: handleRealtimeSession },
   { m: 'GET', exact: '/api/stt/native/status', h: handleNativeSttStatus },
   { m: 'POST', exact: '/api/stt/native', h: handleNativeStt },
   { m: 'GET', exact: '/api/local-voice/status', h: handleLocalVoiceStatus },
@@ -6897,9 +6923,15 @@ function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true }));
 }
+/* The page asks about the provider IT is running on (?provider=), because the Commander can switch providers
+   without restarting the sidecar. No provider named = fall back to the station's own current one, so a plain
+   GET still answers truthfully. */
 function handleRealtimeStatus(req, res) {
+  let provider = '';
+  try { provider = String(new URL(req.url, 'http://x').searchParams.get('provider') || '').trim(); } catch (_) {}
+  if (!provider) provider = cronProviderFor(null);
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(realtimeVoice.status()));
+  res.end(JSON.stringify(realtimeVoice.status(provider)));
 }
 async function handleRealtimeSession(req, res) {
   let offer;
@@ -6911,7 +6943,10 @@ async function handleRealtimeSession(req, res) {
     }
     return;
   }
-  const out = await realtimeVoice.createCall(offer);
+  let provider = '';
+  try { provider = String(new URL(req.url, 'http://x').searchParams.get('provider') || '').trim(); } catch (_) {}
+  if (!provider) provider = cronProviderFor(null);
+  const out = await realtimeVoice.createCall(offer, provider);
   res.writeHead(out.status, { 'Content-Type': out.contentType, 'Cache-Control': 'no-store' });
   res.end(out.body);
 }

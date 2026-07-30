@@ -5,6 +5,9 @@ const VoiceLive = (() => {
   let active = false, ending = false, failed = false, taskTimer = null, modelTimer = null;
   // true while running on the keyless dictation ladder instead of the offline models (see startDictation).
   let dictation = false;
+  // ---- NATIVE LIVE CALL (see startRealtime) ----
+  // `realtime` is the mode flag; the rest is the live peer connection and its plumbing.
+  let realtime = false, pc = null, dataChannel = null, remoteAudio = null, callProvider = '';
   let sessionSeq = 0;
   let stream = null, context = null, source = null, processor = null, sink = null;
   let calibratedUntil = 0, noiseFloor = 0.006, speechFrames = 0, silenceMs = 0;
@@ -555,6 +558,11 @@ const VoiceLive = (() => {
     // the mic keeps feeding the VAD below either way, so barge-in detection is untouched.
     if (agentTalking) pushLevel(agentLevel * AGENT_GAIN, AGENT);
     else pushLevel(rms * 14, SELF);
+    // NATIVE LIVE CALL: the provider does its own turn detection (semantic_vad) on the audio we stream to it,
+    // so everything below — our VAD, utterance capture, partial transcription — would be a second, competing
+    // brain cutting the same speech. The meter above still runs, because that is OUR strip and the frame that
+    // scrolls it is this one.
+    if (realtime) return;
     const frameMs = frame.length / context.sampleRate * 1000;
     if (performance.now() < calibratedUntil) {
       noiseFloor = noiseFloor * 0.92 + rms * 0.08;
@@ -696,6 +704,12 @@ const VoiceLive = (() => {
     // first model import is how this panel used to show users a raw "Cannot find module" string.
     // Only a PROVEN `available:false` refuses; an unreachable sidecar falls through to the existing
     // offline handling below.
+    // FIRST CHOICE, ALWAYS: the provider's own live voice. This is the feature — connect a provider, talk to
+    // your agent in its voice, interrupt it, and have it drive your sessions. Everything below is what we fall
+    // back to for a provider that sells no voice endpoint.
+    const capability = await realtimeCapability();
+    if (capability && capability.available) return startRealtime(capability);
+
     const readiness = await probeAvailability();
     if (readiness && readiness.available === false) {
       // The offline models are absent — the normal case in a packaged build, which ships no node_modules.
@@ -767,6 +781,225 @@ const VoiceLive = (() => {
     }
   }
 
+  /* ===================================================================================================
+     THE NATIVE LIVE CALL — the provider itself listens and speaks, over WebRTC.
+
+     This is what Local Live was always meant to be: connect a provider once, then hold a real conversation
+     with your agent in that provider's own voice. No second key, no transcription layer of ours, and real
+     interruption — the provider runs semantic turn detection on the audio we stream it, so talking over the
+     agent cuts it off the way it does with a person.
+
+     The audio path is deliberately OUR microphone stream: the same one that scrolls the level strip. That is
+     why the meter and barge-in work here and were dead on the dictation leg — nothing was opening a mic.
+
+     Tool calls arrive on the data channel and are answered against the live station, so "what's running?"
+     and "start X" move real workstreams instead of being described. Anything we cannot answer truthfully is
+     returned as an error to the model rather than invented.
+     =================================================================================================== */
+
+  function activeProvider() {
+    try {
+      if (typeof Harness !== 'undefined' && Harness.getProv) return String(Harness.getProv() || '');
+    } catch (_) {}
+    return '';
+  }
+
+  async function realtimeCapability() {
+    try {
+      const q = activeProvider() ? ('?provider=' + encodeURIComponent(activeProvider())) : '';
+      const response = await fetch('/api/realtime/status' + q, { cache: 'no-store' });
+      return await response.json();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---- the three tools the session config declares, answered from live station state ----
+  async function runVoiceTool(name, args) {
+    if (name === 'get_starnet_status') {
+      const snap = statusSnapshot();
+      if (!snap || snap.active === null && !(snap.workstreams || []).length) {
+        return { ok: false, error: 'the station is still starting up — no workstreams are readable yet' };
+      }
+      return { ok: true, ...snap };
+    }
+    if (name === 'start_starnet_task') {
+      const instruction = String((args && args.instruction) || '').trim();
+      if (!instruction) return { ok: false, error: 'no instruction was given' };
+      const dispatch = (typeof Chat !== 'undefined') && (Chat.sendOrQueue || Chat.send);
+      if (!dispatch) return { ok: false, error: 'the chat surface is not ready' };
+      try {
+        // sendOrQueue, not send: the tool's own description promises "queued as a follow-up if busy", and this
+        // is the call that actually does that. It is the SAME path a typed message takes, so a spoken task is
+        // indistinguishable downstream — same approvals, same ledger, same visible transcript.
+        const queued = !!(typeof Chat.isBusy === 'function' && Chat.isBusy());
+        await dispatch.call(Chat, instruction);
+        return { ok: true, started: !queued, queued, instruction };
+      } catch (error) {
+        return { ok: false, error: String((error && error.message) || error) };
+      }
+    }
+    if (name === 'interrupt_starnet_task') {
+      const stop = (typeof Chat !== 'undefined') && (Chat.stopActive || Chat.abort);
+      if (!stop) return { ok: false, error: 'nothing to interrupt' };
+      if (typeof Chat.isBusy === 'function' && !Chat.isBusy()) return { ok: true, interrupted: false, note: 'nothing was running' };
+      try { await stop.call(Chat); return { ok: true, interrupted: true }; }
+      catch (error) { return { ok: false, error: String((error && error.message) || error) }; }
+    }
+    return { ok: false, error: 'unknown tool: ' + name };
+  }
+
+  function sendEvent(payload) {
+    if (!dataChannel || dataChannel.readyState !== 'open') return false;
+    try { dataChannel.send(JSON.stringify(payload)); return true; } catch (_) { return false; }
+  }
+
+  async function onRealtimeEvent(raw) {
+    let event;
+    try { event = JSON.parse(raw); } catch (_) { return; }
+    const type = String(event.type || '');
+
+    // what the Commander said (the provider transcribes its own input)
+    if (/input_audio_transcription\.completed$/.test(type) && event.transcript) {
+      caption('user', String(event.transcript).trim());
+      return;
+    }
+    // what the agent is saying
+    if (/output_audio_transcript\.(delta|done)$/.test(type)) {
+      const text = String(event.delta || event.transcript || '');
+      if (text) caption('agent', text, /delta$/.test(type));
+      return;
+    }
+    if (type === 'input_audio_buffer.speech_started') { setState('hearing'); return; }
+    if (type === 'response.created') { setState('thinking'); return; }
+    if (type === 'output_audio_buffer.started' || type === 'response.output_audio.delta') { setState('speaking'); return; }
+    if (type === 'response.done' || type === 'output_audio_buffer.stopped') { if (active) setState('listening'); return; }
+
+    // a tool the model wants run. Answer it, hand the result back, and ask for the spoken follow-up.
+    if (type === 'response.function_call_arguments.done') {
+      let args = {};
+      try { args = JSON.parse(event.arguments || '{}'); } catch (_) {}
+      const result = await runVoiceTool(String(event.name || ''), args);
+      sendEvent({
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: event.call_id, output: JSON.stringify(result) }
+      });
+      sendEvent({ type: 'response.create' });
+      return;
+    }
+    if (type === 'error') {
+      const message = (event.error && (event.error.message || event.error.code)) || 'the live session reported an error';
+      setTransientError(String(message));
+    }
+  }
+
+  async function startRealtime(capability) {
+    const seq = ++sessionSeq;
+    setError('');
+    setState('connecting');
+    resetLevel();
+    warmupNotice = false;
+    caption('agent', '');
+    if ($('lv-heard')) $('lv-heard').textContent = 'Opening the microphone…';
+    $('live-voice-panel').hidden = false;
+    active = true;
+    realtime = true;
+    ending = false;
+    failed = false;
+    callProvider = capability && capability.provider ? String(capability.provider) : activeProvider();
+    reflectButton(true);
+    if (typeof Voice !== 'undefined') {
+      // The provider speaks for itself here, so OUR text-to-speech must stay silent or the reply is doubled.
+      if (Voice.inVoiceMode && Voice.inVoiceMode() && Voice.stopConvo) Voice.stopConvo();
+      if (Voice.setLocalTts) Voice.setLocalTts(false);
+      if (Voice.stopSpeaking) Voice.stopSpeaking();
+      if (Voice.attachCoordinator) Voice.attachCoordinator({ onState, onAssistant, onOutputLevel });
+    }
+    try {
+      const opened = await openMicrophone(seq);
+      if (!opened || !active || seq !== sessionSeq) return;
+
+      pc = new RTCPeerConnection();
+      remoteAudio = document.createElement('audio');
+      remoteAudio.autoplay = true;
+      remoteAudio.style.display = 'none';
+      document.body.appendChild(remoteAudio);
+      pc.ontrack = event => { if (event.streams && event.streams[0]) remoteAudio.srcObject = event.streams[0]; };
+      pc.onconnectionstatechange = () => {
+        if (!active || seq !== sessionSeq || !pc) return;
+        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          scheduleReconnect('The live voice connection dropped.');
+        }
+      };
+      const micTrack = stream && stream.getAudioTracks()[0];
+      if (micTrack) pc.addTrack(micTrack, stream);
+
+      dataChannel = pc.createDataChannel('oai-events');
+      dataChannel.onmessage = event => { onRealtimeEvent(event.data); };
+
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+      // The call is created from a COMPLETE offer, so wait for ICE gathering rather than trickling — there is
+      // no signalling channel back to the provider to trickle on.
+      await new Promise(resolve => {
+        if (pc.iceGatheringState === 'complete') return resolve();
+        const done = () => { if (pc && pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', done); resolve(); } };
+        pc.addEventListener('icegatheringstatechange', done);
+        setTimeout(resolve, 2000);   // never hang the panel on a stalled gather
+      });
+      if (!active || seq !== sessionSeq) return;
+
+      setState('warming');
+      const q = callProvider ? ('?provider=' + encodeURIComponent(callProvider)) : '';
+      const response = await fetch('/api/realtime/session' + q, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription.sdp
+      });
+      const answer = await response.text();
+      if (!response.ok) {
+        let message = answer;
+        try { message = JSON.parse(answer).error || answer; } catch (_) {}
+        throw new Error(String(message).slice(0, 300));
+      }
+      if (!active || seq !== sessionSeq) return;
+      await pc.setRemoteDescription({ type: 'answer', sdp: answer });
+
+      setState('listening');
+      if ($('lv-model')) $('lv-model').textContent =
+        ('LIVE · ' + (capability && capability.model ? capability.model : 'provider voice')).toUpperCase();
+      if ($('lv-heard')) $('lv-heard').textContent = 'Speak naturally — interrupt any time.';
+      refreshTask();
+      clearInterval(taskTimer);
+      taskTimer = setInterval(refreshTask, 500);
+    } catch (error) {
+      active = false;
+      realtime = false;
+      sessionSeq++;
+      failed = true;
+      setState('offline');
+      setError(/permission|denied|allowed/i.test(String(error && error.message || error))
+        ? 'Microphone access is blocked. Allow it for this local page, then try again.'
+        : String(error && error.message || error));
+      teardownRealtime();
+      closeMicrophone();
+      reflectButton(false);
+      if (typeof Voice !== 'undefined' && Voice.detachCoordinator) Voice.detachCoordinator();
+    }
+  }
+
+  function teardownRealtime() {
+    try { if (dataChannel) dataChannel.close(); } catch (_) {}
+    try { if (pc) { pc.ontrack = null; pc.onconnectionstatechange = null; pc.close(); } } catch (_) {}
+    try {
+      if (remoteAudio) {
+        remoteAudio.srcObject = null;
+        if (remoteAudio.parentNode) remoteAudio.parentNode.removeChild(remoteAudio);
+      }
+    } catch (_) {}
+    dataChannel = null; pc = null; remoteAudio = null; realtime = false; callProvider = '';
+  }
+
   /* DICTATION MODE — Local Live without the offline models.
      Differences from the model path, all deliberate:
        - THIS side never opens the microphone. On the native leg System.Speech listens on the default
@@ -828,6 +1061,7 @@ const VoiceLive = (() => {
     clearTimeout(transientErrorTimer); transientErrorTimer = null;
     reconnectAttempt = 0;
     queuedAudio = null;
+    teardownRealtime();   // close the peer connection BEFORE the mic, so no track is yanked mid-send
     closeMicrophone();
     if (typeof Voice !== 'undefined') {
       if (stopVoice && Voice.stopSpeaking) Voice.stopSpeaking();

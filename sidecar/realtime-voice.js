@@ -2,6 +2,9 @@
 
 const DEFAULT_MODEL = 'gpt-realtime-2.1';
 const DEFAULT_VOICE = 'marin';
+// Only the fallback for a caller that supplies no provider descriptor. The real endpoint comes from the
+// provider registry, so adding a provider is a row there rather than an edit here.
+const OPENAI_REALTIME_URL = 'https://api.openai.com/v1/realtime/calls';
 
 const TOOLS = [
   {
@@ -71,33 +74,78 @@ function safetyIdentifier(seed) {
   return crypto.createHash('sha256').update(String(seed || 'starnet-local')).digest('hex').slice(0, 64);
 }
 
+/* THE CONNECTED PROVIDER IS THE CREDENTIAL. Live voice must never ask for a second, voice-only key: the
+   whole promise is "connect your provider or subscription and talk to your agent". A ChatGPT subscription
+   authorizes this endpoint directly — its access token carries `aud: https://api.openai.com/v1`, and a call
+   with a stub offer comes back `invalid_offer` ("Offer did not have an audio media section"), i.e. it passed
+   AUTH and session validation and failed only on the dummy SDP. The earlier wiring resolved an OpenAI API
+   KEY, which a subscription user simply does not have, so this reported itself unavailable to the very users
+   it was built for.
+
+   `resolveCredential` is async on purpose: a subscription's access token has to be refreshed when it nears
+   expiry, and that is a network round-trip. `hasCredential` stays synchronous so `status()` can answer a
+   poll without touching the network. */
 function makeRealtimeVoice(opts) {
   opts = opts || {};
   const fetchFn = opts.fetch || globalThis.fetch;
-  const resolveKey = opts.resolveKey || (() => '');
-  const model = opts.model || DEFAULT_MODEL;
-  const voice = opts.voice || DEFAULT_VOICE;
+  const legacyResolve = opts.resolveKey || (() => '');
+  const resolveCredential = opts.resolveCredential || (async () => legacyResolve());
+  const hasCredential = opts.hasCredential || (() => !!String(legacyResolve() || '').trim());
+  // The provider's own descriptor decides the endpoint, model and voice. Falling back to the OpenAI
+  // constants keeps the older single-provider construction working for tests.
+  const profileFor = opts.profileFor || (() => ({ transport: 'webrtc', url: OPENAI_REALTIME_URL, model: opts.model || DEFAULT_MODEL, voice: opts.voice || DEFAULT_VOICE }));
   const safetyId = safetyIdentifier(opts.safetySeed);
 
-  function status() {
-    return { available: !!String(resolveKey() || '').trim(), model, voice, transport: 'webrtc' };
+  /* What can THIS provider do for live voice, right now?
+       mode 'native'     — the provider speaks and listens itself (best: its own voice, true barge-in)
+       mode 'composed'   — it has no voice API, so its INTELLIGENCE drives the session while speech is
+                           handled around it. Still one window, still no second key.
+       connected:false   — nothing is connected yet, which is a Settings problem, not a voice problem. */
+  function status(provider) {
+    const lv = profileFor(provider);
+    const connected = !!hasCredential(provider);
+    return {
+      provider: provider || '',
+      connected,
+      mode: lv ? 'native' : 'composed',
+      available: connected && !!lv,
+      model: (lv && lv.model) || '',
+      voice: (lv && lv.voice) || '',
+      transport: (lv && lv.transport) || ''
+    };
   }
 
-  async function createCall(sdp) {
-    const offer = String(sdp || '').trim();
-    if (!offer || offer.length > (1 << 20)) {
+  async function createCall(sdp, provider) {
+    /* ⛔ NEVER `.trim()` AN SDP. Every line must be CRLF-terminated, including the last one: strip that final
+       newline and the parser at the far end runs off the end and answers `failed to unmarshal SDP: EOF`. That
+       one call was the whole reason a live call could never connect — the offer was valid, the credential was
+       valid, and the byte-identical body posted straight to the provider returned 201 while the same body
+       through here returned 400. Validate on a trimmed COPY; send the original, newline-terminated. */
+    const raw = String(sdp == null ? '' : sdp);
+    if (!raw.trim() || raw.length > (1 << 20)) {
       return { status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'invalid SDP offer' }) };
     }
-    const key = String(resolveKey() || '').trim();
+    const offer = /\r?\n$/.test(raw) ? raw : raw + '\r\n';
+    const lv = profileFor(provider);
+    if (!lv) {
+      return { status: 501, contentType: 'application/json', body: JSON.stringify({ error: 'this provider has no native voice endpoint', mode: 'composed' }) };
+    }
+    let key = '';
+    try { key = String((await resolveCredential(provider)) || '').trim(); }
+    catch (e) {
+      // A refresh that failed is NOT "no provider connected" — say which it is, or the panel tells the user
+      // to connect an account they already connected.
+      return { status: 401, contentType: 'application/json', body: JSON.stringify({ error: (e && e.message) || 'provider sign-in expired — reconnect it in Settings' }) };
+    }
     if (!key) {
-      return { status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'OpenAI API key required for live voice' }) };
+      return { status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'connect an AI provider or subscription to use live voice' }) };
     }
     const form = new FormData();
     form.set('sdp', offer);
-    form.set('session', JSON.stringify(sessionConfig({ model, voice })));
+    form.set('session', JSON.stringify(sessionConfig({ model: lv.model, voice: lv.voice })));
     let upstream;
     try {
-      upstream = await fetchFn('https://api.openai.com/v1/realtime/calls', {
+      upstream = await fetchFn(lv.url, {
         method: 'POST',
         headers: {
           Authorization: 'Bearer ' + key,
