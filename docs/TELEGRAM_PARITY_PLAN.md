@@ -482,7 +482,25 @@ corrupt hand-written PNG fixture in the *probe*, not a transport bug — the doc
 encoder succeeded in the same run, and a properly built PNG then went through cleanly. The encoder is fine;
 the lesson is that a hand-rolled binary fixture is worth generating rather than typing.
 
-### Still unproven — needs the bot actually CONNECTED to a station
+### THE INBOUND HALF — PROVEN LIVE (2026-07-30)
+
+Closed with a **real sidecar polling real `api.telegram.org`**, booted from env onto an isolated workspace with
+a local zero-cost model, so it touched neither the station's config nor a paid provider. A real message
+("what can u do") sent from a phone produced, in order:
+
+- `telegram auto-started from env` → `telegram channel connecting…` — the poll loop, with the new six-kind
+  `ALLOWED_UPDATES`, against the real API;
+- `telegram owner claimed (userId …) — other DMs are now refused` — a **real** update parsed by `normalize`
+  and admitted, with trust-on-first-use firing;
+- a run recorded in `runs.jsonl` as `reason: done, turns: 1, usd: 0`;
+- the assistant turn persisted in `channels/tg_<id>.history.json`;
+- **no outbox file created at all** — the hub queues every failed delivery there, so its absence is the proof
+  the reply actually reached Telegram.
+
+That closes the last gap in this plan: **both halves of the channel are now verified against the real
+platform**, not only against fakes.
+
+### Historical — what this section said while it was still open
 
 The outbound half is now done. What remains is the inbound half, and it is blocked on something simpler than
 it looks: **nothing in StarNet is polling this token.** The bot has never been added to a station (no
@@ -561,7 +579,7 @@ and were missing a day ago: the reply lands in the topic it was asked in, it is 
 and the bot is no longer deaf to edits, channel posts or being blocked. What is left is breadth with a
 documented reason.
 
-**On proof, partly.** Everything is gated (`test:fast` 436 steps, `test:http`, 8 Telegram suites, every fix
+**On proof, done.** Everything is gated (`test:fast` 436 steps, `test:http`, 8 Telegram suites, every fix
 revert-proven) and the transport half is now verified against the real Bot API (§4.7). The inbound half —
 thread routing into a real topic, streaming edits on a real run, voice STT, the channel-post echo guard,
 `my_chat_member` — is **still fake-proven only**, because a bot cannot start a conversation and no one has
