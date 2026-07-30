@@ -61,12 +61,26 @@ const { starnetManual } = require('../sidecar/manual.js');
   A.ok(/NEVER send the Commander to REFIT to connect a platform/i.test(m), 'forbids the REFIT dead end');
   A.ok(!/CONNECTOR PORTAL → an MCP/.test(m), 'CONNECTOR PORTAL is no longer listed as a prop that grants a connector');
 
-  /* 9) ANTI-INVENTION. The agent has no catalog in its prompt and no tool to read one, so any specific claim
-        about what is or is not connectable is a guess. It must route to the search box instead of improvising,
-        and must not argue when the Commander reports that its suggestion failed. */
+  /* 9) ANTI-INVENTION. The agent has no catalog in its prompt, so absent the connectors.list tool (block 10)
+        any specific claim about what is or is not connectable is a guess. It must route to the search box
+        instead of improvising, and must not argue when the Commander reports that its suggestion failed. */
   A.ok(/HONESTY RULE/.test(m), 'carries the honesty rule for connect questions');
   A.ok(/NEVER\s+(?:assert|invent)/.test(m), 'forbids inventing menu paths / asserting catalog contents');
   A.ok(/universal fallback/i.test(m), 'names KEYS + web_request as the always-works fallback');
+
+  /* 10) THE AGENT MUST USE THE HARNESS KNOWLEDGE IT ACTUALLY HAS (2026-07-29). `connectors.list` shipped
+         2026-07-28 (sidecar/tools/builtin/connectors.js, capability `web`) and returns the REAL catalog —
+         connected AND available-but-not-installed. The manual, written the same week, still told the agent
+         flatly that it had no reliable list, which understated its own harness and left it guessing on the
+         single most common request. So: route to the tool FIRST, and keep the don't-guess rule for the case
+         where the agent genuinely lacks it (no dish placed → no `web` capability → no tool). */
+  A.ok(/connectors\.list/.test(m), 'points the agent at the connectors.list tool for connect questions');
+  A.ok(/If you have the connectors\.list tool, CALL IT/.test(m), 'tells the agent to call it rather than answer from memory');
+  A.ok(/WITHOUT that tool you do NOT have a reliable/.test(m),
+    'the anti-guessing rule is now scoped to the case where the tool is absent, not stated unconditionally');
+  /* and the specific lie a Commander reports as gaslighting: "StarNet can't do that" when the truth is
+     "that isn't connected yet". Those are different claims and the manual must separate them. */
+  A.ok(/not connected YET/.test(m), 'separates "cannot reach" from "not connected yet"');
 
   // hygiene: no template leakage
   A.ok(!/undefined|null|\[object/.test(m), 'no junk leaks into the manual');
