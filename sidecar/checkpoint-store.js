@@ -255,7 +255,19 @@
         if (!cp.isValidId(sha)) return null;
         const size = await measure(aid);
         try {
-          const index = cp.record(loadIndex(aid),
+          /* THE RESILIENT LOADER, not the sync one. `loadIndex` reads only index.json + index.json.bak and returns
+             an EMPTY index on failure — it deliberately never rebuilds, because git is async. snapshot() IS async,
+             and it was the one await-capable caller still using the sync loader (the module's own docstring says
+             loadIndexResilient is "used by every await-capable caller (snapshot/restore/the list route)").
+
+             The cost of the shortcut: after a crash that lost index.json AND its .bak while the shadow repo
+             survived, the very next mutating tool call recorded on top of an EMPTY index and persisted ONE entry.
+             From then on readIndexRaw reports 'ok', so loadIndexResilient short-circuits and never reaches the
+             git-log rebuild again — the rewind UI showed a single restore point and restore() refused every
+             surviving commit, permanently. The header's law is "the shadow git COMMITS are the truth; index.json
+             is just a cache of them", and this was the one writer that did not honour it. It also made the catch
+             below false: a commit missing from a NON-empty index is not restorable via restore() at all. */
+          const index = cp.record(await loadIndexResilient(aid),
             { id: sha, runId: meta.runId, turn: meta.turn, label: label, files: size.files, bytes: size.bytes },
             { now: clock.now(), keep: keep });
           saveIndex(aid, index);

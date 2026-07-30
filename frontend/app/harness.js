@@ -231,7 +231,11 @@ const Harness = (() => {
     if (p === 'custom' && !getKey(p)) return false;        // a keyless custom endpoint must not manufacture a key row
     if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
     if (!!readScoped(LS.key, p)) return true;              // a real key is stored in this browser
-    if (DEVMODE && DEV && normalizeProviderId(DEV.prov) === p) return true;  // server-held runtime key for the seeded provider
+    // DEV seed: the host may hold a server-side runtime key for the seeded provider. It is not a given —
+    // a seeded station with no key at all still boots in DEV mode, and ASSUMING the key existed made the
+    // settings row render "● KEY SAVED" over nothing (an agent live-verifying a change reads that badge as
+    // proof it can run). `hasKey` is the sidecar's own answer; an older boot payload without it reads false.
+    if (DEVMODE && DEV && DEV.hasKey === true && normalizeProviderId(DEV.prov) === p) return true;
     return false;
   }
 

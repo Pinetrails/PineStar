@@ -3122,6 +3122,24 @@ function liveChannelFor(channel) {
   if (!channel || channel === 'telegram') return telegram;
   return genericChannels[channel] || null;
 }
+/* The HONEST health bit for a channel, beside the handle. A live handle is not reachability: the handle is
+   nulled only by an explicit teardown (start / shutdown / the disconnect route), so a revoked token, a
+   Discord 4004, or a second poller stealing the token breaks the poll loop and leaves the object alive —
+   adapter.js reports { state: 'error' } and breaks, and that is the ONLY place the failure is recorded.
+   Deriving reachability from the handle therefore told an agent "reachable now" about a channel the panel
+   was simultaneously showing as errored, and it also said so during the honest 'connecting' phase, before
+   any round-trip had been proved. Each status object already requires state === 'up' AND its own live
+   handle, so this is the bit to read. DEV is genuinely always reachable — its send is a local capture. */
+function channelLiveHealth(channel) {
+  if (channel === 'dev') return { connected: !!DEV_MODE, state: DEV_MODE ? 'up' : 'down' };
+  if (channel === 'discord') return discordStatus || { connected: false, state: 'down' };
+  if (typeof channel === 'string' && channel.indexOf('telegram:') === 0) {
+    const w = telegramBots.get(channel.slice('telegram:'.length));
+    return (w && w.status) || { connected: false, state: 'down' };
+  }
+  if (!channel || channel === 'telegram') return telegramStatus || { connected: false, state: 'down' };
+  return genericStatus[channel] || { connected: false, state: 'down' };
+}
 const autoNotifier = makeAutoNotifier({
   send: (chatId, text, channel) => {
     const ch = liveChannelFor(channel);
@@ -7852,7 +7870,7 @@ async function createCronJobFromSpec(body) {
       // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
       // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
       meta: body.meta
-    }, { id: id, now: Date.now() }));
+    }, { id: id, now: Date.now(), defaultTz: CRON_HOST_TZ }));
   } catch (e) { return out(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
   recordMint(agentId, { name: body.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
   return out(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
@@ -7873,8 +7891,16 @@ function handleCronUpdate(req, res) {
       if (!scan.ok) return json(400, { error: scan.error, blocked: scan.patternId });
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
-      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+      /* CARRY THE TIMEZONE. This route parsed the schedule patch with NO tz, so editing any field of a routine
+         that WAS created with an explicit zone silently stripped it and re-anchored the job in UTC — the
+         routine.manage tool path (updateRoutine) already passed patch.timezone; only the HTTP route dropped it.
+         Prefer an explicitly supplied zone, else keep the one the job is already on, so a plain field edit never
+         moves a routine's wall-clock. */
+      let keepTz = patch.timezone || patch.tz || '';
+      if (!keepTz) { try { const cur = cronStore.getJob(cronJobs, id); keepTz = (cur && cur.schedule && cur.schedule.tz) || ''; } catch (_) {} }
+      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), keepTz || undefined); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
+    delete patch.timezone; delete patch.tz;   // the zone lives on schedule.tz — never as a loose editable field
     if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
       try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
@@ -7887,8 +7913,8 @@ function handleCronUpdate(req, res) {
       // G4.3: the full edit (updateJob + optional pause/resume) is ONE re-read-modify-write under the lock,
       // so it cannot clobber a concurrent advance and the pause/resume sees the just-updated job.
       await withCronWrite(jobs => {
-        let next = cronStore.updateJob(jobs, id, patch, { now: Date.now() });
-        if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now() });
+        let next = cronStore.updateJob(jobs, id, patch, { now: Date.now(), defaultTz: CRON_HOST_TZ });
+        if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now(), defaultTz: CRON_HOST_TZ });
         else if (enabled === false) next = cronStore.pauseJob(next, id);
         return next;
       });
@@ -8000,7 +8026,7 @@ async function handleCronRun(req, res) {
     try { out = await runSlashRoutine(String(job.prompt), { agentId: job.agentId, runId: runIdC, emit: emitC }); }
     catch (e) { out = { ok: false, text: 'that command failed: ' + ((e && e.message) || e) }; }
     try {
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runIdC, outcome: out.ok ? 'ok' : 'failed', reason: out.ok ? 'done' : 'error' }); } catch (_) {}
     try { res.end(); } catch (_) {}
@@ -8095,7 +8121,7 @@ async function handleCronRun(req, res) {
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
       // concurrent advance/CRUD save with a stale in-memory snapshot).
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     kaOff();
@@ -8317,7 +8343,7 @@ async function armWorkshopShift(agentId) {
     await withCronWrite(jobs => cronStore.createJob(jobs, {
       id: jobId, name: 'Away workshop — ' + id, prompt: WORKSHOP_MARK, schedule: schedule,
       agentId: id, enabled: true, meta: { workshop: true }
-    }, { id: jobId, now: Date.now() }));
+    }, { id: jobId, now: Date.now(), defaultTz: CRON_HOST_TZ }));
   } catch (e) { console.warn('[workshop] arm routine failed:', (e && e.message) || e); return false; }
   // arming the shift needs the tick timer running so it actually fires unattended; arm cron if it isn't already.
   // Respect a durable E-STOP halt: record the arm INTENT but never silently restart the timer the Commander
@@ -9456,7 +9482,7 @@ const slashActions = slashActionsMod.makeSlashActions({
       if (!cronStore.getJob(cronJobs, id)) return { ok: false, error: 'no such routine' };
       const want = on === true;
       try {
-        await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now() }) : cronStore.pauseJob(jobs, id));
+        await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ }) : cronStore.pauseJob(jobs, id));
       } catch (e) { return { ok: false, error: (e && e.message) || 'the write failed' }; }
       return { ok: true, job: cronStore.getJob(cronJobs, id) };
     },
@@ -9732,7 +9758,10 @@ function serveAgentSkills(req, res) {
        the reviewer; they cannot approve what they cannot read. What it gains is the truth about what
        the MODEL sees: withheld/approvable/digest, so a card can say "withheld, needs your approval"
        instead of implying the agent is using a skill it was never given. */
-    skills = skillGate.annotate(skills).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
+    /* verify (not decide) whenever bodies were loaded: the panel is where "Approved by you for this
+       exact content" is printed, and only a re-digest of the delivered bytes can tell whether that is
+       still true. Without it the card blesses a package whose SKILL.md was rewritten after review. */
+    skills = skillGate.annotate(skills, { verify: includeBody }).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
     json(200, { agentId, skills, withheld: skills.filter(s => s.withheld).length });
   } catch (e) { json(200, { skills: [] }); }
 }
@@ -9771,7 +9800,12 @@ async function handleAgentSkillAllow(req, res) {
   }
   const decision = skillGate.decide(skill);
   if (decision.action === 'block') return json(400, { error: 'the skill guard blocked this skill outright - it cannot be approved. Edit the skill to remove the flagged content.', findings: decision.categories });
-  const digest = skillGate.stampOf(skill);
+  /* Key the approval to the digest of the bytes the Commander JUST READ. `skill` here is the HYDRATED
+     record (view() hydrates by default), so on a package whose SKILL.md has drifted from the JSONL the
+     stored stamp describes bytes nobody reviewed — and verify() re-decides against the live digest, so a
+     stamp-keyed approval could never clear the drift. Fall back to the lifecycle stamp only when there is
+     no body to digest. */
+  const digest = typeof skill.body === 'string' ? skillGate.digestOf(skill) : skillGate.stampOf(skill);
   skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
   persistSkillApprovals();
   const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
@@ -10386,6 +10420,9 @@ async function runOnce(o) {
     listJobs: () => cronJobs,
     schedulerState: () => cronArmed,
     normalizeProvider: normalizeProviderId,
+    // the LIVE provider set drives the tool schema's `provider` enum — a hardcoded pair meant an agent on a
+    // Kimi/Grok/Ollama/custom station was schema-refused when it pinned the provider the station actually runs.
+    providerIds: () => listProviderProfiles({ includeInactive: true, public: false }).map(p => p.id),
     createRoutine: (spec) => {
       spec = spec || {};
       // INJECTION TRIPWIRE — the agent-authored path, and the one that matters most: an agent that just read a
@@ -10411,7 +10448,7 @@ async function runOnce(o) {
           id: id, name: spec.name, prompt: spec.prompt, schedule: schedule,
           agentId: spec.agentId, model: spec.model, provider: spec.provider,
           deliver: spec.deliver, enabled: spec.enabled, repeat: spec.repeat
-        }, { id: id, now: Date.now() });
+        }, { id: id, now: Date.now(), defaultTz: CRON_HOST_TZ });
         created = cronStore.getJob(next, id);
         return next;
       }).catch(e => console.warn('[cron] routine.create persist failed:', (e && e.message) || e));
@@ -10444,7 +10481,7 @@ async function runOnce(o) {
       if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
         next.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), patch.timezone);
       }
-      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
       return cronStore.getJob(cronJobs, id);
     },
     removeRoutine: async (id) => {
@@ -10457,7 +10494,7 @@ async function runOnce(o) {
     },
     setRoutineEnabled: async (id, enabled) => {
       await withCronWrite(jobs => enabled
-        ? cronStore.resumeJob(jobs, id, { now: Date.now() })
+        ? cronStore.resumeJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ })
         : cronStore.pauseJob(jobs, id));
       return cronStore.getJob(cronJobs, id);
     },
@@ -10467,18 +10504,27 @@ async function runOnce(o) {
     // cronStore.triggerJob, NOT resumeJob — resume RE-ANCHORS the schedule, which for `0 9 * * *` lands on 09:00
     // TOMORROW and fires nothing now (caught by test/routine-manage.e2e.test.js, which read the time back).
     triggerRoutine: async (id) => {
-      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
       return cronStore.getJob(cronJobs, id);
     },
     armScheduler: (enabled) => {
       const want = enabled === true;
       saveCronArmed(want);
       cronArmed = want;
-      // same resume semantics as POST /api/cron/arm: a deliberate arm write lifts a durable E-STOP halt.
-      if (cronHalted) { cronHalted = false; saveCronHalted(false); }
-      if (want) armCron(); else disarmCron();
+      /* RESPECT A DURABLE E-STOP. This is a MODEL-FACING DEFAULT, not a deliberate human resume: routine.create's
+         `arm` schema says "Default true", so the agent never has to think about it — and a Commander who pressed
+         E-STOP and later asked for "a daily brief" had their emergency stop silently lifted by approving that one
+         create, with every previously-halted routine resuming and nothing in the transcript, the card or any panel
+         saying so. The halt "lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write)",
+         and there is a documented single seam for that (liftCronHalt) whose callers are exactly those paths. So
+         record the arm INTENT and never restart the timer the Commander paused — the same rule the workshop
+         auto-arm already states and implements. */
+      if (want) { if (!cronHalted) armCron(); } else disarmCron();
       return cronArmed;
-    }
+    },
+    // ...and tell the tool, so its response can say the scheduler is still stood down rather than implying the
+    // routine will fire. A caller that cannot see the halt cannot disclose it.
+    schedulerHalted: () => !!cronHalted
   }).register(registry);
   /* channel.targets / channel.send — OUTBOUND messaging reach (see tools/builtin/comms.js for the security
      rationale on known-targets-only). Both hang off the placed DISH under their own 'comms' capId. */
@@ -10503,7 +10549,9 @@ async function runOnce(o) {
             channel: channel,
             chatId: String(rec.chatId || key),
             agentId: String(rec.agentId || ''),
-            connected: !!(live && live.adapter)
+            // A handle is not a heartbeat — see channelLiveHealth. Both must hold: something to send THROUGH,
+            // and a transport that has actually proved a round-trip and not since failed.
+            connected: !!(live && live.adapter) && !!channelLiveHealth(channel).connected
           };
         });
       } catch (_) { return []; }
@@ -10619,7 +10667,13 @@ async function runOnce(o) {
   // — only a watched, interactive lead can let a worker write/run shell, and only with a human's click.
   const consent = o.consent || makeConsentBroker({
     bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
-    grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
+    grantsSession, grantsPermanent, persist: persistAllowlist,
+    /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
+       is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
+       a watched session also blessed that agent's Telegram / cron / night-shift file and memory writes until the
+       sidecar exited, with no readout and no revoke anywhere. A watched click is consent for the watched surface;
+       widening unattended reach is a separate, explicit decision everywhere else in this product. */
+    grantsBlanket: surface === 'interactive' ? blanketSetFor(agentId) : null,
     networkOf: (call) => !!resolved.networkCaps[call.name],
     // AWAY WORKSHOP (W1): the Commander's recorded per-agent grant. The broker only consults it for an autonomous
     // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
@@ -10728,11 +10782,34 @@ async function runOnce(o) {
   // is key-independent → cost stays correct) tagged with credKey so the loop's onFallback can cool it on failure.
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
+  let activePrimaryKey = runKey;
   const primaryProfile = getProviderProfile(providerId);
   if (!usingCodex && !usingDeviceOAuth && primaryProfile && primaryProfile.credentialPool) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== runKey);
-    rotationFallbacks = credPool.order(pool).map(rk => ({
+    /* THE COOLDOWN HAS TO REACH THE PRIMARY KEY. penalize() is called with the OUTGOING key, which on the first
+       rotation is the run's PRIMARY — but the only consumer of a cooldown is credPool.order(), and the list
+       handed to it has just had the primary filtered out (it is the key we are already on). The next run's
+       primary is re-derived from providerRuntimeKey(), not from this ordering, so the cooldown recorded for the
+       key MOST likely to be rate-limited — the one always tried first — could never affect anything, and every
+       run inside the 5-minute window opened on it again and burned a wasted round-trip plus one of the loop's
+       bounded recovery slots. Cooldowns for ALTERNATE keys always worked; only the primary was inert.
+       So: if the primary is cooling and the pool holds a key that is NOT, start on that one instead and demote
+       the cooling primary into the rotation list — still available, just no longer first. */
+    const ordered = credPool.order(pool);
+    const nowMs = Date.now();
+    const primaryCooling = credPool.coolingUntil(runKey) > nowMs;
+    if (primaryCooling) {
+      const warm = ordered.find(rk => credPool.coolingUntil(rk) <= nowMs);
+      if (warm) {
+        activePrimaryKey = warm;
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key: warm, baseUrl, reasoningEffort });
+        auxVisionProvider = provider;
+        ordered.splice(ordered.indexOf(warm), 1);
+        ordered.push(runKey);   // the cooling primary becomes the LAST resort rather than the first try
+      }
+    }
+    rotationFallbacks = ordered.map(rk => ({
       provider: selectProvider({ provider: providerId, fetch: globalThis.fetch, key: rk, baseUrl, reasoningEffort }),
       model, credKey: rk
     }));
@@ -10776,7 +10853,18 @@ async function runOnce(o) {
   // spend stays visible; that event deliberately OMITS tokensIn/tokensOut so the context-occupancy gauge (which
   // reads agent.cost.tokensIn as "current prompt size") is not transiently corrupted by the summarizer's small
   // prompt. The loop owns the accounting; this emit is for the cost stream only.
-  async function summarize(older, prevSummary) {
+  /* `live` carries the loop's CURRENT provider/model/cost. This closure is built BEFORE the loop starts and
+     captured index.js's own `provider` and `model`, neither of which is ever reassigned — so after a credential
+     rotation or a cross-provider fallback the summarizer still called the DEAD credential / failed endpoint.
+     Two failures flip compactionOff (loop.js), which makes the later shouldCompress recovery a no-op, so the
+     run then dies 'error' on a context_overflow it could have folded and survived; on a rate-limited key it
+     also kept hammering the exact credential credPool had just cooled. The failover was fixed at one producer
+     and did not generalize to the injected summarizer. Optional and additive: a caller that passes nothing
+     (every existing test's fake summarizer) behaves exactly as before. */
+  async function summarize(older, prevSummary, live) {
+    const sProvider = (live && live.provider) || provider;
+    const sModel = (live && live.model) || model;
+    const sCost = (live && live.cost) || cost;
     // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
     // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
     // transcript at all — the run-end append can only see what SURVIVED the fold. Draining here keeps the durable
@@ -10799,17 +10887,17 @@ async function runOnce(o) {
     const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
     const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
     const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
-    const req = { model, stream: true, signal, messages: [
+    const req = { model: sModel, stream: true, signal, messages: [
       { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
       { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
-    for await (const ev of provider.stream(req)) {
+    for await (const ev of sProvider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
       else if (ev && ev.type === 'usage') usage = ev.usage;
     }
-    const c = cost.reconcile(usage, model);
-    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model, reconciled: true });   // display-only; no token fields (gauge-safe)
+    const c = sCost.reconcile(usage, sModel);
+    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: sModel, reconciled: true });   // display-only; no token fields (gauge-safe)
     const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
     if (c.unpriced) r.unpricedUsage = [{ model, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
     return r;
@@ -11385,7 +11473,9 @@ async function runOnce(o) {
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
-      credKey: providerUnmetered ? null : runKey,
+      // activePrimaryKey, NOT runKey: when the run's own key was still cooling we STARTED on a warm pool key,
+      // and penalizing the key we never called would cool the wrong credential.
+      credKey: providerUnmetered ? null : activePrimaryKey,
       onFallback: ({ rotate, credKey, retryAfterMs, resetAtMs }) => {
         if (!rotate || !credKey) return;
         // H6.1: honor a server-stated wait — a relative Retry-After directly, or an absolute reset_at minus now.
@@ -11648,8 +11738,17 @@ async function handleConsentAck(req, res) {
 // (honest — includes any non-curated class blessed via a past prompt) + the curated catalog the panel may add.
 // Privileged: behind the same x-starnet-token + loopback gate as every other /api route (apiauth, not TOKEN_EXEMPT).
 function handlePermissionsList(req, res) {
+  /* The panel's own header promises "every capability it may use unattended … and a REVOKE for each", and the
+     mid-run "Full access" wildcard appeared in NEITHER: consent.snapshot() returns only { permanent, session },
+     so one click bought a per-agent '*' that no surface listed and no action could withdraw — only restarting
+     the sidecar cleared it. Report it beside the durable grants, keyed so the existing revoke can take it. */
+  const snap = grantManager.snapshot() || {};
+  const blanket = [];
+  for (const [aid, set] of grantsBlanketByAgent) {
+    if (set && set.has('*')) blanket.push({ key: 'blanket:' + aid, agentId: aid, scope: 'watched sessions, until the app restarts' });
+  }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(grantManager.snapshot()));
+  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket })));
 }
 // POST /api/permissions/grant { key } — proactively PRE-BLESS a curated, LOCAL-only capability (cabinet:write)
 // so an autonomous run can use it with no mid-run prompt. Refuses any non-curated/exec/network class; fail-closed
@@ -11664,6 +11763,15 @@ async function handlePermissionsGrant(req, res) {
 // non-curated class). Fail-closed: a torn persist keeps the grant rather than reporting a phantom revoke.
 async function handlePermissionsRevoke(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  // the mid-run full-access wildcard is revocable through the same door as any other standing grant
+  const rawKey = String((body && body.key) || '');
+  if (rawKey.indexOf('blanket:') === 0) {
+    const aid = rawKey.slice('blanket:'.length);
+    const had = grantsBlanketByAgent.has(aid) && grantsBlanketByAgent.get(aid).has('*');
+    grantsBlanketByAgent.delete(aid);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ok: true, key: rawKey, revoked: had }));
+  }
   const r = grantManager.revoke(body && body.key);
   res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(r));
@@ -11884,7 +11992,7 @@ async function handleAutonomyWrite(req, res) {
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
   const sessionKey = 'autowrite-' + crypto.randomUUID();
-  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId), surface: 'autonomous' });
+  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce
   const lifecycle = await agentLifecycle.acquireMutation(agentId, sessionKey);
   if (!lifecycle.ok) return sendJson(409, { ok: false, reason: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
   try {
@@ -13321,7 +13429,13 @@ async function handleTts(req, res) {
   // Cache key: model+voice+STYLE+text (pacing is client-side, so it stays out of the key for better hits).
   // OpenRouter and native Gemini SHARE a key (same model + prebuilt voice ⇒ same clip); OpenAI is a different
   // vendor voice, so it gets its own namespace (like elevenlabs/) and can never collide.
-  let keyedReason = ttsKey ? '' : 'no key';
+  /* 'no key' is a STRUCTURAL fact about the keyed tier, never a diagnosis of the failure that actually
+     happened. With the free keyless Edge floor enabled, a station holding no credential still has working
+     voice — so reporting an Edge blip as "no key" tells the user to go buy an API key to fix a network
+     hiccup, and the client (which classifies by substring and takes the terminal class first) then treats
+     the whole composite as terminal: no retry, and a 60s dead-voice cold-off instead of 4s. Carry it into
+     the reason only when the floor cannot serve either — there the credential really is what is missing. */
+  let keyedReason = '';
   if (ttsKey) {
     const ck = (ttsProvider === 'openai')
       ? crypto.createHash('sha1').update('openai/' + OPENAI_TTS_MODEL + '|' + OPENAI_TTS_VOICE + '|' + style + '|' + text).digest('hex')
@@ -13358,7 +13472,9 @@ async function handleTts(req, res) {
     let ebuf;
     try { ebuf = await edgetts.synth(text, { voice: edgeVoice, nowMs: Date.now() }); }   // clock injected here (index.js = ambient composition root)
     catch (e) { return fallback(keyedReason ? (keyedReason + '; edge: ' + ((e && e.message) || e)) : ('edge: ' + ((e && e.message) || e))); }
-    if (!ebuf || !ebuf.length) return fallback(keyedReason || 'edge: empty audio');
+    // APPEND the edge detail, never let the keyed reason swallow it: the client needs the transient leg to
+    // pick a 4s cool-off over a 60s one, and 'edge: empty audio' is the only leg that names what just failed.
+    if (!ebuf || !ebuf.length) return fallback(keyedReason ? (keyedReason + '; edge: empty audio') : 'edge: empty audio');
     try { const tmp = path.join(VOICE_CACHE_DIR, eck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, ebuf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, eck + '.mp3')); } catch (_) {}
     res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
     res.end(ebuf); sweepMaybe(); return;
@@ -14432,7 +14548,10 @@ async function serveStatic(req, res) {
       let boot = '<script>window.__STARNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
       // DEV fast-path: hand the page a model + provider hint so a fresh origin auto-resumes the seeded
       // save with no setup. No secret crosses here — the key stays server-side in runtimeKey.
-      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
+      // `hasKey` is the honest half: the page's credential badge assumed a DEV boot meant the host HELD a
+      // runtime key for `prov`, so a seeded station with no key at all still rendered "● KEY SAVED". Say
+      // whether one actually exists — still no secret crosses, only the boolean.
+      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter', hasKey: !!runtimeKey }) + ';';
       boot += '</script>';
       data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
     }

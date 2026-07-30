@@ -203,5 +203,40 @@ const hardline = (call) => (call && call.args && /(^|\/)(\.env|permissions\.allo
     A.ok(!connOn(writeCall, WRITE).allow, 'a connector grant does NOT unlock ordinary writes');
   }
 
+  /* ---- the mid-run FULL ACCESS wildcard is watched-surface only, listed, and revocable ----------------
+     The blanket is per-AGENT and process-lifetime, and runOnce is the SAME host the messaging hub drives with
+     surface:'autonomous'. So one "Full access" click in a watched session also blessed that agent's Telegram /
+     cron / night-shift file and memory writes until the sidecar exited — with no readout in the PERMISSIONS
+     panel (whose header promises "every capability it may use unattended … and a REVOKE for each"), and no
+     clear path anywhere. Consent for a watched surface is not consent for an unattended one. */
+  {
+    const shared = new Set(['*']);   // as if a watched click had already written it
+    // an AUTONOMOUS broker must be handed no blanket at all — index.js now passes null on that surface
+    const auto = makeConsentBroker({ surface: 'autonomous', grantsBlanket: null, hardline: hardline });
+    const r = auto({ name: 'fs.write', args: { path: 'notes.md' } }, WRITE);
+    A.ok(!r.allow, 'an unattended run is NOT covered by a watched-session full-access click');
+    // ...while the watched surface still honors it exactly as before
+    const watched = makeConsentBroker({ surface: 'interactive', prompt: () => Promise.resolve('once'), grantsBlanket: shared, hardline: hardline });
+    const w = watched({ name: 'fs.write', args: { path: 'notes.md' } }, WRITE);
+    A.ok(w.allow === true && w.reason === 'previously granted', 'the watched surface still honors the blanket');
+    const floor2 = watched({ name: 'fs.write', args: { path: '.env' } }, WRITE);
+    A.ok(!floor2.allow && floor2.hardline === true, 'and the hardline floor still wins over it');
+  }
+  // the WIRING: the surface gate, the readout, and the revoke (index.js is not loadable in isolation)
+  {
+    const fs = require('fs'); const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+    A.ok(/grantsBlanket: surface === 'interactive' \? blanketSetFor\(agentId\) : null/.test(src),
+      "runOnce hands the blanket ONLY to a watched surface");
+    A.ok(/grantsBlanket: null, surface: 'autonomous'/.test(src),
+      'the autonomy-write broker is never given it either');
+    A.ok(/blanket\.push\(\{ key: 'blanket:'/.test(src), 'GET /api/permissions REPORTS a standing wildcard');
+    A.ok(/rawKey\.indexOf\('blanket:'\) === 0/.test(src), 'and POST /api/permissions/revoke can withdraw it');
+    const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+    A.ok(/FULL ACCESS<\/b>/.test(ui), 'the PERMISSIONS ledger renders the wildcard row');
+    A.ok(/data-perm-revoke="' \+ esc\(String\(b\.key\)\)/.test(ui), 'with a REVOKE button, as its own header promises');
+    A.ok(/else if \(!blanket\.length\)/.test(ui), 'and never prints "no standing approvals" over a live wildcard');
+  }
+
   A.report('permissions.test');
 })();

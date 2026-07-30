@@ -34,4 +34,53 @@ assert.match(source, /TAURI_SIGNING_PRIVATE_KEY:\s*null/,
 assert.match(source, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD:\s*null/,
   'explicit password signing must remove a legacy password variable from the child environment');
 
+
+/* ---- THE CUT MUST CRYPTOGRAPHICALLY VERIFY ITS OWN SIGNATURE -------------------------------------
+   release-cut checked only that a .sig file EXISTS and is newer than the installer. Neither says it was
+   made with the right KEY. A cut with the wrong updater private key (a restored/regenerated
+   ~/.tauri/starnet-updater.key, or STARNET_UPDATER_KEY_FILE pointing elsewhere) passed T1 signing, T5
+   public-distribution and verify-update-host completely green, published, and then hard-failed the update
+   for EVERY installed app — the exact failure minisign-verify.mjs exists to prevent, and whose own header
+   names this gap. It was wired into ONE producer (release-assemble-manifest, the CI train + canary) and not
+   into this one: the local one-command Windows cutter the launch checklist says to run LAST, right before
+   upload. Nothing downstream catches it — t5 text-compares the manifest against the .sig, t1 checks
+   existsSync + mtime, verify-update-host checks length > 40.
+
+   The non-dry path runs a real desktop build, so this replays the exact check with REAL crypto and locks
+   that the cutter performs it — and performs it BEFORE staging anything into release/. */
+{
+  const { makeSigner } = require('./minisign-test-signer.js');
+  const { verifySignature, resolvePubkeyText } = require('../scripts/minisign-verify.mjs');
+
+  const installerBytes = Buffer.from('MZ fake installer bytes for the wrong-key proof');
+  const wrongKey = makeSigner();
+  const wrongSig = wrongKey.sign(installerBytes, { fileName: 'StarNet_0.0.0_x64-setup.exe' }).sigFileContent;
+
+  // the pubkey EVERY installed app trusts — the one release-cut now resolves by default
+  const bakedPubkey = resolvePubkeyText('', ROOT);
+  const bad = verifySignature(installerBytes, wrongSig, bakedPubkey);
+  assert.equal(bad.ok, false, 'a signature from a DIFFERENT key must not verify against the baked pubkey');
+  assert.match(String(bad.reason), /key id mismatch|different key/i, 'and the reason names the key mismatch: ' + bad.reason);
+
+  // the same bytes signed with the MATCHING key do verify — so the gate is not simply always-fail
+  const good = verifySignature(installerBytes, wrongSig, wrongKey.pubkeyDoc);
+  assert.equal(good.ok, true, 'the matching key verifies (the check is real, not a blanket refusal)');
+
+  // ...and a signature over DIFFERENT bytes is caught too (a stale .sig beside a rebuilt installer)
+  const stale = verifySignature(Buffer.concat([installerBytes, Buffer.from('rebuilt')]), wrongSig, wrongKey.pubkeyDoc);
+  assert.equal(stale.ok, false, 'a .sig that does not cover these exact bytes is rejected');
+
+  // the WIRING: the cutter imports the verifier, calls it, and does so BEFORE it stages the release
+  assert.match(source, /import \{[^}]*verifySignature[^}]*\} from '\.\/minisign-verify\.mjs'/,
+    'release-cut imports the real verifier');
+  assert.match(source, /verifySignature\(readFileSync\(installer\), readText\(sig\), pubkeyText\)/,
+    'and verifies the installer bytes against the resolved pubkey');
+  const verifyAt = source.indexOf('verifySignature(readFileSync(installer)');
+  const stageAt = source.indexOf('copyFileSync(installer, join(releaseDir, installerName))');
+  assert.ok(verifyAt > 0 && stageAt > 0, 'both the verify and the staging step are present');
+  assert.ok(verifyAt < stageAt, 'the signature is verified BEFORE anything is staged into release/');
+  assert.match(source, /UPDATER SIGNATURE DOES NOT VERIFY/,
+    'and a mismatch fails the cut loudly rather than publishing');
+}
+
 console.log('release-cut.test: OK (non-interactive explicit signing path)');

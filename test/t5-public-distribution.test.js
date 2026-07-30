@@ -200,6 +200,58 @@ try {
     const lintRes = spawnSync(process.execPath, [lint, latest], { cwd: ROOT, encoding: 'utf8', env: cleanEnv() });
     assert.equal(lintRes.status, 0, lintRes.stderr || lintRes.stdout);
   }
+  /* ---- T5.1 MUST BIND ITS PREREQ VERDICTS TO THIS INSTALLER ---------------------------------------
+     checkPrereqs read only verdict/ready booleans, and copyLatest() unconditionally re-stamps the `-latest`
+     dirs on every run of every rung, so those verdicts persist across rebuilds indefinitely. Build installer
+     A, take t0-t4 green, rebuild, then run only t5: T5.1 passed on A's leftover evidence while T5.2 hashed the
+     NEW installer — and the lane stamped publicDistributionReady=true for a binary that was never
+     clean-installed, never state-safety tested and never update-delivery tested. On the LAST gate before
+     publishing to real users, that is the false green this lane's governing law calls the worst outcome in
+     the repo. t3.2 already binds T0's recorded hash; t5 skipped it for all five. */
+  {
+    // the prereq statuses now record which installer they were about — here, a DIFFERENT one
+    const staleHash = 'a'.repeat(64);
+    const artifactsOf = (h, b) => ({ results: [{ artifacts: { installer: { sha256: h, bytes: b == null ? 4242 : b } } }] });
+    const s0 = path.join(tmp, 'stale-t0.json'), s1 = path.join(tmp, 'stale-t1.json');
+    const s2 = path.join(tmp, 'stale-t2.json'), s3 = path.join(tmp, 'stale-t3.json'), s4 = path.join(tmp, 'stale-t4.json');
+    writeJson(s0, Object.assign(status('green', 'cleanInstallProofReady', true), artifactsOf(staleHash)));
+    writeJson(s1, Object.assign(status('green', 'publicReleaseReady', true), artifactsOf(staleHash)));
+    writeJson(s2, Object.assign(status('green', 'stateSafetyReady', true), artifactsOf(staleHash)));
+    writeJson(s3, Object.assign(status('green', 'releaseSmokeReady', true), artifactsOf(staleHash)));
+    writeJson(s4, Object.assign(status('green', 'updateDeliveryReady', true), artifactsOf(staleHash)));
+    const out = path.join(tmp, 'stale-prereq-out');
+    const res = run(['--distribution-evidence', path.join(tmp, 'good-proof-for-stale-sig.json')], Object.assign({}, baseEnv, {
+      STARNET_T5_T0_STATUS: s0, STARNET_T5_T1_STATUS: s1, STARNET_T5_T2_STATUS: s2,
+      STARNET_T5_T3_STATUS: s3, STARNET_T5_T4_STATUS: s4,
+      STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out,
+      STARNET_T5_PUBLIC_DISTRIBUTION_LATEST_DIR: path.join(tmp, 'stale-prereq-latest')
+    }));
+    const got = JSON.parse(fs.readFileSync(path.join(out, 't5-public-distribution-status.json'), 'utf8'));
+    const pre = got.results.find(r => r.id === 't5.1-prerequisite-gates');
+    assert.equal(pre.status, 'blocked', 'green prereqs for a DIFFERENT installer must BLOCK T5.1');
+    assert.match(pre.reason, /DIFFERENT installer/, 'and say so plainly: ' + pre.reason);
+    assert.equal(got.publicDistributionReady, true !== true, 'the lane is NOT public-distribution ready');
+    assert.equal(got.verdict, 'blocked');
+    // the status document now RECORDS which binary each verdict was about, so it can be audited
+    assert.equal(pre.gates.t0.installer.sha256, staleHash, 'T5.1 records the installer each prereq verdict covered');
+    assert.ok(pre.installer && pre.installer.sha256, 'and the installer it was compared against');
+
+    // ...and with the prereqs recorded against THIS installer it passes again
+    const cur = hashFile(installer);
+    const g0 = path.join(tmp, 'good-t0.json');
+    writeJson(g0, Object.assign(status('green', 'cleanInstallProofReady', true), artifactsOf(cur, fs.statSync(installer).size)));
+    const out2 = path.join(tmp, 'fresh-prereq-out');
+    run(['--distribution-evidence', path.join(tmp, 'good-proof-for-stale-sig.json')], Object.assign({}, baseEnv, {
+      STARNET_T5_T0_STATUS: g0,
+      STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out2,
+      STARNET_T5_PUBLIC_DISTRIBUTION_LATEST_DIR: path.join(tmp, 'fresh-prereq-latest')
+    }));
+    const got2 = JSON.parse(fs.readFileSync(path.join(out2, 't5-public-distribution-status.json'), 'utf8'));
+    const pre2 = got2.results.find(r => r.id === 't5.1-prerequisite-gates');
+    assert.equal(pre2.status, 'pass', 'a prereq recorded for THIS installer passes: ' + pre2.reason);
+    // a rung that records no installer at all (older status shape) is not punished for it
+    assert.equal(pre2.gates.t2.installer, null, 'a status with no recorded installer is reported as unbound, not stale');
+  }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

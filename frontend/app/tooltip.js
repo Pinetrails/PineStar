@@ -85,7 +85,12 @@
     card.hidden = true;
     doc.body.appendChild(card);
 
-    let anchor = null, timer = null;
+    /* `anchor` is only set once the card SHOWS, so during the SHOW_DELAY window there was no record of which
+       element the tip was armed for — and the pointerout handler opened with `if (!anchor) return`, bailing
+       before hide(), which holds the only clearTimeout. Brush a tipped control and flick away and the card
+       still popped up ~200ms later beside a control the pointer had already left, then sat there until the
+       next element boundary, click, scroll or keypress. `pending` is that missing record. */
+    let anchor = null, timer = null, pending = null;
     const zoom = () => {
       const z = parseFloat(doc.body && doc.body.style ? doc.body.style.zoom : '');
       return z > 0 ? z : 1;
@@ -93,6 +98,7 @@
 
     function hide() {
       if (timer) { clearTimeout(timer); timer = null; }
+      pending = null;
       if (anchor) { try { anchor.removeAttribute('aria-describedby'); } catch (_) {} }
       anchor = null;
       card.classList.remove('show');
@@ -100,6 +106,7 @@
     }
 
     function show(el, text) {
+      pending = null;
       if (!el.isConnected) return;
       anchor = el;
       card.textContent = text;
@@ -122,20 +129,22 @@
 
     function enter(ev, immediate) {
       const el = ev.target && ev.target.closest ? ev.target.closest('[title],[data-tip]') : null;
-      if (!el || el === anchor) return;
+      if (!el || el === anchor || el === pending) return;
       const text = adopt(el);
       if (!text) return;
       hide();
       if (immediate) show(el, text);
-      else { timer = setTimeout(() => { timer = null; show(el, text); }, SHOW_DELAY); }
+      else { pending = el; timer = setTimeout(() => { timer = null; show(el, text); }, SHOW_DELAY); }
     }
 
     doc.addEventListener('pointerover', ev => enter(ev, false));
     doc.addEventListener('focusin', ev => enter(ev, true));
     doc.addEventListener('pointerout', ev => {
-      if (!anchor) return;
+      // A tip that is merely PENDING must be cancellable too — that is the whole ghost-card bug.
+      const from = anchor || pending;
+      if (!from) return;
       const to = ev.relatedTarget;
-      if (to && anchor.contains && anchor.contains(to)) return;   // still inside the same anchor
+      if (to && from.contains && from.contains(to)) return;   // still inside the same anchor
       hide();
     });
     doc.addEventListener('focusout', hide);

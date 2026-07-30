@@ -14,7 +14,7 @@
        conversational prompt offers — so blessing C:\proj\src\main.js blesses C:\proj, matching pathtrust.
 
    makeProjectBless({ fsp, pathMod, detectRoot, normalizeRoot, hardlineReason, bless, isGitRepoOf, now })
-     fsp         : node:fs/promises (injected) — stat only, never writes.
+     fsp         : node:fs/promises (injected) — stat + realpath only, never writes.
      pathMod     : node:path (injected) — isAbsolute + resolve.
      detectRoot  : async (absPath) => proposedRoot     (pathTrustCore.detectRoot — nearest .git ancestor / dir).
      normalizeRoot: (abs) => canonical key             (pathTrustCore.normalizeRoot — SAME string as the grant key).
@@ -46,6 +46,12 @@
     const isGitRepoOf = typeof deps.isGitRepoOf === 'function' ? deps.isGitRepoOf : (async () => false);
     const now = typeof deps.now === 'function' ? deps.now : (() => null);
 
+    async function realpathOrSelf(p) { try { return await fsp.realpath(p); } catch (_) { return p; } }
+    function pathInside(child, parent) {
+      const rel = P.relative(parent, child);
+      return rel === '' || (!!rel && !rel.startsWith('..') && !P.isAbsolute(rel));
+    }
+
     async function blessPath(o) {
       o = o || {};
       const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
@@ -73,11 +79,30 @@
       const phr = hardlineReason(proposed, proposed);
       if (phr) return { ok: false, code: 'hardline', reason: phr };
 
+      /* BLESS THE REAL PATH — the same law pathtrust.js already follows, which this doorway did not.
+         normalizeRoot is only P.resolve, so a folder reached through a junction or a symlinked ancestor (a
+         Windows junction, a OneDrive-redirected known folder, ~/code -> /mnt/data/code, macOS /tmp ->
+         /private/tmp) was recorded UN-canonical, while the run guard compares against the realpath. The two
+         could never match: the rail happily reported 'added "<folder>"' and drew the row as a trusted project,
+         and then the agent was denied on every file in it — a watched session re-raised the folder-trust card
+         on EVERY file touch, and an unattended run hard-denied. That is exactly the consent-fatigue loop the
+         2026-07-27 pathtrust fix was written to kill, re-opened at the sibling doorway.
+         The symlink re-proof comes with it: the picked folder's REAL path must still sit under the proposed
+         root's real path, or the proposal is not this folder's project root. */
+      const proposedReal = normalizeRoot(await realpathOrSelf(proposed));
+      const normReal = normalizeRoot(await realpathOrSelf(norm));
+      if (!pathInside(normReal, proposedReal))
+        return { ok: false, code: 'escape', reason: 'that folder escapes its own project root through a link: ' + norm };
+      const rhr = hardlineReason(proposedReal, proposedReal);
+      if (rhr) return { ok: false, code: 'hardline', reason: rhr };
+
       if (!bless) return { ok: false, code: 'unwired', reason: 'project trust is not wired to persist a grant — denied' };
-      const isGit = await isGitRepoOf(proposed);
-      const ok = await bless(proposed, { isGitRepo: isGit, now: now() });
-      if (!ok) return { ok: false, code: 'persist', reason: 'could not persist project trust — denied: ' + proposed };
-      return { ok: true, root: proposed, isGitRepo: isGit };
+      const isGit = await isGitRepoOf(proposedReal);
+      const ok = await bless(proposedReal, { isGitRepo: isGit, now: now() });
+      if (!ok) return { ok: false, code: 'persist', reason: 'could not persist project trust — denied: ' + proposedReal };
+      // `root` is the CANONICAL key that was actually granted, so the rail row and the guard cannot disagree
+      // about which folder is trusted. `typedRoot` keeps the path the Commander recognizes, for the notice.
+      return { ok: true, root: proposedReal, isGitRepo: isGit, typedRoot: proposed };
     }
 
     return { blessPath };

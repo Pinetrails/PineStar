@@ -331,4 +331,40 @@ const iso = cron._internals.iso;
   A.eq(store.triggerJob(jobs, 'nope', { now: T }), jobs.map(x => x), 'triggerJob on an absent job is a no-op');
 }
 
+/* ---- the HOST TIMEZONE reaches the persisted first fire -------------------------------------------
+   armAt dropped the tz, so cron.js resolved a tz-less schedule against 'UTC'. The DRIVER plans with the real
+   host zone and planTick's dueAtOf PREFERS the persisted nextRunAt, so the UTC-anchored stamp became the real
+   FIRST fire instant: on America/New_York, "every morning" (0 9 * * *) was previewed for today 09:00 and
+   persisted as tomorrow 05:00 local — it fired ~20 hours late at 5am and only settled onto the correct local
+   09:00 from the SECOND fire onward. Every tz-less creation path hit it (marketplace MAKE ROUTINE,
+   routine.create without `timezone`, the /routine action), plus every un-pause and error re-arm. */
+{
+  const TZ = 'America/New_York';
+  const now = Date.parse('2026-07-28T12:00:00Z');
+  const sched = cron.parseSchedule('0 9 * * *', now);        // exactly what POST /api/cron produces with no body.tz
+  const preview = cron.nextFireAt(sched, null, now, { defaultTz: TZ });   // what the picker shows the user
+
+  const jobs = store.createJob([], { id: 'tz1', name: 'brief', prompt: 'x', schedule: sched }, { id: 'tz1', now, defaultTz: TZ });
+  A.eq(Date.parse(jobs[0].nextRunAt), preview, 'the PERSISTED first fire equals the preview the user was shown');
+  A.eq(new Date(jobs[0].nextRunAt).toISOString(), '2026-07-28T13:00:00.000Z', 'which is 09:00 EDT TODAY, not 05:00 tomorrow');
+
+  // un-pause re-anchors with the zone too
+  const paused = store.pauseJob(jobs, 'tz1');
+  const resumed = store.resumeJob(paused, 'tz1', { now, defaultTz: TZ });
+  A.eq(Date.parse(store.getJob(resumed, 'tz1').nextRunAt), preview, 'resumeJob re-anchors on the HOST zone');
+
+  // and a schedule re-anchor through updateJob
+  const updated = store.updateJob(jobs, 'tz1', { schedule: cron.parseSchedule('0 9 * * *', now) }, { now, defaultTz: TZ });
+  A.eq(Date.parse(store.getJob(updated, 'tz1').nextRunAt), preview, 'updateJob re-anchors on the HOST zone');
+
+  // an EXPLICIT schedule tz still wins over the host default (it always did — prove it did not regress)
+  const explicit = cron.parseSchedule('0 9 * * *', now, 'Europe/Berlin');
+  const ej = store.createJob([], { id: 'tz2', name: 'b', prompt: 'x', schedule: explicit }, { id: 'tz2', now, defaultTz: TZ });
+  A.eq(Date.parse(ej[0].nextRunAt), cron.nextFireAt(explicit, null, now, { defaultTz: TZ }), 'an explicit schedule.tz is unaffected by the host default');
+
+  // a caller that injects nothing is byte-identical to before (UTC) — no silent behavior change for them
+  const utc = store.createJob([], { id: 'tz3', name: 'b', prompt: 'x', schedule: sched }, { id: 'tz3', now });
+  A.eq(new Date(utc[0].nextRunAt).toISOString(), '2026-07-29T09:00:00.000Z', 'with no injected zone the old UTC anchor is unchanged');
+}
+
 A.report('cron-store');
