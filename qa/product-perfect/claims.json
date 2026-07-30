@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "919558d49999c88e7867b50a7958cc1681bd57f3",
+    "sourceCommit": "3482a22bae8e21797b6013b3628f7a97a875d39f",
     "pathSetSha256": "80ab5a92b143255a49446c2313d16ce3d86ebf9ff6805073102deb9f5800a1c8",
     "files": [
       {
@@ -638,8 +638,8 @@
       },
       {
         "path": "frontend/app/stationcommands.js",
-        "bytes": 3222,
-        "sha256": "32c3ed4048df6ad681d674b6c5af73adaba185da1029fd63fe2f9916af188de6"
+        "bytes": 6927,
+        "sha256": "759223f4dcbda5050b607f6a84395e0a89b90b2d6e9a65ae328d34a6d703e9cb"
       },
       {
         "path": "frontend/app/stationquests.js",
@@ -758,8 +758,8 @@
       },
       {
         "path": "frontend/app/voice-live.js",
-        "bytes": 64053,
-        "sha256": "173d3d6b2916e8231b75af8d9f2ded8afc2bad3c8ef29d06b4ccfe0fa52727b1"
+        "bytes": 64539,
+        "sha256": "a5f1f9296d28b78e1734be35473e2aea34d21dfce4279305c1ef5e49cddf8436"
       },
       {
         "path": "frontend/app/voice.js",
