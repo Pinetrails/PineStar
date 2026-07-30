@@ -41,6 +41,7 @@
 | **Green Guardian** | Is trunk green + does the app boot/look right? | script | `npm run qa:guardian` | per-merge (`--watch`) **and/or** hourly | ledger + `qa/STATUS.md` + `.bugloops/guardian-<stamp>/` |
 | **Beginner Run** | Can a fresh user reach first value, unassisted? | script | `npm run qa:beginner` | daily `--ui-only`; weekly `--live` | ledger + `qa/STATUS.md` + `.bugloops/beginner-<stamp>/` |
 | **Truth Auditor** | Does the UI show what actually happened? | script | `npm run audit` (also runs inside every Guardian cycle) | every Guardian cycle | `.uiaudit/audit-report.json` |
+| **Saboteur** | Do hostile inputs or authority mutations break a real sidecar? | script | `npm run qa:saboteur` (also runs inside every Guardian cycle) | every Guardian cycle | ledger + `.bugloops/saboteur-<stamp>/report.json` |
 | **Visual Auditor** | Is the rendered game coherent? *(needs eyes)* | **session** | `/loop` per `scripts/VISUAL_AUDITOR.md` | self-paced, local | `SESSIONS.md` + re-shot PNGs |
 | **Overseer** | What broke today, what needs Andrew? | **session** | `/loop` reading the ledger | daily | `qa/digests/<date>.md` + P0 pings |
 | **Janitor** | What's rotting in the workshop? | script | `npm run qa:janitor` | weekly | ledger (P2) + `qa/digests/janitor-<date>.md` |
@@ -61,8 +62,11 @@ Two runner kinds, cleanly separated (Charter Part 2):
 
 One cycle pins trunk HEAD into a **dedicated** detached worktree (`../_qa-guardian-pin`,
 override `SKYNET_GUARDIAN_PIN`; created + `npm install`'d on first run, `git reset --hard`'d
-to trunk each cycle) and composes the four detectors in dependency order:
-`test:fast` → `shoot` → `golden` → `audit`. It files ONE deduped finding per regression
+to trunk each cycle) and composes the detectors in dependency order:
+`test:fast` → `test:http` → `qa:saboteur` → `shoot` → `golden` → `audit` → `qa:journeys`.
+The Saboteur uses a replayable seed to attack every literal API route's token/origin boundary
+plus malformed payloads on stateful seams; it always uses a disposable seeded workspace. It
+files ONE deduped finding per regression
 (fingerprinted per failing suite / frame / assertion), refreshes the Guardian row in
 `qa/STATUS.md`, and exits nonzero on any red. **STATUS.md + findings are written into the
 Guardian script's OWN repo** (resolved from `import.meta.url`), so the dashboard survives the
