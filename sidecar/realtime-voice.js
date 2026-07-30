@@ -2,6 +2,14 @@
 
 const DEFAULT_MODEL = 'gpt-realtime-2.1';
 const DEFAULT_VOICE = 'marin';
+/* The provider's own voice set. It was hardcoded to one name, which read as "you cannot change the voice" —
+   that limit was OURS, not the provider's. Validated against this list rather than passed through, so a
+   caller cannot push an arbitrary string into the session payload. */
+const VOICES = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
+function normalizeVoice(name) {
+  const v = String(name || '').trim().toLowerCase();
+  return VOICES.indexOf(v) >= 0 ? v : '';
+}
 // Only the fallback for a caller that supplies no provider descriptor. The real endpoint comes from the
 // provider registry, so adding a provider is a row there rather than an edit here.
 const OPENAI_REALTIME_URL = 'https://api.openai.com/v1/realtime/calls';
@@ -42,8 +50,12 @@ function sessionConfig(opts) {
     type: 'realtime',
     model: opts.model || DEFAULT_MODEL,
     output_modalities: ['audio'],
+    /* PLACEHOLDER ONLY. The page replaces these over the data channel the instant it opens, with the selected
+       agent's own composed prompt and the live station context — only the page knows who is selected. Written
+       so that even this first second does not claim a separate identity: the previous text opened with "You
+       are Starnet Voice, a control layer", which is exactly the separate-entity feel being fixed. */
     instructions: [
-      'You are Starnet Voice, a concise spoken control layer for the Starnet agent workspace.',
+      'You are the StarNet agent the Commander is currently speaking with. Fuller instructions, including your name and character, arrive immediately over the session channel — adopt them as your own identity when they do.',
       'Speak naturally and briefly. Let the user interrupt you.',
       'For requests that require research, coding, file changes, tools, or sustained work, call start_starnet_task instead of claiming you performed the work yourself.',
       'Use get_starnet_status for progress questions. Never invent task state, tool results, approvals, or files.',
@@ -111,11 +123,12 @@ function makeRealtimeVoice(opts) {
       available: connected && !!lv,
       model: (lv && lv.model) || '',
       voice: (lv && lv.voice) || '',
-      transport: (lv && lv.transport) || ''
+      transport: (lv && lv.transport) || '',
+      voices: lv ? VOICES.slice() : []
     };
   }
 
-  async function createCall(sdp, provider) {
+  async function createCall(sdp, provider, wantVoice) {
     /* ⛔ NEVER `.trim()` AN SDP. Every line must be CRLF-terminated, including the last one: strip that final
        newline and the parser at the far end runs off the end and answers `failed to unmarshal SDP: EOF`. That
        one call was the whole reason a live call could never connect — the offer was valid, the credential was
@@ -142,7 +155,7 @@ function makeRealtimeVoice(opts) {
     }
     const form = new FormData();
     form.set('sdp', offer);
-    form.set('session', JSON.stringify(sessionConfig({ model: lv.model, voice: lv.voice })));
+    form.set('session', JSON.stringify(sessionConfig({ model: lv.model, voice: normalizeVoice(wantVoice) || lv.voice })));
     let upstream;
     try {
       upstream = await fetchFn(lv.url, {
@@ -166,4 +179,4 @@ function makeRealtimeVoice(opts) {
   return { status, createCall };
 }
 
-module.exports = { DEFAULT_MODEL, DEFAULT_VOICE, TOOLS, sessionConfig, safetyIdentifier, makeRealtimeVoice };
+module.exports = { DEFAULT_MODEL, DEFAULT_VOICE, VOICES, normalizeVoice, TOOLS, sessionConfig, safetyIdentifier, makeRealtimeVoice };

@@ -20,6 +20,8 @@ const VoiceLive = (() => {
   let warmupNotice = false;
   const $ = id => document.getElementById(id);
   const POSITION_KEY = 'starnet.liveVoice.position.v1';
+  // Which of the provider's voices speaks. Empty = the provider descriptor's default.
+  const VOICE_KEY = 'starnet.liveVoice.voice.v1';
   // SETTLED (Andrew, 2026-07-29): a small pop-up module with NO icon — a state line, the volume
   // indicator, and the transcript. The four-shape and four-icon switchers that got us here are
   // deleted; shipping the candidates was never the goal, choosing one was.
@@ -876,7 +878,9 @@ const VoiceLive = (() => {
     const said = (chunk || spokenBuffer).trim();
     spokenBuffer = '';
     if (!said) return;
-    try { if (typeof Chat !== 'undefined' && Chat.typeLine) Chat.typeLine(said); } catch (_) {}
+    // Silent, and effectively instant: the voice IS the delivery, so the transcript should simply BE there
+    // rather than typing itself out under speech that has already finished saying it.
+    try { if (typeof Chat !== 'undefined' && Chat.typeLine) Chat.typeLine([{ text: said, cps: 1200 }], null, { silent: true }); } catch (_) {}
   }
 
   // ---- the three tools the session config declares, answered from live station state ----
@@ -1038,7 +1042,14 @@ const VoiceLive = (() => {
       if (!active || seq !== sessionSeq) return;
 
       setState('warming');
-      const q = callProvider ? ('?provider=' + encodeURIComponent(callProvider)) : '';
+      // The spoken voice is a CHOICE, not a constant. Stored per station; the server validates it against the
+      // provider's real voice list (status().voices) and falls back to the descriptor default.
+      let wantVoice = '';
+      try { wantVoice = String(localStorage.getItem(VOICE_KEY) || '').trim(); } catch (_) {}
+      const q = '?' + [
+        callProvider ? 'provider=' + encodeURIComponent(callProvider) : '',
+        wantVoice ? 'voice=' + encodeURIComponent(wantVoice) : ''
+      ].filter(Boolean).join('&');
       const response = await fetch('/api/realtime/session' + q, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp' },
@@ -1190,7 +1201,22 @@ const VoiceLive = (() => {
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && active) end(); });
   }
 
-  return { init, start, end, isActive: () => active, statusSnapshot };
+  /* Pick the spoken voice. Persisted, and applied on the NEXT call — a live WebRTC session's voice is fixed
+     for its lifetime, so changing it mid-call would silently do nothing and that would be a lie. Returns the
+     names the provider actually offers, read from status() rather than a list copied here. */
+  async function voices() {
+    const cap = await realtimeCapability();
+    let current = '';
+    try { current = String(localStorage.getItem(VOICE_KEY) || '').trim(); } catch (_) {}
+    return { available: (cap && cap.voices) || [], current: current || (cap && cap.voice) || '', appliesOn: 'next call' };
+  }
+  function setVoice(name) {
+    const want = String(name || '').trim().toLowerCase();
+    try { if (want) localStorage.setItem(VOICE_KEY, want); else localStorage.removeItem(VOICE_KEY); } catch (_) {}
+    return { voice: want, appliesOn: active ? 'the next call — restart live voice to hear it' : 'the next call' };
+  }
+
+  return { init, start, end, isActive: () => active, statusSnapshot, voices, setVoice };
 })();
 
 document.addEventListener('DOMContentLoaded', () => VoiceLive.init());

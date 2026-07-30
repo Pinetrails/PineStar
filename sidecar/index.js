@@ -6946,7 +6946,9 @@ async function handleRealtimeSession(req, res) {
   let provider = '';
   try { provider = String(new URL(req.url, 'http://x').searchParams.get('provider') || '').trim(); } catch (_) {}
   if (!provider) provider = cronProviderFor(null);
-  const out = await realtimeVoice.createCall(offer, provider);
+  let wantVoice = '';
+  try { wantVoice = String(new URL(req.url, 'http://x').searchParams.get('voice') || '').trim(); } catch (_) {}
+  const out = await realtimeVoice.createCall(offer, provider, wantVoice);
   res.writeHead(out.status, { 'Content-Type': out.contentType, 'Cache-Control': 'no-store' });
   res.end(out.body);
 }
