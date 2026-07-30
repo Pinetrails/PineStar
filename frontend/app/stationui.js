@@ -2414,38 +2414,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        Truthful by construction: if the provider has no native voice endpoint we say so rather than
        offering choices that would do nothing, and the note about WHEN a change takes effect is shown
        because a live session cannot switch voice mid-call. */
-    function wireLiveVoice(host) {
-      const wrap = host && host.querySelector ? host.querySelector('#set-lv-voices') : null;
-      if (!wrap) return;
-      const paint = (list, chosen) => {
-        if (!list.length) { wrap.innerHTML = '<span class="dim">the speech engine has not reported its voices yet</span>'; return; }
-        const group = sex => list.filter(v => v.sex === sex);
-        const row = v => '<button class="set-theme ' + (v.id === chosen ? 'sel' : '') + '" aria-pressed="' +
-          (v.id === chosen ? 'true' : 'false') + '" data-lv-voice="' + v.id + '" title="' + v.accent + ' ' + v.sex + '">' + v.label + '</button>';
-        wrap.innerHTML =
-          '<div class="dim" style="width:100%">MALE</div>' + group('male').map(row).join('') +
-          '<div class="dim" style="width:100%;margin-top:6px">FEMALE</div>' + group('female').map(row).join('');
-        wrap.querySelectorAll('[data-lv-voice]').forEach(btn => {
-          btn.onclick = () => {
-            const want = btn.getAttribute('data-lv-voice');
-            if (typeof VoiceLive !== 'undefined' && VoiceLive.setVoice) VoiceLive.setVoice(want);
-            wrap.querySelectorAll('[data-lv-voice]').forEach(b => {
-              const on = b === btn;
-              b.classList.toggle('sel', on);
-              b.setAttribute('aria-pressed', String(on));
-            });
-            try { SFX.click(); } catch (_) {}
-          };
-        });
-      };
-      if (typeof VoiceLive !== 'undefined' && VoiceLive.voices) {
-        VoiceLive.voices()
-          .then(v => paint(v.available || [], v.current || ''))
-          .catch(() => { wrap.innerHTML = '<span class="dim">voice list unavailable</span>'; });
-      } else {
-        wrap.innerHTML = '<span class="dim">live voice is not loaded on this page</span>';
-      }
-    }
 
     const frag = html => (el => { el.innerHTML = html; });
     mountConsole(body, 'skills', [
@@ -4516,6 +4484,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
 
     const frag = html => (el => { el.innerHTML = html; });  // curried: fill a pane element with a fragment
+    function wireLiveVoice(host) {
+      const wrap = host && host.querySelector ? host.querySelector('#set-lv-voices') : null;
+      if (!wrap) return;
+      const paint = (list, chosen) => {
+        if (!list.length) { wrap.innerHTML = '<span class="dim">the speech engine has not reported its voices yet</span>'; return; }
+        const group = sex => list.filter(v => v.sex === sex);
+        const row = v => '<button class="set-theme ' + (v.id === chosen ? 'sel' : '') + '" aria-pressed="' +
+          (v.id === chosen ? 'true' : 'false') + '" data-lv-voice="' + v.id + '" title="' + v.accent + ' ' + v.sex + '">' + v.label + '</button>';
+        wrap.innerHTML =
+          '<div class="dim" style="width:100%">MALE</div>' + group('male').map(row).join('') +
+          '<div class="dim" style="width:100%;margin-top:6px">FEMALE</div>' + group('female').map(row).join('');
+        wrap.querySelectorAll('[data-lv-voice]').forEach(btn => {
+          btn.onclick = () => {
+            const want = btn.getAttribute('data-lv-voice');
+            if (typeof VoiceLive !== 'undefined' && VoiceLive.setVoice) VoiceLive.setVoice(want);
+            wrap.querySelectorAll('[data-lv-voice]').forEach(b => {
+              const on = b === btn;
+              b.classList.toggle('sel', on);
+              b.setAttribute('aria-pressed', String(on));
+            });
+            try { SFX.click(); } catch (_) {}
+          };
+        });
+      };
+      if (typeof VoiceLive !== 'undefined' && VoiceLive.voices) {
+        VoiceLive.voices()
+          .then(v => paint(v.available || [], v.current || ''))
+          .catch(() => { wrap.innerHTML = '<span class="dim">voice list unavailable</span>'; });
+      } else {
+        wrap.innerHTML = '<span class="dim">live voice is not loaded on this page</span>';
+      }
+    }
+
     const sections = [
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },

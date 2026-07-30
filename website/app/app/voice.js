@@ -1450,6 +1450,21 @@ const Voice = (() => {
     canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
     canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
     setLocalTts: value => { preferLocalTts = !!value; },
+    /* LIVE VOICE MUST ARRIVE AUDIBLE. Opening a hands-free session with the speaker muted is a room where you
+       talk and nothing answers — the Commander then has to find a toggle to make the feature work at all.
+       Classic voice mode already force-enables the speaker in toggleVoiceMode(); the Local Live panel does not
+       route through that, so it needs the same lever. Reuses the SAME `forcedSpeak` bookkeeping, so a speaker
+       WE switched on is restored on exit while one the Commander chose themselves is left alone. */
+    forceSpeakOn: () => {
+      if (speakReplies) return false;          // already audible — nothing to restore later
+      speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle();
+      return true;
+    },
+    restoreSpeak: () => {
+      if (!forcedSpeak) return false;          // the Commander's own choice — never undo it
+      forcedSpeak = false; speakReplies = false; savePref(LS_SPEAK, false); reflectToggle();
+      return true;
+    },
     // Which transcription engine is ACTUALLY selected right now ('recorder' | 'web' | 'native'). A UI that
     // names the engine has to read it rather than re-derive the selection rule, or the label drifts from
     // the truth the moment the ladder changes.

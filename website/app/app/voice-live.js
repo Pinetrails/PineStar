@@ -749,6 +749,10 @@ const VoiceLive = (() => {
     failed = false;
     reflectButton(true);
     if (typeof Voice !== 'undefined') {
+      // Entering hands-free means you expect to HEAR the reply. If the speaker is muted, turn it on for the
+      // session (restored on exit if we were the ones who flipped it) — otherwise live voice opens silent and
+      // looks broken until the Commander hunts down a toggle.
+      if (Voice.forceSpeakOn) Voice.forceSpeakOn();
       // Local Live is now Starnet's one hands-free surface. A legacy loop can still exist through
       // older saved state or API callers; close it before attaching this persistent microphone.
       if (Voice.inVoiceMode && Voice.inVoiceMode() && Voice.stopConvo) Voice.stopConvo();
@@ -1180,6 +1184,7 @@ const VoiceLive = (() => {
     closeMicrophone();
     if (typeof Voice !== 'undefined') {
       if (stopVoice && Voice.stopSpeaking) Voice.stopSpeaking();
+      if (Voice.restoreSpeak) Voice.restoreSpeak();   // only undoes a mute WE lifted; a hand-set speaker stays
       // Dictation mode STARTED the coordinator (which armed a listen loop), so detaching the hooks is not
       // enough — that loop has to be stopped or the sidecar keeps being asked to dictate after the panel closes.
       if (dictation && Voice.stopCoordinator) Voice.stopCoordinator();
