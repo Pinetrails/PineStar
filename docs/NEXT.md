@@ -68,6 +68,17 @@ exits unsuccessfully. The identical post-fix reproduction reported both descenda
 Regression: `shell-bg.test` 37 assertions (including tree-reaper ordering and launch-failure
 fallback) plus `shell-bg-io` 29 assertions. Final verification: touched-file syntax checks,
 `test:fast` 436/436 green, and full `test:http` green. No push, merge, deploy, publish, or PR.
+## 2026-07-29 — CHANNEL SETUP GUIDE REOPENS AFTER FORGET (`agent/quality-loop-0729f`)
+
+READY TO MERGE. The newly added CHANNELS auto-fold listener treated its own programmatic
+`guide.open = false` as a Commander toggle, deleted the one-shot flag, and left a later cold card
+collapsed after its configuration was forgotten. Live seeded Signal reproduction used an isolated
+localhost bridge config: saved/offline folded to 13.4 px, then confirmed removal returned the
+backend/UI to `not connected` but the guide stayed 13.4 px tall. The listener now treats only
+summary activation as the human override; untouched guides track configured state in both
+directions. Post-fix live proof: saved/offline remained folded with the auto flag intact, confirmed
+removal reopened the guide to 91.2 px, and a hand summary click still removed the flag. Regression
+contract expanded to 11 assertions; website mirror synced. No merge, push, deploy, publish, or PR.
 
 ## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
 

@@ -25,16 +25,19 @@ A.ok(/<details class="ch-setup" open data-autofold="1">/.test(ui),
   'the SETUP GUIDE <details> is rendered open, with the one-shot autofold flag');
 A.ok(/<summary>SETUP GUIDE<\/summary>/.test(ui), 'the guide still carries its SETUP GUIDE summary');
 
-// ---- B. it folds on `configured`, never on `conn` ----
-A.ok(/dataset\.autofold === '1' && configured\) guide\.open = false/.test(ui),
-  'the guide auto-folds only when the platform is CONFIGURED (a saved-but-offline card stays open)');
+// ---- B. while untouched, it tracks `configured` in BOTH directions, never `conn` ----
+A.ok(/dataset\.autofold === '1'\) guide\.open = !configured/.test(ui),
+  'the untouched guide closes for CONFIGURED and reopens when the card becomes cold again');
 A.ok(!/autofold[\s\S]{0,60}&& conn\b/.test(ui),
   'the fold is not keyed off `conn` — connected-vs-configured are different truths here');
 
-// ---- C. one-shot: a hand toggle takes the flag away for good ----
-A.ok(/addEventListener\('toggle', \(\) => \{ delete guide\.dataset\.autofold; \}\)/.test(ui),
-  'the first user toggle clears the autofold flag so the UI never fights the Commander');
-A.ok(/dataset\.foldWired/.test(ui), 'the toggle listener is installed once, not on every paint');
+// ---- C. one-shot: only activating the summary takes the flag away for good ----
+A.ok(/querySelector\('summary'\)/.test(ui), 'the hand-toggle detector is scoped to the guide summary');
+A.ok(/summary\.addEventListener\('click', \(\) => \{ delete guide\.dataset\.autofold; \}\)/.test(ui),
+  'a pointer/keyboard summary activation clears the autofold flag so the UI never fights the Commander');
+A.ok(!/guide\.addEventListener\('toggle'/.test(ui),
+  'programmatic guide.open changes cannot consume the human-override flag');
+A.ok(/dataset\.foldWired/.test(ui), 'the summary listener is installed once, not on every paint');
 
 // ---- D. website/app is a generated mirror and must carry the same fix ----
 {
@@ -42,8 +45,10 @@ A.ok(/dataset\.foldWired/.test(ui), 'the toggle listener is installed once, not 
   const m = fs.readFileSync(mirror, 'utf8');
   A.ok(/<details class="ch-setup" open data-autofold="1">/.test(m),
     'the website/app mirror carries the open SETUP GUIDE (run npm run sync:website)');
-  A.ok(/dataset\.autofold === '1' && configured\) guide\.open = false/.test(m),
-    'the website/app mirror carries the configured-keyed auto-fold');
+  A.ok(/dataset\.autofold === '1'\) guide\.open = !configured/.test(m),
+    'the website/app mirror carries the reversible configured-keyed auto-fold');
+  A.ok(/summary\.addEventListener\('click'/.test(m),
+    'the website/app mirror preserves the human-only override seam');
 }
 
 A.report();
