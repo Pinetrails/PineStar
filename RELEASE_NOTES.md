@@ -88,11 +88,15 @@ This is the release's quiet theme. A representative slice:
 
 - **A message that names a component now owes proof that component is at fault.** "The local service
   is unreachable" is no longer said on the strength of a failure that never touched it.
-- **The offline Local Live voice now admits it is not in this build.** The desktop bundle ships no
-  npm packages, so the offline speech models cannot load in an installed copy. The panel used to
-  open your microphone, promise a model download, and then show a raw module error. It now says
-  plainly that the models are not installed, and never opens the microphone. Your existing voice
-  controls are unaffected.
+- **Local Live voice works in the installed build again, and stops lying about how.** The desktop
+  bundle ships no npm packages, so the offline Whisper/Kokoro models cannot load in an installed
+  copy — the panel used to open your microphone, promise a model download, and then show a raw
+  module error. A keyless listening ladder for exactly this case already existed and nothing was
+  calling it: Windows dictation through the sidecar, no key, no download, already inside the
+  bundle. Local Live now falls back to it, speaks through the keyless neural floor, and **names the
+  engine it is actually using** rather than claiming the offline models. Where no leg exists (a
+  platform without the models and without a dictation engine) it says so plainly instead of
+  failing mid-session.
 - **An errored read is not "you have none."** A connector list that failed to load no longer renders
   as a confident empty inventory.
 - **A "since" is never a future timestamp.**
