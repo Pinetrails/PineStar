@@ -154,17 +154,87 @@ async function call(env, verb, args) {
   A.eq(out.result.crew[0].id, 'researcher', 'with the ids a dispatch has to address');
 }
 
+/* ---- station.new_session: the agent can OPEN a session by name — the half "make a session called
+   research and have them work in it" was missing (dispatch could target one, nothing could create one) ---- */
+{
+  const env = boot({ agents: () => [{ id: 'researcher', name: 'RESEARCHER' }] });
+  const out = await call(env, 'station.new_session', { title: 'research', agentId: 'researcher' });
+  A.eq(out.ok, true, 'a named session is created');
+  A.eq(out.result.title, 'research', 'with the title the Commander said');
+  A.eq(out.result.agentId, 'researcher', 'bound to the named crew member');
+  A.eq(out.result.focused, false, 'not focused unless asked');
+  A.ok(env.W.list().some(w => w.title === 'research'), 'and it exists in the real session store');
+  A.eq(env.W.activeId(), env.W.generalId(), 'a background create never steals what the Commander is looking at');
+  A.ok(env.page.rail > 0 && env.page.persisted > 0, 'the rail re-rendered and the save was written');
+
+  // focus:true is the explicit "open it" ask — active session moves, thread renders
+  const f = await call(env, 'station.new_session', { title: 'billing', focus: true });
+  A.eq(f.ok, true, 'a focused create succeeds');
+  A.eq(env.W.activeId(), f.result.id, 'and the Commander is now looking at it');
+  A.eq(env.page.loaded[env.page.loaded.length - 1], f.result.id, 'the thread rendered');
+}
+
+// a duplicate title is REFUSED — a twin would make every later name-addressed action ambiguous
+{
+  const env = boot();
+  env.W.create('research');
+  const dup = await call(env, 'station.new_session', { title: 'RESEARCH' });
+  A.eq(dup.ok, false, 'a case-different duplicate is still a duplicate');
+  A.ok(/already exists/.test(dup.error), 'and the refusal says so');
+  const gen = await call(env, 'station.new_session', { title: 'General' });
+  A.eq(gen.ok, false, 'the untitled home stream\'s display name is reserved too');
+  const ghost = await call(env, 'station.new_session', { title: 'ops', agentId: 'nobody' });
+  A.eq(ghost.ok, false, 'an unknown agentId is refused, not silently dropped');
+  A.ok(/no crew member/.test(ghost.error), 'naming what was wrong');
+  A.ok(!env.W.list().some(w => w.title === 'ops'), 'and no session was created');
+}
+
+/* ---- station.switch_session: focus by the name the Commander says — same resolution law as dispatch
+   (exact id → exact title → unique substring; anything else refuses with the real names) ---- */
+{
+  const env = boot();
+  const r = env.W.create('research');
+  env.W.create('Billing rewrite');
+  env.W.switch(env.W.generalId());
+  const out = await call(env, 'station.switch_session', { session: 'research' });
+  A.eq(out.ok, true, 'an exact title switches');
+  A.eq(env.W.activeId(), r.id, 'the Commander is now looking at it');
+  A.eq(env.page.loaded[env.page.loaded.length - 1], r.id, 'and the thread rendered');
+  const part = await call(env, 'station.switch_session', { session: 'billing' });
+  A.eq(part.ok, true, 'a unique substring resolves');
+  const gen = await call(env, 'station.switch_session', { session: 'general' });
+  A.eq(gen.ok, true, 'the home stream is addressable by the name the UI shows');
+  A.eq(env.W.activeId(), env.W.generalId(), 'and focuses General');
+}
+
+// the refusals — never a guess, and always the list the model needs to correct itself
+{
+  const env = boot();
+  env.W.create('research plan');
+  env.W.create('research notes');
+  env.W.switch(env.W.generalId());   // the Commander is looking at General; a refusal must leave them there
+  const ambig = await call(env, 'station.switch_session', { session: 'research' });
+  A.eq(ambig.ok, false, 'an ambiguous name refuses');
+  A.ok(/more than one session matches/.test(ambig.error) && /research plan/.test(ambig.error), 'explaining the ambiguity with the real names');
+  A.eq(env.W.activeId(), env.W.generalId(), 'and the focus did NOT move');
+  const none = await call(env, 'station.switch_session', { session: 'marketing' });
+  A.eq(none.ok, false, 'an unknown name refuses');
+  A.ok(/no session called "marketing"/.test(none.error) && /research plan/.test(none.error), 'and lists what does exist');
+}
+
 // every verb the sidecar can ask for is implemented here (a missing one would fail as "unknown verb" live)
 {
   const env = boot();
   const verbs = env.S.verbs();
-  for (const v of ['station.status', 'station.crew', 'station.sessions', 'station.deliver']) {
+  for (const v of ['station.status', 'station.crew', 'station.sessions', 'station.deliver', 'station.new_session', 'station.switch_session']) {
     A.ok(verbs.indexOf(v) >= 0, 'the page implements ' + v);
   }
-  const orch = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'tools', 'builtin', 'orchestration.js'), 'utf8');
-  for (const m of orch.match(/station\.request\('([^']+)'/g) || []) {
-    const verb = /'([^']+)'/.exec(m)[1];
-    A.ok(verbs.indexOf(verb) >= 0, 'orchestration asks for ' + verb + ', and the page can answer it');
+  for (const file of ['orchestration.js', 'station.js']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'tools', 'builtin', file), 'utf8');
+    for (const m of src.match(/(?:station|ask)\('(station\.[^']+)'/g) || []) {
+      const verb = /'([^']+)'/.exec(m)[1];
+      A.ok(verbs.indexOf(verb) >= 0, file + ' asks for ' + verb + ', and the page can answer it');
+    }
   }
 }
 

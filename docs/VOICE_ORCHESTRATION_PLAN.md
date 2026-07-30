@@ -148,5 +148,22 @@ What shipped:
 - Proof: `test/e2e.dispatch-session.test.js` boots the real sidecar and asserts against `/api/runs` and
   `/api/transcript` — the sidecar's own durable state — rather than the tool's account of itself.
 
-Still open from the verb list: `new_session`, `switch_session`, `report`. `station.status` and
-`station.crew` exist; `delegate` is covered by the above.
+### SWEEP 2026-07-30 (second pass, same day) — the verb list is now built, and two more traps
+
+**`new_session` + `switch_session` SHIPPED** as agent tools `session.create` / `session.focus` (+
+`session.list`), over the bridge, orchestrator-gated, consent-free. Live-proven with a real model:
+create by name → delegate into it → answer lands there attributed; unknown name → refused by name →
+the agent recovered by creating it (nothing guessed). Only `station.report` remains unbuilt — background
+dispatch + `team.subagents` cover the "is it done" question meanwhile.
+
+⛔ **The capability registry is an ALLOWLIST** (`sidecar/capability/registry.js`): a tool registered with
+the host but not declared there is exposed to NOBODY. The session verbs shipped exactly that way on the
+first pass — every unit test green, live model blind. Registration and declaration land together; a test
+in `test/station-tools.test.js` now enforces it.
+
+⛔ **A `local:true` TTS request must NEVER fall into the keyed provider chain.** On every installed build
+(no node_modules) the Kokoro engine cannot load, and the old fallthrough made live voice speak with the
+keyed provider's identity while the picker adjusted an engine that was not there. Every catalogue voice
+now carries its nearest Edge neural on the row; the shipped shape is reproduced in `sidecar.http.test.js`
+via `STARNET_LOCAL_VOICE=0` + the loopback Edge server, which captures the SSML and proves the PICKED
+voice reaches the wire.

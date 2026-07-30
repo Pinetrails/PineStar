@@ -1150,7 +1150,12 @@ const VoiceLive = (() => {
          installed station still opened Local Live muted, which is a room you talk into that never answers. */
       if (Voice.forceSpeakOn) Voice.forceSpeakOn();
       if (Voice.inVoiceMode && Voice.inVoiceMode() && Voice.stopConvo) Voice.stopConvo();
-      if (Voice.setLocalTts) Voice.setLocalTts(false);
+      /* setLocalTts(TRUE) on the dictation leg too (2026-07-30). This flag means "speak with the BUILT-IN
+         live-voice identity", not "the Kokoro engine is installed": the sidecar now maps the picked voice
+         onto the keyless Edge floor when the engine is absent, so the picker keeps working on an installed
+         build. Passing false here is what disconnected the picker and let the keyed provider voice speak —
+         the identity bug Andrew heard. */
+      if (Voice.setLocalTts) Voice.setLocalTts(true);
       if (Voice.startCoordinator) Voice.startCoordinator({ onState, onAssistant, onOutputLevel });
     }
     if (!active || seq !== sessionSeq) return;
@@ -1167,6 +1172,13 @@ const VoiceLive = (() => {
       : engine === 'recorder' ? 'SERVER WHISPER'
       : 'UNKNOWN';
     if ($('lv-model')) $('lv-model').textContent = `ASR ${engineLabel} · VOICE EDGE`;
+    // …then name the PICKED voice once the catalogue answers, so the label shows the choice is live on this
+    // build too (the sidecar maps it onto the nearest Edge neural when the offline engine is absent).
+    voices().then(v => {
+      if (!active || seq !== sessionSeq || !$('lv-model')) return;
+      const row = (v.available || []).find(x => x && x.id === v.current);
+      if (row && row.label) $('lv-model').textContent = `ASR ${engineLabel} · VOICE ${row.label} (EDGE)`;
+    }).catch(() => {});
     if ($('lv-heard')) $('lv-heard').textContent = 'Speak naturally — the transcript lands in COMMS.';
     caption('agent', 'The offline speech models are not in this build, so Local Live is listening through Windows dictation — one utterance at a time, no live preview.');
     refreshTask();

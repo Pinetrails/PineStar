@@ -208,6 +208,7 @@ const { makeEnvironmentManager } = require('./environment.js');     // execution
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
+const { makeStationTools } = require('./tools/builtin/station.js');               // session verbs (list/create/focus) over the station bridge
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
 const { makeCommsTools } = require('./tools/builtin/comms.js');      // COMMS: outbound reach — an agent messages a connected chat
 const cronGuard = require('./cron-guard.js');                        // routine prompt-injection tripwire (pure, see file header)
@@ -10600,6 +10601,10 @@ async function runOnce(o) {
       return providerHasCredential(id, k, b) ? { provider: id, key: k, baseUrl: b } : null;
     }
   }).register(registry);
+  // session.list/create/focus: the LEAD's session verbs, over the same station bridge dispatch's resolver
+  // uses. Same 'orchestrator' capability gate as team.* — conferred on the lead run only, so a delegated
+  // worker can never open or steal the Commander's sessions. Headless runs refuse honestly (bridge times out).
+  makeStationTools({ station: stationBridge }).register(registry);
   // routine.create/list: the lead can schedule real StarNet ROUTINES through the same cron store the panel uses.
   makeRoutineTools({
     roster: () => agentRoster,
@@ -13578,6 +13583,32 @@ async function handleTts(req, res) {
   // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
   // namespace; the provider chain below is irrelevant there, so dispatch BEFORE the no-key gate.
   if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
+  // one 32nd-miss cache sweep helper, shared by every serving tier (runs AFTER the response, never blocking
+  // it). Declared BEFORE serveEdge so the local-fallback caller — which runs earliest — is never in its TDZ.
+  const sweepMaybe = () => { if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); }); };
+  /* THE EDGE FLOOR AS A NAMED SERVING PATH (shared by the keyless floor below and the local-voice fallback
+     above it). One implementation so the cache namespace, headers and failure wording cannot drift between
+     the two callers; `reasonPrefix` carries the caller's story into the terminal fallback so the client
+     still learns WHICH leg died. Returns via res in every branch. */
+  const serveEdge = async (edgeVoice, reasonPrefix) => {
+    if (!edgetts.enabled()) return fallback(reasonPrefix ? (reasonPrefix + '; edge floor disabled') : 'no key');
+    const eck = crypto.createHash('sha1').update('edge|' + edgeVoice + '|' + text).digest('hex');
+    try {
+      const cached = await fsp.readFile(path.join(VOICE_CACHE_DIR, eck + '.mp3'));
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Provider': 'edge:' + edgeVoice, 'X-Voice-Cache': 'hit' });
+      return res.end(cached);
+    } catch (_) { /* miss → synthesize */ }
+    let ebuf;
+    try { ebuf = await edgetts.synth(text, { voice: edgeVoice, nowMs: Date.now() }); }   // clock injected here (index.js = ambient composition root)
+    catch (e) { return fallback(reasonPrefix ? (reasonPrefix + '; edge: ' + ((e && e.message) || e)) : ('edge: ' + ((e && e.message) || e))); }
+    // APPEND the edge detail, never let the earlier reason swallow it: the client needs the transient leg to
+    // pick a 4s cool-off over a 60s one, and 'edge: empty audio' is the only leg that names what just failed.
+    if (!ebuf || !ebuf.length) return fallback(reasonPrefix ? (reasonPrefix + '; edge: empty audio') : 'edge: empty audio');
+    try { const tmp = path.join(VOICE_CACHE_DIR, eck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, ebuf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, eck + '.mp3')); } catch (_) {}
+    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Provider': 'edge:' + edgeVoice, 'X-Voice-Cache': 'miss' });
+    res.end(ebuf); sweepMaybe(); return;
+  };
+
   // Local Live explicitly opts into the downloaded voice. Other voice surfaces retain their configured
   // provider ladder, so this experimental path cannot silently change an existing persona.
   if (body && body.local) {
@@ -13613,7 +13644,16 @@ async function handleTts(req, res) {
       });
       return res.end(buf);
     } catch (error) {
-      console.error('[tts] local Kokoro failed, falling through:', error && error.message || error);
+      /* ⛔ A LOCAL REQUEST NEVER FALLS INTO THE KEYED PROVIDER CHAIN. It used to, and the result was the
+         2026-07-30 identity bug: on any station without the offline engine (EVERY installed build — the
+         bundle ships no node_modules) live voice silently spoke with the keyed provider's voice while the
+         picker adjusted an engine that wasn't there. The caller asked for the BUILT-IN identity; the honest
+         degrade is the keyless Edge floor in the NEAREST MAPPED voice (sex/accent preserved, picker still
+         live), and if Edge cannot serve either, an honest fallback envelope — never a different provider's
+         voice wearing the built-in name. */
+      const why = 'local voice engine: ' + ((error && error.message) || error);
+      console.error('[tts] local Kokoro failed → edge-mapped floor:', (error && error.message) || error);
+      return serveEdge(localVoice.edgeVoiceFor(body.localVoice), why);
     }
   }
 
@@ -13641,8 +13681,6 @@ async function handleTts(req, res) {
   // fold the style into the spoken input the way Gemini TTS documents (a leading directive it obeys but
   // does not read aloud). Kept separate from `text` so the cache key can include the style (below).
   const input = style ? ('Say the following in ' + style + ': ' + text) : text;
-  // one 32nd-miss cache sweep helper, shared by both tiers (runs AFTER the response, never blocking it).
-  const sweepMaybe = () => { if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); }); };
 
   // TIER 1 — a keyed provider (the station's own AI credential). Attempt only if a key resolved; on ANY
   // failure (4xx/402 billing, network, bad body) record the reason and FALL THROUGH to the free Edge floor
@@ -13677,31 +13715,12 @@ async function handleTts(req, res) {
     keyedReason = keyed.reason;
   }
 
-  // TIER 2 — the FREE, KEYLESS Edge neural floor. Reached when the station has no voice-capable key OR every
-  // keyed attempt failed (billing/network/etc.). Own cache namespace + mp3; NO style (Edge has no style-prompt
-  // support, so ttsStyle is neither sent nor part of the key). Skippable via SKYNET_EDGE_TTS=0 (test determinism).
-  // If Edge ALSO fails we return the terminal 200 {fallback} — the 200-always contract holds; the client drops
-  // to text + an honest speaker tooltip, never a hard error.
-  if (edgetts.enabled()) {
-    const edgeVoice = edgetts.resolveVoice();
-    const eck = crypto.createHash('sha1').update('edge|' + edgeVoice + '|' + text).digest('hex');
-    try {
-      const cached = await fsp.readFile(path.join(VOICE_CACHE_DIR, eck + '.mp3'));
-      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
-      return res.end(cached);
-    } catch (_) { /* miss → synthesize */ }
-    let ebuf;
-    try { ebuf = await edgetts.synth(text, { voice: edgeVoice, nowMs: Date.now() }); }   // clock injected here (index.js = ambient composition root)
-    catch (e) { return fallback(keyedReason ? (keyedReason + '; edge: ' + ((e && e.message) || e)) : ('edge: ' + ((e && e.message) || e))); }
-    // APPEND the edge detail, never let the keyed reason swallow it: the client needs the transient leg to
-    // pick a 4s cool-off over a 60s one, and 'edge: empty audio' is the only leg that names what just failed.
-    if (!ebuf || !ebuf.length) return fallback(keyedReason ? (keyedReason + '; edge: empty audio') : 'edge: empty audio');
-    try { const tmp = path.join(VOICE_CACHE_DIR, eck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, ebuf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, eck + '.mp3')); } catch (_) {}
-    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
-    res.end(ebuf); sweepMaybe(); return;
-  }
-
-  return fallback(keyedReason || 'no key');
+  // TIER 2 — the FREE, KEYLESS Edge neural floor (serveEdge above). Reached when the station has no
+  // voice-capable key OR every keyed attempt failed (billing/network/etc.). NO style (Edge has no
+  // style-prompt support). Skippable via SKYNET_EDGE_TTS=0 (test determinism) — serveEdge then returns the
+  // terminal 200 {fallback}: the 200-always contract holds; the client drops to text + an honest speaker
+  // tooltip, never a hard error.
+  return serveEdge(edgetts.resolveVoice(), keyedReason);
 }
 
 /* ElevenLabs TTS — speak with a user-trained ElevenLabs voice (e.g. the Commander's own Ultron clone).

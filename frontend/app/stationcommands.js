@@ -47,6 +47,58 @@ const StationCommands = (() => {
       };
     },
 
+    /* Create a NAMED session. Refuses a duplicate title rather than minting a twin: two sessions with one
+       name would make every later name-addressed action (dispatch's `session`, switch below) AMBIGUOUS and
+       therefore refused — a create that quietly poisons the namespace is worse than telling the agent to
+       reuse what exists. `focus` is honored only when explicitly asked, so an agent opening sessions in the
+       background can never steal what the Commander is looking at. */
+    'station.new_session': (a) => {
+      if (typeof Workstreams === 'undefined' || !Workstreams.create) throw new Error('sessions are not ready yet');
+      const title = String((a && a.title) || '').trim().slice(0, 80);
+      if (!title) throw new Error('a session needs a title');
+      const clash = (Workstreams.list() || []).find(w => String(w.title || (w.id === Workstreams.generalId() ? 'General' : '')).trim().toLowerCase() === title.toLowerCase());
+      if (clash) throw new Error('a session called "' + title + '" already exists — delegate into it, focus it, or pick another name');
+      const agentId = String((a && a.agentId) || '').trim();
+      if (agentId && typeof App !== 'undefined' && App.agents && !(App.agents() || []).some(x => x && x.id === agentId)) {
+        throw new Error('no crew member with id "' + agentId + '" — use station.crew for the roster, or omit agentId');
+      }
+      const ws = Workstreams.create(title, { agentId: agentId || undefined, activate: !!(a && a.focus) });
+      if (!ws) throw new Error('the station could not create the session');
+      if (a && a.focus && typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
+      try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      return { id: ws.id, title: ws.title, agentId: ws.agentId || 'agent', focused: !!(a && a.focus) };
+    },
+
+    /* Focus an existing session by the name the Commander says (or exact id). SAME resolution law as
+       team.dispatch's sidecar-side resolver — exact id, exact title, then UNIQUE substring, and anything
+       else refuses with the real names — because a switch that lands on a plausible-but-wrong session
+       moves the Commander's eyes somewhere they did not ask to be. */
+    'station.switch_session': (a) => {
+      if (typeof Workstreams === 'undefined' || !Workstreams.list) throw new Error('sessions are not ready yet');
+      const want = String((a && a.session) || '').trim();
+      if (!want) throw new Error('name which session to switch to');
+      const generalId = Workstreams.generalId ? Workstreams.generalId() : null;
+      const rows = (Workstreams.list() || []).map(w => ({ w, title: String(w.title != null ? w.title : (w.id === generalId ? 'General' : '')).trim() }));
+      const lower = want.toLowerCase();
+      const byId = rows.filter(r => r.w.id === want);
+      const byTitle = rows.filter(r => r.title && r.title.toLowerCase() === lower);
+      const byPart = rows.filter(r => r.title && r.title.toLowerCase().indexOf(lower) >= 0);
+      const hits = byId.length ? byId : (byTitle.length ? byTitle : byPart);
+      if (hits.length !== 1) {
+        const names = rows.map(r => r.title).filter(Boolean).join(', ');
+        throw new Error(hits.length > 1
+          ? 'more than one session matches "' + want + '" — name it exactly. Open sessions: ' + names
+          : 'there is no session called "' + want + '"' + (names ? '. Open sessions: ' + names : ''));
+      }
+      const ws = Workstreams.switch(hits[0].w.id);
+      if (!ws) throw new Error('the station could not switch sessions');
+      if (typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
+      try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      return { id: ws.id, title: ws.title != null ? ws.title : 'General' };
+    },
+
     /* Fold a finished delegated run's answer into the session it was filed under. APPENDS — a session usually
        already holds the Commander's own conversation, and replacing that history (the way the cron auto-session
        path can, because it OWNS its stream) would delete their thread. Idempotent by runId so a retry, a
