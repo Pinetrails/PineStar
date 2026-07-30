@@ -1,5 +1,23 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-28 — BROWSER.FIND VIEWPORT HONESTY (`agent/quality-loop-0728c`)
+
+READY TO MERGE. The newly added `browser.find` scanned only visible interactive elements but told
+the agent an uncapped zero-hit result covered “the whole page” and the target was “genuinely not
+there.” Real-Chromium reproduction: a `Checkout now` button below a 1,600px spacer produced exactly
+that false absence claim, steering the agent away from the one required scroll. The finder now
+states its real boundary—visible controls in the current viewport—and every zero-hit result keeps
+off-screen, closed-menu, and not-yet-loaded possibilities open with the correct scroll/open/wait
+next moves. It still returns only visible refs whose coordinates the driver can safely act on.
+
+Regression: the real browser gauntlet now includes the below-fold fixture (65 assertions) and the
+focused find/recovery contract is 39 assertions. `node --check` passed all three touched JS files;
+`test:fast` is 429/429 green; full `test:http:raw` is green through all 51 suites. The standard
+420-second `test:http` wrapper timed out after its browser/skill suites had passed; the same raw
+chain completed cleanly in 429 seconds. A seeded station reached NOVA/COMMS online with no visible
+alerts or browser warnings/errors. No push, merge, PR, deploy, publish, production-data, or source
+credential changes.
+
 ## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
 
 A Settings/permissions audit confirmed a fail-closed enforcement but fail-open-looking UI defect:

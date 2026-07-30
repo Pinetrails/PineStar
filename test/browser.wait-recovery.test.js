@@ -236,19 +236,20 @@ function fakeDriver(opts) {
     A.eq((both.content.match(/\[link\]/g) || []).length, 3, 'limit is honoured');
   }
 
-  // ---- 14. A ZERO-HIT ANSWER SAYS WHICH KIND OF ZERO IT IS ----
+  // ---- 14. A ZERO-HIT ANSWER STAYS INSIDE WHAT THE VIEWPORT SCAN CAN PROVE ----
   {
     const small = [{ role: 'button', text: 'Search', x: 1, y: 1, w: 10, h: 10 }];
     const B1 = makeBrowserTools({ driver: fakeDriver({ nodes: small }) });
     const r1 = await B1.tools.find(t => t.name === 'browser.find').run({ text: 'Checkout' }, {});
-    A.ok(/genuinely not there/.test(r1.content), 'a fully-scanned page reports a REAL absence');
-    A.eq(/may be further down/.test(r1.content), false, 'and does not hedge when it does not need to');
+    A.ok(/current viewport/.test(r1.content), 'an uncapped zero reports only the viewport it actually scanned');
+    A.eq(/genuinely not there|whole page/.test(r1.content), false, 'and never upgrades a visible scan into whole-page absence');
+    A.ok(/off-screen/.test(r1.content) && /scroll/.test(r1.content), 'it preserves the correct below-fold next move');
 
     const huge = [];
     for (let i = 0; i < 240; i++) huge.push({ role: 'link', text: 'Row ' + i, x: 0, y: i, w: 10, h: 10 });
     const B2 = makeBrowserTools({ driver: fakeDriver({ nodes: huge }) });
     const r2 = await B2.tools.find(t => t.name === 'browser.find').run({ text: 'Checkout' }, {});
-    A.ok(/may be further down/.test(r2.content), 'a CAPPED scan admits it was capped rather than claiming absence');
+    A.ok(/scan cap/.test(r2.content), 'a CAPPED visible scan admits it was capped rather than claiming absence');
     A.ok(/scroll/i.test(r2.content), 'and says what to do about it');
   }
 
