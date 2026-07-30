@@ -111,6 +111,16 @@ for (const raw of [
   A.eq(v.action, 'settings', 'auth points at Settings/CONNECTIONS where both paths live');
   A.ok(/chatgpt/i.test(v.userMessage) && /key/i.test(v.userMessage), 'the auth message offers BOTH the ChatGPT sign-in and the add-a-key path');
 }
+{
+  // /api/run's pre-stream guard uses this exact 400 body. If the browser classifier misses it,
+  // COMMS renders an unknown retryable fault and offers a doomed "Try again" loop.
+  const v = friendlyError(new Error('sidecar HTTP 400 — missing key/model'));
+  A.eq(v.kind, 'auth', 'the exact /api/run missing-credential body classifies as auth');
+  A.eq(v.action, 'settings', 'the missing-credential response points at provider settings');
+  A.eq(v.retryable, false, 'missing credentials never offer a blind retry');
+  const btn = actionButton(v);
+  A.ok(btn && /key|settings/i.test(btn.label), 'the recovery action opens the provider-key door');
+}
 
 // ---- expired ChatGPT sign-in => oauth, and still offers the key alternative ----
 {
