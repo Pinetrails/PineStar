@@ -4529,14 +4529,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
-      { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: frag(secLiveVoice) },
+      // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
+      // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
+      { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
       { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
       { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
 
-    wireLiveVoice(host);
     wireProviderActions(host);
     wireKeyActions(host);
     queueProviderHealthRefresh();
