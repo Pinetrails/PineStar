@@ -297,4 +297,43 @@ for (const raw of [
     'the browser fallback and the shared sidecar table give the SAME verdict');
 }
 
+/* ---- PROVIDER 5xx/OVERLOAD => name the PROVIDER's servers, never the local service (2026-07-30) ----
+   The report wave behind this: users seeing "servers are unavailable out of the blue" during industry-wide
+   provider load spikes, because every provider 500/529/"overloaded" landed on the server_error copy that says
+   "The LOCAL StarNet service hit an error". A message naming a component owes proof it is at fault. The
+   discriminator is EVIDENCE in the raw: provider phrasing or a provider name → provider; a "sidecar HTTP 5xx"
+   with neither → the one case where our own route demonstrably answered, and only THAT keeps the local copy. */
+{
+  const { kindFromRaw } = require('../frontend/app/friendlyerror.js')._internals;
+  // in-band adapter labels (the dominant real path: the provider answered 5xx mid-run)
+  for (const raw of [
+    'Anthropic http 529 - Overloaded',
+    'OpenRouter http 503 - upstream is overloaded, try again later',
+    'Anthropic http 500 - internal server error',
+    'openai: The server is temporarily unavailable'
+  ]) {
+    const v = friendlyError(new Error(raw));
+    A.eq(v.kind, 'provider_server_error', raw + ' is the PROVIDER\'s server fault (delegate path)');
+    A.eq(kindFromRaw(raw.toLowerCase(), null), 'provider_server_error', raw + ' — BROWSER ladder agrees');
+    A.eq(v.retryable, true, raw + ' is retryable (load spikes pass)');
+    A.ok(!/local .*service|starnet service/i.test(v.userMessage) || /StarNet itself is fine/i.test(v.userMessage),
+      raw + ' must NEVER blame the local service');
+    A.ok(/provider/i.test(v.userMessage), raw + ' names the provider\'s servers');
+    A.ok(/fine/i.test(v.userMessage), raw + ' reassures the user their install is healthy');
+  }
+  // a proxied provider body under the sidecar prefix still reads as the provider's fault
+  A.eq(kindFromRaw('sidecar http 503 — anthropic: overloaded', null), 'provider_server_error',
+    'a PROXIED provider overload under the sidecar prefix is still the provider');
+  // …but a sidecar 5xx with NO provider evidence in the body is genuinely local, both ladders
+  A.eq(kindFromRaw('sidecar http 500 — internal error', null), 'server_error',
+    'BROWSER: a bare sidecar 500 keeps the local-service copy');
+  A.eq(friendlyError(Object.assign(new Error('sidecar HTTP 500 — internal error'), { status: 500 })).kind,
+    'server_error', 'DELEGATE: a bare sidecar 500 keeps the local-service copy');
+  A.ok(/local starnet service/i.test(KINDS.server_error.msg), 'the local copy still exists for the proven-local case');
+  // the two ladders must agree on the flagship shape, or the halves drift again
+  A.eq(kindFromRaw('anthropic http 529 - overloaded', null),
+    friendlyError(new Error('Anthropic http 529 - Overloaded')).kind,
+    'browser fallback and delegate give the SAME verdict on a provider overload');
+}
+
 A.report('friendlyerror.test');
