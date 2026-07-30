@@ -63,7 +63,7 @@
       // A ChatGPT subscription reaches the SAME realtime endpoint as an OpenAI API key: its access token is
       // minted with `aud: https://api.openai.com/v1`, and a call there returns `invalid_offer` — past auth and
       // past session validation — rather than 401/403. Verified 2026-07-30 against the live endpoint.
-      liveVoice: { transport: 'webrtc', url: 'https://api.openai.com/v1/realtime/calls', model: 'gpt-realtime-2.1', voice: 'marin' },
+      liveVoice: { transport: 'webrtc', url: 'https://api.openai.com/v1/realtime/calls', model: 'gpt-realtime-2.1', voice: 'ash' },
       order: 10
     },
     {
@@ -163,7 +163,7 @@
       // Native speech-to-speech: the provider itself listens and speaks, so live voice needs NO second
       // credential and no transcription layer of ours. Present here only because it is PROVEN against the
       // real endpoint; a provider without a verified descriptor gets composed voice instead of a guess.
-      liveVoice: { transport: 'webrtc', url: 'https://api.openai.com/v1/realtime/calls', model: 'gpt-realtime-2.1', voice: 'marin' },
+      liveVoice: { transport: 'webrtc', url: 'https://api.openai.com/v1/realtime/calls', model: 'gpt-realtime-2.1', voice: 'ash' },
       order: 30
     },
     {

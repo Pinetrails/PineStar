@@ -1,11 +1,11 @@
 'use strict';
 
 const DEFAULT_MODEL = 'gpt-realtime-2.1';
-const DEFAULT_VOICE = 'marin';
+const DEFAULT_VOICE = 'ash';   // MALE by default: the station voice is written as a low American male, and the crew sprites read male
 /* The provider's own voice set. It was hardcoded to one name, which read as "you cannot change the voice" —
    that limit was OURS, not the provider's. Validated against this list rather than passed through, so a
    caller cannot push an arbitrary string into the session payload. */
-const VOICES = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'];
+const VOICES = ['ash', 'cedar', 'ballad', 'echo', 'verse', 'marin', 'alloy', 'coral', 'sage', 'shimmer'];
 function normalizeVoice(name) {
   const v = String(name || '').trim().toLowerCase();
   return VOICES.indexOf(v) >= 0 ? v : '';

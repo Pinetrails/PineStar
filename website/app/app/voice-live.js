@@ -841,8 +841,19 @@ const VoiceLive = (() => {
     //    crew clause, so the spoken agent and the typed agent are the same character rather than two.
     if (agent && agent.systemPrompt) lines.push(String(agent.systemPrompt));
     lines.push('You are ' + name + ', speaking aloud to the Commander in StarNet. You are the SAME agent they type to — same memory, same work, same voice of character. Never describe yourself as a separate voice assistant or a control layer.');
-    // 2) SPOKEN MANNER
-    lines.push('Speak naturally and briefly, a sentence or two at a time. Let the Commander interrupt you at any moment and stop immediately when they do.');
+    /* 2) THE PERSONALITY IS THE POINT, AND SPEAKING IT ALOUD MUST NOT SAND IT DOWN.
+       This block used to say "speak naturally and briefly, a sentence or two at a time", which quietly
+       overrode the persona above and produced a flat, careful assistant no matter which archetype was
+       chosen. The Commander picked that personality deliberately — UNHINGED even arms a two-press confirm
+       because it swears for real — so the spoken register has to match the typed one exactly. State it
+       explicitly, because a realtime model defaults to a polite house style unless told otherwise. */
+    const persona = (typeof Personas !== 'undefined' && Personas.get && agent && agent.personaId) ? Personas.get(agent.personaId) : null;
+    if (persona) {
+      if (persona.promptInjection) lines.push(String(persona.promptInjection));
+      lines.push('That personality — ' + (persona.name || agent.personaId) + ' — is your ACTUAL speaking voice here, not a description of one. Deliver it out loud with the same register, vocabulary and attitude you would use in writing. Do not soften it, sanitise it, or default to a neutral assistant tone because this is speech.');
+      lines.push('Swearing: if your personality swears, swear — naturally and uncensored, never bleeped, never spelled around, never replaced with a milder word. If it does not, do not.');
+    }
+    lines.push('Speak in a natural spoken rhythm — the length a person would actually say out loud rather than a written paragraph. Let the Commander interrupt you at any moment and stop immediately when they do.');
     // 3) THE STATION, as it is right now.
     if (ctx.crew.length) {
       lines.push('The crew on this station: ' + ctx.crew.map(a => (a.name || a.id) + (a.role ? ' (' + a.role + ')' : '')).join('; ') + '.');

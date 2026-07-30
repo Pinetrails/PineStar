@@ -2410,6 +2410,49 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const secAgent =
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">loading agent skills…</div></div>';
+    /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
+       Truthful by construction: if the provider has no native voice endpoint we say so rather than
+       offering choices that would do nothing, and the note about WHEN a change takes effect is shown
+       because a live session cannot switch voice mid-call. */
+    function wireLiveVoice(host) {
+      const wrap = host && host.querySelector ? host.querySelector('#set-lv-voices') : null;
+      if (!wrap) return;
+      const paint = (cap, current) => {
+        const list = (cap && cap.voices) || [];
+        if (!cap || !cap.connected) { wrap.innerHTML = '<span class="dim">connect a provider first &mdash; live voice uses the one you already connected</span>'; return; }
+        if (cap.mode !== 'native' || !list.length) {
+          wrap.innerHTML = '<span class="dim">' + String(cap.provider || 'this provider').toUpperCase() + ' has no native voice endpoint, so its voice is not selectable here</span>';
+          return;
+        }
+        const chosen = current || cap.voice || '';
+        wrap.innerHTML = list.map(v =>
+          '<button class="set-theme ' + (v === chosen ? 'sel' : '') + '" aria-pressed="' + (v === chosen ? 'true' : 'false') +
+          '" data-lv-voice="' + v + '">' + v.toUpperCase() + '</button>').join('');
+        wrap.querySelectorAll('[data-lv-voice]').forEach(btn => {
+          btn.onclick = () => {
+            const want = btn.getAttribute('data-lv-voice');
+            let note = '';
+            if (typeof VoiceLive !== 'undefined' && VoiceLive.setVoice) note = (VoiceLive.setVoice(want) || {}).appliesOn || '';
+            wrap.querySelectorAll('[data-lv-voice]').forEach(b => {
+              const on = b === btn;
+              b.classList.toggle('sel', on);
+              b.setAttribute('aria-pressed', String(on));
+            });
+            try { SFX.click(); } catch (_) {}
+            if (note && typeof toast === 'function') toast('Voice set to ' + want.toUpperCase() + ' — applies on ' + note + '.');
+          };
+        });
+      };
+      let current = '';
+      try { current = String(localStorage.getItem('starnet.liveVoice.voice.v1') || ''); } catch (_) {}
+      if (typeof VoiceLive !== 'undefined' && VoiceLive.voices) {
+        VoiceLive.voices().then(v => paint({ connected: true, mode: (v.available || []).length ? 'native' : 'composed', voices: v.available, voice: v.current }, current))
+          .catch(() => { wrap.innerHTML = '<span class="dim">voice list unavailable</span>'; });
+      } else {
+        wrap.innerHTML = '<span class="dim">live voice is not loaded on this page</span>';
+      }
+    }
+
     const frag = html => (el => { el.innerHTML = html; });
     mountConsole(body, 'skills', [
       { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
@@ -4362,6 +4405,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div>' +
       '<div id="tm-msg" class="msg"></div>';
     const customSw = deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph'];   // swatch tint for the CUSTOM chip
+    /* LIVE VOICE — which of the provider's voices speaks in hands-free mode. This lived only in a console
+       call, which is not a setting. The list is fetched from the sidecar (status().voices) rather than
+       hardcoded here, so it can never drift from what the provider actually offers. */
+    const secLiveVoice =
+      '<h4 class="ms-h">SPOKEN VOICE</h4>' +
+      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Your provider supplies these &mdash; no extra key or account. A change applies to the <b>next</b> call, because the voice is fixed for the life of a live session.</p>' +
+      '<div class="set-themes" id="set-lv-voices"><span class="dim">reading the provider’s voice list…</span></div>';
+
     const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" aria-pressed="' + (s.theme === t ? 'true' : 'false') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
@@ -4478,12 +4529,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
+      { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: frag(secLiveVoice) },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
       { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
       { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
 
+    wireLiveVoice(host);
     wireProviderActions(host);
     wireKeyActions(host);
     queueProviderHealthRefresh();
