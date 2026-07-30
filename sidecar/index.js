@@ -104,7 +104,7 @@ const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } =
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
 let Study = null; try { Study = require('../frontend/app/study.js'); } catch (_) { Study = null; }
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
-const { makeDiagnostics } = require('./diagnostics.js');   // T3.9: pure paste-ready bug-report assembler (redacted, truthful)
+const { makeDiagnostics, proxyHostOnly } = require('./diagnostics.js');   // T3.9: pure paste-ready bug-report assembler (redacted, truthful)
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
@@ -746,6 +746,24 @@ function recordDiagError(message, ts) {
   try { fs.writeFileSync(DIAG_ERR_FILE, JSON.stringify(DIAG_ERR_RING)); } catch (_) {}   // survives restarts; tiny + rare
 }
 const diagnostics = makeDiagnostics({ redact });   // pure assembler; redact injected for the second sanitization backstop
+/* Which proxy env vars are set, HOST ONLY (see diagnostics.proxyHostOnly — credentials are stripped there before
+   anything is reported). Reading process.env belongs here, not in the pure assembler. This exists because Node's
+   fetch IGNORES these variables (measured on v22.23: a dead HTTPS_PROXY still reached the network, and neither
+   `require('undici')` nor `node:undici` is available in a bundled build to install a ProxyAgent) — so a user
+   behind a proxy gets a working UI and a sidecar that cannot reach any provider. Surfacing the mismatch is the
+   honest move until real proxy routing is built. */
+const PROXY_ENV_VARS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'];
+function proxySnapshot() {
+  const vars = [];
+  for (const name of PROXY_ENV_VARS) {
+    let host = '';
+    try { host = proxyHostOnly(process.env[name]); } catch (_) { host = ''; }
+    if (!host) continue;
+    const label = name.toUpperCase() + '=' + host;      // fold the lower/upper duplicates of the same var
+    if (vars.indexOf(label) < 0) vars.push(label);
+  }
+  return { configured: vars.length > 0, vars: vars };
+}
 // wrap any run emit fn so an `agent.run.error` also lands in the diagnostics ring (one sink for every run path).
 function wrapEmitDiag(emitFn) {
   return function (name, payload) {
@@ -12191,7 +12209,8 @@ function handleDiagnostics(req, res) {
       // observed provider quota. Empty until a call has actually been made — an empty array means NO DATA and
       // must never be rendered as "plenty left" (see ratelimits.advise).
       rateLimits: (() => { try { return rateLimits.snapshot(); } catch (_) { return []; } })(),
-      errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
+      errors: DIAG_ERR_RING.slice(),   // already redacted on write; the assembler redacts again as a backstop
+      proxy: proxySnapshot()
     };
     out = diagnostics.assemble(snapshot);
   } catch (e) {

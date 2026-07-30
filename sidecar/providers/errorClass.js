@@ -71,6 +71,42 @@
     return (err && (err.code || err.errno || (err.cause && err.cause.code))) || '';
   }
 
+  /* WHY THIS EXISTS (2026-07-29). A real user's diagnostics report carried five entries reading exactly
+     `fetch failed` — and nothing else. That is undici's ENTIRE message for any failed outbound fetch: the useful
+     part (ENOTFOUND / ECONNREFUSED / EAI_AGAIN / UND_ERR_CONNECT_TIMEOUT, plus the hostname) lives on `err.cause`
+     and was being dropped on the floor by extractMessage's `err.message` fallback. We could not tell DNS failure
+     from a refused connection from a TLS/proxy interception, so we could not tell the user what to fix.
+
+     PURE by contract: reads only the error object (no env, no clock, no I/O) so it stays safe to unit-test and
+     safe to call from the loop. Returns '' when there is nothing to add, so callers can append unconditionally. */
+  function transportDetail(err) {
+    const code = String(transportCode(err) || '').trim();
+    const cause = (err && err.cause) || null;
+    // undici's DNS failures carry the hostname directly; other causes often name it only in their message.
+    let host = (cause && (cause.hostname || cause.host)) || '';
+    if (!host && cause && cause.message) {
+      const m = String(cause.message).match(/(?:^|\s)([a-z0-9-]+(?:\.[a-z0-9-]+){1,})(?::\d+)?(?:\s|$)/i);
+      if (m) host = m[1];
+    }
+    host = String(host || '').trim();
+    if (!code && !host) return '';
+    return code && host ? code + ' ' + host : (code || host);
+  }
+  /* Append the transport detail to a message ONLY when the message is too bare to be actionable. Deliberately
+     conservative: a provider that already sent a real error sentence keeps its own words verbatim (we must never
+     bury an upstream explanation under plumbing), and we never double-append a code the message already names.
+     NOTE the ORDER of the caller in classifyApiError: `reason` is picked from the RAW message BEFORE this runs,
+     so enriching the text can never move a verdict. Keep it that way. */
+  function annotateTransport(message, err) {
+    const msg = String(message == null ? '' : message);
+    const detail = transportDetail(err);
+    if (!detail) return msg;
+    if (msg.toLowerCase().indexOf(detail.toLowerCase()) >= 0) return msg;
+    // only bare transport-shaped messages get annotated — undici's "fetch failed" is the case that mattered.
+    if (!/^\s*(?:typeerror:\s*)?(?:fetch failed|failed to fetch|terminated|socket hang up|other side closed|premature close|network(?:error| error)?)\s*$/i.test(msg)) return msg;
+    return msg + ' (' + detail + ')';
+  }
+
   // H6.1: surface how long the server says to wait, so a rate-limited credential cools for exactly that long
   // (instead of a blind fixed cooldown). PURE — no clock: a RELATIVE hint (Retry-After: 30, "try again in 1.5s")
   // becomes `retryAfterMs`; an ABSOLUTE hint (HTTP-date, X-RateLimit-Reset epoch, "resets at <epoch>") becomes
@@ -190,9 +226,13 @@
       statusCode: status || null,
       retryAfterMs: wait.retryAfterMs,   // H6.1: server-stated delay (relative ms), or null
       resetAtMs: wait.resetAtMs,         // H6.1: server-stated absolute reset (epoch ms), or null
-      message: message
+      // `reason` above was already picked from the RAW message, so annotating here cannot move the verdict — it
+      // only makes the text a human can act on ("fetch failed" -> "fetch failed (ENOTFOUND api.openai.com)").
+      // This is the message the loop emits as agent.run.error, which is what lands in the diagnostics ring.
+      message: annotateTransport(message, err)
     };
   }
 
-  return { classifyApiError, REASONS, _internals: { extractStatus, extractCode, extractMessage, classify400, pickReason, extractRetryAfter } };
+  return { classifyApiError, REASONS, transportDetail, annotateTransport,
+    _internals: { extractStatus, extractCode, extractMessage, classify400, pickReason, extractRetryAfter, transportCode } };
 });

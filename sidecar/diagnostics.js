@@ -90,6 +90,21 @@
         provider: clean(s.provider, 60) || 'unknown',
         model: clean(s.model, 120) || 'unknown',          // SLUG only — the caller never passes a key here; redacted anyway
         keyPresent: bool(s.keyPresent),
+        /* PROXY VISIBILITY (2026-07-29). A user's report showed a healthy engine and five bare `fetch failed`
+           entries; the sidecar could not reach the provider and we had no way to see why from the report alone.
+           A configured proxy is the highest-value invisible cause, because it fails ASYMMETRICALLY and that
+           asymmetry looks like a broken app: WebView2 honors the system proxy, so signing into ChatGPT works
+           and the whole UI works, while the sidecar's outbound fetch does NOT route through it and dies.
+           MEASURED on node v22.23: `require('undici')` is MODULE_NOT_FOUND, `node:undici` is not a builtin (so
+           ProxyAgent is unreachable in a bundled build that ships no node_modules), and setting HTTPS_PROXY to a
+           dead address still let fetch reach the network — i.e. the proxy env vars are IGNORED outright.
+           Shape-only + host-only by construction; see proxySnapshot() in index.js, which strips credentials
+           BEFORE this ever sees the value. `configured` false means no proxy env var was set. */
+        proxy: s.proxy && typeof s.proxy === 'object' ? {
+          configured: bool(s.proxy.configured),
+          vars: Array.isArray(s.proxy.vars) ? s.proxy.vars.slice(0, 4).map(v => clean(v, 80)) : [],
+          routed: false   // never true today: the engine cannot route through a proxy (see above). Honest constant.
+        } : { configured: false, vars: [], routed: false },
         agentCount: num(s.agentCount),
         uptime: fmtUptime(s.uptimeMs),
         workspacePresent: bool(s.workspacePresent),
@@ -137,6 +152,11 @@
         'Provider:      ' + r.provider,
         'Model:         ' + r.model,
         'Credential:    ' + (r.keyPresent ? 'configured' : 'none'),
+        // Spelled out rather than left as a flag: whoever reads this report needs to know that a configured proxy
+        // is NOT in the engine's path, because that single fact explains "the app works but chat can't connect".
+        'Proxy:         ' + (r.proxy.configured
+          ? (r.proxy.vars.join(', ') + ' — NOT used by the engine (its outbound calls bypass the proxy; likely cause of provider connection failures)')
+          : 'none configured'),
         'Agents:        ' + r.agentCount,
         'Uptime:        ' + r.uptime,
         'Workspace dir: ' + (r.workspacePresent ? 'present' : 'missing')
@@ -176,5 +196,19 @@
     return { assemble, _internals: { render, fmtUptime, oneLine } };
   }
 
-  return { makeDiagnostics };
+  /* Reduce a proxy URL to HOST[:PORT] — nothing else ever reaches a bug report. PURE, and it lives here rather
+     than beside the env read in index.js precisely so it can be unit-tested: a corporate proxy URL routinely
+     carries `user:password@`, and this is the ONLY thing standing between those credentials and a report the user
+     pastes into an email. Strips the scheme, then everything up to and including the LAST '@' (a password may
+     itself contain '@'), then any path/query. Returns '' for empty input. */
+  function proxyHostOnly(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    let rest = s.replace(/^[a-z0-9+.-]+:\/\//i, '');   // scheme
+    const at = rest.lastIndexOf('@');                  // LAST, not first — passwords can contain '@'
+    if (at >= 0) rest = rest.slice(at + 1);
+    return rest.replace(/[/?#].*$/, '').slice(0, 80);
+  }
+
+  return { makeDiagnostics, proxyHostOnly };
 });
