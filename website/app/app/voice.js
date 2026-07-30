@@ -1444,6 +1444,10 @@ const Voice = (() => {
     canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
     canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
     setLocalTts: value => { preferLocalTts = !!value; },
+    // Which transcription engine is ACTUALLY selected right now ('recorder' | 'web' | 'native'). A UI that
+    // names the engine has to read it rather than re-derive the selection rule, or the label drifts from
+    // the truth the moment the ladder changes.
+    sttEngine: () => (sttProvider && sttProvider.name) || '',
     isListening: () => listening, isSpeaking: () => speaking, inVoiceMode: () => convoMode
   };
 })();
