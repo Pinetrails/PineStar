@@ -31,10 +31,10 @@ A.eq(clampTerminalSize({ width: 'bad', height: null }, limits, desktop), { width
 const src = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
 function body(re, label) { const m = re.exec(src); A.ok(m, 'stationui.js still defines ' + label); return m ? m[0] : ''; }
 
-// the control itself
-A.ok(/mkEl\('button', 'term-min'/.test(src), 'every window gets the shared term-min MINIMIZE button');
-A.ok(/aria-label[^\n]*'Minimize/.test(src), 'the minimize button has an accessible name');
-A.ok(/minimizeTerm\(key\)/.test(src), 'clicking term-min calls minimizeTerm(key)');
+// the entry point: no dedicated button (it read as a duplicate ✕, removed 2026-07-22) —
+// header double-click is the minimize gesture, and it must never re-grow the button.
+A.ok(!/mkEl\('button', 'term-min'/.test(src), 'no dedicated term-min button (removed — it duplicated the ✕)');
+A.ok(/dblclick[\s\S]{0,300}?minimizeTerm\(key\)/.test(src), 'header double-click calls minimizeTerm(key)');
 
 const minB = body(/function minimizeTerm\(key\)\s*\{[\s\S]*?\n  \}/, 'minimizeTerm(key)');
 // geometry preserved: an explicitly-moved window's rect is captured into the SAME map restore reads
