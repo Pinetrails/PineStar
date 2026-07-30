@@ -73,6 +73,11 @@
     server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
     network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — if the app closed, restart it; if it restarted, reload this window, then try again." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is busy (too many requests) — wait a few seconds and try again.' },
+    // The sidecar is fine; its call OUT to the model provider failed (see isUpstreamFetchFailure). Say that, and
+    // say StarNet is healthy — the failure mode this replaces had users restarting and reinstalling for days over
+    // a message that named the wrong component. `action: null` on purpose: a provider blip is usually transient,
+    // so RETRY must stay the primary chip rather than a SETTINGS door that fixes nothing.
+    provider_unreachable: { retryable: true, action: null, msg: "StarNet is running fine, but it couldn't reach the AI provider — that's usually your internet connection, a VPN or proxy, or the provider having a moment. Try again; if it keeps failing, switch provider or model in SETTINGS." },
     // auth: the pure message is context-blind (classify time can't know if ChatGPT is already connected). It names the
     // one honest next step; the action BUTTON (actionButton) tailors the door — "add a key" vs "sign in with ChatGPT".
     auth:          { retryable: false, action: 'settings', msg: 'No model is connected yet — add a provider key (or sign in with ChatGPT) to let it run.' },
@@ -140,6 +145,27 @@
   function isTransportLoss(raw) {
     return /cannot reach|can'?t reach|unreachable|failed to fetch|fetch failed|networkerror|load failed|connection (?:refused|reset)|disconnected|\bterminated\b|socket (?:hang up|closed)|other side closed|premature close|econnreset|epipe/i.test(String(raw || ''));
   }
+  /* IS THIS THE SIDECAR'S *OUTBOUND* CALL FAILING? (2026-07-29 — from a real user's diagnostics report.)
+     The word order is the tell, and it is decisive. A BROWSER fetch rejection says "Failed to fetch" (Chromium),
+     "NetworkError" or "Load failed". NODE/undici says "fetch failed" — the other order. So a raw text carrying
+     `fetch failed` cannot have come from this page's fetch to the sidecar; it can only have been produced INSIDE
+     the sidecar and forwarded to us, which means the hop that broke is sidecar -> MODEL PROVIDER. Same for the
+     Node-only DNS/undici strings (getaddrinfo, ENOTFOUND, EAI_AGAIN, UND_ERR_*), which no browser ever emits.
+
+     This existed as a real user report: diagnostics showed a healthy local engine (uptime, workspace present, the
+     report itself was served by it) with five `fetch failed` entries — the sidecar could not reach chatgpt.com /
+     api.openai.com — and the app told them "Can't reach StarNet's local service, restart it". They lost a day.
+
+     WHY THE BUG SURVIVED: sidecar/providers/errorClass.js:168 ALREADY classifies undici transport codes
+     correctly, but friendlyerror only `require`s it in node/tests — in the browser classifyApiError is null, so
+     the real user path fell through to isTransportLoss and blamed the local service. Getting this right in the
+     BROWSER fallback ladder is the whole point; a node-only test proves the half users never run. */
+  function isUpstreamFetchFailure(raw) {
+    const s = String(raw || '');
+    // `fetch failed` in THAT order only — "Failed to fetch" (browser) must never match here.
+    return /\bfetch failed\b/i.test(s) || /getaddrinfo|ENOTFOUND|EAI_AGAIN|UND_ERR_/i.test(s);
+  }
+
   // The three HONEST readings of a transport loss, keyed on whether the local engine was actually PROVEN to be
   // up. `engineAlive` comes from a token-free GET /api/health probe (Harness.pingEngine) — true/false are
   // measured; null/undefined means nobody probed, so we must not name a culprit at all.
@@ -201,6 +227,9 @@
     if (/no api key set|no model selected/.test(low)) return 'auth';
     // a forwarded capability denial ("no web — …" / "capdenied")
     if (/\bcapdenied\b/.test(low) || /^no\s+\w+\s+—/.test(low) || /needs a capability|capability.*(off|denied)/.test(low)) return 'capdenied';
+    // MUST precede isTransportLoss: that predicate also matches `fetch failed`, and whichever runs first owns the
+    // verdict. Upstream is the more specific (and provable) reading, so it wins.
+    if (isUpstreamFetchFailure(low)) return 'provider_unreachable';
     // the sidecar is unreachable (fetch threw — Harness throws "cannot reach the STARNET sidecar…")
     if (isTransportLoss(low)) return 'network';
     // content / policy beats a status
@@ -296,6 +325,10 @@
         // a bare network failure ("cannot reach the sidecar") classifies as `unknown` upstream (it never reached
         // the API) — promote it to the friendlier `network` bucket so the message points at the sidecar.
         if (kind === 'unknown' && isTransportLoss(raw)) kind = 'network';
+        // Same precedence as the browser ladder above. The node classifier calls an undici transport code
+        // `timeout`, which is honest about the SHAPE but silent about the HOP — "the provider timed out" and "your
+        // machine can't reach the provider" need different words, and only the latter should mention VPN/proxy.
+        if ((kind === 'unknown' || kind === 'network' || kind === 'timeout') && isUpstreamFetchFailure(raw)) kind = 'provider_unreachable';
       } catch (_) { kind = kindFromRaw(raw, status); }
     } else {
       kind = kindFromRaw(raw, status);
@@ -412,5 +445,5 @@
   }
 
   return { friendlyError, actionButton, KINDS, CAP_INFO,
-    _internals: { kindFromRaw, isTransportLoss, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected, transportMessage } };
+    _internals: { kindFromRaw, isTransportLoss, isUpstreamFetchFailure, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected, transportMessage } };
 });

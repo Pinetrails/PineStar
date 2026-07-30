@@ -5,6 +5,53 @@
 const A = require('./_assert.js');
 const { friendlyError, actionButton, KINDS, CAP_INFO } = require('../frontend/app/friendlyerror.js');
 
+/* ---- THE SIDECAR'S OUTBOUND CALL FAILED => name the PROVIDER, not the local service ----
+   From a real 0.7.0 user report (2026-07-29): their diagnostics showed a healthy local engine serving the report
+   itself, with five `fetch failed` entries — the sidecar could not reach chatgpt.com/api.openai.com — while the
+   app told them "Can't reach StarNet's local service, restart it". They lost a day to it.
+   The discriminator is word order and it is decisive: NODE/undici says "fetch failed", a BROWSER says "Failed to
+   fetch". So `fetch failed` can only have been produced inside the sidecar and forwarded, i.e. the broken hop is
+   sidecar -> provider. These assertions lock BOTH directions, because the whole defect was one string being
+   claimed by the wrong bucket. */
+for (const raw of [
+  'fetch failed',
+  'TypeError: fetch failed',
+  'getaddrinfo ENOTFOUND api.openai.com',
+  'getaddrinfo EAI_AGAIN chatgpt.com',
+  'UND_ERR_CONNECT_TIMEOUT'
+]) {
+  const v = friendlyError(new Error(raw));
+  A.eq(v.kind, 'provider_unreachable', raw + ' is an UPSTREAM failure, not a local one');
+  A.eq(v.retryable, true, raw + ' is retryable (provider blips are usually transient)');
+  A.eq(v.action, null, raw + ' keeps RETRY as the primary chip, not a SETTINGS door that fixes nothing');
+  A.ok(!/local service/i.test(v.userMessage), raw + ' must NEVER blame the local service');
+  A.ok(!/restart/i.test(v.userMessage), raw + ' must NEVER tell the user to restart the app');
+  A.ok(/provider/i.test(v.userMessage), raw + ' names the AI provider as the failing hop');
+  A.ok(/running fine/i.test(v.userMessage), raw + ' reassures the user their install is healthy');
+}
+// …and the browser-side wordings must NOT be captured by the upstream bucket (they really are local transport).
+for (const raw of ['Failed to fetch', 'cannot reach the STARNET sidecar', 'terminated', 'Load failed']) {
+  A.eq(friendlyError(new Error(raw)).kind, 'network', raw + ' stays a LOCAL transport verdict');
+}
+
+/* ⛔ THE BROWSER LADDER, TESTED DIRECTLY. Everything above ran under node, where friendlyerror successfully
+   `require`s sidecar/providers/errorClass.js — so it exercised the DELEGATE path. Real users run the FALLBACK
+   ladder (kindFromRaw), because in the browser classifyApiError is null. That asymmetry is exactly how the
+   original defect shipped: the sidecar classifier already got undici transport codes right, so a node-only test
+   looked green over the half no user ever executes. These assertions hit kindFromRaw directly. */
+{
+  const { kindFromRaw } = require('../frontend/app/friendlyerror.js')._internals;
+  A.eq(kindFromRaw('fetch failed', null), 'provider_unreachable', 'BROWSER ladder: "fetch failed" -> upstream');
+  A.eq(kindFromRaw('getaddrinfo ENOTFOUND api.openai.com', null), 'provider_unreachable', 'BROWSER ladder: node DNS text -> upstream');
+  A.eq(kindFromRaw('failed to fetch', null), 'network', 'BROWSER ladder: the browser word order stays LOCAL');
+  A.eq(kindFromRaw('cannot reach the starnet sidecar', null), 'network', 'BROWSER ladder: an explicit sidecar-unreachable stays LOCAL');
+  // precedence guard: isTransportLoss also matches `fetch failed`, so whichever test runs first owns the verdict.
+  const { isTransportLoss, isUpstreamFetchFailure } = require('../frontend/app/friendlyerror.js')._internals;
+  A.ok(isTransportLoss('fetch failed'), 'isTransportLoss still matches "fetch failed" (so ORDER is load-bearing)');
+  A.ok(isUpstreamFetchFailure('fetch failed'), 'isUpstreamFetchFailure claims it');
+  A.ok(!isUpstreamFetchFailure('Failed to fetch'), 'isUpstreamFetchFailure must NOT claim the browser wording');
+}
+
 /* ---- transport loss during an established SSE stream => retryable `network`, never "unknown" ----
    THIS BLOCK USED TO ASSERT THE DEFECT (fixed 2026-07-29). It required every one of these strings to produce
    "local service / reload / restart" guidance. But these five are precisely the shapes undici emits when the
