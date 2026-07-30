@@ -8,6 +8,8 @@ const VoiceLive = (() => {
   // ---- NATIVE LIVE CALL (see startRealtime) ----
   // `realtime` is the mode flag; the rest is the live peer connection and its plumbing.
   let realtime = false, pc = null, dataChannel = null, remoteAudio = null, callProvider = '';
+  // keeps the live session's picture of the station current without spamming an update every tick
+  let contextTimer = null, lastContextFingerprint = '';
   let sessionSeq = 0;
   let stream = null, context = null, source = null, processor = null, sink = null;
   let calibratedUntil = 0, noiseFloor = 0.006, speechFrames = 0, silenceMs = 0;
@@ -814,6 +816,69 @@ const VoiceLive = (() => {
     }
   }
 
+  /* WHO IS SPEAKING, AND WHAT DO THEY KNOW.
+     The live call must BE the selected agent — same name, same persona, same composed system prompt the typed
+     chat uses — not a separate "voice assistant" bolted on beside it. It also has to know the station it is
+     standing in: which crew exist, which sessions are open, which one is active, what is running. The server's
+     starting instructions are deliberately generic because only the page knows any of this, so the moment the
+     channel opens we replace them with the real thing, and refresh whenever the station changes underneath. */
+  function stationContext() {
+    const agent = (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null;
+    const crew = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
+    const streams = (typeof Workstreams !== 'undefined' && Workstreams.list) ? (Workstreams.list() || []) : [];
+    const activeWs = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+    return { agent, crew, streams, activeWs };
+  }
+
+  function voiceInstructions() {
+    const ctx = stationContext();
+    const agent = ctx.agent;
+    const name = (agent && agent.name) || 'the station agent';
+    const lines = [];
+    // 1) IDENTITY — the agent's own composed prompt, verbatim. It already carries persona, role, dossier and
+    //    crew clause, so the spoken agent and the typed agent are the same character rather than two.
+    if (agent && agent.systemPrompt) lines.push(String(agent.systemPrompt));
+    lines.push('You are ' + name + ', speaking aloud to the Commander in StarNet. You are the SAME agent they type to — same memory, same work, same voice of character. Never describe yourself as a separate voice assistant or a control layer.');
+    // 2) SPOKEN MANNER
+    lines.push('Speak naturally and briefly, a sentence or two at a time. Let the Commander interrupt you at any moment and stop immediately when they do.');
+    // 3) THE STATION, as it is right now.
+    if (ctx.crew.length) {
+      lines.push('The crew on this station: ' + ctx.crew.map(a => (a.name || a.id) + (a.role ? ' (' + a.role + ')' : '')).join('; ') + '.');
+    }
+    if (ctx.streams.length) {
+      lines.push('Open sessions: ' + ctx.streams.slice(0, 12).map(w => (w.title || 'General')).join('; ') + '.');
+    }
+    if (ctx.activeWs) lines.push('The active session is "' + (ctx.activeWs.title || 'General') + '".');
+    lines.push('Call get_starnet_status before answering any question about what is running, what is waiting for approval, or what the crew is doing — never guess or invent task state, tool results, approvals or files.');
+    lines.push('For anything requiring research, code, file changes, tools or sustained work, call start_starnet_task rather than claiming you did it yourself. Afterwards confirm in one short sentence and note that the work is visible in the session.');
+    lines.push('Use interrupt_starnet_task only when the Commander clearly asks to stop or change direction.');
+    lines.push('Do not ask for credentials or read secrets aloud.');
+    return lines.join('\n\n');
+  }
+
+  function pushSessionContext() {
+    return sendEvent({ type: 'session.update', session: { type: 'realtime', instructions: voiceInstructions() } });
+  }
+
+  /* THE CONVERSATION IS A SESSION, NOT A SEPARATE LAYER.
+     Everything said aloud is written into the active session's transcript, so voice history is the same
+     history — scrollable afterwards, and part of the record the agent itself reads back. Without this the
+     panel is a room you talk into that keeps nothing. */
+  function recordUserTurn(text) {
+    const said = String(text || '').trim();
+    if (!said) return;
+    try { if (typeof Chat !== 'undefined' && Chat.echoUser) Chat.echoUser(said); } catch (_) {}
+  }
+  let spokenBuffer = '';
+  function recordAgentTurn(text, done) {
+    const chunk = String(text || '');
+    if (!done) { spokenBuffer += chunk; return; }
+    const said = (chunk || spokenBuffer).trim();
+    spokenBuffer = '';
+    if (!said) return;
+    try { if (typeof Chat !== 'undefined' && Chat.typeLine) Chat.typeLine(said); } catch (_) {}
+  }
+
   // ---- the three tools the session config declares, answered from live station state ----
   async function runVoiceTool(name, args) {
     if (name === 'get_starnet_status') {
@@ -861,13 +926,17 @@ const VoiceLive = (() => {
 
     // what the Commander said (the provider transcribes its own input)
     if (/input_audio_transcription\.completed$/.test(type) && event.transcript) {
-      caption('user', String(event.transcript).trim());
+      const said = String(event.transcript).trim();
+      caption('user', said);
+      recordUserTurn(said);        // …and into the session, so voice history IS chat history
       return;
     }
     // what the agent is saying
     if (/output_audio_transcript\.(delta|done)$/.test(type)) {
       const text = String(event.delta || event.transcript || '');
-      if (text) caption('agent', text, /delta$/.test(type));
+      const done = /done$/.test(type);
+      if (text || done) caption('agent', text, !done);
+      recordAgentTurn(text, done);
       return;
     }
     if (type === 'input_audio_buffer.speech_started') { setState('hearing'); return; }
@@ -936,6 +1005,25 @@ const VoiceLive = (() => {
 
       dataChannel = pc.createDataChannel('oai-events');
       dataChannel.onmessage = event => { onRealtimeEvent(event.data); };
+      // The server can only send generic instructions — it does not know which agent is selected or what is
+      // open. The instant the channel is live, replace them with THIS agent's identity and the real station
+      // state, then keep them current: switching agent or session mid-call must not leave the voice talking
+      // as whoever was selected when it started.
+      dataChannel.onopen = () => {
+        pushSessionContext();
+        clearInterval(contextTimer);
+        contextTimer = setInterval(() => {
+          if (!active || !realtime) return;
+          const fingerprint = JSON.stringify([
+            (stationContext().agent || {}).id || '',
+            ((stationContext().activeWs || {}).id) || '',
+            (stationContext().streams || []).length
+          ]);
+          if (fingerprint === lastContextFingerprint) return;
+          lastContextFingerprint = fingerprint;
+          pushSessionContext();
+        }, 2000);
+      };
 
       const offer = await pc.createOffer({ offerToReceiveAudio: true });
       await pc.setLocalDescription(offer);
@@ -997,6 +1085,7 @@ const VoiceLive = (() => {
         if (remoteAudio.parentNode) remoteAudio.parentNode.removeChild(remoteAudio);
       }
     } catch (_) {}
+    clearInterval(contextTimer); contextTimer = null; lastContextFingerprint = ''; spokenBuffer = '';
     dataChannel = null; pc = null; remoteAudio = null; realtime = false; callProvider = '';
   }
 
