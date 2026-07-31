@@ -164,6 +164,54 @@ const SPRITES = (() => {
     return frames[set + '.rot.south'] ? set + '.rot.south' : null;
   }
 
+  /* ---------- 8-direction render facing ----------
+     world.js keeps game-logic facing 4-valued (`b.dir`) — glance/sit/OPP/social all speak that
+     vocabulary and must keep doing so. Smooth turning is a RENDER concern, so it lives here:
+     each body carries a render-side facing angle that slews toward what the game wants (the
+     continuous walk heading `b.faceA` while walking, the bucketed `dir` otherwise) at the SAME
+     rate stepGait turns a walking body, then buckets into EIGHT sectors with hysteresis. A body
+     turning 180° therefore walks its pose through the diagonal in ~2 steps instead of teleporting
+     it, and a body that stops on a diagonal eases to its cardinal instead of popping.
+     Sets that don't ship diagonal frames are untouched: pick8 falls straight back to the old
+     4-dir pick on `b.dir`, so this is a no-op for every skin until its diagonals exist. */
+  const DIR8_A = {
+    east: 0, 'south-east': Math.PI / 4, south: Math.PI / 2, 'south-west': 3 * Math.PI / 4,
+    west: Math.PI, 'north-west': -3 * Math.PI / 4, north: -Math.PI / 2, 'north-east': -Math.PI / 4
+  };
+  const RENDER_TURN_RATE = 12;   // rad/s — matches world.js TURN_RATE so walk turns and stand turns read alike
+  const DIR8_HYST = 0.10;        // rad a sector holds past its boundary (sectors are π/8 half-width)
+  const ang = a => Math.atan2(Math.sin(a), Math.cos(a));
+  function renderDir8(b, dir, glancing, nowMs) {
+    // while walking (and not glancing) follow the true continuous heading; otherwise the game dir
+    const want = (!glancing && b.state === 'walk' && b.faceA != null) ? ang(b.faceA) : DIR8_A[dir];
+    if (want == null) return dir;
+    const dt = Math.max(0, Math.min(100, nowMs - (b._rAt || 0)));   // clamp: first frame / tab-restore must not spin
+    b._rAt = nowMs;
+    if (b._rA == null) b._rA = want;   // new body (or dossier portrait's fresh object): snap, no tween
+    else {
+      const turn = ang(want - b._rA), cap = RENDER_TURN_RATE * dt / 1000;
+      b._rA = ang(Math.abs(turn) <= cap ? want : b._rA + Math.sign(turn) * cap);
+    }
+    const cur = b._rD8;
+    if (cur && DIR8_A[cur] != null && Math.abs(ang(b._rA - DIR8_A[cur])) < Math.PI / 8 + DIR8_HYST) return cur;
+    let best = dir, bd = Infinity;
+    for (const d in DIR8_A) {
+      const t = Math.abs(ang(b._rA - DIR8_A[d]));
+      if (t < bd) { bd = t; best = d; }
+    }
+    return (b._rD8 = best);
+  }
+  /* prefer the 8-bucket direction when the set ships it, else the exact old 4-dir path */
+  function pick8(set, names, dir8, dir) {
+    if (dir8 !== dir) {
+      for (const n of names) {
+        const k = set + '.' + n + '.' + dir8;
+        if (frames[k]) return k;
+      }
+    }
+    return pick(set, names, dir);
+  }
+
   /* main draw: foot-anchored at (x, y) */
   function drawBody(ctx, b, nowMs) {
     const set = b.id === 'ULTRON' ? 'ultron'
@@ -175,12 +223,15 @@ const SPRITES = (() => {
     // PHASES[] index for the mood engine), and a whole-frame offset ticks every body's cycle on the same
     // 100ms boundaries — the crew animated in lockstep. Bodies without `aph` (dossier portrait) fall back.
     const aph = (b.aph != null ? b.aph : (b.phase || 0));
+    // 8-sector render facing — only locomotion + standing poses use it; seated/desk states keep
+    // the plain 4-dir vocabulary (their frames are cardinal-only and their facing is furniture-set)
+    const dir8 = renderDir8(b, dir, glancing, nowMs);
     let key = null, fps = 8, bob = 0;
 
     if (meeting) {
-      key = pick(set, ['rot'], dir); fps = 4;
+      key = pick8(set, ['rot'], dir8, dir); fps = 4;
     } else if (b.state === 'walk') {
-      key = pick(set, ['walk'], dir); fps = 10;
+      key = pick8(set, ['walk'], dir8, dir); fps = 10;
     } else if (b.working && !glancing) {
       key = pick(set, ['type', 'sit'], 'north') || pick(set, ['rot'], 'north'); fps = 6;
     } else if (b.state === 'social' && b.sitting) {
@@ -197,14 +248,37 @@ const SPRITES = (() => {
         ? Math.sin(nowMs / 600 + aph) * 0.7
         : Math.sin(nowMs / 170 + aph) * 1.1 - (Math.floor(nowMs / 150) % 2 ? 1 : 0);
     } else {
-      key = pick(set, ['rot'], dir);
+      key = pick8(set, ['rot'], dir8, dir);
       bob = Math.sin(nowMs / 600 + aph) * 0.7;
+    }
+
+    // life-like idle gesture: a standing body occasionally plays its set's one-shot `gesture`
+    // track (stretch / arm movement) ONCE through, then returns to the rot pose. Staggered per
+    // agent like the blink so the crew never moves in unison. The index is derived from the
+    // window's own progress (fixedIdx), NOT the free-running clock — a clock index would enter
+    // the animation mid-cycle. Sets without a gesture track skip this entirely.
+    let fixedIdx = null;
+    if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
+        && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
+      const kd = key.slice(key.lastIndexOf('.') + 1);
+      const gk = frames[set + '.gesture.' + kd] ? set + '.gesture.' + kd
+        : (frames[set + '.gesture.' + dir] ? set + '.gesture.' + dir : null);
+      if (gk) {
+        const GFPS = 8, glen = frames[gk].length, gdur = glen * (1000 / GFPS);
+        const gt = (nowMs + aph * 1300) % 11000;
+        if (gt < gdur) {
+          key = gk; fixedIdx = Math.min(glen - 1, Math.floor(gt / (1000 / GFPS)));
+          bob = 0;   // the frames carry the motion; bobbing on top reads as jitter
+        }
+      }
     }
 
     // life-like idle blink: while standing on a 'rot' pose, briefly shut the eyes.
     // staggered per-agent via b.phase so the crew doesn't blink in unison.
+    // keyed off the RESOLVED key's own direction (may be a diagonal): swapping to a cardinal
+    // blink frame under a diagonal pose would snap the head 45° for the blink's 130ms.
     if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk') {
-      const bk = set + '.blink.' + dir;
+      const bk = set + '.blink.' + key.slice(key.lastIndexOf('.') + 1);
       if (frames[bk]) {
         const bt = (nowMs + aph * 900) % 3300;
         if (bt < 130) key = bk;
@@ -227,9 +301,10 @@ const SPRITES = (() => {
     const sc = drawScaleFor(set);
     const CYCLE_PER_HEIGHT = 0.56;   // world units of ground covered per drawn pixel of character height
     const stride = (fr[0].height * sc * CYCLE_PER_HEIGHT) / fr.length;
-    const idx = (key.indexOf('.walk.') !== -1 && b.odo != null && stride > 0)
-      ? Math.floor(b.odo / stride + aph)
-      : Math.floor(nowMs / (1000 / fps) + aph);
+    const idx = fixedIdx != null ? fixedIdx
+      : (key.indexOf('.walk.') !== -1 && b.odo != null && stride > 0)
+        ? Math.floor(b.odo / stride + aph)
+        : Math.floor(nowMs / (1000 / fps) + aph);
     const f = fr.length > 1 ? fr[((idx % fr.length) + fr.length) % fr.length] : fr[0];
     // footprint = native master × per-set scale → identical on-floor size as before, but f is now the
     // full-resolution master. Draw it DOWN to that size with smoothing ON so the detail survives (and
