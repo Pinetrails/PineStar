@@ -3028,7 +3028,17 @@ const Chat = (() => {
     const cards = briefCards; briefCards = [];
     for (const close of cards) { try { close(); } catch (_) { /* a detached card must never break run teardown */ } }
   }
+  /* ⛔ LIVE VOICE RENDERS NO CLICKABLE PROMPTS (Andrew, 2026-07-30: "it should not give the same clickable
+     popups, it should just directly ask the user — live mode is different from regular session mode").
+     While a call is live, the interactive beats — the tap-to-correct brief card and choice-chip rows — are
+     SUPPRESSED, not narrated: the agent's own spoken words are the ask, and the Commander's spoken words
+     are the answer. The consent/approval card is deliberately NOT suppressed: it is the durable record of a
+     permission decision, and live mode asks it aloud (voice-live announceWaits) and answers it by voice. */
+  function liveVoiceCall() {
+    try { return typeof VoiceLive !== 'undefined' && VoiceLive.isActive && VoiceLive.isActive(); } catch (_) { return false; }
+  }
   function briefReadCard(ws, p) {
+    if (liveVoiceCall()) return;   // in a call the read is not a form — the agent says what it heard, or asks
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
     // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
     // the one line that matters, so the objective started mid-sentence at caption size. Caption above, objective
@@ -6336,6 +6346,9 @@ const Chat = (() => {
   }
   function choices(items, onPick) {
     if (!log) return;
+    // in a live voice call, chips never render (see liveVoiceCall) — no pick means the producer's optional
+    // beat simply goes unanswered, exactly as if the Commander never clicked, which every caller tolerates
+    if (liveVoiceCall()) return;
     clearEmptyState();
     clearChoices();   // chips are a focused prompt, never a background layer behind the next question
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
