@@ -290,9 +290,10 @@ const Chat = (() => {
       };
       card.addEventListener('click', toggle);
       card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
-      // ERROR HONESTY: a FAILED run's work log self-exposes — collapsing machinery is for successes;
-      // when something broke the evidence must not hide behind a click.
-      if (isErr) toggle();
+      // A FAILED run keeps its fold CLOSED like any other (2026-07-31). The old rule auto-expanded
+      // every chip "for honesty" — but the failure's evidence is already IN the transcript (the ⚠ error
+      // row, its raw .err-detail line, the diagnostics chip), and dumping the whole rail open painted a
+      // wall of machinery that read as fifty failures when one thing failed. One click still shows it all.
     } else {
       card.setAttribute('role', 'note');
     }
@@ -5944,9 +5945,11 @@ const Chat = (() => {
         // harness emit; this handler owns the transcript chips + desk walk + presence only.
         onToolCall: ev => { callNames[ev.callId] = ev.name; Channels.addToolCall(ws.id, { callId: ev.callId, name: ev.name, argsSummary: ev.argsSummary }); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } },
         // Re-emit the hero's tool RESULT onto U.bus so the world's per-prop capability surge fires on the REAL
-        // outcome (the station SSE tee drops tool_result; the hero's interactive stream is the only place it's
-        // seen). callId joins it to its tool_call; isError drives the success-vs-failure (green-vs-red) surge.
-        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; Channels.addToolResult(ws.id, { callId: ev.callId, name: nm, summary: ev.summary, isError: ev.isError, ms: ev.ms }); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError }); },
+        // outcome. (The station SSE tee DOES carry tool_result now, but outcome-only and without `summary` —
+        // sse.js:runTeeView — so the in-band stream stays the richest source for the page that started the run.)
+        // callId joins it to its tool_call; isError drives the success-vs-failure surge. `summary`/`ms` ride
+        // along per the frozen event shape so any consumer sees the result's own words, never a bare 'error'.
+        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; Channels.addToolResult(ws.id, { callId: ev.callId, name: nm, summary: ev.summary, isError: ev.isError, ms: ev.ms }); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError, summary: ev.summary, ms: ev.ms }); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
           // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the reference harness's model), not

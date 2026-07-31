@@ -11363,7 +11363,8 @@ async function runOnce(o) {
       : '')
     + 'If a dedicated tool answers "not connected", tell the Commander how to connect it (Settings) and ask before using a louder path. '
     + 'After any action that changes the world, VERIFY it took effect with a read-back tool (e.g. now-playing after play, a listing after a write, a probe after a start) before reporting done. '
-    + 'A tool error is information: read it and change strategy — never repeat the identical failing call, and never silently switch to a louder tool. ';
+    + 'A tool error is information: read it and change strategy — never repeat the identical failing call, and never silently switch to a louder tool. '
+    + 'Blocked sites, dead links and throttled engines are ordinary web weather: route around them, and mention an obstacle in your reply only if it changed the outcome — never narrate routine obstacles as failures, and never apologize for them. ';
   const workDisciplineNote = ''
     + (hasShellExec ? 'When the Commander names a local project folder, first anchor shell_exec.cwd to that exact folder, then keep later shell paths relative to it. After a path or cwd failure, run one small working-directory diagnostic plus a listing, and change strategy instead of retrying the same bad path. ' : '')
     + (hasReadTools ? 'Inspect before editing with fs_search/fs_list/fs_read, or one small shell diagnostic when the file tools cannot see the project; do not guess file contents or shotgun failed paths. ' : '')

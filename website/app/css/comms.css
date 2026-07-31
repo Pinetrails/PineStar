@@ -197,7 +197,9 @@
 .tool-chip.ok  .tc-glyph  { color: var(--ok); }
 .tool-chip.err .tc-glyph,
 .tool-chip.err .tc-stat   { color: var(--bad); }
-.tool-chip.err { border-color: var(--bad); background: rgba(255,92,77,.05); }
+/* no frame-level alarm on an errored chip (2026-07-31): the red glyph/stat/detail already carry the
+   outcome. A red-bordered, red-tinted chip per failed probe turned an ordinary research run into a
+   wall of alarm boxes — the chip stays in the normal phosphor frame like every other step. */
 /* A1: a skill-flavored chip (consulting / writing a skill) — a subtle left rule keeps the phosphor language
    but marks it as skillbase activity so the Commander can spot the agent tending its own recipes. */
 .tool-chip.skill { border-left: 2px solid var(--ph-dim); }
