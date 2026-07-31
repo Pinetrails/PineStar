@@ -57,7 +57,9 @@ function makeLivePrices(deps) {
   deps = deps || {};
   const file = deps.file || null;
   const doFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-  const now = deps.now || (() => Date.now());
+  // the clock is INJECTED (determinism lint: no ambient Date.now in providers). Without one, cadence
+  // tracking degrades to "refresh only when forced or never-fetched" — the host always passes a real clock.
+  const now = deps.now || (() => 0);
 
   let byFamily = null;   // { family: { id: {in,out} } }
   let fetchedAt = 0;

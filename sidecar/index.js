@@ -319,7 +319,7 @@ const livePrices = (function () {
     if (String(ENV('LIVE_PRICES') || '').trim() === '0') return null;
     const { makeLivePrices } = require('./providers/liveprices.js');
     const prices = require('./providers/prices.js');
-    const lp = makeLivePrices({ file: path.join(WORKSPACES, 'liveprices.cache.json') });
+    const lp = makeLivePrices({ file: path.join(WORKSPACES, 'liveprices.cache.json'), now: () => Date.now() });
     prices.setLiveLookup((family, id) => lp.lookup(family, id));
     lp.refresh().catch(() => {});
     const t = setInterval(() => { lp.refresh().catch(() => {}); }, 6 * 60 * 60 * 1000);
