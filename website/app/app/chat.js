@@ -290,9 +290,10 @@ const Chat = (() => {
       };
       card.addEventListener('click', toggle);
       card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
-      // ERROR HONESTY: a FAILED run's work log self-exposes — collapsing machinery is for successes;
-      // when something broke the evidence must not hide behind a click.
-      if (isErr) toggle();
+      // A FAILED run keeps its fold CLOSED like any other (2026-07-31). The old rule auto-expanded
+      // every chip "for honesty" — but the failure's evidence is already IN the transcript (the ⚠ error
+      // row, its raw .err-detail line, the diagnostics chip), and dumping the whole rail open painted a
+      // wall of machinery that read as fifty failures when one thing failed. One click still shows it all.
     } else {
       card.setAttribute('role', 'note');
     }
@@ -1818,12 +1819,69 @@ const Chat = (() => {
     if (t === 'browser.login') return 'open a browser window so YOU can log in to ' + (ev.argsSummary || 'a website') + ' (you type your password in that window — the agent never sees it)';
     if (t === 'browser.login.done') return 'wait while you log in to ' + (ev.argsSummary || 'the website') + ' in the browser window — click Done here when you\'ve finished';
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
+    if (t === 'brief.ask') return 'ask you a quick question about the task';   // clarify card renders its own body
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
+  }
+
+  /* IN-TURN CLARIFY CARD (2026-07-31, Hermes-parity). A brief.ask prompt rides the consent transport but is
+     a QUESTION, not a permission grade — approve/deny buttons would be a lie. Renders the question with the
+     same one-tap choice chips the end-run TASK_QUESTION card uses (★ = the agent's recommended option, plus
+     the standing "use your judgment" skip), and answers via POST /api/consent/answer so the SAME turn
+     resumes with the decision — the run never ends. Ignoring the card is safe: the sidecar's fail-closed
+     timer falls back to today's durable end-run question. Joins the consent card's lifecycle contract:
+     decided chips vanish into a verdict tag, pending-span bookkeeping excludes the wait from run time, and
+     focus is never stolen from a mid-typing Commander. */
+  function clarifyRow(p, ws) {
+    let q = { question: '', options: [], recommended: '', reason: '' };
+    try { q = Object.assign(q, JSON.parse(p.argsSummary || '{}')); } catch (_) {}
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
+    r.body.appendChild(document.createTextNode('▣ ' + name + ' asks: ' + (q.question || 'which way should this go?') + ' '));
+    if (q.reason) {
+      const why = document.createElement('div'); why.className = 'dim'; why.textContent = q.reason;
+      r.body.appendChild(why);
+    }
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    let decided = false;
+    function answer(text, doneLabel) {
+      if (decided) return; decided = true;
+      const rid = (ws && typeof Channels !== 'undefined') ? Channels.runIdOf(ws.id) : null;
+      Harness.consentAnswer(rid, p.promptId, text);
+      if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // the wait never counts as run time
+      if (isActiveWs(ws)) renderPresence();
+      btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result'; tag.textContent = doneLabel;
+      r.body.appendChild(tag);
+      syncStatus();
+    }
+    const opts = Array.isArray(q.options) ? q.options.slice(0, 6) : [];
+    for (const opt of opts) {
+      const b = document.createElement('button');
+      b.className = 'consent-btn';
+      b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
+      b.onclick = () => answer(opt, '✓ ' + opt);
+      btns.appendChild(b);
+    }
+    const skip = document.createElement('button');
+    skip.className = 'consent-btn';
+    skip.textContent = 'use your judgment';
+    skip.onclick = () => answer('use your judgment', '✓ your call');
+    btns.appendChild(skip);
+    r.body.appendChild(btns);
+    // Esc = "use your judgment": the reflexive dismiss defers the decision rather than silently denying a
+    // question (a deny makes no sense here), matching the end-run card's skip chip semantics.
+    r.d.tabIndex = -1;
+    r.d.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); answer('use your judgment', '✓ your call'); } });
+    status('awaiting your answer…');
+    if (typeof StationUI !== 'undefined') StationUI.notify(name + ' has a quick question for you', 'warn', 'needsApproval');
+    autoscroll();
+    const composerBusy = !!(input && (document.activeElement === input || (input.value && input.value.trim())));
+    if (!composerBusy) { try { r.d.focus({ preventScroll: true }); } catch (_) { try { r.d.focus(); } catch (_) {} } }
   }
   // p = a consent payload { promptId, tool, argsSummary } — works for both a live onPermission event and a
   // Channels snapshot.pending (re-rendered after a switch). ws is the origin stream, so the answer routes to
   // THAT stream's run (per-channel runId), not a single global one.
   function permissionRow(p, ws) {
+    if (p && p.tool === 'brief.ask') return clarifyRow(p, ws);   // a question, not a grade — its own card
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
     r.body.appendChild(document.createTextNode('▣ ' + name + ' wants to ' + actionPhrase(p) + ' '));
     const btns = document.createElement('span'); btns.className = 'consent-btns';
@@ -5944,9 +6002,11 @@ const Chat = (() => {
         // harness emit; this handler owns the transcript chips + desk walk + presence only.
         onToolCall: ev => { callNames[ev.callId] = ev.name; Channels.addToolCall(ws.id, { callId: ev.callId, name: ev.name, argsSummary: ev.argsSummary }); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } },
         // Re-emit the hero's tool RESULT onto U.bus so the world's per-prop capability surge fires on the REAL
-        // outcome (the station SSE tee drops tool_result; the hero's interactive stream is the only place it's
-        // seen). callId joins it to its tool_call; isError drives the success-vs-failure (green-vs-red) surge.
-        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; Channels.addToolResult(ws.id, { callId: ev.callId, name: nm, summary: ev.summary, isError: ev.isError, ms: ev.ms }); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError }); },
+        // outcome. (The station SSE tee DOES carry tool_result now, but outcome-only and without `summary` —
+        // sse.js:runTeeView — so the in-band stream stays the richest source for the page that started the run.)
+        // callId joins it to its tool_call; isError drives the success-vs-failure surge. `summary`/`ms` ride
+        // along per the frozen event shape so any consumer sees the result's own words, never a bare 'error'.
+        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; Channels.addToolResult(ws.id, { callId: ev.callId, name: nm, summary: ev.summary, isError: ev.isError, ms: ev.ms }); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError, summary: ev.summary, ms: ev.ms }); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
           // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the reference harness's model), not

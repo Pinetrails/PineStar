@@ -4,10 +4,10 @@ slug: muting-the-speaker-mid-reply-in-hands-free-nulls
 title: Muting the speaker mid-reply in hands-free nulls the only surviving rearm heartbeat — the mic never re-opens while the mode button still reads 'hands-free ON'
 surface: voice
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/voice
-fix: 
+fix: 50a8b07b
 ---
 
 # Muting the speaker mid-reply in hands-free nulls the only surviving rearm heartbeat — the mic never re-opens while the mode button still reads 'hands-free ON'

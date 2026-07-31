@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "2e8aca20507286c3e4539b90aa1982377d3da0f6",
+    "sourceCommit": "bed96f036518b1dfe608679a5866707f6e056d8e",
     "pathSetSha256": "7d4dff42cde1d41eccdf0b62cdc46370c8359d502730792dab79cd6bcf33b3e0",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 467064,
-        "sha256": "94c794de672ee8b900bf3489d3909563c2efc0babe3576de39f7f564936a22b5"
+        "bytes": 471230,
+        "sha256": "aa436b4d14417e2d92c37e9e05743d5bd4dfd76b4f727e068642fdf887db7446"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 55227,
-        "sha256": "512454a97906a45da7cef8e8e264075155d439df543fe9930579185785696741"
+        "bytes": 55891,
+        "sha256": "9d456d7ad542799f18584ff5ef0b70c165e8eff1b94355789ed2effa8eca5a70"
       },
       {
         "path": "frontend/app/hint.js",
@@ -753,8 +753,8 @@
       },
       {
         "path": "frontend/app/voice-live.js",
-        "bytes": 73507,
-        "sha256": "04d3a21367f8aedcac2f334cdbc7445d6da2f8378283340494bd0d2789983a19"
+        "bytes": 80863,
+        "sha256": "2edb09d42579cf8a5eea8ebf2bf805d83194bb616218d8e227cb5b2bc952bd25"
       },
       {
         "path": "frontend/app/voice.js",
@@ -853,8 +853,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 489089,
-        "sha256": "65344c928839d131820b2b6069d0545e05a17397d035d0eef3a1a6fa9a93940b"
+        "bytes": 489732,
+        "sha256": "28e451f2e9e87e1fc4cf92eb3962e109aed7f0d8c76e03e3626b691df13b23e4"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -888,8 +888,8 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 42917,
-        "sha256": "b02249b7366d89d7b8180ccc8dd209b31cd7f8a0bf5df1132e30d4521a7666cc"
+        "bytes": 43137,
+        "sha256": "d52133225b54376720c1d6f2d1b8531499e627ee6e5d863d8bf1646c78c62149"
       },
       {
         "path": "frontend/css/marketplace.css",

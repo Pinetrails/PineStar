@@ -1,3 +1,32 @@
+**2026-07-31 merge digest (COST PLUMBING — Hermes gap lane 3 of 3; the ×3 sweep is COMPLETE):** `agent/cost-plumbing` -> `feat/harness-backend` no-ff merge `4e4bdc84` (lane commits `7f6e42d1` + `abc504bd` + the owner's trunk-sync `f644da6c`, which pre-gated the exact merged tree at 469 steps EXIT=0 in the lane worktree; built by the calm-errors session, merged by the coordination session). Gate ON TRUNK after the merge: see the FAST/HTTP line below this digest's commit. No claims re-lock owed — no measured-surface files.
+
+- **Prompt caching 2 -> 4 breakpoints:** the static-prefix anchor plus SLIDING anchors on the last THREE messages. ⛔ **One trailing anchor was mechanically fragile** — a breakpoint only walks back 20 content blocks for its predecessor, and one parallel-tool turn can append more than that, silently re-billing the whole conversation as a cold write.
+- `SKYNET_ANTHROPIC_CACHE_TTL=1h` opts into the 1-hour tier (writes 2.0x vs 1.25x — right for human-paced COMMS gaps); **prices.js reads the SAME env so the seatbelt estimate tracks what the wire actually bills.** A guard keeps cache_control off block kinds that cannot carry it (a thinking block 400s).
+- **`liveprices.js` (NEW):** the models.dev aggregate (USD/Mtok, our exact unit) wired into prices.js via setLiveLookup. Precedence: operator override > live rate > built-in snapshot. ⛔ **Treated as HOSTILE** — finite, 0..10000 $/Mtok, wholesale reject on shape drift; background + 24h disk cache; a throwing lookup falls through to the snapshot; `SKYNET_LIVE_PRICES=0` disables. ⛔ **The clock is INJECTED** (determinism lint bans ambient Date.now in providers/).
+- Coordination note for the record: two sessions converged on this lane; the duplicate start (this session's) was discarded UNCOMMITTED the moment the owner's claim block appeared — the claim protocol worked. All three Hermes gap lanes (web reach `dd29ed4b`, in-turn clarify `a192d455`, cost plumbing `4e4bdc84`) are now on trunk.
+
+**2026-07-31 merge digest (IN-TURN CLARIFY — Hermes gap lane 2 of 3):** `agent/clarify-turn` -> `feat/harness-backend` no-ff merge `a192d455` (lane commits `8441018a` + seed `bed96f03` + in-lane claims re-lock `500cb23c`; built + live-proven by the calm-errors session, merged by the coordination session per Andrew's order). Gate ON TRUNK after the merge: **fast 468 steps + full http chain, FAST_EXIT=0 HTTP_EXIT=0 read FROM THE LOG, 0 FAIL lines.** sidecar/index.js auto-merged against web-reach's wiring — both lanes' symbols verified present by hand.
+
+- A mid-task question no longer ENDS the run: `brief.ask` on a WATCHED run blocks on the EXISTING fail-closed consent transport (same pendingByRun map, disconnect-denies, one-shot ack extension) and resumes the SAME turn. COMMS renders a clarifyRow (choice chips, ★ recommended, "use your judgment"); answered over the new `POST /api/consent/answer`.
+- ⛔ **/api/consent/answer is a SIBLING of /api/consent, not a widened decision enum** — free-text answers must not masquerade as a permission grade.
+- ⛔ **brief.ask carries its OWN 20min timeoutMs** — the wait blocks INSIDE run(), where the default 30s tool timer would kill it (the consent gate itself sits OUTSIDE withTimeout).
+- Every non-answer outcome (unattended/channel, walk-away, dead transport, stale write) falls back BYTE-IDENTICALLY to today's durable end-run question. Live-proven: a chip clicked mid-run resumed the SAME runId with the answer in the final text. `dev/seed-clarify.js` is the proof recipe. Website mirror synced in-lane; claims re-locked in-lane (frontend measured files).
+
+**2026-07-31 merge digest (WEB REACH — Hermes gap lane 1 of 3):** `agent/web-reach` -> `feat/harness-backend` no-ff merge `dd29ed4b` (lane commit `39a26c0a`, built + live-proven by the calm-errors session; merged by the coordination session per Andrew's "land all three tonight"). Diff: `sidecar/tools/builtin/web.js`, new `sidecar/tools/builtin/webreader.js`, `sidecar/index.js` wiring, new `test/web.reach.test.js`, `test/fast.list` (auto-merge with the browser-pie line verified by hand). Gate ON TRUNK after the merge: see the FAST/HTTP result line below this digest's commit.
+
+- ⛔ **THE MOJEEK OUTAGE WAS ONE CHARACTER: `%20` vs `+`.** encodeURIComponent's space encoding hit Mojeek's interstitial shell on EVERY multi-word query (the endless "mojeek: 0 results"); form-encoding (`+`) gets the real result page. Fixed on both the Mojeek GET and the DDG POST body; live-proven `source: mojeek` on a multi-word query.
+- **`webreader.js`** — a shared headless cookie-less real-Chrome reader: web_fetch auto-retries bot-walled (401/403/407/429/451/503) + JS-only pages through it; web_search uses it as the last keyless rung. Provenance truthful ("read via the station browser after http 403"). ⛔ **NEVER the persistent signed-in profile** — web_fetch is read-scope no-consent; an authenticated page leaking into it would be an exfil channel. `SKYNET_WEB_READER=0` disables.
+- Engine variance under burst: bing PRIMARY (ddg html CAPTCHAs a real Chrome), degrade lands on the existing calm answers — no adversarial machinery.
+
+**2026-07-31 merge digest (browser pdf/intercept/emulate — the three moves the agentic-browsing audit left open):** `agent/browser-pie` -> `feat/harness-backend` FAST-FORWARD to `12c0f36d` (single lane commit; trunk had not moved). Diff: `sidecar/tools/builtin/browser.js`, `sidecar/capability/registry.js`, new `test/browser.pie.test.js` (53 assertions), locked lists in `test/browser.test.js`/`test/harness.integration.test.js`, `test/fast.list`. Gate IN THE LANE WORKTREE AT THIS EXACT TREE: **466 steps NPM_EXIT=0 read FROM THE LOG, 0 FAIL lines** (first run tripped the KNOWN voice.button timing flake at step 159; standalone x2 green, full re-run green — the flake's owned fix is another session's, not re-written here).
+
+- **No claims re-lock owed — 0 of the changed files are among the 189 measured paths (checked against releaseSurface.files, not assumed).**
+- `browser.pdf` renders the WHOLE document into the agent's jail (content-addressed `pdf/page-<sha>.pdf`, kind:file deliverable, same jail as screenshots). Honest failure modes: no workspace -> "discarded", a headed build refusing Page.printToPDF -> the refusal verbatim, never a fake path.
+- `browser.intercept` blocks image/media/font/stylesheet via Fetch resource-type patterns, so only blocked kinds ever pause. **A paused request is failed ON THE SESSION THE EVENT CAME FROM** — replying on the active session would leave a background tab's request paused forever and wedge its load. Focusing a later-adopted tab re-applies the block; blocked requests surface in browser.network as BlockedByClient, nothing hidden.
+- `browser.emulate`: iphone/pixel/ipad presets (metrics+touch+matching UA) plus explicit userAgent/locale/timezone; locale rides Accept-Language on the same UA override; reset:true clears every override.
+- **intercept/emulate REFUSE while attached to the Commander's own Chrome** — ownership, not risk arithmetic: their real browser is not the station's to reconfigure. pdf still works there (printing what you are looking at is a read).
+- All three granted in CAP_REGISTRY as DEFERRED specialists; browser.tool-parity.test pins registration<->grant so none can ship dark. Red-checked: breaking the session-targeted failRequest turns exactly that assertion red.
+
 **2026-07-30 merge digest (live-mode prompt SUPPRESSION — the hands-free correction):** `agent/realtime-native-voice` -> `feat/harness-backend` no-ff merge `43fca6c2` (lane commit `ad4a0e3b` + re-locks; claims conflict on the trunk sync resolved by REGENERATING against the merged tree, then re-locked AGAIN once the merge commit existed — a mid-merge regeneration records the wrong sourceCommit). Gate ON TRUNK: **`test:fast` 465 steps EXIT=0 read FROM THE LOG, 0 FAIL lines** (frontend-only diff; http not owed). Andrew, after the previous pass: *"I already TOLD YOU… this SHOULD NEVER POP UP IN LIVE VOICE MODE… AND IT BLURTS OUT RANDOM SHIT."*
 
 - **⛔ HE ASKED FOR SUPPRESSION AND THE FIRST FIX DELIVERED NARRATION.** The hands-free pass kept the clickable beats on screen and added speech on top — which ALSO meant opening a call over a re-rendered old chip row blurted "say one: confirm, or not quite, or request l.o.g." out of nowhere (the log repaints unanswered beats with history; the announcer read whatever was visible; TTS spelled the all-caps label). **Requirements read: "should not give the popups" meant DON'T SHOW THEM, not "show them and also talk".**
@@ -141,6 +170,20 @@
 - **THE DOSSIER NOW READS THE RUN LOG.** `↻ ran 3×` is a counter that never says whether anything came of it; the durable run row already carried `recipeId` (the provenance spine) plus the end reason and the artifact ledger. The dossier reports `◱ last run 1d ago · done · produced 2026-07-28.md +1`. **No rows, no line** — nothing is invented.
 - **SCOPE STATED PLAINLY: only 8 of ~64 catalog params are typed** (the obviously path- or pick-shaped ones in `core.js` and `dev.js`); the other three persona catalogs are untouched and render exactly as before.
 - **TRAP — DRIVING THE PARAM GRID FROM A SCRIPT LIES IF YOU CACHE THE ROWS.** Changing a row's type re-renders the whole grid, so a held `rows[i]` reference is detached and writes into nothing. A first verification pass "proved" a saved recipe had lost a param; driving it the way a human does (re-query per interaction) showed both params saved correctly. The bug was in the test, not the app.
+
+**2026-07-28 digest (AGENTIC BROWSING — conditional waits, stale-ref recovery, the Commander's own Chrome, and finding past the cap):** `1536a278` + `0fb137b2`, **committed DIRECTLY to `feat/harness-backend`, NOT through a lane merge** — see the process note at the end, which is the most important line here. Gate **test:fast 430 green ON TRUNK** (re-run in an isolated worktree AFTER the three lanes that merged on top: learned-topic recommendations, COMMS composer fit, and the folder-card consent fix), claims planning authority **PASS**. Diff is `sidecar/tools/builtin/browser.js`, `sidecar/capability/registry.js` and four test files — **no frontend, no `shared/`, no `package.json`, nothing in the release surface, so NO claims re-lock is owed** (checked against `releaseSurface.files`, not assumed). 71 new assertions across `test/browser.wait-recovery.test.js` and `test/browser.attach.test.js`; both revert-checked (disable recovery, or delete the eval refusal, and they go red).
+- **⛔ LAW — COUNT TOOLS BY LOADING THE MODULE, NEVER BY GREPPING `name:`.** The browser surface was reported as 35, then 52, then **79** tools across three consecutive turns, and every undercount had one cause: these tools are declared through helpers — `read('browser.click', …)`, `exec(…)` — where **the name is the first POSITIONAL ARGUMENT**, not a `name:` property. A `name:` grep silently drops whole families (all 29 `browser.*`, plus `web_*`, `image_*`, `voice_generate`, `spotify_*`). The honest count is `require()` the module and read `.tools.map(t => t.name)`.
+- **LAW — AUDIT THE SUBSYSTEM BEFORE RATING IT.** On the strength of that grep this browser was scored a gap that "drives pixels via computer.use and a vision sub-call". It does not, and never did: `browser.js` is ~1900 lines of real CDP driver with ref-based accessibility snapshots, out-of-process iframe adoption, popup auto-attach, downloads already routed into the agent's jail, and `browser.login` banking real signed-in sessions behind a single-owner profile lease. It also already made a call Hermes does not: **`eval` refused ON the signed-in profile**, because "eval is dangerous WHERE THE CREDENTIALS ARE". A rating sourced from a grep is a guess wearing a number.
+- **LAW — A TIMEOUT IS A FINDING, NOT A FAILURE.** `browser.wait` never throws on timeout and never reads as success — "the results never loaded" is a real answer the agent has to be able to branch on. A THROWN predicate (bad selector) is reported immediately as a malformed question instead of burning the budget and then reporting absence: different diagnosis, different next move. And it waits on **visibility, not presence** — `display:none`, a zero-size box and a collapsed parent all match `querySelector`, so waiting on presence is how an agent walks into a still-hidden dialog.
+- **LAW — `navEpoch` IS NOT `version`, AND THE DIFFERENCE IS THE WHOLE SAFETY ARGUMENT.** `version` bumps on snapshot AND on navigation, so it cannot tell them apart — and that is exactly what decides whether a stale ref may be recovered. Re-snapshotting only renumbers the same page; a navigation or tab switch replaces the document, where the same role+text is a DIFFERENT control. `back`/`forward`/`tab_select` bump the epoch too.
+- **LAW — RECOVERY USES FRESH COORDINATES, WHICH IS WHY IT RETIRES THE OLD CONTRACT RATHER THAN WEAKENING IT.** Two existing tests asserted a stale ref must REJECT, guarding against a "silently mis-aimed" click. Recovery re-snapshots and takes the new node, so it never touches the remembered coordinates — the guarded hazard is eliminated, not tolerated. Ambiguity still fails loudly (two matching "Delete" buttons name the candidates rather than flip a coin on a mutating action), and recovery is never silent.
+- **LAW — ONE RE-SNAPSHOT RESOLVES EVERY REF IN A CALL.** Recovering refs one at a time re-snapshots per ref, and each pass invalidates the ref the previous pass just resolved — so a two-ref `browser.drag` could never have recovered at all. Found by reading my own diff before the gate, not by a test.
+- **ATTACH — THE HONEST ANSWER TO BOT WALLS.** Hermes' extra engines are lightpanda and **Camoufox** (a Firefox fork with C++ fingerprint spoofing, ~300MB plus its own REST server). No stealth was built here and nothing is lost by that: `browser.attach` drives the Commander's OWN running Chrome over its DevTools port — a real browser, a real profile, their real sessions, no download and no deception. Its guards: consent ALWAYS (never defaulted away), **`eval` stays refused for as long as the session is attached** (their browser holds every login they have, not just the ones they chose to lend the station), the attachment is **sticky** so a headless request cannot silently swap in a station browser mid-task, the port is probed BEFORE the relaunch so a wrong port does not cost a working session, the probe is **127.0.0.1-only** (a DevTools port is unauthenticated RCE over the browser), and `proc` stays null so `close()` — which only kills what it spawned — can never shut their browser and its unsaved tabs.
+- **LAW — A ZERO-HIT ANSWER MUST SAY WHICH KIND OF ZERO IT IS.** `browser.find` scans at the driver's 200 ceiling instead of snapshot's 80, and reports `scanned`/`capped`, because "not on this page" and "past the cap" are different next moves and the agent cannot guess between them.
+- **THE REPO'S OWN GUARDS CAUGHT THE ONE DEFECT THAT MATTERED.** `browser.tool-parity.test` found `browser.wait` **registered but NOT GRANTED** in `CAP_REGISTRY` — it would have shipped invisible to every real agent. **A new tool needs BOTH a registration and a grant**, plus the locked surface lists in `test/browser.test.js` and `test/harness.integration.test.js`. Deferral was chosen per tool for a measured reason: `wait`/`find` are front-row (a waiting tool the model cannot see is one it replaces with a guess), `attach`/`detach` are deferred (the browser family is already ~10.2KB of schema on every turn).
+- **NOT BUILT, ON PURPOSE.** `browser.cookies` — reading cookies is a credential-exfiltration primitive that would have to be refused in exactly the signed-in cases where it would be useful; `browser.inspect`/`get_text` cover the honest uses. Downloads were **checked and found already solved** (Chrome is pointed at the agent's jailed `downloads/`), so no duplicate was built. Still open: `browser.pdf`, `browser.intercept`, `browser.emulate`.
+- **⛔ PROCESS FAILURE, RECORDED BECAUSE IT WILL RECUR.** These two commits went **straight onto trunk instead of a lane branch**: merging the previous lane left the shell's cwd in the main repo (which has `feat/harness-backend` checked out), and every later commit inherited it. Nothing was lost — each commit was gated green first, and the diff owes no re-lock — but it skipped the `merge:`/digest ritual, and the session then **reported the work as "unmerged" for several turns**, which was false. **LAW: after merging a lane, the cwd is the main repo — `git rev-parse --abbrev-ref HEAD` before the next commit, not after.** A second session was also live in that same checkout throughout (an uncommitted `qa/STATUS.md` Guardian row), which is why this gate was run in an isolated worktree: two concurrent `test:fast` runs in one tree is the documented phantom-RED.
+- **AN UNRELATED RED IS OUTSTANDING AND IS NOT THIS WORK.** That Guardian row reports trunk **RED with 3 open findings** at `8df38d46` (another lane's commit). `test:fast` is **430 green** at this tree including everything above, so those findings are either stale or live outside the fast gate (Guardian also checks app boot and visuals). Unattributed here rather than guessed at.
 
 **2026-07-28 merge digest (the station learned WHAT you work on and told nobody):** `claude/starnet-recommendation-audit-ac94c8` -> `feat/harness-backend` no-ff merge `93c141b0` (snapshot/reset point `4160c935`; lane commits `3061f013` feat, `f569a2a7` in-lane claims re-lock), followed by post-merge re-lock `69ee0d10`. 19 files, +1108/-76 — new `frontend/app/topicmatch.js` + `test/topicmatch.test.js`, `recipes.js`, `marketplace.js`, `recruiter.js`, `recruiterstore.js`, `sidecar/nightfocus.js`, `sidecar/index.js`, `index.html`, `marketplace.css`, `test/fast.list`, `claims.json`, and the generated `website/app/` mirror. Gate **ON TRUNK after the merge: `test:fast` 430 green, `test:http` 53 green (exit 0), claims planning PASS (37 claims / 185 locked paths)**. **No hotfile from the no-touch set, no `shared/`, no `package.json`, no credential moved.** **Lands AFTER the `v0.7.0` tag (`87b61564` — note the preceding digest cites `799b8b06` for this tag, which does not resolve; `git rev-list -n1 v0.7.0` is the authority) — it does NOT ride that cut unless the tag moves.** Origin: an audit Andrew asked for across night shift / recipe / class recommendations, explicitly scoped to "make sure we don't break it or ruin it for the worse" — 2 of 4 findings were built, 2 were deliberately declined.
 
@@ -797,7 +840,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-31 01:10Z @ 05ec673f | RED | 4 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-31 06:11Z @ 4c8c0345 | RED | 4 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-30T13:01:45.510Z · ui-only · 103344ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -1571,3 +1614,64 @@ takes effect depends on which path reads it. That split-brain is why a manual mo
 "fixed" things — it rewrote both sides. ⛔ **Also: `agent.save.json` was still stamped 21:17 the
 previous evening while the app ran, so an in-app settings fix had not reached disk and a restart
 would resume the failing combination.**
+
+## 2026-07-30 — pilasters restored + the floating helper sprite removed (session ee18aebd)
+
+Andrew circled a blue flickering rectangle floating beside his agent. It was the G4.3 sub-agent
+helper sprite ("meeseeks") — misidentified first as the bulkhead wall pilaster, which was wrongly
+removed (merge 91e9f1c0) and then RESTORED by revert a6d6510d + re-lock 08448e53 (claims 64/64).
+The real fix: merge 05b9e708 deletes the entire helper-sprite layer — world.js ledger/draw wiring,
+subagentsprites.js, its test, the index.html tag, website mirrors (−588 lines). No floating marker
+can follow a body anymore; the LIVE HELPERS panel stays the sole (server-truth) sub-agent readout.
+Bug c96c4d41 → fixed ("layer removed"). Gate AFTER the merge: run-fast-tests OK — 464 steps green,
+440 suites OK, read from the log. Claims re-locked per side (79604605 / daf7ac18). LAW earned: a
+thing described by BEHAVIOR (it follows the agent) can only be identified by reproducing the
+behavior — a still-frame position match is not an identification, and a fresh boot's empty runtime
+ledger refutes nothing about a long-running instance.
+
+- 2026-07-31 · `agent/session-delivery-diagnosis` → trunk `7c90e71c` · `test:fast` 464/464 + `test:http` PASS · live proof: General stayed active while RESEARCHER worked and delivered into Codex Delivery Proof.
+- 2026-07-31 · `agent/worker-research-reliability` → trunk `c803bfef` · `test:fast` 464/464 + `test:http` PASS · search fallback wrapper now covers the full provider chain; delegated worker cap 10→16.
+- 2026-07-31 · `agent/voice-release-sweep` → trunk `2e1385fc` · focused voice + claims PASS, `test:fast` 464/464 on lane and trunk, full 55-suite `test:http` PASS · live restart proof: a new-code stale tab refused before opening voice, rendered the reload instruction, and stayed on the Start action; both tabs reloaded ONLINE · feature MERGE-READY, whole-station `qa:ready` still NOT READY (missing Guardian/journey/Beginner/installed-exe receipts; 28 unrelated register bugs remain open).
+
+## 2026-07-31 — mid-run error noise: a probing agent no longer reads as broken (calm-errors lane)
+
+Andrew: StarNet "runs through fifty errors" mid-task while Hermes shows none. Field data from his
+live workspace: 176 error tool-results in the transcript — web_fetch 403 x35 / 404 x31, throttled
+keyless search x38 — plus 18/92 runs dead on codex "servers overloaded" after ~2s of retry patience.
+What landed (lane agent/calm-errors, pure FAST-FORWARD to trunk 91f2d5a5):
+- web.js: web weather (403/404/410/429/5xx/redirect-loop/JS-only page/ENOTFOUND, exhausted search
+  chain) returns OK results that state the fact and steer the model ("No page exists... do not
+  refetch"); genuine faults (timeout/abort/SSRF/connect-timeout) still throw. test/web.calm.test.js
+  (19) in fast.list. Raw webSearch/webFetch keep the throwing contract.
+- loop.js: the A2 same-provider retry guard finally implements its own comment — retryable
+  fallback-class errors (overloaded/server_error) with an EXHAUSTED or EMPTY failover chain now get
+  bounded same-provider retries instead of instant fatal (this was the codex-only death). Ladder
+  [400,1200] -> [400,1200,4000,10000]. Two loop.replay assertions were asserting the defect; updated.
+- COMMS/world calm pass: an errored chip keeps its red glyph/detail but loses the alarm frame; the
+  per-tool "x" HUD tick is removed (failure was the ONLY outcome the ticker ever narrated — red now
+  means the RUN died); a failed run's fold stays closed (the error row + diagnostics chip carry the
+  evidence); the SLAG toast skips reason 'error' (already announced); the in-band tool_result
+  re-emit carries summary/ms. Website mirror synced. Plus one system-prompt line: mention an
+  obstacle only if it changed the outcome.
+Live-proven via dev/seed-calm-errors.js (mock model -> REAL dispatch -> real web; launch entry
+calm-errors-proof): a 404 probe renders a green "dead link (404)" chip whose guidance reached the
+model verbatim, an errored probe keeps the normal phosphor frame, no red HUD line, presence RUN
+COMPLETE with the fold closed. Hermes four quiet-rules + the dish-placement recipe recorded in
+memory calm-errors-lane. Claims re-locked on-branch (91f2d5a5, rode the FF in — no post-merge regen
+owed). Gates read from the logs: branch tree fast 465 + http NPM_EXIT=0; trunk post-FF fast 465
+EXIT_FAST=0.
+
+## 2026-07-31 — Local Live meter real on the dictation leg (session cb31f95a)
+
+Andrew's live report on the v0.8.0 test installer: audio visualizer flat for both voices in a
+live call. Root cause: every packaged build runs startDictation(), whose listening engines
+(sidecar System.Speech / browser SpeechRecognition) expose no level signal, and the strip's only
+clock was the models-leg mic frame — a designed gap resting on "two consumers on one microphone
+fight", which a live probe DISPROVED (SAPI recognizer + shared-mode WASAPI capture coexist
+cleanly: recognizer heard audio + exited 0 while the capture held 23-24 fps throughout). Fix
+merged as FF `e5a321a2` + re-lock `1f369d7a` (agent/live-meter): levels-only meter tap +
+fixed-cadence clock pushing MEASURED values only (tap RMS self, playback-tap RMS agent, nothing
+when no live source). Live-proven on the dictation leg (seeded sidecar, fake-mic tone, headless
+Chrome): SELF bars lift off the real tone, AGENT columns light during real Edge playback, engine
+label ASR BROWSER SPEECH, zero exceptions, VERIFY: ALL PASS. Gates read from the logs: worktree
+fast 465 NPM_EXIT=0 pre-merge; trunk post-merge fast 465 NPM_EXIT=0.

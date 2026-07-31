@@ -432,14 +432,16 @@ function chatFixture() {
     {
       const r = await run({ m1: httpErr(503), m2: httpErr(503) }, ['m2']);
       A.eq(r.res.reason, 'error', 'exhausted chain -> error');
-      A.eq(r.provider.callCount(), 2, 'tried primary then the one fallback, then gave up');
+      A.eq(r.provider.callCount(), 6, 'primary, the one fallback, then 4 bounded same-provider retries before giving up');
       A.eq(r.seq.find(e => e.name === 'agent.run.error').payload.transient, true, '503 is transient');
     }
-    // no fallback configured -> dies on the failover error (today's behavior; no app-lie)
+    // no fallback configured -> bounded same-provider retries ride out a transient overload before dying.
+    // (The old assertion here — give up after ONE attempt — was the field failure that killed codex-only
+    // runs at the first "servers overloaded" blip while every other harness rode it out.)
     {
       const r = await run({ m1: httpErr(503) }, []);
-      A.eq(r.res.reason, 'error', 'no fallback -> the run still ends error');
-      A.eq(r.provider.callCount(), 1, 'no extra attempt without a chain');
+      A.eq(r.res.reason, 'error', 'no fallback + persistent 503 -> the run still ends error');
+      A.eq(r.provider.callCount(), 5, '1 initial + 4 same-provider retries when there is no chain to burn');
     }
     // a NON-failover error (malformed 400) is fatal immediately — the chain is not burned on a client bug
     {

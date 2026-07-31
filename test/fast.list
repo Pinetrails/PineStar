@@ -40,6 +40,7 @@ test/native-stt.test.js
 test/local-voice.test.js
 test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
+test/prices.live.test.js
 test/provider.gemini.test.js
 test/provider.toolschema.test.js
 test/provider.prices.test.js
@@ -204,10 +205,13 @@ test/web.ssrf.test.js
 test/web.search.test.js
 test/web.fence.test.js
 test/web.fetch-jina.test.js
+test/web.calm.test.js
+test/web.reach.test.js
 test/browser.test.js
 test/browser.tool-parity.test.js
 test/browser.wait-recovery.test.js
 test/browser.attach.test.js
+test/browser.pie.test.js
 test/desktop.test.js
 test/computer.test.js
 test/inputpolicy.test.js
@@ -231,6 +235,7 @@ test/dossier.test.js
 test/understanding.test.js
 test/fork.test.js
 test/taskintent.test.js
+test/taskbrief.clarify.test.js
 test/understandingstore.test.js
 test/study.test.js
 test/goals.test.js

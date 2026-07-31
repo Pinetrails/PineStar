@@ -28,6 +28,7 @@ dev/.scratch-workspace/
 dev/.scratch-mock-cron/
 # mock-comms dev sidecar runtime state (same shape; never committed)
 dev/.scratch-mock-comms/
+dev/.scratch-calm-errors/
 dev/.scratch-adversarial/
 
 # rust / tauri desktop shell build output
@@ -131,3 +132,4 @@ qa/installed/smoke-*/
 CODEX_HANDOFF.md
 http-gate.err
 qa/digests/
+dev/.scratch-clarify/

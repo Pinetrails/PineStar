@@ -71,9 +71,9 @@ function fakeDriver() {
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
     'browser.attach', 'browser.back', 'browser.click', 'browser.console', 'browser.detach', 'browser.dialog', 'browser.drag',
-    'browser.eval', 'browser.find', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect',
-    'browser.login', 'browser.navigate', 'browser.network',
-    'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
+    'browser.emulate', 'browser.eval', 'browser.find', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect',
+    'browser.intercept', 'browser.login', 'browser.navigate', 'browser.network',
+    'browser.pdf', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
     'browser.tab_close', 'browser.tab_select', 'browser.tabs',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
     'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'browser.wait'

@@ -16,6 +16,9 @@ const VoiceLive = (() => {
   let recording = false, utterance = [], utteranceSamples = 0, preRoll = [], transcriptionPending = false, queuedAudio = null;
   let utteranceSeq = 0, partialPending = false, partialAbort = null, lastPartialAt = 0, partialText = '';
   let finalAbort = null;
+  // Dictation-leg meter tap: a levels-only capture (see openMeterTap) plus the clock that scrolls it.
+  let tapStream = null, tapContext = null, tapSource = null, tapProcessor = null, tapSink = null;
+  let tapLevel = 0, meterClock = null;
   let reconnectTimer = null, reconnectAttempt = 0, transientErrorTimer = null;
   let warmupNotice = false;
   const $ = id => document.getElementById(id);
@@ -27,6 +30,9 @@ const VoiceLive = (() => {
   // deleted; shipping the candidates was never the goal, choosing one was.
   // Level readout: a rolling window of mic RMS, oldest at the left. The columns ARE the microphone
   // — never animate them off a timer, or the module would claim to hear a room it cannot hear.
+  // (The dictation leg scrolls on a timer for cadence, but every push is a MEASURED value — its own
+  // meter tap or the agent's playback tap — and with no live source it pushes nothing. See
+  // dictationMeterTick: the law is about inventing values, and no value is ever invented.)
   // TYPED, not drawn: one block glyph per column, from the same ▁▂▃ ramp the link-status bars in
   // app.js already speak, so the meter belongs to the CRT instead of sitting on top of it.
   const WAVE_BARS = 17;
@@ -176,6 +182,7 @@ const VoiceLive = (() => {
   function resetLevel() {
     waveHistory = new Array(WAVE_BARS).fill(null).map(() => ({ v: 0, src: SELF }));
     agentLevel = 0;
+    tapLevel = 0;
     if (waveBars) waveBars.forEach(bar => { bar.textContent = RAMP[0]; bar.dataset.src = SELF; });
     const panel = $('live-voice-panel');
     if (panel) { panel.style.setProperty('--lv-amp', '0'); panel.dataset.talker = SELF; }
@@ -285,14 +292,26 @@ const VoiceLive = (() => {
     announceWaits();
   }
 
-  // One read of the sidecar's installation verdict. Returns null when the sidecar cannot be reached, so
-  // callers can tell "proven unavailable" apart from "don't know yet".
+  function availabilityFailure(response) {
+    if (!response || response.ok !== false) return null;
+    return {
+      probeFailed: true,
+      staleSession: response.status === 403,
+      status: Number(response.status) || 0
+    };
+  }
+
+  // One read of the sidecar's installation verdict. A failed probe is a first-class result: every Live
+  // Voice engine needs the sidecar, so opening the microphone after a 403/5xx only creates a convincing
+  // but silent session. In particular, 403 means this page still carries the token from before a restart.
   async function probeAvailability() {
     try {
       const response = await fetch('/api/local-voice/status', { cache: 'no-store' });
+      const failure = availabilityFailure(response);
+      if (failure) return failure;
       return await response.json();
     } catch (_) {
-      return null;
+      return { probeFailed: true, staleSession: false, status: 0 };
     }
   }
 
@@ -774,6 +793,88 @@ const VoiceLive = (() => {
     resetLevel();
   }
 
+  /* DICTATION-LEG METER TAP — levels only, never audio for transcription.
+     The engine that LISTENS in dictation mode (System.Speech inside the sidecar, or the browser's own
+     SpeechRecognition) exposes no live signal, so on every installed build the strip froze while the
+     models leg — which owns a real mic frame — scrolled. Proven on the target machine (2026-07-31):
+     Windows shares one microphone between a SAPI recognizer and a shared-mode WASAPI capture with zero
+     interference in either direction (recognizer heard audio and exited clean; the capture held a
+     steady frame rate throughout), so the "two consumers on one microphone fight" assumption this leg
+     was built on does not hold. A second, meter-only capture is safe — and if it cannot open (denied,
+     dismissed, no device), your half of the strip simply stays flat while listening itself continues
+     untouched, because the dictation engine still owns its own capture. */
+  async function openMeterTap(seq) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    let acquired = null;
+    try {
+      // A DISMISSED WebView2 permission prompt never settles getUserMedia (voice.js learned this as a
+      // wedged mic button) — race it so an unanswered prompt degrades to a flat half, not a hung tap.
+      acquired = await Promise.race([
+        navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
+        }),
+        new Promise((_, reject) => setTimeout(() => {
+          const err = new Error('meter tap prompt timed out'); err.name = 'TimeoutError'; reject(err);
+        }, 12000))
+      ]);
+    } catch (error) {
+      console.warn('[voice-live] level meter tap unavailable:', (error && error.name) || error);
+      return;
+    }
+    // The permission prompt can outlive the call — never let a late grant hold an orphaned device.
+    if (!active || !dictation || seq !== sessionSeq) {
+      try { acquired.getTracks().forEach(track => track.stop()); } catch (_) {}
+      return;
+    }
+    try {
+      tapStream = acquired;
+      tapContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+      await tapContext.resume();
+      tapSource = tapContext.createMediaStreamSource(tapStream);
+      tapProcessor = tapContext.createScriptProcessor(2048, 1, 1);
+      tapSink = tapContext.createGain();
+      tapSink.gain.value = 0;
+      tapProcessor.onaudioprocess = event => {
+        const frame = event.inputBuffer.getChannelData(0);
+        let energy = 0;
+        for (let i = 0; i < frame.length; i++) energy += frame[i] * frame[i];
+        tapLevel = Math.sqrt(energy / frame.length);
+      };
+      tapSource.connect(tapProcessor);
+      tapProcessor.connect(tapSink);
+      tapSink.connect(tapContext.destination);
+    } catch (error) {
+      console.warn('[voice-live] level meter tap failed to wire:', (error && error.message) || error);
+      closeMeterTap();
+    }
+  }
+
+  function tapAlive() {
+    const track = tapStream && tapStream.getAudioTracks()[0];
+    return !!(track && track.readyState === 'live' && tapContext && tapContext.state === 'running');
+  }
+
+  function closeMeterTap() {
+    try { if (tapProcessor) tapProcessor.disconnect(); } catch (_) {}
+    try { if (tapSource) tapSource.disconnect(); } catch (_) {}
+    try { if (tapSink) tapSink.disconnect(); } catch (_) {}
+    try { if (tapStream) tapStream.getTracks().forEach(track => track.stop()); } catch (_) {}
+    try { if (tapContext) tapContext.close(); } catch (_) {}
+    tapStream = tapContext = tapSource = tapProcessor = tapSink = null;
+    tapLevel = 0;
+  }
+
+  /* ONE CLOCK, same cadence as a 2048-sample mic frame (~43ms — the models leg's own scroll rate).
+     Each tick pushes a MEASURED value or nothing: the agent's half from Voice's playback tap whenever
+     the agent holds the turn, your half from the meter tap while it is alive. With no live source
+     there is no push — a frozen strip is the truthful rendering of "no signal to show". */
+  function dictationMeterTick() {
+    if (!active || !dictation) return;
+    const agentTalking = typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking();
+    if (agentTalking) pushLevel(agentLevel * AGENT_GAIN, AGENT);
+    else if (tapAlive()) pushLevel(tapLevel * 14, SELF);
+  }
+
   function scheduleReconnect(reason) {
     if (!active || reconnectTimer) return;
     closeMicrophone();
@@ -822,8 +923,8 @@ const VoiceLive = (() => {
     // Local Live rides on the offline speech packages, and the shipped desktop bundle carries no
     // node_modules — so ASK the sidecar before opening the microphone. Going live first and failing on the
     // first model import is how this panel used to show users a raw "Cannot find module" string.
-    // Only a PROVEN `available:false` refuses; an unreachable sidecar falls through to the existing
-    // offline handling below.
+    // A failed sidecar probe refuses before touching the microphone. Every engine below still depends on
+    // that sidecar, so "try anyway" can only produce a live-looking session that cannot hear or speak.
     /* ONE ENGINE FOR EVERY STATION (Andrew, 2026-07-30). The provider-native realtime path is deliberately NOT
        taken any more, even where it is available. It gave the smoothest turns but tied the feature to one
        vendor, capped the personality behind that vendor's guardrails, and made the behaviour differ between
@@ -835,6 +936,23 @@ const VoiceLive = (() => {
        like a fix for. */
 
     const readiness = await probeAvailability();
+    if (readiness && readiness.probeFailed) {
+      $('live-voice-panel').hidden = false;
+      setState('offline');
+      caption('user', readiness.staleSession
+        ? 'This page lost its connection when the station restarted.'
+        : 'Local Live could not reach the station.');
+      caption('agent', readiness.staleSession
+        ? 'Reload this page to reconnect, then start Local Live again.'
+        : 'Confirm the station is running, then try again.');
+      if (readiness.staleSession) {
+        setUnrecoverableError('The station restarted — reload this page to reconnect voice.');
+      } else {
+        setError('Local voice could not reach the station.');
+      }
+      reflectButton(false);
+      return;
+    }
     if (readiness && readiness.available === false) {
       // The offline models are absent — the normal case in a packaged build, which ships no node_modules.
       // That is NOT a reason to refuse: listening has a keyless ladder (Windows dictation through the
@@ -906,6 +1024,9 @@ const VoiceLive = (() => {
       if (typeof Voice !== 'undefined') {
         if (Voice.detachCoordinator) Voice.detachCoordinator();
         if (Voice.setLocalTts) Voice.setLocalTts(false);
+        // start() may have lifted a user mute before the microphone permission request failed. A failed
+        // session must restore that preference just like a normal finish does.
+        if (Voice.restoreSpeak) Voice.restoreSpeak();
       }
     }
   }
@@ -1238,11 +1359,11 @@ const VoiceLive = (() => {
 
   /* DICTATION MODE — Local Live without the offline models.
      Differences from the model path, all deliberate:
-       - THIS side never opens the microphone. On the native leg System.Speech listens on the default
-         device from inside the sidecar, and two consumers on one microphone fight. (The browser-speech
-         leg does open a mic, but the browser engine owns it — we still don't.) Either way there is no
-         level meter here, and the native leg has no interim partials: it returns one finished utterance
-         per call.
+       - THIS side never opens a microphone FOR AUDIO. On the native leg System.Speech captures from
+         inside the sidecar; on the browser-speech leg the browser engine owns the capture. What this
+         side does open is a levels-only meter tap (openMeterTap) — mic sharing is measured-safe on
+         Windows, see the note there — so the strip shows the same two-voice meter as the models leg.
+         The native leg still has no interim partials: it returns one finished utterance per call.
        - local TTS stays OFF (Kokoro is absent too), so speech goes down the normal ladder and lands
          on the keyless Edge floor.
        - `startCoordinator`, not `attachCoordinator`: only the former SELECTS an stt provider, and with
@@ -1277,6 +1398,11 @@ const VoiceLive = (() => {
       if (Voice.startCoordinator) Voice.startCoordinator({ onState, onAssistant, onOutputLevel });
     }
     if (!active || seq !== sessionSeq) return;
+    // The meter is real on this leg too (see openMeterTap): the tap arrives whenever the permission
+    // settles; until then — and if it never opens — only the agent's half moves, off its playback tap.
+    openMeterTap(seq);
+    clearInterval(meterClock);
+    meterClock = setInterval(dictationMeterTick, 43);
     setState('listening');
     // Name the engine the ladder ACTUALLY chose, read back from Voice rather than re-derived here. In the
     // packaged WebView2 shell there is no SpeechRecognition so this is the sidecar's Windows dictation; in a
@@ -1317,6 +1443,8 @@ const VoiceLive = (() => {
     queuedAudio = null;
     teardownRealtime();   // close the peer connection BEFORE the mic, so no track is yanked mid-send
     closeMicrophone();
+    clearInterval(meterClock); meterClock = null;
+    closeMeterTap();
     if (typeof Voice !== 'undefined') {
       if (stopVoice && Voice.stopSpeaking) Voice.stopSpeaking();
       if (Voice.restoreSpeak) Voice.restoreSpeak();   // only undoes a mute WE lifted; a hand-set speaker stays
@@ -1340,8 +1468,13 @@ const VoiceLive = (() => {
     if (button) button.onclick = () => active ? end() : start(false);
     window.addEventListener('resize', () => clampPanel($('live-voice-panel')));
     document.addEventListener('visibilitychange', () => {
-      // Dictation mode holds no browser mic, so `stream`/`context` are null by design — the checks below
-      // would read that as "microphone lost" and fire a reconnect that opens a device we must not touch.
+      // The dictation leg's meter tap is cosmetic: resume its context if the platform suspended it while
+      // hidden, and on failure just leave the half flat — never a reconnect, never session state.
+      if (active && dictation && !document.hidden && tapContext && tapContext.state === 'suspended') {
+        tapContext.resume().catch(() => {});
+      }
+      // Dictation mode holds no transcription mic, so `stream`/`context` are null by design — the checks
+      // below would read that as "microphone lost" and fire a reconnect that opens a device we must not touch.
       if (!active || dictation || document.hidden) return;
       if (context && context.state === 'suspended') context.resume().catch(() => scheduleReconnect('Audio session was suspended.'));
       const track = stream && stream.getAudioTracks()[0];

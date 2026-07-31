@@ -59,6 +59,32 @@ function bodyOf(name) {
   assert.ok(m, 'voice-live.js still defines ' + name + '()');
   return m[0];
 }
+{
+  const m = /(  function availabilityFailure\([\s\S]*?\n  \})/.exec(source);
+  assert.ok(m, 'voice-live.js still classifies failed availability probes before opening the mic');
+  // eslint-disable-next-line no-new-func
+  const availabilityFailure = new Function(m[1] + '\nreturn availabilityFailure;')();
+  assert.deepEqual(
+    availabilityFailure({ ok: false, status: 403 }),
+    { probeFailed: true, staleSession: true, status: 403 },
+    'an old sidecar token is recognized as a stale page, not allowed into a silent voice session'
+  );
+  assert.deepEqual(
+    availabilityFailure({ ok: false, status: 500 }),
+    { probeFailed: true, staleSession: false, status: 500 },
+    'other sidecar failures are also refused before the microphone opens'
+  );
+  assert.equal(availabilityFailure({ ok: true, status: 200 }), null, 'a healthy probe proceeds normally');
+}
+{
+  const startBody = bodyOf('start');
+  assert.match(startBody, /readiness\.probeFailed[\s\S]*?reload this page to reconnect voice/, 'stale pages receive an actionable reload message');
+  assert.ok(
+    startBody.indexOf('readiness.probeFailed') < startBody.indexOf('openMicrophone(seq)'),
+    'a failed sidecar probe is refused before requesting microphone access'
+  );
+  assert.match(startBody, /catch \(error\)[\s\S]*?Voice\.restoreSpeak\(\)/, 'failed startup restores a mute that Live Voice lifted');
+}
 for (const fn of ['start', 'startDictation']) {
   assert.match(bodyOf(fn), /Voice\.forceSpeakOn\(\)/, fn + '() force-enables the speaker — hands-free is never opened muted');
   /* ⛔ BOTH entry points speak with the BUILT-IN identity. setLocalTts(true) is what routes /api/tts through
@@ -131,5 +157,61 @@ assert.match(bodyOf('chipCommand'), /\.click\(\)/, 'a spoken pick clicks the REA
   assert.equal(matchChoice('', chips), -1, 'silence picks nothing');
 }
 assert.match(voiceSource, /if \(!forcedSpeak\) return false;/, "restoreSpeak never undoes the Commander's own speaker choice");
+
+/* ⛔ THE METER IS REAL ON THE SHIPPED LEG TOO. The dictation leg (every packaged build) used to scroll
+   nothing — the engine that listens exposes no frame clock — so the strip sat flat for both voices while
+   the models leg animated in demos. The fix is a levels-only meter tap plus a fixed-cadence clock, and
+   the honesty line lives in the tick: every push is a MEASURED value (the tap's RMS for your half, the
+   playback tap's RMS for the agent's), and with no live source a tick pushes NOTHING — scrolling zeros
+   would render "silent room", a claim the module cannot make with no signal to read. Assert the wiring
+   per-function (the speaker-mute bug above taught why), and exercise the tick's truth table for real. */
+for (const fn of ['startDictation']) {
+  assert.match(bodyOf(fn), /openMeterTap\(seq\)/, fn + '() opens the levels-only meter tap');
+  assert.match(bodyOf(fn), /setInterval\(dictationMeterTick,\s*43\)/, fn + '() scrolls the strip at the mic-frame cadence the models leg has');
+}
+assert.match(bodyOf('finish'), /closeMeterTap\(\)/, 'leaving live voice releases the meter tap device');
+assert.match(bodyOf('finish'), /clearInterval\(meterClock\)/, 'leaving live voice stops the dictation meter clock');
+{
+  const tap = /(  async function openMeterTap\(seq\) \{[\s\S]*?\n  \})/.exec(source);
+  assert.ok(tap, 'voice-live.js still defines openMeterTap()');
+  assert.match(tap[1], /Promise\.race/, 'a dismissed WebView2 permission prompt degrades to a flat half, never a hung tap');
+  assert.match(tap[1], /seq !== sessionSeq/, 'a late permission grant cannot hold an orphaned meter device');
+  assert.match(tap[1], /track\.stop\(\)/, 'a tap the session no longer wants is released, not leaked');
+  assert.doesNotMatch(tap[1], /setError|setState|scheduleReconnect/, 'the meter tap is cosmetic — its failure never touches session state');
+}
+{
+  const m = /(  function dictationMeterTick\(\) \{[\s\S]*?\n  \})/.exec(source);
+  assert.ok(m, 'voice-live.js still defines dictationMeterTick()');
+  const run = env => {
+    const pushes = [];
+    // eslint-disable-next-line no-new-func
+    const tick = new Function(
+      'active', 'dictation', 'Voice', 'agentLevel', 'AGENT_GAIN', 'tapAlive', 'tapLevel', 'pushLevel', 'SELF', 'AGENT',
+      m[1] + '\nreturn dictationMeterTick;'
+    )(env.active, env.dictation, { isSpeaking: () => env.speaking }, env.agentLevel, 6, () => env.tapAlive, env.tapLevel, (v, s) => pushes.push([+v.toFixed(3), s]), 'self', 'agent');
+    tick();
+    return pushes;
+  };
+  assert.deepEqual(
+    run({ active: true, dictation: true, speaking: true, agentLevel: 0.1, tapAlive: true, tapLevel: 0.9 }),
+    [[0.6, 'agent']],
+    'while the agent holds the turn the strip carries the agent playback level — measured, gained, colored agent'
+  );
+  assert.deepEqual(
+    run({ active: true, dictation: true, speaking: false, agentLevel: 0.5, tapAlive: true, tapLevel: 0.05 }),
+    [[0.7, 'self']],
+    'while you hold the turn the strip carries the meter tap level, at the models-leg mic gain'
+  );
+  assert.deepEqual(
+    run({ active: true, dictation: true, speaking: false, agentLevel: 0.5, tapAlive: false, tapLevel: 0.5 }),
+    [],
+    'a dead tap and a quiet agent push NOTHING — the meter never claims to hear a room it cannot hear'
+  );
+  assert.deepEqual(
+    run({ active: true, dictation: false, speaking: true, agentLevel: 0.5, tapAlive: true, tapLevel: 0.5 }),
+    [],
+    'outside dictation mode the tick is inert — the mic frame stays the only clock on the models leg'
+  );
+}
 
 console.log('voice-live-ui.test.js: ok');

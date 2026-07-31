@@ -54,6 +54,10 @@
   const WAIT_DEFAULT_MS = 10000;
   const WAIT_MAX_MS = 30000;
   const WAIT_POLL_MS = 150;
+  // browser.intercept's vocabulary → CDP resource types. Module-scoped because BOTH layers need it:
+  // the session validates the agent's kinds (so a bad kind fails loudly on any driver, including an
+  // injected test one) and the driver maps them onto Fetch.enable patterns.
+  const INTERCEPT_TYPES = { image: 'Image', media: 'Media', font: 'Font', stylesheet: 'Stylesheet' };
   /* A MINIMUM observation window before quiescence may be declared. DOM quiescence cannot see the
      future: a click handler that renders from a setTimeout leaves the page genuinely still in the
      meantime, so a pure quiet check returns before the work lands. Watching for at least this long
@@ -416,7 +420,9 @@
           m.error ? p.reject(new Error(m.error.message || 'CDP error')) : p.resolve(m.result || {});
         } else if (m.method) {
           const hs = this.handlers.get(m.method) || [];
-          for (const h of hs) { try { h(m.params || {}); } catch (_) {} }
+          // The sessionId rides along as a second argument: a handler that must REPLY to an event
+          // (Fetch.requestPaused) has to answer on the session the event came from, not the active one.
+          for (const h of hs) { try { h(m.params || {}, m.sessionId); } catch (_) {} }
         }
       });
     }
@@ -508,6 +514,15 @@
     const NETLOG_MAX = 200;
     let netLog = [];
     const netById = new Map();
+    /* INTERCEPT state. The kinds currently blocked (by CDP resource type). Kinds live on the DRIVER,
+       not per tab, because "block images" is a statement about the RUN's browsing posture — but CDP's
+       Fetch domain is session-scoped, so applyIntercept walks every known tab session and selectTab
+       re-applies to tabs adopted later. */
+    let interceptKinds = [];
+    /* EMULATION state, kept for two reasons: selectTab must re-apply it to a newly-focused tab
+       (Emulation.* overrides are per-session too), and the tool must be able to report truthfully
+       what is currently being emulated instead of guessing. */
+    let emulation = null;
     function netRecord(requestId, patch) {
       let row = netById.get(requestId);
       if (!row) {
@@ -762,6 +777,16 @@
               try { await cdp.send('Browser.setDownloadBehavior', Object.assign({ eventsEnabled: true }, behavior)); }
               catch (_) { try { await cdp.send('Page.setDownloadBehavior', behavior); } catch (_) {} }
             }
+            /* browser.intercept — every request paused here matched a blocked-type Fetch pattern, so the
+               only job is to fail it fast. The reply goes to the SESSION THE EVENT CAME FROM (second
+               handler arg): answering on the active session would leave a background tab's paused request
+               hanging forever, which wedges that tab's load. The blocked request then surfaces through the
+               ordinary Network.loadingFailed path as net::ERR_BLOCKED_BY_CLIENT — browser.network stays
+               truthful about what the page lost without any bookkeeping here. */
+            cdp.on('Fetch.requestPaused', (p, sid) => {
+              if (!p || !p.requestId) return;
+              Promise.resolve(cdp.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'BlockedByClient' }, sid)).catch(() => {});
+            });
             cdp.on('Network.requestWillBeSent', p => {
               if (!p || !p.requestId) return;
               inflight.add(p.requestId);
@@ -1105,6 +1130,62 @@
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return Math.round(Number(width) || 0) + 'x' + Math.round(Number(height) || 0);
     }
+    /* PDF — Page.printToPDF renders the CURRENT document (whole page, not the viewport crop a
+       screenshot gives). It can legitimately take longer than an ordinary command on a long page, so
+       it gets the navigation-class budget. Headed Chrome builds that refuse the command reject the
+       CDP call; the caller reports that honestly rather than synthesizing an empty file. */
+    async function pdf(opts) {
+      opts = opts || {};
+      const c = await page();
+      const r = await c.send('Page.printToPDF', { printBackground: true, landscape: opts.landscape === true }, undefined, navTimeoutMs);
+      return (r && r.data) || '';
+    }
+    /* Fetch.enable's patterns pre-filter by resource type, so only requests of BLOCKED kinds ever
+       pause — everything else flows with zero interception overhead. Session-scoped, hence the walk
+       over every known tab session; disabling walks the same set so no background tab keeps blocking. */
+    async function applyIntercept(c) {
+      for (const sid of tabSessions()) {
+        const sessionId = sid === null ? undefined : sid;
+        try {
+          if (!interceptKinds.length) await c.send('Fetch.disable', {}, sessionId);
+          else await c.send('Fetch.enable', { patterns: interceptKinds.map(k => ({ urlPattern: '*', resourceType: INTERCEPT_TYPES[k], requestStage: 'Request' })) }, sessionId);
+        } catch (_) {}
+      }
+    }
+    async function intercept(kinds) {
+      const list = (Array.isArray(kinds) ? kinds : []).map(k => String(k || '').trim().toLowerCase()).filter(Boolean);
+      const bad = list.filter(k => !INTERCEPT_TYPES[k]);
+      if (bad.length) throw new Error('browser.intercept: unknown kind(s): ' + bad.join(', ') + ' (supported: ' + Object.keys(INTERCEPT_TYPES).join(', ') + ')');
+      interceptKinds = Array.from(new Set(list));
+      await applyIntercept(await page());
+      return interceptKinds.slice();
+    }
+    /* EMULATION. Overrides are all-or-nothing per call for the fields given; reset:true clears every
+       override. UA clearing rides Chromium's own contract (an empty userAgent disables the override);
+       locale clears by omission; timezone by empty string; metrics by clearDeviceMetricsOverride. */
+    async function applyEmulation(c) {
+      const e = emulation;
+      if (!e) {
+        try { await c.send('Emulation.clearDeviceMetricsOverride', {}); } catch (_) {}
+        try { await c.send('Emulation.setTouchEmulationEnabled', { enabled: false }); } catch (_) {}
+        try { await c.send('Emulation.setUserAgentOverride', { userAgent: '' }); } catch (_) {}
+        try { await c.send('Emulation.setLocaleOverride', {}); } catch (_) {}
+        try { await c.send('Emulation.setTimezoneOverride', { timezoneId: '' }); } catch (_) {}
+        return;
+      }
+      if (e.width && e.height) await c.send('Emulation.setDeviceMetricsOverride', { width: e.width, height: e.height, deviceScaleFactor: e.scale || 1, mobile: e.mobile === true });
+      if (e.touch != null) { try { await c.send('Emulation.setTouchEmulationEnabled', { enabled: e.touch === true }); } catch (_) {} }
+      if (e.userAgent || e.locale) await c.send('Emulation.setUserAgentOverride', Object.assign({ userAgent: e.userAgent || '' }, e.locale ? { acceptLanguage: e.locale } : {}));
+      if (e.locale) { try { await c.send('Emulation.setLocaleOverride', { locale: e.locale }); } catch (_) {} }
+      if (e.timezone) await c.send('Emulation.setTimezoneOverride', { timezoneId: e.timezone });
+    }
+    async function emulate(next) {
+      emulation = next || null;
+      const c = await page();
+      await applyEmulation(c);
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return emulation ? Object.assign({}, emulation) : null;
+    }
     /* INSPECT — the bounded half of "page eval".
        The audit's real complaint about the loopback-only eval gate was concrete: no computed style, no
        data-* attributes, no shadow DOM. Those are READS, and they do not need arbitrary code. This
@@ -1182,6 +1263,11 @@
       if (!Number.isInteger(i) || i < 0 || i >= sessions.length) throw new Error('no such tab: ' + index + ' (there are ' + sessions.length + ')');
       activeSession = sessions[i];
       const c = await page();
+      /* Intercept and emulation are session-scoped in CDP but run-scoped in intent: a tab adopted
+         after they were set (a popup, a target=_blank checkout) has neither. Re-applying on focus is
+         what keeps "block images" true on the tab the agent is actually driving. */
+      if (interceptKinds.length) { try { await applyIntercept(c); } catch (_) {} }
+      if (emulation) { try { await applyEmulation(c); } catch (_) {} }
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return (await evalIn(c, 'location.href')) || '(unknown)';
     }
@@ -1425,7 +1511,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, waitFor, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, waitFor, pdf, intercept, emulate, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -1679,6 +1765,28 @@
       // `nodes`, so even an uncapped zero must never be promoted into a whole-document absence claim.
       return { hits, scanned: (nodes || []).length, capped: (nodes || []).length >= FIND_SCAN_CAP };
     }
+    // pdf() is a READ of the current document — allowed everywhere, including attached mode, where
+    // "print the page you are looking at" is exactly as safe as get_text on it.
+    async function pdf(opts) { return driverFn(ensureDriver(), 'pdf')(opts || {}); }
+    /* intercept/emulate are refused while ATTACHED, and the reason is ownership, not risk arithmetic:
+       the Commander's own Chrome is not the station's to reconfigure. Blocking resource loads or
+       spoofing device/language/timezone inside their real signed-in browser changes what THEY see and
+       how sites treat THEM, in ways that outlast the agent's attention. The station browser exists for
+       exactly this kind of reshaping. */
+    async function intercept(kinds) {
+      if (attachedToUserBrowser) throw new Error('browser.intercept is refused while attached to your own Chrome — your real browser is not the station\'s to reconfigure. Detach first, or use the station browser.');
+      // Validated HERE so a bad kind fails loudly on every driver, including injected test drivers.
+      const list = (Array.isArray(kinds) ? kinds : []).map(k => String(k || '').trim().toLowerCase()).filter(Boolean);
+      const bad = list.filter(k => !INTERCEPT_TYPES[k]);
+      if (bad.length) throw new Error('browser.intercept: unknown kind(s): ' + bad.join(', ') + ' (supported: ' + Object.keys(INTERCEPT_TYPES).join(', ') + ')');
+      return driverFn(ensureDriver(), 'intercept')(Array.from(new Set(list)));
+    }
+    async function emulate(opts) {
+      if (attachedToUserBrowser) throw new Error('browser.emulate is refused while attached to your own Chrome — spoofing device, language or timezone inside your real signed-in browser is not the station\'s to do. Detach first, or use the station browser.');
+      const out = await driverFn(ensureDriver(), 'emulate')(opts || null);
+      version++;   // metric/UA changes relay the page: refs from the previous layout are meaningless
+      return out;
+    }
     /* attach(port) — drive the Commander's OWN already-running Chrome instead of a station-launched one.
 
        WHY THIS AND NOT A STEALTH ENGINE. The practical wall in agent browsing is not that a headless
@@ -1888,7 +1996,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, evalAllowed, wait, find, attach, detach, attachedToUser: () => attachedToUserBrowser, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, navEpoch: () => navEpoch, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, evalAllowed, wait, find, pdf, intercept, emulate, attach, detach, attachedToUser: () => attachedToUserBrowser, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, navEpoch: () => navEpoch, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -1922,6 +2030,25 @@
       await shotFsp.writeFile(abs, buffer);
       if (ctx && typeof ctx.emit === 'function') {
         const d = { id: 'shot_' + h, agentId: aid, kind: 'image', title: rel };
+        if (ctx.room) d.room = ctx.room;
+        ctx.emit('deliverable', d);
+      }
+      return { rel, bytes: buffer.length, viewer: '/api/file?agent=' + encodeURIComponent(aid) + '&path=' + encodeURIComponent(rel) };
+    }
+    // Same jail, same content-addressing, same deliverable event as saveShot — but kind:'file' (a PDF
+    // is a document the user opens, not pixels the chat inlines) and its own pdf/ shelf.
+    async function savePdf(ctx, b64) {
+      if (!canSaveShots) return null;
+      const aid = (ctx && ctx.agentId) || 'agent';
+      const buffer = Buffer.from(String(b64 || ''), 'base64');
+      if (!buffer.length) return null;
+      const h = require('node:crypto').createHash('sha1').update(buffer).digest('hex').slice(0, 12);
+      const rel = 'pdf/page-' + h + '.pdf';
+      const { abs } = await shotJail.resolveInside(aid, rel);
+      await shotFsp.mkdir(shotPath.dirname(abs), { recursive: true });
+      await shotFsp.writeFile(abs, buffer);
+      if (ctx && typeof ctx.emit === 'function') {
+        const d = { id: 'pdf_' + h, agentId: aid, kind: 'file', title: rel };
         if (ctx.room) d.room = ctx.room;
         ctx.emit('deliverable', d);
       }
@@ -2192,7 +2319,61 @@
             // never has the field turned on.
             images: [{ mime: 'image/png', data: String(data) }]
           };
-        })
+        }),
+      read('browser.pdf', 'Render the CURRENT page to a PDF file in your workspace — the whole document, not just the visible viewport. Use it to keep an article, a receipt, a report, or anything the user asked you to save in a form they can open later. Returns the saved path. browser.screenshot is the tool for a quick visual proof of the viewport.', { type: 'object', properties: { landscape: { type: 'boolean' } } },
+        async (a, ctx) => {
+          let data = null;
+          try { data = await session.pdf({ landscape: a && a.landscape === true }); }
+          catch (e) {
+            // Headed Chrome builds that refuse Page.printToPDF land here; an honest refusal beats a fake file.
+            return { content: 'browser.pdf failed: ' + ((e && e.message) || e) + '. If the browser is in a visible window, try again after it returns to headless mode.', summary: 'pdf failed' };
+          }
+          if (!data) return { content: 'browser.pdf produced no data for this page.', summary: 'no pdf' };
+          const doc = await savePdf(ctx, data);
+          if (!doc) {
+            const bytes = Math.round(String(data).length * 3 / 4);
+            return { content: 'Rendered ' + bytes + ' bytes of PDF but this run has no workspace to save into, so it was discarded.', summary: 'not saved' };
+          }
+          return { content: 'PDF saved to ' + doc.rel + ' (' + (doc.bytes / 1024).toFixed(0) + ' KB).\nView: ' + doc.viewer, summary: 'pdf → ' + doc.rel };
+        }),
+      exec('browser.intercept', 'Block heavy resource types (image, media, font, stylesheet) in the station browser to make text research faster and cheaper — pages load without downloading what you were never going to read. Pass kinds:[] to turn blocking off. Blocked requests appear in browser.network as ERR_BLOCKED_BY_CLIENT, so nothing is hidden. Blocking "stylesheet" can change layout and hide elements — use it only for pure text scraping. Refused while attached to the Commander\'s own Chrome.', { type: 'object', required: ['kinds'], properties: { kinds: { type: 'array', items: { type: 'string', enum: ['image', 'media', 'font', 'stylesheet'] } } } },
+        async a => {
+          const active = await session.intercept(a.kinds);
+          return {
+            content: active.length ? 'Now blocking: ' + active.join(', ') + '. Applies to the tabs of this browsing session; browser.network shows what was blocked. Pass kinds:[] to stop.' : 'Blocking is off — all resource types load again.',
+            summary: active.length ? 'blocking ' + active.join(',') : 'blocking off'
+          };
+        }, false),
+      exec('browser.emulate', 'Emulate a device, user agent, language, or timezone in the station browser — for checking a mobile layout, a localized page, or time-dependent rendering. Pass device (iphone | pixel | ipad) for a one-call phone/tablet profile (metrics + touch + matching user agent), or set userAgent / locale (e.g. "de-DE") / timezone (e.g. "Europe/Berlin") individually. Pass reset:true to clear every override. Refs from earlier snapshots expire — take a fresh browser.snapshot. Refused while attached to the Commander\'s own Chrome.', { type: 'object', properties: { device: { type: 'string', enum: ['iphone', 'pixel', 'ipad'] }, userAgent: { type: 'string' }, locale: { type: 'string' }, timezone: { type: 'string' }, reset: { type: 'boolean' } } },
+        async a => {
+          a = a || {};
+          if (a.reset === true) {
+            await session.emulate(null);
+            return { content: 'Emulation cleared — the browser is back to its real device metrics, user agent, language and timezone. Take a fresh browser.snapshot.', summary: 'emulation off' };
+          }
+          /* Preset UA strings freeze a browser generation and will age — that is inherent to UA
+             emulation, and honest enough for layout testing. They are NOT a stealth feature: the
+             station's answer to bot walls is browser.attach (a real browser), never spoofing. */
+          const DEVICES = {
+            iphone: { width: 390, height: 844, scale: 3, mobile: true, touch: true, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' },
+            pixel: { width: 412, height: 915, scale: 2.625, mobile: true, touch: true, userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36' },
+            ipad: { width: 820, height: 1180, scale: 2, mobile: true, touch: true, userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' }
+          };
+          const base = a.device ? DEVICES[String(a.device).toLowerCase()] : null;
+          if (a.device && !base) throw new Error('browser.emulate: unknown device "' + a.device + '" (supported: iphone, pixel, ipad)');
+          const next = Object.assign({}, base || {});
+          if (a.userAgent) next.userAgent = String(a.userAgent);
+          if (a.locale) next.locale = String(a.locale);
+          if (a.timezone) next.timezone = String(a.timezone);
+          if (!Object.keys(next).length) throw new Error('browser.emulate needs a device, userAgent, locale, timezone, or reset:true');
+          const active = await session.emulate(next);
+          const parts = [];
+          if (active && active.width) parts.push((active.mobile ? 'mobile ' : '') + active.width + 'x' + active.height + '@' + (active.scale || 1) + 'x');
+          if (active && active.userAgent) parts.push('UA set');
+          if (active && active.locale) parts.push('locale ' + active.locale);
+          if (active && active.timezone) parts.push('timezone ' + active.timezone);
+          return { content: 'Emulating: ' + parts.join(', ') + '. Take a fresh browser.snapshot — earlier refs expired. reset:true clears it.', summary: 'emulating ' + (a.device || parts.join(',')) };
+        }, false)
     ];
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }

@@ -4,10 +4,10 @@ slug: voice-init
 title: Voice.init (agent focus / persona change / dossier apply) calls reflectToggle without clearing fbNotified, permanently wiping the pinned degrade tooltip while t
 surface: voice
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/voice
-fix: 
+fix: 50a8b07b
 ---
 
 # Voice.init (agent focus / persona change / dossier apply) calls reflectToggle without clearing fbNotified, permanently wiping the pinned degrade tooltip while t

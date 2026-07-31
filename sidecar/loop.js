@@ -449,7 +449,11 @@
     // NO wait (keeps the loop deterministic + test-fast); when present it honors the classifier's retryAfterMs.
     const sleep = (typeof o.sleep === 'function') ? o.sleep : null;
     // mid-stream retry backoff schedule (same shape as the adapters' pre-stream RETRY_DELAYS).
-    const STREAM_RETRY_DELAYS = [400, 1200];
+    // Widened 2026-07-31: [400,1200] gave the whole loop ~1.6s of patience, so a provider overload
+    // measured in tens of seconds (codex "servers overloaded" in the field) killed runs that every
+    // other harness rides out. ~16s of ladder (plus the adapters' own pre-stream retries and any
+    // server-stated retry-after, capped at 60s) survives a real overload window and still terminates.
+    const STREAM_RETRY_DELAYS = [400, 1200, 4000, 10000];
     function noteUnpriced(modelId, c) {
       if (!c || !c.unpriced) return;
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
@@ -626,7 +630,7 @@
       let recoveries = 0;
       const maxRecoveries = 1 + fallbacks.length;
       let retriesUsed = 0;
-      const MAX_STREAM_RETRIES = 2;
+      const MAX_STREAM_RETRIES = 4;   // one per STREAM_RETRY_DELAYS rung; see the ladder's comment
       // A truncation is its own (cheap, transient) retry class — kept separate from MAX_STREAM_RETRIES and
       // deliberately tighter, because a truncation costs a FULL generation to re-run.
       let truncRetries = 0;
@@ -693,7 +697,11 @@
         // transient `unknown`) — or a fallback class whose chain is already exhausted. Without this a hung/idle
         // stream that the watchdog turned into a `timeout` would kill the run on the first blip. Bounded to
         // MAX_STREAM_RETRIES so a persistently-failing backend still terminates. Honors the server-stated wait.
-        if (!signal.aborted && cls.retryable && !cls.shouldFallback && retriesUsed < MAX_STREAM_RETRIES) {
+        // ⛔ the guard was `!cls.shouldFallback` alone, which contradicted the sentence above: a retryable
+        // fallback class (overloaded/server_error) with an EMPTY or exhausted chain — every single-provider
+        // station, e.g. ChatGPT-login codex — fell straight to fatal on the first blip. The chain-exhausted
+        // case the comment always promised is now real.
+        if (!signal.aborted && cls.retryable && (!cls.shouldFallback || fbIndex >= fallbacks.length) && retriesUsed < MAX_STREAM_RETRIES) {
           retriesUsed++;
           // NOTE: no provider.fallback emit here — a same-provider retry is NOT a failover; emitting it would
           // inflate the floor's failover counter and lie about a model/credential switch that didn't happen

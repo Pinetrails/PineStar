@@ -5689,11 +5689,11 @@ const World = (() => {
       const arg = tickerClip(p.argsSummary, 48);
       pushTicker(tickerName(p.agentId) + ' ▸ ' + tickerTool(p.name) + (arg ? ' · ' + arg : ''), '', tickerSuit(p.agentId));
     });
-    // successes replace themselves via the next tool_call; only surface a genuine tool FAILURE tick.
-    U.bus.on('agent.tool_result', p => {
-      if (!p || !p.isError) return;
-      pushTicker(tickerName(p.agentId) + ' ▸ ✗ ' + tickerClip(p.summary || 'tool error', 40), 'bad', tickerSuit(p.agentId));
-    });
+    // NO per-tool failure tick (2026-07-31). This used to push a red '✗ <summary>' line for every errored
+    // tool call — and since successes tick nothing, failure was the ONLY outcome the HUD ever narrated: a
+    // research run probing a few blocked sites read as a station-wide malfunction. A negative tool result
+    // is the agent working, and the next agent.tool_call line already shows it moving; the COMMS chips
+    // keep the per-call truth one click away. Red on this HUD now means one thing: the run itself died.
     U.bus.on('agent.run.error', p => {
       if (!p) return;
       pushTicker(tickerName(p.agentId) + ' ▸ RUN FAULT · ' + tickerClip(p.message || 'error', 40).toUpperCase(), 'bad', tickerSuit(p.agentId));
@@ -5778,7 +5778,11 @@ const World = (() => {
       lastSlagAt = performance.now();
       if (!slaglog) return;
       const diag = slaglog.record(r, { cacheFrac: lastCacheFrac, turns: p && p.turns, usd: p && p.usd });
-      if (typeof StationUI !== 'undefined' && StationUI.notify) {
+      // an 'error' run has ALREADY announced itself (⚠ error row, its own toast, the RUN FAULT tick,
+      // the desk strobe) — a simultaneous SLAG toast made ONE failure read as two (2026-07-31). The
+      // post-mortem record + slag crate below still happen for every dead reason; only the duplicate
+      // toast is skipped. Budget/step-limit/refusal deaths keep it: nothing else announces those.
+      if (typeof StationUI !== 'undefined' && StationUI.notify && r !== 'error') {
         const clean = s => String(s || '').replace(/\bspend\b/ig, 'run resources').replace(/\bdollars?\b/ig, 'limits');
         StationUI.notify('⚠ SLAG (a run died with nothing to show) · ' + clean(SlagLog.line(diag)), 'warn');
       }

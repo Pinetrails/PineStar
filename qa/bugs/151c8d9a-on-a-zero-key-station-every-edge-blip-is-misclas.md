@@ -4,10 +4,10 @@ slug: on-a-zero-key-station-every-edge-blip-is-misclas
 title: On a zero-key station every Edge blip is misclassified as 'no key': no retry, a 60s dead-voice cold-off, and a tooltip demanding a credential the station never
 surface: voice
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/voice
-fix: 
+fix: 50a8b07b
 ---
 
 # On a zero-key station every Edge blip is misclassified as 'no key': no retry, a 60s dead-voice cold-off, and a tooltip demanding a credential the station never

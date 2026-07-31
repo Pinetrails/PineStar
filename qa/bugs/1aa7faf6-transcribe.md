@@ -4,10 +4,10 @@ slug: transcribe
 title: transcribe() never checks r.ok, so any non-JSON /api/stt error (stale-token 403, 5xx, HTML) is laundered into a confirmed-empty transcript and the spoken senten
 surface: voice
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/voice
-fix: 
+fix: 50a8b07b
 ---
 
 # transcribe() never checks r.ok, so any non-JSON /api/stt error (stale-token 403, 5xx, HTML) is laundered into a confirmed-empty transcript and the spoken senten
