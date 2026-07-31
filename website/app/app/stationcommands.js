@@ -13,6 +13,27 @@
 'use strict';
 
 const StationCommands = (() => {
+  /* ONE resolution law for every name-addressed verb (and the same one team.dispatch applies sidecar-side):
+     exact id → exact title → UNIQUE substring; anything else throws with the real names, because a
+     plausible-but-wrong session is worse than a refusal the agent can read and correct. */
+  function resolveSession(want) {
+    if (typeof Workstreams === 'undefined' || !Workstreams.list) throw new Error('sessions are not ready yet');
+    want = String(want || '').trim();
+    if (!want) throw new Error('name which session');
+    const generalId = Workstreams.generalId ? Workstreams.generalId() : null;
+    const rows = (Workstreams.list() || []).map(w => ({ w, title: String(w.title != null ? w.title : (w.id === generalId ? 'General' : '')).trim() }));
+    const lower = want.toLowerCase();
+    const byId = rows.filter(r => r.w.id === want);
+    const byTitle = rows.filter(r => r.title && r.title.toLowerCase() === lower);
+    const byPart = rows.filter(r => r.title && r.title.toLowerCase().indexOf(lower) >= 0);
+    const hits = byId.length ? byId : (byTitle.length ? byTitle : byPart);
+    if (hits.length === 1) return hits[0];
+    const names = rows.map(r => r.title).filter(Boolean).join(', ');
+    throw new Error(hits.length > 1
+      ? 'more than one session matches "' + want + '" — name it exactly. Open sessions: ' + names
+      : 'there is no session called "' + want + '"' + (names ? '. Open sessions: ' + names : ''));
+  }
+
   const VERBS = {
     /* Everything the station can currently see: which sessions exist, which is active, who is busy, what is
        waiting on approval. Reuses VoiceLive's snapshot so voice and tools cannot drift into two answers. */
@@ -70,33 +91,46 @@ const StationCommands = (() => {
       return { id: ws.id, title: ws.title, agentId: ws.agentId || 'agent', focused: !!(a && a.focus) };
     },
 
-    /* Focus an existing session by the name the Commander says (or exact id). SAME resolution law as
-       team.dispatch's sidecar-side resolver — exact id, exact title, then UNIQUE substring, and anything
-       else refuses with the real names — because a switch that lands on a plausible-but-wrong session
-       moves the Commander's eyes somewhere they did not ask to be. */
+    /* Focus an existing session by the name the Commander says (or exact id) — resolveSession's shared law,
+       because a switch that lands on a plausible-but-wrong session moves the Commander's eyes somewhere
+       they did not ask to be. */
     'station.switch_session': (a) => {
-      if (typeof Workstreams === 'undefined' || !Workstreams.list) throw new Error('sessions are not ready yet');
-      const want = String((a && a.session) || '').trim();
-      if (!want) throw new Error('name which session to switch to');
-      const generalId = Workstreams.generalId ? Workstreams.generalId() : null;
-      const rows = (Workstreams.list() || []).map(w => ({ w, title: String(w.title != null ? w.title : (w.id === generalId ? 'General' : '')).trim() }));
-      const lower = want.toLowerCase();
-      const byId = rows.filter(r => r.w.id === want);
-      const byTitle = rows.filter(r => r.title && r.title.toLowerCase() === lower);
-      const byPart = rows.filter(r => r.title && r.title.toLowerCase().indexOf(lower) >= 0);
-      const hits = byId.length ? byId : (byTitle.length ? byTitle : byPart);
-      if (hits.length !== 1) {
-        const names = rows.map(r => r.title).filter(Boolean).join(', ');
-        throw new Error(hits.length > 1
-          ? 'more than one session matches "' + want + '" — name it exactly. Open sessions: ' + names
-          : 'there is no session called "' + want + '"' + (names ? '. Open sessions: ' + names : ''));
-      }
-      const ws = Workstreams.switch(hits[0].w.id);
+      const hit = resolveSession(a && a.session);
+      const ws = Workstreams.switch(hit.w.id);
       if (!ws) throw new Error('the station could not switch sessions');
       if (typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
       try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
       try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      /* A switch that happens DURING a live voice call came through the call (the Commander said "open X"),
+         so the call follows the Commander there. A UI click never routes through this verb, so browsing
+         other sessions while speaking can never re-target the call (VoiceLive holds its own binding). */
+      try { if (typeof VoiceLive !== 'undefined' && VoiceLive.isActive && VoiceLive.isActive() && VoiceLive.rebind) VoiceLive.rebind(ws.id); } catch (_) {}
       return { id: ws.id, title: ws.title != null ? ws.title : 'General' };
+    },
+
+    /* Read a session's recent visible conversation — the agent's EYES into work that happened elsewhere.
+       Exists because of a live failure: asked "what did the researcher do?", a lead with no way to read the
+       other session guessed "nothing" while the finished answer sat right there. Visible dialogue only
+       (same filter the session power tools use — sys markers ride along labeled, hidden/internal never). */
+    'station.read_session': (a) => {
+      const hit = resolveSession(a && a.session);
+      const ws = hit.w;
+      const limit = Math.max(1, Math.min(30, Number(a && a.limit) || 12));
+      const turns = (ws.history || [])
+        .filter(m => m && !m.hidden && !m.internal && typeof m.content === 'string'
+          && (m.role === 'user' || m.role === 'assistant' || m.sys))
+        .slice(-limit)
+        .map(m => ({
+          speaker: m.sys ? 'station' : (m.role === 'user' ? 'commander' : (m.agentId || ws.agentId || 'agent')),
+          sys: !!m.sys,
+          text: String(m.content).slice(0, 600)
+        }));
+      const busy = (typeof Channels !== 'undefined' && Channels.isBusy) ? !!Channels.isBusy(ws.id) : false;
+      return {
+        id: ws.id, title: hit.title || 'General', agentId: ws.agentId || 'agent',
+        busy, runCount: (ws.runIds || []).length, turns,
+        note: turns.length ? undefined : 'this session has no visible conversation yet'
+      };
     },
 
     /* Fold a finished delegated run's answer into the session it was filed under. APPENDS — a session usually

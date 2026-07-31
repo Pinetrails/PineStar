@@ -209,6 +209,9 @@
       // (that is how these three shipped invisible on the first pass; a live model probe caught it).
       { capId: 'orchestrator', tool: 'session.list', scope: 'read', requiresConsent: false, network: false },
       { capId: 'orchestrator', tool: 'session.create', scope: 'write', requiresConsent: false, network: false },
+      // session.peek reads another session's recent turns — the anti-guessing verb: without it a lead asked
+      // "what did the researcher do?" answered from assumption and denied real finished work (2026-07-30).
+      { capId: 'orchestrator', tool: 'session.peek', scope: 'read', requiresConsent: false, network: false },
       { capId: 'orchestrator', tool: 'session.focus', scope: 'write', requiresConsent: false, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
