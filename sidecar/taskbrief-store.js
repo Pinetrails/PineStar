@@ -145,6 +145,24 @@ function makeTaskBriefStore(deps) {
     }).then(() => out);
   }
 
+  /* answerInTurn(id, text, now) — a mid-run answer delivered over the live clarify channel (2026-07-31,
+     Hermes-parity). Mirrors exactly what prepare()'s answer branch does for the next-run path (stamp the
+     open question's answer, status back to 'ready') WITHOUT minting a new brief or touching currentInput:
+     the directive didn't change, only the open question got its answer — so every restart/reconnect
+     fallback that reads the durable 'clarifying' record keeps working untouched. Refuses anything but
+     the open-question state (a second answer, a settled brief) so a stale POST can't rewrite history. */
+  function answerInTurn(id, text, now) {
+    const key = String(id || ''); const ans = bounded(text, 4000); let out = null;
+    if (!key || !ans) return Promise.resolve(null);
+    return durable.update(STORE_KEY, cur => {
+      const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
+      if (b.status !== 'clarifying') return undefined;
+      const q = b.questions[b.questions.length - 1]; if (!q || q.answer) return undefined;
+      q.answer = ans; q.answeredAt = Number(now) || 0;
+      b.status = 'ready'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+    }).then(() => out);
+  }
+
   function proceed(id, candidate, now) {
     const key = String(id || ''); let out = null;
     return durable.update(STORE_KEY, cur => {
@@ -264,7 +282,7 @@ function makeTaskBriefStore(deps) {
       .map(t => t.dimension);
   }
 
-  return { read, list, active, prepare, ask, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
+  return { read, list, active, prepare, ask, answerInTurn, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
 }
 
 module.exports = { makeTaskBriefStore, normalize, normalizeBrief, normalizeQuestion, fingerprintQuestion };
