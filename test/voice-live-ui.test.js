@@ -87,13 +87,26 @@ assert.match(source, /boundSession\(\) \|\| Workstreams\.active\(\)/, "the panel
 const cmdSource = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationcommands.js'), 'utf8');
 assert.match(cmdSource, /VoiceLive\.isActive\(\) && VoiceLive\.rebind/, 'a voice-driven session switch rebinds the live call (a UI click never routes through that verb)');
 
-/* ⛔ HANDS-FREE MEANS NOTHING WAITS ON A CLICK. Approvals and choice chips used to appear silently and wait
-   for a mouse — the opposite of a voice call. Both are announced aloud once when they appear, and both are
-   answerable by voice; the chip answer clicks the REAL button so every downstream effect matches a mouse pick. */
-assert.match(bodyOf('refreshTask'), /announceWaits\(\)/, 'the live tick announces anything newly waiting on a click');
+/* ⛔ LIVE VOICE RENDERS NO CLICKABLE PROMPTS — AND NARRATES NO STALE ONES. Two failures, in order: chips
+   and the tap-to-correct brief card appeared mid-call and waited on a mouse (the opposite of hands-free);
+   then the first fix NARRATED them, which meant opening a call over a re-rendered old beat blurted
+   "say one: confirm, or not quite…" out of nowhere. The law that survived both: while a call is live the
+   interactive beats are SUPPRESSED in chat.js — the agent's words are the ask — and the ONLY wait that
+   speaks is an APPROVAL, which is a real blocking permission with a durable card. */
+assert.match(chatSource, /function liveVoiceCall\(\)/, 'chat.js knows whether a call is live');
+{
+  const choicesBody = /(  function choices\(items, onPick\) \{[\s\S]*?\n  \})/.exec(chatSource);
+  assert.ok(choicesBody, 'chat.js still defines choices()');
+  assert.match(choicesBody[1], /if \(liveVoiceCall\(\)\) return;/, 'chip rows NEVER render during a live call');
+  const briefBody = /(  function briefReadCard\(ws, p\) \{[\s\S]{0,400})/.exec(chatSource);
+  assert.ok(briefBody, 'chat.js still defines briefReadCard()');
+  assert.match(briefBody[1], /if \(liveVoiceCall\(\)\) return;/, 'the tap-to-correct brief card never renders during a live call');
+}
+assert.match(bodyOf('refreshTask'), /announceWaits\(\)/, 'the live tick announces a newly-arrived approval');
 assert.match(source, /Say approve, always allow, or deny/, 'an arriving approval is ASKED aloud, with the exact words that answer it');
+assert.doesNotMatch(bodyOf('announceWaits'), /Say one/, 'chips are never narrated — the blurt class is dead, approvals are the only spoken wait');
 assert.match(bodyOf('handleTranscript'), /approvalCommand\(lower\)/, 'a spoken approval answer settles the blocking wait first');
-assert.match(bodyOf('handleTranscript'), /chipCommand\(lower\)/, 'a spoken chip pick is tried before the words go to the model');
+assert.match(bodyOf('handleTranscript'), /chipCommand\(lower\)/, 'a chip row that PRE-DATES the call can still be answered by voice');
 assert.match(bodyOf('chipCommand'), /\.click\(\)/, 'a spoken pick clicks the REAL chip button — never a parallel path');
 
 // the matcher is pure — extract and exercise it for real (the chat-linkify idiom: chat/voice files are

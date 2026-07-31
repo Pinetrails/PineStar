@@ -386,7 +386,7 @@ const VoiceLive = (() => {
      voice: approvals via approvalCommand, chips via chipCommand, which clicks the REAL button so every
      downstream effect is identical to a mouse pick. The visual cards stay — they are the truthful record —
      but the ASK happens aloud, and the call never depends on the Commander looking at the screen. */
-  let spokenApprovalId = null, spokenChipsKey = '';
+  let spokenApprovalId = null;
   function chipButtons() {
     return Array.from(document.querySelectorAll('#chat-log .choice-row button.choice')).filter(b => !b.disabled);
   }
@@ -394,9 +394,15 @@ const VoiceLive = (() => {
     // strip the leading glyph (▤, ◈, …) chips carry — nobody SAYS the icon
     return String(b.textContent || '').replace(/^[^A-Za-z0-9]+/, '').trim();
   }
+  /* ⛔ THE ONLY WAIT THAT SPEAKS IS AN APPROVAL. Chips are not announced, because in a live call they are
+     not even RENDERED any more (chat.js suppresses choice rows and the tap-to-correct brief card while a
+     call is active — Andrew: "it should not give the same clickable popups, it should just directly ask").
+     The first version of this narrated whatever chip row happened to be on screen, so opening a call over a
+     re-rendered old beat blurted "say one: confirm, or not quite…" out of nowhere. Rows that pre-date the
+     call can still be answered by voice (chipCommand) — they are just never read at anyone. */
   function announceWaits() {
     if (!active) return;
-    // only when the DISPLAYED session is the call's own — chips/cards in a browsed session are not ours to read
+    // only when the DISPLAYED session is the call's own — cards in a browsed session are not ours to read
     if (typeof Workstreams === 'undefined' || (boundWsId && Workstreams.activeId && Workstreams.activeId() !== boundWsId)) return;
     const ws = boundSession() || (Workstreams.active && Workstreams.active());
     const pending = ws && typeof Channels !== 'undefined' && Channels.pendingOf ? Channels.pendingOf(ws.id) : null;
@@ -407,14 +413,6 @@ const VoiceLive = (() => {
         speakLocal('Approval needed: ' + (pending.tool || 'an action') + (pending.argsSummary ? ' — ' + String(pending.argsSummary).slice(0, 120) : '') + '. Say approve, always allow, or deny.');
       }
     } else spokenApprovalId = null;
-    const labels = chipButtons().map(chipLabel).filter(Boolean);
-    const key = labels.join('|');
-    if (labels.length && key !== spokenChipsKey) {
-      spokenChipsKey = key;
-      // an approval outranks chips in the same beat — one question at a time is the whole point of speech
-      if (!pending) speakLocal('Say one: ' + labels.join(', or ') + '.');
-    }
-    if (!labels.length) spokenChipsKey = '';
   }
   /* Answer visible chips by voice. Clicks the REAL button (chat.js binds the pick to it), so this is the
      mouse path with a different finger. Matching is deliberately conservative — exact, then prefix/containment
@@ -448,7 +446,6 @@ const VoiceLive = (() => {
     if (idx < 0) return false;
     const picked = chipLabel(buttons[idx]);
     buttons[idx].click();
-    spokenChipsKey = '';
     speakLocal(picked + '.');
     refreshTask();
     return true;
@@ -494,6 +491,7 @@ const VoiceLive = (() => {
   let boundWsId = null;
   function bindSession() {
     boundWsId = (typeof Workstreams !== 'undefined' && Workstreams.activeId) ? Workstreams.activeId() : null;
+    spokenApprovalId = null;   // a NEW call announces a genuinely-pending approval once, never a prior call's
   }
   function rebind(id) {
     if (id) { boundWsId = String(id); refreshTask(); }
