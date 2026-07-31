@@ -47,29 +47,26 @@
   background:
     repeating-linear-gradient(0deg, rgba(0,0,0,.09) 0 1px, transparent 1px 3px),
     linear-gradient(180deg,
-      color-mix(in srgb, var(--ph-bright) 28%, var(--ph)) 0%,
+      color-mix(in srgb, var(--ph-bright) 10%, var(--ph)) 0%,
       var(--ph) 52%,
-      color-mix(in srgb, #000 20%, var(--ph)) 100%);
+      color-mix(in srgb, #000 12%, var(--ph)) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(var(--ph-bright-rgb), .5),
-    inset 0 -1px 0 rgba(0,0,0,.38),
-    0 2px 9px rgba(0,0,0,.5),
-    0 0 16px var(--ph-glow2);
-  text-shadow: 0 1px 0 rgba(var(--ph-bright-rgb), .28);
+    inset 0 1px 0 rgba(var(--ph-bright-rgb), .18),
+    inset 0 -1px 0 rgba(0,0,0,.25),
+    0 1px 6px rgba(0,0,0,.4);
 }
 /* the SESSIONS/PROJECTS rail head wears the same molding, one size down */
 .ws-head {
   background:
     repeating-linear-gradient(0deg, rgba(0,0,0,.09) 0 1px, transparent 1px 3px),
     linear-gradient(180deg,
-      color-mix(in srgb, var(--ph-bright) 22%, var(--ph)) 0%,
+      color-mix(in srgb, var(--ph-bright) 8%, var(--ph)) 0%,
       var(--ph) 55%,
-      color-mix(in srgb, #000 18%, var(--ph)) 100%);
+      color-mix(in srgb, #000 10%, var(--ph)) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(var(--ph-bright-rgb), .42),
-    inset 0 -1px 0 rgba(0,0,0,.34),
-    0 1px 6px rgba(0,0,0,.45);
-  text-shadow: 0 1px 0 rgba(var(--ph-bright-rgb), .24);
+    inset 0 1px 0 rgba(var(--ph-bright-rgb), .15),
+    inset 0 -1px 0 rgba(0,0,0,.22),
+    0 1px 5px rgba(0,0,0,.35);
 }
 
 /* ============================================================
@@ -112,12 +109,12 @@
   background: linear-gradient(180deg, rgba(0,0,0,.3), rgba(0,0,0,.16));
   box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb), .04);
 }
-/* hover: the status rail lights + phosphor bloom (motion.css keeps its -1px lift) */
+/* hover: the status rail lights, no outer bloom (motion.css keeps its -1px lift) */
 .crew-row:hover {
   background: var(--ph-faint); border-left-color: var(--ph);
-  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb), .06), 0 0 12px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb), .05);
 }
-.crew-row:hover .crew-name { color: var(--ph-bright); text-shadow: 0 0 7px var(--ph-glow2); }
+.crew-row:hover .crew-name { color: var(--ph-bright); }
 /* engraved WORKING/IDLE counter strip */
 #crew-sum {
   margin: 5px 6px 0; padding: 4px 10px; border-radius: 4px; border-top: 0;
@@ -149,10 +146,10 @@
   background: linear-gradient(180deg, rgba(0,0,0,.36), rgba(0,0,0,.2));
   box-shadow: inset 0 3px 8px -4px rgba(0,0,0,.8);
 }
-/* the desk lights when the operator is on it (border stays style.css's 2px --ph-dim at rest) */
+/* the desk marks focus with the brightened seam only — no outer glow wash */
 #chat-inputrow:focus-within {
   border-top-color: var(--ph);
-  box-shadow: inset 0 3px 8px -4px rgba(0,0,0,.8), 0 -4px 18px var(--ph-glow2);
+  box-shadow: inset 0 3px 8px -4px rgba(0,0,0,.8);
 }
 
 /* ============================================================
@@ -164,39 +161,37 @@
 .bb-grp {
   border: 1px solid var(--ph-dim); border-radius: 5px;
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--ph) 10%, var(--panel2)) 0%,
+    color-mix(in srgb, var(--ph) 5%, var(--panel2)) 0%,
     var(--panel2) 58%,
-    color-mix(in srgb, #000 40%, var(--panel2)) 100%);
+    color-mix(in srgb, #000 22%, var(--panel2)) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(var(--ph-rgb), .16),
-    inset 0 -2px 0 rgba(0,0,0,.45),
-    0 2px 3px rgba(0,0,0,.5);
-  text-shadow: 0 0 6px var(--ph-glow2);
+    inset 0 1px 0 rgba(var(--ph-rgb), .07),
+    inset 0 -2px 0 rgba(0,0,0,.3),
+    0 1px 2px rgba(0,0,0,.45);
 }
 .bb-grp:hover {
   color: var(--ph-bright); border-color: var(--ph);
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--ph) 16%, var(--panel2)) 0%,
+    color-mix(in srgb, var(--ph) 8%, var(--panel2)) 0%,
     var(--panel2) 62%,
-    color-mix(in srgb, #000 34%, var(--panel2)) 100%);
+    color-mix(in srgb, #000 18%, var(--panel2)) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(var(--ph-rgb), .2),
-    inset 0 -2px 0 rgba(0,0,0,.45),
-    0 2px 3px rgba(0,0,0,.5),
-    0 0 12px var(--ph-glow2);
+    inset 0 1px 0 rgba(var(--ph-rgb), .09),
+    inset 0 -2px 0 rgba(0,0,0,.3),
+    0 1px 2px rgba(0,0,0,.45);
 }
 /* open = the key is DOWN: inverted phosphor (app.css) + sunk seat */
 .bb-group.open .bb-grp {
   transform: translateY(1px);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,.4), 0 0 14px var(--ph-glow2);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,.35);
 }
 /* "a panel from this group is open" keeps its gold engraving ON the keycap material */
 .bb-group.has-active .bb-grp {
   box-shadow:
     inset 0 -3px 0 var(--gold),
-    inset 0 1px 0 rgba(var(--ph-rgb), .16),
-    0 2px 3px rgba(0,0,0,.5),
-    0 0 10px rgba(var(--gold-rgb), .25);
+    inset 0 1px 0 rgba(var(--ph-rgb), .07),
+    0 1px 2px rgba(0,0,0,.45),
+    0 0 8px rgba(var(--gold-rgb), .15);
 }
 .bb-group.open.has-active .bb-grp {
   transform: translateY(1px);
@@ -212,7 +207,7 @@
   to   { opacity: 1; transform: translateY(0)  scale(1); }
 }
 .bb-menu .bb { border-radius: 4px; }
-.bb-menu .bb:hover .bb-i { color: var(--ph-bright); text-shadow: 0 0 7px var(--ph-glow2); }
+.bb-menu .bb:hover .bb-i { color: var(--ph-bright); }
 /* CTX gauge: recessed housing (matches the topbar cluster's milled well) */
 #bottombar .ctx-gauge {
   padding: 4px 11px; border-radius: 6px;
