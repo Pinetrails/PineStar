@@ -46,13 +46,17 @@ jobs:
           - os: ubuntu-22.04
             target: linux-x64
             bundles: deb,appimage
+          # app,dmg — NOT dmg alone: the mac updater artifact (.app.tar.gz + .sig) only exists
+          # when the `app` target builds. dmg-only silently produces no updater feed artifacts
+          # (Tauri warns and moves on), which is how the v0.8.0 mac cut lost its tarballs twice.
+          # This matches release-train.yml's mac legs exactly.
           - os: macos-latest
             target: darwin-arm64
-            bundles: dmg
+            bundles: app,dmg
             rust-target: aarch64-apple-darwin
           - os: macos-latest
             target: darwin-x64
-            bundles: dmg
+            bundles: app,dmg
             rust-target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
