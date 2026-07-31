@@ -4,7 +4,7 @@ slug: a-meeseeks-helper-sprite-whose-terminal-task-eve
 title: A Meeseeks helper sprite whose terminal `task` event is lost stays asserted LIVE forever — the ledger has no TTL, no snapshot reconcile, and no reset on NEW AGE
 surface: world
 severity: P1
-status: closed
+status: fixed
 found: 2026-07-28
 lane: sweep/world
 fix: meeseeks layer removed 2026-07-30 (agent/meeseeks-visual)
