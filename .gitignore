@@ -132,3 +132,4 @@ qa/installed/smoke-*/
 CODEX_HANDOFF.md
 http-gate.err
 qa/digests/
+dev/.scratch-clarify/
