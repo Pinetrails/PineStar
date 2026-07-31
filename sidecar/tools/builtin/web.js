@@ -315,6 +315,11 @@
     // the Commander's stored keys. Default: no keys and the strict surface, so an unwired caller can only
     // make UNAUTHENTICATED requests rather than silently gaining credentials it was never handed.
     const surface = deps.surface === 'interactive' ? 'interactive' : 'autonomous';
+    // The station READER (webreader.js): a shared headless cookie-less real Chrome that fetch/search
+    // borrow when plain HTTP hits a bot wall or every engine throttles. Optional — absent, everything
+    // behaves exactly as before. Availability is probed lazily per use (Chrome may not exist).
+    const reader = deps.reader || null;
+    const readerReady = () => { try { return !!(reader && reader.available().ok); } catch (_) { return false; } };
     const serviceKeys = {
       resolve: (name, sfc) => (typeof deps.resolveServiceKey === 'function'
         ? deps.resolveServiceKey(name, sfc)
@@ -333,7 +338,7 @@
       const html = await withTimeout(signal => doFetch(endpoint, {
         method: 'POST',
         headers: searchHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-        body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
+        body: 'q=' + formEncode(query) + '&kl=us-en',   // form-urlencoded: spaces are `+` (see the Mojeek law below)
         signal
       }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (isDDGBlocked(html.status, html.body)) { const e = new Error('duckduckgo rate-limited (anomaly/202)'); e.__blocked = true; throw e; }
@@ -342,8 +347,14 @@
 
     // PRIMARY: Mojeek — keyless GET, independent index, no aggressive bot-shell. Treat a non-200 (e.g. a
     // 403/429 throttle) as a soft failure so the chain falls through to DDG/OpenRouter.
+    /* ⛔ SPACES MUST BE `+`, NOT `%20` (live A/B, 2026-07-31): for a `%20`-encoded multi-word query
+       Mojeek answers 200 with a ~5.7KB "Please…" interstitial and ZERO result anchors; the identical
+       query `+`-encoded answers the real 20KB result page. encodeURIComponent produces %20, so every
+       multi-word search silently got the shell — the field's endless "mojeek: 0 results". Form-style
+       encoding is what a real browser submits for a query string, and it is what Mojeek expects. */
+    const formEncode = (q) => encodeURIComponent(q).replace(/%20/g, '+');
     async function mojeekSearch(query, parent) {
-      const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + encodeURIComponent(query), {
+      const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + formEncode(query), {
         method: 'GET', headers: searchHeaders(), signal
       }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (res.status !== 200) throw new Error('mojeek http ' + res.status);
@@ -392,6 +403,12 @@
         ['duckduckgo-html', () => ddgSearch('https://html.duckduckgo.com/html/', parseDDGHtml, query, parent)],
         ['duckduckgo-lite', () => ddgSearch('https://lite.duckduckgo.com/lite/', parseDDGLite, query, parent)]
       ];
+      // The READER outranks the paid fallback: a real local Chrome sails past the fingerprint checks
+      // that throttle the scrape endpoints, costs nothing, and keeps search working with zero keys.
+      if (readerReady()) chain.push(['browser', async () => {
+        const r = await reader.search(query, { signal: parent });
+        return (r && r.results) || [];
+      }]);
       if (or && or.apiKey) chain.push(['openrouter', () => openrouterSearch(query, parent)]);
       for (const [source, fn] of chain) {
         try {
@@ -547,6 +564,7 @@
        provider plus a guess. The old 37s wrapper could abort OpenRouter before its own 20s allowance after
        Mojeek + both DDG paths had consumed time — exactly when the fallback was most needed. */
     const searchChainTimeoutMs = (SEARCH_TIMEOUT_MS * 3)
+      + (reader ? 45000 : 0)   // the reader rung: Chrome boot + up to two engine navigations
       + ((or && or.apiKey) ? OPENROUTER_SEARCH_TIMEOUT_MS : 0)
       + 5000;
     const searchTool = {
@@ -581,14 +599,41 @@
     };
 
     const fetchTool = {
-      name: 'web_fetch', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: FETCH_TIMEOUT_MS + 20000,
+      name: 'web_fetch', capability: 'web', scope: 'read', requiresConsent: false,
+      timeoutMs: FETCH_TIMEOUT_MS + 20000 + (reader ? 45000 : 0),   // the reader rung needs Chrome boot + nav + settle
       description: 'Fetch a web page by URL and return its main text content (cleaned). Use after web_search to read a result. ' +
-        'If a page cannot be read (bot-blocked, dead link, site outage) the result says so — that is information about the site, not a tool failure; use a different source rather than retrying the same URL.',
+        'Bot-blocked and JavaScript-only pages are automatically retried through the station\'s own browser, so one call is enough. ' +
+        'If a page still cannot be read (dead link, site outage, verification wall) the result says so — that is information about the site, not a tool failure; use a different source rather than retrying the same URL.',
       schema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
       run: async (args, ctx) => {
         let out;
         try { out = await webFetch(args.url, { signal: ctx && ctx.signal }); }
         catch (e) {
+          /* THE READER RUNG — a wall a REAL browser can climb: bot-block statuses, challenge-prone
+             503s, and JS-only pages. Dead links (404/410), genuine outages (500/502/504) and network
+             faults skip it — Chrome cannot resurrect a page that does not exist, and a cold boot is
+             not free. On success the label SAYS the browser read it (truthful provenance). */
+          const msg = String((e && e.message) || '');
+          const m = msg.match(/^http (\d{3})$/);
+          const s = m ? +m[1] : 0;
+          const walled = s === 401 || s === 403 || s === 407 || s === 429 || s === 451 || s === 503
+            || /^web_fetch got empty content/.test(msg);
+          if (walled && readerReady()) {
+            const r = await reader.fetchText(args.url, { signal: ctx && ctx.signal });
+            if (r && r.ok) {
+              const text = clamp(r.text, FETCH_MAX_CHARS);
+              return {
+                content: fenceExternal(text, 'page text from ' + (r.url || args.url) + ' (read via the station browser' + (s ? ' after http ' + s : '') + ')'),
+                summary: text.length + ' chars via browser'
+              };
+            }
+            const soft2 = softFetchAnswer(e, args.url);
+            if (soft2) return {
+              content: soft2.content + ' (The station\'s own browser also tried and was refused'
+                + (r && r.reason === 'challenge' ? ' — the site is holding a verification wall' : '') + '.)',
+              summary: soft2.summary
+            };
+          }
           const soft = softFetchAnswer(e, args.url);   // the web ANSWERED (403/404/throttle/…) → ok result
           if (soft) return soft;
           throw e;                                     // genuine fault (timeout/abort/SSRF/bad URL) → isError

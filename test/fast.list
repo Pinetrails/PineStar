@@ -205,6 +205,7 @@ test/web.search.test.js
 test/web.fence.test.js
 test/web.fetch-jina.test.js
 test/web.calm.test.js
+test/web.reach.test.js
 test/browser.test.js
 test/browser.tool-parity.test.js
 test/browser.wait-recovery.test.js
