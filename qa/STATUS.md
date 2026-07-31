@@ -797,7 +797,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-31 01:10Z @ 05ec673f | RED | 4 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-31 05:11Z @ c803bfef | GREEN | 4 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-30T13:01:45.510Z · ui-only · 103344ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -1571,3 +1571,49 @@ takes effect depends on which path reads it. That split-brain is why a manual mo
 "fixed" things — it rewrote both sides. ⛔ **Also: `agent.save.json` was still stamped 21:17 the
 previous evening while the app ran, so an in-app settings fix had not reached disk and a restart
 would resume the failing combination.**
+
+## 2026-07-30 — pilasters restored + the floating helper sprite removed (session ee18aebd)
+
+Andrew circled a blue flickering rectangle floating beside his agent. It was the G4.3 sub-agent
+helper sprite ("meeseeks") — misidentified first as the bulkhead wall pilaster, which was wrongly
+removed (merge 91e9f1c0) and then RESTORED by revert a6d6510d + re-lock 08448e53 (claims 64/64).
+The real fix: merge 05b9e708 deletes the entire helper-sprite layer — world.js ledger/draw wiring,
+subagentsprites.js, its test, the index.html tag, website mirrors (−588 lines). No floating marker
+can follow a body anymore; the LIVE HELPERS panel stays the sole (server-truth) sub-agent readout.
+Bug c96c4d41 → fixed ("layer removed"). Gate AFTER the merge: run-fast-tests OK — 464 steps green,
+440 suites OK, read from the log. Claims re-locked per side (79604605 / daf7ac18). LAW earned: a
+thing described by BEHAVIOR (it follows the agent) can only be identified by reproducing the
+behavior — a still-frame position match is not an identification, and a fresh boot's empty runtime
+ledger refutes nothing about a long-running instance.
+
+- 2026-07-31 · `agent/session-delivery-diagnosis` → trunk `7c90e71c` · `test:fast` 464/464 + `test:http` PASS · live proof: General stayed active while RESEARCHER worked and delivered into Codex Delivery Proof.
+- 2026-07-31 · `agent/worker-research-reliability` → trunk `c803bfef` · `test:fast` 464/464 + `test:http` PASS · search fallback wrapper now covers the full provider chain; delegated worker cap 10→16.
+- 2026-07-31 · `agent/voice-release-sweep` → trunk `2e1385fc` · focused voice + claims PASS, `test:fast` 464/464 on lane and trunk, full 55-suite `test:http` PASS · live restart proof: a new-code stale tab refused before opening voice, rendered the reload instruction, and stayed on the Start action; both tabs reloaded ONLINE · feature MERGE-READY, whole-station `qa:ready` still NOT READY (missing Guardian/journey/Beginner/installed-exe receipts; 28 unrelated register bugs remain open).
+
+## 2026-07-31 — mid-run error noise: a probing agent no longer reads as broken (calm-errors lane)
+
+Andrew: StarNet "runs through fifty errors" mid-task while Hermes shows none. Field data from his
+live workspace: 176 error tool-results in the transcript — web_fetch 403 x35 / 404 x31, throttled
+keyless search x38 — plus 18/92 runs dead on codex "servers overloaded" after ~2s of retry patience.
+What landed (lane agent/calm-errors, pure FAST-FORWARD to trunk 91f2d5a5):
+- web.js: web weather (403/404/410/429/5xx/redirect-loop/JS-only page/ENOTFOUND, exhausted search
+  chain) returns OK results that state the fact and steer the model ("No page exists... do not
+  refetch"); genuine faults (timeout/abort/SSRF/connect-timeout) still throw. test/web.calm.test.js
+  (19) in fast.list. Raw webSearch/webFetch keep the throwing contract.
+- loop.js: the A2 same-provider retry guard finally implements its own comment — retryable
+  fallback-class errors (overloaded/server_error) with an EXHAUSTED or EMPTY failover chain now get
+  bounded same-provider retries instead of instant fatal (this was the codex-only death). Ladder
+  [400,1200] -> [400,1200,4000,10000]. Two loop.replay assertions were asserting the defect; updated.
+- COMMS/world calm pass: an errored chip keeps its red glyph/detail but loses the alarm frame; the
+  per-tool "x" HUD tick is removed (failure was the ONLY outcome the ticker ever narrated — red now
+  means the RUN died); a failed run's fold stays closed (the error row + diagnostics chip carry the
+  evidence); the SLAG toast skips reason 'error' (already announced); the in-band tool_result
+  re-emit carries summary/ms. Website mirror synced. Plus one system-prompt line: mention an
+  obstacle only if it changed the outcome.
+Live-proven via dev/seed-calm-errors.js (mock model -> REAL dispatch -> real web; launch entry
+calm-errors-proof): a 404 probe renders a green "dead link (404)" chip whose guidance reached the
+model verbatim, an errored probe keeps the normal phosphor frame, no red HUD line, presence RUN
+COMPLETE with the fold closed. Hermes four quiet-rules + the dish-placement recipe recorded in
+memory calm-errors-lane. Claims re-locked on-branch (91f2d5a5, rode the FF in — no post-merge regen
+owed). Gates read from the logs: branch tree fast 465 + http NPM_EXIT=0; trunk post-FF fast 465
+EXIT_FAST=0.
