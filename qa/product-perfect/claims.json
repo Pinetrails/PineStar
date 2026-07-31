@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9522f983b32f433945d7bc88fdc3189a72e0bfb7",
-    "pathSetSha256": "7d4dff42cde1d41eccdf0b62cdc46370c8359d502730792dab79cd6bcf33b3e0",
+    "sourceCommit": "4a825d07be5649fc6552ef7cb5168ef0756cf4d8",
+    "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
         "path": "INSTALL.md",
@@ -902,6 +902,11 @@
         "sha256": "e309e0c6e13e6d00d8a090d66d59e421b6043fcd974300bbd3cee1a0c877228e"
       },
       {
+        "path": "frontend/css/panelchrome.css",
+        "bytes": 10449,
+        "sha256": "c590a359dbf42ee7d9d14761ea7d6989394a8a375c7abc30c79125d14d4b9cae"
+      },
+      {
         "path": "frontend/css/refit.css",
         "bytes": 6094,
         "sha256": "7ee2fb355b5d0845c5750e1f1e0f43256633333514647c6eadf66fe4f41c51d4"
@@ -943,8 +948,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 66920,
-        "sha256": "58bc9e6bfb9d54daed9577550e0e32e594b40645d3698adc379d8023e2cc45f5"
+        "bytes": 67111,
+        "sha256": "deb7c8ecfb75ddef6cab2606a2a3bccaae59065e73c4d7e3ae85387326d6cdcb"
       },
       {
         "path": "frontend/js/arcade.js",
