@@ -2655,6 +2655,138 @@
       "xenomorph/walk_west_3.png",
       "xenomorph/walk_west_4.png",
       "xenomorph/walk_west_5.png"
+    ],
+    "bear.gesture.south": [
+      "bear/gesture_south_0.png",
+      "bear/gesture_south_1.png",
+      "bear/gesture_south_2.png",
+      "bear/gesture_south_3.png",
+      "bear/gesture_south_4.png",
+      "bear/gesture_south_5.png",
+      "bear/gesture_south_6.png",
+      "bear/gesture_south_7.png",
+      "bear/gesture_south_8.png"
+    ],
+    "bear.rot.south-east": [
+      "bear/rot_south-east.png"
+    ],
+    "bear.walk.south-east": [
+      "bear/walk_south-east_0.png",
+      "bear/walk_south-east_1.png",
+      "bear/walk_south-east_2.png",
+      "bear/walk_south-east_3.png",
+      "bear/walk_south-east_4.png",
+      "bear/walk_south-east_5.png"
+    ],
+    "bear.gesture.south-east": [
+      "bear/gesture_south-east_0.png",
+      "bear/gesture_south-east_1.png",
+      "bear/gesture_south-east_2.png",
+      "bear/gesture_south-east_3.png",
+      "bear/gesture_south-east_4.png",
+      "bear/gesture_south-east_5.png",
+      "bear/gesture_south-east_6.png",
+      "bear/gesture_south-east_7.png",
+      "bear/gesture_south-east_8.png"
+    ],
+    "bear.gesture.east": [
+      "bear/gesture_east_0.png",
+      "bear/gesture_east_1.png",
+      "bear/gesture_east_2.png",
+      "bear/gesture_east_3.png",
+      "bear/gesture_east_4.png",
+      "bear/gesture_east_5.png",
+      "bear/gesture_east_6.png",
+      "bear/gesture_east_7.png",
+      "bear/gesture_east_8.png"
+    ],
+    "bear.rot.north-east": [
+      "bear/rot_north-east.png"
+    ],
+    "bear.walk.north-east": [
+      "bear/walk_north-east_0.png",
+      "bear/walk_north-east_1.png",
+      "bear/walk_north-east_2.png",
+      "bear/walk_north-east_3.png",
+      "bear/walk_north-east_4.png",
+      "bear/walk_north-east_5.png"
+    ],
+    "bear.gesture.north-east": [
+      "bear/gesture_north-east_0.png",
+      "bear/gesture_north-east_1.png",
+      "bear/gesture_north-east_2.png",
+      "bear/gesture_north-east_3.png",
+      "bear/gesture_north-east_4.png",
+      "bear/gesture_north-east_5.png",
+      "bear/gesture_north-east_6.png",
+      "bear/gesture_north-east_7.png",
+      "bear/gesture_north-east_8.png"
+    ],
+    "bear.gesture.north": [
+      "bear/gesture_north_0.png",
+      "bear/gesture_north_1.png",
+      "bear/gesture_north_2.png",
+      "bear/gesture_north_3.png",
+      "bear/gesture_north_4.png",
+      "bear/gesture_north_5.png",
+      "bear/gesture_north_6.png",
+      "bear/gesture_north_7.png",
+      "bear/gesture_north_8.png"
+    ],
+    "bear.rot.north-west": [
+      "bear/rot_north-west.png"
+    ],
+    "bear.walk.north-west": [
+      "bear/walk_north-west_0.png",
+      "bear/walk_north-west_1.png",
+      "bear/walk_north-west_2.png",
+      "bear/walk_north-west_3.png",
+      "bear/walk_north-west_4.png",
+      "bear/walk_north-west_5.png"
+    ],
+    "bear.gesture.north-west": [
+      "bear/gesture_north-west_0.png",
+      "bear/gesture_north-west_1.png",
+      "bear/gesture_north-west_2.png",
+      "bear/gesture_north-west_3.png",
+      "bear/gesture_north-west_4.png",
+      "bear/gesture_north-west_5.png",
+      "bear/gesture_north-west_6.png",
+      "bear/gesture_north-west_7.png",
+      "bear/gesture_north-west_8.png"
+    ],
+    "bear.gesture.west": [
+      "bear/gesture_west_0.png",
+      "bear/gesture_west_1.png",
+      "bear/gesture_west_2.png",
+      "bear/gesture_west_3.png",
+      "bear/gesture_west_4.png",
+      "bear/gesture_west_5.png",
+      "bear/gesture_west_6.png",
+      "bear/gesture_west_7.png",
+      "bear/gesture_west_8.png"
+    ],
+    "bear.rot.south-west": [
+      "bear/rot_south-west.png"
+    ],
+    "bear.walk.south-west": [
+      "bear/walk_south-west_0.png",
+      "bear/walk_south-west_1.png",
+      "bear/walk_south-west_2.png",
+      "bear/walk_south-west_3.png",
+      "bear/walk_south-west_4.png",
+      "bear/walk_south-west_5.png"
+    ],
+    "bear.gesture.south-west": [
+      "bear/gesture_south-west_0.png",
+      "bear/gesture_south-west_1.png",
+      "bear/gesture_south-west_2.png",
+      "bear/gesture_south-west_3.png",
+      "bear/gesture_south-west_4.png",
+      "bear/gesture_south-west_5.png",
+      "bear/gesture_south-west_6.png",
+      "bear/gesture_south-west_7.png",
+      "bear/gesture_south-west_8.png"
     ]
   }
 }
