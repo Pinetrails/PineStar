@@ -27,7 +27,11 @@ const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
+const { makeWebReader } = require('./tools/builtin/webreader.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
+// ONE reader for the whole sidecar (lazy: no Chrome until the first bot-walled fetch actually needs
+// it; idle self-teardown). Per-run construction would pay the Chrome cold start on every run.
+const stationWebReader = makeWebReader({ env: process.env });
 const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
 const { makeHooks } = require('./hooks.js');                 // the hook spine: pre/post tool + llm, session, compress
@@ -6402,6 +6406,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/halt', h: handleHalt },
   { m: 'POST', exact: '/api/consent', h: handleConsent },
   { m: 'POST', exact: '/api/consent/ack', h: handleConsentAck },   // EL-11: the browser attests the prompt is human-visible
+  { m: 'POST', exact: '/api/consent/answer', h: handleConsentAnswer },   // in-turn clarify: the Commander's live answer to a brief.ask card
   { m: 'GET', exact: '/api/permissions', h: handlePermissionsList },
   { m: 'POST', exact: '/api/permissions/grant', h: handlePermissionsGrant },
   { m: 'POST', exact: '/api/permissions/revoke', h: handlePermissionsRevoke },
@@ -10129,6 +10134,29 @@ async function handleRun(req, res) {
   // existing consent card answers it (Always = record a standing path grant; Approve once = this access only;
   // Deny = refuse). tool:'path.trust' lets the card phrase it as a folder-trust ask; the resolved decision string
   // routes back to pathtrust.js, NOT the capability broker (a directory bless is never a capability:scope grant).
+  /* IN-TURN CLARIFY (2026-07-31, Hermes-parity): brief.ask on this watched run blocks HERE and resumes
+     the SAME turn with the Commander's answer — a material question no longer costs the run its plan and
+     context. Rides the exact fail-closed consent transport (same pending map, same disconnect-denies,
+     same one-shot ack extension); tool:'brief.ask' is the frontend's cue to render choice chips instead
+     of approve/deny. The answer arrives via POST /api/consent/answer as {__clarify, text}; every other
+     resolution (timeout, tab close, a plain consent decision) maps to {answered:false} and the tool falls
+     back to today's durable end-run question. Components are bounded so the frozen permission.prompt
+     argsSummary stays a sane size. */
+  function askCommander(fields) {
+    const f = fields || {};
+    const clip = (s, n) => String(s == null ? '' : s).slice(0, n);
+    return askHuman({
+      tool: 'brief.ask', scope: 'read',
+      argsSummary: JSON.stringify({
+        question: clip(f.question, 400),
+        options: (Array.isArray(f.options) ? f.options.slice(0, 6) : []).map(x => clip(x, 120)),
+        recommended: clip(f.recommended, 120),
+        reason: clip(f.reason, 240)
+      })
+    }).then(v => (v && typeof v === 'object' && v.__clarify && v.text)
+      ? { answered: true, text: String(v.text) }
+      : { answered: false });
+  }
   function promptPathTrust(proposedRoot, info) {
     return askHuman({ tool: 'path.trust', scope: (info && info.scope) || 'read', argsSummary: String(proposedRoot || '') });
   }
@@ -10179,6 +10207,7 @@ async function handleRun(req, res) {
       emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
+      askCommander,            // in-turn clarify: brief.ask blocks + resumes the SAME turn on this watched surface
 
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       taskKey: streamId ? ('stream:' + streamId) : null,
@@ -10450,7 +10479,12 @@ async function runOnce(o) {
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   const internalBriefTools = taskBriefState && taskBrief.status !== 'cancelled'
-    ? registerTaskBriefTools(registry, taskBriefStore, taskBriefState, { now: () => Date.now() }) : [];
+    ? registerTaskBriefTools(registry, taskBriefStore, taskBriefState, {
+        now: () => Date.now(),
+        // in-turn clarify is a WATCHED-surface capability only: unattended/channel runs pass nothing and
+        // keep the durable end-run question (nobody is there to answer a live card)
+        askCommander: (surface === 'interactive' && typeof o.askCommander === 'function') ? o.askCommander : null
+      }) : [];
   const loadedSkills = [];
   const managedSkills = [];
   const seenLoadedSkills = new Set();
@@ -10461,6 +10495,9 @@ async function runOnce(o) {
     openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
     surface: surface,
     redact: redact,
+    // the station READER: automatic real-Chrome rung for bot-walled fetches + throttled search
+    // (webreader.js — headless, cookie-less, shared across runs, SKYNET_WEB_READER=0 disables)
+    reader: stationWebReader,
     resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc),
     // web_fetch's clean-extraction path is keyed now (r.jina.ai 401s without a token), so it is attempted
     // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
@@ -11979,6 +12016,22 @@ async function handleConsent(req, res) {
   const pend = pendingByRun.get(body.runId);
   const finish = pend && pend.get(body.promptId);
   if (finish) finish(decision);
+  res.writeHead(200); res.end('ok');
+}
+
+/* POST /api/consent/answer { runId, promptId, answer } — the in-turn clarify reply (2026-07-31). A SIBLING
+   of handleConsent rather than a widened decision whitelist on purpose: consent decisions are a closed enum
+   with grant semantics, an ANSWER is free text — folding answers into that channel would let arbitrary text
+   masquerade as a permission decision. Resolves the same fail-closed waiter with a shape the clarify caller
+   recognizes ({__clarify, text}); a consent-shaped prompt that somehow receives an answer resolves to a
+   non-enum value and fails closed to deny downstream. Stale ids are a harmless no-op, like handleConsent. */
+async function handleConsentAnswer(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 8192)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const text = String(body.answer == null ? '' : body.answer).trim().slice(0, 2000);
+  const pend = pendingByRun.get(body.runId);
+  const finish = pend && pend.get(body.promptId);
+  if (finish && text) finish({ __clarify: true, text });
   res.writeHead(200); res.end('ok');
 }
 
