@@ -522,6 +522,7 @@
     const settleActionBudgetMs = deps.settleActionBudgetMs == null ? SETTLE_ACTION_BUDGET_MS : Number(deps.settleActionBudgetMs);
     const settleEmptyGraceMs = deps.settleEmptyGraceMs == null ? SETTLE_EMPTY_GRACE_MS : Number(deps.settleEmptyGraceMs);
     const settleMinObserveMs = deps.settleMinObserveMs == null ? SETTLE_MIN_OBSERVE_MS : Number(deps.settleMinObserveMs);
+    const inputSleep = typeof deps.inputSleep === 'function' ? deps.inputSleep : sleep;
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
     /* ATTACH MODE. deps.attachPort names an ALREADY-RUNNING Chrome's DevTools port (the Commander started
        it with --remote-debugging-port). We launch nothing, so we need no Chromium binary of our own — the
@@ -559,6 +560,37 @@
        (Emulation.* overrides are per-session too), and the tool must be able to report truthfully
        what is currently being emulated instead of guessing. */
     let emulation = null;
+    /* INPUT CADENCE. One deterministic seed per run gives natural-looking bounded paths without
+       ambient randomness, flaky tests, or unbounded latency. Long text is grouped into at most 40
+       paced inserts, so a large form body cannot turn into minutes of artificial delay. */
+    let inputSeed = 2166136261;
+    for (const ch of String(deps.inputSeed || profileDir)) {
+      inputSeed ^= ch.charCodeAt(0); inputSeed = Math.imul(inputSeed, 16777619) >>> 0;
+    }
+    function inputRandom() {
+      inputSeed ^= inputSeed << 13; inputSeed ^= inputSeed >>> 17; inputSeed ^= inputSeed << 5;
+      return (inputSeed >>> 0) / 4294967296;
+    }
+    function inputBetween(min, max) { return Math.round(min + inputRandom() * (max - min)); }
+    async function inputPause(min, max) { await inputSleep(inputBetween(min, max)); }
+    let pointer = { x: 720, y: 450 };
+    async function movePointer(c, target, button) {
+      const start = { x: pointer.x, y: pointer.y };
+      const dx = target.x - start.x, dy = target.y - start.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const steps = Math.max(3, Math.min(9, Math.ceil(dist / 180) + inputBetween(2, 4)));
+      const bend = (inputRandom() - 0.5) * Math.min(70, dist * 0.18);
+      const nx = dist ? -dy / dist : 0, ny = dist ? dx / dist : 0;
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps, eased = t * t * (3 - 2 * t);
+        const arc = Math.sin(Math.PI * t) * bend;
+        const x = Math.round(start.x + dx * eased + nx * arc);
+        const y = Math.round(start.y + dy * eased + ny * arc);
+        await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: button || 'none' });
+        await inputPause(6, 18);
+      }
+      pointer = { x: target.x, y: target.y };
+    }
     function netRecord(requestId, patch) {
       let row = netById.get(requestId);
       if (!row) {
@@ -1087,7 +1119,9 @@
       const c = await page();
       const x = node.x + Math.max(1, Math.floor(node.w / 2));
       const y = node.y + Math.max(1, Math.floor(node.h / 2));
+      await movePointer(c, { x, y }, 'none');
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      await inputPause(35, 90);
       await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'clicked';
@@ -1095,7 +1129,15 @@
     async function type(node, text) {
       await click(node);
       const c = await page();
-      await c.send('Input.insertText', { text: String(text || '') });
+      const chars = Array.from(String(text || ''));
+      const paced = Math.min(chars.length, 40);
+      let at = 0;
+      for (let i = 0; i < paced; i++) {
+        const take = Math.ceil((chars.length - at) / (paced - i));
+        await c.send('Input.insertText', { text: chars.slice(at, at + take).join('') });
+        at += take;
+        if (i + 1 < paced) await inputPause(25, 70);
+      }
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'typed';
     }
@@ -1103,6 +1145,7 @@
       const c = await page();
       key = String(key || 'Enter');
       await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key });
+      await inputPause(25, 70);
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key });
       // Enter/Escape routinely submit or dismiss, so a keypress gets a navigation-sized budget.
       await waitForSettle(c, { budgetMs: settleNavBudgetMs });
@@ -1113,7 +1156,7 @@
     async function hover(node) {
       const c = await page();
       const p = center(node);
-      await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' });
+      await movePointer(c, p, 'none');
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'hovered';
     }
@@ -1122,15 +1165,10 @@
     async function drag(from, to) {
       const c = await page();
       const a = center(from), b = center(to);
+      await movePointer(c, a, 'none');
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: a.x, y: a.y, button: 'left', clickCount: 1 });
-      const steps = 6;
-      for (let i = 1; i <= steps; i++) {
-        await c.send('Input.dispatchMouseEvent', {
-          type: 'mouseMoved', button: 'left',
-          x: Math.round(a.x + (b.x - a.x) * i / steps),
-          y: Math.round(a.y + (b.y - a.y) * i / steps)
-        });
-      }
+      await inputPause(45, 100);
+      await movePointer(c, b, 'left');
       await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: b.x, y: b.y, button: 'left', clickCount: 1 });
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'dragged';
@@ -1420,8 +1458,20 @@
     // Scrolling is what triggers lazy-load / infinite-scroll, so it settles too — otherwise the very
     // content the scroll was meant to reveal is missing from the next snapshot.
     async function scroll(x, y) {
-      await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')');
-      await waitForSettle(await page(), { budgetMs: settleActionBudgetMs });
+      const c = await page();
+      const totalX = Number(x) || 0, totalY = Number(y) || 0;
+      const steps = inputBetween(3, 6);
+      let sentX = 0, sentY = 0;
+      for (let i = 1; i <= steps; i++) {
+        const nextX = Math.round(totalX * i / steps), nextY = Math.round(totalY * i / steps);
+        await c.send('Input.dispatchMouseEvent', {
+          type: 'mouseWheel', x: pointer.x, y: pointer.y,
+          deltaX: nextX - sentX, deltaY: nextY - sentY
+        });
+        sentX = nextX; sentY = nextY;
+        if (i < steps) await inputPause(20, 55);
+      }
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'scrolled';
     }
     async function back() {

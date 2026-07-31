@@ -281,7 +281,7 @@ function fakeDriver() {
   // Drive the real CDP adapter against an in-memory protocol peer: the bootstrap must be
   // registered BEFORE Page.navigate, and the launched process must stay headless/muted.
   {
-    const sent = [], launches = [];
+    const sent = [], launches = [], inputDelays = [];
     let currentUrl = 'about:blank', isolationReady = true;
     const fakeProc = pid => {
       let close;
@@ -305,6 +305,7 @@ function fakeDriver() {
     }
     const d = T.makeCdpDriver({
       chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9347,
+      inputSeed: 'browser-input-contract', inputSleep: async ms => { inputDelays.push(ms); },
       fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://fake' }] }),
       WebSocketImpl: FakeWS,
       spawn: (exe, args) => { launches.push({ exe, args }); return fakeProc(42); }
@@ -321,6 +322,27 @@ function fakeDriver() {
     A.ok(!sent.some(m => m.method === 'Runtime.enable'), 'the page-observable Runtime domain is never globally enabled');
     await d.consoleLog();
     A.ok(sent.some(m => m.method === 'Runtime.enable'), 'Runtime observation begins only after browser.console is requested');
+
+    // BOUNDED INPUT CADENCE: real actions use deterministic paths/timing, never instant teleport bursts.
+    let mark = sent.length;
+    await d.click({ x: 10, y: 20, w: 80, h: 30 });
+    let input = sent.slice(mark).filter(m => m.method === 'Input.dispatchMouseEvent');
+    A.ok(input.filter(m => m.params.type === 'mouseMoved').length >= 3, 'click moves through a bounded pointer path before pressing');
+    A.eq(input.slice(-2).map(m => m.params.type), ['mousePressed', 'mouseReleased'], 'click ends with an ordered press/release pair');
+    A.ok(inputDelays.some(ms => ms >= 35 && ms <= 90), 'click carries a bounded press duration');
+
+    mark = sent.length; inputDelays.length = 0;
+    await d.type({ x: 10, y: 60, w: 200, h: 24 }, 'abc');
+    const inserts = sent.slice(mark).filter(m => m.method === 'Input.insertText');
+    A.eq(inserts.map(m => m.params.text).join(''), 'abc', 'paced typing preserves the exact text');
+    A.eq(inserts.length, 3, 'short text is typed character by character');
+    A.ok(inputDelays.filter(ms => ms >= 25 && ms <= 70).length >= 2, 'typing intervals stay inside the bounded cadence');
+
+    mark = sent.length; inputDelays.length = 0;
+    await d.scroll(0, 240);
+    const wheels = sent.slice(mark).filter(m => m.method === 'Input.dispatchMouseEvent' && m.params.type === 'mouseWheel');
+    A.ok(wheels.length >= 3 && wheels.length <= 6, 'scroll uses a bounded wheel-event sequence');
+    A.eq(wheels.reduce((n, m) => n + m.params.deltaY, 0), 240, 'wheel steps preserve the requested total distance');
     FakeWS.last.fire('message', { data: JSON.stringify({ method: 'Target.attachedToTarget', params: { sessionId: 'popup-session', targetInfo: { type: 'page', targetId: 'popup-target' } } }) });
     // Adoption is a multi-hop promise chain (inject shim, inject settle marker, record, resume).
     await new Promise(resolve => setTimeout(resolve, 60));
