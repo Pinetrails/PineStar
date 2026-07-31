@@ -1,5 +1,27 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-31 — NEXT UPDATE PLAN: v0.9.0 LEGIBLE · SOLID · UNBLOCKED
+
+Andrew's mandate for the update after v0.8.0: (1) make StarNet dramatically easier for a
+beginner to understand — users are asking a lot of questions; (2) fix as many bugs as we can;
+(3) build a stealth engine so station browsing stops being misidentified as a bot. Full plan,
+with evidence re-grepped against trunk `129801b1`: **[docs/PLAN_v0.9.0.md](PLAN_v0.9.0.md)**.
+
+Headlines a lane should know before claiming work from it:
+- `qa/bugs/` is stale in the *fixed* direction — 25 of its 28 `status: open` records were closed
+  by merge `0a6a14e1` and never flipped. Only `4962c3ad`, `e05cdba8`, `f42a5f46` are really open.
+- 10 `agent/*` lanes are ahead of trunk carrying built, gated fixes. Merge order in the plan;
+  `agent/quality-loop-0730f` (E-STOP does not survive a page reload) is the worst live defect.
+- `test:fast` ran 473/473 green at `129801b1` on 2026-07-31 while the Guardian recorded
+  `test-fast exitCode 1` at the same commit. Reproduce before planning on top of either.
+- The explanation layer mostly EXISTS and is undeployed: 32 glossary terms, a correct hint
+  layer, and only 29 `data-hint` attributes repo-wide (4 pointing at undefined terms). The tour
+  can only ever run once (`app.js:2977` → `tutorial.js:134`) and a refresh loses it forever.
+- The stealth work must be dependency-free CDP-level: `package.json` has two runtime deps and
+  the desktop bundle ships no `node_modules`, so Camoufox/playwright-stealth are not options.
+  It also REVERSES a written position in `browser.js:1792-1799`/`:2354-2356` — rewrite those
+  comments in the same lane or the next session re-litigates it.
+
 ## 2026-07-31 — RESUMABLE APPLE NOTARIZATION (`agent/mac-notarization`)
 
 IMPLEMENTED, LIVE RE-PROOF REQUIRED. Developer ID signing succeeded on both Intel and
