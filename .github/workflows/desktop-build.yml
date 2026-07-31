@@ -156,9 +156,14 @@ jobs:
         with:
           name: notarization-input-${{ matrix.target }}
           if-no-files-found: error
+          # The updater tarball + .sig ride along: this artifact REPLACES the distributable
+          # upload for a signed mac build, and without them every signed run threw away the
+          # only copy of the mac updater-feed artifacts (found cutting v0.8.0).
           path: |
             notary-submission.json
             src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/**/release/bundle/macos/*.app.tar.gz.sig
 
       - name: Upload distributable artifacts
         if: runner.os != 'macOS' || hashFiles('notary-submission.json') == ''
@@ -180,6 +185,10 @@ jobs:
 
   notarize-macos:
     needs: build
+    # The linux leg is not shipped (release-platforms law) and fails independently; its
+    # failure must not skip mac stapling. Run whenever the run wasn't cancelled — the
+    # steps already no-op cleanly when a leg produced no notarization input.
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
