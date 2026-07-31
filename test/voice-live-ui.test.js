@@ -59,6 +59,32 @@ function bodyOf(name) {
   assert.ok(m, 'voice-live.js still defines ' + name + '()');
   return m[0];
 }
+{
+  const m = /(  function availabilityFailure\([\s\S]*?\n  \})/.exec(source);
+  assert.ok(m, 'voice-live.js still classifies failed availability probes before opening the mic');
+  // eslint-disable-next-line no-new-func
+  const availabilityFailure = new Function(m[1] + '\nreturn availabilityFailure;')();
+  assert.deepEqual(
+    availabilityFailure({ ok: false, status: 403 }),
+    { probeFailed: true, staleSession: true, status: 403 },
+    'an old sidecar token is recognized as a stale page, not allowed into a silent voice session'
+  );
+  assert.deepEqual(
+    availabilityFailure({ ok: false, status: 500 }),
+    { probeFailed: true, staleSession: false, status: 500 },
+    'other sidecar failures are also refused before the microphone opens'
+  );
+  assert.equal(availabilityFailure({ ok: true, status: 200 }), null, 'a healthy probe proceeds normally');
+}
+{
+  const startBody = bodyOf('start');
+  assert.match(startBody, /readiness\.probeFailed[\s\S]*?reload this page to reconnect voice/, 'stale pages receive an actionable reload message');
+  assert.ok(
+    startBody.indexOf('readiness.probeFailed') < startBody.indexOf('openMicrophone(seq)'),
+    'a failed sidecar probe is refused before requesting microphone access'
+  );
+  assert.match(startBody, /catch \(error\)[\s\S]*?Voice\.restoreSpeak\(\)/, 'failed startup restores a mute that Live Voice lifted');
+}
 for (const fn of ['start', 'startDictation']) {
   assert.match(bodyOf(fn), /Voice\.forceSpeakOn\(\)/, fn + '() force-enables the speaker — hands-free is never opened muted');
   /* ⛔ BOTH entry points speak with the BUILT-IN identity. setLocalTts(true) is what routes /api/tts through

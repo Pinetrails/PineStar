@@ -4,10 +4,10 @@ slug: the-api-stt-degrade-reason-is-written-to-the-sta
 title: The /api/stt degrade reason is written to the status line then overwritten by endListening()'s restore in the same synchronous block, so it is never painted
 surface: voice
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/voice
-fix: 
+fix: 50a8b07b
 ---
 
 # The /api/stt degrade reason is written to the status line then overwritten by endListening()'s restore in the same synchronous block, so it is never painted

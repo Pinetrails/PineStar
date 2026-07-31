@@ -1,5 +1,24 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-31 — LIVE HANDS-FREE VOICE RELEASE SWEEP (`agent/voice-release-sweep`)
+
+READY TO MERGE. The current Local Live stack passed a release-focused code, regression, and browser
+sweep. Two additional lifecycle defects were closed: a tab holding the pre-restart sidecar token
+could open a convincing but silent microphone session, and a microphone-start failure could leave
+the Commander's previous speaker mute force-enabled. Local Live now refuses a failed availability
+probe before touching the microphone, gives a stale tab an explicit reload instruction, and restores
+the speaker preference on every startup failure.
+
+Release accounting was reconciled at the same time: five previously fixed voice findings were still
+marked open despite their existing `50a8b07b` implementation and regression coverage; those records
+now match the code, and the two findings from this sweep are recorded against `8bc9ff9a`. Focused
+voice tests are green (`voice.button` 67 assertions, `voice.draftguard` 21, Local Live UI, realtime,
+native STT, local voice, and provider timeouts). Claims planning is PASS (37 claims / 189 locked
+files), `test:fast` is 464/464 green, and the full 55-suite `test:http` chain is green. A post-merge
+seeded restart and stale-tab browser round trip remain the final live proof. The wider station still
+has unrelated open QA-register findings, so this entry is a feature merge verdict, not a whole-product
+release verdict. No push, deploy, publish, production-data, credential, or secret change.
+
 ## 2026-07-30 — DELEGATED RESEARCH WEB RELIABILITY (`agent/worker-research-reliability`)
 
 READY TO MERGE at `8258e028`. A live researcher run reached its 10-turn ceiling after eight

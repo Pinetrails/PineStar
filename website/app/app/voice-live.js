@@ -285,14 +285,26 @@ const VoiceLive = (() => {
     announceWaits();
   }
 
-  // One read of the sidecar's installation verdict. Returns null when the sidecar cannot be reached, so
-  // callers can tell "proven unavailable" apart from "don't know yet".
+  function availabilityFailure(response) {
+    if (!response || response.ok !== false) return null;
+    return {
+      probeFailed: true,
+      staleSession: response.status === 403,
+      status: Number(response.status) || 0
+    };
+  }
+
+  // One read of the sidecar's installation verdict. A failed probe is a first-class result: every Live
+  // Voice engine needs the sidecar, so opening the microphone after a 403/5xx only creates a convincing
+  // but silent session. In particular, 403 means this page still carries the token from before a restart.
   async function probeAvailability() {
     try {
       const response = await fetch('/api/local-voice/status', { cache: 'no-store' });
+      const failure = availabilityFailure(response);
+      if (failure) return failure;
       return await response.json();
     } catch (_) {
-      return null;
+      return { probeFailed: true, staleSession: false, status: 0 };
     }
   }
 
@@ -822,8 +834,8 @@ const VoiceLive = (() => {
     // Local Live rides on the offline speech packages, and the shipped desktop bundle carries no
     // node_modules — so ASK the sidecar before opening the microphone. Going live first and failing on the
     // first model import is how this panel used to show users a raw "Cannot find module" string.
-    // Only a PROVEN `available:false` refuses; an unreachable sidecar falls through to the existing
-    // offline handling below.
+    // A failed sidecar probe refuses before touching the microphone. Every engine below still depends on
+    // that sidecar, so "try anyway" can only produce a live-looking session that cannot hear or speak.
     /* ONE ENGINE FOR EVERY STATION (Andrew, 2026-07-30). The provider-native realtime path is deliberately NOT
        taken any more, even where it is available. It gave the smoothest turns but tied the feature to one
        vendor, capped the personality behind that vendor's guardrails, and made the behaviour differ between
@@ -835,6 +847,23 @@ const VoiceLive = (() => {
        like a fix for. */
 
     const readiness = await probeAvailability();
+    if (readiness && readiness.probeFailed) {
+      $('live-voice-panel').hidden = false;
+      setState('offline');
+      caption('user', readiness.staleSession
+        ? 'This page lost its connection when the station restarted.'
+        : 'Local Live could not reach the station.');
+      caption('agent', readiness.staleSession
+        ? 'Reload this page to reconnect, then start Local Live again.'
+        : 'Confirm the station is running, then try again.');
+      if (readiness.staleSession) {
+        setUnrecoverableError('The station restarted — reload this page to reconnect voice.');
+      } else {
+        setError('Local voice could not reach the station.');
+      }
+      reflectButton(false);
+      return;
+    }
     if (readiness && readiness.available === false) {
       // The offline models are absent — the normal case in a packaged build, which ships no node_modules.
       // That is NOT a reason to refuse: listening has a keyless ladder (Windows dictation through the
@@ -906,6 +935,9 @@ const VoiceLive = (() => {
       if (typeof Voice !== 'undefined') {
         if (Voice.detachCoordinator) Voice.detachCoordinator();
         if (Voice.setLocalTts) Voice.setLocalTts(false);
+        // start() may have lifted a user mute before the microphone permission request failed. A failed
+        // session must restore that preference just like a normal finish does.
+        if (Voice.restoreSpeak) Voice.restoreSpeak();
       }
     }
   }
