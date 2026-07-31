@@ -104,7 +104,10 @@
         + '\n\n[DELEGATED EXECUTION] Treat the task context above as settled input from the Commander. Do not ask the Commander another discovery question. If a truly blocking gap remains, report that gap to the lead agent.';
     }
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
-    const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 10;
+    // A delegated research run commonly needs plan + several search/fetch turns + synthesis. Ten turns left no
+    // recovery room: three transient web failures could consume the whole job before it wrote the deliverable.
+    // Keep this well below the lead's 40-turn ceiling while allowing bounded recovery.
+    const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 16;
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
     // Cross-provider dispatch: a roster identity carries its OWN mirrored provider (model is a roster

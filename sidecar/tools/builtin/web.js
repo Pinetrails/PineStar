@@ -55,6 +55,7 @@
   const SNIPPET_MAX_CHARS = 320;
   const SEARCH_TIMEOUT_MS = 12000;
   const FETCH_TIMEOUT_MS  = 15000;
+  const OPENROUTER_SEARCH_TIMEOUT_MS = SEARCH_TIMEOUT_MS + 8000;
 
   // ---------- untrusted-content fence ----------
   // Page text and search snippets are attacker-authored input that lands directly in the agent's
@@ -74,12 +75,28 @@
   // drops its in-flight HTTP request instead of running to completion in the background.
   function withTimeout(promiseFactory, ms, parent) {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), ms);
+    let timedOut = false;
+    const t = setTimeout(() => {
+      timedOut = true;
+      const reason = new Error('request timed out after ' + ms + 'ms');
+      reason.__timeout = true;
+      try { ctrl.abort(reason); } catch (_) { ctrl.abort(); }
+    }, ms);
     if (parent) {
       if (parent.aborted) { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }
       else { try { parent.addEventListener('abort', () => { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }, { once: true }); } catch (_) {} }
     }
-    return Promise.resolve(promiseFactory(ctrl.signal)).finally(() => clearTimeout(t));
+    return Promise.resolve(promiseFactory(ctrl.signal)).catch(e => {
+      // Node/undici often discards AbortController.reason and reports only "This operation was aborted".
+      // Preserve the distinction between our per-provider expiry and a parent run/tool cancellation so the
+      // model can change source instead of blindly retrying an opaque abort.
+      if (timedOut) {
+        const reason = new Error('request timed out after ' + ms + 'ms');
+        reason.__timeout = true;
+        throw reason;
+      }
+      throw e;
+    }).finally(() => clearTimeout(t));
   }
   function decodeEntities(s) {
     return String(s)
@@ -348,7 +365,7 @@
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + or.apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify(body), signal
-      }).then(r => r.json()), SEARCH_TIMEOUT_MS + 8000, parent);
+      }).then(r => r.json()), OPENROUTER_SEARCH_TIMEOUT_MS, parent);
       const msg = data && data.choices && data.choices[0] && data.choices[0].message;
       // Prefer structured url_citation annotations when present.
       const ann = (msg && msg.annotations) || [];
@@ -383,7 +400,9 @@
           errors.push(source + ': 0 results');
         } catch (e) { errors.push(source + ': ' + (e && e.message ? e.message : String(e))); }
       }
-      const e = new Error('web_search failed (' + errors.join(' | ') + ')');
+      const e = new Error('web_search failed (' + errors.join(' | ')
+        + '). Search providers are temporarily unavailable; do not immediately repeat the same search. '
+        + 'Use sources already returned, try a known direct URL with web_fetch, or finish with an explicit evidence limitation.');
       e.__allFailed = true; throw e;
     }
 
@@ -459,8 +478,14 @@
     // ====================================================================
     //  Tool definitions (match sidecar/tools/tool.js shape)
     // ====================================================================
+    /* The providers above are sequential fallbacks. The registry timeout must cover their SUM, not one
+       provider plus a guess. The old 37s wrapper could abort OpenRouter before its own 20s allowance after
+       Mojeek + both DDG paths had consumed time — exactly when the fallback was most needed. */
+    const searchChainTimeoutMs = (SEARCH_TIMEOUT_MS * 3)
+      + ((or && or.apiKey) ? OPENROUTER_SEARCH_TIMEOUT_MS : 0)
+      + 5000;
     const searchTool = {
-      name: 'web_search', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: SEARCH_TIMEOUT_MS + 25000,
+      name: 'web_search', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: searchChainTimeoutMs,
       description: 'Search the web and get a list of results (title, url, snippet). Use this to find current information and pages to read.',
       schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } },
       run: async (args, ctx) => {
@@ -643,7 +668,7 @@
     return {
       searchTool, fetchTool, requestTool, webSearch, webFetch,
       // exported for unit tests
-      _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, fenceExternal },
+      _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, fenceExternal, withTimeout },
       register(reg) { reg.register(searchTool); reg.register(fetchTool); reg.register(requestTool); return reg; }
     };
   }

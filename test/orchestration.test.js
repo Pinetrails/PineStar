@@ -48,7 +48,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   // proven against a real AbortController in the "one worker's wall clock" section below.
   A.ok(ro.calls[0].signal && ro.calls[0].signal !== signal, "the child runs on its OWN abort signal (a straggler is stopped alone)");
   A.eq(ro.calls[0].maxCostUsd, 1, 'per-worker cost cap is passed to the child');
-  A.eq(ro.calls[0].maxIters, 10, 'default per-worker iteration cap is passed to the child');
+  A.eq(ro.calls[0].maxIters, 16, 'default per-worker iteration cap leaves bounded recovery room');
   A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless on the autonomous office baseline');
   // SAME ACCESS AS THE ORCHESTRATOR: a worker shares the lead's consent broker (its APPROVAL posture + grants)
   // and is handed the WORKBENCH, so shell/writes are available and gated by the lead's approvals — not auto-denied.
@@ -211,7 +211,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     const handle = JSON.parse(out.content)[0];
     A.ok(handle.id && handle.status === 'running', 'background dispatch returns a running durable handle immediately');
     await tick();
-    A.eq(ro.calls[0].maxIters, 10, 'background worker receives the same default iteration cap');
+    A.eq(ro.calls[0].maxIters, 16, 'background worker receives the same default iteration cap');
     await tick(); await tick();
     const rec = subagents.get(handle.id);
     A.eq(rec.status, 'done', 'background worker completes into the durable record');
@@ -437,7 +437,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     A.ok(ro.calls[0].agentId !== ro.calls[1].agentId && ro.calls[0].agentId !== 'lead', 'each clone is a distinct, non-lead id');
     A.eq(ro.calls[0].isTask, true, 'the clone run is a task (tool-capable)');
     A.eq(ro.calls[0].maxCostUsd, 2, 'per-worker cost cap is passed to the clone');
-    A.eq(ro.calls[0].maxIters, 10, 'default per-worker iteration cap is passed to the clone');
+    A.eq(ro.calls[0].maxIters, 16, 'default per-worker iteration cap is passed to the clone');
     A.ok(ro.calls[0].consent === leadBroker, 'the clone shares the lead consent broker (same approval posture)');
     A.ok(Array.isArray(ro.calls[0].extraObjects) && ro.calls[0].extraObjects.some(o => o.objectType === 'workbench'), 'the clone gets the workbench (terminal)');
     A.ok(!ro.calls[0].lead, 'FLAT DEPTH: the clone is NOT a lead (no orchestrator object) so it cannot re-spawn');
