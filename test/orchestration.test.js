@@ -744,6 +744,8 @@ function fakeStation(sessions, opts) {
       seen.push({ verb, args });
       if (opts.down) return { ok: false, error: 'no station page answered', unattended: true };
       if (verb === 'station.sessions') return { ok: true, result: { sessions: sessions } };
+      if (verb === 'station.dispatch_start') return { ok: true, result: { started: true } };
+      if (verb === 'station.dispatch_end') return { ok: true, result: { settled: true } };
       if (verb === 'station.deliver') return opts.deliverFails ? { ok: false, error: 'session vanished' } : { ok: true, result: { folded: true } };
       return { ok: false, error: 'unknown verb' };
     }
@@ -768,6 +770,8 @@ const leadCtx = () => ({ agentId: 'agent', emit: () => {} });
   const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'summarise X', session: 'research' }] }, leadCtx());
   A.eq(ro.calls.length, 1, 'the worker ran');
   A.eq(ro.calls[0].streamId, 'ws_r1', 'the named session resolves to its real id and rides into the run as streamId');
+  A.eq(ro.calls[0].sessionTitle, 'research', 'the stable session name rides into the durable run row for missed-page replay');
+  A.eq(ro.calls[0].sessionPrompt, 'summarise X', 'the delegated instruction rides into the durable delivery envelope');
   const row = JSON.parse(out.content)[0];
   A.eq(row.reason, 'done', 'the worker completed');
   A.eq(row.session, 'research', 'the row reports WHICH session the work landed in');
@@ -776,6 +780,13 @@ const leadCtx = () => ({ agentId: 'agent', emit: () => {} });
   A.eq(deliver.args.streamId, 'ws_r1', 'delivered to the resolved session, not the active one');
   A.eq(deliver.args.text, 'out:researcher', "the delivered text is the worker's real answer");
   A.eq(deliver.args.runId, ro.calls[0].runId, 'the delivery carries the SAME runId the run was filed under (idempotency + appendRun)');
+  A.eq(deliver.args.sessionTitle, 'research', 'delivery carries the title so a second page with a divergent local id can resolve the same session');
+  const started = station.seen.find(s => s.verb === 'station.dispatch_start');
+  A.ok(started, 'the target session is told when its worker genuinely starts');
+  A.eq(started.args.streamId, 'ws_r1', 'the live activity marker targets the resolved session');
+  const settled = station.seen.find(s => s.verb === 'station.dispatch_end');
+  A.ok(settled, 'the target session is told when its worker settles');
+  A.eq(settled.args.runId, ro.calls[0].runId, 'the settled marker belongs to the same real worker run');
   A.eq(station.seen.filter(s => s.verb === 'station.sessions').length, 1, 'one session-list round trip for the whole dispatch');
 }
 

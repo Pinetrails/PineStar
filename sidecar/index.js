@@ -11788,7 +11788,17 @@ async function runOnce(o) {
     // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
     try {
       const title = latestUserText(msgs);   // an attachment turn titles/records ITSELF, never the message before it
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
+      let deliveryText = '';
+      if (o.sessionTitle && result && Array.isArray(result.messages)) {
+        for (let i = result.messages.length - 1; i >= 0; i--) {
+          const m = result.messages[i];
+          if (m && m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) {
+            deliveryText = m.content.trim();
+            break;
+          }
+        }
+      }
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

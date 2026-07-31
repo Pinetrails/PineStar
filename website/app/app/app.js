@@ -2824,6 +2824,9 @@ const App = (() => {
     // recovers sessions for routines that finished while the browser was closed. Read-only on U.bus. Init AFTER
     // Chat.init + App is fully formed (this returns App) so the module's App.refreshRail/persist bridges resolve.
     if (typeof AutoSessions !== 'undefined') AutoSessions.init();
+    // Delegated-session recovery: if no page received the live delivery (or another open page won the ACK race
+    // with a divergent local id), fold the durable run envelope into the matching named session exactly once.
+    if (typeof StationCommands !== 'undefined' && StationCommands.reconcile) StationCommands.reconcile();
     // G3a PRIDE LAYER: arm the durable lifetime STATION RECORD — folds real completed runs / delivered
     // work-items / fired routines / summed run durations into counters that persist across sessions (own key,
     // read-only on the bus). The COMMANDER DOSSIER panel renders snapshot() as the STATION RECORD block.
@@ -3132,6 +3135,7 @@ const App = (() => {
     focusAgent(ws.agentId || 'agent');   // the focused agent follows the stream's binding (multi-agent COMMS)
     if (typeof World !== 'undefined' && World.lockBody) World.lockBody(ws.agentId || 'agent');   // Commander PICKED this session → the camera follow-locks its agent (any wheel/drag releases it)
     Chat.load(ws); refreshUsage(); renderRail(); persist();
+    if (typeof StationCommands !== 'undefined' && StationCommands.reconcile) StationCommands.reconcile(id);
     if (railView === 'projects') renderProjects();   // keep the entered-project selection truthful
   }
   function openWorkstream(id) { switchWorkstream(id); }

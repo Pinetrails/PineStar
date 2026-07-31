@@ -42,6 +42,9 @@
   const ARTIFACT_KINDS = new Set(['file', 'image', 'message']);
   const ARTIFACTS_MAX = 50;         // a run that writes 500 files still records a bounded row
   const ARTIFACT_STR_MAX = 260;     // classic MAX_PATH — a path/target is a display label, not a blob
+  const SESSION_TITLE_MAX = 80;
+  const DELIVERY_PROMPT_MAX = 4000;
+  const DELIVERY_TEXT_MAX = 24000;
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function str(v) { return v == null ? '' : String(v); }
   function modelName(v) { const s = str(v).trim(); return (s || UNKNOWN_MODEL).slice(0, 80); }
@@ -90,6 +93,11 @@
         turns: num(e.turns), tokens: num(e.tokens), usd: num(e.usd),
         title: str(e.title).slice(0, TITLE_MAX),
         streamId: str(e.streamId),     // H3.2: the run's workstream — joins this outcome row to its transcript (GET /api/transcript?stream=)
+        // Durable session-delivery envelope. The page bridge is best-effort (and multiple open pages may disagree
+        // about local session ids), so a later page can reconcile a completed worker by its stable title + runId.
+        sessionTitle: str(e.sessionTitle).trim().slice(0, SESSION_TITLE_MAX),
+        deliveryPrompt: str(e.deliveryPrompt).slice(0, DELIVERY_PROMPT_MAX),
+        deliveryText: str(e.deliveryText).slice(0, DELIVERY_TEXT_MAX),
         recipeId: str(e.recipeId).slice(0, 60),   // provenance spine (additive): WHICH recipe launched this run ('' for non-recipe runs; old rows lack it and default '')
         model: modelName(e.model),   // H3.3/G6: actual model used, or explicit (unknown) as a last resort
         unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
