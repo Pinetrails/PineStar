@@ -265,7 +265,13 @@ const SPRITES = (() => {
         : (frames[set + '.gesture.' + dir] ? set + '.gesture.' + dir : null);
       if (gk) {
         const GFPS = 8, glen = frames[gk].length, gdur = glen * (1000 / GFPS);
-        const gt = (nowMs + aph * 1300) % 11000;
+        // a stretch is a RARE beat (Andrew, 2026-07-31): once every ~90 minutes per body,
+        // not an every-cycle tic. Each body's fire-point is spread uniformly across the
+        // period via its float phase, so the crew never stretches in unison — and a fresh
+        // boot still sees SOMEONE stretch early rather than everyone at minute 90.
+        const GESTURE_PERIOD = 5400000;
+        const gph = Math.abs(aph) % (2 * Math.PI) / (2 * Math.PI);
+        const gt = (nowMs + gph * GESTURE_PERIOD) % GESTURE_PERIOD;
         if (gt < gdur) {
           key = gk; fixedIdx = Math.min(glen - 1, Math.floor(gt / (1000 / GFPS)));
           bob = 0;   // the frames carry the motion; bobbing on top reads as jitter
