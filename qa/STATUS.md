@@ -1617,3 +1617,18 @@ COMPLETE with the fold closed. Hermes four quiet-rules + the dish-placement reci
 memory calm-errors-lane. Claims re-locked on-branch (91f2d5a5, rode the FF in — no post-merge regen
 owed). Gates read from the logs: branch tree fast 465 + http NPM_EXIT=0; trunk post-FF fast 465
 EXIT_FAST=0.
+
+## 2026-07-31 — Local Live meter real on the dictation leg (session cb31f95a)
+
+Andrew's live report on the v0.8.0 test installer: audio visualizer flat for both voices in a
+live call. Root cause: every packaged build runs startDictation(), whose listening engines
+(sidecar System.Speech / browser SpeechRecognition) expose no level signal, and the strip's only
+clock was the models-leg mic frame — a designed gap resting on "two consumers on one microphone
+fight", which a live probe DISPROVED (SAPI recognizer + shared-mode WASAPI capture coexist
+cleanly: recognizer heard audio + exited 0 while the capture held 23-24 fps throughout). Fix
+merged as FF `e5a321a2` + re-lock `1f369d7a` (agent/live-meter): levels-only meter tap +
+fixed-cadence clock pushing MEASURED values only (tap RMS self, playback-tap RMS agent, nothing
+when no live source). Live-proven on the dictation leg (seeded sidecar, fake-mic tone, headless
+Chrome): SELF bars lift off the real tone, AGENT columns light during real Edge playback, engine
+label ASR BROWSER SPEECH, zero exceptions, VERIFY: ALL PASS. Gates read from the logs: worktree
+fast 465 NPM_EXIT=0 pre-merge; trunk post-merge fast 465 NPM_EXIT=0.
