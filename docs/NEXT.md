@@ -2007,3 +2007,18 @@ Live seeded proof at `:8892`: the no-match row measured 230×51.9 px while Gener
 the no-match row. Browser warnings/errors: none. Focused gate: 121 assertions; website sync: 8;
 `test:fast`: 423/423 green. No backend seam changed, so `test:http` was not required. No merge, push,
 PR, deployment, publish, production-data, credential, or secret change was performed.
+
+# IN PROGRESS 2026-07-31 — MACOS DEVELOPER ID + NOTARIZATION (`agent/mac-notarization`)
+
+Apple Developer Program enrollment is active. Trunk already carries hardened-runtime
+entitlements and a release-train proof for Developer ID authority, Node JIT entitlement,
+DMG notarization/stapling, and Gatekeeper acceptance (`11392c7d`). This lane makes the
+public train fail closed when any of the six Apple signing/notarization secrets is absent
+and turns an ambiguous non-notarized Gatekeeper source into a hard failure. A fast
+structural gate locks that boundary; `docs/CODE_SIGNING.md` now contains the exact
+certificate, app-specific-password, secret, backup, and first-live-proof procedure.
+
+OPEN: Apple portal is waiting on Andrew's sign-in/2FA. No certificate, private key, `.p12`,
+app-specific password, GitHub secret, CI run, notarization submission, or clean-Mac launch
+has been created or claimed yet. Do not retire the unsigned-download warnings until both
+architectures pass the first staged live proof.
