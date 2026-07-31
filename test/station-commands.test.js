@@ -22,16 +22,22 @@ const src = fs.readFileSync(SRC, 'utf8');
 function boot(opts) {
   opts = opts || {};
   delete require.cache[require.resolve('../frontend/app/workstreams.js')];
+  delete require.cache[require.resolve('../frontend/app/channels.js')];
   const Workstreams = require('../frontend/app/workstreams.js');
+  const Channels = require('../frontend/app/channels.js');
   Workstreams.reset();
+  Channels.reset();
   const page = { rail: 0, persisted: 0, loaded: [], acks: [] };
   const sandbox = {
-    Workstreams,
+    Workstreams, Channels,
     App: { refreshRail: () => page.rail++, persist: () => page.persisted++, agents: opts.agents || (() => []) },
     Chat: { load: ws => page.loaded.push(ws.id) },
     U: { bus: { on: () => {} } },
     VoiceLive: opts.voiceLive,
-    fetch: async (url, init) => { page.acks.push(JSON.parse(init.body)); return { ok: true }; },
+    fetch: async (url, init) => {
+      if (String(url).indexOf('/api/runs') === 0) return { ok: true, json: async () => ({ runs: opts.runs || [] }) };
+      page.acks.push(JSON.parse(init.body)); return { ok: true };
+    },
     document: { addEventListener: () => {} },
     console, setTimeout, clearTimeout, Date, JSON
   };
@@ -42,7 +48,7 @@ function boot(opts) {
   const S = vm.runInContext(src + '\n;StationCommands;', sandbox, { filename: 'stationcommands.js' });
   // VoiceLive is probed by bare identifier too — expose a setter so a test can stand in a live call
   const setVoiceLive = (v) => { sandbox.VoiceLive = v; };
-  return { S, W: Workstreams, page, setVoiceLive };
+  return { S, W: Workstreams, C: Channels, page, setVoiceLive };
 }
 // run a verb through the module's real dispatch path (the same one U.bus drives) and read the ack it posted
 async function call(env, verb, args) {
@@ -87,6 +93,64 @@ async function call(env, verb, args) {
   A.ok(env.W.unread(ws.id), 'the rail flags it unread — the Commander has genuinely not seen this yet');
   A.ok(env.page.rail > before && env.page.persisted > 0, 'the rail re-renders and the save is written');
   A.eq(env.page.loaded.length, 0, 'a session that is NOT open is not force-rendered');
+}
+
+// two browser pages can hold different local ids for the SAME named session. Delivery resolves by the stable
+// exact title when this page does not know the id chosen by the other page.
+{
+  const env = boot();
+  const local = env.W.create('business research session');
+  env.W.switch(env.W.generalId());
+  const out = await call(env, 'station.deliver', {
+    streamId: 'ws_other_page', sessionTitle: 'business research session',
+    agentId: 'researcher', runId: 'split-1', prompt: 'find three ideas', text: 'three sourced ideas'
+  });
+  A.eq(out.ok, true, 'split-brain delivery succeeds by stable title');
+  A.eq(out.result.resolvedBy, 'title', 'the ack says the id mismatch was healed by title');
+  A.eq(env.W.get(local.id).history[1].content, 'three sourced ideas', 'the page the Commander is viewing receives the answer');
+  A.ok(env.W.get(local.id).runIds.indexOf('split-1') >= 0, 'the local session records the durable run id');
+}
+
+// a real delegated run makes its TARGET session visibly busy without stealing focus; final delivery settles it.
+{
+  const env = boot();
+  const ws = env.W.create('research');
+  env.W.switch(env.W.generalId());
+  const started = await call(env, 'station.dispatch_start', {
+    streamId: ws.id, sessionTitle: 'research', agentId: 'researcher', runId: 'live-1'
+  });
+  A.eq(started.ok, true, 'dispatch start is acknowledged');
+  A.ok(env.C.isBusy(ws.id), 'the target session is visibly busy');
+  A.eq(env.C.runIdOf(ws.id), 'live-1', 'its status is backed by the real worker run id');
+  A.eq(env.W.activeId(), env.W.generalId(), 'marking the target busy does not steal the Commander from General');
+  const settled = await call(env, 'station.dispatch_end', {
+    streamId: ws.id, sessionTitle: 'research', agentId: 'researcher', runId: 'live-1'
+  });
+  A.eq(settled.ok, true, 'dispatch end is acknowledged');
+  A.ok(!env.C.isBusy(ws.id), 'an errored or stopped worker also settles the target session');
+  await call(env, 'station.dispatch_start', {
+    streamId: ws.id, sessionTitle: 'research', agentId: 'researcher', runId: 'live-2'
+  });
+  await call(env, 'station.deliver', {
+    streamId: ws.id, sessionTitle: 'research', agentId: 'researcher', runId: 'live-2', text: 'done'
+  });
+  A.ok(!env.C.isBusy(ws.id), 'final delivery settles the target session');
+}
+
+// missed delivery heals from the durable /api/runs envelope on boot/open, even when another page minted the id.
+{
+  const env = boot({ runs: [{
+    runId: 'heal-1', agentId: 'researcher', reason: 'done', streamId: 'ws_other_page',
+    sessionTitle: 'business research session', deliveryPrompt: 'research it',
+    deliveryText: 'durable finished brief', ts: 1234
+  }] });
+  const local = env.W.create('business research session');
+  env.W.switch(env.W.generalId());
+  const healed = await env.S.reconcile(local.id);
+  A.eq(healed, 1, 'one missed delegated run was healed');
+  A.eq(env.W.get(local.id).history[1].content, 'durable finished brief', 'the durable answer appears in the visible session');
+  A.eq(await env.S.reconcile(local.id), 0, 'reconciliation is idempotent by runId');
+  A.eq(env.W.get(local.id).history.length, 2, 'the healed answer appears exactly once');
 }
 
 // delivering into the session the Commander is WATCHING re-renders it immediately

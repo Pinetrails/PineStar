@@ -211,16 +211,29 @@
     async function deliverToSession(job, row) {
       if (!station || !job.streamId) return;
       let out = null;
-      try {
-        out = await station.request('station.deliver', {
-          streamId: job.streamId, agentId: job.agentId, runId: row.runId || '',
-          prompt: job.prompt, text: row.result
-        });
-      } catch (e) { out = { ok: false, error: String((e && e.message) || e) }; }
+      const args = {
+        streamId: job.streamId, sessionTitle: job.sessionTitle || job.session || '',
+        agentId: job.agentId, runId: row.runId || '', prompt: job.prompt, text: row.result
+      };
+      try { out = await station.request('station.deliver', args); }
+      catch (e) { out = { ok: false, error: String((e && e.message) || e) }; }
       if (out && out.ok) row.session = job.sessionTitle || job.streamId;
       else row.sessionNote = 'the work ran and is filed under the "' + (job.sessionTitle || job.streamId)
         + '" session, but the station could not show it there: ' + String((out && out.error) || 'no answer')
-        + '. Tell the Commander where it actually is.';
+        + '. The completed run is durable and will be reconciled when that session is opened.';
+    }
+
+    // Busy state belongs to the TARGET session, not whichever session the Commander is currently viewing.
+    // This is intentionally best-effort: a missing page must never delay or cancel paid worker work.
+    function noteSessionActivity(verb, job, runId) {
+      if (!station || !job.streamId) return;
+      try {
+        const pending = station.request(verb, {
+          streamId: job.streamId, sessionTitle: job.sessionTitle || job.session || '',
+          agentId: job.agentId, runId: runId || ''
+        });
+        if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+      } catch (_) {}
     }
 
     const dispatchTool = {
@@ -320,6 +333,7 @@
             };
           };
           let result;
+          noteSessionActivity('station.dispatch_start', job, workerRunId);
           try {
             result = await runOnce({
               key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
@@ -337,6 +351,8 @@
               // transcript) and scopes its working memory to that stream. Absent -> undefined, byte-identical to
               // the pre-2026-07-30 call. This is the DURABLE half; deliverToSession is the visible one.
               streamId: job.streamId || undefined,
+              sessionTitle: job.streamId ? (job.sessionTitle || job.session || '') : undefined,
+              sessionPrompt: job.streamId ? job.prompt : undefined,
               // Share the lead's consent broker so a worker's WRITES follow the lead's APPROVAL posture
               // (full-auto bypass, or a prompt forwarded to the watched lead) instead of the headless default-deny.
               // NOT "same access as the orchestrator" — a worker runs surface:'autonomous' (below), and
@@ -350,11 +366,13 @@
               maxIters: workerMaxIters         // a runaway worker can't burn the lead's full iteration budget
             });
           } catch (e) {
+            noteSessionActivity('station.dispatch_end', job, workerRunId);
             if (timedOut) return timeoutRow(null);   // the abort we fired surfaced as a throw — still an honest timeout
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
           } finally {
             if (timer) clearTimeout(timer);
           }
+          noteSessionActivity('station.dispatch_end', job, workerRunId);
           if (timedOut) return timeoutRow(result);   // keep whatever partial text the aborted run did produce
           if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the station\'s concurrent-agent cap was full at that instant, or a provider sign-in is needed. A parallel dispatch already runs in waves sized to the free capacity and retries a refusal once, so a refusal that survives means the cap is genuinely saturated: raise MAX_CONCURRENT_AGENTS in SETTINGS, or dispatch these workers in a follow-up call.', usd: 0 };
           const row = {

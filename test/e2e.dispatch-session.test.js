@@ -112,7 +112,9 @@ function attachStationPage(B, token, sessions) {
             seen.push(p);
             const out = p.verb === 'station.sessions' ? { ok: true, result: { sessions: sessions } }
               : p.verb === 'station.deliver' ? { ok: true, result: { folded: true, session: 'research' } }
-                : { ok: false, error: 'unknown station verb: ' + p.verb };
+                : (p.verb === 'station.dispatch_start' || p.verb === 'station.dispatch_end')
+                  ? { ok: true, result: { session: 'research' } }
+                  : { ok: false, error: 'unknown station verb: ' + p.verb };
             await fetch(B + '/api/station/ack', {
               method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
               body: JSON.stringify(Object.assign({ id: p.id }, out))
@@ -199,8 +201,10 @@ await run('targeted',
     const delivered = station.filter(c => c.verb === 'station.deliver');
     A.eq(delivered.length, 1, label + ': the answer was delivered to the page exactly once');
     A.eq(delivered[0].args.streamId, 'ws_r1', label + ': delivered into the session the Commander named');
+    A.eq(delivered[0].args.sessionTitle, 'research', label + ': delivery carries the stable title that heals page-local id drift');
     A.eq(delivered[0].args.agentId, 'researcher', label + ': attributed to the worker that did it');
     A.ok(delivered[0].args.text.indexOf('Phobos') >= 0, label + ": the delivered text is the worker's real output");
+    A.eq(station.filter(c => c.verb === 'station.dispatch_start').length, 1, label + ': target-session activity starts from a real worker run');
 
     /* 4) ⛔ THE LOAD-BEARING PROOF. Everything above is the tool describing its own behaviour. THIS reads the
           sidecar's own durable ledger: the worker's run must be recorded under the named stream. Before this
@@ -210,6 +214,9 @@ await run('targeted',
     A.ok(workerRun, label + ": the worker's run is in the run ledger");
     A.eq(workerRun.streamId, 'ws_r1', label + ': and the ledger files it under the named session — not the lead\'s');
     A.eq(workerRun.runId, delivered[0].args.runId, label + ': the delivered runId is the SAME run the ledger recorded');
+    A.eq(workerRun.sessionTitle, 'research', label + ': the stable target title is durable for cross-page recovery');
+    A.eq(workerRun.deliveryPrompt, 'summarise the moons of Mars', label + ': the delegated instruction is durable');
+    A.eq(workerRun.deliveryText, WORKER_TEXT, label + ': the finished answer is durable when no page can receive it');
 
     // 5) and its dialogue persisted under that stream, so a reload still finds the work there
     const tr = await (await fetch(B + '/api/transcript?agent=researcher&stream=ws_r1&limit=50', { headers: H })).json();

@@ -34,6 +34,61 @@ const StationCommands = (() => {
       : 'there is no session called "' + want + '"' + (names ? '. Open sessions: ' + names : ''));
   }
 
+  /* Delivery crosses browser pages, and frontend workstream ids are page-local until their saves converge.
+     Prefer the id that launched the run; if this page does not know it, heal ONLY by a unique exact title.
+     Substring matching is deliberately forbidden here: an automatic fold must never guess its destination. */
+  function resolveDelivery(a) {
+    if (typeof Workstreams === 'undefined' || !Workstreams.get || !Workstreams.list) throw new Error('sessions are not ready yet');
+    const id = String((a && a.streamId) || '');
+    const byId = id && Workstreams.get(id);
+    if (byId) return { w: byId, resolvedBy: 'id' };
+    const title = String((a && a.sessionTitle) || '').trim();
+    if (title) {
+      const lower = title.toLowerCase();
+      const generalId = Workstreams.generalId ? Workstreams.generalId() : null;
+      const hits = (Workstreams.list() || []).filter(w =>
+        String(w.title != null ? w.title : (w.id === generalId ? 'General' : '')).trim().toLowerCase() === lower);
+      if (hits.length === 1) return { w: hits[0], resolvedBy: 'title' };
+      if (hits.length > 1) throw new Error('more than one session is called "' + title + '" on this station');
+    }
+    throw new Error('there is no session with id ' + (id || '(none given)') + ' on this station');
+  }
+
+  function refreshAndPersist(ws, quiet) {
+    if (quiet) return;
+    const isOpen = Workstreams.activeId && Workstreams.activeId() === ws.id;
+    if (isOpen && typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
+    try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+    try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+  }
+
+  function foldDelivery(a, opts) {
+    opts = opts || {};
+    const hit = resolveDelivery(a);
+    const ws = hit.w;
+    const text = String((a && a.text) || '').trim();
+    if (!text) throw new Error('nothing to deliver — the worker returned no text');
+    const runId = String((a && a.runId) || '');
+    if (runId && (ws.runIds || []).indexOf(runId) >= 0) {
+      try { if (typeof Channels !== 'undefined' && Channels.end) Channels.end(ws.id); } catch (_) {}
+      return { folded: false, reason: 'already delivered', session: ws.title || 'General', resolvedBy: hit.resolvedBy };
+    }
+    const who = String((a && a.agentId) || 'agent');
+    const prompt = String((a && a.prompt) || '').trim();
+    const ts = Number(a && a.ts) > 0 ? Number(a.ts) : Date.now();
+    if (!Array.isArray(ws.history)) ws.history = [];
+    /* The instruction goes in as a sys marker, not a user turn: the Commander did not type it here, and
+       chat.js excludes sys lines from historyWindow() so it is never replayed to the model as if they had. */
+    if (prompt) ws.history.push({ role: 'system', sys: true, content: '— delegated to ' + who + ': ' + prompt.slice(0, 400) + ' —', ts });
+    ws.history.push({ role: 'assistant', content: text, agentId: who, ts });
+    if (runId && Workstreams.appendRun) Workstreams.appendRun(ws.id, runId, ts);
+    else if (Workstreams.touch) Workstreams.touch(ws.id);
+    if (Workstreams.markUnread) Workstreams.markUnread(ws.id);
+    try { if (typeof Channels !== 'undefined' && Channels.end) Channels.end(ws.id); } catch (_) {}
+    refreshAndPersist(ws, !!opts.quiet);
+    return { folded: true, session: ws.title || 'General', agentId: who, resolvedBy: hit.resolvedBy };
+  }
+
   const VERBS = {
     /* Everything the station can currently see: which sessions exist, which is active, who is busy, what is
        waiting on approval. Reuses VoiceLive's snapshot so voice and tools cannot drift into two answers. */
@@ -101,6 +156,7 @@ const StationCommands = (() => {
       if (typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
       try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
       try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      try { reconcile(ws.id); } catch (_) {}
       /* A switch that happens DURING a live voice call came through the call (the Commander said "open X"),
          so the call follows the Commander there. A UI click never routes through this verb, so browsing
          other sessions while speaking can never re-target the call (VoiceLive holds its own binding). */
@@ -137,31 +193,28 @@ const StationCommands = (() => {
        already holds the Commander's own conversation, and replacing that history (the way the cron auto-session
        path can, because it OWNS its stream) would delete their thread. Idempotent by runId so a retry, a
        duplicated command, or a re-delivered background worker can never double-post. */
-    'station.deliver': (a) => {
-      if (typeof Workstreams === 'undefined' || !Workstreams.get) throw new Error('sessions are not ready yet');
-      const id = String((a && a.streamId) || '');
-      const ws = id && Workstreams.get(id);
-      if (!ws) throw new Error('there is no session with id ' + (id || '(none given)') + ' on this station');
-      const text = String((a && a.text) || '').trim();
-      if (!text) throw new Error('nothing to deliver — the worker returned no text');
+    'station.deliver': (a) => foldDelivery(a),
+
+    /* A delegated worker runs in the target session while the Commander is free to remain in General. The
+       bridge supplies the real runId, so this is proven activity rather than a hopeful local spinner. */
+    'station.dispatch_start': (a) => {
+      const hit = resolveDelivery(a);
+      const ws = hit.w;
       const runId = String((a && a.runId) || '');
-      if (runId && (ws.runIds || []).indexOf(runId) >= 0) return { folded: false, reason: 'already delivered', session: ws.title || 'General' };
-      const who = String((a && a.agentId) || 'agent');
-      const prompt = String((a && a.prompt) || '').trim();
-      if (!Array.isArray(ws.history)) ws.history = [];
-      /* The instruction goes in as a sys marker, not a user turn: the Commander did not type it here, and
-         chat.js excludes sys lines from historyWindow() so it is never replayed to the model as if they had. */
-      if (prompt) ws.history.push({ role: 'system', sys: true, content: '— delegated to ' + who + ': ' + prompt.slice(0, 400) + ' —', ts: Date.now() });
-      // agentId names the ACTUAL speaker so renderHistory attributes it to the worker, not the session's agent.
-      ws.history.push({ role: 'assistant', content: text, agentId: who, ts: Date.now() });
-      if (runId && Workstreams.appendRun) Workstreams.appendRun(ws.id, runId);
-      else if (Workstreams.touch) Workstreams.touch(ws.id);
-      if (Workstreams.markUnread) Workstreams.markUnread(ws.id);   // real new content the Commander has not seen
-      const isOpen = Workstreams.activeId && Workstreams.activeId() === ws.id;
-      if (isOpen && typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
+      if (!runId) throw new Error('dispatch start needs a run id');
+      if (typeof Channels === 'undefined' || !Channels.begin || !Channels.setRunId) throw new Error('session activity is not ready yet');
+      Channels.begin(ws.id, Date.now());
+      Channels.setRunId(ws.id, runId, Date.now());
+      if (Channels.setStatus) Channels.setStatus(ws.id, 'working…');
       try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
-      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
-      return { folded: true, session: ws.title || 'General', agentId: who };
+      return { started: true, session: ws.title || 'General', runId, resolvedBy: hit.resolvedBy };
+    },
+
+    'station.dispatch_end': (a) => {
+      const hit = resolveDelivery(a);
+      if (typeof Channels !== 'undefined' && Channels.end) Channels.end(hit.w.id);
+      try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+      return { settled: true, session: hit.w.title || 'General', resolvedBy: hit.resolvedBy };
     },
 
     /* Who is on the roster and what each one is for — the list a delegate call has to choose from. */
@@ -175,6 +228,53 @@ const StationCommands = (() => {
       };
     }
   };
+
+  const reconciling = Object.create(null);
+
+  /* Recover a station.deliver command that no page received (or that the wrong page acknowledged first).
+     The completed answer is stored with the run itself; fold by runId exactly once, resolving a divergent
+     page-local id by the unique exact session title. A read failure is fail-open and never blocks page boot. */
+  function reconcile(targetId) {
+    const target = String(targetId || '');
+    const key = target || '*';
+    if (reconciling[key]) return reconciling[key];
+    reconciling[key] = (async () => {
+      let rows = [];
+      try {
+        const r = await fetch('/api/runs?agent=*&limit=500', { cache: 'no-store' });
+        if (!r.ok) return 0;
+        rows = ((await r.json()) || {}).runs || [];
+      } catch (_) { return 0; }
+      let folded = 0;
+      // /api/runs is newest-first. Fold oldest-first so multiple missed answers preserve conversation order.
+      for (const row of rows.slice().reverse()) {
+        if (!row || ['done', 'max_iters', 'budget'].indexOf(String(row.reason || 'done')) < 0) continue;
+        if (!String(row.sessionTitle || '').trim() || !String(row.deliveryText || '').trim()) continue;
+        const args = {
+          streamId: row.streamId, sessionTitle: row.sessionTitle, agentId: row.agentId,
+          runId: row.runId, prompt: row.deliveryPrompt, text: row.deliveryText, ts: row.ts
+        };
+        let hit;
+        try { hit = resolveDelivery(args); } catch (_) { continue; }
+        if (target && hit.w.id !== target) continue;
+        if (row.runId && (hit.w.runIds || []).indexOf(String(row.runId)) >= 0) continue;
+        try {
+          const out = foldDelivery(args, { quiet: true });
+          if (out && out.folded) folded++;
+        } catch (_) {}
+      }
+      if (folded) {
+        try {
+          const active = Workstreams.activeId && Workstreams.get(Workstreams.activeId());
+          if (active && typeof Chat !== 'undefined' && Chat.load) Chat.load(active);
+        } catch (_) {}
+        try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+        try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      }
+      return folded;
+    })();
+    return reconciling[key].finally(() => { delete reconciling[key]; });
+  }
 
   async function run(id, verb, args) {
     let out;
@@ -205,7 +305,7 @@ const StationCommands = (() => {
     });
   }
 
-  return { init, run, verbs: () => Object.keys(VERBS) };
+  return { init, run, reconcile, verbs: () => Object.keys(VERBS) };
 })();
 
 document.addEventListener('DOMContentLoaded', () => StationCommands.init());
