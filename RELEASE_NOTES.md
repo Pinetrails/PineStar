@@ -1,11 +1,33 @@
 # StarNet v0.8.0
 
-The station stops being something you have to sit in front of. Your agents now hold a real
-conversation on Telegram — reading what you replied to, answering in the thread that asked, writing
-back in front of you — and they carry an earned record of what they can actually do, one the harness
-proves rather than the interface flatters. The floor under them became a place. And a long sweep ran
+The station stops being something you have to sit in front of. You can now hold a real spoken
+call with it — hands-free, fully offline, no API key — and your agents hold a real conversation
+on Telegram: reading what you replied to, answering in the thread that asked, writing back in
+front of you. They carry an earned record of what they can actually do, one the harness proves
+rather than the interface flatters. The floor under them became a place. And a long sweep ran
 the other way: forty-odd spots where StarNet said something it could not prove are now either true
 or gone.
+
+## Live Voice: a real call with the station, fully offline
+
+LOCAL LIVE is a hands-free voice mode: open a call and talk. The station listens, thinks, and
+answers out loud — and nothing in the loop waits on a click.
+
+- **The offline engine ships inside the installer.** Whisper speech recognition and the Kokoro
+  neural voice now travel with the app itself, so an installed build listens and speaks with no
+  API key and no cloud round trip. The model weights download once (~150 MB) into a local cache
+  documented in PRIVACY.md; after that, your audio never leaves the machine.
+- **Hands-free means hands-free.** Approvals, choices and questions that come up mid-call are
+  spoken to you and can be answered by voice. A call is something you can walk away from your
+  desk and still finish.
+- **One voice, and it is the one you picked.** The station speaks with a single engine and a
+  single chosen identity. An installed build can no longer silently swap your picked voice for a
+  keyed cloud provider's; if the offline engine is unavailable, it falls back to the nearest
+  built-in system neural voice — same sex, same accent — and says which engine it is using.
+- **A live call is bound to the session that opened it.** Your microphone input and the station's
+  spoken replies stay with that one session — they cannot bleed into another tab or an older
+  page. A stale session is refused *before* the microphone opens, and delivery survives page
+  switches instead of going quiet.
 
 ## Telegram is a real seat at the station, not a notification pipe
 
@@ -88,15 +110,12 @@ This is the release's quiet theme. A representative slice:
 
 - **A message that names a component now owes proof that component is at fault.** "The local service
   is unreachable" is no longer said on the strength of a failure that never touched it.
-- **Local Live voice works in the installed build again, and stops lying about how.** The desktop
-  bundle ships no npm packages, so the offline Whisper/Kokoro models cannot load in an installed
-  copy — the panel used to open your microphone, promise a model download, and then show a raw
-  module error. A keyless listening ladder for exactly this case already existed and nothing was
-  calling it: Windows dictation through the sidecar, no key, no download, already inside the
-  bundle. Local Live now falls back to it, speaks through the keyless neural floor, and **names the
-  engine it is actually using** rather than claiming the offline models. Where no leg exists (a
-  platform without the models and without a dictation engine) it says so plainly instead of
-  failing mid-session.
+- **Local Live voice names the engine it is actually using.** Earlier builds would open your
+  microphone, promise an offline model download the installed app could not perform, and then
+  show a raw module error. This release fixes the root — the offline engine now ships in the
+  installer (see the Live Voice section) — and keeps the honesty: the panel reports the engine
+  really in use, and on a platform with no engine at all it says so plainly instead of failing
+  mid-session.
 - **An errored read is not "you have none."** A connector list that failed to load no longer renders
   as a confident empty inventory.
 - **A "since" is never a future timestamp.**
@@ -135,7 +154,12 @@ This is the release's quiet theme. A representative slice:
 - Windows installers are code-signed (CN=Andrew Sims), continuing from v0.6.5.
 - **Windows: update from inside StarNet.** It installs over your existing copy — your crew,
   sessions, keys and station stay exactly where they are.
-- **macOS: in-app updating works from v0.6.8 onward.**
+- **This release ships the Windows build.** The macOS 0.8.0 build follows separately; macOS
+  in-app updating continues to work from v0.6.8 onward once it lands.
+- **Stale caches can no longer outlive an update.** The compiled WebView caches are now
+  invalidated against the exact executable that is running — not just its version number — so
+  even a rebuilt installer under the same version can never run yesterday's cached code against
+  today's app. Your world save and settings are untouched.
 - **Upgrading is a no-op for your data.** The workspace schema generation is unchanged from v0.7.0
   and the shared event contract was not touched, so there is no migration to run. Verified by
   booting this build against a copy of a real v0.7.0 workspace rather than assumed.
