@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "a6d6510d3e6a59ad671fa0b792039bf383fdd6dd",
-    "pathSetSha256": "80ab5a92b143255a49446c2313d16ce3d86ebf9ff6805073102deb9f5800a1c8",
+    "sourceCommit": "49f124b9ff5cbf3b4be2df85729d3e0f302d7d2e",
+    "pathSetSha256": "7d4dff42cde1d41eccdf0b62cdc46370c8359d502730792dab79cd6bcf33b3e0",
     "files": [
       {
         "path": "INSTALL.md",
@@ -667,11 +667,6 @@
         "sha256": "964e963d686904ac849fa4ac279384bc3a9541c6692d0dc3f03cc115d521ab78"
       },
       {
-        "path": "frontend/app/subagentsprites.js",
-        "bytes": 7186,
-        "sha256": "15eeb8f6ce062f1af970891bdbbf42353181c71a48f3307870f0c2a0f4f4c196"
-      },
-      {
         "path": "frontend/app/suggeststore.js",
         "bytes": 15435,
         "sha256": "c1b674ab7214c7f5ada1051e966ec4a10ca29674ce78b5415f2df7fb540d4984"
@@ -858,8 +853,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 495487,
-        "sha256": "1648331b285556760d4dedc30572e753e242264a05a7e9d3ae9d3896e225bb89"
+        "bytes": 489089,
+        "sha256": "65344c928839d131820b2b6069d0545e05a17397d035d0eef3a1a6fa9a93940b"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -948,8 +943,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67058,
-        "sha256": "4edcd910ff7bf29b88b4d58fbd70657878e453641865e4847c1ee20ae7ed738a"
+        "bytes": 66920,
+        "sha256": "58bc9e6bfb9d54daed9577550e0e32e594b40645d3698adc379d8023e2cc45f5"
       },
       {
         "path": "frontend/js/arcade.js",
