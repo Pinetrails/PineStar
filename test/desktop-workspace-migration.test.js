@@ -24,8 +24,11 @@ A.ok(/file_type\(\)\.is_symlink\(\)[\s\S]{0,80}return\s+Ok\(\(\)\)/.test(src), '
 // resurrects files the user deleted on every boot. Source-lock the marker gate so this never
 // regresses back to unconditional copying.
 A.ok(/const\s+MIGRATION_MARKER\s*:\s*&str\s*=\s*"\.migrated"/.test(src), 'migration declares a .migrated done-marker');
+A.ok(/const\s+MIGRATION_PENDING_MARKER\s*:\s*&str\s*=\s*"\.migration-pending"/.test(src), 'migration declares an in-progress receipt');
 A.ok(/if\s+marker\.exists\(\)\s*\{[\s\S]{0,60}return/.test(src), 'migration skips entirely once the marker exists');
 A.ok(/workspace_has_content\(current\)/.test(src), 'migration skips when the live workspace already has content');
+A.ok(/if\s+copy_failed\s*\{[\s\S]{0,80}return\s+migrated/.test(src), 'a copy failure returns before the done-marker is written');
+A.ok(/workspace-migration:\s+RETRY required/.test(src), 'copy failures are named as retryable in the startup log');
 
 const setupMigration = src.indexOf('let migrated_workspaces = migrate_workspace_data');
 // Setup kicks off the sidecar via spawn_sidecar_with_retry(&state) (audit 0.2 wrapped the bare
