@@ -457,6 +457,7 @@ test/release-cut.test.js
 test/opensource-readiness.test.js
 test/release-train-provenance.test.js
 test/release-train-macos-trust.test.js
+test/release-train-windows-trust.test.js
 test/website-app-sync.test.js
 test/lint-gate-can-fail.js
 test/lint-emits.js

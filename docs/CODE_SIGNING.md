@@ -3,8 +3,10 @@
 Why this exists: unsigned installers hit the Windows SmartScreen "unrecognized app /
 potential virus" wall and the macOS Gatekeeper block. Signing + notarization is what
 turns "sketchy download" into "opens cleanly". Both CI workflows (desktop-build.yml,
-release-train.yml) are already wired — they light up automatically when the secrets
-below exist, and degrade to unsigned builds when they don't.
+release-train.yml) are wired. Manual `desktop-build` runs sign when credentials are
+available and may degrade to unsigned internal-test artifacts. The tagged public
+`release-train` fails closed if either platform's production credentials or trust proof
+is missing.
 
 ## Windows — Azure Trusted Signing ("Artifact Signing")
 
@@ -21,31 +23,40 @@ below exist, and degrade to unsigned builds when they don't.
 | Certificate profile | `starnet-public` (PublicTrust) — provisioned Succeeded 2026-07-21. Name is load-bearing: CI's signCommand references it. |
 | Service principal | `starnet-ci-signer` (appId `2a51e476-1196-49e4-8ee9-8f31a57045f2`) with role `Artifact Signing Certificate Profile Signer` scoped to the account. Credentials at `%USERPROFILE%\.starnet-signing\azure-ci-signer.json` (delete after first signed build verifies). |
 
-### Remaining operator steps (in order)
+### Live status (verified 2026-07-31)
 
-1. **Add the three `AZURE_*` secrets** to the repo running the workflows
-   (androoAGI/starnet → Settings → Secrets → Actions): AZURE_TENANT_ID
-   `bb673ff6-ccab-4628-9b90-c8a874c20d65`, AZURE_CLIENT_ID
-   `2a51e476-1196-49e4-8ee9-8f31a57045f2`, AZURE_CLIENT_SECRET = `password` from the
-   credentials file above. Next tagged train ships signed.
-2. **Verify on the first signed build:** `Get-AuthenticodeSignature` on the setup exe,
-   the installed `StarNet.exe`, AND the bundled `node-x86_64-pc-windows-msvc.exe` must
-   all say Valid — an unsigned nested exe still trips Defender.
+- The three `AZURE_*` Actions secrets are installed in `androoAGI/starnet`.
+- Non-publishing `desktop-build` run `30606849654` authenticated as the signing service
+  principal and used account `starnet-signing`, public-trust profile `starnet-public`.
+- Azure successfully signed `skynet-desktop.exe`, the NSIS components, and
+  `StarNet_0.7.0_x64-setup.exe` with zero signing errors.
+- The downloaded CI installer passed the native Windows check:
+  `Get-AuthenticodeSignature` returned `Valid` / `Signature verified`, publisher
+  `Andrew Sims`, a Microsoft verified code-signing issuer, and a Microsoft timestamp.
+- The checksum-verified Node runtime that is bundled by `externalBin` independently
+  returns `Valid`, publisher `OpenJS Foundation`, with a DigiCert timestamp. Preserve
+  that upstream signature rather than replacing it.
 
 ### How CI signs (already wired — no action)
 
 With the AZURE_* secrets present, the Windows leg installs `trusted-signing-cli` and
-injects `bundle.windows.signCommand` via `--config`. Tauri then signs the app exe, the
-bundled node sidecar (externalBin), and the NSIS installer/uninstaller. Keyless builds
-skip all of it (warning, not failure). tauri.conf.json stays untouched so local builds
-never reach for Azure.
+injects `bundle.windows.signCommand` via `--config`. Tauri signs the app executable,
+NSIS components, and final installer. The bundled Node sidecar keeps its upstream
+OpenJS signature. `tauri.conf.json` stays untouched so local builds never reach for
+Azure.
+
+The tagged public train requires all three Azure credentials before compiling, then
+uses `Get-AuthenticodeSignature` to require a valid timestamped signature on the app,
+installer, and bundled Node runtime. Any missing credential, wrong publisher, unsigned
+file, invalid chain, or missing timestamp stops the release before staging.
 
 ### Reputation reality check
 
-Signing kills the "potential virus" heuristics but SmartScreen reputation still
-accrues per-certificate: expect a softer "unrecognized" prompt for the first
-releases/downloads, then silence. Never change the signing identity once shipping —
-reputation follows the cert.
+Signing removes the unknown-publisher condition and reduces malware heuristics, but
+SmartScreen reputation still accrues over real downloads. Azure's short-lived
+certificates rotate automatically; reputation follows the verified publisher identity.
+Early releases can still receive a reputation warning even when the signature is fully
+valid, so record clean-machine results rather than promising instant SmartScreen silence.
 
 ## macOS — Apple Developer ID + notarization
 

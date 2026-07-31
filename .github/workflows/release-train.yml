@@ -20,10 +20,11 @@
 #   APPLE_* (required for macOS)       — codesign/notarize the mac DMG. The release train
 #                                        fails closed when any Apple credential is absent;
 #                                        public releases must never stage an unsigned Mac build.
-#   AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET (optional) — Authenticode-sign the
-#                                        Windows exe + bundled node sidecar + NSIS installer via
-#                                        Azure Trusted Signing (account starnet-signing / eastus).
-#                                        Absent = unsigned Windows build (SmartScreen warning).
+#   AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET (required for Windows) —
+#                                        Authenticode-sign the Windows exe + NSIS installer via
+#                                        Azure Artifact Signing (account starnet-signing / eastus).
+#                                        The bundled Node runtime retains its valid upstream
+#                                        OpenJS signature. Missing/invalid trust fails the train.
 #                                        Operator setup for both signing tiers: docs/CODE_SIGNING.md.
 name: release-train
 
@@ -196,6 +197,29 @@ jobs:
           esac
           echo "::notice::complete Developer ID signing + notarization credential set present."
 
+      # Public Windows artifacts must never silently fall back to an unknown publisher.
+      # Check the complete service-principal credential set before compiling so a renamed or
+      # expired secret cannot produce a green-but-unsigned installer.
+      - name: Require complete Azure Artifact Signing credentials
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for v in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+            if [ -z "${!v:-}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Windows release signing is incomplete. Missing GitHub Actions secrets:$missing"
+            echo "::error::Follow docs/CODE_SIGNING.md. The public release train will not stage an unsigned Windows installer."
+            exit 1
+          fi
+          echo "::notice::complete Azure Artifact Signing credential set present."
+
       - name: Build desktop bundles (signed updater artifacts required)
         shell: bash
         env:
@@ -212,21 +236,16 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           RUST_TARGET: ${{ matrix.rust-target }}
         run: |
-          # Windows Authenticode tier (same shape as the Apple tier above): with the AZURE_*
-          # service-principal secrets present, inject a signCommand pointing at Azure Trusted
-          # Signing. Tauri then signs the app exe, the bundled node sidecar (externalBin), and
-          # the NSIS installer/uninstaller — every shipped Windows executable, which is what
-          # clears SmartScreen "unrecognized app" and most Defender false positives. Injected
-          # via --config so keyless/local builds never try to reach Azure. docs/CODE_SIGNING.md.
+          # Windows Authenticode tier: the credential gate above makes Azure Artifact Signing
+          # mandatory for public releases. Tauri signs StarNet.exe, NSIS components, and the
+          # final installer. The bundled official Node runtime already carries a valid OpenJS
+          # Foundation Authenticode signature; the post-build trust proof checks all three.
+          # Injected via --config so keyless/local builds never try to reach Azure.
           SIGN_CFG=""
           if [ "$RUNNER_OS" = "Windows" ]; then
-            if [ -n "${AZURE_CLIENT_SECRET:-}" ] && [ -n "${AZURE_CLIENT_ID:-}" ] && [ -n "${AZURE_TENANT_ID:-}" ]; then
-              cargo install trusted-signing-cli --locked
-              SIGN_CFG='{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a starnet-signing -c starnet-public %1"}}}'
-              echo "::notice::Windows Authenticode signing ENABLED (Azure Trusted Signing: starnet-signing/starnet-public)"
-            else
-              echo "::warning::no Azure Trusted Signing secrets — Windows exe/installer will be UNSIGNED (SmartScreen warning for users)"
-            fi
+            cargo install trusted-signing-cli --locked
+            SIGN_CFG='{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a starnet-signing -c starnet-public %1"}}}'
+            echo "::notice::Windows Authenticode signing ENABLED (Azure Artifact Signing: starnet-signing/starnet-public)"
           fi
           npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET} ${SIGN_CFG:+--config "$SIGN_CFG"}
 
@@ -357,6 +376,56 @@ jobs:
             for a in $arts; do echo "  art: $a"; done
             for s in $sigs; do echo "  sig: $s"; done
           done
+
+      # Windows' equivalent of the macOS Gatekeeper proof. A successful signing command is
+      # not sufficient: validate the embedded Authenticode chain and timestamp on the exact
+      # files that will execute on a user's machine.
+      - name: Verify Windows Authenticode signing + timestamp
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Assert-Authenticode {
+            param(
+              [Parameter(Mandatory = $true)][string]$Label,
+              [Parameter(Mandatory = $true)][string]$Path,
+              [Parameter(Mandatory = $true)][string]$PublisherPattern
+            )
+
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "[$env:TARGET] $Label is missing: $Path"
+            }
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if ($signature.Status -ne 'Valid') {
+              throw "[$env:TARGET] $Label Authenticode status is '$($signature.Status)': $($signature.StatusMessage)"
+            }
+            if ($null -eq $signature.SignerCertificate -or
+                $signature.SignerCertificate.Subject -notmatch $PublisherPattern) {
+              throw "[$env:TARGET] $Label has the wrong publisher: $($signature.SignerCertificate.Subject)"
+            }
+            if ($null -eq $signature.TimeStamperCertificate) {
+              throw "[$env:TARGET] $Label has no trusted timestamp; its signing certificate would strand users after expiry."
+            }
+            Write-Host "::notice::[$env:TARGET] $Label Authenticode valid + timestamped: $($signature.SignerCertificate.Subject)"
+          }
+
+          $app = Get-ChildItem -Path 'src-tauri/target' -Recurse -File -Filter 'skynet-desktop.exe' |
+            Where-Object { $_.Directory.Name -eq 'release' } |
+            Select-Object -First 1
+          $installer = Get-ChildItem -Path 'src-tauri/target' -Recurse -File -Filter '*-setup.exe' |
+            Where-Object { $_.FullName -match '[\\/]bundle[\\/]nsis[\\/]' } |
+            Select-Object -First 1
+          $node = 'src-tauri/binaries/node-x86_64-pc-windows-msvc.exe'
+
+          if ($null -eq $app) { throw "[$env:TARGET] could not locate skynet-desktop.exe" }
+          if ($null -eq $installer) { throw "[$env:TARGET] could not locate the NSIS setup executable" }
+
+          Assert-Authenticode -Label 'StarNet executable' -Path $app.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
+          Assert-Authenticode -Label 'NSIS installer' -Path $installer.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
+          Assert-Authenticode -Label 'bundled Node runtime' -Path $node -PublisherPattern 'CN=OpenJS Foundation(?:,|$)'
 
       # macOS trust proof. Signing can fail SILENTLY GREEN in three ways, each of which ships
       # a build that looks fine in CI and is broken in the user's hands:

@@ -2031,3 +2031,13 @@ desktop executable, and `StarNet.app`, then submitted both Intel and Apple Silic
 Apple notarization. Final Apple verdict and DMG artifacts are pending. Do not retire the
 unsigned-download warnings until both architectures pass this staged live proof and the
 DMGs receive a clean-Mac launch check.
+
+WINDOWS TRUST PROOF: the same non-publishing run used Azure Artifact Signing account
+`starnet-signing` / public-trust profile `starnet-public` and signed the app, NSIS
+components, and final installer with zero errors. The downloaded setup executable passed
+native Windows Authenticode validation as publisher Andrew Sims with a Microsoft verified
+code-signing chain and timestamp. The checksum-verified bundled Node runtime independently
+passes as publisher OpenJS Foundation with a DigiCert timestamp. The tagged release train
+now fails closed on missing Azure credentials and checks all three timestamped signatures
+before staging. A clean Windows SmartScreen/Defender launch remains the final reputation
+proof; a valid new publisher can still show a reputation prompt during early downloads.

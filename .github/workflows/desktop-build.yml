@@ -10,9 +10,9 @@
 #   APPLE_CERTIFICATE(+_PASSWORD) + APPLE_SIGNING_IDENTITY -> codesign the .app
 #   APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID -> notarize (kills the Gatekeeper wall)
 #   AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET -> Authenticode-sign the
-#     Windows exe + bundled node sidecar + NSIS installer via Azure Trusted Signing
-#     (account starnet-signing / eastus; kills the SmartScreen "unrecognized app" wall
-#     and most Defender false positives). Absent = unsigned exe, still installable.
+#     Windows exe + NSIS installer via Azure Artifact Signing. The bundled Node runtime
+#     retains its valid upstream OpenJS signature. (Account starnet-signing / eastus;
+#     absent = unsigned StarNet exe/installer, still installable for internal testing.)
 # With no Apple secrets the DMG is unsigned: fine for internal testing (System
 # Settings -> Privacy & Security -> Open Anyway), not for public distribution.
 # Operator setup for both signing tiers: docs/CODE_SIGNING.md.
@@ -110,16 +110,16 @@ jobs:
             echo "::warning::no Apple signing cert in secrets — DMG will be UNSIGNED (internal testing only)"
           fi
           # Windows Authenticode tier: with the AZURE_* service-principal secrets present,
-          # inject a signCommand pointing at Azure Trusted Signing. Tauri then signs the app
-          # exe, the bundled node sidecar (externalBin), and the NSIS installer/uninstaller.
-          # Config injected via --config (not committed to tauri.conf.json) so local/keyless
-          # builds never try to reach Azure.
+          # inject a signCommand pointing at Azure Artifact Signing. Tauri signs the app exe,
+          # NSIS components, and installer; the checksum-verified Node externalBin retains its
+          # upstream OpenJS Foundation Authenticode signature. Config is injected via --config
+          # so local/keyless builds never try to reach Azure.
           SIGN_CFG=""
           if [ "$RUNNER_OS" = "Windows" ]; then
             if [ -n "${AZURE_CLIENT_SECRET:-}" ] && [ -n "${AZURE_CLIENT_ID:-}" ] && [ -n "${AZURE_TENANT_ID:-}" ]; then
               cargo install trusted-signing-cli --locked
               SIGN_CFG='{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a starnet-signing -c starnet-public %1"}}}'
-              echo "::notice::Windows Authenticode signing ENABLED (Azure Trusted Signing: starnet-signing/starnet-public)"
+              echo "::notice::Windows Authenticode signing ENABLED (Azure Artifact Signing: starnet-signing/starnet-public)"
             else
               echo "::warning::no Azure Trusted Signing secrets — Windows exe/installer will be UNSIGNED (SmartScreen warning for users)"
             fi
