@@ -135,4 +135,26 @@ A.ok(/openProjectMenu\(row, b\.left, b\.bottom \+ 2, li\)/.test(appSrc)
   && /closeProjectMenu\(true\)/.test(appSrc),
   'Shift+F10 enters the project action menu and Escape restores its row focus');
 
+/* ---------- failed refresh: unknown stays unknown; never mint an empty trust ledger ---------- */
+const renderProjects = appSrc.slice(
+  appSrc.indexOf('function renderProjects()'),
+  appSrc.indexOf('// sessions attached to one project', appSrc.indexOf('function renderProjects()'))
+);
+const unavailableProjects = appSrc.slice(
+  appSrc.indexOf('function renderProjectsUnavailable('),
+  appSrc.indexOf('function renderProjects()', appSrc.indexOf('function renderProjectsUnavailable('))
+);
+A.ok(/if \(!r\.ok\) throw new Error\('projects unavailable'\)/.test(renderProjects),
+  'a non-2xx /api/projects response enters the unavailable path instead of synthesizing an empty list');
+A.ok(/!Array\.isArray\(j\.projects\)/.test(renderProjects),
+  'a malformed success payload is unavailable, not a confirmed empty trust ledger');
+A.ok(!/projects:\s*\[\]/.test(renderProjects),
+  'the fetch path cannot manufacture a confirmed-empty projects response');
+A.ok(/lastConfirmedProjects[\s\S]*renderProjectRows\(ul, lastConfirmedProjects\)/.test(unavailableProjects),
+  'failed refreshes repaint the last confirmed ledger before adding the stale warning');
+A.ok(/showing the last confirmed list/.test(unavailableProjects) && /Reload to reconnect/.test(unavailableProjects),
+  'the stale ledger is labeled honestly with the recovery action');
+A.ok(!/setProjScope\(/.test(unavailableProjects),
+  'an unavailable refresh cannot erase the persisted project scope');
+
 A.report('projects-view.test');
