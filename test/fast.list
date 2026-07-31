@@ -204,6 +204,7 @@ test/docextract.test.js
 test/imagewire.test.js
 test/web.ssrf.test.js
 test/web.search.test.js
+test/web.politeness.test.js
 test/web.fence.test.js
 test/web.fetch-jina.test.js
 test/web.calm.test.js
