@@ -136,13 +136,10 @@ const World = (() => {
   // per-hero cooldown; `postTargetTile` the board approach tile it walks to. Beats (1) inspection-rounds and
   // (3) queue-aware idle bias ride existing machinery (maybeRounds / decideIdle) and need no new module state.
   let postCd = 0, postTargetTile = null;
-  // G4 feature 3 — MEESEEKS sub-agent sprites. A real background sub-agent (team.dispatch/team.spawn) makes
-  // itself observable via a frozen `task` event (kind:'subagent', status running→done). SubagentSprites folds
-  // that stream into a live-only helper ledger (truthfulness law: a sprite exists IFF a real sub-agent is live).
-  // Each helper is drawn small/translucent/flickering near the LEAD's desk — eerie helpers, not full agents.js
-  // bodies. helperSlots caches a stable local-frame offset per helper id so they don't jitter frame to frame.
-  const subLedger = (typeof SubagentSprites !== 'undefined') ? SubagentSprites.makeLedger({ cap: 5 }) : null;
-  const helperSlots = new Map();
+  // (G4.3 "Meeseeks" helper sprites REMOVED 2026-07-30 on Andrew's order — the flickering cyan bar that
+  //  hovered beside the lead and rode along when it walked read as floating garbage, not as a helper. The
+  //  world draws NO floating marker for background sub-agents; the LIVE HELPERS panel (server-truth
+  //  /api/subagents) remains the one honest readout. Do not rebuild a follower sprite for this.)
   // AGENT GROWTH HUD: per-agent Xp.compute() snapshots pushed in by XpStore (drives the hero name-tag "Lv N"
   // chip and any body's gold level-up ripple). The station headline lives in the top-bar STATION chip.
   let xpAgent = null, levelUpAt = 0;
@@ -785,10 +782,6 @@ const World = (() => {
     if (slaglog) slaglog.reset();       // W1: wasted-spend post-mortems
     if (convey) convey.reset();         // W2: drop the prior agent's in-flight belt crates
     chanQueues.clear(); serverLit.clear();   // W3: no phantom backlog gauge / no body stuck "working" from a prior run
-    // ...and the helper ledger, for the same reason. Without it the previous Commander's spectral sub-agents
-    // re-rendered beside the NEWBORN hero: drawMeeseeks falls back to `bodyForAgent(s.leadId) || agent`, and
-    // bodyForAgent returns null for the dead lead id, so every orphan re-anchored onto the new body.
-    if (subLedger) subLedger.clear();
     xpAgent = null; xpByAgent.clear();  // W4: name-tag level chip re-seeds from XpStore on enterGame
     levelUpAt = 0; lastSlagAt = -1e9; lastOutboxFlash = -1e9;   // W4: one-shot beats don't replay into the newborn
     agent = {
@@ -3660,7 +3653,6 @@ const World = (() => {
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
     drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
-    drawMeeseeks(now);   // G4.3: the ephemeral sub-agent helper sprites clustered near the lead's desk (over the entities)
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
     drawShippedPallet(now);   // SHIPPED TODAY: completed jobs stack as product crates at the OUTBOX (server-truth count)
 
@@ -4430,69 +4422,6 @@ const World = (() => {
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillText('PINNED', cx, cy - 6 - e * 4);
     ctx.restore();
-  }
-
-  /* ---------- MEESEEKS helper sprites (G4 feature 3): a lightweight, dedicated layer (NOT agents.js bodies).
-     Each LIVE sub-agent is one small, translucent, faintly-flickering helper that materializes near the lead's
-     desk, works in place (a tight shimmer + micro-wander), and dissolves in a brief amber-cyan poof when its
-     sub-agent completes. Cap 5 + a '+N' badge. The ledger is the ONLY source — a sprite exists iff a real
-     sub-agent is live (the truthfulness law). Colours are cool/pale so they read as spectral helpers, not crew. */
-  function helperSlot(id) {
-    let s = helperSlots.get(id);
-    if (!s) {
-      // a stable fan of offsets around the lead's foot (local px), hash-seeded so a given helper keeps its spot
-      const h = U.hash('ms' + id);
-      const ang = (h % 360) * Math.PI / 180, rad = 10 + (h % 7);
-      s = { ox: Math.cos(ang) * rad, oy: -6 - (h % 5), ph: (h % 100) / 100 * Math.PI * 2 };
-      helperSlots.set(id, s);
-    }
-    return s;
-  }
-  function drawMeeseeks(now) {
-    if (!subLedger) return;
-    subLedger.prune(now);
-    const view = subLedger.list(now);
-    if (!view.shown.length) { for (const k of helperSlots.keys()) helperSlots.delete(k); return; }
-    for (const s of view.shown) {
-      const lead = bodyForAgent(s.leadId) || agent;
-      if (!lead || lead.unplaced) continue;
-      const lx = lead.seated ? lead.seatPx : lead.px, ly = lead.seated ? lead.seatPy : lead.py;
-      const slot = helperSlot(s.id);
-      // micro-wander: a small lissajous drift so the helper works "in place" without standing dead-still
-      const wob = s.phase === 'materialize' ? 1 : 0.4;
-      const hx = Math.round(lx + slot.ox + Math.sin(now / 520 + slot.ph) * 2.2 * wob);
-      const hy = Math.round(ly + slot.oy + Math.cos(now / 610 + slot.ph) * 1.6 * wob);
-      // flicker: a fast, shallow alpha jitter on top of the materialize/dissolve alpha (eerie, unstable presence)
-      const flick = 0.82 + 0.18 * Math.sin(now / 90 + slot.ph * 3);
-      const a = Math.max(0, Math.min(1, s.alpha)) * flick;
-      const scale = s.phase === 'materialize' ? (0.55 + 0.45 * Math.min(1, s.alpha)) : (0.4 + 0.6 * s.alpha);   // scale-in on birth, shrink on poof
-      ctx.save();
-      ctx.globalAlpha = 0.85 * a;
-      // a small spectral body: pale-cyan torso + head, a faint amber core, a soft contact shadow
-      const bodyH = Math.round(9 * scale), bodyW = Math.max(2, Math.round(3 * scale));
-      ctx.globalAlpha = 0.28 * a; ctx.fillStyle = '#0b1416'; ctx.fillRect(hx - bodyW, hy, bodyW * 2, 1);   // shadow
-      ctx.globalAlpha = 0.8 * a;
-      ctx.fillStyle = '#8fe6df'; ctx.fillRect(hx - (bodyW >> 1), hy - bodyH, bodyW, bodyH);                 // torso
-      ctx.fillStyle = '#c7f4ef'; ctx.fillRect(hx - (bodyW >> 1), hy - bodyH - Math.max(2, Math.round(3 * scale)), bodyW, Math.max(2, Math.round(3 * scale)));   // head
-      ctx.globalAlpha = 0.5 * a; ctx.fillStyle = '#ffd9a3'; ctx.fillRect(hx - 1, hy - Math.round(bodyH * 0.6), 1, 1);   // amber work-core spark
-      // the poof: a couple of rising motes while dissolving
-      if (s.phase === 'dissolve') {
-        ctx.globalAlpha = 0.7 * s.alpha; ctx.fillStyle = '#a7f0ea';
-        for (let i = 0; i < 3; i++) { const t = (1 - s.alpha); ctx.fillRect(hx - 2 + i * 2, hy - bodyH - Math.round(t * 8) - i, 1, 1); }
-      }
-      ctx.restore();
-    }
-    // the '+N' badge: more live helpers than the cap — a tiny cyan counter near the lead
-    if (view.overflow > 0) {
-      const lead = agent;
-      if (lead && !lead.unplaced) {
-        ctx.save();
-        ctx.globalAlpha = 0.9; ctx.font = "7px 'VT323','Courier New',monospace"; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.shadowBlur = 3; ctx.shadowColor = '#8fe6df'; ctx.fillStyle = '#c7f4ef';
-        ctx.fillText('+' + view.overflow, (lead.seated ? lead.seatPx : lead.px) + 14, (lead.seated ? lead.seatPy : lead.py) - 14);
-        ctx.restore();
-      }
-    }
   }
 
   /* ---------- the SPEECH BUBBLE: what a body is saying right now (a routed "received: …" beat, a muttered
@@ -6093,10 +6022,6 @@ const World = (() => {
     // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
     U.bus.on('task', t => {
       if (!t || !t.agentId) return;
-      // G4 feature 3: a sub-agent lifecycle event (kind:'subagent') folds into the Meeseeks helper ledger. The
-      // lead is whoever is currently delegating (the open team.dispatch window), else the hero — so helpers
-      // cluster near the desk that spawned them. The fold itself enforces the "live sub-agent ⇒ one sprite" law.
-      if (subLedger && t.kind === 'subagent') subLedger.fold(t, performance.now(), delegateLead || (agent && agent.id) || null);
       if (t.status && t.status !== 'active' && t.status !== 'running' && t.status !== 'queued') { deskProg.delete(t.agentId); return; }
       const prog = +t.prog, dur = +t.dur;
       if (isFinite(prog) && isFinite(dur) && dur > 0) deskProg.set(t.agentId, Math.max(0, Math.min(1, prog / dur)));
@@ -6146,21 +6071,6 @@ const World = (() => {
         .then(r => { if (!r.ok) return null; return r.json(); })
         .then(snap => { if (snap) { try { reconcileFromSnapshot(snap); } catch (_) {} } })
         .catch(() => {});   // endpoint absent / offline: TTL net covers it
-      /* The helper sprites need their own reconcile: /api/state/snapshot carries no sub-agent list, and the
-         ledger is fed ONLY by `task` frames — a terminal frame emitted while the socket was down is gone for
-         good (the stream sends no `id:` lines, so there is no Last-Event-ID replay). Without this a finished
-         helper flickered beside the desk forever. Same authoritative source the LIVE HELPERS panel paints from. */
-      if (subLedger) {
-        fetch(apiUrl('/api/subagents?status=running'), { cache: 'no-store' })
-          .then(r => { if (!r.ok) return null; return r.json(); })
-          .then(j => {
-            if (!j || !Array.isArray(j.records)) return;   // absent endpoint: leave the ledger alone
-            // the same clock the fold uses (world.js:5991) — fnow is a stale frame stamp and would skew alpha
-            const nowMs = (typeof performance !== 'undefined') ? performance.now() : fnow;
-            try { subLedger.reconcile(j.records.map(r => ({ id: r && r.id, leadId: r && (r.leadId || r.agentId), title: r && r.title })), nowMs); } catch (_) {}
-          })
-          .catch(() => {});
-      }
     } catch (_) {}
   }
   // the live backlog total — FloorStats owns it (tested), with the chanQueues sum as a fallback if
@@ -6366,7 +6276,7 @@ const World = (() => {
       if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, attn: (agent.attn && fnow < agent.attn.until) ? { x: agent.attn.x, y: agent.attn.y, inMs: Math.round(agent.attn.until - fnow) } : null, drive: (fnow < (agent.driveUntil || 0)) ? agent.drive : null, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, attn: (agent.attn && fnow < agent.attn.until) ? { x: agent.attn.x, y: agent.attn.y, inMs: Math.round(agent.attn.until - fnow) } : null, drive: (fnow < (agent.driveUntil || 0)) ? agent.drive : null, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
     // read-only camera truth for the DEV verify harness (+ the war-room HUD chip): who drives the camera
     // ('manual' | 'lock' = session follow | 'auto' = idle cinecam), which body is locked, and how long the
     // Commander has been hands-off. Pure read, no side effects — the testapi idiom.

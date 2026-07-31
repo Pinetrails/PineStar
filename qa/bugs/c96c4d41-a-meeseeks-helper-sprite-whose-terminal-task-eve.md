@@ -4,10 +4,10 @@ slug: a-meeseeks-helper-sprite-whose-terminal-task-eve
 title: A Meeseeks helper sprite whose terminal `task` event is lost stays asserted LIVE forever — the ledger has no TTL, no snapshot reconcile, and no reset on NEW AGE
 surface: world
 severity: P1
-status: open
+status: closed
 found: 2026-07-28
 lane: sweep/world
-fix: 
+fix: meeseeks layer removed 2026-07-30 (agent/meeseeks-visual)
 ---
 
 # A Meeseeks helper sprite whose terminal `task` event is lost stays asserted LIVE forever — the ledger has no TTL, no snapshot reconcile, and no reset on NEW AGE
@@ -34,4 +34,9 @@ _Found by the `sweep/world` lane, 2026-07-28. Finder confidence: high. Severity 
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+The finding was true (a trunk pass later added `subLedger.clear()` on spawn + a `/api/subagents` reconcile in
+fetchSnapshot, closing the lost-event legs). Moot as of 2026-07-30: Andrew ordered the helper-sprite layer
+removed outright — the flickering cyan follower read as floating garbage on his own station, and he flagged it
+twice. world.js no longer constructs the ledger or draws any floating sub-agent marker; subagentsprites.js and
+its test are deleted. Sub-agent observability lives solely in the LIVE HELPERS panel (server-truth
+`/api/subagents`). Do not rebuild a follower sprite for this.
