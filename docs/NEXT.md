@@ -1,5 +1,18 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-31 — RESUMABLE APPLE NOTARIZATION (`agent/mac-notarization`)
+
+IMPLEMENTED, LIVE RE-PROOF REQUIRED. Developer ID signing succeeded on both Intel and
+Apple Silicon in non-publishing run `30606849654`, but Apple's notarization queue remained
+in progress long enough to expose a workflow design flaw: three macOS runners eventually
+lost their network route while polling, and the fourth was cancelled at GitHub's six-hour
+job ceiling. Apple never returned an invalid/rejected verdict. The workflows now build and
+sign without giving Tauri the Apple account credentials, submit each completed DMG once,
+persist the exact DMG plus Apple's submission ID, and poll/staple/Gatekeeper-verify in an
+independently retryable job. A slow queue can no longer discard the signed build or force a
+new submission. YAML parsing and focused signing/notarization trust tests are green; the
+updated workflow must be merged, pushed, and exercised before macOS support is claimed.
+
 ## 2026-07-31 — LIVE HANDS-FREE VOICE RELEASE SWEEP (`agent/voice-release-sweep`)
 
 READY TO MERGE. The current Local Live stack passed a release-focused code, regression, and browser

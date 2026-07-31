@@ -122,7 +122,8 @@ losing them prevents signing the next release with the same identity.
 ### First proof
 
 1. Run the manual `desktop-build` workflow with `publish-test=false`. Both Mac legs
-   should show Tauri signing and notarization rather than the unsigned-build warning.
+   should sign locally, upload a `notarization-input-*` artifact, and then enter the
+   independent `notarize-macos` finalization jobs.
 2. On the first tagged release train, the Mac legs must show all of these:
    `Authority=Developer ID Application`, hardened runtime, Node `allow-jit`,
    `DMG notarized + stapled`, and `source=Notarized Developer ID`.
@@ -135,6 +136,34 @@ losing them prevents signing the next release with the same identity.
 The tagged public release train now fails closed if any Apple secret is absent or if
 Gatekeeper does not return the notarized Developer ID verdict. Manual test builds can
 still be unsigned so contributor CI remains usable.
+
+### Long Apple queues and safe retries
+
+Do not put Apple account credentials in Tauri's build step. Tauri then invokes
+`notarytool --wait` inside the build, and an unusually long Apple queue can consume
+GitHub's six-hour job limit before the signed DMG is uploaded anywhere.
+
+Both release workflows instead use a resumable sequence:
+
+1. Tauri builds and Developer-ID-signs the DMG without receiving `APPLE_ID`,
+   `APPLE_PASSWORD`, or `APPLE_TEAM_ID`.
+2. `scripts/notarize-macos-submit.sh` submits that exact DMG without `--wait` and saves
+   Apple's submission ID beside it.
+3. Actions uploads the DMG plus ID as `notarization-input-<arch>` before polling.
+4. A separate `notarize-macos` job resumes the saved ID, tolerates transient network
+   failures, staples the accepted ticket, validates it, and requires Gatekeeper to report
+   `source=Notarized Developer ID`.
+5. Only that finalized job publishes the `starnet-<arch>` artifact consumed downstream.
+
+If Apple is still processing after 330 minutes, the finalizer exits retryably before
+GitHub cancels it. Re-run that failed finalization job; do not rebuild or resubmit. This
+also keeps one slow architecture from destroying the other architecture's signed bytes.
+
+The first live proof run, `30606849654`, established that the certificate imports and
+Developer ID signing succeeds on both architectures. Its notarization attempts remained
+in Apple's queue for hours: three runners later lost their network route while polling,
+and one reached GitHub's six-hour limit. None contained an Apple rejection. That run is
+diagnostic evidence for the resumable workflow, not a completed notarization proof.
 
 ## Per-release hygiene (until reputation is established)
 

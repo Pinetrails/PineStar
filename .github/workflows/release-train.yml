@@ -228,14 +228,14 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           RUST_TARGET: ${{ matrix.rust-target }}
         run: |
+          # Apple account credentials are intentionally scoped to the later submission
+          # step. Exposing them here makes Tauri block inside notarytool --wait, which can
+          # outlive GitHub's six-hour runner limit and discard a valid signed build.
           # Windows Authenticode tier: the credential gate above makes Azure Artifact Signing
           # mandatory for public releases. Tauri signs StarNet.exe, NSIS components, and the
           # final installer. The bundled official Node runtime already carries a valid OpenJS
@@ -427,25 +427,20 @@ jobs:
           Assert-Authenticode -Label 'NSIS installer' -Path $installer.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
           Assert-Authenticode -Label 'bundled Node runtime' -Path $node -PublisherPattern 'CN=OpenJS Foundation(?:,|$)'
 
-      # macOS trust proof. Signing can fail SILENTLY GREEN in three ways, each of which ships
+      # macOS pre-notarization trust proof. Signing can fail SILENTLY GREEN in three ways,
+      # each of which ships
       # a build that looks fine in CI and is broken in the user's hands:
       #   1. cert present but the bundler fell back to an ad-hoc signature -> Apple Silicon
       #      users still get the false "damaged, move to Trash" dialog with NO override.
       #   2. hardened runtime off -> Apple refuses to notarize, quietly.
       #   3. the bundled node sidecar signed WITHOUT the JIT entitlement -> the app opens and
       #      the sidecar is killed on V8's first codegen. Nothing in the build log says why.
-      # Tauri's docs do not state whether the DMG (vs the .app) gets stapled, so step 4
-      # validates first and only staples if it must, instead of assuming either way.
-      # Deliberately never re-signs the .app: the signed *.app.tar.gz updater artifact was
-      # already produced from it, and touching it now would desync that .sig.
-      - name: Verify macOS signing + notarization, staple DMG
+      # Notarization itself is submitted asynchronously after these cheap local checks. That
+      # preserves the exact signed DMG and submission id before waiting on Apple's queue.
+      - name: Verify macOS Developer ID signing before notarization
         if: runner.os == 'macOS'
         shell: bash
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
@@ -488,30 +483,7 @@ jobs:
           fi
           echo "::notice::[$TARGET] sidecar signed with allow-jit ✓"
 
-          # (4) staple the DMG if the bundler did not. Unstapled = Gatekeeper phones Apple on
-          # first open, so an offline user is still blocked.
-          if xcrun stapler validate "$dmg" >/dev/null 2>&1; then
-            echo "::notice::[$TARGET] DMG already stapled by the bundler ✓"
-          else
-            echo "::notice::[$TARGET] DMG not stapled — submitting it to the notary service."
-            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-            xcrun stapler staple "$dmg"
-            xcrun stapler validate "$dmg"
-            echo "::notice::[$TARGET] DMG notarized + stapled ✓"
-          fi
-
-          # (5) the verdict a real user's Mac will reach.
-          spctl -a -t exec -vv "$app" > "$T/spctl.txt" 2>&1 || true
-          cat "$T/spctl.txt"
-          if ! grep -qi 'accepted' "$T/spctl.txt"; then
-            echo "::error::[$TARGET] Gatekeeper REJECTS the .app — do not ship this build."
-            exit 1
-          fi
-          if ! grep -qi 'source=Notarized Developer ID' "$T/spctl.txt"; then
-            echo "::error::[$TARGET] Gatekeeper did not report 'source=Notarized Developer ID' — refusing to stage an ambiguous Mac build."
-            exit 1
-          fi
-          echo "::notice::[$TARGET] Gatekeeper accepts the notarized Developer ID app ✓"
+          echo "::notice::[$TARGET] local Developer ID checks passed; ready for asynchronous Apple submission ✓"
 
       # Tauri names the mac updater bundle "<App>.app.tar.gz" with NO arch marker — identical
       # for both mac legs. Release assets are a flat namespace, so without a rename the two
@@ -539,7 +511,35 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v4
+      - name: Submit macOS DMG for asynchronous notarization
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARIZATION_REQUIRED: "true"
+        run: |
+          set -euo pipefail
+          dmg=$(find src-tauri/target -type f -name '*.dmg' -path '*/release/bundle/dmg/*' | head -1)
+          [ -n "${dmg:-}" ] || { echo "::error::no release DMG found to submit"; exit 1; }
+          bash scripts/notarize-macos-submit.sh "$dmg" notary-submission.json
+
+      - name: Upload macOS notarization input
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: notarization-input-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            notary-submission.json
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/**/release/bundle/macos/*.app.tar.gz.sig
+
+      - name: Upload non-macOS distributable artifacts
+        if: runner.os != 'macOS'
+        uses: actions/upload-artifact@v4
         with:
           name: starnet-${{ matrix.target }}
           if-no-files-found: error
@@ -557,10 +557,50 @@ jobs:
             src-tauri/target/**/release/bundle/macos/*.app.tar.gz.sig
 
   # -------------------------------------------------------------------------------------------
-  # Job 3 — assemble: one multi-platform latest.json from all artifacts, verified locally.
+  # Job 3 — finalize the exact submitted Mac bytes. This job is independently retryable:
+  # Apple's queue can exceed one runner lifetime without forcing a rebuild or resubmission.
+  # -------------------------------------------------------------------------------------------
+  notarize-macos:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [darwin-arm64, darwin-x64]
+    runs-on: macos-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: notarization-input-${{ matrix.target }}
+          path: notarization-input
+
+      - name: Resume Apple submission, staple, and prove Gatekeeper verdict
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          dmg=$(find notarization-input -type f -name '*.dmg' | head -1)
+          bash scripts/notarize-macos-finalize.sh notarization-input/notary-submission.json "$dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starnet-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            notarization-input/**/*.dmg
+            notarization-input/**/*.app.tar.gz
+            notarization-input/**/*.app.tar.gz.sig
+
+  # -------------------------------------------------------------------------------------------
+  # Job 4 — assemble: one multi-platform latest.json from all artifacts, verified locally.
   # -------------------------------------------------------------------------------------------
   assemble:
-    needs: build
+    needs: [build, notarize-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -590,6 +630,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: starnet-*
           path: dist
           merge-multiple: true
 
@@ -637,6 +678,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: starnet-*
           path: dist
           merge-multiple: true
 

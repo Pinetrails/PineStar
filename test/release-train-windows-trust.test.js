@@ -41,7 +41,7 @@ A.ok(!/Windows exe\/installer will be UNSIGNED/.test(build),
   'shipping Windows build has no unsigned-success escape hatch');
 
 const trustStep = yml.match(
-  /- name: Verify Windows Authenticode signing \+ timestamp([\s\S]*?)(?=\n      # macOS trust proof)/
+  /- name: Verify Windows Authenticode signing \+ timestamp([\s\S]*?)(?=\n      # macOS pre-notarization trust proof)/
 );
 A.ok(trustStep, 'release train has a Windows Authenticode trust proof');
 const trust = trustStep[1];

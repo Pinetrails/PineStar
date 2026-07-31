@@ -461,6 +461,7 @@ test/release-bump.test.js
 test/release-cut.test.js
 test/opensource-readiness.test.js
 test/release-train-provenance.test.js
+test/desktop-build-macos-notarization.test.js
 test/release-train-macos-trust.test.js
 test/release-train-windows-trust.test.js
 test/website-app-sync.test.js
