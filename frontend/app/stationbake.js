@@ -1138,20 +1138,41 @@ const StationBake = (() => {
      Vertical budget is tight: h = WALL.up + NFACE = 23px, of which the bottom 4 are the foot
      shadow. Detail finer than ~3px does not survive the ambient bake — go coarse. */
 
-  /* BULKHEAD — the base wall since 2026-07-25, replacing `plating`. Flush bays with the crown
-     line, the bumper rail and the shadowed foot carrying the wall — all horizontals.
+  /* A · BULKHEAD — a raised STANCHION every 3 tiles instead of a seam every tile, with one wide
+     recessed infill panel spanning the bay between them. The stanchion is the wall's structure:
+     it carries the fixings (a bolt at head and foot, nowhere else), and the bumper rail BREAKS at
+     it, so the rail reads as segments held between columns rather than a stripe painted over
+     everything. Gives the wall the vertical rhythm the SPINE deck deliberately lacks. */
+  /* the pilaster every BULKHEAD variant shares: a raised column standing in front of the infill.
+     It STARTS BELOW THE CROWN and stays dimmer than it — drawn from topY with a bright edge it
+     read as a fence post standing ON the wall top at room scale, because the crown is the
+     brightest continuous line in the room and anything vertical touching it joins it. */
+  function wallPilaster(b, sh, X, topY, footY, w, bolts) {
+    const px = (a, c, wd_, ht, col) => { b.fillStyle = col; b.fillRect(a, c, wd_, ht); };
+    const sy = topY + 2, ht = footY - sy;
+    px(X, sy, w, ht, sh(0.05));                                                        // column body, in front
+    px(X, sy, 1, ht, sh(-0.32));                                                       // its cast shadow
+    px(X + w - 1, sy, 1, ht, sh(0.11));                                                // its lit edge
+    if (bolts) {
+      const bolt = (by) => { px(X + 1, by, 2, 2, sh(0.13)); px(X + 2, by + 1, 1, 1, sh(-0.24)); };
+      bolt(sy + 2); bolt(footY - 8);                                                   // head and foot only
+    }
+  }
 
-     The pilaster (a raised column every 2 tiles) was REMOVED 2026-07-30 on Andrew's call: seen
-     beside a desk under the monitor's spill at cinecam zoom, a lone column stopped reading as
-     wall structure and read as a free-standing object standing next to the agent (he flagged it
-     as a stray sprite). The earlier below-the-crown/dimmer fix (2026-07-25) killed the fence-post
-     read at room scale but not this one — any vertical the wall carries eventually reads as a
-     THING once a light pool isolates it. If a vertical rhythm ever comes back here, it must
-     survive that exact shot: one column beside a lit desk, camera close. */
+  /* BULKHEAD — the base wall since 2026-07-25, replacing `plating`. A slim pilaster every 2 tiles
+     and NOTHING between them: the bay is left flush, the rail runs unbroken, and the rhythm of the
+     columns alone carries the wall.
+
+     Three versions were built and Andrew picked this one. The other two put work INTO the bay — a
+     framed recess in one, two riveted courses in the other — and both lost to the empty bay. That
+     is the lesson worth keeping: on a face only 23px tall with a bright crown above it and a
+     shadowed foot below, the wall has room for ONE idea. Adding a second thing between the columns
+     competes with the columns instead of supporting them. If you are tempted to dress this bay,
+     render a whole room first and compare it against this. */
   function wallBulkhead(b, pal, X, topY, h, e, n, room, footY) {
     const wd = wallDet();
     const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
-    const bay = Math.floor(e.x / 2);   // 2-tile tint bays keep the subtle per-bay variation
+    const bay = Math.floor(e.x / 2), tx = ((e.x % 2) + 2) % 2;      // tx 0 = the pilaster tile
     const body = U.shade(pal.face, ((h2(bay, e.y, 'bht') % 5) - 2) * 0.014 * wd);
     const sh = d => U.shade(body, d * wd);
     px(X, topY, T, h, body);
@@ -1160,6 +1181,7 @@ const StationBake = (() => {
     const rail = topY + Math.round(h * 0.62);
     px(X, rail, T, 2, sh(-0.22));
     px(X, rail, T, 1, sh(0.11));
+    if (tx === 0) wallPilaster(b, sh, X, topY, footY, 3, false);
   }
 
   /* B · COURSES — riveted hull plating, all horizontal: three stacked courses, each with a lit top
