@@ -1,5 +1,40 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-31 — BROWSER REACH 0.8.5 (`agent/browser-reach-085`)
+
+READY TO MERGE at `dd01c8d3` (five commits from `7b2550e0`). The station-owned Chromium launch now
+derives its UA generation from the installed binary, carries the host locale, removes the
+`HeadlessChrome` product token, and disables Chromium's AutomationControlled signal. Attached
+Commander-owned Chrome is never launched or modified by this posture. Challenge telemetry is one
+conservative classifier across the honest reader and interactive browser; verification walls are a
+distinct outcome rather than successful page content. No CAPTCHA solving or wall-bypass claim exists.
+
+CDP's Runtime domain now stays disabled during ordinary browsing and is enabled lazily only when the
+agent asks for console diagnostics; the real browser proves buffered console messages still arrive.
+Click, type, press, hover, drag, and wheel input now use deterministic seeded cadence with hard step
+and delay bounds, exact text preservation, and exact aggregate scroll distance. This is bounded input
+fidelity, not an attempt to synthesize an individual person's behavior.
+
+All reader traffic shares one process-wide per-host scheduler. Same-host work serializes with a 350ms
+minimum gap; 403/429/503 responses add capped exponential delay (up to 30s), numeric `Retry-After` is
+honored, success clears the penalty, and responses are never auto-retried or rewritten. Different
+hosts remain independent. The scheduler covers search, Jina, direct reader fetch, and `web_request`.
+
+`scripts/browser-reach-measure.js` produces aggregate authorized-reach receipts without clicking or
+submitting: status, challenge signal, text length, identity exposure, elapsed time, and redirect
+authorization. Entry origins require an exact explicit allowlist; subdomains are not inherited,
+off-authorization redirect content is not read, and escaped redirects cannot count as reach. The
+owned real-Chromium fixture records ordinary content as reached and a verification page as blocked.
+
+Verification: focused browser contract 281 assertions; reach-measure contract 15; web-politeness 10;
+real-Chromium gauntlet 77; `test:fast` 475/475 green; full `test:http` green (including sidecar 445).
+A seeded station booted on `:8897`; `/health` returned 200 with `v0.8.0-18-gdd01c8d3`, the app shell
+returned 200/67,131 bytes, and unauthenticated `/api/toolsets` correctly returned 403. The proof seed
+was stopped. No external-site benchmark was run because no authorized origin was supplied, so no
+claim about third-party wall reach is made. No merge, push, PR, deploy, publish, credential, or
+production-data change was performed.
+
+
 ## 2026-07-31 — NEXT UPDATE PLAN: v0.9.0 LEGIBLE · SOLID · UNBLOCKED
 
 Andrew's mandate for the update after v0.8.0: (1) make StarNet dramatically easier for a
