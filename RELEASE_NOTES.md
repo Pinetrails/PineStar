@@ -51,6 +51,17 @@ same tools, the same station, from wherever you are.
   "received" from "ignored" at a glance — across every update kind, not just plain text.
 - **Group discipline built in:** wake words, per-speaker attribution, `/mention on|off` as an
   escape hatch, and a room the agent can genuinely follow.
+- **Replies render like messages, not markup.** The station's answers used to reach the phone as
+  literal `**bold**` and raw fences; they now arrive formatted, through a conversion that only
+  emits what it can prove is safe — and if Telegram rejects the formatting, the message is resent
+  plain rather than lost. Tapping the START button no longer spends a paid model run on the word
+  "/start"; the hub answers it, free. And one unparseable update can no longer wedge the whole
+  channel — it costs one dropped message, not the feed.
+- **`/approvals on` no longer costs the agent its tools.** Asking to be consulted used to
+  silently strip a chat's agent from the full office down to four tools — no web, no files. Who
+  answers a prompt and what the agent can reach are separate questions now.
+- **A dead topic is forgotten, not retried forever**, and an opt-in status line on the bot's
+  profile says whether the station is connected.
 - **And it is honest about the edges.** With Telegram privacy mode on, wake words and passive
   observation receive *nothing* from Telegram — StarNet says so plainly instead of offering a
   feature that quietly does nothing. Bot tokens are redacted from every error string.
@@ -82,6 +93,8 @@ machine-checked upgrade guard runs v0.7.0-shaped records through the update and 
 - **Twelve new decor props**, and the lounge became a place agents actually go.
 - **The prop palette is searchable** — one box, flat across 120 props, and the pick lands on its own
   shelf. Every word the palette prints is a word you can type.
+- **The floating helper marker is gone.** Sub-agents no longer drag a hovering sprite around the
+  floor; the LIVE HELPERS panel is the one truthful readout of who is working under whom.
 
 ## Reach: the station can name what it can touch
 
@@ -95,6 +108,25 @@ machine-checked upgrade guard runs v0.7.0-shaped records through the update and 
 - **The skill guard verdict is enforced.** A flagged skill is withheld, not silently injected.
 - **Connectors are discoverable** — typing a platform name finds it, and the agent reads its own
   catalog instead of inventing menu paths.
+- **`browser.pdf`, `browser.intercept`, `browser.emulate`.** Render the page you are looking at
+  into a PDF deliverable, block heavy resource types mid-crawl, and wear a device preset — UA,
+  locale, timezone. The station refuses to reconfigure the Commander's own attached Chrome:
+  printing what you can see stays allowed, rewiring your browser does not.
+- **Two tools the agent was owed: `connectors.list`** — from inside a run it can finally see the
+  vetted integrations one click away, instead of answering "StarNet cannot reach GitHub" when the
+  truth was "not installed yet" — **and `voice_generate`**, which hands you a spoken clip as a
+  real file deliverable, through the same voice ladder the station itself speaks with.
+- **Runs got cheaper and prices got real.** Prompt caching now uses sliding anchors, so a long
+  conversation stops silently re-billing itself cold, with an opt-in 1-hour cache tier for
+  human-paced sessions — and model pricing is read live from published rates, so a newly released
+  model is metered at its real price instead of a stale family guess.
+
+## A run can ask you a question now
+
+"Which approach?" no longer costs a watched run its plan and its context. When the agent needs
+your call mid-run, the question lands in COMMS with one-tap choices, the run blocks, and your
+answer resumes the *same* run — everything it had already worked out intact. Walk away and it
+falls back exactly to the old behaviour: a durable end-of-run question, never a hung station.
 
 ## Recipes and recommendations
 
@@ -171,6 +203,19 @@ Beyond the honesty sweep, the mechanical bugs this release closes:
 - **COMMS announces the active model from the selector**, so what you picked is what you see
   running.
 - **A summoned specialist finally earns its own XP** — the rate-the-work beat was hero-only.
+- **Kimi sign-in finishes.** The device flow opened the provider's code-consuming page without
+  the code in hand; it now opens the completed URL, with the typeable address kept on screen as
+  the fallback.
+- **`/skill` actually preloads the skill.** The preload path threw on every run and its own catch
+  swallowed the error — for as long as the feature has existed. And your own typed content asks
+  for approval instead of being refused outright: the hard block is reserved for content that
+  arrives claiming someone else vetted it.
+- **A toast can no longer announce success for a request that failed**, and the MCP bridge stops
+  re-presenting a dead station token every three seconds after a restart.
+- **The session rail answers the keyboard**, and rail search results stay in the search instead
+  of leaking into the list.
+- **The COMMS composer keeps its controls inside a narrowly-dragged panel**, and the STARNET mark
+  yields to a window dragged into the top-left corner.
 - **Tables are actually usable as prop mounts**, hallway walls read as bulkheads with a properly
   lit deck, and rollback history survives an index loss.
 
