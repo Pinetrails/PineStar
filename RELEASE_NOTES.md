@@ -1,13 +1,15 @@
 # StarNet v0.8.0
 
-The station stops being something you have to sit in front of. You can now hold a real spoken
-call with it — hands-free, fully offline, no API key — and conduct every session on the floor
-from that one call: reading what each is doing, spinning up new ones, handing work across.
-Meanwhile your agents hold a real conversation on Telegram: threaded, streaming, full media in
-both directions. They carry an earned record of what they can actually do, one the harness proves
-rather than the interface flatters. The floor under them became a place. And a long sweep ran
-the other way: forty-odd spots where StarNet said something it could not prove are now either true
-or gone.
+The station stops being something you have to sit in front of. Hold a real spoken call with it —
+hands-free, fully offline, no API key — and conduct every session on the floor from that one
+conversation: read what each is doing, spin up new ones, hand work across. Your agents hold a
+real conversation on Telegram: threaded, streaming, full media in both directions. A run that
+needs your judgment now asks you mid-run and resumes exactly where it was, instead of throwing
+its work away. Specialists carry an earned record the harness proves rather than the interface
+flatters — and it now decides who gets handed the work. The browser reaches further, runs bill
+cheaper against live prices, and the floor under all of it became a place. And a long sweep ran
+the other way: forty-odd spots where StarNet said something it could not prove are now either
+true or gone.
 
 ## Live Voice: a real call with the station, fully offline
 
@@ -245,5 +247,3 @@ Beyond the honesty sweep, the mechanical bugs this release closes:
 - **Upgrading is a no-op for your data.** The workspace schema generation is unchanged from v0.7.0
   and the shared event contract was not touched, so there is no migration to run. Verified by
   booting this build against a copy of a real v0.7.0 workspace rather than assumed.
-- **StarNet stays MIT-licensed**, and the code is genuinely free to use commercially. The *name,
-  logo and artwork* are not part of that grant — a fork is welcome, under its own name.
