@@ -395,7 +395,7 @@ const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
 // Stage 2 companion to ORCH_PER_WORKER: per-WORKER tool-turn ceiling. A delegated worker doing one
 // scoped subtask has no business burning the lead's whole 40-turn budget. runOnce clamps this DOWN
 // only (see runMaxIters) so a caller can never widen past the station's own CAPS.maxIters.
-const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 10);
+const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 16);
 // ---- MANAGED CREDITS (opt-in, config-gated). The whole managed-credit path is INERT unless STARNET_CREDITS_URL
 // points at a credits backend: no payment client is built, admission stays pure BYOK, no STORE UI renders, and
 // /api/credits 404s (the honesty law — a control that does nothing is a bug). When wired, a managed account can
