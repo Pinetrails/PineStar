@@ -81,7 +81,9 @@ jobs:
       - run: npm ci
 
       - name: Stage bundled Node sidecar runtime
-        run: node scripts/prepare-node.mjs ${{ matrix.target }}
+        run: |
+          node scripts/prepare-node.mjs ${{ matrix.target }}
+          node scripts/stage-voice-deps.mjs --target ${{ matrix.target }}
 
       - name: Build desktop bundles
         shell: bash

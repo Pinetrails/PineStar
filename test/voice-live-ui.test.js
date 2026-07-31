@@ -48,12 +48,11 @@ assert.match(css, /\.lv-wave i\[data-src="self"\]/, 'the user side of the shared
 assert.match(css, /\.lv-wave i\[data-src="agent"\]/, 'the agent side of the shared waveform has an explicit visual contract');
 assert.match(css, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.lv-x\s*\{[^}]*pointer-events:\s*auto/, 'touch users always have a reachable close control');
 
-/* ⛔ LIVE VOICE OPENS AUDIBLE ON *BOTH* PATHS. Local Live has two entry points: start() when the offline
-   speech models are present (a source checkout) and startDictation() when they are not — which is EVERY
-   packaged build, because the installer ships no node_modules. Wiring the speaker auto-enable into start()
-   alone therefore fixed it only where nobody ships from: installed stations still opened muted, so the
-   Commander talked and heard nothing. Assert it per-function, not file-wide: a file-wide match would have
-   passed happily while the path that actually runs was missing it. */
+/* ⛔ LIVE VOICE OPENS AUDIBLE ON *BOTH* PATHS. Local Live has two entry points: start() when the bundled
+   offline speech engine is available and startDictation() for explicit opt-out or a degraded/custom bundle.
+   Wiring the speaker auto-enable into start() alone leaves that fallback room muted, so the Commander can
+   talk but never hear an answer. Assert it per-function, not file-wide: a file-wide match would pass while
+   one runtime path remained broken. */
 function bodyOf(name) {
   const m = new RegExp('function ' + name + '\\([\\s\\S]*?\\n  \\}').exec(source);
   assert.ok(m, 'voice-live.js still defines ' + name + '()');
@@ -89,7 +88,7 @@ for (const fn of ['start', 'startDictation']) {
   assert.match(bodyOf(fn), /Voice\.forceSpeakOn\(\)/, fn + '() force-enables the speaker — hands-free is never opened muted');
   /* ⛔ BOTH entry points speak with the BUILT-IN identity. setLocalTts(true) is what routes /api/tts through
      the picked voice; the dictation leg passing false is what let the keyed provider voice speak on every
-     installed build while the picker adjusted an engine that was not there (the identity bug Andrew heard).
+     degraded install while the picker adjusted an engine that was not there (the identity bug Andrew heard).
      The sidecar maps the pick onto the Edge floor when the offline engine is absent, so true is correct on
      the shipped path too. */
   assert.match(bodyOf(fn), /Voice\.setLocalTts\(true\)/, fn + '() opts into the built-in voice identity');
@@ -108,10 +107,69 @@ for (const fn of ['start', 'startDictation']) {
   assert.match(bodyOf(fn), /bindSession\(\)/, fn + '() binds the call to the session it was opened in');
 }
 assert.match(bodyOf('handleTranscript'), /ensureBoundFocus\(\)/, 'every utterance routes to the BOUND session, not whatever is focused');
+assert.match(bodyOf('onAssistant'), /ensureBoundFocus\(\)/, 'the bound agent replying brings back its own session instead of adopting the browsed one');
+assert.match(bodyOf('rebind'), /Voice\.stopSpeaking\(\)/, 'a voice-commanded rebind cuts queued audio owned by the former session');
 assert.match(bodyOf('finish'), /boundWsId = null/, 'the binding dies with the call');
 assert.match(source, /boundSession\(\) \|\| Workstreams\.active\(\)/, "the panel reports the CALL's session, not the browsed one");
 const cmdSource = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationcommands.js'), 'utf8');
 assert.match(cmdSource, /VoiceLive\.isActive\(\) && VoiceLive\.rebind/, 'a voice-driven session switch rebinds the live call (a UI click never routes through that verb)');
+
+// Exercise the binding state machine, not only its spelling. A UI rail switch changes activeId but
+// cannot change boundWsId; the next call-owned event restores the original workstream and transcript.
+{
+  const m = /(  let boundWsId = null;[\s\S]*?  function ensureBoundFocus\(\) \{[\s\S]*?\n  \})\n\n  function handleTranscript/.exec(source);
+  assert.ok(m, 'voice-live.js still carries the complete session-binding state machine');
+  let activeId = 'research';
+  const sessions = {
+    research: { id: 'research', archived: false },
+    general: { id: 'general', archived: false }
+  };
+  const effects = [];
+  const Workstreams = {
+    activeId: () => activeId,
+    get: id => sessions[id] || null,
+    switch: id => { effects.push('switch:' + id); activeId = id; return sessions[id] || null; }
+  };
+  // eslint-disable-next-line no-new-func
+  const binding = new Function('Workstreams', 'Chat', 'App', 'Voice', 'caption', 'refreshTask',
+    'let spokenApprovalId = null;\n' + m[1] + '\nreturn { bindSession, ensureBoundFocus, bound: () => boundWsId };'
+  )(
+    Workstreams,
+    { load: ws => effects.push('load:' + ws.id) },
+    { refreshRail: () => effects.push('rail') },
+    { stopSpeaking: () => effects.push('stop-audio') },
+    () => {},
+    () => {}
+  );
+  binding.bindSession();
+  activeId = 'general'; // a UI click: visible selection changes, call ownership does not
+  binding.ensureBoundFocus();
+  assert.equal(binding.bound(), 'research', 'a rail click never rebinds the call');
+  assert.equal(activeId, 'research', 'the next call-owned event restores the originating session');
+  assert.deepEqual(effects, ['switch:research', 'load:research', 'rail'], 'focus + transcript are restored together');
+}
+
+// The output path is session-owned too. Live Voice force-enables a shared speaker, so Chat must
+// explicitly refuse speech/heartbeat use by every non-bound workstream.
+{
+  const m = /(  function liveVoiceOwns\(ws\) \{[\s\S]*?\n  \})/.exec(chatSource);
+  assert.ok(m, 'chat.js defines the live-call output ownership gate');
+  let callActive = true;
+  const VoiceLive = { boundSessionId: () => 'research' };
+  // eslint-disable-next-line no-new-func
+  const owns = new Function('VoiceLive', 'liveVoiceCall', m[1] + '\nreturn liveVoiceOwns;')(
+    VoiceLive,
+    () => callActive
+  );
+  assert.equal(owns({ id: 'research' }), true, 'the bound session owns spoken output');
+  assert.equal(owns({ id: 'general' }), false, 'a browsed session cannot borrow the live-call speaker');
+  callActive = false;
+  assert.equal(owns({ id: 'general' }), true, 'ordinary speaker behavior is unchanged outside Live Voice');
+}
+assert.match(chatSource, /const willSpeak = isOrchestrator && liveVoiceOwns\(ws\)/, 'a non-bound run never opens a spoken reply');
+assert.match(chatSource, /const pushSpeech = \(finalize, finalText\) => \{[\s\S]{0,500}!liveVoiceOwns\(ws\)/, 'ownership is rechecked on every streamed speech chunk');
+assert.match(chatSource, /willSpeak && liveVoiceOwns\(ws\)[\s\S]{0,120}Voice\.endReply/, 'only the bound run may close the live speech stream');
+assert.match(chatSource, /\(!liveVoiceCall\(\) \|\| liveVoiceOwns\(ws\)\)[\s\S]{0,120}Voice\.onTurnEnd/, 'only the bound run may re-arm the live microphone');
 
 /* ⛔ LIVE VOICE RENDERS NO CLICKABLE PROMPTS — AND NARRATES NO STALE ONES. Two failures, in order: chips
    and the tap-to-correct brief card appeared mid-call and waited on a mouse (the opposite of hands-free);
@@ -158,7 +216,7 @@ assert.match(bodyOf('chipCommand'), /\.click\(\)/, 'a spoken pick clicks the REA
 }
 assert.match(voiceSource, /if \(!forcedSpeak\) return false;/, "restoreSpeak never undoes the Commander's own speaker choice");
 
-/* ⛔ THE METER IS REAL ON THE SHIPPED LEG TOO. The dictation leg (every packaged build) used to scroll
+/* ⛔ THE METER IS REAL ON THE FALLBACK LEG TOO. The dictation leg used to scroll
    nothing — the engine that listens exposes no frame clock — so the strip sat flat for both voices while
    the models leg animated in demos. The fix is a levels-only meter tap plus a fixed-cadence clock, and
    the honesty line lives in the tick: every push is a MEASURED value (the tap's RMS for your half, the

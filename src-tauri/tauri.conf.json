@@ -60,7 +60,8 @@
     "resources": {
       "../sidecar": "sidecar",
       "../frontend": "frontend",
-      "../shared": "shared"
+      "../shared": "shared",
+      "voice-deps/node_modules": "node_modules"
     }
   },
   "plugins": {

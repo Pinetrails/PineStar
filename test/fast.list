@@ -38,6 +38,7 @@ test/provider.openai-compatible.test.js
 test/realtime-voice.test.js
 test/native-stt.test.js
 test/local-voice.test.js
+test/desktop-voice-bundle.test.js
 test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
 test/prices.live.test.js

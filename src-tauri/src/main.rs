@@ -486,27 +486,47 @@ fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
     }
 }
 
-// ---- WebView2 stale-cache purge on version change ----------------------------------------
+// ---- WebView2 stale-cache purge on packaged-build change ---------------------------------
 //
 // The desktop webview loads the frontend COMPILED INTO the exe (tauri.localhost). WebView2
 // caches those assets (Cache / `Code Cache/js`) and never revalidates. After an exe swap, V8
 // can run OLD bytecode against NEW data — the 2026-07-06 incident (agents vanished from the
-// world sim, COMMS fell back to the overseer). Fix: on every version change, delete the
-// compiled/GPU caches while PRESERVING user state (Local Storage holds the world save under
-// `starnet.save`). See docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1.
+// world sim, COMMS fell back to the overseer). A version-only marker is insufficient: release
+// candidates are routinely rebuilt and reinstalled under the same semver, which left the old
+// voice controller running after the fixed 0.8.0 installer was installed. Key the marker to the
+// exact executable bytes and purge on every packaged-build change while PRESERVING user state
+// (Local Storage holds the world save under `starnet.save`).
 
-/// Pure decision: given the previously-recorded marker (if any) and the running version,
+/// Pure decision: given the previously-recorded marker (if any) and the running build identity,
 /// should we purge the stale webview caches? Purge on first run (no marker) or on any change.
 /// Kept side-effect-free so it can be unit-tested without touching the filesystem.
-fn should_purge_webview_cache(last_marker: Option<&str>, current_version: &str) -> bool {
+fn should_purge_webview_cache(last_marker: Option<&str>, current_build: &str) -> bool {
     match last_marker {
-        Some(prev) => prev.trim() != current_version.trim(),
+        Some(prev) => prev.trim() != current_build.trim(),
         None => true,
     }
 }
 
-/// Marker file recording the version that last ran, next to the workspaces root
-/// (`%APPDATA%\ai.skynet.harness\last-run-version`). Reused for the purge decision.
+/// Stable marker payload for the exact packaged executable. The runtime SHA is the authority:
+/// unlike semver or the Git tree it changes for a same-version rebuild and covers generated bundle
+/// inputs. If hashing the executable fails, fall back to the strongest compile-time source identity.
+fn webview_build_identity(current_version: &str) -> String {
+    let (executable_sha, executable_size) = runtime_executable_identity();
+    let artifact = if !executable_sha.is_empty() && executable_size > 0 {
+        format!("exe:{executable_sha}:{executable_size}")
+    } else {
+        format!(
+            "source:{}:{}:{}",
+            env!("STARNET_BUILD_SHA"),
+            env!("STARNET_BUILD_TREE"),
+            env!("STARNET_BUILD_DESCRIBE")
+        )
+    };
+    format!("{}|{}", current_version.trim(), artifact)
+}
+
+/// Marker file recording the exact build that last ran. The legacy filename is retained so
+/// existing version-only markers differ and force the required one-time migration purge.
 fn last_run_version_marker(app: &tauri::AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|dir| {
         let _ = std::fs::create_dir_all(&dir);
@@ -577,31 +597,32 @@ fn purge_webview2_caches(user_data_dir: &Path, startup_log: &Option<PathBuf>) ->
     removed
 }
 
-/// Top-level orchestration: compare the running version to the stored marker; on first run
-/// or any change, purge the stale webview caches (Windows/WebView2 today; other platforms
+/// Top-level orchestration: compare the exact running build to the stored marker; on first run
+/// or any build change, purge the stale webview caches (Windows/WebView2 today; other platforms
 /// hook in later), then record the new marker. Platform-neutral marker logic so a future
 /// mac/linux (WebKit) purge can reuse the same decision path.
-fn purge_stale_webview_cache_on_version_change(
+fn purge_stale_webview_cache_on_build_change(
     app: &tauri::AppHandle,
     identifier: &str,
     current_version: &str,
     startup_log: &Option<PathBuf>,
 ) {
+    let current_build = webview_build_identity(current_version);
     let marker_path = last_run_version_marker(app);
     let last = marker_path
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok());
     let last_trimmed = last.as_ref().map(|s| s.trim());
 
-    if !should_purge_webview_cache(last_trimmed, current_version) {
+    if !should_purge_webview_cache(last_trimmed, &current_build) {
         return;
     }
 
     log_startup(
         startup_log,
         format!(
-            "webview-cache-purge: version change {:?} -> {} — purging stale caches (preserving Local Storage/IndexedDB/cookies)",
-            last_trimmed, current_version
+            "webview-cache-purge: packaged-build change {:?} -> {} — purging stale caches (preserving Local Storage/IndexedDB/cookies)",
+            last_trimmed, current_build
         ),
     );
 
@@ -640,7 +661,7 @@ fn purge_stale_webview_cache_on_version_change(
     // Record the new marker LAST, so a crash mid-purge re-triggers a purge next boot rather
     // than leaving stale caches behind a satisfied marker.
     if let Some(path) = marker_path {
-        if let Err(e) = std::fs::write(&path, current_version) {
+        if let Err(e) = std::fs::write(&path, &current_build) {
             log_startup(
                 startup_log,
                 format!(
@@ -2240,7 +2261,7 @@ fn main() {
             #[cfg(windows)]
             let init = format!("{init}window.__STARNET_CUSTOM_CHROME__=1;");
 
-            // Purge stale WebView2 compiled/GPU caches when the app version changed, BEFORE the
+            // Purge stale WebView2 compiled/GPU caches when the packaged build changed, BEFORE the
             // webview window is created — otherwise V8 can run old bytecode against new data
             // (see docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1). Fails soft; never blocks boot.
             {
@@ -2248,7 +2269,7 @@ fn main() {
                 let identifier = handle.config().identifier.clone();
                 let current_version = handle.package_info().version.to_string();
                 let log = startup_log_path(handle);
-                purge_stale_webview_cache_on_version_change(
+                purge_stale_webview_cache_on_build_change(
                     handle,
                     &identifier,
                     &current_version,
@@ -2567,22 +2588,42 @@ mod webview_cache_purge_tests {
     }
 
     #[test]
-    fn purges_when_version_changed() {
-        assert!(should_purge_webview_cache(Some("0.2.3"), "0.2.4"));
+    fn purges_when_packaged_build_changed() {
+        assert!(should_purge_webview_cache(
+            Some("0.8.0|exe:old:12"),
+            "0.8.0|exe:new:12"
+        ));
     }
 
     #[test]
-    fn no_purge_when_version_unchanged() {
-        assert!(!should_purge_webview_cache(Some("0.2.4"), "0.2.4"));
+    fn same_version_legacy_marker_forces_migration_purge() {
+        assert!(should_purge_webview_cache(
+            Some("0.8.0"),
+            "0.8.0|exe:new:12"
+        ));
+    }
+
+    #[test]
+    fn no_purge_when_exact_packaged_build_is_unchanged() {
+        assert!(!should_purge_webview_cache(
+            Some("0.8.0|exe:same:12"),
+            "0.8.0|exe:same:12"
+        ));
     }
 
     #[test]
     fn tolerates_whitespace_in_marker() {
         // Markers are written via fs::write and read back with read_to_string; a trailing
-        // newline or stray whitespace must NOT be read as a version change (would purge every
+        // newline or stray whitespace must NOT be read as a build change (would purge every
         // boot). trim() on both sides guards that.
-        assert!(!should_purge_webview_cache(Some("0.2.4\n"), "0.2.4"));
-        assert!(!should_purge_webview_cache(Some("  0.2.4  "), "0.2.4"));
+        assert!(!should_purge_webview_cache(
+            Some("0.8.0|exe:same:12\n"),
+            "0.8.0|exe:same:12"
+        ));
+        assert!(!should_purge_webview_cache(
+            Some("  0.8.0|exe:same:12  "),
+            "0.8.0|exe:same:12"
+        ));
     }
 
     #[cfg(windows)]

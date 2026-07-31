@@ -513,7 +513,15 @@ const VoiceLive = (() => {
     spokenApprovalId = null;   // a NEW call announces a genuinely-pending approval once, never a prior call's
   }
   function rebind(id) {
-    if (id) { boundWsId = String(id); refreshTask(); }
+    if (id) {
+      const next = String(id);
+      // A voice-commanded session switch transfers ownership of the call. Cut any queued audio
+      // from the old owner before changing the id, so a late old-session sentence can never play
+      // into the newly-bound conversation.
+      if (boundWsId && boundWsId !== next && typeof Voice !== 'undefined' && Voice.stopSpeaking) Voice.stopSpeaking();
+      boundWsId = next;
+      refreshTask();
+    }
   }
   function boundSession() {
     if (!boundWsId || typeof Workstreams === 'undefined' || !Workstreams.get) return null;
@@ -580,6 +588,10 @@ const VoiceLive = (() => {
 
   function onAssistant(part) {
     part = part || {};
+    // The first spoken chunk is also a focus event for the CALL'S session. The Commander may browse
+    // elsewhere while the agent works, but the answering agent brings its bound conversation back;
+    // it never adopts whichever rail item happens to be selected when the reply arrives.
+    ensureBoundFocus();
     caption('agent', part.text || '', !part.opening);
   }
   // the agent's live output RMS, straight off the tap on its playback chain. Stored, not drawn: the mic
@@ -795,7 +807,7 @@ const VoiceLive = (() => {
 
   /* DICTATION-LEG METER TAP — levels only, never audio for transcription.
      The engine that LISTENS in dictation mode (System.Speech inside the sidecar, or the browser's own
-     SpeechRecognition) exposes no live signal, so on every installed build the strip froze while the
+     SpeechRecognition) exposes no live signal, so whenever that fallback ran the strip froze while the
      models leg — which owns a real mic frame — scrolled. Proven on the target machine (2026-07-31):
      Windows shares one microphone between a SAPI recognizer and a shared-mode WASAPI capture with zero
      interference in either direction (recognizer heard audio and exited clean; the capture held a
@@ -954,7 +966,7 @@ const VoiceLive = (() => {
       return;
     }
     if (readiness && readiness.available === false) {
-      // The offline models are absent — the normal case in a packaged build, which ships no node_modules.
+      // The offline engine is unavailable (explicit opt-out, damaged/custom bundle, or failed probe).
       // That is NOT a reason to refuse: listening has a keyless ladder (Windows dictation through the
       // sidecar) and speaking already works through the Edge floor. Only refuse when neither exists.
       const native = await probeNativeStt();
@@ -1383,10 +1395,9 @@ const VoiceLive = (() => {
     bindSession();   // the shipped path binds too — the call belongs to the session it was opened in
     reflectButton(true);
     if (typeof Voice !== 'undefined') {
-      /* ⛔ THE SAME LEVER start() PULLS, AND THE PATH THAT ACTUALLY SHIPS. A packaged build carries no
-         node_modules, so the offline models are always absent there and hands-free ALWAYS lands here. Wiring
-         the speaker auto-enable only into the models path fixed it exclusively on a source checkout: every
-         installed station still opened Local Live muted, which is a room you talk into that never answers. */
+      /* ⛔ THE SAME LEVER start() PULLS, INCLUDING THE DEGRADE PATH. An explicit opt-out or damaged/custom
+         bundle lands here even in an installed station. Wiring the speaker auto-enable only into the models
+         path left that room muted: the Commander could talk, but never hear an answer. */
       if (Voice.forceSpeakOn) Voice.forceSpeakOn();
       if (Voice.inVoiceMode && Voice.inVoiceMode() && Voice.stopConvo) Voice.stopConvo();
       /* setLocalTts(TRUE) on the dictation leg too (2026-07-30). This flag means "speak with the BUILT-IN

@@ -27,15 +27,15 @@ const state = { asr: 'cold', tts: 'cold', progress: null, error: '', cacheRoot }
    `am_` American male, `bm_` British male, `af_`/`bf_` the female sets. Listed male-first because that is the
    station's character; every one of them is selectable. */
 const DEFAULT_LOCAL_VOICE = 'am_onyx';
-/* `edge` on every row: the nearest Microsoft Edge read-aloud neural to that voice. This is the SHIPPED
-   fallback identity — an installed build carries no node_modules, so the Kokoro engine can never load
-   there, and before this mapping existed /api/tts silently fell through to the KEYED provider voice:
+/* `edge` on every row: the nearest Microsoft Edge read-aloud neural to that voice. This is the built-in
+   fallback identity when the bundled offline engine is disabled, damaged, or unavailable, and before this
+   mapping existed /api/tts silently fell through to the KEYED provider voice:
    the picker was inert and the station spoke with a completely different identity than the one chosen
    (2026-07-30, found by Andrew's ears on a stale-node_modules dev server that behaved like an installed
    build). The mapping lives ON the catalogue row so a new voice cannot be added without deciding its
    shipped fallback — a test fails on any row without one. Sex and accent are preserved; the Edge free
    set has only ~5 male American neurals for our 8, so some picks share a nearest neighbour — a coarser
-   voice on an installed build is honest, the WRONG voice is not. */
+   voice on a degraded installation is honest, the WRONG voice is not. */
 const LOCAL_VOICES = [
   { id: 'am_onyx', label: 'ONYX', sex: 'male', accent: 'American', edge: 'en-US-ChristopherNeural' },
   { id: 'am_michael', label: 'MICHAEL', sex: 'male', accent: 'American', edge: 'en-US-GuyNeural' },
@@ -76,11 +76,10 @@ function edgeVoiceFor(id) {
 
 // ---- installation probe -------------------------------------------------------------------------
 // Offline speech needs two npm packages (`@huggingface/transformers` + `kokoro-js`, which drags in
-// onnxruntime-node's native binaries). The shipped desktop bundle carries `sidecar/`, `frontend/` and
-// `shared/` as Tauri resources and NO node_modules — the Node sidecar is otherwise dependency-free — so
-// in an installed build these imports cannot resolve. `status()` must therefore PROVE the packages are
-// present rather than assert it: claiming a capability the harness can't deliver is exactly the lie this
-// product forbids, and before this probe existed the panel showed users a raw "Cannot find module" string.
+// onnxruntime-node's native binaries). Release builds stage that runtime closure beside `sidecar/`, where
+// Node resolves it normally. `status()` must still PROVE the packages are present rather than infer them
+// from being packaged: an interrupted/custom install or explicit opt-out must degrade truthfully, and
+// before this probe existed the panel showed users a raw "Cannot find module" string.
 const REQUIRED_PACKAGES = ['@huggingface/transformers', 'kokoro-js'];
 const UNAVAILABLE_REASON =
   'offline speech models are not installed in this build (run "npm install" in a source checkout to enable them)';

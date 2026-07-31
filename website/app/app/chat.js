@@ -3095,6 +3095,15 @@ const Chat = (() => {
   function liveVoiceCall() {
     try { return typeof VoiceLive !== 'undefined' && VoiceLive.isActive && VoiceLive.isActive(); } catch (_) { return false; }
   }
+  function liveVoiceOwns(ws) {
+    if (!liveVoiceCall()) return true;
+    // Fail closed during a live call: only the session captured when the call opened may use the
+    // shared speaker/coordinator. A rail click changes the visible session, never call ownership.
+    try {
+      const bound = VoiceLive.boundSessionId && VoiceLive.boundSessionId();
+      return !!(bound && ws && String(ws.id) === String(bound));
+    } catch (_) { return false; }
+  }
   function briefReadCard(ws, p) {
     if (liveVoiceCall()) return;   // in a call the read is not a form — the agent says what it heard, or asks
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
@@ -5887,7 +5896,8 @@ const Chat = (() => {
     // exists for the orchestrator to DELEGATE to — the Commander talks to the orchestrator, not to a crowd of
     // agents — so a summoned agent's replies are never voiced (and never get the short spoken-style prompt).
     const isOrchestrator = !ws.agentId || ws.agentId === 'agent';
-    const willSpeak = isOrchestrator && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    const willSpeak = isOrchestrator && liveVoiceOwns(ws)
+      && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
     // REACTIVE DESK TRIP — the honest signal. We no longer pre-commit the walk on the classifier's GUESS:
     // every turn the agent first turns to face the Commander (listen), and it only gets up and walks to its
     // workstation the instant it ACTUALLY reaches for a tool (web / files / terminal) — see walkToDesk(),
@@ -5955,7 +5965,9 @@ const Chat = (() => {
       return s;
     };
     const pushSpeech = (finalize, finalText) => {
-      if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
+      // Ownership is checked again for every chunk. A voice-commanded rebind can happen while an
+      // older run is still streaming; none of its late words may leak into the new call owner.
+      if (typeof Voice === 'undefined' || !willSpeak || !liveVoiceOwns(ws) || !Voice.speakChunk) return;
       const src = speakSafe(finalize ? (finalText || acc) : acc);
       const pending = src.slice(spokenIdx);
       if (!pending) return;
@@ -6272,7 +6284,7 @@ const Chat = (() => {
       if (titleOk && (firstTurn || (typeof Workstreams !== 'undefined' && Workstreams.needsModelTitle && Workstreams.needsModelTitle(ws.id)))) maybeRetitle(ws, text, finalReply);
       // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
       // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
-      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) {
+      if (willSpeak && liveVoiceOwns(ws) && typeof Voice !== 'undefined' && Voice.endReply) {
         pushSpeech(true, finalReply);
         // VOICE-AWARE CHOICES: the choice itself is spoken as a natural question — question text only;
         // the 2-3 options are on-screen chips (reading them out was the "reads every option" glitch).
@@ -6280,7 +6292,7 @@ const Chat = (() => {
         Voice.endReply();
       }
       // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
-      if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
+      if ((!liveVoiceCall() || liveVoiceOwns(ws)) && typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
       // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).
       setTimeout(() => flushQueued(ws.id), 0);
       // GOAL LOOP: after the teardown, judge this turn against the standing goal and maybe fire the next continuation.

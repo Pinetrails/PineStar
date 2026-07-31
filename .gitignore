@@ -133,3 +133,6 @@ CODEX_HANDOFF.md
 http-gate.err
 qa/digests/
 dev/.scratch-clarify/
+
+# staged runtime node_modules for the desktop bundle (build artifact, ~480MB)
+src-tauri/voice-deps/
