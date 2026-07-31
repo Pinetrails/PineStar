@@ -542,6 +542,7 @@
        an in-flight request count that makes auto-wait aware of XHR that has not landed yet. */
     let mainFrameId = null, lastResponse = null;
     const inflight = new Set();
+    const runtimeConsoleSessions = new Set();
     /* REQUEST LOG. `browser.console` already lets the agent see what the page SAID; this is what the
        page DID. Without it "the button did nothing" is unfalsifiable — you cannot tell a 401 from a
        CORS refusal from a request that was never made. Bounded like consoleLog, and deliberately
@@ -776,7 +777,9 @@
             const shimSource = syntheticInputSource(popupsAdopted);
             const S = openerSession || undefined;   // under browser-level attach, even tab 0 is a session
             await cdp.send('Page.enable', {}, S);
-            await cdp.send('Runtime.enable', {}, S);
+            // Runtime.evaluate does not require Runtime.enable. Leave the observable Runtime domain
+            // disabled during ordinary browsing; browser.console enables it lazily for the active tab
+            // only when the agent explicitly asks for console diagnostics.
             if (deps.syntheticInputOnly !== false) {
               // Install for all future documents AND the current about:blank. A page click can
               // now satisfy its logical pointer-lock contract without touching Win32 ClipCursor.
@@ -1464,6 +1467,18 @@
       const detected = Challenge.detectChallenge(pageState || {});
       return Object.assign({ title: pageState && pageState.title || '' }, detected);
     }
+    async function readConsoleLog() {
+      const c = await page();
+      const sessionKey = activeSession || openerSession || '__root__';
+      if (!runtimeConsoleSessions.has(sessionKey)) {
+        await c.send('Runtime.enable', {});
+        runtimeConsoleSessions.add(sessionKey);
+        // Runtime.enable flushes buffered console entries asynchronously. Give that bounded protocol
+        // delivery one turn before reading the local ring.
+        await sleep(20);
+      }
+      return consoleLog.slice();
+    }
 
     /* waitFor — poll a NAMED condition until it holds or the budget expires.
 
@@ -1558,7 +1573,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, waitFor, pdf, intercept, emulate, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, challengeStatus, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, waitFor, pdf, intercept, emulate, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, challengeStatus, handleDialog, screenshot, close, consoleLog: readConsoleLog, networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -1961,7 +1976,7 @@
       return rows.slice(-(limit || 60));
     }
     async function consoleLog(limit) {
-      const list = ensureDriver().consoleLog ? ensureDriver().consoleLog() : [];
+      const list = ensureDriver().consoleLog ? await ensureDriver().consoleLog() : [];
       return list.slice(-(limit || 40));
     }
     async function dialog(action, promptText) { return ensureDriver().handleDialog(action || 'accept', promptText || ''); }

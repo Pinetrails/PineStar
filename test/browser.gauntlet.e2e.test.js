@@ -35,6 +35,7 @@ const ROUTES = {
   '/inner': () => ({ status: 200, body: PAGE('<p>Card details</p><button id=pay>Pay now</button>') }),
   '/missing': () => ({ status: 404, body: PAGE('<h1>Not found</h1><p>no such page</p>') }),
   '/challenge': () => ({ status: 200, body: '<!doctype html><meta charset=utf-8><title>Just a moment...</title><body><p>Checking your browser before accessing the site.</p></body>' }),
+  '/console': () => ({ status: 200, body: PAGE('<p>console fixture</p>', '<script>console.warn("owned console marker")</script>') }),
   '/form': () => ({ status: 200, body: PAGE('<select id=country><option value=us>United States</option><option value=uk>United Kingdom</option></select>') }),
   // CROSS-ORIGIN frame: the child is served from localhost while the parent is on 127.0.0.1, which
   // Chrome treats as a different origin and gives its own out-of-process target.
@@ -142,6 +143,14 @@ const ROUTES = {
     {
       await driver.navigate(base + '/form');
       A.eq(driver.lastResponse().status, 200, 'status does not leak from the previous 404 navigation');
+    }
+
+    // 3a. OBSERVABLE-SURFACE REDUCTION — diagnostics survive without Runtime.enable.
+    {
+      await driver.navigate(base + '/console');
+      await new Promise(r => setTimeout(r, 200));
+      A.ok((await driver.consoleLog()).some(row => /owned console marker/.test(row.text || '')),
+        'lazy Runtime observation preserves buffered console diagnostics in real Chromium');
     }
 
     /* 2z. FIND ZERO-HIT HONESTY — snapshot/find see the viewport, not the whole document.

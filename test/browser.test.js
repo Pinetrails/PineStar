@@ -318,6 +318,9 @@ function fakeDriver() {
     A.ok(launches[0].args.some(a => /^--headless/.test(a)) && launches[0].args.includes('--mute-audio'), 'CDP browser process is headless and muted');
     A.ok(!launches[0].args.includes('--new-window'), 'synthetic test browser never requests a window');
     A.ok(sent.some(m => m.method === 'Target.setAutoAttach' && m.params.waitForDebuggerOnStart === true), 'new targets are paused before scripts can reach native input APIs');
+    A.ok(!sent.some(m => m.method === 'Runtime.enable'), 'the page-observable Runtime domain is never globally enabled');
+    await d.consoleLog();
+    A.ok(sent.some(m => m.method === 'Runtime.enable'), 'Runtime observation begins only after browser.console is requested');
     FakeWS.last.fire('message', { data: JSON.stringify({ method: 'Target.attachedToTarget', params: { sessionId: 'popup-session', targetInfo: { type: 'page', targetId: 'popup-target' } } }) });
     // Adoption is a multi-hop promise chain (inject shim, inject settle marker, record, resume).
     await new Promise(resolve => setTimeout(resolve, 60));
