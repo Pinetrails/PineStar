@@ -281,6 +281,8 @@ const VoiceLive = (() => {
     el.title = pending ? `${pending.tool || 'Action'} needs approval${pending.argsSummary ? `: ${pending.argsSummary}` : ''}` : (Channels.statusOf(ws.id) || ws.title || 'Ready');
     el.classList.toggle('busy', busy);
     el.classList.toggle('pending', !!pending);
+    // hands-free: anything now WAITING on a click gets said aloud, once (see announceWaits)
+    announceWaits();
   }
 
   // One read of the sidecar's installation verdict. Returns null when the sidecar cannot be reached, so
@@ -377,6 +379,81 @@ const VoiceLive = (() => {
     return true;
   }
 
+  /* HANDS-FREE MEANS NOTHING WAITS ON A CLICK (2026-07-30, Andrew: "it's constantly giving pop ups the
+     user needs to click… in live mode it should just directly ask"). Two things wait silently for a mouse
+     during a run: the APPROVAL card and CHOICE CHIPS. In a live call both are now SPOKEN the moment they
+     appear (once each — announceWaits below, driven by the panel's existing 500ms tick) and ANSWERED by
+     voice: approvals via approvalCommand, chips via chipCommand, which clicks the REAL button so every
+     downstream effect is identical to a mouse pick. The visual cards stay — they are the truthful record —
+     but the ASK happens aloud, and the call never depends on the Commander looking at the screen. */
+  let spokenApprovalId = null, spokenChipsKey = '';
+  function chipButtons() {
+    return Array.from(document.querySelectorAll('#chat-log .choice-row button.choice')).filter(b => !b.disabled);
+  }
+  function chipLabel(b) {
+    // strip the leading glyph (▤, ◈, …) chips carry — nobody SAYS the icon
+    return String(b.textContent || '').replace(/^[^A-Za-z0-9]+/, '').trim();
+  }
+  function announceWaits() {
+    if (!active) return;
+    // only when the DISPLAYED session is the call's own — chips/cards in a browsed session are not ours to read
+    if (typeof Workstreams === 'undefined' || (boundWsId && Workstreams.activeId && Workstreams.activeId() !== boundWsId)) return;
+    const ws = boundSession() || (Workstreams.active && Workstreams.active());
+    const pending = ws && typeof Channels !== 'undefined' && Channels.pendingOf ? Channels.pendingOf(ws.id) : null;
+    if (pending) {
+      const id = String(pending.promptId || pending.tool || 'prompt');
+      if (id !== spokenApprovalId) {
+        spokenApprovalId = id;
+        speakLocal('Approval needed: ' + (pending.tool || 'an action') + (pending.argsSummary ? ' — ' + String(pending.argsSummary).slice(0, 120) : '') + '. Say approve, always allow, or deny.');
+      }
+    } else spokenApprovalId = null;
+    const labels = chipButtons().map(chipLabel).filter(Boolean);
+    const key = labels.join('|');
+    if (labels.length && key !== spokenChipsKey) {
+      spokenChipsKey = key;
+      // an approval outranks chips in the same beat — one question at a time is the whole point of speech
+      if (!pending) speakLocal('Say one: ' + labels.join(', or ') + '.');
+    }
+    if (!labels.length) spokenChipsKey = '';
+  }
+  /* Answer visible chips by voice. Clicks the REAL button (chat.js binds the pick to it), so this is the
+     mouse path with a different finger. Matching is deliberately conservative — exact, then prefix/containment
+     with length floors, then ordinals ("the second one") — because a wrong pick ACTS, and acting wrongly is
+     worse than falling through to the model, which sees the words and can ask. */
+  /* matchChoice(saidText, labels) -> index | -1. PURE (unit-tested by extraction) and deliberately
+     conservative: exact, then spoken-prefix-of-label, then label-inside-sentence with length floors, then
+     bare ordinals. A wrong pick ACTS, and acting wrongly is worse than falling through to the model, which
+     sees the words and can ask. The length floors are the guard: without them a chip labeled "ok" would
+     swallow every sentence containing those two letters. */
+  function matchChoice(said, labels) {
+    const norm = s => String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const want = norm(said);
+    if (!want) return -1;
+    const ls = (labels || []).map(norm);
+    let idx = ls.findIndex(l => l && l === want);
+    if (idx < 0 && want.length >= 3) idx = ls.findIndex(l => l.length >= 3 && l.indexOf(want) === 0);   // spoken prefix of a label
+    if (idx < 0) idx = ls.findIndex(l => l.length >= 4 && want.indexOf(l) >= 0);                        // label inside the sentence
+    if (idx < 0) {
+      const bare = want.replace(/\b(the|one|option|pick|choose|take)\b/g, ' ').replace(/\s+/g, ' ').trim();
+      const ord = ['first', 'second', 'third', 'fourth'].indexOf(bare);
+      if (ord >= 0 && ord < ls.length) idx = ord;
+      else if (bare === 'last' && ls.length) idx = ls.length - 1;
+    }
+    return idx;
+  }
+  function chipCommand(lower) {
+    const buttons = chipButtons();
+    if (!buttons.length) return false;
+    const idx = matchChoice(lower, buttons.map(chipLabel));
+    if (idx < 0) return false;
+    const picked = chipLabel(buttons[idx]);
+    buttons[idx].click();
+    spokenChipsKey = '';
+    speakLocal(picked + '.');
+    refreshTask();
+    return true;
+  }
+
   function approvalCommand(lower) {
     if (typeof Workstreams === 'undefined' || typeof Channels === 'undefined') return false;
     const ws = Workstreams.active();
@@ -451,7 +528,8 @@ const VoiceLive = (() => {
     setState('thinking');
     refreshTask();
     const lower = value.toLowerCase().replace(/[.!?]+$/, '').trim();
-    if (approvalCommand(lower)) return true;
+    if (approvalCommand(lower)) return true;   // the blocking wait answers first
+    if (chipCommand(lower)) return true;       // then a visible chip row — spoken pick clicks the real button
     if (agentCommand(value, lower)) return true;
     if (/^(?:what(?:'s| is) (?:the )?status|status update|task status|what are (?:my )?agents doing|how(?:'s| is) (?:it|the task) going)$/.test(lower)) {
       speakLocal(answerStatusQuestion());

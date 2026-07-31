@@ -86,6 +86,37 @@ assert.match(bodyOf('finish'), /boundWsId = null/, 'the binding dies with the ca
 assert.match(source, /boundSession\(\) \|\| Workstreams\.active\(\)/, "the panel reports the CALL's session, not the browsed one");
 const cmdSource = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationcommands.js'), 'utf8');
 assert.match(cmdSource, /VoiceLive\.isActive\(\) && VoiceLive\.rebind/, 'a voice-driven session switch rebinds the live call (a UI click never routes through that verb)');
+
+/* ⛔ HANDS-FREE MEANS NOTHING WAITS ON A CLICK. Approvals and choice chips used to appear silently and wait
+   for a mouse — the opposite of a voice call. Both are announced aloud once when they appear, and both are
+   answerable by voice; the chip answer clicks the REAL button so every downstream effect matches a mouse pick. */
+assert.match(bodyOf('refreshTask'), /announceWaits\(\)/, 'the live tick announces anything newly waiting on a click');
+assert.match(source, /Say approve, always allow, or deny/, 'an arriving approval is ASKED aloud, with the exact words that answer it');
+assert.match(bodyOf('handleTranscript'), /approvalCommand\(lower\)/, 'a spoken approval answer settles the blocking wait first');
+assert.match(bodyOf('handleTranscript'), /chipCommand\(lower\)/, 'a spoken chip pick is tried before the words go to the model');
+assert.match(bodyOf('chipCommand'), /\.click\(\)/, 'a spoken pick clicks the REAL chip button — never a parallel path');
+
+// the matcher is pure — extract and exercise it for real (the chat-linkify idiom: chat/voice files are
+// browser-flow and not node-loadable whole)
+{
+  const m = /(  function matchChoice\([\s\S]*?\n  \})/.exec(source);
+  assert.ok(m, 'voice-live.js still defines matchChoice()');
+  // eslint-disable-next-line no-new-func
+  const matchChoice = new Function(m[1] + '\nreturn matchChoice;')();
+  const chips = ['▤ PLACE ITS DESK', 'later'];
+  assert.equal(matchChoice('place its desk', chips), 0, 'an exact spoken label picks it');
+  assert.equal(matchChoice('Place its desk.', chips), 0, 'punctuation and case are forgiven');
+  assert.equal(matchChoice('place', chips), 0, 'a spoken prefix of a label picks it');
+  assert.equal(matchChoice('later', chips), 1, 'the quiet option is just as sayable');
+  assert.equal(matchChoice('yeah do that, place its desk please', chips), 0, 'the label inside a sentence picks it');
+  assert.equal(matchChoice('the first one', chips), 0, 'ordinals work');
+  assert.equal(matchChoice('the last one', chips), 1, '"last" works whatever the count');
+  assert.equal(matchChoice('tell me about jupiter', chips), -1, 'an unrelated sentence falls through to the model');
+  assert.equal(matchChoice('ok', ['ok', 'cancel']), 0, 'a short label still matches EXACTLY');
+  assert.equal(matchChoice('okay lets look at the report', ['ok', 'cancel']), -1, 'but a short label never swallows a sentence (length floor)');
+  assert.equal(matchChoice('la', chips), -1, 'a two-letter fragment is too little to act on');
+  assert.equal(matchChoice('', chips), -1, 'silence picks nothing');
+}
 assert.match(voiceSource, /if \(!forcedSpeak\) return false;/, "restoreSpeak never undoes the Commander's own speaker choice");
 
 console.log('voice-live-ui.test.js: ok');
