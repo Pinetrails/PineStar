@@ -1,9 +1,10 @@
 # StarNet v0.8.0
 
 The station stops being something you have to sit in front of. You can now hold a real spoken
-call with it — hands-free, fully offline, no API key — and your agents hold a real conversation
-on Telegram: reading what you replied to, answering in the thread that asked, writing back in
-front of you. They carry an earned record of what they can actually do, one the harness proves
+call with it — hands-free, fully offline, no API key — and conduct every session on the floor
+from that one call: reading what each is doing, spinning up new ones, handing work across.
+Meanwhile your agents hold a real conversation on Telegram: threaded, streaming, full media in
+both directions. They carry an earned record of what they can actually do, one the harness proves
 rather than the interface flatters. The floor under them became a place. And a long sweep ran
 the other way: forty-odd spots where StarNet said something it could not prove are now either true
 or gone.
@@ -20,35 +21,39 @@ answers out loud — and nothing in the loop waits on a click.
 - **Hands-free means hands-free.** Approvals, choices and questions that come up mid-call are
   spoken to you and can be answered by voice. A call is something you can walk away from your
   desk and still finish.
+- **One call conducts the whole station.** Mid-call, the station can list your open sessions,
+  read what each one is doing, spin up new ones and put work in front of them. You stand in one
+  conversation and orchestrate every desk on the floor by voice — ask what the research session
+  found, start a build in a fresh session, and keep talking while both run.
 - **One voice, and it is the one you picked.** The station speaks with a single engine and a
   single chosen identity. An installed build can no longer silently swap your picked voice for a
   keyed cloud provider's; if the offline engine is unavailable, it falls back to the nearest
   built-in system neural voice — same sex, same accent — and says which engine it is using.
-- **A live call is bound to the session that opened it.** Your microphone input and the station's
-  spoken replies stay with that one session — they cannot bleed into another tab or an older
-  page. A stale session is refused *before* the microphone opens, and delivery survives page
-  switches instead of going quiet.
+- **The call's audio has exactly one home.** Your microphone and the station's spoken replies are
+  bound to the session that opened the call — they cannot bleed into another tab or an older
+  page, a stale session is refused *before* the microphone opens, and delivery survives page
+  switches instead of going quiet. The call commands the whole station; the audio never strays.
 
-## Telegram is a real seat at the station, not a notification pipe
+## Telegram is a full seat at the station
 
-The channel could already send and receive. It could not hold a conversation. Now it can.
+Your agents now hold a real, threaded, full-media conversation on Telegram — the same crew, the
+same tools, the same station, from wherever you are.
 
-- **It answers in the topic that asked.** Thread and reply routing means a forum group with ten
-  topics gets ten conversations instead of ten answers in the wrong place. If the topic is deleted
-  mid-run, the reply falls back to the group rather than vanishing.
-- **The reply is written in front of you.** Long answers stream in as the agent thinks, edited in
-  place, chunked on fences so code never breaks mid-block.
-- **It reads what you replied to.** Quoting a message now hands the agent that message as context
-  instead of silently dropping it.
-- **Media both directions** — photos, documents and albums out; photos, documents and **voice
-  notes** in. Bot tokens are redacted from every error string.
-- **It hears the update kinds it used to be deaf to**, and acknowledges receipt with a reaction, so
-  you can tell "received" from "ignored".
-- **Group discipline:** wake words, `/mention on|off` as an escape hatch, per-speaker attribution,
-  and a room the agent can actually follow.
-- **It tells you what it cannot hear.** With Telegram privacy mode on, wake words and passive
-  observation receive *nothing*. StarNet now says so plainly instead of offering a feature that
-  quietly does nothing.
+- **Every topic is its own conversation.** Thread and reply routing means a forum group with ten
+  topics runs ten parallel conversations, each answer landing exactly where it was asked — and if
+  a topic is deleted mid-run, the reply falls back to the group instead of vanishing.
+- **Answers are written in front of you.** Long replies stream in live as the agent thinks,
+  edited in place, chunked on fences so code never breaks mid-block.
+- **Quoting is context.** Reply to any message and the agent reads it as part of your ask.
+- **Full media, both directions** — photos, documents and albums out; photos, documents and
+  **voice notes** in. Speak to your station from your phone and it does the work.
+- **Received is visible.** The agent acknowledges what it hears with a reaction, so you can tell
+  "received" from "ignored" at a glance — across every update kind, not just plain text.
+- **Group discipline built in:** wake words, per-speaker attribution, `/mention on|off` as an
+  escape hatch, and a room the agent can genuinely follow.
+- **And it is honest about the edges.** With Telegram privacy mode on, wake words and passive
+  observation receive *nothing* from Telegram — StarNet says so plainly instead of offering a
+  feature that quietly does nothing. Bot tokens are redacted from every error string.
 
 Both directions were proven against the real api.telegram.org — a real message driving a real run to
 a real reply — not against a fixture.
