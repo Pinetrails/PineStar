@@ -67,6 +67,26 @@
       }
     };
 
+    const peekTool = {
+      name: 'session.peek', capability: 'orchestrator', scope: 'read', requiresConsent: false,
+      description: 'Read another session\'s recent conversation — who said what, including delegated work that landed there. ⛔ ALWAYS call this before answering any question about what another session or agent did ("what did the researcher do?", "did anything finish in research?"): your own thread does NOT contain other sessions\' turns, so answering from memory is guessing. Pass the session\'s title as the Commander says it (or an exact id); an unknown or ambiguous name is refused with the list of real ones.',
+      schema: {
+        type: 'object', required: ['session'], properties: {
+          session: { type: 'string' },
+          limit: { type: 'integer' }     // optional: how many recent turns (default 12, max 30)
+        }
+      },
+      run: async (args) => {
+        const ref = String((args && args.session) || '').trim().slice(0, 80);
+        if (!ref) return refuse('name which session to read');
+        const limit = Math.max(1, Math.min(30, Number(args && args.limit) || 12));
+        const out = await ask('station.read_session', { session: ref, limit });
+        if (!out.ok) return refuse(out.error);
+        const r = out.result || {};
+        return { content: JSON.stringify(r), summary: '"' + (r.title || ref) + '": ' + ((r.turns || []).length) + ' recent turn(s)' + (r.busy ? ' — still working' : '') };
+      }
+    };
+
     const focusTool = {
       name: 'session.focus', capability: 'orchestrator', scope: 'write', requiresConsent: false,
       description: 'Switch the Commander\'s focused session to an existing one, by the title they say (or an exact id) — e.g. "open the research session". The name must match exactly one session; an unknown or ambiguous name is refused with the list of real ones, so never guess — use session.list. This changes what the Commander is LOOKING at; use it only when they asked to switch.',
@@ -82,8 +102,8 @@
     };
 
     return {
-      listTool, createTool, focusTool,
-      register(reg) { [listTool, createTool, focusTool].forEach(t => reg.register(t)); return reg; }
+      listTool, createTool, peekTool, focusTool,
+      register(reg) { [listTool, createTool, peekTool, focusTool].forEach(t => reg.register(t)); return reg; }
     };
   }
 

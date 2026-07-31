@@ -21,6 +21,7 @@ function stubBridge(impl) {
     if (verb === 'station.sessions') return { ok: true, result: { count: 2, sessions: [{ id: 'a', title: 'research' }, { id: 'b', title: 'General' }] } };
     if (verb === 'station.new_session') return { ok: true, result: { id: 'c', title: 'ops', focused: false } };
     if (verb === 'station.switch_session') return { ok: true, result: { id: 'a', title: 'research' } };
+    if (verb === 'station.read_session') return { ok: true, result: { id: 'a', title: 'research', busy: true, turns: [{ speaker: 'researcher', text: 'Phobos and Deimos.' }] } };
     return { ok: false, error: 'unknown' };
   });
   const t = makeStationTools({ station: bridge });
@@ -34,12 +35,19 @@ function stubBridge(impl) {
   A.eq(bridge.seen[1].args.focus, false, 'focus is never implied');
   const foc = await t.focusTool.run({ session: 'research' });
   A.eq(JSON.parse(foc.content).title, 'research', 'session.focus returns where the Commander now is');
+  const peek = await t.peekTool.run({ session: 'research' });
+  const pk = JSON.parse(peek.content);
+  A.eq(pk.turns[0].speaker, 'researcher', "session.peek returns another session's real turns, attributed");
+  A.ok(/still working/.test(peek.summary), 'a busy session says so in the summary — "done" is never implied');
+  A.eq(bridge.seen[bridge.seen.length - 1].args.limit, 12, 'the default read window travels');
+  await t.peekTool.run({ session: 'research', limit: 500 });
+  A.eq(bridge.seen[bridge.seen.length - 1].args.limit, 30, 'a runaway limit clamps');
 }
 
 // ---- ⛔ the honesty contract: every failure is an explicit REFUSED, never a soft nothing ----
 {
   const t = makeStationTools({});   // no bridge at all (bare host / headless composition)
-  for (const [tool, args] of [[t.listTool, {}], [t.createTool, { title: 'x' }], [t.focusTool, { session: 'x' }]]) {
+  for (const [tool, args] of [[t.listTool, {}], [t.createTool, { title: 'x' }], [t.focusTool, { session: 'x' }], [t.peekTool, { session: 'x' }]]) {
     const out = await tool.run(args);
     A.ok(/^REFUSED:/.test(out.content), tool.name + ' without a bridge refuses explicitly');
     A.ok(/do not report this action as done/.test(out.content), 'and tells the model not to claim it');
@@ -70,15 +78,18 @@ function stubBridge(impl) {
 // ---- capability surface: lead-only, and consent-free (a session costs nothing and is reversible) ----
 {
   const t = makeStationTools({});
-  for (const tool of [t.listTool, t.createTool, t.focusTool]) {
+  for (const tool of [t.listTool, t.createTool, t.peekTool, t.focusTool]) {
     A.eq(tool.capability, 'orchestrator', tool.name + ' rides the lead-only orchestrator gate');
     A.eq(tool.requiresConsent, false, tool.name + ' needs no consent beat');
   }
   A.eq(t.listTool.scope, 'read', 'listing is a read');
+  A.eq(t.peekTool.scope, 'read', 'peeking is a read');
   A.eq(t.createTool.scope, 'write', 'creating is a write');
+  A.ok(/NEVER answer from memory/i.test(t.peekTool.description) || /answering from memory is guessing/i.test(t.peekTool.description),
+    "peek's description carries the anti-guessing rule — the tool exists because a lead denied real work");
   const reg = { registered: [], register(x) { this.registered.push(x.name); } };
   t.register(reg);
-  A.eq(reg.registered.join(','), 'session.list,session.create,session.focus', 'register() installs exactly the three verbs');
+  A.eq(reg.registered.join(','), 'session.list,session.create,session.peek,session.focus', 'register() installs exactly the four verbs');
 }
 
 /* ---- ⛔ THE CAPABILITY REGISTRY IS AN ALLOWLIST. A tool registered with the host but not declared in
@@ -88,7 +99,7 @@ function stubBridge(impl) {
 {
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'sidecar', 'capability', 'registry.js'), 'utf8');
   const orch = src.slice(src.indexOf('orchestrator: ['), src.indexOf(']', src.indexOf('orchestrator: [')));
-  for (const name of ['session.list', 'session.create', 'session.focus']) {
+  for (const name of ['session.list', 'session.create', 'session.peek', 'session.focus']) {
     A.ok(orch.indexOf("tool: '" + name + "'") >= 0, name + ' is DECLARED in the orchestrator capability allowlist (registration alone exposes nothing)');
   }
   A.ok(/tool: 'session\.create', scope: 'write', requiresConsent: false/.test(orch), 'session.create is consent-free (spends nothing, reversible)');

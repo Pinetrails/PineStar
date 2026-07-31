@@ -72,6 +72,20 @@ for (const fn of ['start', 'startDictation']) {
 // and the positive per-function assert above is what locks that.)
 assert.match(bodyOf('finish'), /Voice\.restoreSpeak\(\)/, 'leaving restores a mute we lifted (a hand-set speaker is left alone)');
 assert.match(bodyOf('finish'), /Voice\.setLocalTts\(false\)/, 'leaving live voice returns ordinary speech to the persona ladder');
+
+/* ⛔ THE CALL IS BOUND TO ONE SESSION. Everything routed through Chat lands on the ACTIVE workstream, so
+   without a binding, browsing the rail mid-call silently re-targeted the conversation — the next utterance
+   ran in whatever session was open, under that session's agent (Andrew hit this live). Both entry points
+   bind; every utterance pins focus back to the bound session; the binding dies with the call; and the ONE
+   legitimate rebind is a voice-driven station.switch_session while a call is live. */
+for (const fn of ['start', 'startDictation']) {
+  assert.match(bodyOf(fn), /bindSession\(\)/, fn + '() binds the call to the session it was opened in');
+}
+assert.match(bodyOf('handleTranscript'), /ensureBoundFocus\(\)/, 'every utterance routes to the BOUND session, not whatever is focused');
+assert.match(bodyOf('finish'), /boundWsId = null/, 'the binding dies with the call');
+assert.match(source, /boundSession\(\) \|\| Workstreams\.active\(\)/, "the panel reports the CALL's session, not the browsed one");
+const cmdSource = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationcommands.js'), 'utf8');
+assert.match(cmdSource, /VoiceLive\.isActive\(\) && VoiceLive\.rebind/, 'a voice-driven session switch rebinds the live call (a UI click never routes through that verb)');
 assert.match(voiceSource, /if \(!forcedSpeak\) return false;/, "restoreSpeak never undoes the Commander's own speaker choice");
 
 console.log('voice-live-ui.test.js: ok');

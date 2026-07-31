@@ -11452,6 +11452,17 @@ async function runOnce(o) {
       + 'summon an agent, actually DO it with team.summon — don\'t just describe it or claim you cannot. '
       + 'For scheduled work, create StarNet routines with routine_create; if the work clearly belongs to a specialist '
       + '(research/news/latest => researcher/scout/analyst), target that agentId, or summon the specialist first.';
+    /* SESSIONS (2026-07-30): the lead can also RUN the station's sessions — and the peek rule exists because
+       of a live failure: asked "what did the researcher do?", a lead with no way to read the other session
+       GUESSED, and told the Commander their agent had done nothing when the work was sitting right there.
+       An agent that can check and doesn't is lying by negligence; truthful telemetry applies to prose too. */
+    teamNote += '\n• SESSIONS: session_list shows every open session by title; session_create makes a named one '
+      + '("make a session called research"); session_focus opens one for the Commander; and passing session:"<title>" '
+      + 'on a team.dispatch worker runs and files that work INSIDE that session. '
+      + '⛔ To answer ANY question about another session\'s work ("what did the researcher do?", "did anything finish?"), '
+      + 'read it first with session_peek — NEVER answer from memory or assumption. Your own thread does not show other '
+      + 'sessions\' turns, so without peeking you would be guessing, and a guessed "nothing happened" about real finished '
+      + 'work is a lie the Commander will catch.';
   }
   // INSTALLED SKILLS (bundled recipe library): inject the bodies of the recipes the Commander ENABLED whose
   // required objects are actually on THIS agent's floor (object = capability — the same gate the tools use). Empty

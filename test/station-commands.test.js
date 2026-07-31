@@ -40,7 +40,9 @@ function boot(opts) {
   // a top-level `const` is NOT a property of the context object (the same reason the module probes App/Chat by
   // bare identifier rather than window.App), so take the module as the script's completion value.
   const S = vm.runInContext(src + '\n;StationCommands;', sandbox, { filename: 'stationcommands.js' });
-  return { S, W: Workstreams, page };
+  // VoiceLive is probed by bare identifier too — expose a setter so a test can stand in a live call
+  const setVoiceLive = (v) => { sandbox.VoiceLive = v; };
+  return { S, W: Workstreams, page, setVoiceLive };
 }
 // run a verb through the module's real dispatch path (the same one U.bus drives) and read the ack it posted
 async function call(env, verb, args) {
@@ -220,6 +222,60 @@ async function call(env, verb, args) {
   const none = await call(env, 'station.switch_session', { session: 'marketing' });
   A.eq(none.ok, false, 'an unknown name refuses');
   A.ok(/no session called "marketing"/.test(none.error) && /research plan/.test(none.error), 'and lists what does exist');
+}
+
+/* ---- station.read_session: the agent's EYES into other sessions. Exists because a lead asked "what did
+   the researcher do?" had no way to look, GUESSED, and denied real finished work to the Commander. ---- */
+{
+  const env = boot();
+  const ws = env.W.create('research');
+  ws.history.push(
+    { role: 'user', content: 'my question' },
+    { role: 'system', sys: true, content: '— delegated to researcher: summarise X —' },
+    { role: 'assistant', agentId: 'researcher', content: 'Phobos and Deimos, both captured asteroids.' },
+    { role: 'assistant', content: 'a hidden one', hidden: true }
+  );
+  const out = await call(env, 'station.read_session', { session: 'research' });
+  A.eq(out.ok, true, 'a named session can be read');
+  A.eq(out.result.title, 'research', 'with its real title');
+  A.eq(out.result.turns.length, 3, 'visible turns only — hidden/internal rows never leak');
+  A.eq(out.result.turns[0].speaker, 'commander', 'the Commander\'s turns are labeled');
+  A.eq(out.result.turns[1].speaker, 'station', 'sys markers are labeled as the station, not as speech');
+  A.eq(out.result.turns[2].speaker, 'researcher', 'delegated work is attributed to the worker who did it');
+  A.ok(/Phobos/.test(out.result.turns[2].text), 'and carries the real content');
+  A.eq(out.result.busy, false, 'busy state rides along so "still working" is answerable');
+
+  // an empty session says so — an empty turns array alone reads like "nothing happened", which is a claim
+  const blank = env.W.create('empty one');
+  const b = await call(env, 'station.read_session', { session: 'empty one' });
+  A.eq(b.result.turns.length, 0, 'no visible turns');
+  A.ok(/no visible conversation yet/.test(b.result.note), 'stated, not implied');
+
+  // same resolution law as every other name-addressed verb
+  const nope = await call(env, 'station.read_session', { session: 'marketing' });
+  A.eq(nope.ok, false, 'an unknown name refuses');
+  A.ok(/no session called "marketing"/.test(nope.error) && /research/.test(nope.error), 'with the real names');
+  // the limit clamps
+  const lim = await call(env, 'station.read_session', { session: 'research', limit: 2 });
+  A.eq(lim.result.turns.length, 2, 'limit returns the most recent N');
+  A.eq(lim.result.turns[1].speaker, 'researcher', 'and they are the LAST turns, not the first');
+}
+
+/* ---- the voice-call rebind hook: a switch DURING a live call re-targets the call (it came through the
+   call); with no live call the verb must not touch VoiceLive at all ---- */
+{
+  const env = boot();
+  env.W.create('research');
+  const rebinds = [];
+  // stationcommands probes the VoiceLive global by bare identifier — inject it into the vm context
+  env.setVoiceLive({ isActive: () => true, rebind: id => rebinds.push(id) });
+  const out = await call(env, 'station.switch_session', { session: 'research' });
+  A.eq(out.ok, true, 'the switch succeeded');
+  A.eq(rebinds.length, 1, 'a live call is rebound by a voice-driven switch');
+  A.eq(rebinds[0], out.result.id, 'to the session the switch landed on');
+  env.setVoiceLive({ isActive: () => false, rebind: id => rebinds.push(id) });
+  await call(env, 'station.switch_session', { session: 'General' });
+  A.eq(rebinds.length, 1, 'no live call -> no rebind attempted');
 }
 
 // every verb the sidecar can ask for is implemented here (a missing one would fail as "unknown verb" live)
