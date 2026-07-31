@@ -142,6 +142,38 @@ This is the release's quiet theme. A representative slice:
 - **The header minimize button is gone** — it read as a duplicate close. Minimize-to-strip stays,
   via header double-click and the dock.
 
+## Fixes
+
+Beyond the honesty sweep, the mechanical bugs this release closes:
+
+- **Live voice opens audible on the path that actually ships**, the LIVE VOICE settings list
+  paints, the picker works, and the two-voice level meter reads real levels on the dictation leg.
+- **Room noise cannot fire an agent run.** Native dictation is gated, and the keystroke sound no
+  longer plays under live speech.
+- **A reply finds you across pages.** Session delivery is durable — navigate away mid-run and the
+  answer still lands in the right session instead of going quiet.
+- **Runs ride out transient provider overloads** instead of dying at the first blip, and
+  delegated research survives web-fallback stalls.
+- **Web search recovered from a one-character encoding outage**, and bot-walled pages now get a
+  real reader instead of a dead end.
+- **A web "failure" that is really an answer is treated as one** — a 403, a 404 or a throttle
+  comes back as information, not an error card.
+- **Agent lifecycle and MCP reconnects are serialized**, ending a race that could wedge
+  connectors mid-session.
+- **E-STOP holds.** Grant keys are canonical, the FULL ACCESS wildcard is visible, and the
+  emergency stop actually stops what it claims to.
+- **SETTINGS stopped storming repaints** and fetching the model catalog in duplicate.
+- **REFIT no longer goes black on a landed station**, and the gallery host claims its full
+  palette column.
+- **The ACP editor bridge re-discovers the station token after a restart** instead of telling
+  your editor to restart.
+- **Channel setup guides come back** — after a forget, and on platforms never set up at all.
+- **COMMS announces the active model from the selector**, so what you picked is what you see
+  running.
+- **A summoned specialist finally earns its own XP** — the rate-the-work beat was hero-only.
+- **Tables are actually usable as prop mounts**, hallway walls read as bulkheads with a properly
+  lit deck, and rollback history survives an index loss.
+
 ## Security
 
 - **The Codex OAuth token migration was a copier, not a migrator.** It could write a live ChatGPT
