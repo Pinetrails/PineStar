@@ -24,6 +24,7 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { _internals: T } = require('../sidecar/tools/builtin/browser.js');
+const Reach = require('../scripts/browser-reach-measure.js');
 
 const PAGE = (body, head) => '<!doctype html><meta charset=utf-8><title>fixture</title>' + (head || '') + '<body>' + body + '</body>';
 
@@ -120,6 +121,21 @@ const ROUTES = {
       const go = nodes.find(n => /Continue/.test(n.text || ''));
       A.ok(!!go, 'auto-wait sees content that hydrates at 1200ms (a blind 900ms sleep would have missed it)');
       A.ok(go.w > 1 && go.h > 1, 'the late-rendered element has real geometry, so it is clickable');
+    }
+
+    // 1a. AUTHORIZED REACH RECEIPT — aggregate observations only, against this owned fixture.
+    {
+      const receipt = await Reach.measureWithDriver(base + '/second', driver,
+        { authorizedOrigins: [new URL(base).origin] });
+      A.eq(receipt.reached, true, 'the owned ordinary-content fixture is measured as reached');
+      A.eq(receipt.status, 200, 'the reach receipt retains the observed document status');
+      A.eq(receipt.identity.headlessProductToken, false, 'the reach receipt measures headless-token exposure');
+      A.eq(receipt.identity.webdriver, false, 'the reach receipt measures webdriver exposure');
+
+      const blocked = await Reach.measureWithDriver(base + '/challenge', driver,
+        { authorizedOrigins: [new URL(base).origin] });
+      A.eq(blocked.reached, false, 'the owned verification fixture is not counted as reach');
+      A.eq(blocked.challengeSignal, 'title', 'the reach receipt records why reach was denied');
     }
 
     // 2. HONEST HTTP STATUS — a 404 that still renders a body.
