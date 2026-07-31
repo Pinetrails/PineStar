@@ -403,7 +403,7 @@
       const e = new Error('web_search failed (' + errors.join(' | ')
         + '). Search providers are temporarily unavailable; do not immediately repeat the same search. '
         + 'Use sources already returned, try a known direct URL with web_fetch, or finish with an explicit evidence limitation.');
-      e.__allFailed = true; throw e;
+      e.__allFailed = true; e.__errors = errors.slice(); throw e;
     }
 
     // ====================================================================
@@ -478,6 +478,71 @@
     // ====================================================================
     //  Tool definitions (match sidecar/tools/tool.js shape)
     // ====================================================================
+    /* ---------- web weather is an ANSWER, not an error ----------
+       Field data (2026-07-31, the Commander's own live workspace): the single biggest source of
+       mid-run "errors" users see is this file throwing on ordinary web reality — bot-blocked sites
+       (http 403), dead links (http 404), throttled keyless engines. Each throw became
+       "ERROR: tool web_fetch failed: http 403" in the transcript and a red ✗ chip in COMMS, and a
+       research task would rack up dozens — reading as a malfunctioning agent when nothing was wrong.
+       Reference harnesses (Hermes) return these to the MODEL as plain data and show the user nothing.
+
+       So: when the web ANSWERED — with a refusal, a 404, a throttle — the tool SUCCEEDED at finding
+       that out. Return an ok result whose content states the fact and steers the model to a different
+       source (never a blind retry). Genuine faults (timeouts, aborts, SSRF refusals, invalid URLs,
+       unreachable network) still throw and still become isError results — those keep the loop-guard
+       and repeat protection. Truthful telemetry cuts both ways: asserting a FAILURE the harness
+       didn't have is as untruthful as hiding one. */
+    function softFetchAnswer(e, rawUrl) {
+      const msg = String((e && e.message) || '');
+      const url = String(rawUrl || '');
+      let host = url; try { host = new URL(url).hostname; } catch (_) {}
+      const m = msg.match(/^http (\d{3})$/);
+      if (m) {
+        const s = +m[1];
+        if (s === 404 || s === 410) return {
+          content: 'No page exists at ' + url + ' (HTTP ' + s + ') — the link is dead or the content moved. ' +
+                   'Do not refetch this exact URL; search for where it lives now, or use another source.',
+          summary: 'dead link (' + s + ')'
+        };
+        if (s === 429) return {
+          content: host + ' is rate-limiting automated readers right now (HTTP 429). ' +
+                   'Use a different source for this information; the URL may work again later.',
+          summary: 'rate-limited (429)'
+        };
+        if (s >= 500) return {
+          content: host + '\'s own server is failing right now (HTTP ' + s + ') — an outage on their side. ' +
+                   'Use a different source, or retry this URL later.',
+          summary: 'site outage (' + s + ')'
+        };
+        return {
+          content: host + ' declined automated access to ' + url + ' (HTTP ' + s + ') — bot protection or a ' +
+                   'login wall. This page cannot be read directly; get the same information from a different ' +
+                   'source instead of retrying.',
+          summary: 'site declined (' + s + ')'
+        };
+      }
+      if (msg === 'too many redirects') return {
+        content: 'The URL ' + url + ' redirect-loops (6+ hops) and never lands on a page. Treat it as ' +
+                 'unreachable and use a different source.',
+        summary: 'redirect loop'
+      };
+      if (/^web_fetch got empty content/.test(msg)) return {
+        content: 'The page at ' + url + ' loaded but yielded no readable text — it likely renders entirely ' +
+                 'with JavaScript. Use the browser tool if one is available, or a different source.',
+        summary: 'no readable text'
+      };
+      // getaddrinfo ENOTFOUND — the DOMAIN does not resolve: a dead site or a mistyped host, i.e. an answer.
+      // (EAI_AGAIN / ECONNREFUSED / resets stay hard errors: they can also mean the USER'S network is down,
+      // and calling that "web weather" would be the harness lying about its own connectivity.)
+      const cause = e && e.cause;
+      const causeCodes = cause ? [cause.code].concat((cause.errors || []).map(x => x && x.code)) : [];
+      if (causeCodes.indexOf('ENOTFOUND') >= 0) return {
+        content: 'The domain ' + host + ' does not resolve — the site no longer exists or the hostname is ' +
+                 'mistyped. Do not retry this URL; search for the right address or use another source.',
+        summary: 'domain not found'
+      };
+      return null;
+    }
     /* The providers above are sequential fallbacks. The registry timeout must cover their SUM, not one
        provider plus a guess. The old 37s wrapper could abort OpenRouter before its own 20s allowance after
        Mojeek + both DDG paths had consumed time — exactly when the fallback was most needed. */
@@ -486,11 +551,26 @@
       + 5000;
     const searchTool = {
       name: 'web_search', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: searchChainTimeoutMs,
-      description: 'Search the web and get a list of results (title, url, snippet). Use this to find current information and pages to read.',
+      description: 'Search the web and get a list of results (title, url, snippet). Use this to find current information and pages to read. ' +
+        'If every engine is throttled the result says so — that is temporary web weather, not a malfunction; change strategy instead of repeating the search.',
       schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } },
       run: async (args, ctx) => {
         // visible tool activity is the loop's frozen agent.tool_call / agent.tool_result events
-        const { results, source } = await webSearch(args.query, { signal: ctx && ctx.signal });
+        let results, source;
+        try { ({ results, source } = await webSearch(args.query, { signal: ctx && ctx.signal })); }
+        catch (e) {
+          // An exhausted keyless chain is the engines' weather, not a harness fault — answer it as
+          // information (see softFetchAnswer's rationale above). webSearch itself still throws, so
+          // programmatic callers and tests keep the strict contract.
+          if (e && e.__allFailed) return {
+            content: 'No results this time — every search engine declined (' + (e.__errors || []).join('; ') + '). ' +
+                     'This is temporary throttling of the keyless engines, not a malfunction. Do not immediately ' +
+                     'repeat the same search: use sources already gathered, web_fetch a known URL directly, or ' +
+                     'finish and state the evidence limitation.',
+            summary: 'engines throttled — no results'
+          };
+          throw e;
+        }
         const content = results.length
           ? fenceExternal(
               results.map((r, i) => (i + 1) + '. ' + r.title + '\n   ' + r.url + (r.snippet ? '\n   ' + r.snippet : '')).join('\n'),
@@ -502,11 +582,18 @@
 
     const fetchTool = {
       name: 'web_fetch', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: FETCH_TIMEOUT_MS + 20000,
-      description: 'Fetch a web page by URL and return its main text content (cleaned). Use after web_search to read a result.',
+      description: 'Fetch a web page by URL and return its main text content (cleaned). Use after web_search to read a result. ' +
+        'If a page cannot be read (bot-blocked, dead link, site outage) the result says so — that is information about the site, not a tool failure; use a different source rather than retrying the same URL.',
       schema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
       run: async (args, ctx) => {
-        const { text, url, source } = await webFetch(args.url, { signal: ctx && ctx.signal });
-        return { content: fenceExternal(text, 'page text from ' + url), summary: text.length + ' chars via ' + source };
+        let out;
+        try { out = await webFetch(args.url, { signal: ctx && ctx.signal }); }
+        catch (e) {
+          const soft = softFetchAnswer(e, args.url);   // the web ANSWERED (403/404/throttle/…) → ok result
+          if (soft) return soft;
+          throw e;                                     // genuine fault (timeout/abort/SSRF/bad URL) → isError
+        }
+        return { content: fenceExternal(out.text, 'page text from ' + out.url), summary: out.text.length + ' chars via ' + out.source };
       }
     };
 
