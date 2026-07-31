@@ -369,7 +369,6 @@ test/prepare-node.test.js
 test/summon.id.test.js
 test/recruit-identity-ui.test.js
 test/subagents.test.js
-test/subagentsprites.test.js
 test/orchestration.test.js
 test/worker-iteration-cap.test.js
 test/channels.test.js

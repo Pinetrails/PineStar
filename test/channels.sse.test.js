@@ -182,18 +182,18 @@ A.eq(runTeeView('agent.reasoning', { agentId: 'a1', runId: 'r1', on: true }), nu
   A.ok(!src.includes("res.write(': ka\\n\\n')"), 'the browser-invisible SSE comment keepalive is retired');
 }
 
-/* ---- the CLIENT side of the same stream: exactly one EventSource, and a helper ledger that can be
-   corrected. world.js is not node-loadable (canvas/rAF/DOM at module scope), so these are source locks —
-   the same pattern the other world.js guards in test/ use.
+/* ---- the CLIENT side of the same stream: exactly one EventSource. world.js is not node-loadable
+   (canvas/rAF/DOM at module scope), so these are source locks — the same pattern the other world.js
+   guards in test/ use.
 
-   Two defects lived here. (1) `open()` guarded only on bridgePaused: onerror nulls chanES and arms a retry,
-   and resumeBridge re-opens on !chanES, so a re-entry INSIDE the backoff window (DATA › IMPORT → reentry →
-   enterGame → resumeBridge) opened stream #1 and the pending timer then overwrote chanES with #2 — #1 never
-   closed, its onmessage closure re-emitting every server event onto the bus forever (two crates per inbound
-   message, doubled HUD notes). (2) the sub-agent helper ledger had no lost-event net at all: the stream sends
-   no `id:` lines, so a terminal `task` frame emitted while the socket was down is gone, and the sprite drew at
-   full alpha forever — while spawn(), the block that exists so nothing haunts a newborn agent, never cleared
-   it either. */
+   The defect that lived here: `open()` guarded only on bridgePaused: onerror nulls chanES and arms a
+   retry, and resumeBridge re-opens on !chanES, so a re-entry INSIDE the backoff window (DATA › IMPORT →
+   reentry → enterGame → resumeBridge) opened stream #1 and the pending timer then overwrote chanES with
+   #2 — #1 never closed, its onmessage closure re-emitting every server event onto the bus forever (two
+   crates per inbound message, doubled HUD notes).
+
+   (The sub-agent helper-sprite ledger this block also used to lock was REMOVED 2026-07-30 on Andrew's
+   order — the world draws no floating helper marker; the LIVE HELPERS panel is the readout.) */
 {
   const fs = require('fs');
   const path = require('path');
@@ -208,16 +208,7 @@ A.eq(runTeeView('agent.reasoning', { agentId: 'a1', runId: 'r1', on: true }), nu
 
   const spawnAt = world.indexOf('chanQueues.clear(); serverLit.clear();');
   A.ok(spawnAt > 0, 'spawn() owns the new-agent reset block');
-  A.ok(/subLedger\.clear\(\)/.test(world.slice(spawnAt, spawnAt + 700)),
-    'spawn() clears the sub-agent helper ledger — a newborn inherits no spectral helpers');
-
-  const snapAt = world.indexOf('function fetchSnapshot');
-  A.ok(snapAt > 0, 'world.js owns fetchSnapshot');
-  const snapSeg = world.slice(snapAt, snapAt + 1800);
-  A.ok(/api\/subagents\?status=running/.test(snapSeg), 'fetchSnapshot also reconciles helpers against server truth');
-  A.ok(/subLedger\.reconcile\(/.test(snapSeg), 'through the tested ledger reconcile');
-  A.ok(/Array\.isArray\(j\.records\)/.test(snapSeg),
-    'and a failed/absent endpoint is NOT read as "no helpers are live" (that would delete live sprites)');
+  A.ok(!/subLedger/.test(world), 'the retired helper-sprite ledger stays gone — no floating sub-agent marker in the world');
 }
 
 A.report('channels.sse');
