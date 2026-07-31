@@ -40,26 +40,8 @@
   const IDLE_MS_DEFAULT = 90000;
   const RESULTS_MAX = 12;
   const TEXT_MAX = 12000;
-  // Hermes' bot-detection title patterns (tools/browser_tool.py) — a page WEARING one of these titles
-  // is a wall, not an answer, regardless of its HTTP status.
-  const CHALLENGE_TITLES = [
-    'access denied', 'access to this page has been denied', 'blocked', 'bot detected',
-    'verification required', 'please verify', 'are you a robot', 'captcha', 'cloudflare',
-    'ddos protection', 'checking your browser', 'just a moment', 'attention required'
-  ];
-  function looksChallenged(title) {
-    const low = String(title || '').toLowerCase();
-    return CHALLENGE_TITLES.some(p => low.indexOf(p) >= 0);
-  }
-  /* A block page that WEARS a normal title (live case: Reddit's "You've been blocked by network
-     security" page, title clean, 221 chars) — detect by BODY text, but only on SHORT pages: block
-     interstitials are terse, and a real article that merely DISCUSSES bot-blocking is never under
-     ~1200 chars. Without this, the reader returns the wall's own words as "page content". */
-  const CHALLENGE_TEXT = /you.?ve been blocked|access( to this site)? (is |has been )?denied|verify (that )?you.?re? (a )?human|complete the (following |security )?(challenge|check)|unusual traffic|confirm .{0,30}(human|not a robot)|enable javascript and cookies to continue|network security/i;
-  function looksBlockedText(text) {
-    const t = String(text || '').trim();
-    return t.length > 0 && t.length < 1200 && CHALLENGE_TEXT.test(t.slice(0, 600));
-  }
+  const Challenge = req('./browserchallenge.js');
+  const { looksChallenged, looksBlockedText, CHALLENGE_TITLES } = Challenge;
 
   // In-page result extractors. DOM queries, not regex-over-HTML: the browser already parsed the page,
   // and selector drift is easier to see and fix than regex drift. Each returns [{title,url,snippet}].

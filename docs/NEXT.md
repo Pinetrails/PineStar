@@ -1,5 +1,27 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-31 — BROWSER REACH 0.8.5 FOUNDATION (`agent/browser-reach-085`)
+
+BUILT, GATED, AND LIVE-BOOT PROVEN. The station-owned Chromium launch now derives its UA browser
+generation from the installed binary, carries the host locale, strips the `HeadlessChrome` product
+token, and disables Chromium's AutomationControlled signal. The real-browser gauntlet observed
+`navigator.webdriver === false` and a non-headless UA. Attached Commander-owned Chrome is never
+launched or modified by this posture.
+
+Challenge telemetry is now one shared conservative classifier across `webreader.js` and the full
+interactive browser. `browser.navigate` and `browser.get_text` report a human-verification wall as
+a distinct outcome, never return its interstitial text as successful content, and name the existing
+attended `browser.attach` / `browser.login` escalation paths. No CAPTCHA solving or wall-bypass claim
+was added.
+
+Verification: focused browser contract 271 assertions; web reach 29; real-Chromium gauntlet 70;
+`test:fast` 473/473 green; full `test:http` green. A seeded station booted on `:8897` and
+`/api/health` returned 200; the owned proof processes were then stopped and the port confirmed free.
+The injected `replay/model` is intentionally not a live catalog model, so no provider-backed agent run
+is claimed. Open for later slices: CDP observable-surface reduction, bounded input timing, per-host
+politeness/backoff, and authorized-site reach measurement.
+
+
 ## 2026-07-31 — NEXT UPDATE PLAN: v0.9.0 LEGIBLE · SOLID · UNBLOCKED
 
 Andrew's mandate for the update after v0.8.0: (1) make StarNet dramatically easier for a

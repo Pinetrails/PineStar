@@ -34,6 +34,7 @@ const ROUTES = {
   '/frame': () => ({ status: 200, body: PAGE('<p>Outer page</p><iframe src="/inner" style="position:absolute;left:120px;top:160px;width:300px;height:200px;border:0"></iframe>') }),
   '/inner': () => ({ status: 200, body: PAGE('<p>Card details</p><button id=pay>Pay now</button>') }),
   '/missing': () => ({ status: 404, body: PAGE('<h1>Not found</h1><p>no such page</p>') }),
+  '/challenge': () => ({ status: 200, body: '<!doctype html><meta charset=utf-8><title>Just a moment...</title><body><p>Checking your browser before accessing the site.</p></body>' }),
   '/form': () => ({ status: 200, body: PAGE('<select id=country><option value=us>United States</option><option value=uk>United Kingdom</option></select>') }),
   // CROSS-ORIGIN frame: the child is served from localhost while the parent is on 127.0.0.1, which
   // Chrome treats as a different origin and gives its own out-of-process target.
@@ -110,6 +111,10 @@ const ROUTES = {
     // 1. LATE HYDRATION — the silent corrupter. Content lands at 1200ms; the old code waited 900ms.
     {
       await driver.navigate(base + '/hydrate');
+      const identity = await driver.testEval('({ua:navigator.userAgent,webdriver:navigator.webdriver,language:navigator.language})');
+      A.ok(identity && !/HeadlessChrome/.test(identity.ua || ''), 'real Chromium does not announce the headless product token');
+      A.eq(identity.webdriver, false, 'real Chromium does not expose navigator.webdriver');
+      A.ok(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(identity.language || ''), 'real Chromium exposes a normalized host language');
       const nodes = await driver.snapshot(40);
       const go = nodes.find(n => /Continue/.test(n.text || ''));
       A.ok(!!go, 'auto-wait sees content that hydrates at 1200ms (a blind 900ms sleep would have missed it)');
@@ -126,6 +131,14 @@ const ROUTES = {
       A.ok(/Not found/.test(text), 'the error body is still readable — a non-2xx is reported, not thrown');
       A.ok(/HTTP 404/.test(T.describeResponse(r).text), 'the agent-facing text names the status');
     }
+    // 3. CHALLENGE HONESTY — a 200 interstitial is not successful page content.
+    {
+      await driver.navigate(base + '/challenge');
+      const wall = await driver.challengeStatus();
+      A.ok(wall.challenged === true && wall.signal === 'title', 'real Chromium identifies a title-based verification wall');
+      A.eq(wall.title, 'Just a moment...', 'the observed challenge title is retained for diagnosis');
+    }
+
     {
       await driver.navigate(base + '/form');
       A.eq(driver.lastResponse().status, 200, 'status does not leak from the previous 404 navigation');

@@ -66,6 +66,18 @@ function fakeDriver() {
   A.throws(() => T.assertLoopbackUrl('http://192.168.0.5'), 'local test route never widens to the LAN');
   A.throws(() => T.assertLoopbackUrl('https://example.com'), 'local test route accepts loopback only');
 
+  // Station-owned Chrome announces the installed browser generation, never the headless product token.
+  {
+    const identity = T.makeLaunchIdentity('fake-chrome.exe', { browserVersion: '140.0.7339.12', locale: 'en_US', platform: 'win32', arch: 'x64' });
+    A.eq(identity.locale, 'en-US', 'host locale is normalized for Chrome');
+    A.ok(/Chrome\/140\.0\.7339\.12/.test(identity.userAgent), 'launch identity matches the installed browser version');
+    A.ok(/Windows NT 10\.0; Win64; x64/.test(identity.userAgent), 'launch identity matches the host platform family');
+    A.ok(!/HeadlessChrome/.test(identity.userAgent), 'station identity never announces the headless product token');
+    const unknown = T.makeLaunchIdentity('missing-chrome', { spawnSync: () => ({ stdout: '', stderr: '' }), locale: 'de-DE' });
+    A.eq(unknown.userAgent, '', 'an unproven browser version is never fabricated');
+    A.eq(unknown.locale, 'de-DE', 'locale consistency remains available when version probing is unavailable');
+  }
+
   const driver = fakeDriver();
   const B = makeBrowserTools({ driver, vision: async ({ question }) => 'vision answer: ' + question });
   const names = B.tools.map(t => t.name).sort();
@@ -338,16 +350,15 @@ function fakeDriver() {
     isolationReady = true; currentUrl = 'about:blank'; sent.length = 0;
     const privatePort = T.makeCdpDriver({
       chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000,
-      cdpPort: 0, profileDir: privateProfile,
+      cdpPort: 0, profileDir: privateProfile, browserVersion: '140.0.7339.12', locale: 'en-US', platform: 'win32',
       fetchImpl: async url => { fetched.push(url); return { json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://owned-private' }] }; },
       WebSocketImpl: FakeWS,
       spawn: (exe, args) => { privateLaunches.push(args); return fakeProc(44); }
     });
     await privatePort.navigate('http://127.0.0.1:5173/');
-    // FINGERPRINT GUARD: production must launch on a private port it allocated ITSELF, never on
-    // literal 0. Chromium's runtime_features.cc special-cases --remote-debugging-port=0 and turns on
-    // AutomationControlled (navigator.webdriver), and Google refuses sign-in to browsers "being
-    // controlled through software automation" — which would break attended login for the human driving it.
+    // FINGERPRINT GUARD: production uses a private non-zero port so no other run can attach and port=0
+    // cannot trigger AutomationControlled. The launch flag is separately locked below because real current
+    // headless Chromium still exposed navigator.webdriver until that Blink feature was disabled explicitly.
     const portArg = privateLaunches[0].find(a => /^--remote-debugging-port=/.test(a));
     A.ok(portArg, 'production launch carries a private CDP port');
     const launchedPort = Number(String(portArg).split('=')[1]);
@@ -355,6 +366,11 @@ function fakeDriver() {
     A.ok(launchedPort !== 9347, 'the private port is per-run, never the process-wide default another agent run could attach to');
     A.ok(fetched.some(u => u === 'http://127.0.0.1:' + launchedPort + '/json/list'), 'driver attaches only through the private port it allocated for this run');
     A.eq(privatePort.attachedPort(), launchedPort, 'driver reports the privately owned attached port');
+    const uaArg = privateLaunches[0].find(a => /^--user-agent=/.test(a));
+    A.ok(uaArg && /Chrome\/140\.0\.7339\.12/.test(uaArg), 'private launch uses the installed browser generation in its UA');
+    A.ok(!/HeadlessChrome/.test(uaArg || ''), 'private launch never exposes the headless product token');
+    A.ok(privateLaunches[0].includes('--lang=en-US'), 'private launch language matches the host locale');
+    A.ok(privateLaunches[0].includes('--disable-blink-features=AutomationControlled'), 'private launch disables Chromium automation signaling');
     await privatePort.close();
     fs.rmSync(privateProfile, { recursive: true, force: true });
   }
@@ -931,6 +947,21 @@ function fakeDriver() {
       // A driver with no network visibility must not invent a status.
       const plain = await makeBrowserTools({ driver: fakeDriver() }).tools.find(t => t.name === 'browser.navigate').run({ url: 'https://example.com' }, {});
       A.ok(!/HTTP/.test(plain.content), 'a driver without network visibility claims no status (truthful telemetry)');
+    }
+
+    // F. a verification interstitial is a distinct outcome, never page content.
+    {
+      const wallDriver = fakeDriver();
+      wallDriver.challengeStatus = async () => ({ challenged: true, signal: 'title', title: 'Just a moment...' });
+      wallDriver.lastResponse = () => ({ status: 200, statusText: 'OK', failure: null });
+      const wall = makeBrowserTools({ driver: wallDriver });
+      const nav = await wall.tools.find(t => t.name === 'browser.navigate').run({ url: 'https://example.com/challenge' }, {});
+      A.ok(/^verification wall(?: 200)?$/.test(nav.summary), 'browser.navigate reports a challenge as its own outcome');
+      A.ok(/not page content/i.test(nav.content), 'navigation refuses to treat a challenge as content');
+      A.ok(/browser\.attach/.test(nav.content) && /browser\.login/.test(nav.content), 'navigation gives the honest attended escalation paths');
+      const text = await wall.tools.find(t => t.name === 'browser.get_text').run({}, {});
+      A.eq(text.summary, 'verification wall', 'browser.get_text preserves the same challenge outcome');
+      A.ok(!/Example page text/.test(text.content), 'browser.get_text never returns the challenge body as readable content');
     }
   }
 
