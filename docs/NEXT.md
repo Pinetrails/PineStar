@@ -1,5 +1,19 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-30 — DELEGATED RESEARCH WEB RELIABILITY (`agent/worker-research-reliability`)
+
+READY TO MERGE at `8258e028`. A live researcher run reached its 10-turn ceiling after eight
+nearly identical web-search failures. The keyless search providers were throttled, and the
+OpenRouter rescue path was then aborted by a 37-second registry wrapper even though the sequential
+provider chain legitimately needed up to 56 seconds. The wrapper now covers the full fallback sum
+plus scheduling slack, provider-local aborts report an actionable timeout instead of “operation
+aborted,” and an exhausted chain tells the worker to change strategy. Delegated workers receive 16
+bounded turns (still below the lead’s 40) so transient failures do not consume the whole job.
+
+Regression: focused web/orchestration/harness tests passed; `node --check` passed all touched JS;
+`test:fast` is 464/464 green; full `test:http` is green. Live real-provider re-run remains required
+after merge/restart. No push, PR, deploy, publish, production-data, credential, or secret change.
+
 ## 2026-07-28 — BROWSER.FIND VIEWPORT HONESTY (`agent/quality-loop-0728c`)
 
 READY TO MERGE. The newly added `browser.find` scanned only visible interactive elements but told
