@@ -2018,7 +2018,16 @@ and turns an ambiguous non-notarized Gatekeeper source into a hard failure. A fa
 structural gate locks that boundary; `docs/CODE_SIGNING.md` now contains the exact
 certificate, app-specific-password, secret, backup, and first-live-proof procedure.
 
-OPEN: Apple portal is waiting on Andrew's sign-in/2FA. No certificate, private key, `.p12`,
-app-specific password, GitHub secret, CI run, notarization submission, or clean-Mac launch
-has been created or claimed yet. Do not retire the unsigned-download warnings until both
-architectures pass the first staged live proof.
+LIVE SETUP: Apple issued Developer ID Application certificate `5XX554XKQT` for team
+`699UALS857` (expires 2031-08-01). The matching private key, certificate, PKCS#12 bundle,
+and recovery material are stored outside Git with user-only ACLs. A dedicated app-specific
+password and all six `APPLE_*` Actions secrets are installed in `androoAGI/starnet`.
+
+FIRST CI PROOF: non-publishing `desktop-build` run `30606849654` exposed an OpenSSL 3
+PBES2/AES PKCS#12 compatibility failure in macOS `security import`. The certificate was
+re-exported as Apple-compatible SHA-1/3DES PKCS#12 and the secret replaced. Retry attempt
+2 imported one identity, found Andrew Sims's certificate, signed the bundled Node runtime,
+desktop executable, and `StarNet.app`, then submitted both Intel and Apple Silicon apps to
+Apple notarization. Final Apple verdict and DMG artifacts are pending. Do not retire the
+unsigned-download warnings until both architectures pass this staged live proof and the
+DMGs receive a clean-Mac launch check.
