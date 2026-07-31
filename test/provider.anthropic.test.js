@@ -71,7 +71,8 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.body.system, [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } }],
       'leading system lifted — block form, carrying the cache breakpoint');
     A.eq(captured.body.tools[0], { name: 'web', description: 'd', input_schema: { type: 'object' } }, 'OpenAI tool -> Anthropic tool');
-    A.eq(captured.body.messages[0].content[1], { type: 'tool_use', id: 'call_7', name: 'web', input: { q: 1 } }, 'assistant tool_call -> tool_use block');
+    A.eq(captured.body.messages[0].content[1], { type: 'tool_use', id: 'call_7', name: 'web', input: { q: 1 }, cache_control: { type: 'ephemeral' } },
+      'assistant tool_call -> tool_use block (inside the last-3 sliding window, so it carries an anchor)');
     A.eq(captured.body.messages[1].content[0], { type: 'tool_result', tool_use_id: 'call_7', content: 'result text', cache_control: { type: 'ephemeral' } },
       'tool result -> tool_result block (last block of the last turn carries the conversation breakpoint)');
   }
@@ -110,10 +111,21 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.ok(!noSys.system, 'no system block invented when the caller sent none');
     A.eq(noSys.tools[0].cache_control, { type: 'ephemeral' }, 'tools anchor the breakpoint when there is no system prompt');
 
-    // The conversation breakpoint rides the LAST block of the LAST turn, and only there.
-    const convo = await cap({ model: 'm', messages: [{ role: 'user', content: 'one' }, { role: 'assistant', content: 'two' }, { role: 'user', content: 'three' }] });
-    A.ok(!convo.messages[0].content[0].cache_control, 'earlier turns are read points, not write points');
-    A.eq(convo.messages[2].content[0].cache_control, { type: 'ephemeral' }, 'last block of the last turn carries the conversation breakpoint');
+    /* SLIDING TAIL ANCHORS (2026-07-31): the LAST THREE messages each carry a breakpoint (with the
+       static-prefix anchor that is the API's 4-breakpoint max). One trailing anchor was fragile: a
+       breakpoint only walks back 20 blocks for its predecessor, and one parallel-tool turn can append
+       more than that — the anchor then misses and the whole conversation re-bills cold. Turns older
+       than the window stay unstamped: they are read points the slid-off anchors already cover. */
+    const convo = await cap({ model: 'm', messages: [
+      { role: 'user', content: 'one' }, { role: 'assistant', content: 'two' },
+      { role: 'user', content: 'three' }, { role: 'assistant', content: 'four' },
+      { role: 'user', content: 'five' }
+    ] });
+    A.ok(!convo.messages[0].content[0].cache_control, 'turns older than the sliding window are read points, not write points');
+    A.ok(!convo.messages[1].content[0].cache_control, 'the window is exactly three — the fourth-from-last turn is unstamped');
+    A.eq(convo.messages[2].content[0].cache_control, { type: 'ephemeral' }, 'third-from-last turn carries an anchor');
+    A.eq(convo.messages[3].content[0].cache_control, { type: 'ephemeral' }, 'second-from-last turn carries an anchor');
+    A.eq(convo.messages[4].content[0].cache_control, { type: 'ephemeral' }, 'last turn carries an anchor');
 
     // ALIASING TRAP: native image blocks pass through by reference, so stamping in place would mutate the
     // caller's own message array and leak cache_control back into harness state.
@@ -127,6 +139,26 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.ok(!off.system[0].cache_control, 'SKYNET_ANTHROPIC_CACHE=0 drops the system breakpoint');
     A.ok(!off.tools[0].cache_control, 'SKYNET_ANTHROPIC_CACHE=0 drops every breakpoint');
     A.eq(off.system[0].text, 's', 'system content survives with caching off');
+
+    // 1-HOUR TTL (2026-07-31): SKYNET_ANTHROPIC_CACHE_TTL=1h rides every breakpoint. Opt-in because a 1h
+    // write bills 2.0x (vs 1.25x) — the right trade only for human-paced conversations with >5min gaps.
+    {
+      const prevTtl = process.env.SKYNET_ANTHROPIC_CACHE_TTL;
+      process.env.SKYNET_ANTHROPIC_CACHE_TTL = '1h';
+      delete require.cache[require.resolve('../sidecar/providers/anthropic.js')];
+      const mod = require('../sidecar/providers/anthropic.js');
+      let got = null;
+      const fetchImpl = async (url, init) => {
+        got = JSON.parse(init.body);
+        return new Response([line({ type: 'message_stop' }), ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      };
+      await collect(mod.makeAnthropicProvider({ fetch: fetchImpl, key: 'k' }),
+        { model: 'm', messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }] });
+      A.eq(got.system[0].cache_control, { type: 'ephemeral', ttl: '1h' }, 'the 1h TTL rides the static-prefix anchor');
+      A.eq(got.messages[0].content[0].cache_control, { type: 'ephemeral', ttl: '1h' }, 'and the tail anchors');
+      if (prevTtl === undefined) delete process.env.SKYNET_ANTHROPIC_CACHE_TTL; else process.env.SKYNET_ANTHROPIC_CACHE_TTL = prevTtl;
+      delete require.cache[require.resolve('../sidecar/providers/anthropic.js')];
+    }
   }
 
   // D. model catalog parses /models.

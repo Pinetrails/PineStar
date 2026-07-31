@@ -34,6 +34,21 @@
       return String(raw == null ? '' : raw).trim() === '0';
     } catch (_) { return false; }
   })();
+  /* CACHE TTL (2026-07-31, Hermes-parity pass). Default stays the 5-minute tier. SKYNET_ANTHROPIC_CACHE_TTL=1h
+     opts into the 1-hour tier — the right trade for human-paced COMMS conversations, where the gap between
+     turns routinely exceeds 5 minutes and every reply then pays a full re-write. Costs are NOT symmetric:
+     a 1h write bills 2.0x (vs 1.25x), so the break-even moves from two requests to three — which is why it
+     is an operator opt-in, not the default. prices.js reads the SAME env so the spend estimate tracks the
+     tier actually requested. */
+  const CACHE_TTL_1H = (function () {
+    try {
+      const raw = (typeof process !== 'undefined' && process.env) ? process.env.SKYNET_ANTHROPIC_CACHE_TTL : '';
+      return String(raw == null ? '' : raw).trim().toLowerCase() === '1h';
+    } catch (_) { return false; }
+  })();
+  const cacheControl = () => (CACHE_TTL_1H ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' });
+  // the block kinds Anthropic documents as legal carriers of cache_control (plus schema-less tool defs)
+  const CACHEABLE_BLOCK = { text: 1, image: 1, tool_use: 1, tool_result: 1, document: 1 };
 
   /* THINKING + EFFORT (2026-07-27). Claude's headline capability, previously unreachable through this adapter:
      reasoningEfforts() returned ['none'] and buildBody emitted no thinking parameter at all, so a Commander on
@@ -399,9 +414,14 @@
       if (CACHE_OFF || !Array.isArray(blocks) || !blocks.length) return blocks;
       const i = blocks.length - 1;
       const last = blocks[i];
+      if (!last || typeof last !== 'object') return blocks;
+      // Only the documented cacheable block kinds may carry cache_control (system text, tool defs, and
+      // message text/image/tool_use/tool_result/document). A THINKING block cannot — stamping one 400s the
+      // request — and tool DEFINITIONS have no .type at all, which is why absence of .type passes.
+      if (last.type && !CACHEABLE_BLOCK[last.type]) return blocks;
       // COPY, never stamp in place: userContentToBlocks passes native image blocks through BY REFERENCE, so
       // mutating the last block here would reach back into the CALLER's message array and persist.
-      if (last && typeof last === 'object') blocks[i] = Object.assign({}, last, { cache_control: { type: 'ephemeral' } });
+      blocks[i] = Object.assign({}, last, { cache_control: cacheControl() });
       return blocks;
     }
     /* Put the model's thinking contract on the wire. Per-request `reasoningEffort` wins over the construction
@@ -449,8 +469,17 @@
       // tools and so caches both; with no system prompt the last tool is the only anchor that covers them.
       if (converted.system) body.system = breakpoint([{ type: 'text', text: converted.system }]);
       else if (tools) breakpoint(tools);
-      const lastMsg = converted.messages[converted.messages.length - 1];
-      if (lastMsg) breakpoint(lastMsg.content);
+      /* SLIDING TAIL ANCHORS (2026-07-31, Hermes-parity pass): the LAST THREE messages each carry a
+         breakpoint — with the static-prefix anchor above, exactly the API's 4-breakpoint maximum.
+         One trailing anchor was fragile for a mechanical reason: a breakpoint only looks BACK 20 content
+         blocks for its predecessor, and a single agentic turn with parallel tool calls can append more
+         than 20 blocks at once — the new anchor then misses the old one and the whole conversation
+         re-bills as a cold write. Three sliding anchors keep every gap under the lookback window, and
+         the anchors they slide off remain valid READ points as the tail grows. */
+      const msgs = converted.messages;
+      for (let k = Math.max(0, msgs.length - 3); k < msgs.length; k++) {
+        if (msgs[k]) breakpoint(msgs[k].content);
+      }
       return body;
     }
 

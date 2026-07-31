@@ -40,6 +40,7 @@ test/native-stt.test.js
 test/local-voice.test.js
 test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
+test/prices.live.test.js
 test/provider.gemini.test.js
 test/provider.toolschema.test.js
 test/provider.prices.test.js

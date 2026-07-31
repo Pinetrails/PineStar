@@ -313,6 +313,25 @@ function defaultWorkspaces() {
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
 
+/* ---- LIVE MODEL PRICING (2026-07-31, Hermes-parity pass): wire the models.dev aggregate into the
+   price snapshot so a newly-released model gets its real published rate instead of a stale family
+   fallback. Strictly additive to the seatbelt: operator overrides still win, the built-in snapshot
+   still answers offline, and a hostile/drifted payload is validated away (liveprices.js). The fetch
+   is background + disk-cached (24h cadence) and never blocks a run. SKYNET_LIVE_PRICES=0 disables. */
+const livePrices = (function () {
+  try {
+    if (String(ENV('LIVE_PRICES') || '').trim() === '0') return null;
+    const { makeLivePrices } = require('./providers/liveprices.js');
+    const prices = require('./providers/prices.js');
+    const lp = makeLivePrices({ file: path.join(WORKSPACES, 'liveprices.cache.json'), now: () => Date.now() });
+    prices.setLiveLookup((family, id) => lp.lookup(family, id));
+    lp.refresh().catch(() => {});
+    const t = setInterval(() => { lp.refresh().catch(() => {}); }, 6 * 60 * 60 * 1000);
+    if (t.unref) t.unref();
+    return lp;
+  } catch (e) { console.warn('[prices] live catalog wiring failed:', (e && e.message) || e); return null; }
+})();
+
 /* ---- P1-9 ADVANCED runtime knobs: a handful of limits that were environment-only (MAX_ITERS,
    MAX_CONCURRENT_AGENTS, the consent timeout, the cron tick) are now editable + PERSISTED so a beginner who can't
    set env vars can still tune them. PRECEDENCE is strict and disclosed in the UI: an explicit ENVIRONMENT VARIABLE
