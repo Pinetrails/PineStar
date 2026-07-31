@@ -136,83 +136,6 @@
       "astronaut/walk_west_4.png",
       "astronaut/walk_west_5.png"
     ],
-    "bear.blink.east": [
-      "bear/blink_east.png"
-    ],
-    "bear.blink.north": [
-      "bear/blink_north.png"
-    ],
-    "bear.blink.south": [
-      "bear/blink_south.png"
-    ],
-    "bear.blink.west": [
-      "bear/blink_west.png"
-    ],
-    "bear.rot.east": [
-      "bear/rot_east.png"
-    ],
-    "bear.rot.north": [
-      "bear/rot_north.png"
-    ],
-    "bear.rot.south": [
-      "bear/rot_south.png"
-    ],
-    "bear.rot.west": [
-      "bear/rot_west.png"
-    ],
-    "bear.sit.east": [
-      "bear/sit_east.png"
-    ],
-    "bear.sit.north": [
-      "bear/sit_north.png"
-    ],
-    "bear.sit.south": [
-      "bear/sit_south.png"
-    ],
-    "bear.sit.west": [
-      "bear/sit_west.png"
-    ],
-    "bear.type.north": [
-      "bear/type_north_0.png",
-      "bear/type_north_1.png",
-      "bear/type_north_2.png",
-      "bear/type_north_3.png",
-      "bear/type_north_4.png",
-      "bear/type_north_5.png",
-      "bear/type_north_6.png"
-    ],
-    "bear.walk.east": [
-      "bear/walk_east_0.png",
-      "bear/walk_east_1.png",
-      "bear/walk_east_2.png",
-      "bear/walk_east_3.png",
-      "bear/walk_east_4.png",
-      "bear/walk_east_5.png"
-    ],
-    "bear.walk.north": [
-      "bear/walk_north_0.png",
-      "bear/walk_north_1.png",
-      "bear/walk_north_2.png",
-      "bear/walk_north_3.png",
-      "bear/walk_north_4.png",
-      "bear/walk_north_5.png"
-    ],
-    "bear.walk.south": [
-      "bear/walk_south_0.png",
-      "bear/walk_south_1.png",
-      "bear/walk_south_2.png",
-      "bear/walk_south_3.png",
-      "bear/walk_south_4.png",
-      "bear/walk_south_5.png"
-    ],
-    "bear.walk.west": [
-      "bear/walk_west_0.png",
-      "bear/walk_west_1.png",
-      "bear/walk_west_2.png",
-      "bear/walk_west_3.png",
-      "bear/walk_west_4.png",
-      "bear/walk_west_5.png"
-    ],
     "blank.blink.east": [
       "blank/blink_east.png"
     ],
@@ -2656,6 +2579,23 @@
       "xenomorph/walk_west_4.png",
       "xenomorph/walk_west_5.png"
     ],
+    "bear.rot.south": [
+      "bear/rot_south.png"
+    ],
+    "bear.sit.south": [
+      "bear/sit_south.png"
+    ],
+    "bear.blink.south": [
+      "bear/blink_south.png"
+    ],
+    "bear.walk.south": [
+      "bear/walk_south_0.png",
+      "bear/walk_south_1.png",
+      "bear/walk_south_2.png",
+      "bear/walk_south_3.png",
+      "bear/walk_south_4.png",
+      "bear/walk_south_5.png"
+    ],
     "bear.gesture.south": [
       "bear/gesture_south_0.png",
       "bear/gesture_south_1.png",
@@ -2669,6 +2609,9 @@
     ],
     "bear.rot.south-east": [
       "bear/rot_south-east.png"
+    ],
+    "bear.blink.south-east": [
+      "bear/blink_south-east.png"
     ],
     "bear.walk.south-east": [
       "bear/walk_south-east_0.png",
@@ -2688,6 +2631,23 @@
       "bear/gesture_south-east_6.png",
       "bear/gesture_south-east_7.png",
       "bear/gesture_south-east_8.png"
+    ],
+    "bear.rot.east": [
+      "bear/rot_east.png"
+    ],
+    "bear.sit.east": [
+      "bear/sit_east.png"
+    ],
+    "bear.blink.east": [
+      "bear/blink_east.png"
+    ],
+    "bear.walk.east": [
+      "bear/walk_east_0.png",
+      "bear/walk_east_1.png",
+      "bear/walk_east_2.png",
+      "bear/walk_east_3.png",
+      "bear/walk_east_4.png",
+      "bear/walk_east_5.png"
     ],
     "bear.gesture.east": [
       "bear/gesture_east_0.png",
@@ -2722,6 +2682,20 @@
       "bear/gesture_north-east_7.png",
       "bear/gesture_north-east_8.png"
     ],
+    "bear.rot.north": [
+      "bear/rot_north.png"
+    ],
+    "bear.sit.north": [
+      "bear/sit_north.png"
+    ],
+    "bear.walk.north": [
+      "bear/walk_north_0.png",
+      "bear/walk_north_1.png",
+      "bear/walk_north_2.png",
+      "bear/walk_north_3.png",
+      "bear/walk_north_4.png",
+      "bear/walk_north_5.png"
+    ],
     "bear.gesture.north": [
       "bear/gesture_north_0.png",
       "bear/gesture_north_1.png",
@@ -2732,6 +2706,15 @@
       "bear/gesture_north_6.png",
       "bear/gesture_north_7.png",
       "bear/gesture_north_8.png"
+    ],
+    "bear.type.north": [
+      "bear/type_north_0.png",
+      "bear/type_north_1.png",
+      "bear/type_north_2.png",
+      "bear/type_north_3.png",
+      "bear/type_north_4.png",
+      "bear/type_north_5.png",
+      "bear/type_north_6.png"
     ],
     "bear.rot.north-west": [
       "bear/rot_north-west.png"
@@ -2755,6 +2738,23 @@
       "bear/gesture_north-west_7.png",
       "bear/gesture_north-west_8.png"
     ],
+    "bear.rot.west": [
+      "bear/rot_west.png"
+    ],
+    "bear.sit.west": [
+      "bear/sit_west.png"
+    ],
+    "bear.blink.west": [
+      "bear/blink_west.png"
+    ],
+    "bear.walk.west": [
+      "bear/walk_west_0.png",
+      "bear/walk_west_1.png",
+      "bear/walk_west_2.png",
+      "bear/walk_west_3.png",
+      "bear/walk_west_4.png",
+      "bear/walk_west_5.png"
+    ],
     "bear.gesture.west": [
       "bear/gesture_west_0.png",
       "bear/gesture_west_1.png",
@@ -2768,6 +2768,9 @@
     ],
     "bear.rot.south-west": [
       "bear/rot_south-west.png"
+    ],
+    "bear.blink.south-west": [
+      "bear/blink_south-west.png"
     ],
     "bear.walk.south-west": [
       "bear/walk_south-west_0.png",

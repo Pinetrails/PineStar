@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# Splice an EIGHT-direction set (rot/walk/gesture x8 from assemble8.py) into
-# manifest.json. Cardinal sit/blink/type entries are left untouched — the 8-dir
-# rebuilds keep those on the shipped cardinal frames. Same encoding laws as
+# Splice an EIGHT-direction set (rot/walk/gesture x8 from assemble8.py, blink from
+# make_blink.py, cardinal sit/type) into manifest.json. The set's keys are REBUILT
+# from the files on disk — a deleted frame (e.g. the dropped back-view blinks) must
+# drop its key too, or drawBody swaps in a missing image. Same encoding laws as
 # splice_manifest.py: utf-8, ensure_ascii=False, CRLF, every value a list.
 import json, os, sys
 
@@ -18,14 +19,18 @@ def frames_for(setname, prefix, d):
     return [f"{setname}/{f}" for f in fs]
 
 def add_set8(sprites, setname):
+    setdir = os.path.join(ROOT, setname)
+    for k in [k for k in sprites if k.startswith(setname + ".")]:
+        del sprites[k]
     for d in DIRS8:
         sprites[f"{setname}.rot.{d}"] = [f"{setname}/rot_{d}.png"]
-        walks = frames_for(setname, "walk", d)
-        if walks:
-            sprites[f"{setname}.walk.{d}"] = walks
-        gests = frames_for(setname, "gesture", d)
-        if gests:
-            sprites[f"{setname}.gesture.{d}"] = gests
+        for state in ("sit", "blink", "type"):
+            if os.path.exists(os.path.join(setdir, f"{state}_{d}.png")):
+                sprites[f"{setname}.{state}.{d}"] = [f"{setname}/{state}_{d}.png"]
+        for track in ("walk", "gesture", "type"):
+            fs = frames_for(setname, track, d)
+            if fs:
+                sprites[f"{setname}.{track}.{d}"] = fs
 
 if __name__ == "__main__":
     with open(MANIFEST, encoding="utf-8") as f:
