@@ -96,6 +96,13 @@
          which is also the moment a human is around to answer its consent card. */
       { capId: 'web', tool: 'browser.attach', scope: 'execute', requiresConsent: true, network: true, deferred: true },
       { capId: 'web', tool: 'browser.detach', scope: 'execute', requiresConsent: false, network: true, deferred: true },
+      /* Deferred, same reasoning as attach: specialist moves, not the ordinary browse loop. pdf is a
+         READ (render what is already on screen into the jail); intercept/emulate reshape only the
+         STATION browser and both refuse in attached mode (ownership — the Commander's own Chrome is
+         not the station's to reconfigure). */
+      { capId: 'web', tool: 'browser.pdf', scope: 'read', requiresConsent: false, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.intercept', scope: 'execute', requiresConsent: false, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.emulate', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.console', scope: 'read', requiresConsent: false, network: true, deferred: true },
       // NOT deferred, and this was measured rather than reasoned. "Show me the page" is a headline request,
       // and a model that cannot see the tool does not always go looking: with browser.screenshot deferred,
