@@ -272,7 +272,9 @@ const VoiceLive = (() => {
     const el = $('lv-task');
     refreshRoute();
     if (!el || typeof Workstreams === 'undefined' || typeof Channels === 'undefined') return;
-    const ws = Workstreams.active();
+    // the panel reports the session the CALL is bound to — not whatever the Commander is browsing, which
+    // would misreport whose work the strip is showing the moment they click around mid-call.
+    const ws = boundSession() || Workstreams.active();
     if (!ws) { el.textContent = 'No active workstream.'; return; }
     const busy = Channels.isBusy(ws.id), pending = Channels.pendingOf(ws.id);
     el.textContent = (pending ? 'APPROVAL NEEDED · ' : busy ? 'WORKING · ' : 'READY · ') + (ws.title || 'GENERAL');
@@ -403,9 +405,47 @@ const VoiceLive = (() => {
     return true;
   }
 
+  /* THE CALL IS BOUND TO ONE SESSION (2026-07-30, Andrew: "if you open live voice in a session it should
+     ONLY be for that session — clicking another session must not rebind the live mode"). Everything routed
+     through Chat lands on the ACTIVE workstream, so before this binding existed, browsing the rail mid-call
+     silently re-targeted the conversation: the next utterance ran in whatever session was open, under that
+     session's agent. The call now remembers the session it was OPENED in and pins focus back to it before
+     every utterance — browsing while silent is free, but spoken words always reach the session the call
+     belongs to. The ONE legitimate rebind is the Commander steering the call BY VOICE ("open the research
+     session"): station.switch_session calls rebind() when a live call is up, because that switch came
+     through the call itself. A UI click never routes through that verb. */
+  let boundWsId = null;
+  function bindSession() {
+    boundWsId = (typeof Workstreams !== 'undefined' && Workstreams.activeId) ? Workstreams.activeId() : null;
+  }
+  function rebind(id) {
+    if (id) { boundWsId = String(id); refreshTask(); }
+  }
+  function boundSession() {
+    if (!boundWsId || typeof Workstreams === 'undefined' || !Workstreams.get) return null;
+    return Workstreams.get(boundWsId);
+  }
+  function ensureBoundFocus() {
+    if (typeof Workstreams === 'undefined') return;
+    const bound = boundSession();
+    if (!bound || bound.archived) {
+      // the bound session was deleted/archived mid-call — rebind to the live one and SAY so, never guess on
+      if (boundWsId) caption('agent', '— that session is gone; the call now follows the open one —');
+      boundWsId = Workstreams.activeId ? Workstreams.activeId() : null;
+      return;
+    }
+    if (Workstreams.activeId && Workstreams.activeId() !== bound.id) {
+      const ws = Workstreams.switch(bound.id);
+      if (ws && typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
+      try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+    }
+  }
+
   function handleTranscript(text) {
     const value = String(text || '').trim();
     if (!value) { setState('listening'); return true; }
+    // spoken words go to the session this call was opened in, wherever the Commander happens to be browsing
+    ensureBoundFocus();
     caption('user', value);
     caption('agent', '');
     setState('thinking');
@@ -747,6 +787,7 @@ const VoiceLive = (() => {
     active = true;
     ending = false;
     failed = false;
+    bindSession();   // the call belongs to the session it was OPENED in (see the binding note above)
     reflectButton(true);
     if (typeof Voice !== 'undefined') {
       // Entering hands-free means you expect to HEAR the reply. If the speaker is muted, turn it on for the
@@ -1142,6 +1183,7 @@ const VoiceLive = (() => {
     dictation = true;
     ending = false;
     failed = false;
+    bindSession();   // the shipped path binds too — the call belongs to the session it was opened in
     reflectButton(true);
     if (typeof Voice !== 'undefined') {
       /* ⛔ THE SAME LEVER start() PULLS, AND THE PATH THAT ACTUALLY SHIPS. A packaged build carries no
@@ -1209,6 +1251,7 @@ const VoiceLive = (() => {
       if (Voice.setLocalTts) Voice.setLocalTts(false);
     }
     dictation = false;
+    boundWsId = null;   // the binding dies with the call — a later call binds to wherever it is opened
     if ($('live-voice-panel')) $('live-voice-panel').hidden = true;
     reflectButton(false);
     ending = false;
@@ -1261,7 +1304,7 @@ const VoiceLive = (() => {
     return { voice: want, appliesOn: 'the next reply' };
   }
 
-  return { init, start, end, isActive: () => active, statusSnapshot, voices, setVoice };
+  return { init, start, end, isActive: () => active, statusSnapshot, voices, setVoice, rebind, boundSessionId: () => boundWsId };
 })();
 
 document.addEventListener('DOMContentLoaded', () => VoiceLive.init());
