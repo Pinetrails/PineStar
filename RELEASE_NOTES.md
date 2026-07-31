@@ -136,12 +136,15 @@ falls back exactly to the old behaviour: a durable end-of-run question, never a 
 - **The learned topic histogram feeds every ranked surface**, so what StarNet suggests tracks what
   you have actually been doing.
 
-## macOS: signed, hardened, and notarizable
+## macOS: signed and hardened
 
-The Mac app now ships with **hardened runtime and the entitlements notarization requires**. That
-matters more than it sounds: hardened runtime terminates JIT-compiling processes unless they are
-entitled for it, and StarNet ships two — the shell's WebView and the Node sidecar's V8. Without
-these the app signs and notarizes cleanly and then dies on launch.
+The Mac app now ships with **hardened runtime and the entitlements it requires**. That matters
+more than it sounds: hardened runtime terminates JIT-compiling processes unless they are entitled
+for it, and StarNet ships two — the shell's WebView and the Node sidecar's V8 — plus the offline
+voice engine's native libraries, which the entitlements now allow to load. Full Apple
+notarization is close but not in this build (the third-party voice binaries still need Apple's
+countersignature), so a first install from the DMG still asks you to right-click → **Open** the
+first time. In-app updates are untouched by any of this.
 
 ## Truthful telemetry: forty-one things StarNet said that it could not prove
 
@@ -238,8 +241,8 @@ Beyond the honesty sweep, the mechanical bugs this release closes:
 - Windows installers are code-signed (CN=Andrew Sims), continuing from v0.6.5.
 - **Windows: update from inside StarNet.** It installs over your existing copy — your crew,
   sessions, keys and station stay exactly where they are.
-- **This release ships the Windows build.** The macOS 0.8.0 build follows separately; macOS
-  in-app updating continues to work from v0.6.8 onward once it lands.
+- **Windows and macOS ship together** — installer for Windows, Apple Silicon and Intel DMGs for
+  macOS, and in-app updating on both platforms (macOS from v0.6.8 onward).
 - **Stale caches can no longer outlive an update.** The compiled WebView caches are now
   invalidated against the exact executable that is running — not just its version number — so
   even a rebuilt installer under the same version can never run yesterday's cached code against
