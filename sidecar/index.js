@@ -27,7 +27,11 @@ const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
+const { makeWebReader } = require('./tools/builtin/webreader.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
+// ONE reader for the whole sidecar (lazy: no Chrome until the first bot-walled fetch actually needs
+// it; idle self-teardown). Per-run construction would pay the Chrome cold start on every run.
+const stationWebReader = makeWebReader({ env: process.env });
 const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
 const { makeHooks } = require('./hooks.js');                 // the hook spine: pre/post tool + llm, session, compress
@@ -10442,6 +10446,9 @@ async function runOnce(o) {
     openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
     surface: surface,
     redact: redact,
+    // the station READER: automatic real-Chrome rung for bot-walled fetches + throttled search
+    // (webreader.js — headless, cookie-less, shared across runs, SKYNET_WEB_READER=0 disables)
+    reader: stationWebReader,
     resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc),
     // web_fetch's clean-extraction path is keyed now (r.jina.ai 401s without a token), so it is attempted
     // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
