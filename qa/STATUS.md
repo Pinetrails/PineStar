@@ -840,8 +840,8 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-31 06:11Z @ 4c8c0345 | RED | 4 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-30T13:01:45.510Z · ui-only · 103344ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-31 22:10Z @ f541a4d6 | GREEN | 4 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-31T13:01:47.949Z · ui-only · 105569ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
@@ -1675,3 +1675,7 @@ when no live source). Live-proven on the dictation leg (seeded sidecar, fake-mic
 Chrome): SELF bars lift off the real tone, AGENT columns light during real Edge playback, engine
 label ASR BROWSER SPEECH, zero exceptions, VERIFY: ALL PASS. Gates read from the logs: worktree
 fast 465 NPM_EXIT=0 pre-merge; trunk post-merge fast 465 NPM_EXIT=0.
+
+2026-07-31 merge: agent/voice-desktop-parity -> feat/harness-backend (`25e90214`) — Live Voice input/output is bound to its opening session; same-version desktop rebuilds purge stale WebView assets by executable identity; packaged Whisper/Kokoro runtime verified 3/3 round trips; signed installer SHA-256 `26860D91446BBFA1767BA6C8A72A111C9935DE63F26A1B429BFBFFF2DFDB7746`; trunk `test:fast` 473/473 GREEN + `test:http` GREEN.
+
+2026-07-31 merge: agent/ui-panel-polish -> feat/harness-backend (pure FF to `add513f6`) — PANEL-CHROME premium pass: new `frontend/css/panelchrome.css` (one additive layer; molded matte header strips on CREW/COMMS/SESSIONS, topbar instruments docked into a recessed cockpit plate + gold STATION lamp, crew rows as console cards + engraved WORKING/IDLE counter, framed SESSIONS module, recessed COMMS composer desk, keycap dock triggers with flyout pop-in, etched corner marks on all four panels) + one link line in `frontend/index.html`; website mirror synced; claims re-locked in-lane (`add513f6`, 190 measured files). Gloss dialed back to matte on Andrew's live review (specular bands + hover/focus glow washes removed; geometry kept). Verified via CDP shooter: 17/17 states ok, zero console errors. Gates FROM THE LOGS: worktree fast 473 green pre-merge; trunk post-merge fast 473 green, 0 FAIL lines. (This commit also carries the prior session's completed voice-desktop-parity digest row + the Guardian auto-refresh row that were uncommitted in the shared tree.)
