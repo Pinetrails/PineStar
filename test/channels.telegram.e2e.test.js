@@ -64,6 +64,23 @@ function startMockOpenRouter() {
              messages the model answers plainly, or the run would loop forever. */
           const msgs = (parsed && parsed.messages) || [];
           const lastUser = [...msgs].reverse().find(m => m && m.role === 'user');
+          if (/run telegram shell proof/i.test(String((lastUser && lastUser.content) || '')) && !msgs.some(m => m && m.role === 'tool')) {
+            // A task-shaped request first settles the same Task Brief that a desktop run settles. This proves
+            // owner parity through the genuine task pipeline rather than bypassing unrelated task semantics.
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_brief', type: 'function', function: { name: 'brief_proceed', arguments: '{"objective":"Run the requested Telegram shell proof"}' } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          if (/run telegram shell proof/i.test(String((lastUser && lastUser.content) || '')) && msgs.some(m => m && m.role === 'tool')
+              && !msgs.some(m => m && m.role === 'tool' && /TELEGRAM_SHELL_OK/.test(JSON.stringify(m)))) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_shell', type: 'function', function: { name: 'shell_exec', arguments: '{"cmd":"echo TELEGRAM_SHELL_OK"}' } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
           if (/who can you reach/i.test(String((lastUser && lastUser.content) || '')) && !msgs.some(m => m && m.role === 'tool')) {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_t', type: 'function', function: { name: 'channel.targets', arguments: '{}' } }] } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
@@ -263,6 +280,9 @@ async function waitUntil(fn, ms, label) {
   const llm = await startMockOpenRouter();
   const tg = await startMockTelegram();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-telegram-e2e-'));
+  fs.writeFileSync(path.join(ws, 'usercommands.json'), JSON.stringify({ commands: [
+    { name: 'telegramproof', type: 'exec', command: 'echo TELEGRAM_COMMAND_OK' }
+  ] }));
   const env = {
     SKYNET_WORKSPACES: ws,
     STARNET_WORKSPACES: ws,
@@ -304,6 +324,28 @@ async function waitUntil(fn, ms, label) {
     A.ok(turns.some(t => t.role === 'user' && String(t.content || '').indexOf('research AI trend now') >= 0), 'transcript captured Telegram user turn');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content || '').indexOf('Telegram answer') >= 0), 'transcript captured Telegram assistant reply');
 
+    // ---- authenticated owner DM: real agent shell execution + defined command execution ------------------
+    const shellChat = 4244;
+    const beforeShell = llm.requests.length;
+    tg.pushText(shellChat, 99, 'run telegram shell proof');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === String(shellChat) && String(s.text || '').indexOf('Telegram answer') >= 0), 8000, 'owner Telegram shell reply');
+    const shellReqs = llm.requests.slice(beforeShell);
+    const shellWire = ((shellReqs[0] && shellReqs[0].tools) || []).map(t => String((t && t.function && t.function.name) || (t && t.name) || ''));
+    A.ok(shellWire.indexOf('shell_exec') >= 0, 'owner Telegram run advertises shell_exec to the provider');
+    A.ok(shellWire.indexOf('verify_run') >= 0, 'owner Telegram run advertises verify_run to the provider');
+    A.ok(shellWire.indexOf('spotify_play') >= 0, 'owner Telegram run advertises media control to the provider');
+    A.ok(shellWire.indexOf('team_dispatch') >= 0, 'owner Telegram run advertises task delegation to the provider');
+    const shellToolMessages = shellReqs.flatMap(r => (r.messages || []).filter(m => m && m.role === 'tool'));
+    A.ok(shellToolMessages.some(m => /TELEGRAM_SHELL_OK/.test(JSON.stringify(m))),
+      'the shell output returns through the real tool loop before the agent replies: ' + JSON.stringify(shellToolMessages));
+
+    const proofChat = 4245;
+    tg.pushText(proofChat, 99, '/telegramproof');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === String(proofChat) && /TELEGRAM_COMMAND_OK/.test(String(s.text || ''))), 8000,
+      'owner Commander-defined exec command');
+    A.ok(tg.sends.some(s => String(s.chat_id) === String(proofChat) && /TELEGRAM_COMMAND_OK/.test(String(s.text || ''))),
+      'a Commander-defined shell command runs over the admitted owner DM');
+
     // ---- /tools must describe the office this channel's runs ACTUALLY get -------------------------------
     // THE BUG (2026-07-28, reported off a v0.6.8 install): runSlashForChannel read `placed` ONLY from
     // router.stationFor(agentId), which is null for every agent NOT docked in a conveyor bay — i.e. essentially
@@ -321,11 +363,11 @@ async function waitUntil(fn, ms, label) {
     A.ok(/WEB & BROWSER/.test(toolsReply), '/tools lists WEB & BROWSER (dish is in the autonomous office)');
     A.ok(/FILE CABINET/.test(toolsReply), '/tools lists FILE CABINET (cabinet is in the autonomous office)');
     A.ok(/MEMORY NOTEBOOK/.test(toolsReply), '/tools lists MEMORY NOTEBOOK (notebook is in the autonomous office)');
-    // ...and stays HONEST about what this surface does NOT grant: fullOffice carries no WORKBENCH, and the
-    // orchestrator object is LEAD-only, so neither may be reported as active however the desktop floor looks.
+    // An admitted owner DM extends the headless office with the same non-physical workbench and orchestration
+    // objects the desktop Commander receives, so this card must agree with the provider wire above.
     const activeLines = toolsReply.split('\n').filter(l => l.indexOf('✓') === 0);
-    A.ok(!activeLines.some(l => /WORKBENCH/.test(l)), '/tools does not claim terminal on a channel (no workbench off-browser)');
-    A.ok(!activeLines.some(l => /TASK DELEGATION/.test(l)), '/tools does not claim delegation on a channel (orchestrator is LEAD-only)');
+    A.ok(activeLines.some(l => /WORKBENCH/.test(l)), '/tools lists terminal authority for the admitted owner DM');
+    A.ok(activeLines.some(l => /TASK DELEGATION/.test(l)), '/tools lists delegation authority for the admitted owner DM');
     // a slash command must not spend a model turn — it is answered by the registry, not the provider.
     A.eq(llm.requests.length, llmCallsBeforeTools, '/tools was answered by the registry without calling the provider');
 
@@ -375,9 +417,9 @@ async function waitUntil(fn, ms, label) {
     A.ok(advertised.indexOf('browser_navigate') >= 0, 'an approvals-ON channel run still gets the browser — the exact capability the user was told it lacked');
     A.ok(advertised.indexOf('fs_read') >= 0, 'an approvals-ON channel run still gets fs_read (cabinet is in the headless office)');
     A.ok(advertised.indexOf('notebook_write') >= 0, 'an approvals-ON channel run still gets notebook_write (notebook is in the headless office)');
-    // ...and the moat still holds where it IS a floor fact: no terminal, no delegation, however approvals are set.
-    A.ok(advertised.indexOf('shell_exec') < 0, 'approvals ON does not conjure a terminal (no workbench off-browser)');
-    A.ok(advertised.indexOf('team_dispatch') < 0, 'approvals ON does not conjure delegation (orchestrator is LEAD-only)');
+    // The owner authority survives an approvals-on choice; buttons alter consent UX, not the control surface.
+    A.ok(advertised.indexOf('shell_exec') >= 0, 'approvals ON retains the owner DM terminal');
+    A.ok(advertised.indexOf('team_dispatch') >= 0, 'approvals ON retains the owner DM delegation tools');
 
     // and the readout AGREES with that wire, which is the whole point of the pair of fixes.
     tg.pushText(approvalsChat, 99, '/tools');
