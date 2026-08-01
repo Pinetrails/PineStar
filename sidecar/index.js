@@ -259,7 +259,7 @@ function applyApiCors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-StarNet-Token,X-Skynet-Token');   // accept the legacy header name too (old Tauri shell)
   res.setHeader('Access-Control-Max-Age', '600');
 }
@@ -6373,8 +6373,8 @@ function attachmentFailPolicy(res, e) { try { if (!res.headersSent) { res.writeH
      do NOT "normalize" a route onto a different matcher):
        exact:   req.url === path                      (query string makes it MISS — intentional)
        qsplit:  req.url.split('?')[0] === path        (path match; the url may carry ?token= etc.)
-       prefix:  req.url.indexOf(path) === 0           (raw prefix; query string rides along)
-       qprefix: req.url.split('?')[0].indexOf(path) === 0
+       prefix:  segment-safe prefix on req.url        (exact, query, or /child; no sibling alias)
+       qprefix: segment-safe prefix on the query-stripped path
        rx:      req.url.match(rx) — the match array is passed to h as its 3rd arg
        qrx:     rx.test(req.url.split('?')[0])
    - h: the handler (req, res[, match]).
@@ -6653,8 +6653,8 @@ function dispatchRoute(req, res) {
     let gm = null;
     if (r.exact !== undefined) { if (url !== r.exact) continue; }
     else if (r.qsplit !== undefined) { if (bare !== r.qsplit) continue; }
-    else if (r.prefix !== undefined) { if (url.indexOf(r.prefix) !== 0) continue; }
-    else if (r.qprefix !== undefined) { if (bare.indexOf(r.qprefix) !== 0) continue; }
+    else if (r.prefix !== undefined) { if (!routePrefixMatches(url, r.prefix)) continue; }
+    else if (r.qprefix !== undefined) { if (!routePrefixMatches(bare, r.qprefix)) continue; }
     else if (r.rx) { gm = url.match(r.rx); if (!gm) continue; }
     else if (r.qrx) { if (!r.qrx.test(bare)) continue; }
     else continue;   // malformed entry: never match (fail closed to the static fallthrough)
@@ -6662,6 +6662,15 @@ function dispatchRoute(req, res) {
     return r.errorPolicy ? out.catch((e) => r.errorPolicy(res, e)) : out;
   }
   return serveStatic(req, res);
+}
+
+// Prefix routes are route families, not arbitrary string aliases. A route whose declared prefix already
+// ends in '/' owns every child below it; otherwise the next byte must be a real URL boundary.
+function routePrefixMatches(url, prefix) {
+  if (url.indexOf(prefix) !== 0) return false;
+  if (prefix.charAt(prefix.length - 1) === '/') return true;
+  const next = url.charAt(prefix.length);
+  return next === '' || next === '?' || next === '/';
 }
 server.on('error', (e) => {
   if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
@@ -7757,7 +7766,8 @@ function spotifyHtml(res, code, title, body) {
 }
 
 async function handleSpotifyStart(req, res) {
-  let body = {}; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return spotifyJson(res, 400, { error: 'bad json' });
   let clientId = String(body.clientId || '').trim();
   if (clientId) { try { await spotifyStore.setClientId(clientId); } catch (_) {} }
   else { try { clientId = (await spotifyStore.getClientId()) || ''; } catch (_) {} }
@@ -12643,8 +12653,9 @@ async function handleSummonAck(req, res) {
 }
 
 async function handleCancel(req, res) {
-  let runId;
-  try { runId = (JSON.parse(await readBody(req, 4096)) || {}).runId; } catch (e) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const runId = body.runId;
   const ac = runId && runs.get(runId);
   if (ac) ac.abort();
   res.writeHead(200); res.end('ok');
@@ -12892,8 +12903,9 @@ async function handleChannelSync(req, res) {
 // record + runtime + durable marker cleared and the .bak scrubbed. Explicit user destruction, so exempt from the
 // never-remove-a-secret-silently rule. Additive: a body-less POST keeps the old disable-only behaviour.
 async function handleChannelDisconnect(req, res) {
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopTelegram();
   let persisted = true;
   if (channelSecrets && channelSecrets.telegram) {
@@ -12980,8 +12992,9 @@ async function handleTelegramBotAction(req, res, botId, verb) {
     try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
     return json(200, { botId: botId, state: 'connecting', persisted: !!persisted });
   }
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return json(400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopTelegramBot(botId);
   const persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the record left the disk.
@@ -13197,8 +13210,9 @@ async function handleGenericChannelSync(req, res, id) {
 // reconnect). With { purge:true } (the FORGET action) also destroy the stored token (record + runtime + durable
 // marker) and scrub the .bak — mirrors handleChannelDisconnect. Additive: a body-less POST disables only.
 async function handleGenericChannelDisconnect(req, res, id) {
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopGenericChannel(id);
   let persisted = true;
   let removedConfiguration = false;
