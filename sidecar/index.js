@@ -48,6 +48,8 @@ const imageWire = require('./tools/builtin/imagewire.js').makeImageWire({});
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
+const CodeMode = require('./tools/builtin/code.js');                      // code.run: bounded JS composition over this run's read-only grants
+const { makeCodeTools } = CodeMode;
 const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
@@ -10636,6 +10638,7 @@ async function runOnce(o) {
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
+  makeCodeTools({}).register(registry);   // code.run — child Node/vm owns no authority; every nested read returns through this run's parent dispatcher
   makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
@@ -11434,6 +11437,48 @@ async function runOnce(o) {
     if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
     else seen.delete(sig);
     return r;
+  };
+
+  // CODE MODE COMPOSITION. The child process gets no registry, credentials or ambient authority; every
+  // `tool(name,args)` crosses this function and re-enters the SAME dispatch closure used by ordinary model
+  // calls. That preserves live withholding, authority, hooks, taint latching, output budgets and the run
+  // journal. V1 is intentionally READ-ONLY: programmatic composition is a context-saving reasoning primitive,
+  // not a way to batch mutations or route around consent. Mutation/team/code recursion is refused BEFORE an
+  // intent can be journaled. Nested results go only to the child; the model sees code.run's final aggregation.
+  capCtx.composeDispatch = async (request, nestedMeta) => {
+    const requested = String((request && request.name) || '').trim();
+    const realName = fromWire.get(requested) || allWire.get(requested) || requested;
+    const nestedTool = registry.get(realName);
+    const seq = Math.max(1, Number(nestedMeta && nestedMeta.sequence) || 1);
+    const parentCallId = String((nestedMeta && nestedMeta.parentCallId) || capCtx.callId || 'code');
+    const callId = parentCallId + ':nested:' + seq;
+    let args = request && request.args;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+    let argsRaw = '{}';
+    try { argsRaw = JSON.stringify(args); } catch (_) { throw new Error('nested tool arguments must be JSON-serializable'); }
+    const call = { id: callId, name: realName, args, argsRaw };
+    emit('agent.tool_call', { agentId, runId, callId, name: realName || 'unknown', argsSummary: argsRaw.slice(0, 240) });
+
+    const refusal = CodeMode._internals.refusalForNested(realName || requested, nestedTool, grantedSet);
+    if (refusal) {
+      emit('agent.tool_result', { agentId, runId, callId, ok: false, ms: 0, summary: 'code-nested-denied', isError: true });
+      throw new Error(refusal);
+    }
+
+    const started = Date.now();
+    const result = await dispatch(call, capCtx);
+    emit('agent.tool_result', {
+      agentId, runId, callId, ok: !!(result && result.ok), ms: Math.max(0, Date.now() - started),
+      summary: (result && result.summary) || (result && result.isError ? 'error' : 'ok'), isError: !!(result && result.isError)
+    });
+    if (!result || result.isError) throw new Error(String((result && result.content) || 'nested tool failed'));
+    const content = result.content == null ? '' : result.content;
+    if (typeof content !== 'string') return content;
+    const trimmed = content.trim();
+    if (trimmed && /^[\[{]/.test(trimmed)) {
+      try { return JSON.parse(trimmed); } catch (_) {}
+    }
+    return content;
   };
 
   // tell the model, plainly + capability-driven, that it has real tools right now (so it never claims it can't act)

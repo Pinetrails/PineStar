@@ -21,12 +21,12 @@ function startMockOpenRouter() {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: [{ id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' } }] }));
+        res.end(JSON.stringify({ data: [{ id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }] }));
         return;
       }
       if (req.url.indexOf('/chat/completions') >= 0) {
         let body = ''; req.on('data', d => { body += d; }); req.on('end', () => {
-          try { requests.push(JSON.parse(body)); } catch (_) {}
+          let parsed = null; try { parsed = JSON.parse(body); requests.push(parsed); } catch (_) {}
           // KABOOM sentinel: a hard non-retryable provider failure (401 auth) whose message carries a
           // distinctive needle — used to provoke a REAL recorded run error for the diagnostics-tail tests.
           if (body.indexOf('KABOOM') >= 0) {
@@ -35,6 +35,19 @@ function startMockOpenRouter() {
             return;
           }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          // CODEMODE sentinel: actual tool call on turn one, final answer after its result on turn two.
+          if (body.indexOf('CODEMODE') >= 0) {
+            const hasToolResult = !!(parsed && (parsed.messages || []).some(m => m && m.role === 'tool'));
+            if (!hasToolResult) {
+              const code = "const raw = await tool('tool.search', {query:'browser screenshot'}); return {nestedBytes:String(raw).length};";
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'code_outer', type: 'function', function: { name: 'code_run', arguments: JSON.stringify({ code }) } }] } }] }) + '\n\n');
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 8, completion_tokens: 8, total_tokens: 16 } }) + '\n\n');
+            } else {
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Code mode complete.' } }] }) + '\n\n');
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } }) + '\n\n');
+            }
+            res.write('data: [DONE]\n\n'); res.end(); return;
+          }
           const write = () => {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: ', world' } }] }) + '\n\n');
@@ -139,6 +152,27 @@ function boot(port, env, attemptsLeft) {
     A.ok(firstSystem.indexOf('Provider: openrouter') >= 0, 'runtime block names the selected provider');
     A.ok(firstSystem.indexOf('Requested model at run start: test/model') >= 0, 'runtime block names the requested model');
     A.ok(firstSystem.indexOf('If the Commander asks what model') >= 0, 'runtime block tells the agent to answer model/provider questions from host state');
+
+    // WAVE 3 LIVE PROOF: real sidecar -> provider tool call -> isolated worker -> parent-dispatched read.
+    {
+      const before = mock.requests.length;
+      const r = await fetch(B + '/api/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'code-e2e', isTask: true, messages: [{ role: 'user', content: 'CODEMODE compose a read' }] })
+      });
+      const raw = await r.text();
+      const evs = raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+      const called = evs.filter(e => e.name === 'agent.tool_call').map(e => e.payload.name);
+      A.ok(called.indexOf('code_run') >= 0, 'real sidecar executed model-facing code.run through its provider-safe wire name');
+      A.ok(called.indexOf('tool.search') >= 0, 'the child nested read re-entered parent tool telemetry');
+      A.ok(evs.some(e => e.name === 'agent.tool_result' && String(e.payload.callId).indexOf(':nested:1') >= 0 && e.payload.ok), 'nested result is independently visible and successful');
+      A.ok(evs.some(e => e.name === 'agent.run.end' && e.payload.reason === 'done'), 'code-composed run completed cleanly');
+      const codeRequests = mock.requests.slice(before);
+      const continuation = codeRequests.find(q => (q.messages || []).some(m => m && m.role === 'tool'));
+      const outerResult = continuation && (continuation.messages || []).find(m => m && m.role === 'tool' && m.tool_call_id === 'code_outer');
+      A.ok(outerResult && /^\{"nestedBytes":\d+\}$/.test(String(outerResult.content)), 'provider saw only the child final aggregation');
+      A.ok(String(outerResult && outerResult.content).indexOf('browser.screenshot') < 0, 'intermediate tool.search output stayed out of model context');
+    }
 
     // H1.1: the run's full dialogue was persisted to the durable transcript (not just title+final) — fetch it back.
     const tr = await (await fetch(B + '/api/transcript?stream=global&agent=e2e&limit=20', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
