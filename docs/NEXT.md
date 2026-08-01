@@ -1,5 +1,23 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-01 — DEEP-DIVE BUG FIX WAVE — MERGED (`8ef6c2c4`)
+
+Three isolated audit/fix lanes found and fixed 15 previously unregistered defects: four mobile
+control-reachability failures, six API/CORS/Task-Brief boundary failures, and five
+persistence/recovery failures. The combined integration preserves desktop layout and built-in read
+behavior while keeping E-STOP, REFIT actions, dock menus, and Genesis phosphor controls reachable at
+320/360/390px; makes DELETE CORS, malformed-body rejection, segment-safe routing, and untrusted MCP
+gating consistent; and fails closed when Night Shift accounting, focus/avoid authority, skill
+approvals, durable writes, or process ownership probes cannot be proven durable.
+
+Lane commits: UI `f1e5cc75`; backend `e169ab9c` + `9726ce60`; state `517c4398` +
+`e17d0294` + `0773b22c` + `654c7e1f`. Combined candidate merge `0ffc9a9f`, canonical claims
+re-lock `eb7c2fc4`, trunk merge `8ef6c2c4`. Final clean detached proof at the exact trunk commit:
+claims planning PASS (37 claims / 190 locked files), `test:fast` 476/476 green, full `test:http`
+green. Live seeded Chromium proved the four mobile controls on the UI lane; the exact merged HTTP
+gate re-proved malformed requests, route boundaries, MCP gating, restart persistence, and failure
+paths. No publish, push, PR, deployment, release, credential, or production-data action occurred.
+
 ## 2026-07-31 — BROWSER REACH 0.8.5 (`agent/browser-reach-085`)
 
 READY TO MERGE at `dd01c8d3` (five commits from `7b2550e0`). The station-owned Chromium launch now
