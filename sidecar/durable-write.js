@@ -57,7 +57,11 @@ function writeFileDurable(deps, file, data) {
       const bytes = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
       let offset = 0;
       while (offset < bytes.length) {
-        const wrote = fs.writeSync(fd, bytes, offset, bytes.length - offset);
+        let wrote = fs.writeSync(fd, bytes, offset, bytes.length - offset);
+        // A few long-standing injected in-memory fs facades implement the old side-effect-only shape and omit
+        // writeSync's numeric return. Node's real fs always returns a byte count; preserve facade compatibility by
+        // treating only null/undefined as a completed requested write. Numeric short writes still retry or fail.
+        if (wrote == null) wrote = bytes.length - offset;
         if (!Number.isInteger(wrote) || wrote <= 0 || wrote > bytes.length - offset) {
           const e = new Error('writeFileDurable: short write made no valid progress (' + wrote + '/' + (bytes.length - offset) + ' bytes)');
           e.code = 'ESHORTWRITE';
