@@ -34,7 +34,10 @@ async function measureWithDriver(rawUrl, driver, options) {
   const response = driver.lastResponse();
   const challenge = await driver.challengeStatus();
   const observed = await driver.testEval(
-    '({url:location.href,ua:navigator.userAgent,webdriver:navigator.webdriver,language:navigator.language})'
+    `(async()=>{let hints=null;try{hints=navigator.userAgentData?await navigator.userAgentData.getHighEntropyValues(['uaFullVersion','fullVersionList']):null;}catch(e){}
+      return{url:location.href,ua:navigator.userAgent,webdriver:navigator.webdriver,language:navigator.language,
+        hints,plugins:navigator.plugins.length,chrome:!!globalThis.chrome,
+        geometry:[screen.width,screen.height,innerWidth,innerHeight,outerWidth,outerHeight]};})()`
   );
   const finalOrigin = observed && observed.url ? new URL(observed.url).origin : null;
   const finalOriginAuthorized = !!finalOrigin && normalizeOrigins(options && options.authorizedOrigins).has(finalOrigin);
@@ -53,8 +56,14 @@ async function measureWithDriver(rawUrl, driver, options) {
     textChars: text.length,
     identity: {
       headlessProductToken: /HeadlessChrome/i.test(observed && observed.ua || ''),
+      headlessClientHints: /HeadlessChrome/i.test(JSON.stringify(observed && observed.hints || {})),
       webdriver: observed ? observed.webdriver === true : null,
-      languagePresent: !!(observed && observed.language)
+      languagePresent: !!(observed && observed.language),
+      fullBrowserSurface: observed ? observed.chrome === true && Number(observed.plugins) > 0 : null,
+      geometryCoherent: observed && Array.isArray(observed.geometry)
+        ? observed.geometry[0] >= observed.geometry[4] && observed.geometry[1] >= observed.geometry[5] &&
+          observed.geometry[4] >= observed.geometry[2] && observed.geometry[5] >= observed.geometry[3]
+        : null
     },
     elapsedMs: Date.now() - started
   };
