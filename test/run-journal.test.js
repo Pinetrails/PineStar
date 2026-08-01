@@ -9,6 +9,7 @@ function memoryIo() {
     append(id, line) { if (!files.has(id)) throw new Error('missing'); files.set(id, files.get(id) + line + '\n'); },
     read(id) { return files.get(id); }, list() { return Array.from(files.keys()); },
     readFile(id) { return files.get(id); }, remove(id) { files.delete(id); }, quarantine(id) { files.set(id + '.corrupt', files.get(id)); files.delete(id); return id + '.corrupt'; },
+    repair(id, records) { files.set(id + '.corrupt', files.get(id)); files.set(id, records.map(r => JSON.stringify(r)).join('\n') + '\n'); return id + '.corrupt'; },
     files
   };
 }
@@ -32,7 +33,7 @@ A.eq(state.checkpoint.phase, 'tool_results', 'latest provider-valid checkpoint w
 A.eq(state.completed.length, 1, 'paired intent/result evidence survives recovery analysis');
 A.eq(state.meta.agentId, 'a', 'run metadata remains available to the restart reconciler');
 
-j.finish('r1', { reason: 'done' });
+j.finish('r1', { reason: 'done', transcriptAck: true });
 state = j.inspect('r1');
 A.eq(state.status, 'finished', 'a terminal record is not offered as interrupted work');
 j.remove('r1');
@@ -46,6 +47,8 @@ const recovered = bad.recoverAll();
 A.eq(recovered.length, 1, 'corrupt-tail journal is discovered');
 A.eq(recovered[0].corrupt, true, 'corrupt tail is disclosed');
 A.eq(recovered[0].status, 'resumable', 'valid prefix remains recoverable');
+bad.checkpoint('broken', { phase: 'after-repair', messages: [] });
+A.eq(bad.inspect('broken').records, 2, 'new records remain visible after a torn tail is repaired');
 
 const unknownIo = memoryIo();
 const unknown = J.makeRunJournal({ io: unknownIo, clock: { now: () => 2 } });
@@ -53,6 +56,20 @@ unknown.begin({ runId: 'unknown', messages: [] });
 unknown.toolIntent('unknown', { callId: 'side-effect', name: 'shell.exec', mutating: true });
 unknown.finish('unknown', { reason: 'error' });
 A.eq(unknown.inspect('unknown').status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
+
+const pendingIo = memoryIo();
+const pending = J.makeRunJournal({ io: pendingIo, clock: { now: () => 3 } });
+pending.begin({ runId: 'pending', messages: [] });
+pending.finish('pending', { reason: 'done', transcriptAck: false });
+A.eq(pending.inspect('pending').status, 'awaiting_commit', 'terminal run remains recoverable until transcript durability is acknowledged');
+
+const scrubIo = memoryIo();
+const scrub = J.makeRunJournal({ io: scrubIo, clock: { now: () => 4 } });
+scrub.begin({ runId: 'scrub', messages: [] });
+scrub.toolIntent('scrub', { callId: 'x', name: 'connector.write', argsRaw: '{"password":"hunter2","nested":{"api_key":"ordinary-value"},"safe":"kept"}' });
+const scrubbedBytes = scrubIo.read('scrub');
+A.ok(!/hunter2|ordinary-value/.test(scrubbedBytes), 'serialized JSON credential fields are scrubbed by key');
+A.ok(/kept/.test(scrubbedBytes), 'non-secret tool arguments remain reviewable');
 
 // The real fs writer must retry short writes instead of accepting a torn record.
 const chunks = [];

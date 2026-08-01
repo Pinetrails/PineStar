@@ -43,7 +43,7 @@ function provider() {
     },
     capCtx: {}
   });
-  journal.finish('r', { reason: result.reason });
+  journal.finish('r', { reason: result.reason, transcriptAck: true });
   const rows = _internals.parseRecords(io.read('r')).records;
   A.eq(rows.map(r => r.type), ['begin', 'checkpoint', 'tool_intent', 'tool_result', 'checkpoint', 'checkpoint', 'finish'], 'assistant is durable before intent and result before the next model turn');
   A.eq(rows[1].payload.phase, 'assistant', 'provider-valid tool-call assistant checkpoint is first');

@@ -847,7 +847,7 @@ const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: ()
 const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
 let recoveredRunJournals = [];
 try {
-  recoveredRunJournals = runJournal.recoverAll().filter(r => r && !r.terminal);
+  recoveredRunJournals = runJournal.recoverAll().filter(r => r && r.status !== 'finished');
   if (recoveredRunJournals.length) console.warn('[run-journal] interrupted run(s) awaiting recovery:', recoveredRunJournals.length);
 } catch (e) { console.warn('[run-journal] recovery scan failed:', (e && e.message) || e); }
 
@@ -11778,6 +11778,7 @@ async function runOnce(o) {
         runId, agentId, streamId: o.streamId || 'global', trigger, model,
         userTitle: latestUserText(msgs), startedAt: Date.now()
       });
+      runJournal.checkpoint(runId, { phase: 'initial', turn: 0, messages: msgs });
       journalStarted = true;
     } catch (e) {
       emit('agent.run.start', { agentId, runId, trigger, model });
@@ -11941,7 +11942,10 @@ async function runOnce(o) {
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
       if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
       if (journalStarted) runJournal.finish(runId, {
-        reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd
+        reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd,
+        // The legacy transcript sink is fail-open and cannot acknowledge stable storage. Wave 4 upgrades this to
+        // true only after strict append+read-back, at which point the journal can be removed safely.
+        transcriptAck: false
       });
     } catch (_) {}
     // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest

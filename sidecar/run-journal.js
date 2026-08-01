@@ -26,18 +26,28 @@ function hashRecord(r) {
   })).digest('hex');
 }
 
-function cloneSafe(value, redact, depth) {
+const SECRET_KEY = /(?:pass(?:word)?|token|secret|api[_-]?key|authorization|cookie|credential|private[_-]?key)/i;
+function cloneSafe(value, redact, depth, key) {
   if (depth > 20) return '[depth limit]';
   if (typeof value === 'string') {
+    if (key && SECRET_KEY.test(String(key))) return '[redacted]';
+    // Tool arguments/results commonly arrive as serialized JSON. Scrub credential-shaped fields inside that
+    // envelope instead of trusting a value-pattern redactor to recognize an otherwise ordinary secret.
+    if (key === 'argsRaw' || key === 'content') {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === 'object') return JSON.stringify(cloneSafe(parsed, redact, depth + 1, key));
+      } catch (_) {}
+    }
     let out = value.slice(0, MAX_STRING);
     try { out = String(redact(out)); } catch (_) {}
     return out.slice(0, MAX_STRING);
   }
   if (value == null || typeof value === 'number' || typeof value === 'boolean') return value;
-  if (Array.isArray(value)) return value.slice(0, 1000).map(v => cloneSafe(v, redact, depth + 1));
+  if (Array.isArray(value)) return value.slice(0, 1000).map(v => cloneSafe(v, redact, depth + 1, key));
   if (typeof value === 'object') {
     const out = {};
-    for (const k of Object.keys(value).slice(0, 200)) out[k] = cloneSafe(value[k], redact, depth + 1);
+    for (const k of Object.keys(value).slice(0, 200)) out[k] = cloneSafe(value[k], redact, depth + 1, k);
     return out;
   }
   return String(value);
@@ -87,6 +97,19 @@ function makeFsIo(opts) {
       const to = filePath + '.corrupt';
       try { fs.renameSync(filePath, to); } catch (_) {}
       return to;
+    },
+    repair(filePath, records) {
+      const nonce = crypto.randomBytes(5).toString('hex');
+      const backup = filePath + '.corrupt-' + nonce;
+      const tmp = filePath + '.repair-' + nonce;
+      const body = records.map(r => JSON.stringify(r)).join('\n') + '\n';
+      let fd = null;
+      try {
+        fd = fs.openSync(tmp, 'wx'); writeAll(fs, fd, body); fs.fsyncSync(fd);
+      } finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+      fs.renameSync(filePath, backup);       // preserve the forensic original, including its torn tail
+      fs.renameSync(tmp, filePath);          // repaired verified prefix becomes the active journal
+      return backup;
     }
   };
 }
@@ -124,11 +147,12 @@ function analyze(records, corrupt) {
   }
   const uncertain = Array.from(intents.values());
   const terminal = !!(last && last.type === 'finish');
+  const transcriptAck = !!(terminal && last.payload && last.payload.transcriptAck === true);
   return {
     runId: first ? first.runId : '', records: records.length, corrupt: !!corrupt, terminal,
     // A terminal run event cannot prove what happened inside a tool that returned no durable result. The intent
     // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
-    status: uncertain.length ? 'needs_review' : (terminal ? 'finished' : 'resumable'),
+    status: uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable'),
     meta: first && first.type === 'begin' ? first.payload : {},
     uncertain, completed, checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
   };
@@ -170,7 +194,11 @@ function makeRunJournal(opts) {
         catch (_) { parsed = { records: [], corrupt: true }; }
         const state = analyze(parsed.records, parsed.corrupt);
         state.file = file;
-        if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') state.quarantinedTo = io.quarantine(file);
+        if (parsed.corrupt && parsed.records.length && typeof io.repair === 'function') {
+          state.repairedFrom = io.repair(file, parsed.records);
+        } else if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') {
+          state.quarantinedTo = io.quarantine(file);
+        }
         out.push(state);
         if (state.runId && parsed.records.length) {
           const last = parsed.records[parsed.records.length - 1];
