@@ -136,3 +136,7 @@ dev/.scratch-clarify/
 
 # staged runtime node_modules for the desktop bundle (build artifact, ~480MB)
 src-tauri/voice-deps/
+
+# python bytecode from the sprite assembly scripts
+__pycache__/
+*.pyc
