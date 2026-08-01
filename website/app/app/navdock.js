@@ -16,6 +16,33 @@
   // the menuitem buttons inside a group's popover (role=menuitem; see index.html .bb-menu)
   const itemsOf = g => Array.from(g.querySelectorAll('.bb-menu .bb'));
 
+  /* The four triggers wrap onto different rows on phone-width stations, so a fixed
+     left:0 popover cannot be made viewport-safe with one CSS alignment. Clamp the open
+     menu in its group's local frame. getBoundingClientRect/innerWidth are VISUAL px;
+     style.left is a uiZoom-scaled CSS px, hence the one deliberate division. */
+  function clampMenu(g) {
+    const menu = g && g.querySelector('.bb-menu');
+    if (!menu || !g.classList.contains('open')) return;
+    menu.style.left = '0px';
+    if (window.innerWidth > 600) {
+      menu.style.removeProperty('width');
+      menu.style.removeProperty('max-width');
+      return;
+    }
+    const edge = 8;
+    let zoom = 1;
+    try { zoom = (typeof U === 'object' && U && typeof U.uiZoom === 'function') ? Number(U.uiZoom()) || 1 : 1; } catch (_) {}
+    // vw is resolved before StarNet's uiZoom transform; cap the menu in the visual frame too.
+    const cssWidth = Math.max(0, window.innerWidth - edge * 2) / zoom;
+    menu.style.width = cssWidth + 'px';
+    menu.style.maxWidth = cssWidth + 'px';
+    const r = menu.getBoundingClientRect();
+    let shift = 0;
+    if (r.right > window.innerWidth - edge) shift -= r.right - (window.innerWidth - edge);
+    if (r.left + shift < edge) shift += edge - (r.left + shift);
+    menu.style.left = (shift / zoom) + 'px';
+  }
+
   /* ---------- popover open/close (one at a time) ---------- */
   function closeAll(except) {
     groups.forEach(g => {
@@ -39,6 +66,12 @@
     const t = g.querySelector('.bb-grp');
     if (t) t.setAttribute('aria-expanded', String(willOpen));
     if (willOpen) {
+      clampMenu(g);
+      // panelchrome's opening scale changes the first synchronous rect by a few pixels;
+      // re-clamp on the painted frame and once its opening animation settles.
+      requestAnimationFrame(() => clampMenu(g));
+      const openingMenu = g.querySelector('.bb-menu');
+      if (openingMenu) openingMenu.addEventListener('animationend', () => clampMenu(g), { once: true });
       dismissCoach();   // they found the docks — retire the hint for good
       // a11y: on a keyboard open, move focus to the first menu item so the popover is navigable
       if (viaKeyboard) { const first = itemsOf(g)[0]; if (first) { try { first.focus(); } catch (_) {} } }
@@ -134,6 +167,7 @@
   // click anywhere else, or Escape, dismisses an open dock
   document.addEventListener('click', ev => { if (!bar.contains(ev.target)) closeAll(null); });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeAll(null); });
+  window.addEventListener('resize', () => groups.forEach(g => clampMenu(g)));
 
   /* ---------- reflect live state onto the collapsed trigger ----------
      A group underlines its trigger while one of its panels is open (mirrors stationui's
