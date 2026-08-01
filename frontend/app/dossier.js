@@ -101,6 +101,11 @@
       // evidence weight (V3): caller-declared; an invalid/missing weight infers via weightOf (legacy-honest).
       weight: isWeight(belief.weight) ? belief.weight : weightOf(belief),
       sourceRunId: (typeof belief.sourceRunId === 'string') ? belief.sourceRunId : null,
+      evidence: (typeof belief.evidence === 'string') ? clip(belief.evidence) : '',
+      evidenceRef: (belief.evidenceRef && typeof belief.evidenceRef === 'object') ? {
+        runId: (typeof belief.evidenceRef.runId === 'string') ? belief.evidenceRef.runId : null,
+        kind: (typeof belief.evidenceRef.kind === 'string') ? belief.evidenceRef.kind.slice(0, 40) : ''
+      } : null,
       // Phase B (study): when the STATION observed a belief from real work (not the Commander authoring it), stamp
       // WHEN — the COMMANDER panel renders a study-sourced belief with an "observed" tag + this timestamp. Only a
       // finite number is kept (never a guessed 0), so a Commander-authored belief carries none.
@@ -228,6 +233,11 @@
             source: (typeof b.source === 'string') ? b.source : 'commander',
             weight: weightOf(b),   // V3: preserved when valid; legacy records infer honestly (never 'seed' by guess)
             sourceRunId: (typeof b.sourceRunId === 'string') ? b.sourceRunId : null,
+            evidence: (typeof b.evidence === 'string') ? clip(b.evidence) : '',
+            evidenceRef: (b.evidenceRef && typeof b.evidenceRef === 'object') ? {
+              runId: (typeof b.evidenceRef.runId === 'string') ? b.evidenceRef.runId : null,
+              kind: (typeof b.evidenceRef.kind === 'string') ? b.evidenceRef.kind.slice(0, 40) : ''
+            } : null,
             observedAt: (Number.isFinite(b.observedAt) && b.observedAt > 0) ? b.observedAt : null,   // Phase B study provenance (preserved across reload)
             createdAt: Number.isFinite(b.createdAt) ? b.createdAt : 0,
             updatedAt: Number.isFinite(b.updatedAt) ? b.updatedAt : 0,

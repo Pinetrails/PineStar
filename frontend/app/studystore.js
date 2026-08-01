@@ -166,7 +166,8 @@ const StudyStore = (() => {
         const existing = (typeof DossierStore.beliefs === 'function') ? (DossierStore.beliefs(dim) || []) : [];
         let dup = false;
         for (const b of existing) { const t = b && b.text; if (t && (t.toLowerCase() === body.toLowerCase() || Study.jaccard(t, body) >= Study.SIM_THRESHOLD)) { dup = true; break; } }
-        if (!dup) DossierStore.upsert(dim, { text: body, source: 'study', observedAt: now(), sourceRunId: prop.sourceRunId || null });
+        if (!dup) DossierStore.upsert(dim, { text: body, source: 'study', observedAt: now(), sourceRunId: prop.sourceRunId || null,
+          evidence: prop.evidence || '', evidenceRef: prop.evidenceRef || { runId: prop.sourceRunId || null, kind: 'directive' } });
         ok = true;   // a dup-skip is still a successful Keep (the belief IS in the dossier)
       }
     } catch (_) { ok = false; }
