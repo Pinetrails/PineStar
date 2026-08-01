@@ -872,10 +872,23 @@ const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now()
    `block` verdicts are absent from this file by design: nothing in it can bless one. */
 const SKILLS_ALLOW_FILE = path.join(WORKSPACES, 'skills-allowed.json');
 let skillApprovals = {};
-try { skillApprovals = JSON.parse(fs.readFileSync(SKILLS_ALLOW_FILE, 'utf8')) || {}; } catch (_) { skillApprovals = {}; }
-function persistSkillApprovals() {
-  try { fs.writeFileSync(SKILLS_ALLOW_FILE, JSON.stringify(skillApprovals, null, 2), 'utf8'); return true; }
-  catch (e) { console.warn('[skills] approval write failed:', (e && e.message) || e); return false; }
+try {
+  const loaded = loadResilient(SKILLS_ALLOW_FILE, 'skill approvals');
+  if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) skillApprovals = loaded;
+} catch (e) { console.warn('[skills] approval load failed:', (e && e.message) || e); }
+function persistSkillApprovals(next) {
+  const candidate = next && typeof next === 'object' ? next : {};
+  saveResilient(SKILLS_ALLOW_FILE, candidate);
+  // Approval changes expose reviewed bytes to the model. Read back the exact map before changing RAM or claiming
+  // success, so a swallowed/partial/redirected write can never create a session-only approval.
+  const proven = loadResilient(SKILLS_ALLOW_FILE, 'skill approvals');
+  if (JSON.stringify(proven) !== JSON.stringify(candidate)) {
+    const e = new Error('skill approval read-back did not match the committed decision');
+    e.code = 'ESTORE_UNVERIFIED';
+    throw e;
+  }
+  skillApprovals = candidate;
+  return true;
 }
 const skillGate = makeSkillGate({
   guard: skillGuard,
@@ -3451,7 +3464,12 @@ function loadNightFocusState() {
   catch (e) { console.warn('[nightfocus] load failed:', (e && e.message) || e); return nightfocus.fresh(Date.now()); }
 }
 let nightFocusState = loadNightFocusState();
-function saveNightFocusState() { try { saveResilient(NIGHTFOCUS_STATE_FILE, nightfocus.toEnvelope(nightFocusState, Date.now())); } catch (e) { console.warn('[nightfocus] persist failed:', (e && e.message) || e); } }
+function saveNightFocusState(next) {
+  const candidate = next || nightFocusState;
+  saveResilient(NIGHTFOCUS_STATE_FILE, nightfocus.toEnvelope(candidate, Date.now()));
+  nightFocusState = candidate;
+  return candidate;
+}
 
 // gather the evidence the pure resolver ranks: blessed project roots (+ light run-mention frequency), open threads,
 // the active goal arc. Bounded + fail-open (a store hiccup degrades that one field to empty). Reused by the beat +
@@ -3534,19 +3552,25 @@ function nightFocusTargetAvailable(target) {
 }
 function reconcileNightFocusAuthority() {
   const before = JSON.stringify(nightFocusState);
-  if (nightFocusState && nightFocusState.steer && !nightFocusTargetAvailable(nightFocusState.steer))
-    nightFocusState = nightfocus.clearSteer(nightFocusState);
-  if (nightFocusState && nightFocusState.focus && !nightFocusTargetAvailable(nightFocusState.focus))
-    nightFocusState = Object.assign({}, nightFocusState, { focus: null });
-  if (JSON.stringify(nightFocusState) !== before) saveNightFocusState();
+  let candidate = nightFocusState;
+  if (candidate && candidate.steer && !nightFocusTargetAvailable(candidate.steer))
+    candidate = nightfocus.clearSteer(candidate);
+  if (candidate && candidate.focus && !nightFocusTargetAvailable(candidate.focus))
+    candidate = Object.assign({}, candidate, { focus: null });
+  if (JSON.stringify(candidate) !== before) saveNightFocusState(candidate);
 }
 
 function resolveNightFocus() {
   reconcileNightFocusAuthority();
   const inp = nightFocusInputs();
   const r = nightfocus.ensureFocus(nightFocusState, inp, { now: inp.now });
-  if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) { nightFocusState = r.state; saveNightFocusState(); }
+  if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) saveNightFocusState(r.state);
   return { focus: r.focus, resolved: r.resolved };
+}
+
+function resolvedNightFocusCandidate(candidate) {
+  const inp = nightFocusInputs();
+  return nightfocus.ensureFocus(candidate, inp, { now: inp.now });
 }
 
 // same-night prior beat outputs (titles) so beat 2+ EXTENDS the same work (the compounding shape). Drafts carry `at`;
@@ -10020,8 +10044,9 @@ async function handleAgentSkillAllow(req, res) {
   if (!skill) return json(404, { error: 'no such skill' });
   const key = agentId + '\x00' + skill.id;
   if (body.allow === false) {
-    delete skillApprovals[key];
-    persistSkillApprovals();
+    const next = Object.assign({}, skillApprovals); delete next[key];
+    try { persistSkillApprovals(next); }
+    catch (e) { console.warn('[skills] approval revoke persist failed:', (e && e.message) || e); return json(507, { ok: false, approved: true, error: 'approval change could not be persisted; the existing decision was kept' }); }
     return json(200, { ok: true, approved: false, skill: skillGate.annotate([skill])[0] });
   }
   const decision = skillGate.decide(skill);
@@ -10032,8 +10057,9 @@ async function handleAgentSkillAllow(req, res) {
      stamp-keyed approval could never clear the drift. Fall back to the lifecycle stamp only when there is
      no body to digest. */
   const digest = typeof skill.body === 'string' ? skillGate.digestOf(skill) : skillGate.stampOf(skill);
-  skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
-  persistSkillApprovals();
+  const next = Object.assign({}, skillApprovals, { [key]: { digest, action: 'allow', at: Date.now(), name: skill.name } });
+  try { persistSkillApprovals(next); }
+  catch (e) { console.warn('[skills] approval persist failed:', (e && e.message) || e); return json(507, { ok: false, approved: false, error: 'approval could not be persisted; the skill remains withheld' }); }
   const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
   json(200, { ok: true, approved: true, digest, skill: after });
 }
@@ -12559,19 +12585,32 @@ async function handleNightshiftFocus(req, res) {
     const requestedKind = (body.kind == null || body.kind === '') ? 'project' : body.kind;
     const checked = await validateNightFocusSteer(requestedKind, ref);
     if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
-    nightFocusState = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
-    saveNightFocusState();
-    const foc = resolveNightFocus();   // re-resolve toward the steer NOW so status reflects it immediately
+    const candidate = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused steer whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'night focus could not be persisted; previous focus kept' });
+    }
     return json(200, { ok: true, focus: nightFocusView(), steered: true, resolved: !!(foc && foc.resolved) });
   }
   if (req.method === 'DELETE') {
-    nightFocusState = nightfocus.clearSteer(nightFocusState);
-    saveNightFocusState();
-    const foc = resolveNightFocus();
+    const candidate = nightfocus.clearSteer(nightFocusState);
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused clear whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'night focus could not be persisted; previous focus kept' });
+    }
     return json(200, { ok: true, cleared: true, focus: nightFocusView() || (foc && foc.focus) || null, resolved: !!(foc && foc.resolved) });
   }
   // GET — a read-only preview: resolve (persist iff changed) so a first-ever read still shows what the night WOULD chase.
-  const foc = resolveNightFocus();
+  let foc;
+  try { foc = resolveNightFocus(); }
+  catch (e) {
+    console.warn('[nightfocus] could not persist resolved focus:', e && e.message || e);
+    return json(507, { ok: false, error: 'night focus state is unavailable' });
+  }
   return json(200, { ok: true, focus: nightFocusView() || (foc && foc.focus) || null, steer: (nightFocusState.steer || null), avoid: nightFocusAvoidView() });
 }
 
@@ -12598,17 +12637,25 @@ async function handleNightshiftAvoid(req, res) {
     const checked = await validateNightFocusSteer(requestedKind, ref);
     if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
     const label = checked.kind === 'thread' ? String((liveNightThread(checked.ref) || {}).title || '') : '';
-    nightFocusState = nightfocus.applyAvoid(nightFocusState, { ref: checked.ref, kind: checked.kind, label }, Date.now());
-    saveNightFocusState();
-    const foc = resolveNightFocus();   // if the avoid dethroned tonight's focus, re-declare from what remains NOW
+    const candidate = nightfocus.applyAvoid(nightFocusState, { ref: checked.ref, kind: checked.kind, label }, Date.now());
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused off-limits change whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'off-limits directive could not be persisted; previous boundaries kept' });
+    }
     return json(200, { ok: true, avoid: nightFocusAvoidView(), focus: nightFocusView() || (foc && foc.focus) || null });
   }
   // DELETE — remove one entry by ref.
   const u = new URL(req.url, 'http://127.0.0.1');
   const ref = String(u.searchParams.get('ref') || '').trim();
   if (!ref) return json(400, { ok: false, error: 'which entry? DELETE /api/nightshift/avoid?ref=<ref>' });
-  nightFocusState = nightfocus.removeAvoid(nightFocusState, ref);
-  saveNightFocusState();
+  const candidate = nightfocus.removeAvoid(nightFocusState, ref);
+  try { saveNightFocusState(candidate); }
+  catch (e) {
+    console.warn('[nightfocus] refused off-limits removal whose durable state could not be written:', e && e.message || e);
+    return json(507, { ok: false, error: 'off-limits directive could not be persisted; previous boundaries kept' });
+  }
   return json(200, { ok: true, avoid: nightFocusAvoidView() });
 }
 
