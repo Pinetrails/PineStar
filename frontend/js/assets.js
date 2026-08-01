@@ -178,7 +178,20 @@ const SPRITES = (() => {
     east: 0, 'south-east': Math.PI / 4, south: Math.PI / 2, 'south-west': 3 * Math.PI / 4,
     west: Math.PI, 'north-west': -3 * Math.PI / 4, north: -Math.PI / 2, 'north-east': -Math.PI / 4
   };
-  const RENDER_TURN_RATE = 12;   // rad/s — matches world.js TURN_RATE so walk turns and stand turns read alike
+  /* A turn has WEIGHT. The first pass slewed the facing at a flat rate, which is exactly a
+     turntable: the pose rotated at constant angular speed and the body appeared to slide around
+     its own axis ("it just perfectly spins" — Andrew, 2026-08-01). Two things fix that, and
+     neither needs new art:
+       1. the facing ACCELERATES and BRAKES. `_rW` is angular velocity, ramped by TURN_ACCEL and
+          capped by the sqrt term so it arrives at the target with zero speed instead of stopping
+          dead. Same shape as the linear speed easing stepGait already does.
+       2. the feet keep the score. `_turnAng` accumulates radians actually swept, and drawBody
+          spends it on WALK frames, so a pivoting body steps its legs around instead of holding a
+          frozen idle pose while the sprite rotates underneath it. */
+  const TURN_MAX = 9;            // rad/s ceiling — below the old flat 12 so the turn is legible
+  const TURN_ACCEL = 55;         // rad/s²: spins up in ~160ms and brakes into the target
+  const TURN_STEP_W = 1.2;       // rad/s a standing body must exceed before its feet shuffle
+  const TURN_STEP_FRAMES = 4 / Math.PI;   // walk frames per radian swept ≈ 2 frames per 90° pivot
   const DIR8_HYST = 0.10;        // rad a sector holds past its boundary (sectors are π/8 half-width)
   const ang = a => Math.atan2(Math.sin(a), Math.cos(a));
   function renderDir8(b, dir, glancing, nowMs) {
@@ -187,10 +200,18 @@ const SPRITES = (() => {
     if (want == null) return dir;
     const dt = Math.max(0, Math.min(100, nowMs - (b._rAt || 0)));   // clamp: first frame / tab-restore must not spin
     b._rAt = nowMs;
-    if (b._rA == null) b._rA = want;   // new body (or dossier portrait's fresh object): snap, no tween
+    if (b._rA == null) { b._rA = want; b._rW = 0; b._turnAng = 0; }  // new body: snap, no tween
     else {
-      const turn = ang(want - b._rA), cap = RENDER_TURN_RATE * dt / 1000;
-      b._rA = ang(Math.abs(turn) <= cap ? want : b._rA + Math.sign(turn) * cap);
+      const turn = ang(want - b._rA), remain = Math.abs(turn);
+      const s = dt / 1000;
+      // brake so the facing ARRIVES at rest: v = sqrt(2·a·s) is the fastest it can still stop in time
+      const target = Math.min(TURN_MAX, Math.sqrt(2 * TURN_ACCEL * remain));
+      const cur = b._rW || 0;
+      b._rW = cur < target ? Math.min(target, cur + TURN_ACCEL * s)
+                           : Math.max(target, cur - TURN_ACCEL * s);
+      const swept = Math.min(remain, b._rW * s);
+      b._rA = ang(b._rA + Math.sign(turn) * swept);
+      b._turnAng = (b._turnAng || 0) + swept;
     }
     const cur = b._rD8;
     if (cur && DIR8_A[cur] != null && Math.abs(ang(b._rA - DIR8_A[cur])) < Math.PI / 8 + DIR8_HYST) return cur;
@@ -226,7 +247,7 @@ const SPRITES = (() => {
     // 8-sector render facing — only locomotion + standing poses use it; seated/desk states keep
     // the plain 4-dir vocabulary (their frames are cardinal-only and their facing is furniture-set)
     const dir8 = renderDir8(b, dir, glancing, nowMs);
-    let key = null, fps = 8, bob = 0;
+    let key = null, fps = 8, bob = 0, turnStep = false;
 
     if (meeting) {
       key = pick8(set, ['rot'], dir8, dir); fps = 4;
@@ -250,6 +271,15 @@ const SPRITES = (() => {
     } else {
       key = pick8(set, ['rot'], dir8, dir);
       bob = Math.sin(nowMs / 600 + aph) * 0.7;
+      // PIVOT STEP. A standing body that changes facing used to hold a frozen idle pose while the
+      // sprite rotated under it — the "it just slides round" read. Nobody turns like that; you
+      // shuffle your feet. While the facing is actively sweeping, borrow the set's WALK frames and
+      // spend the swept ANGLE on them, so the legs step the body around. Angle-phased, not
+      // clock-phased, so the shuffle stops dead the instant the turn does.
+      if ((b._rW || 0) > TURN_STEP_W) {
+        const wk = pick8(set, ['walk'], dir8, dir);
+        if (wk) { key = wk; turnStep = true; bob *= 0.35; }
+      }
     }
 
     // life-like idle gesture: a standing body occasionally plays its set's one-shot `gesture`
@@ -313,6 +343,9 @@ const SPRITES = (() => {
     const CYCLE_PER_HEIGHT = 0.56;   // world units of ground covered per drawn pixel of character height
     const stride = (fr[0].height * sc * CYCLE_PER_HEIGHT) / fr.length;
     const idx = fixedIdx != null ? fixedIdx
+      // a pivoting body spends SWEPT ANGLE on the walk cycle, the same way a travelling one spends
+      // distance — the feet are driven by what the body actually did, never by the clock
+      : turnStep ? Math.floor((b._turnAng || 0) * TURN_STEP_FRAMES + aph)
       : (key.indexOf('.walk.') !== -1 && b.odo != null && stride > 0)
         ? Math.floor(b.odo / stride + aph)
         : Math.floor(nowMs / (1000 / fps) + aph);
