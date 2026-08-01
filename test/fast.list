@@ -196,6 +196,7 @@ test/qa-janitor.test.js
 test/qa-evidence-sweep.test.js
 test/qa-installed-smoke.test.js
 test/transcript.test.js
+test/transcript-history-v2.test.js
 test/recall.test.js
 test/fs.jail.test.js
 test/fs.patch.test.js

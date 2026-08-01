@@ -62,6 +62,7 @@ const { makeRunStore } = require('./runstore.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeTranscriptStore } = require('./transcriptstore.js');
+const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
@@ -566,7 +567,7 @@ function loadResilient(file, tag) {
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
 
 /* ---- P3 bounded append-only JSONL logs ----
-   The ledger / run-history / transcript are append-only and were read into RAM IN FULL at boot
+   The ledger / run-history are append-only and were read into RAM IN FULL at boot
    (fs.readFileSync(FILE).split('\n')) and never rotated, so months of 24/7 use grow them without bound
    until a single boot-time readFileSync crash-loops startup. readBoundedJsonl loads only the last
    LOG_MAX_BYTES of (archive + live) at boot (newest lines), and rotateJsonl rolls the live file to
@@ -816,25 +817,25 @@ function attachStreamKeepAlive(res) {
   return () => clearInterval(t);
 }
 
-// durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
+// durable per-workstream CONVERSATION transcript (P0.1): segmented append-only + fsync/read-back proven, a SIBLING of
 // the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
 // authoritative, append-only record covering EVERY surface, including headless cron/Telegram/delegated runs
 // that have no browser ws.history (the interactive browser conversation already persists durably via the
 // save-envelope mirror in cloudsave.js/savestore.js). The reference harness keeps a SQLite transcript for all surfaces; this
-// closes that gap for the headless paths + gives an autopsy/replay substrate. Content is redacted on write.
+// closes that gap for the headless paths + gives an autopsy/replay substrate. Closed numbered segments are
+// immutable and indexed; only a bounded recent tail enters RAM, while recall searches lifetime history lazily.
+// Content is redacted on write. Legacy transcript.jsonl(.1) files remain untouched after verified import.
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
-const transcriptIo = {
-  readAll() {
-    try { return readBoundedJsonl(TRANSCRIPT_FILE); } catch (e) { return []; }   // P3: bounded boot-load
-  },
-  append(entry) {
-    let fd = null;
-    try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
-    catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
-    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-    rotateJsonl(TRANSCRIPT_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
-  }
-};
+const transcriptIo = makeSegmentedTranscriptIo({
+  fs: fs,
+  path: path,
+  root: path.join(WORKSPACES, 'transcript-history-v2'),
+  legacyFiles: [TRANSCRIPT_FILE + '.1', TRANSCRIPT_FILE],
+  segmentBytes: Math.max(64 * 1024, num(ENV('TRANSCRIPT_SEGMENT_BYTES'), 4 * 1024 * 1024)),
+  recentPerStream: 1200,
+  writeDurable: writeFileDurable,
+  onWarning: (message) => console.warn('[transcript] ' + message)
+});
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
 
 // H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of

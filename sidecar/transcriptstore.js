@@ -13,9 +13,9 @@
    crashed by an unreadable transcript). Content is run through the injected `redact` on write so a
    secret-shaped token can't be laundered into a durable file (consistent with the SSE/NDJSON redaction).
 
-   It lives at <root>/transcript.jsonl — a SIBLING of the fs jail (<root>/<agentId>/), so the agent's own
-   fs.* tools can neither read nor corrupt the record of its own conversations. It holds no key (those are
-   stored separately and never appear in message content after redaction).
+   It lives under <root>/transcript-history-v2/ — a SIBLING of the fs jail (<root>/<agentId>/), so the
+   agent's own fs.* tools can neither read nor corrupt the record of its own conversations. Legacy
+   transcript.jsonl(.1) inputs remain in place after import. It holds no key (those are stored separately).
 
      makeTranscriptStore({ io, clock, redact?, limit? }) -> {
        append({ streamId, agentId, role, content }) -> entry,   // stamps ts, redacts content, appends, returns it
@@ -82,12 +82,16 @@
     // PER-STREAM RAM ceiling: history()/reconstruct() read at most `cap` (≤400) turns of ONE stream. Keep ~3x
     // headroom per stream so one chatty workstream can't evict another stream's turns below its own query
     // horizon (the fairness the plan calls for). Bound is PER streamId, not global, so N idle streams keep their
-    // recent history while a firehose stream self-trims. Disk keeps the full append-only log (bounded at boot).
+    // recent history while a firehose stream self-trims. Disk keeps the full append-only segmented history;
+    // the host adapter loads only recent rows here and answers lifetime recall lazily from per-segment indexes.
     const ramPerStream = num(opts.ramPerStream) > 0 ? num(opts.ramPerStream) : Math.max(cap * 3, 1200);
 
     // in-memory mirror loaded once; append keeps RAM + disk in lockstep so history() is O(n) over RAM.
     let rows = [];
-    try { const raw = io.readAll(); if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object'); }
+    try {
+      const raw = typeof io.readRecent === 'function' ? io.readRecent({ perStream: ramPerStream }) : io.readAll();
+      if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object');
+    }
     catch (e) { rows = []; }
     // trim the boot load per-stream too, so a huge bounded-boot load of one stream can't start us over the cap.
     trimStreamRam();   // no arg => sweep every over-cap stream once
@@ -127,6 +131,9 @@
       if (!terms.length) return [];
       const all = o.scope === 'all';
       const want = normStream(streamId);
+      if (typeof io.search === 'function') {
+        try { return io.search(want, query, { limit: limit, scope: all ? 'all' : 'stream' }) || []; } catch (_) {}
+      }
       const scored = [];
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
@@ -148,6 +155,9 @@
       o = o || {};
       const limit = num(o.limit) > 0 ? Math.min(num(o.limit), 100) : 20;
       const previewMax = num(o.previewChars) > 0 ? num(o.previewChars) : 160;
+      if (typeof io.streams === 'function') {
+        try { return io.streams({ limit: limit, previewChars: previewMax }) || []; } catch (_) {}
+      }
       const by = new Map();
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
@@ -172,6 +182,9 @@
       const win = num(o.window) > 0 ? Math.min(num(o.window), 50) : 6;
       const want = normStream(streamId);
       const at = num(ts);
+      if (typeof io.around === 'function') {
+        try { return io.around(want, ts, { window: win, rowId: o.rowId }) || []; } catch (_) {}
+      }
       const mine = [];
       for (let i = 0; i < rows.length; i++) { if (rows[i].streamId === want) mine.push(rows[i]); }
       if (!mine.length) return [];
@@ -205,10 +218,14 @@
         if (tc) entry.toolCalls = tc;
       }
       if (e.toolCallId != null) { const id = str(e.toolCallId).slice(0, 200); if (id) entry.toolCallId = id; }
-      rows.push(entry);
-      trimStreamRam(entry.streamId);   // bound THIS stream's RAM only (per-stream fairness; disk keeps full log)
-      try { io.append(entry); } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
-      return entry;
+      let stored = entry;
+      try {
+        const persisted = io.append(entry);
+        if (persisted && typeof persisted === 'object') stored = persisted;
+      } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
+      rows.push(stored);
+      trimStreamRam(stored.streamId);   // bound THIS stream's RAM only (per-stream fairness; disk keeps full log)
+      return stored;
     }
 
     // H1.1: append a SLICE of an OpenAI-format messages array (a run's new turns) as full transcript rows —
