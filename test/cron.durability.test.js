@@ -134,6 +134,42 @@ function tmpFile(name) { const f = path.join(tmpRoot, name); cleanup.push(f); re
     A.ok(realFs.existsSync(target) && realFs.readFileSync(target, 'utf8').length > 0, 'the jobs file landed non-empty despite the dir-fsync failure');
   }
 
+  /* ---- 3b. SHORT WRITES: loop until every byte lands; zero progress fails BEFORE rename. ---- */
+  {
+    const target = tmpFile('jobs-short-write.json');
+    let writeCalls = 0;
+    let renamed = false;
+    const spyFs = {
+      openSync(p, flags) { return realFs.openSync(p, flags); },
+      writeSync(fd, buf, offset, length) {
+        writeCalls++;
+        const chunk = Math.min(3, length);
+        return realFs.writeSync(fd, buf, offset, chunk);
+      },
+      fsyncSync(fd) { return realFs.fsyncSync(fd); },
+      closeSync(fd) { return realFs.closeSync(fd); },
+      renameSync(a, b) { renamed = true; return realFs.renameSync(a, b); }
+    };
+    const body = JSON.stringify({ version: 1, jobs: [], note: '☃ survives byte offsets' });
+    writeFileDurable({ fs: spyFs, path: path }, target, body);
+    A.ok(writeCalls > 1, 'partial writeSync progress is retried until the full buffer lands');
+    A.eq(realFs.readFileSync(target, 'utf8'), body, 'short-write loop preserves the complete UTF-8 payload');
+
+    const zeroTarget = tmpFile('jobs-zero-progress.json');
+    renamed = false;
+    const zeroFs = {
+      openSync(p, flags) { return realFs.openSync(p, flags); },
+      writeSync() { return 0; },
+      fsyncSync(fd) { return realFs.fsyncSync(fd); },
+      closeSync(fd) { return realFs.closeSync(fd); },
+      renameSync() { renamed = true; }
+    };
+    let err = null;
+    try { writeFileDurable({ fs: zeroFs, path: path }, zeroTarget, body); } catch (e) { err = e; }
+    A.ok(err && err.code === 'ESHORTWRITE', 'zero-progress write fails loudly with ESHORTWRITE');
+    A.eq(renamed, false, 'a zero-progress temp is never renamed over the authoritative file');
+  }
+
   /* ---- 4. FAIL-CLOSED LOAD: a stale leftover .tmp does NOT corrupt load; a truncated jobs file fails closed.
      Mirror the host's loadCronJobs: read ONLY the real path string, hand it to cronStore.loadEnvelope. ---- */
   {

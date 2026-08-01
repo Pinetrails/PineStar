@@ -9,6 +9,7 @@ const A = require('./_assert.js');
 const { makeMcpClient } = require('../sidecar/mcp/client.js');
 const { makeMcpToolDef, mcpToolName, RESULT_MAX_CHARS } = require('../sidecar/mcp/translate.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
+const TaskBriefPolicy = require('../sidecar/taskbrief-policy.js');
 
 // a fake duplex transport: a request (id+method) auto-responds via the injected handle(); a handle that throws
 // becomes a JSON-RPC error response; returning undefined never responds (to exercise timeouts/close). Records all sent.
@@ -138,6 +139,9 @@ function makeFakeTransport(handle) {
     // approval" is exactly the trust the host does not extend to connectors.
     A.eq(ro.requiresConsent, true, 'readOnlyHint cannot switch off the consent gate');
     A.eq(ro.impact, 'external-unknown', 'host authority still treats a declared read-only MCP tool as unknown');
+    A.eq(TaskBriefPolicy.canMutate({ status: 'ready' }, ro).ok, false, 'external-unknown MCP read is consequential until the Task Brief executes');
+    A.eq(TaskBriefPolicy.canMutate({ status: 'executing' }, ro).ok, true, 'an executing Task Brief admits the same MCP read');
+    A.eq(TaskBriefPolicy.canMutate({ status: 'ready' }, { scope: 'read', impact: 'none' }).ok, true, 'legitimate built-in reads remain available before execution');
 
     const errDef = makeMcpToolDef({ connectorId: 'x', mcpTool: { name: 't', inputSchema: { type: 'object' } }, call: () => Promise.resolve({ isError: true, content: [{ type: 'text', text: 'bad input' }] }) });
     let rThrew = false;

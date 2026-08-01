@@ -139,6 +139,20 @@ const { makeProcLedger, _internals } = require('../sidecar/procledger.js');
   const l5 = makeProcLedger({ fs, pathMod: path, file, clock, probe: async () => { throw new Error('boom'); }, killTree: async () => { A.ok(false, 'killTree must not run on probe failure'); } });
   const s5 = await l5.sweep();
   A.eq(s5.killed, 0, 'probe failure -> zero kills');
+  A.eq(s5.probeFailed, true, 'probe failure is reported distinctly (not laundered into every pid being gone)');
+  A.eq(JSON.parse(fs.readFileSync(file, 'utf8')).procs.map(p => p.pid), [555], 'probe failure RETAINS the ownership receipt on disk for a later boot');
+  A.eq(l5.list().map(p => p.pid), [555], 'probe failure also retains the receipt in memory');
+
+  const killedRetry = [];
+  const l5retry = makeProcLedger({
+    fs, pathMod: path, file, clock,
+    probe: async () => new Map([[555, 'cmd.exe /c x y z']]),
+    killTree: async (pid) => killedRetry.push(pid)
+  });
+  const s5retry = await l5retry.sweep();
+  A.eq(s5retry.probeFailed, false, 'a later successful probe resumes ordinary sweep semantics');
+  A.eq(killedRetry, [555], 'the retained receipt is reaped on the next successful boot');
+  A.eq(JSON.parse(fs.readFileSync(file, 'utf8')).procs.length, 0, 'only the successful retry consumes the receipt');
 
   // ---- 6. bad pids are refused ----
   const l6 = makeProcLedger({ fs, pathMod: path, file: path.join(dir, 'l6.json'), clock, probe: async () => new Map(), killTree: async () => {} });
