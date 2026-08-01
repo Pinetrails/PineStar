@@ -51,7 +51,20 @@ function writeFileDurable(deps, file, data) {
     let fd = null;
     try {
       fd = fs.openSync(tmp, 'w');
-      fs.writeSync(fd, data);
+      // writeSync is allowed to make partial progress (disk pressure, interrupted/network filesystems, injected
+      // fault tests). A single unchecked call can therefore fsync + rename a JSON prefix as the authoritative
+      // store. Write a Buffer to make offsets byte-accurate for non-ASCII data, and refuse zero/invalid progress.
+      const bytes = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+      let offset = 0;
+      while (offset < bytes.length) {
+        const wrote = fs.writeSync(fd, bytes, offset, bytes.length - offset);
+        if (!Number.isInteger(wrote) || wrote <= 0 || wrote > bytes.length - offset) {
+          const e = new Error('writeFileDurable: short write made no valid progress (' + wrote + '/' + (bytes.length - offset) + ' bytes)');
+          e.code = 'ESHORTWRITE';
+          throw e;
+        }
+        offset += wrote;
+      }
       fs.fsyncSync(fd);                    // <-- durability barrier, strictly BEFORE the rename below
     } finally {
       if (fd != null) { try { fs.closeSync(fd); } catch (_) {} }
