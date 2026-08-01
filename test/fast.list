@@ -172,6 +172,7 @@ test/roster-clause.test.js
 test/agent-config-target.test.js
 test/notebookrestore.test.js
 test/runstore.test.js
+test/run-journal.test.js
 test/autonomy-ledger.test.js
 test/artifacts.test.js
 test/deliverable-store.test.js
