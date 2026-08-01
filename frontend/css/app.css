@@ -308,6 +308,14 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
 .cc-title-row h2 { margin: 4px 0 0; }      /* the inverted-block h2 keeps its global look */
 @keyframes cc-blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }   /* used by .sp-rec + .cc-tb-rec */
 
+/* MOBILE CONTROL REACHABILITY: PHOSPHOR is real setup hardware, not expendable title
+   decoration. Give its six switches a dedicated second row before the bezel clips them. */
+@media (max-width: 600px) {
+  .cc-titlebar { flex-wrap: wrap; row-gap: 5px; }
+  .cc-tb-phosphor { flex: 0 0 100%; order: 5; min-width: 0; }
+  .phosphor-swatches { flex-wrap: wrap; }
+}
+
 /* .cc-grid is the CONNECTORS catalog grid (stationui.js), NOT genesis — genesis uses .ov-grid. Kept here;
    the old genesis two-column body (cc-col, cc-emblem, cc-ascii, cc-stamp, cc-cursor, lead-banner) is deleted. */
 .cc-grid {
@@ -2061,6 +2069,20 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .bb-menu .bb:hover::before, .bb-menu .bb:hover::after { content: none; }  /* no pip-boy [..] brackets inside the menu */
 .bb-menu .bb.active { background: var(--ph-faint); color: var(--ph-bright); box-shadow: inset 0 0 0 2px var(--ph); }
 
+/* MOBILE CONTROL REACHABILITY: navdock.js supplies the final zoom-aware horizontal
+   clamp because each trigger has a different wrapped-row origin. CSS owns the maximum
+   hardware width and ellipsis so the menu itself can never demand a wider viewport. */
+@media (max-width: 600px) {
+  .bb-menu {
+    min-width: 0;
+    width: min(300px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    box-sizing: border-box;
+  }
+  .bb-menu-h { overflow: hidden; text-overflow: ellipsis; }
+  .bb-menu .bb { min-width: 0; }
+}
+
 /* one-time "what now" coach pointing at the new docks */
 .nav-coach {
   position: fixed; left: 14px; bottom: 58px; z-index: 70; max-width: 470px;
@@ -2947,6 +2969,37 @@ body.crew-rail-off #screen-game.active {
   padding: 0; border-radius: 9px; overflow: hidden;
   background: var(--panel);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
+}
+/* MOBILE CONTROL REACHABILITY: a touch-only Commander has no hardware Escape key, so
+   DONE and every editor action must stay on the glass. The title owns row one and six
+   compact station keys share row two. */
+@media (max-width: 600px) {
+  .refit-top {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-rows: auto 30px;
+    height: 68px;
+    align-content: center;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+  .refit-title {
+    grid-column: 1 / -1;
+    padding: 2px 8px;
+    font-size: 16px;
+    letter-spacing: 2px;
+  }
+  .refit-sub,
+  .refit-spacer { display: none; }
+  .refit-top .bb {
+    width: 100%;
+    min-width: 0;
+    height: 30px;
+    padding-inline: 3px;
+    font-size: 12px;
+    letter-spacing: 0;
+  }
 }
 .refit-dock-section {
   display: flex; flex-direction: column; align-items: stretch; gap: 6px;

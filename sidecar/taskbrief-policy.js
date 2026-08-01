@@ -86,7 +86,10 @@ function validateProceed(candidate) {
 }
 
 function canMutate(brief, tool) {
-  if (!brief || !tool || tool.scope === 'read') return { ok: true };
+  if (!brief || !tool) return { ok: true };
+  // Built-in reads are non-consequential, but MCP tools are deliberately `external-unknown` even when an
+  // untrusted server advertises readOnlyHint. That annotation may shape grants; it cannot bypass the brief gate.
+  if (tool.scope === 'read' && tool.impact !== 'external-unknown') return { ok: true };
   return brief.status === 'executing'
     ? { ok: true }
     : { ok: false, reason: 'settle the Task Brief with brief_proceed, or ask the one material question with brief_ask, before consequential work' };
