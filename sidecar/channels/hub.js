@@ -1458,7 +1458,8 @@
             reflect: true,
             station: bayStation || undefined,
             taskKey: 'channel:' + channel + ':' + chatId,
-            taskSource: channel
+            taskSource: channel,
+            deliveryOrigin: { channel: channel, chatId: String(chatId), threadId: (routes.get(String(chatId)) || {}).threadId || null }
           });
         } catch (e) {
           state.errMsg = state.errMsg || ('run failed: ' + ((e && e.message) || e));

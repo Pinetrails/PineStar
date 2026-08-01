@@ -39,6 +39,8 @@ function setup(jobs, opts) {
     getKey: () => 'sk-test',
     defaultModel: 'test/model',
     persona: 'PERSONA',
+    contextFor: opts.contextFor,
+    deliverResult: opts.deliverResult,
     maxRunMs: 480000
   });
   return {
@@ -126,6 +128,25 @@ function intervalJob(id, everyStr) {
     run1.reject(new Error('aborted')); await flush();
     A.eq(s.getJob('a1').lastRunId, null, 'a reclaimed run\'s rejection never writes the job record');
     A.eq(s.getJob('a1').lastStatus, null, 'no phantom error status from a fenced settle');
+  }
+
+  // ---- 4. DATA PLANE: upstream context reaches the model and completion gets the final reply once. ----
+  {
+    const delivered = [];
+    const j = intervalJob('d1', 'every 1m');
+    j.contextFrom = ['source']; j.skills = ['Research']; j.workdir = 'C:\\approved-project'; j.enabledToolsets = ['web'];
+    const s = setup([j], { contextFor: () => '<untrusted_routine_context>prior result</untrusted_routine_context>', deliverResult: (job, result) => delivered.push({ job, result }) });
+    s.clock.set(T0 + 60000); s.driver.applyTick(s.clock.now());
+    A.ok(s.runs[0].opts.messages[0].content.includes('prior result'), 'assembled upstream context reaches the scheduled run');
+    A.eq(s.runs[0].opts.preloadSkills, ['Research'], 'scheduled skills reach the guarded runtime preload seam');
+    A.eq(s.runs[0].opts.workdir, 'C:\\approved-project', 'scheduled project cwd reaches the run host');
+    A.eq(s.runs[0].opts.enabledToolsets, ['web'], 'per-job toolset intersection reaches the run host');
+    A.eq(s.runs[0].opts.initialTaint, true, 'upstream context structurally taints the unattended run');
+    s.runs[0].opts.emit('agent.token', { delta: 'final answer' });
+    s.runs[0].resolve(); await flush(); await flush();
+    A.eq(s.getJob('d1').lastOutput, 'final answer', 'final reply is persisted for downstream context');
+    A.eq(delivered.length, 1, 'completion delivery hook runs exactly once');
+    A.eq(delivered[0].result.text, 'final answer', 'delivery receives the actual final result text');
   }
 
   A.report('cron.dispatch');

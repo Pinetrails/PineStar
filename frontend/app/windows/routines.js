@@ -65,6 +65,18 @@
         '<div id="rt-preview" class="dim" style="min-height:1em;font-size:.9em"></div>' +
         '<div class="rt-agent-pick" role="group" aria-label="Routine agent">' + roster.map(agentButton).join('') + '</div>' +
         '<input id="rt-agent" type="hidden" value="' + esc(routineAgentId) + '">' +
+        '<details class="brief-block" style="margin:4px 0"><summary>ADVANCED RUNTIME</summary>' +
+          '<div class="mc-form" style="margin-top:8px">' +
+            '<input id="rt-skills" class="key-input" placeholder="saved skills (comma-separated names)">' +
+            '<input id="rt-context" class="key-input" placeholder="upstream routine ids (comma-separated)">' +
+            '<input id="rt-workdir" class="key-input" placeholder="approved project folder (optional absolute path)">' +
+            '<input id="rt-script" class="key-input" placeholder="pre-check script (relative to workspace/project)">' +
+            '<label class="rt-term"><input type="checkbox" id="rt-no-agent"> script only — do not call a model</label>' +
+            '<input id="rt-toolsets" class="key-input" placeholder="allowed toolsets (comma-separated; blank = station defaults)">' +
+            '<select id="rt-deliver" class="key-input"><option value="local">keep result in StarNet</option><option value="origin">return result to this conversation</option></select>' +
+            '<label class="rt-term"><input type="checkbox" id="rt-continue"> keep delivery continuable in its conversation</label>' +
+          '</div>' +
+        '</details>' +
         // UNATTENDED TERMINAL GRANT — default OFF, and it must stay a deliberate tick: this is the one control
         // that lets a scheduled run execute commands with nobody watching. The label states the risk plainly
         // rather than selling the feature (truthful telemetry applies to consent copy too).
@@ -168,8 +180,15 @@
       const termBadge =
         grantBadge(grantsOf.indexOf('workbench') >= 0, '⌘ terminal', 'this routine may run shell commands unattended') +
         grantBadge(grantsOf.indexOf('connectors') >= 0, '⧉ connected tools', 'this routine may call your MCP connectors unattended');
+      const runtimeBadge =
+        grantBadge(!!j.noAgent, '⚙ script only', 'this routine completes without calling a model') +
+        grantBadge(!!j.script && !j.noAgent, '⚙ pre-check', 'a script decides whether the agent should wake') +
+        grantBadge(!!(j.skills && j.skills.length), '✦ ' + j.skills.length + ' skill' + (j.skills.length === 1 ? '' : 's'), 'saved skills preload on every run') +
+        grantBadge(!!(j.contextFrom && j.contextFrom.length), '⇢ pipeline', 'uses successful output from upstream routines') +
+        grantBadge(j.enabledToolsets != null, '⊣ restricted tools', 'this routine has an explicit per-job toolset intersection') +
+        grantBadge(String(j.deliver || 'local') !== 'local', '↗ delivery', 'results are delivered to approved destinations');
       return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '">' +
-        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + termBadge + fromRecipe + '</div>' +
+        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + termBadge + runtimeBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
         deliveryLine(j) +
@@ -372,7 +391,23 @@
         const grants = [];
         if ((body.querySelector('#rt-term') || {}).checked) grants.push('workbench');
         if ((body.querySelector('#rt-conn') || {}).checked) grants.push('connectors');
-        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider, tz, unattendedGrants: grants.length ? grants : undefined })).json();
+        const split = id => (body.querySelector(id).value || '').split(',').map(x => x.trim()).filter(Boolean);
+        const script = (body.querySelector('#rt-script').value || '').trim();
+        const toolsetText = (body.querySelector('#rt-toolsets').value || '').trim();
+        const workdir = (body.querySelector('#rt-workdir').value || '').trim();
+        const deliveryMode = body.querySelector('#rt-deliver').value;
+        const activeSession = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+        const r = await (await post('/api/cron', {
+          name, prompt, schedule, agentId: agentId || undefined, provider, tz,
+          unattendedGrants: grants.length ? grants : undefined,
+          skills: split('#rt-skills'), contextFrom: split('#rt-context'),
+          workdir: workdir || undefined, script: script || undefined,
+          noAgent: !!body.querySelector('#rt-no-agent').checked,
+          enabledToolsets: toolsetText ? split('#rt-toolsets') : undefined,
+          deliver: deliveryMode,
+          origin: deliveryMode === 'origin' && activeSession ? { sessionId: activeSession.id, streamId: activeSession.id, sessionTitle: activeSession.title || '' } : undefined,
+          attachToSession: !!body.querySelector('#rt-continue').checked
+        })).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
         else {
           msgEl.textContent = '';

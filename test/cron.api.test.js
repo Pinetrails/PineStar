@@ -32,7 +32,7 @@ function boot(port, workspaces, attemptsLeft) {
     const appSandbox = path.join(workspaces, '_appdata');
     const child = spawn(process.execPath, [INDEX], {
       env: Object.assign({}, process.env, {
-        SKYNET_PORT: String(port), SKYNET_WORKSPACES: workspaces,
+        SKYNET_PORT: String(port), SKYNET_WORKSPACES: workspaces, SKYNET_DEV: '1',
         LOCALAPPDATA: appSandbox, APPDATA: appSandbox, XDG_DATA_HOME: appSandbox
       }),
       stdio: ['ignore', 'pipe', 'pipe']
@@ -55,6 +55,8 @@ function boot(port, workspaces, attemptsLeft) {
 
 (async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-cron-'));
+  fs.mkdirSync(path.join(ws, 'channels'), { recursive: true });
+  fs.writeFileSync(path.join(ws, 'channels', 'chatmap.json'), JSON.stringify({ version: 1, chats: { dev_target: { chatId: 'cron-dev', channel: 'dev', agentId: 'cron_brief' } } }), 'utf8');
   let booted = await boot(8890 + (process.pid % 60), ws, 20);
   let child = booted.child, port = booted.port;
   const B = () => 'http://' + HOST + ':' + port;
@@ -171,6 +173,32 @@ function boot(port, workspaces, attemptsLeft) {
     const runMissing = await j('POST', '/api/cron/run', { id: 'nope' });
     A.eq(runMissing.status, 404, 'run-now of an unknown id -> 404');
 
+    // ---- script-only: a safe workspace script runs with no model and no provider credential ----
+    const agentWs = path.join(ws, 'cron_brief');
+    fs.mkdirSync(agentWs, { recursive: true });
+    fs.writeFileSync(path.join(agentWs, 'health.js'), 'console.log("script-only result")\n', 'utf8');
+    const scriptCreate = await j('POST', '/api/cron', {
+      name: 'Script health', prompt: 'run the local health check', schedule: 'every 1h', agentId: 'cron_brief',
+      script: 'health.js', noAgent: true, unattendedGrants: ['workbench'],
+      deliver: 'targets:dev_target', attachToSession: true
+    });
+    A.eq(scriptCreate.status, 200, 'script-only routine creates with an explicit workbench grant');
+    A.eq(scriptCreate.body.job.noAgent, true, 'script-only mode is returned by the API');
+    const scriptRun = await j('POST', '/api/cron/run', { id: scriptCreate.body.job.id });
+    A.eq(scriptRun.status, 200, 'script-only Run Now needs no provider credential');
+    A.ok(String(scriptRun.body).includes('script-only result'), 'script stdout is the final routine result');
+    const scriptSnap = await j('GET', '/api/cron');
+    const scriptJob = scriptSnap.body.jobs.find(x => x.id === scriptCreate.body.job.id);
+    A.eq(scriptJob.lastStatus, 'ok', 'script-only completion is durably successful');
+    A.eq(scriptJob.lastOutput, 'script-only result', 'script-only stdout is durable for delivery/contextFrom');
+    const delivered = await j('GET', '/api/dev/replies?chatId=cron-dev');
+    A.ok((delivered.body.replies || []).some(x => String(x.text || '').includes('script-only result')), 'specific-target delivery carries the actual final output');
+    const continued = JSON.parse(fs.readFileSync(path.join(ws, 'channels', 'cron_brief.history.json'), 'utf8'));
+    A.ok((continued.messages || []).some(x => x.role === 'assistant' && x.content === 'script-only result'), 'delivered output is folded into channel history for continuation');
+    const scriptTranscript = await j('GET', '/api/transcript?agent=cron_brief&stream=' + encodeURIComponent('cron-' + scriptJob.lastRunId) + '&limit=20');
+    A.ok((scriptTranscript.body.turns || []).some(t => t.role === 'assistant' && t.content === 'script-only result'), 'script-only output is recoverable in its continuable cron session');
+    await j('POST', '/api/cron/remove', { id: scriptCreate.body.job.id });
+
     // ---- persistence: the routine survives a fresh boot on the same workspace ----
     A.ok(fs.existsSync(path.join(ws, 'cron.jobs.json')), 'cron.jobs.json written to the workspace');
     try { child.kill(); } catch (_) {} await sleep(200);
@@ -193,7 +221,7 @@ function boot(port, workspaces, attemptsLeft) {
     booted = await boot(port + 200, ws, 20); child = booted.child; port = booted.port;
     await refreshToken();
     const recovered = await j('GET', '/api/cron');
-    A.eq(recovered.body.jobs.length, 2, 'torn cron.jobs.json recovered from .bak on boot');
+    A.eq(recovered.body.jobs.length, 3, 'torn cron.jobs.json recovered from .bak on boot');
     A.ok(recovered.body.jobs.some(job => job.name === 'Renamed brief'), 'recovered routine keeps the edited name');
     A.ok(recovered.body.jobs.some(job => job.schedule && job.schedule.kind === 'cron'), 'recovered routine keeps the cron schedule');
 
@@ -202,6 +230,7 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(rm.status, 200, 'remove -> 200');
     const rmCron = await j('POST', '/api/cron/remove', { id: cronId });
     A.eq(rmCron.status, 200, 'remove cron -> 200');
+    await j('POST', '/api/cron/remove', { id: scriptCreate.body.job.id }); // the protected backup intentionally restored it
     const empty = await j('GET', '/api/cron');
     A.eq(empty.body.jobs.length, 0, 'routine removed');
   } finally {

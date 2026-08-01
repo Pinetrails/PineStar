@@ -221,6 +221,32 @@ function enforceSyntheticOnly(resolved) {
   });
 }
 
+/* Per-run toolsets are attenuation only: null preserves the station grant, while an explicit array
+   intersects it. Compute and the two computer freebies are not toggleable tool families. */
+function enforceEnabledToolsets(resolved, registry, enabledToolsets) {
+  if (enabledToolsets == null) return resolved;
+  const enabled = new Set(Array.isArray(enabledToolsets) ? enabledToolsets.map(String) : []);
+  const free = new Set(['quest', 'toolsearch']);
+  const allowed = new Set();
+  for (const name of ((resolved && resolved.tools) || [])) {
+    const tool = registry && typeof registry.get === 'function' ? registry.get(name) : null;
+    const cap = String((tool && tool.capability) || '');
+    const family = cap.indexOf('mcp:') === 0 ? 'connectors' : cap;
+    if (free.has(family) || enabled.has(family)) allowed.add(name);
+  }
+  const approvalRules = {}, networkCaps = {};
+  for (const name of allowed) {
+    if (resolved.approvalRules && resolved.approvalRules[name]) approvalRules[name] = resolved.approvalRules[name];
+    if (resolved.networkCaps && resolved.networkCaps[name]) networkCaps[name] = resolved.networkCaps[name];
+  }
+  return Object.assign({}, resolved, {
+    tools: (resolved.tools || []).filter(n => allowed.has(n)),
+    deferred: (resolved.deferred || []).filter(n => allowed.has(n)),
+    grants: (resolved.grants || []).filter(g => g && allowed.has(g.tool)),
+    approvalRules, networkCaps
+  });
+}
+
 function runInputContext(surface, isTask) {
   return {
     surface: surface || 'autonomous',
@@ -288,4 +314,4 @@ async function backgroundOwnsLocalUrl(status, rawUrl, listenerProbe) {
   try { return await listenerProbe(status, rawUrl) === true; } catch (_) { return false; }
 }
 
-module.exports = { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS, GRANTABLE_UNATTENDED, normalizeUnattendedGrants, isConnectorTool };
+module.exports = { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS, GRANTABLE_UNATTENDED, normalizeUnattendedGrants, isConnectorTool };

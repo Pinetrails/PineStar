@@ -35,7 +35,7 @@ npm start  →  node sidecar/index.js  (ONE process, port 8787)
               ├─ tools/ (14)          web/browser/computer/fs/shell/notebook/recall/skills/…
               ├─ channels/            telegram, discord, SSE hub, keychain-split secrets
               ├─ mcp/                 MCP connector manager + curated catalog + OAuth 2.1
-              ├─ cron*.js             schedules → real runs (auto-notify to channels)
+              ├─ cron*.js             schedules → scripts/real runs → bounded outputs/delivery/pipelines
               └─ *-store.js (10+)     atomic fsync-rename persistence per subsystem
 
 frontend/  (no build step; index.html loads ~80 app/*.js modules in order)

@@ -138,8 +138,8 @@ A.ok(/surface === 'interactive' \? \[\] : Array\.from\(normalizeUnattendedGrants
   // edit door — a clean routine must not be patchable into a payload
   A.ok(/cronGuard\.scanRoutinePrompt\(patch\.prompt\)/.test(src), 'the update/patch path scans the new prompt');
   // fire doors — defense in depth for prompts authored before the scanner, and for runtime-loaded content
-  A.ok(/cronGuard\.scanAssembled\(job\.prompt/.test(src), 'Run Now re-scans the assembled prompt before spending');
-  A.ok(/cronGuard\.scanAssembled\(job\.prompt/.test(driver), 'the scheduled tick re-scans before firing');
+  A.ok(/cronGuard\.scanAssembled\(assembledPrompt/.test(src), 'Run Now re-scans the actual prompt after upstream context assembly');
+  A.ok(/cronGuard\.scanAssembled\(assembledPrompt/.test(driver), 'the scheduled tick re-scans the actual prompt after upstream context assembly');
   // a fire-time block must be VISIBLE, not a silent skip
   A.ok(/status: 'error', reason: 'blocked'/.test(driver), 'a blocked fire is recorded as a real failed run');
   A.ok(/outcome: 'failed', reason: 'blocked: '/.test(driver), 'and reported on the cron.result event');
