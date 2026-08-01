@@ -33,6 +33,7 @@ test/checkpoint.test.js
 test/module-scope-shadowing.test.js
 test/verify.test.js
 test/provider.replay.test.js
+test/agent-eval.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
 test/realtime-voice.test.js
