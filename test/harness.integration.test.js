@@ -235,7 +235,7 @@ const fixture = {
     const cutBus = A.makeBus();
     const cutSeq = A.collectBus(cutBus, events.names());
     const cutEmit = makeEmitter(cutBus, () => {});
-    // one-turn run whose stream ends with finish_reason 'length' (hit max_tokens mid-thought) and NO tool call.
+    // Explicit opt-out preserves the cut-short telemetry contract for a host that disables semantic continuation.
     const cutProvider = makeReplayProvider({
       models: fixture.models,
       turns: [[ { type: 'text', delta: 'The answer begins but is cut o' },
@@ -247,7 +247,7 @@ const fixture = {
       messages: [{ role: 'user', content: 'write me a long essay' }],
       provider: cutProvider, emit: cutEmit, cost: cutCost, tools: toolDefs, dispatch, capCtx,
       model: 'replay/model', agentId: 'agent', runId: 'cut1',
-      limits: { maxIters: 8, maxCostUsd: 1 }, clock: { now: () => 0 }
+      limits: { maxIters: 8, maxCostUsd: 1, outputContinuation: false }, clock: { now: () => 0 }
     });
     A.eq(cutRes.reason, 'done', 'a truncated turn with prose still ends reason:done (not a new run-end reason)');
     A.eq(cutRes.finishReason, 'length', 'finishReason:length rides the RETURN value (index.js reflection gate)');
