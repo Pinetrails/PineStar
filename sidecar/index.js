@@ -32,7 +32,7 @@ const { makeBrowserTools } = require('./tools/builtin/browser.js');
 // ONE reader for the whole sidecar (lazy: no Chrome until the first bot-walled fetch actually needs
 // it; idle self-teardown). Per-run construction would pay the Chrome cold start on every run.
 const stationWebReader = makeWebReader({ env: process.env });
-const stationWebPoliteness = makePoliteScheduler();
+const stationWebPoliteness = makePoliteScheduler({ now: () => Date.now() });
 const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
 const { makeHooks } = require('./hooks.js');                 // the hook spine: pre/post tool + llm, session, compress
