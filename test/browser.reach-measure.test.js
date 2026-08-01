@@ -15,7 +15,7 @@ const Reach = require('../scripts/browser-reach-measure.js');
     async navigate(url) { calls.push(['navigate', url]); },
     lastResponse() { return { status: 200 }; },
     async challengeStatus() { return { challenged: false, signal: '' }; },
-    async testEval() { return { url: 'https://owned.example/final', ua: 'Mozilla/5.0 Chrome/130.0.0.0', webdriver: false, language: 'en-US' }; },
+    async testEval() { return { url: 'https://owned.example/final', ua: 'Mozilla/5.0 Chrome/130.0.0.0', webdriver: false, language: 'en-US', hints: { brands: [{ brand: 'Chromium', version: '130' }] }, plugins: 5, chrome: true, geometry: [1440, 900, 1440, 900, 1440, 900] }; },
     async getText() { return 'Owned fixture content'; }
   };
   const receipt = await Reach.measureWithDriver('https://owned.example/start', driver,
@@ -25,7 +25,10 @@ const Reach = require('../scripts/browser-reach-measure.js');
   A.eq(receipt.challenged, false, 'ordinary content is not recorded as challenged');
   A.eq(receipt.textChars, 21, 'only aggregate text length is retained');
   A.eq(receipt.identity.headlessProductToken, false, 'headless product-token exposure is measured');
+  A.eq(receipt.identity.headlessClientHints, false, 'Client-Hints headless exposure is measured independently');
   A.eq(receipt.identity.webdriver, false, 'webdriver exposure is measured');
+  A.eq(receipt.identity.fullBrowserSurface, true, 'reduced headless-shell browser surfaces are measured');
+  A.eq(receipt.identity.geometryCoherent, true, 'screen and window geometry coherence is measured');
   A.eq(receipt.authorizationEscaped, false, 'a same-origin final URL stays inside the authorization receipt');
 
   driver.challengeStatus = async () => ({ challenged: true, signal: 'title' });

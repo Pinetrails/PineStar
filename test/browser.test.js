@@ -76,6 +76,40 @@ function fakeDriver() {
     const unknown = T.makeLaunchIdentity('missing-chrome', { spawnSync: () => ({ stdout: '', stderr: '' }), locale: 'de-DE' });
     A.eq(unknown.userAgent, '', 'an unproven browser version is never fabricated');
     A.eq(unknown.locale, 'de-DE', 'locale consistency remains available when version probing is unavailable');
+    const probes = [];
+    const winVersion = T.detectBrowserVersion('C:\\Program Files\\Chrome\\chrome.exe', {
+      platform: 'win32', spawnSync: (exe, args) => { probes.push([exe, args]); return probes.length === 1 ? { stdout: '' } : { stdout: '149.0.7827.55' }; }
+    });
+    A.eq(winVersion, '149.0.7827.55', 'Windows GUI Chrome falls back to its file ProductVersion when --version is silent');
+    A.ok(probes.length === 2 && /powershell/i.test(probes[1][0]), 'the version fallback is a bounded local file-metadata query');
+
+    const cdpIdentity = T.makeCdpIdentity(
+      { product: 'HeadlessChrome/149.0.7827.55' },
+      { ua: 'HeadlessChrome/149.0.0.0', platform: 'Win32', hints: {
+        brands: [{ brand: 'HeadlessChrome', version: '149' }, { brand: 'Not)A;Brand', version: '24' }],
+        fullVersionList: [{ brand: 'HeadlessChrome', version: '149.0.7827.55' }],
+        platform: 'Windows', platformVersion: '19.0.0', architecture: 'x86', bitness: '64', mobile: false
+      } },
+      { chromePath: 'fake-chrome.exe', locale: 'en-US', platform: 'win32', arch: 'x64' }
+    );
+    A.ok(/Chrome\/149\.0\.7827\.55/.test(cdpIdentity.userAgent), 'CDP identity derives the exact connected browser version');
+    A.eq(cdpIdentity.userAgentMetadata.brands.some(b => /HeadlessChrome/.test(b.brand)), false, 'Client Hint brands never retain the headless product token');
+    A.ok(cdpIdentity.userAgentMetadata.brands.some(b => b.brand === 'Chromium' && b.version === '149'), 'Client Hint major version agrees with the legacy UA');
+    A.ok(cdpIdentity.userAgentMetadata.fullVersionList.some(b => b.brand === 'Chromium' && b.version === '149.0.7827.55'), 'high-entropy Client Hints agree with the exact UA version');
+    A.eq(cdpIdentity.userAgentMetadata.platform, 'Windows', 'natural platform metadata is preserved instead of fabricated');
+    const edgeIdentity = T.makeCdpIdentity({ product: 'Chrome/149.0.7827.55' }, {
+      ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 HeadlessChrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0',
+      platform: 'Win32', hints: { brands: [{ brand: 'Microsoft Edge', version: '149' }], platform: 'Windows' }
+    }, { chromePath: 'msedge.exe', locale: 'en-US', platform: 'win32' });
+    A.ok(/Chrome\/149\.0\.7827\.55/.test(edgeIdentity.userAgent) && /Edg\/149/.test(edgeIdentity.userAgent), 'identity cleanup preserves the connected browser family instead of disguising Edge as Chrome');
+
+    const fullCandidate = T.CHROME_CANDIDATES.find(c => !c.headless);
+    const shellCandidate = T.CHROME_CANDIDATES.find(c => c.headless);
+    if (fullCandidate && shellCandidate) {
+      const picked = T.resolveChrome(false, p => p === fullCandidate.path || p === shellCandidate.path);
+      A.eq(picked.path, fullCandidate.path, 'ordinary headless runs prefer a full Chromium binary over headless-shell');
+      A.eq(picked.headless, false, 'the preferred browser retains the full browser surface');
+    }
   }
 
   const driver = fakeDriver();
@@ -297,8 +331,15 @@ function fakeDriver() {
         let value = currentUrl;
         if (m.method === 'Runtime.evaluate' && /return \{ready:/.test(String(m.params && m.params.expression || ''))) {
           value = { ready: isolationReady, error: isolationReady ? null : 'simulated bootstrap refusal' };
+        } else if (m.method === 'Runtime.evaluate' && /getHighEntropyValues/.test(String(m.params && m.params.expression || ''))) {
+          value = { ua: 'HeadlessChrome/140.0.0.0', platform: 'Win32', hints: {
+            brands: [{ brand: 'HeadlessChrome', version: '140' }],
+            fullVersionList: [{ brand: 'HeadlessChrome', version: '140.0.7339.12' }],
+            platform: 'Windows', platformVersion: '19.0.0', architecture: 'x86', bitness: '64', mobile: false
+          } };
         }
-        const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
+        const result = m.method === 'Runtime.evaluate' ? { result: { value } } :
+          (m.method === 'Browser.getVersion' ? { product: 'HeadlessChrome/140.0.7339.12' } : {});
         setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
       }
       close() {}
@@ -391,9 +432,11 @@ function fakeDriver() {
     A.ok(launchedPort !== 9347, 'the private port is per-run, never the process-wide default another agent run could attach to');
     A.ok(fetched.some(u => u === 'http://127.0.0.1:' + launchedPort + '/json/list'), 'driver attaches only through the private port it allocated for this run');
     A.eq(privatePort.attachedPort(), launchedPort, 'driver reports the privately owned attached port');
-    const uaArg = privateLaunches[0].find(a => /^--user-agent=/.test(a));
-    A.ok(uaArg && /Chrome\/140\.0\.7339\.12/.test(uaArg), 'private launch uses the installed browser generation in its UA');
-    A.ok(!/HeadlessChrome/.test(uaArg || ''), 'private launch never exposes the headless product token');
+    A.eq(privateLaunches[0].some(a => /^--user-agent=/.test(a)), false, 'launch flags do not create a legacy-UA / Client-Hints contradiction');
+    A.eq(privateLaunches[0].includes('--disable-gpu'), false, 'owned Chrome does not force a software-renderer fingerprint');
+    const uaOverride = sent.find(m => m.method === 'Emulation.setUserAgentOverride' && m.params && /Chrome\/140\.0\.7339\.12/.test(m.params.userAgent || ''));
+    A.ok(!!uaOverride, 'the connected browser generation is installed through one CDP identity override');
+    A.eq(uaOverride.params.userAgentMetadata.brands.some(b => /HeadlessChrome/.test(b.brand)), false, 'the CDP override removes HeadlessChrome from Client Hints too');
     A.ok(privateLaunches[0].includes('--lang=en-US'), 'private launch language matches the host locale');
     A.ok(privateLaunches[0].includes('--disable-blink-features=AutomationControlled'), 'private launch disables Chromium automation signaling');
     await privatePort.close();
@@ -418,7 +461,7 @@ function fakeDriver() {
           const expr = String((m.params && m.params.expression) || '');
           let value = state.url;
           if (/return \{ready:/.test(expr)) value = { ready: true, error: null };          // isolation attestation
-          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) {  // the settle probe
+          else if (/document\.readyState/.test(expr)) {  // the settle probe
             value = script(state.probes++);
           }
           const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
@@ -503,7 +546,7 @@ function fakeDriver() {
           const expr = String((m.params && m.params.expression) || '');
           let value = 'about:blank';
           if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
-          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) { state.probes++; value = { ok: true, ready: 'complete', n: 0 }; }
+          else if (/document\.readyState/.test(expr)) { state.probes++; value = { ok: true, ready: 'complete', n: 0 }; }
           const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
           setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
         }
@@ -599,7 +642,7 @@ function fakeDriver() {
         if (m.method === 'Runtime.evaluate') {
           let value = null;
           if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
-          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+          else if (/document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
           else if (/location\.href, title/.test(expr)) value = m.sessionId ? { url: 'https://x.test/receipt', title: 'Receipt' } : { url: 'https://x.test/', title: 'Shop' };
           else if (/role="button"/.test(expr)) value = m.sessionId ? [{ index: 0, role: 'button', text: 'Print', x: 1, y: 1, w: 9, h: 9 }] : [{ index: 0, role: 'link', text: 'Open', x: 1, y: 1, w: 9, h: 9 }];
           else value = 'https://x.test/';
@@ -720,7 +763,7 @@ function fakeDriver() {
         else if (m.method === 'Runtime.evaluate') {
           let value = 'about:blank';
           if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
-          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+          else if (/document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
           else if (/const pick = doc/.test(expr)) value = m.sessionId ? 'Enter your card' : 'Top page';
           else if (/role="button"/.test(expr)) {
             // The TOP document answers one button; the iframe session answers a different one.
@@ -760,7 +803,7 @@ function fakeDriver() {
     const text = await d.getText();
     A.ok(/Top page/.test(text) && /Enter your card/.test(text), 'get_text reads the frame as well as the top document');
     A.ok(/--- frame 1 ---/.test(text), 'frame text is labelled rather than silently concatenated');
-    A.ok(sent.some(m => m.method === 'Page.addScriptToEvaluateOnNewDocument' && m.sessionId === 'frame-1' && /__STARNET_SETTLE__/.test(m.params.source)), 'the settle marker is installed into adopted frames too');
+    A.ok(sent.some(m => m.method === 'Page.addScriptToEvaluateOnNewDocument' && m.sessionId === 'frame-1' && /MutationObserver/.test(m.params.source)), 'the settle marker is installed into adopted frames too');
 
     /* THE WEDGE GUARD. An out-of-process iframe has NO execution context while paused, so a
        Runtime.evaluate into it always fails ("Cannot find default execution context"). The old chain
@@ -903,7 +946,7 @@ function fakeDriver() {
           else if (m.method === 'Runtime.evaluate') {
             let value = state.url;
             if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
-            else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+            else if (/document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
             result = { result: { value } };
           }
           if (m.method === 'Page.navigate') { state.url = m.params.url; for (const e of events) this.emit(e[0], e[1]); }

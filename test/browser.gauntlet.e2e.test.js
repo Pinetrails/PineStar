@@ -113,10 +113,24 @@ const ROUTES = {
     // 1. LATE HYDRATION — the silent corrupter. Content lands at 1200ms; the old code waited 900ms.
     {
       await driver.navigate(base + '/hydrate');
-      const identity = await driver.testEval('({ua:navigator.userAgent,webdriver:navigator.webdriver,language:navigator.language})');
+      const identity = await driver.testEval(`(async()=>({
+        ua:navigator.userAgent,
+        webdriver:navigator.webdriver,
+        language:navigator.language,
+        plugins:navigator.plugins.length,
+        chrome:!!window.chrome,
+        screen:[screen.width,screen.height,screen.availWidth,screen.availHeight],
+        window:[innerWidth,innerHeight,outerWidth,outerHeight],
+        hints:navigator.userAgentData ? await navigator.userAgentData.getHighEntropyValues(['uaFullVersion','fullVersionList','architecture','bitness','platformVersion']) : null
+      }))()`);
       A.ok(identity && !/HeadlessChrome/.test(identity.ua || ''), 'real Chromium does not announce the headless product token');
       A.eq(identity.webdriver, false, 'real Chromium does not expose navigator.webdriver');
       A.ok(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(identity.language || ''), 'real Chromium exposes a normalized host language');
+      A.ok(identity.chrome === true && identity.plugins > 0, 'ordinary runs use the full browser surface, not headless-shell');
+      A.eq(JSON.stringify(identity.hints || {}).includes('HeadlessChrome'), false, 'Client Hints do not contradict the clean legacy UA');
+      A.ok(identity.hints && identity.hints.uaFullVersion && identity.ua.includes('Chrome/' + identity.hints.uaFullVersion), 'legacy UA and high-entropy Client Hints carry one exact version');
+      A.ok(identity.screen[0] >= identity.window[0] && identity.screen[1] >= identity.window[1], 'screen geometry contains the reported browser window');
+      A.ok(identity.screen[0] >= identity.screen[2] && identity.screen[1] >= identity.screen[3], 'available screen geometry never exceeds the physical screen');
       const nodes = await driver.snapshot(40);
       const go = nodes.find(n => /Continue/.test(n.text || ''));
       A.ok(!!go, 'auto-wait sees content that hydrates at 1200ms (a blind 900ms sleep would have missed it)');
@@ -130,7 +144,10 @@ const ROUTES = {
       A.eq(receipt.reached, true, 'the owned ordinary-content fixture is measured as reached');
       A.eq(receipt.status, 200, 'the reach receipt retains the observed document status');
       A.eq(receipt.identity.headlessProductToken, false, 'the reach receipt measures headless-token exposure');
+      A.eq(receipt.identity.headlessClientHints, false, 'the reach receipt measures Client-Hints exposure');
       A.eq(receipt.identity.webdriver, false, 'the reach receipt measures webdriver exposure');
+      A.eq(receipt.identity.fullBrowserSurface, true, 'the reach receipt confirms the full browser surface');
+      A.eq(receipt.identity.geometryCoherent, true, 'the reach receipt confirms coherent screen/window geometry');
 
       const blocked = await Reach.measureWithDriver(base + '/challenge', driver,
         { authorizedOrigins: [new URL(base).origin] });
@@ -216,12 +233,9 @@ const ROUTES = {
       A.ok(/Outer page/.test(await driver.getText()), 'the top document is still readable');
     }
 
-    /* 2c. THE SAME PAGE ON FULL CHROME — because the binary changes the capability.
-       chrome-headless-shell (which resolveChrome prefers for headless) does NOT put a cross-origin
-       frame in its own process, so there is no target to adopt AND contentDocument is blocked: the
-       frame's content is unreachable by either path, on any harness. Full Chrome with --headless=new
-       DOES isolate it, and then adoption reads it. Asserting this here keeps the difference visible
-       rather than letting a weaker binary quietly cap what the agent can see. */
+    /* 2c. FULL-CHROME CROSS-ORIGIN PROOF. Ordinary resolution now prefers the full browser because
+       headless-shell exposes a reduced fingerprint and cannot provide the same OOPIF reach. Keep a
+       dedicated second process here so target adoption remains proven independently. */
     {
       const full = T.resolveChrome(true);
       const fullPath = full && full.path && !full.headless ? full.path : null;
@@ -314,8 +328,12 @@ const ROUTES = {
       A.eq((await driver.tabs()).length, 1, 'a _blank LINK CLICK spawns no target in headless (browser behaviour, not a driver gap)');
 
       await driver.testEval('void window.open("/second","_blank")');
-      await new Promise(r => setTimeout(r, 800));   // let the new target attach and be adopted
-      const list = await driver.tabs();
+      let list = [];
+      for (let attempt = 0; attempt < 15; attempt++) {
+        await new Promise(r => setTimeout(r, 200));
+        list = await driver.tabs();
+        if (list.length >= 2) break;
+      }
       A.eq(list.length, 2, 'a popup is ADOPTED as a REAL second tab instead of being killed');
       A.eq(list[0].active, true, 'the ORIGINAL tab stays active — switching is never implicit');
       A.ok(/\/second/.test(list[1].url), 'the new tab reports its own URL (' + list[1].url + ')');
@@ -332,10 +350,12 @@ const ROUTES = {
       // THE SAFETY PROPERTY the old block bought, now bought by adoption instead: the popup ran with
       // the isolation shim already installed, so page code never reached a native pointer/keyboard lock.
       await driver.selectTab(1);
-      A.eq(await driver.testEval('typeof window.__STARNET_SYNTHETIC_INPUT__ !== "undefined"'), true,
+      A.eq((await driver.testState(null)).syntheticReady, true,
         'the adopted tab was SHIMMED before its own script ran');
-      A.eq(await driver.testEval('String(document.exitPointerLock === window.__STARNET_SYNTHETIC_INPUT__.exitPointerLock)'), 'true',
-        'and the shim is the real one, not a page-supplied forgery');
+      A.eq(await driver.testEval('(()=>{const d=Object.getOwnPropertyDescriptor(Document.prototype,"exitPointerLock");return !!d&&d.writable===false&&d.configurable===false})()'), true,
+        'and the installed lock override is immutable, not a page-supplied writable value');
+      A.eq((await driver.testEval('Object.getOwnPropertyNames(window).filter(x=>/STARNET/.test(x))')).length, 0,
+        'the page realm exposes no stable product-named automation marker');
       await driver.selectTab(0);
 
       await driver.closeTab(1);

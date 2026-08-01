@@ -125,15 +125,28 @@
     const minGapMs = Math.max(0, Number(deps.minGapMs == null ? 350 : deps.minGapMs));
     const initialBackoffMs = Math.max(minGapMs, Number(deps.initialBackoffMs == null ? 1200 : deps.initialBackoffMs));
     const maxBackoffMs = Math.max(initialBackoffMs, Number(deps.maxBackoffMs == null ? 30000 : deps.maxBackoffMs));
+    const maxHosts = Math.max(1, Number(deps.maxHosts == null ? 512 : deps.maxHosts));
     const wait = typeof deps.wait === 'function' ? deps.wait : waitAbortable;
+    // Production injects the wall clock at the composition root. A no-clock unit construction stays
+    // conservative (it may wait the full remembered delay) without smuggling ambient time into logic.
+    const now = typeof deps.now === 'function' ? deps.now : () => 0;
     const hosts = new Map();
+    let touchSeq = 0;
 
     function stateFor(host) {
       let state = hosts.get(host);
       if (!state) {
-        state = { tail: Promise.resolve(), seen: false, backoffMs: 0, requests: 0, lastDelayMs: 0, lastStatus: 0 };
+        if (hosts.size >= maxHosts) {
+          let victim = null;
+          for (const [key, candidate] of hosts) {
+            if (candidate.queued === 0 && (!victim || candidate.touched < victim[1].touched)) victim = [key, candidate];
+          }
+          if (victim) hosts.delete(victim[0]);
+        }
+        state = { tail: Promise.resolve(), seen: false, backoffMs: 0, nextAllowedAt: 0, requests: 0, lastDelayMs: 0, lastStatus: 0, queued: 0, touched: ++touchSeq };
         hosts.set(host, state);
       }
+      state.touched = ++touchSeq;
       return state;
     }
     function retryAfterMs(response) {
@@ -149,9 +162,22 @@
       if (status === 403 || status === 429 || status === 503) {
         const directed = retryAfterMs(response);
         state.backoffMs = directed || Math.min(maxBackoffMs, state.backoffMs ? state.backoffMs * 2 : initialBackoffMs);
+        state.nextAllowedAt = Math.max(state.nextAllowedAt, now() + state.backoffMs);
       } else if (status >= 200 && status < 400) {
         state.backoffMs = 0;
       }
+    }
+    function awaitTurn(previous, signal) {
+      if (!signal) return previous;
+      if (signal.aborted) return Promise.reject(signal.reason || new Error('request aborted'));
+      return new Promise((resolve, reject) => {
+        const aborted = () => reject(signal.reason || new Error('request aborted'));
+        signal.addEventListener('abort', aborted, { once: true });
+        previous.then(
+          value => { signal.removeEventListener('abort', aborted); resolve(value); },
+          error => { signal.removeEventListener('abort', aborted); reject(error); }
+        );
+      });
     }
     async function run(url, signal, request) {
       let host = '';
@@ -160,20 +186,22 @@
       const previous = state.tail;
       let release;
       state.tail = new Promise(resolve => { release = resolve; });
+      state.queued++;
       try {
-        await previous;
-        const delayMs = state.seen ? Math.max(minGapMs, state.backoffMs) : 0;
+        await awaitTurn(previous, signal);
+        const delayMs = state.seen ? Math.max(0, state.nextAllowedAt - now()) : 0;
         state.lastDelayMs = delayMs;
         if (delayMs) await wait(delayMs, signal);
         state.seen = true; state.requests++;
+        state.nextAllowedAt = Math.max(state.nextAllowedAt, now() + minGapMs);
         const response = await request();
         note(state, response);
         return response;
-      } finally { release(); }
+      } finally { state.queued--; state.touched = ++touchSeq; release(); }
     }
     function snapshot() {
       return Array.from(hosts.entries()).map(([host, state]) => ({
-        host, requests: state.requests, backoffMs: state.backoffMs,
+        host, requests: state.requests, backoffMs: state.backoffMs, nextAllowedAt: state.nextAllowedAt,
         lastDelayMs: state.lastDelayMs, lastStatus: state.lastStatus
       }));
     }
@@ -382,7 +410,8 @@
     if (!rawFetch) throw new Error('web.js requires global fetch (Node 18+) or deps.fetchImpl');
     const politeness = deps.politeness || makePoliteScheduler({
       wait: deps.politeWait, minGapMs: deps.politeMinGapMs,
-      initialBackoffMs: deps.politeInitialBackoffMs, maxBackoffMs: deps.politeMaxBackoffMs
+      initialBackoffMs: deps.politeInitialBackoffMs, maxBackoffMs: deps.politeMaxBackoffMs,
+      now: deps.politeNow, maxHosts: deps.politeMaxHosts
     });
     const doFetch = (url, opts) => politeness.run(url, opts && opts.signal, () => rawFetch(url, opts));
     const UA = deps.userAgent || DEFAULT_UA;

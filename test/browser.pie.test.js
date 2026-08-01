@@ -206,8 +206,9 @@ const PDF_B64 = Buffer.from('%PDF-1.4\n% fake').toString('base64');
     A.ok(sent.some(m => m.method === 'Emulation.setTimezoneOverride' && m.params.timezoneId === 'Europe/Berlin'), 'the timezone override lands');
     A.ok(sent.some(m => m.method === 'Emulation.setTouchEmulationEnabled' && m.params.enabled === true), 'touch emulation lands');
 
+    const resetMark = sent.length;
     await d.emulate(null);
-    A.ok(sent.some(m => m.method === 'Emulation.clearDeviceMetricsOverride'), 'reset clears device metrics');
+    A.ok(sent.slice(resetMark).some(m => m.method === 'Emulation.setDeviceMetricsOverride' && m.params.width === 1440 && m.params.screenWidth === 1440), 'reset restores the coherent station screen metrics');
     A.ok(sent.some(m => m.method === 'Emulation.setTimezoneOverride' && m.params.timezoneId === ''), 'reset clears the timezone');
 
     // pdf over the wire: printBackground always, and the data comes back decoded by the tool layer.
