@@ -462,7 +462,20 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   const cxIntake = CommanderContext.compose({ recipeIntake: dr.intake });
   A.ok(/<recipe_intake provenance="recipe-declared">/.test(cxIntake) && /suggested: tight brief/.test(cxIntake), 'composer renders the declared decisions with their suggested defaults');
   A.ok(CommanderContext.compose({}).indexOf('recipe_intake') < 0, 'no recipe -> no intake block');
+  const evidenceCx = CommanderContext.compose({
+    topics: [{ label: 'release automation', count: 3, evidence: ['automate release notes'] }],
+    threads: [{ title: 'finish the changelog verifier' }],
+    worksignal: 'dominant lane: workbench; 4 completed task-runs',
+    verdicts: { kinds: { research: { weight: 0.4, positive: 3, negative: 0 } } },
+    activity: ['Ship the StarNet beta (yesterday)']
+  });
+  A.ok(/<commander_evidence provenance="observed; weak; never override the current request">/.test(evidenceCx), 'one provenance-labelled evidence block composes the learned model for every execution lane');
+  A.ok(/release automation/.test(evidenceCx) && /automate release notes/.test(evidenceCx), 'topic claims carry their stored evidence quote');
+  A.ok(/finish the changelog verifier/.test(evidenceCx) && /research=\+0\.4/.test(evidenceCx), 'open threads and bounded verdict learning share the same composer');
+  A.ok(CommanderContext.compose({ topics: [], threads: [], activity: [] }).indexOf('commander_evidence') < 0, 'empty evidence fabricates no learned context block');
   const mktSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
+  A.ok(/const ready = recommendationsReady\(\)/.test(mktSrc) && /STARTING POINTS/.test(mktSrc), 'the marketplace uses shared readiness and labels its cold shelf honestly');
+  A.ok((mktSrc.match(/const gt = ready \? goalText\(\) : ''/g) || []).length >= 2, 'cold marketplace shelves cannot smuggle dossier goals past readiness');
   A.ok(/values\.__intake = intake/.test(mktSrc) && /mkt-intake-opt/.test(mktSrc), 'the launch form collects one-tap intake decisions');
   A.ok(/recipeIntake/.test(indexSrc) && /Recipes\.get\(String\(o\.recipeId\)\)/.test(indexSrc), 'a recipe-launched run injects its declared intake');
 

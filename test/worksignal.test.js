@@ -54,7 +54,20 @@ for (let k = 0; k < N - 1; k++) W.observe(c, { lane: 'dish' }, 0);
 A.eq(W.summary(c, 0).calibrating, true, 'below the sample floor: calibrating');
 W.observe(c, { lane: 'dish' }, 0);
 A.eq(W.summary(c, 0).calibrating, false, 'at the sample floor: a known read');
-A.eq(W.summary(c, 0).samples, N, 'samples counts every tool observation');
+A.eq(W.summary(c, 0).samples, N, 'the legacy primitive still counts each explicit observation');
+
+/* ---------- normalized run fold: tool-loop length cannot dominate ---------- */
+const runs = W.fresh();
+W.observeRun(runs, { lanes: ['workbench', 'workbench', 'cabinet'], tag: 'code' }, 0);
+A.eq(runs.total, 1, 'one completed run advances calibration exactly once');
+A.eq(runs.lanes.workbench.n, 1, 'duplicate tool calls in a lane collapse to one lane observation');
+A.eq(runs.lanes.workbench.w, 0.5, 'a multi-lane run shares one unit of weight across its lanes');
+A.eq(runs.lanes.cabinet.w, 0.5, 'the other unique lane receives the other half');
+A.eq(runs.lanes.workbench.tags.code, 1, 'tag volume counts runs, not tool calls');
+W.observeRun(runs, { lanes: ['dish'], tag: 'research' }, 0);
+A.eq(runs.total, 2, 'a second completed run adds one sample regardless of tool count');
+const noLane = W.fresh(); W.observeRun(noLane, { lanes: ['banana'] }, 0);
+A.eq(noLane.total, 0, 'a completed run with no mapped capability lane fabricates no signal');
 
 /* ---------- weighted + hostile folds ---------- */
 const wt = W.fresh(); W.observe(wt, { lane: 'dish', weight: 3 }, 0);
