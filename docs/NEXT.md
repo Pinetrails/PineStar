@@ -1,5 +1,30 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-01 — UNIFIED COMMANDER RECOMMENDATIONS (`agent/recommendation-unify`)
+
+READY TO MERGE. Three scoped commits implement the recommendation-system audit actions: `475aa6d3`
+adds the durable cross-surface lifecycle/evidence ledger, bounded Commander evidence composer, richer
+completed-task context, and replay CLI; `b882665b` gates recruitment and marketplace personalization on
+shared understanding readiness, labels cold shelves as starting points, preserves validated study evidence,
+and adds typed suggestion verdicts; `70afe07c` normalizes capability learning per completed run instead of
+raw tool-call frequency. Seed beliefs no longer inflate visible familiarity.
+
+The lifecycle retains bounded transitions and typed reasons (`shown -> deferred -> accepted -> completed`),
+survives restart, and feeds bounded preference weights without treating wrong-time deferrals as rejection.
+Study proposals may carry a verbatim run quote; invented quotes are rejected, legacy proposals retain an
+explicit directive receipt, and pending/declined study state is durable. Ordinary task runs and autonomous
+lanes now read the same provenance-labelled topics, threads, workflow, recent activity, active goal, dossier,
+and verdict summary; weak observed evidence is explicitly forbidden from overriding the current request.
+
+Verification on the final tree: `test:fast` 478/478 green; full `test:http` green (including sidecar 445 and
+route coverage 75). Focused recommendation/readiness/workflow/context/study tests are green. A seeded station
+on `:18799` recorded a recommendation, applied deferred/accepted/completed verdicts, restarted with `--keep`,
+and reloaded the exact four-state transition plus its evidence. `recommendation-replay.mjs` then reported
+acceptance/completion/evidence/readiness coverage of 1 for that proof sample and a bounded research weight of
+0.3333. No provider run, external write, merge, push, PR, deploy, publish, credential, or production-data
+change was performed. The seeded proof process was stopped. A byte-identical voice test exposed a 20ms-vs-30ms
+timer race in this longer worktree; the test-only compressed ceiling is now 50ms and passed twice plus the gate.
+
 ## 2026-07-31 — BROWSER REACH 0.8.5 (`agent/browser-reach-085`)
 
 READY TO MERGE at `dd01c8d3` (five commits from `7b2550e0`). The station-owned Chromium launch now
