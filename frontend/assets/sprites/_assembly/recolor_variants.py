@@ -63,7 +63,24 @@ def apply_to_new(sprites_root, base, variant, lut):
     for f in os.listdir(vdir):
         if f.endswith(".png"):
             os.remove(os.path.join(vdir, f))
-    n = miss = 0
+    # The rebuild redraws seven of the eight directions, so it can introduce shades the old
+    # 4-direction palette never contained. Left unmapped those pixels keep the BASE colour —
+    # white specks scattered over a blue suit. They are always near-duplicates of a colour we
+    # do know, so fall back to the nearest learned source and reuse its target.
+    nearest = {}
+    def resolve(p):
+        if p in lut:
+            return lut[p], False
+        if p not in nearest:
+            best, bd = None, None
+            for src, dst in lut.items():
+                d = (src[0] - p[0]) ** 2 + (src[1] - p[1]) ** 2 + (src[2] - p[2]) ** 2
+                if bd is None or d < bd:
+                    bd, best = d, dst
+            nearest[p] = best
+        return nearest[p], True
+
+    n = approx = 0
     for f in sorted(os.listdir(bdir)):
         if not f.endswith(".png"):
             continue
@@ -74,13 +91,12 @@ def apply_to_new(sprites_root, base, variant, lut):
                 p = px[x, y]
                 if p[3] <= 16:
                     continue
-                if p in lut:
-                    px[x, y] = lut[p]
-                else:
-                    miss += 1
+                colour, approximated = resolve(p)
+                px[x, y] = colour
+                approx += approximated
         im.save(os.path.join(vdir, f))
         n += 1
-    return n, miss
+    return n, approx
 
 if __name__ == "__main__":
     sprites_root, old_root, base = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -91,6 +107,7 @@ if __name__ == "__main__":
             print(f"{variant}: REJECTED — {len(lut)} colours, {conflicts} conflict(s), "
                   f"{bad}/{total} pixel(s) wrong on replay")
             continue
-        n, miss = apply_to_new(sprites_root, base, variant, lut)
+        n, approx = apply_to_new(sprites_root, base, variant, lut)
         print(f"{variant}: {len(lut)} colours learned from {nshared} shared frame(s), "
-              f"replay exact -> wrote {n} new frame(s)" + (f", {miss} UNMAPPED px" if miss else ""))
+              f"replay exact -> wrote {n} new frame(s)"
+              + (f", {approx} px via nearest shade" if approx else ""))
