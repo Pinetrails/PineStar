@@ -3435,7 +3435,12 @@ function loadNightshiftState() {
   catch (e) { console.warn('[nightshift] load failed:', (e && e.message) || e); return nightshift.fresh(Date.now()); }
 }
 let nightshiftState = loadNightshiftState();
-function saveNightshiftState() { try { saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(nightshiftState, Date.now())); } catch (e) { console.warn('[nightshift] persist failed:', (e && e.message) || e); } }
+function saveNightshiftState(next) {
+  const candidate = next || nightshiftState;
+  saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(candidate, Date.now()));
+  nightshiftState = candidate;
+  return candidate;
+}
 
 /* ---- NS-5b: the FOCUS state — a sibling JSON so a restart resumes the SAME night's declared priority (not a
    re-scatter). Holds { v, day, focus, steer }. The pure resolver (nightfocus.js) owns every decision; this is glue:
@@ -4340,7 +4345,7 @@ async function runNightshiftActShift(opts) {
 // ---- the driver: all ambient deps injected, so nightshift-driver.js stays determinism-clean.
 const nightshiftDriver = makeNightshiftDriver({
   getState: () => nightshiftState,
-  setState: (s) => { nightshiftState = s; saveNightshiftState(); },
+  setState: (s) => { saveNightshiftState(s); },
   getPosture: () => commanderPosture.summary(),
   // presence truth: a LIVE interactive run counts as activity-now — the Commander watching their own run must
   // never read as "away" no matter how long the run streams (idle-detection bug, 2026-07-17).
@@ -12364,7 +12369,9 @@ async function handleAutonomyPosture(req, res) {
   commanderPosture.set(posture, body.beliefs);
   // deliberately re-writing the dial is the Commander's "autonomy back on" signal, so it LIFTS any durable E-STOP
   // halt on the night shift (engaged in handleHalt). Without this an E-STOP would wedge the shift stood-down forever.
-  try { if (nightshift.isHalted(nightshiftState)) { nightshiftState = nightshift.clearHalt(nightshiftState, Date.now()); saveNightshiftState(); } } catch (_) {}
+  let nightshiftStatePersisted = true;
+  try { if (nightshift.isHalted(nightshiftState)) saveNightshiftState(nightshift.clearHalt(nightshiftState, Date.now())); }
+  catch (e) { nightshiftStatePersisted = false; console.warn('[nightshift] halt-lift persist failed:', (e && e.message) || e); }
   // Lane 4D symmetry: the same "autonomy back on" signal lifts the durable cron E-STOP halt (engaged in
   // handleHalt) and re-arms the timer when the user's arm intent still stands — routines resume with no restart.
   try { liftCronHalt(); } catch (_) {}
@@ -12389,7 +12396,7 @@ async function handleAutonomyPosture(req, res) {
       workshopGranted = workshopOf(NIGHTSHIFT_AGENT);
     }
   } catch (_) { workshopGranted = null; }   // a grant hiccup must never fail the posture write; null = unknown (honest)
-  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, workshopGranted: workshopGranted });
+  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, nightshiftStatePersisted: nightshiftStatePersisted, workshopGranted: workshopGranted });
 }
 // GET /api/autonomy/posture — the server copy (posture summary + whether a beliefs snapshot is present). Never
 // echoes the raw beliefs texts back to the browser (it already has them); just reports presence + freshness.
@@ -12815,7 +12822,15 @@ function handleHalt(req, res) {
   // were already spent at accept-time, so the ~45-min cooldown was the ONLY thing pausing autonomy — beats resumed
   // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
-  try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
+  let nightshiftHaltPersisted = true;
+  const haltedNightshiftState = nightshift.engageHalt(nightshiftState, Date.now());
+  try { saveNightshiftState(haltedNightshiftState); }
+  catch (e) {
+    // E-STOP still governs this process immediately, but a failed disk write is not a restart-durability claim.
+    nightshiftState = haltedNightshiftState;
+    nightshiftHaltPersisted = false;
+    console.warn('[nightshift] halt persist failed:', (e && e.message) || e);
+  }
   // Lane 4D symmetry: ROUTINES get the same durable stand-down the night shift got above. Without this the
   // cron timer kept re-firing due jobs unattended right after an E-STOP, and the lifecycle aggregate kept
   // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
@@ -12833,7 +12848,7 @@ function handleHalt(req, res) {
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted + loop iterations aborted (additive fields)
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, nightshiftHaltPersisted }));   // honest counts + restart-durability receipt
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
