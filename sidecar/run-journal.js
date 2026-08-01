@@ -135,7 +135,8 @@ function analyze(records, corrupt) {
 function makeRunJournal(opts) {
   opts = opts || {};
   const io = opts.io || makeFsIo(opts);
-  const now = opts.clock && typeof opts.clock.now === 'function' ? () => opts.clock.now() : () => Date.now();
+  // The ambient host injects real time. A pure caller that omits it gets a deterministic zero stamp.
+  const now = opts.clock && typeof opts.clock.now === 'function' ? () => opts.clock.now() : () => 0;
   const redact = typeof opts.redact === 'function' ? opts.redact : s => s;
   const live = new Map();
 
