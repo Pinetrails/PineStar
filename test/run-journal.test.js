@@ -47,6 +47,13 @@ A.eq(recovered.length, 1, 'corrupt-tail journal is discovered');
 A.eq(recovered[0].corrupt, true, 'corrupt tail is disclosed');
 A.eq(recovered[0].status, 'resumable', 'valid prefix remains recoverable');
 
+const unknownIo = memoryIo();
+const unknown = J.makeRunJournal({ io: unknownIo, clock: { now: () => 2 } });
+unknown.begin({ runId: 'unknown', messages: [] });
+unknown.toolIntent('unknown', { callId: 'side-effect', name: 'shell.exec', mutating: true });
+unknown.finish('unknown', { reason: 'error' });
+A.eq(unknown.inspect('unknown').status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
+
 // The real fs writer must retry short writes instead of accepting a torn record.
 const chunks = [];
 const fakeFs = {

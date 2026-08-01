@@ -126,7 +126,9 @@ function analyze(records, corrupt) {
   const terminal = !!(last && last.type === 'finish');
   return {
     runId: first ? first.runId : '', records: records.length, corrupt: !!corrupt, terminal,
-    status: terminal ? 'finished' : (uncertain.length ? 'needs_review' : 'resumable'),
+    // A terminal run event cannot prove what happened inside a tool that returned no durable result. The intent
+    // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
+    status: uncertain.length ? 'needs_review' : (terminal ? 'finished' : 'resumable'),
     meta: first && first.type === 'begin' ? first.payload : {},
     uncertain, completed, checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
   };

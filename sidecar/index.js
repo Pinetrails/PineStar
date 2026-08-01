@@ -61,7 +61,10 @@ const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
-const { makeTranscriptStore } = require('./transcriptstore.js');
+const transcriptStoreModule = require('./transcriptstore.js');
+const { makeTranscriptStore } = transcriptStoreModule;
+const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
+const { makeRunJournal } = require('./run-journal.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
@@ -836,6 +839,15 @@ const transcriptIo = {
   }
 };
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
+// Active runs journal their provider-valid message and tool side-effect boundaries outside the agent fs jail.
+// Finished journals remain until the segmented transcript store acknowledges their final durable checkpoint;
+// this avoids deleting the only recovery copy after the legacy transcript writer's fail-open append.
+const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
+let recoveredRunJournals = [];
+try {
+  recoveredRunJournals = runJournal.recoverAll().filter(r => r && !r.terminal);
+  if (recoveredRunJournals.length) console.warn('[run-journal] interrupted run(s) awaiting recovery:', recoveredRunJournals.length);
+} catch (e) { console.warn('[run-journal] recovery scan failed:', (e && e.message) || e); }
 
 // H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of
 // the fs jail (the agent's fs.* tools can't reach it). Singleton (persists across runs); redacted on write.
@@ -11276,6 +11288,7 @@ async function runOnce(o) {
   // run PRODUCED (files/images/channel sends) — recorded onto the runStore row at run end and served over
   // GET /api/runs. Pure + capped (sidecar/artifacts.js); a collector hiccup must never break a run.
   const artifactLedger = makeArtifactCollector();
+  let journalStarted = false;
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
     else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
@@ -11365,7 +11378,19 @@ async function runOnce(o) {
       } catch (_) { /* a checkpoint failure must never break a run */ }
     }
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
+    // Persist the exact call before it can have side effects. If the process dies after this barrier but before a
+    // durable result, restart classifies the outcome as unknown and never replays it automatically.
+    if (journalStarted) runJournal.toolIntent(runId, {
+      callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
+      mutating: !!(liveTool && liveTool.scope !== 'read')
+    });
     let r = await registry.dispatch(c, dctx);
+    // Persist the full model-visible result before the loop advances to another call/turn. A journal write failure
+    // throws here, leaving the intent unmatched and therefore review-required after restart.
+    if (journalStarted) runJournal.toolResult(runId, {
+      callId: c.id, ok: !!(r && r.ok), isError: !!(r && r.isError),
+      content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
+    });
     // TASTE EXTRACTION (announce-and-act): a successful brief.proceed IS the product moment — the model's
     // settled READ (objective + correctable assumptions, incl. its taste guesses) surfaces to COMMS as a
     // non-blocking card while the run continues. Internal brief controls stay hidden from tool telemetry;
@@ -11741,6 +11766,20 @@ async function runOnce(o) {
   // rebuilds the same array in place and SHORTER, leaving the index past the end and dropping the entire run's
   // dialogue with no error. See the PERSISTED marker in transcriptstore.js.
   transcriptStore.markPersisted(msgs);
+  if (!internal) {
+    try {
+      runJournal.begin({
+        runId, agentId, streamId: o.streamId || 'global', trigger, model,
+        userTitle: latestUserText(msgs), startedAt: Date.now()
+      });
+      journalStarted = true;
+    } catch (e) {
+      emit('agent.run.start', { agentId, runId, trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: false, message: 'Run could not start safely because its recovery journal could not be persisted: ' + String((e && e.message) || e) });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+  }
   let bufferedTaskEnd = null;
   // Hold a successful user-facing Task Brief end until the final text is known; a question maps to the
   // contract's additive `clarifying` terminal (neither product nor slag — every success path keys on 'done').
@@ -11802,6 +11841,16 @@ async function runOnce(o) {
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       steer: () => drainSteer(runId),   // LIVE STEERING: fold any mid-run /steer notes into the next model call
       signal: signal, clock: { now: () => Date.now() },
+      onCheckpoint: journalStarted ? ({ phase, messages: checkpointMessages, turn }) => {
+        // Initial prompt messages carry transcriptStore's non-enumerable PERSISTED marker. Everything without it
+        // was created by this run, so compaction cannot invalidate the boundary and recovery avoids duplicating
+        // the historical seed. System continuation/guard messages remain included because provider resumption
+        // must receive a valid context, even though the user-facing transcript later omits them.
+        const fresh = Array.isArray(checkpointMessages)
+          ? checkpointMessages.filter(m => m && typeof m === 'object' && (!TRANSCRIPT_PERSISTED || !m[TRANSCRIPT_PERSISTED]))
+          : [];
+        runJournal.checkpoint(runId, { phase, turn, messages: fresh });
+      } : null,
       agentId, runId, model, trigger: trigger,
       // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
@@ -11885,6 +11934,9 @@ async function runOnce(o) {
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
       if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
+      if (journalStarted) runJournal.finish(runId, {
+        reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd
+      });
     } catch (_) {}
     // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest
     // whose run-contract is bound to this runId (bound at the injection seam / the quest.update progress tick);
