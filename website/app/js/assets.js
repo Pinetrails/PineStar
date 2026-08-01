@@ -260,9 +260,14 @@ const SPRITES = (() => {
     let fixedIdx = null;
     if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
         && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
+      // EXACT direction only — never fall back to another facing. Most sets ship the stretch
+      // on the 4 cardinals alone (the diagonals would cost 4 more generations each and are
+      // unreachable in practice: a body that stops walking leaves its diagonal within ~50ms
+      // and holds a cardinal while idle, and only an idle body stretches). Falling back would
+      // snap the body 45° for the length of the stretch — the exact class of pop this pass
+      // was built to remove.
       const kd = key.slice(key.lastIndexOf('.') + 1);
-      const gk = frames[set + '.gesture.' + kd] ? set + '.gesture.' + kd
-        : (frames[set + '.gesture.' + dir] ? set + '.gesture.' + dir : null);
+      const gk = frames[set + '.gesture.' + kd] ? set + '.gesture.' + kd : null;
       if (gk) {
         const GFPS = 8, glen = frames[gk].length, gdur = glen * (1000 / GFPS);
         // a stretch is a RARE beat (Andrew, 2026-07-31): once every ~90 minutes per body,
