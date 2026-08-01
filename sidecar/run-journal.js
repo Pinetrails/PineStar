@@ -26,11 +26,16 @@ function hashRecord(r) {
   })).digest('hex');
 }
 
-const SECRET_KEY = /(?:pass(?:word)?|token|secret|api[_-]?key|authorization|cookie|credential|private[_-]?key)/i;
+function isSecretKey(key) {
+  const norm = String(key || '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  return /^(?:password|passwd|passphrase|token|secret|api_key|authorization|cookie|credentials?|private_key)$/.test(norm)
+    || /(?:^|_)(?:password|passwd|passphrase|token|secret|api_key|authorization|cookie|credentials?|private_key)(?:_|$)/.test(norm);
+}
 function cloneSafe(value, redact, depth, key) {
   if (depth > 20) return '[depth limit]';
+  // Credential containers are as sensitive as credential scalars. Check the key before branching on value type.
+  if (key && isSecretKey(key)) return '[redacted]';
   if (typeof value === 'string') {
-    if (key && SECRET_KEY.test(String(key))) return '[redacted]';
     // Tool arguments/results commonly arrive as serialized JSON. Scrub credential-shaped fields inside that
     // envelope instead of trusting a value-pattern redactor to recognize an otherwise ordinary secret.
     if (key === 'argsRaw' || key === 'content') {
@@ -107,8 +112,28 @@ function makeFsIo(opts) {
       try {
         fd = fs.openSync(tmp, 'wx'); writeAll(fs, fd, body); fs.fsyncSync(fd);
       } finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-      fs.renameSync(filePath, backup);       // preserve the forensic original, including its torn tail
-      fs.renameSync(tmp, filePath);          // repaired verified prefix becomes the active journal
+      fs.copyFileSync(filePath, backup);     // preserve the forensic original without removing the active path
+      try {
+        fs.renameSync(tmp, filePath);        // atomic replacement on platforms that support replace-existing
+      } catch (_) {
+        // Windows may reject replace-existing rename. Keep the discoverable active pathname throughout the
+        // fallback; the forensic backup above lets the next boot recover even if power fails during this rewrite.
+        let active = null;
+        try {
+          active = fs.openSync(filePath, 'r+');
+          const bytes = Buffer.from(body, 'utf8');
+          let at = 0;
+          while (at < bytes.length) {
+            const n = fs.writeSync(active, bytes, at, bytes.length - at, at);
+            if (!(n > 0)) throw new Error('run journal repair short write');
+            at += n;
+          }
+          fs.ftruncateSync(active, bytes.length); fs.fsyncSync(active);
+        } finally {
+          if (active != null) { try { fs.closeSync(active); } catch (__) {} }
+          try { fs.unlinkSync(tmp); } catch (__) {}
+        }
+      }
       return backup;
     }
   };
@@ -135,9 +160,13 @@ function analyze(records, corrupt) {
   const last = records[records.length - 1] || null;
   const intents = new Map();
   const completed = [];
-  let checkpoint = first && first.type === 'begin' ? first.payload : null;
+  let baseCheckpoint = null;
+  let latestCheckpoint = null;
   for (const r of records) {
-    if (r.type === 'checkpoint') checkpoint = r.payload;
+    if (r.type === 'checkpoint') {
+      if (r.payload && r.payload.phase === 'initial' && !baseCheckpoint) baseCheckpoint = r.payload;
+      else latestCheckpoint = r.payload;
+    }
     if (r.type === 'tool_intent' && r.payload && r.payload.callId) intents.set(String(r.payload.callId), r.payload);
     if (r.type === 'tool_result' && r.payload && r.payload.callId) {
       const callId = String(r.payload.callId);
@@ -148,13 +177,20 @@ function analyze(records, corrupt) {
   const uncertain = Array.from(intents.values());
   const terminal = !!(last && last.type === 'finish');
   const transcriptAck = !!(terminal && last.payload && last.payload.transcriptAck === true);
+  let checkpoint = latestCheckpoint || baseCheckpoint || (first && first.type === 'begin' ? first.payload : {});
+  if (baseCheckpoint && latestCheckpoint) {
+    checkpoint = Object.assign({}, latestCheckpoint, {
+      messages: (Array.isArray(baseCheckpoint.messages) ? baseCheckpoint.messages : [])
+        .concat(Array.isArray(latestCheckpoint.messages) ? latestCheckpoint.messages : [])
+    });
+  }
   return {
     runId: first ? first.runId : '', records: records.length, corrupt: !!corrupt, terminal,
     // A terminal run event cannot prove what happened inside a tool that returned no durable result. The intent
     // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
     status: uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable'),
     meta: first && first.type === 'begin' ? first.payload : {},
-    uncertain, completed, checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
+    uncertain, completed, baseCheckpoint: baseCheckpoint || {}, checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
   };
 }
 
@@ -194,11 +230,13 @@ function makeRunJournal(opts) {
         catch (_) { parsed = { records: [], corrupt: true }; }
         const state = analyze(parsed.records, parsed.corrupt);
         state.file = file;
-        if (parsed.corrupt && parsed.records.length && typeof io.repair === 'function') {
-          state.repairedFrom = io.repair(file, parsed.records);
-        } else if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') {
-          state.quarantinedTo = io.quarantine(file);
-        }
+        try {
+          if (parsed.corrupt && parsed.records.length && typeof io.repair === 'function') {
+            state.repairedFrom = io.repair(file, parsed.records);
+          } else if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') {
+            state.quarantinedTo = io.quarantine(file);
+          }
+        } catch (e) { state.repairError = String((e && e.message) || e); }
         out.push(state);
         if (state.runId && parsed.records.length) {
           const last = parsed.records[parsed.records.length - 1];

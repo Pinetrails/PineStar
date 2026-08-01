@@ -70,6 +70,19 @@ scrub.toolIntent('scrub', { callId: 'x', name: 'connector.write', argsRaw: '{"pa
 const scrubbedBytes = scrubIo.read('scrub');
 A.ok(!/hunter2|ordinary-value/.test(scrubbedBytes), 'serialized JSON credential fields are scrubbed by key');
 A.ok(/kept/.test(scrubbedBytes), 'non-secret tool arguments remain reviewable');
+scrub.toolResult('scrub', { callId: 'x', content: JSON.stringify({ credentials: { value: 'nested-secret' }, authorization: { value: 'Basic abc123' }, compass: 'north' }) });
+const containerBytes = scrubIo.read('scrub');
+A.ok(!/nested-secret|abc123/.test(containerBytes), 'credential-shaped object containers are scrubbed as a whole');
+A.ok(/compass/.test(containerBytes), 'ordinary keys containing pass-like letters are not over-redacted');
+
+const contextIo = memoryIo();
+const contextJournal = J.makeRunJournal({ io: contextIo, clock: { now: () => 5 } });
+contextJournal.begin({ runId: 'context', agentId: 'a' });
+contextJournal.checkpoint('context', { phase: 'initial', messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'request' }] });
+contextJournal.checkpoint('context', { phase: 'assistant', messages: [{ role: 'assistant', content: 'work', tool_calls: [{ id: 'c' }] }] });
+const contextState = contextJournal.inspect('context');
+A.eq(contextState.checkpoint.messages.map(m => m.role), ['system', 'user', 'assistant'], 'recovery checkpoint combines initial provider context with the latest run delta');
+A.eq(contextState.baseCheckpoint.messages.length, 2, 'initial provider context remains separately inspectable');
 
 // The real fs writer must retry short writes instead of accepting a torn record.
 const chunks = [];
