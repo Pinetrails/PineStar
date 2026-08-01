@@ -83,6 +83,7 @@ contextJournal.checkpoint('context', { phase: 'assistant', messages: [{ role: 'a
 const contextState = contextJournal.inspect('context');
 A.eq(contextState.checkpoint.messages.map(m => m.role), ['system', 'user', 'assistant'], 'recovery checkpoint combines initial provider context with the latest run delta');
 A.eq(contextState.baseCheckpoint.messages.length, 2, 'initial provider context remains separately inspectable');
+A.eq(contextState.deltaCheckpoint.phase, 'assistant', 'latest run delta remains separately inspectable for recovery reconciliation');
 
 // The real fs writer must retry short writes instead of accepting a torn record.
 const chunks = [];

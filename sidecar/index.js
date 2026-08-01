@@ -65,6 +65,7 @@ const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
 const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
 const { makeRunJournal } = require('./run-journal.js');
+const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
@@ -571,7 +572,7 @@ function loadResilient(file, tag) {
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
 
 /* ---- P3 bounded append-only JSONL logs ----
-   The ledger / run-history / transcript are append-only and were read into RAM IN FULL at boot
+   The ledger / run-history are append-only and were read into RAM IN FULL at boot
    (fs.readFileSync(FILE).split('\n')) and never rotated, so months of 24/7 use grow them without bound
    until a single boot-time readFileSync crash-loops startup. readBoundedJsonl loads only the last
    LOG_MAX_BYTES of (archive + live) at boot (newest lines), and rotateJsonl rolls the live file to
@@ -821,25 +822,25 @@ function attachStreamKeepAlive(res) {
   return () => clearInterval(t);
 }
 
-// durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
+// durable per-workstream CONVERSATION transcript (P0.1): segmented append-only + fsync/read-back proven, a SIBLING of
 // the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
 // authoritative, append-only record covering EVERY surface, including headless cron/Telegram/delegated runs
 // that have no browser ws.history (the interactive browser conversation already persists durably via the
 // save-envelope mirror in cloudsave.js/savestore.js). The reference harness keeps a SQLite transcript for all surfaces; this
-// closes that gap for the headless paths + gives an autopsy/replay substrate. Content is redacted on write.
+// closes that gap for the headless paths + gives an autopsy/replay substrate. Closed numbered segments are
+// immutable and indexed; only a bounded recent tail enters RAM, while recall searches lifetime history lazily.
+// Content is redacted on write. Legacy transcript.jsonl(.1) files remain untouched after verified import.
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
-const transcriptIo = {
-  readAll() {
-    try { return readBoundedJsonl(TRANSCRIPT_FILE); } catch (e) { return []; }   // P3: bounded boot-load
-  },
-  append(entry) {
-    let fd = null;
-    try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
-    catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
-    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-    rotateJsonl(TRANSCRIPT_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
-  }
-};
+const transcriptIo = makeSegmentedTranscriptIo({
+  fs: fs,
+  path: path,
+  root: path.join(WORKSPACES, 'transcript-history-v2'),
+  legacyFiles: [TRANSCRIPT_FILE + '.1', TRANSCRIPT_FILE],
+  segmentBytes: Math.max(64 * 1024, num(ENV('TRANSCRIPT_SEGMENT_BYTES'), 4 * 1024 * 1024)),
+  recentPerStream: 1200,
+  writeDurable: writeFileDurable,
+  onWarning: (message) => console.warn('[transcript] ' + message)
+});
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
 // Active runs journal their provider-valid message and tool side-effect boundaries outside the agent fs jail.
 // Finished journals remain until the segmented transcript store acknowledges their final durable checkpoint;
@@ -847,7 +848,13 @@ const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: ()
 const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
 let recoveredRunJournals = [];
 try {
-  recoveredRunJournals = runJournal.recoverAll().filter(r => r && r.status !== 'finished');
+  recoveredRunJournals = runJournal.recoverAll().filter(r => {
+    if (!r) return false;
+    // A durable transcript acknowledgement is the commit record. If the process died between that record and
+    // unlink, finish the idempotent retirement now; all other states remain visible for human-led recovery.
+    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
+    return true;
+  });
   if (recoveredRunJournals.length) console.warn('[run-journal] interrupted run(s) awaiting recovery:', recoveredRunJournals.length);
 } catch (e) { console.warn('[run-journal] recovery scan failed:', (e && e.message) || e); }
 
@@ -6637,6 +6644,7 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/save', h: serveSaveLoad },
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
+  { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
@@ -11939,14 +11947,20 @@ async function runOnce(o) {
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
-      if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
-      if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
-      if (journalStarted) runJournal.finish(runId, {
-        reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd,
-        // The legacy transcript sink is fail-open and cannot acknowledge stable storage. Wave 4 upgrades this to
-        // true only after strict append+read-back, at which point the journal can be removed safely.
-        transcriptAck: false
-      });
+      if (journalStarted) {
+        // Retirement is ordered strictly: each transcript row is fsync/read-back proven, then the journal records
+        // that acknowledgement, then (and only then) is the recovery copy removed. A throw leaves it discoverable.
+        if (title) transcriptStore.appendStrict({ streamId: o.streamId, agentId, role: 'user', content: title, sourceRunId: runId });
+        if (result && Array.isArray(result.messages)) transcriptStore.appendNewStrict(o.streamId, agentId, result.messages, { sourceRunId: runId });
+        runJournal.finish(runId, {
+          reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd,
+          transcriptAck: true
+        });
+        runJournal.remove(runId);
+      } else {
+        if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
+        if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
+      }
     } catch (_) {}
     // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest
     // whose run-contract is bound to this runId (bound at the injection seam / the quest.update progress tick);
@@ -14502,6 +14516,38 @@ function serveRuns(req, res) {
     // on r.ok (chat.js, autosessions.js, returnstore.js, world.js) or a safe [] default (stationui.js).
     json(500, { error: 'could not read run history: ' + ((e && e.message) || e) });
   }
+}
+
+// GET /api/run-recoveries — authenticated by the shared /api gate, read-only, and intentionally conservative.
+// It exposes safe checkpoint dialogue plus tool names/call ids, never raw tool arguments or results. An uncertain
+// side effect is review-required; the harness does not replay it or claim that it did/didn't happen.
+function serveRunRecoveries(req, res) {
+  const safeMessage = m => {
+    const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
+    if (m && m.tool_call_id) out.tool_call_id = String(m.tool_call_id);
+    if (m && Array.isArray(m.tool_calls)) out.tool_calls = m.tool_calls.map(c => ({
+      id: String((c && c.id) || ''), type: 'function', function: { name: String((c && c.function && c.function.name) || '') }
+    }));
+    return out;
+  };
+  const rows = recoveredRunJournals.map(r => ({
+    runId: String(r.runId || ''),
+    agentId: String((r.meta && r.meta.agentId) || ''),
+    streamId: String((r.meta && r.meta.streamId) || 'global'),
+    startedAt: Number((r.meta && r.meta.startedAt) || 0),
+    userTitle: String((r.meta && r.meta.userTitle) || '').slice(0, 1000),
+    status: r.status,
+    corrupt: !!r.corrupt,
+    repaired: !!r.repairedFrom,
+    repairError: r.repairError ? String(r.repairError).slice(0, 500) : '',
+    uncertain: (r.uncertain || []).map(x => ({ callId: String(x.callId || ''), name: String(x.name || '') })),
+    checkpoint: {
+      phase: String((r.checkpoint && r.checkpoint.phase) || ''),
+      turn: Number((r.checkpoint && r.checkpoint.turn) || 0),
+      messages: Array.isArray(r.checkpoint && r.checkpoint.messages) ? r.checkpoint.messages.slice(-200).map(safeMessage) : []
+    }
+  }));
+  respondJson(res, 200, { recoveries: rows });
 }
 
 // GET /api/autonomy/ledger?limit=N&source=&kind= — NS-0: the recent AUTONOMY DECISION LEDGER (cron fire/skip/

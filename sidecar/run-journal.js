@@ -190,7 +190,8 @@ function analyze(records, corrupt) {
     // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
     status: uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable'),
     meta: first && first.type === 'begin' ? first.payload : {},
-    uncertain, completed, baseCheckpoint: baseCheckpoint || {}, checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
+    uncertain, completed, baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
+    checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
   };
 }
 
