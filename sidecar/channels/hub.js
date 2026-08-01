@@ -5,7 +5,7 @@
    the platform. The hub knows nothing of the loop/provider/broker internals — it is handed `runOnce`, the
    durable `store`, a `send`, the current `secrets` (OR key+model), and a `classify` (task-vs-talk), all injected.
 
-     makeChannelHub({ channel, runOnce, store, send, secrets, persona, classify, redact, emit, newId,
+     makeChannelHub({ channel, runOnce, store, send, secrets, persona, classify, ownerTrusted?, redact, emit, newId,
                       maxMessageLength?, agentPrefix? }) -> { onInbound, onCallback, onStatus }
 
    Per inbound it: (1) maps chatId -> a per-chat agentId (`tg_<chatId>`, isolated notebook/workspace/history);
@@ -307,6 +307,9 @@
     const runSlashFn = typeof o.runSlash === 'function' ? o.runSlash : null;
     // names of the Commander's own commands, so this hub can recognise one without owning the list
     const userCommandNames = typeof o.userCommandNames === 'function' ? o.userCommandNames : (() => []);
+    // The composition root may mint this only for an authenticated Telegram owner DM. It deliberately lives at
+    // the hub edge so every other channel and every Telegram group message stays on its ordinary policy.
+    const ownerTrustedFor = typeof o.ownerTrusted === 'function' ? o.ownerTrusted : (() => false);
     const rosterFn = typeof o.roster === 'function' ? o.roster : null;
     const setModelFn = typeof o.setModel === 'function' ? o.setModel : null;
     const modelCatalogFn = typeof o.modelCatalog === 'function' ? o.modelCatalog : null;
@@ -773,8 +776,9 @@
     // only claims success after saveChatRecord returns; a model change only confirms after setModel reports ok.
     // boundRec is this chat's persisted record (or null) — /approvals reads its opt-in flag and writes it back.
     // chatType (optional, additive) — only /mention needs it, to say honestly that the setting is group-only
-    // rather than storing a value that can never apply in a DM.
-    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec, chatType) {
+    // rather than storing a value that can never apply in a DM. `ownerTrusted` is host-minted at ingress and is
+    // forwarded to the shared slash registry so its /tools answer matches this owner DM's actual run authority.
+    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec, chatType, ownerTrusted) {
       const cmd = parsed.cmd, arg = parsed.arg;
       // rosterFn is an INJECTED callback (Discord/other wire-ups pass it straight through); a throwing roster must
       // degrade to a logged error + polite reply, never an unhandled rejection that swallows the whole inbound.
@@ -814,7 +818,7 @@
       if (SLASH_CMDS[cmd]) {
         if (!runSlashFn) { await deliver(chatId, '⚠ ' + '/' + cmd + ' is not available on this channel.', '', 'command'); return; }
         let r;
-        try { r = await runSlashFn('/' + cmd + (arg ? ' ' + arg : ''), { agentId: boundId }); }
+        try { r = await runSlashFn('/' + cmd + (arg ? ' ' + arg : ''), { agentId: boundId, ownerTrusted: !!ownerTrusted }); }
         catch (e) { try { console.error('[' + channel + '] /' + cmd + ' threw:', (e && e.message) || e); } catch (_) {} r = null; }
         if (!r) { await deliver(chatId, '⚠ Could not run /' + cmd + ' right now — try again in a moment.', '', 'command'); return; }
         const body = (r.lines && r.lines.length)
@@ -1173,6 +1177,8 @@
       let boundRec = null;
       try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
+      let ownerTrusted = false;
+      try { ownerTrusted = ownerTrustedFor(msg) === true; } catch (_) { ownerTrusted = false; }
 
       /* OBSERVE-ONLY: heard, filed, never answered. The mention gate stopped the bot replying to a room it was
          not addressed in, and in doing so gave it amnesia — asked later to "summarise that", it had never seen
@@ -1193,7 +1199,7 @@
       // through the SAME deliver() path so chunking/limits apply. Channel-agnostic: this lives in the hub, so
       // Telegram/Discord/any future adapter get identical behavior.
       const parsed = parseCommand(msg.text);
-      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec, msg.chatType); return; }
+      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec, msg.chatType, ownerTrusted); return; }
 
       // COMMANDER-DEFINED commands are not in this hub's table (the sidecar owns them), so a "/standup" would
       // otherwise fall through and be answered by the MODEL — spending a turn to say it doesn't understand.
@@ -1206,7 +1212,7 @@
         // is actually talking to rather than a default
         const ucAgent = currentBoundAgent(chatId, boundAgentId, sec);
         let r;
-        try { r = await runSlashFn(String(msg.text).trim(), { agentId: ucAgent }); }
+        try { r = await runSlashFn(String(msg.text).trim(), { agentId: ucAgent, ownerTrusted: ownerTrusted }); }
         catch (e) { try { console.error('[' + channel + '] user command threw:', (e && e.message) || e); } catch (_) {} r = null; }
         const body = (r && Array.isArray(r.lines) && r.lines.length)
           ? ((r.title ? r.title + '\n' : '') + r.lines.join('\n'))
@@ -1437,6 +1443,7 @@
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
             surface: wantApprovals ? 'interactive' : 'autonomous',
+            ownerTrusted: ownerTrusted,
             // ...but ONLY for who answers a consent prompt. A phone has no floor to place props on, so this run
             // composes the headless office either way. Without this, /approvals on silently cut the agent from
             // the full autonomous office to compute-only (2 tools) — THE MOAT is floor-real placement, and there
@@ -1509,7 +1516,7 @@
                 key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
                 system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
                 agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
-                surface: 'autonomous', broadcast: true, reflect: true,
+                surface: 'autonomous', ownerTrusted: ownerTrusted, broadcast: true, reflect: true,
                 station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,
                 taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel
               });

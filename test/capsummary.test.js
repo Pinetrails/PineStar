@@ -49,6 +49,13 @@ const resolvedTools = (capIds, tools) => ({
   A.ok(/do NOT blame missing credentials/.test(auto),
     'autonomous: explicitly forbidden from blaming credentials for an ungranted power');
 
+  // 4b) an admitted owner Telegram DM has desktop-equivalent non-physical authority, so it must not receive
+  // the ordinary unattended warning or impossible floor-placement advice.
+  const owner = summarizeCapabilities(resolvedWith(), { surface: 'autonomous', ownerTrusted: true });
+  A.ok(/authenticated owner Telegram session/.test(owner), 'owner DM: names the actual trusted remote-control posture');
+  A.ok(!/UNATTENDED run/.test(owner), 'owner DM: does not falsely describe the Commander as unattended automation');
+  A.ok(!/place a DISH|place an INTEL CAB|place a WORKBENCH/.test(owner), 'owner DM: never suggests inaccessible floor placement');
+
   // 5) no surface specified -> behaves as interactive (emits the note)
   A.ok(summarizeCapabilities(resolvedWith()).length > 0, 'unspecified surface defaults to interactive (emits)');
 

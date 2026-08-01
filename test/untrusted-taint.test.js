@@ -110,8 +110,8 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
     'any untrusted-source result carrying real content taints — an isError flag is not an exemption');
   A.ok(!/!r\.isError && typeof r\.content === 'string' && r\.content\.length && revokedByTaint\.isSource/.test(src),
     'the isError exemption is gone (a hostile connector cannot opt out of taint by failing)');
-  A.ok(/if \(taintedBy && surface !== 'interactive' && !revokedByTaint\.ok\(liveTool\)\)/.test(src),
-    'the dispatch gate enforces it, and ONLY on unattended runs');
+  A.ok(/if \(taintedBy && surface !== 'interactive' && !ownerTrusted && !revokedByTaint\.ok\(liveTool\)\)/.test(src),
+    'the dispatch gate enforces it on ordinary unattended runs, but keeps the authenticated owner DM on desktop-equivalent authority');
   A.ok(/summary: 'untrusted-content-lockout'/.test(src), 'the refusal is telemetered distinctly');
   A.ok(/outside content \(via ' \+ taintedBy \+ '\)/.test(src),
     'the refusal names the actual source so the agent can report it honestly');
@@ -119,7 +119,7 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
   A.ok(/terminalGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the terminal grant respects taint');
   A.ok(/connectorGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the connector grant respects taint');
   // enforcement must run BEFORE the tool executes
-  A.ok(src.indexOf("if (taintedBy && surface !== 'interactive'") < src.indexOf('let r = await registry.dispatch(c, dctx)'),
+  A.ok(src.indexOf("if (taintedBy && surface !== 'interactive' && !ownerTrusted") < src.indexOf('let r = await registry.dispatch(c, dctx)'),
     'the lockout is checked BEFORE dispatch, so a revoked power never executes');
 }
 

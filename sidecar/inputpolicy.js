@@ -85,6 +85,10 @@ function makeRunAuthority(opts) {
   opts = opts || {};
   const surface = opts.surface === 'interactive' ? 'interactive' : 'autonomous';
   const isTask = !!opts.isTask;
+  // `ownerTrusted` is minted only by an authenticated owner DM at the channel ingress. It grants that
+  // Commander the same tool authority as a watched StarNet session without changing the ordinary autonomous
+  // policy used by cron, delegated workers, other channels, or group messages.
+  const ownerTrusted = !!opts.ownerTrusted;
   const environment = opts.environment || null;
   const confirm = typeof opts.confirm === 'function' ? opts.confirm : null;
   const isolated = !!(environment && environment.supports && (environment.supports.userControlIsolation === true || environment.supports.hostileCodeSandbox === true));
@@ -111,13 +115,14 @@ function makeRunAuthority(opts) {
     const impact = impactOfTool(tool);
     if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return false;
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      if (ownerTrusted) return true;
       if (surface === 'interactive') return !!confirm;
       return connectorAllowedUnattended(tool);
     }
-    if (surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) return false;
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) return false;
     // A host-process capability unattended requires the explicit per-run grant above — absent it, the
     // pre-2026-07-25 blanket denial is unchanged.
-    if (surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS) return workbenchGranted;
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS) return workbenchGranted;
     return true;
   }
   function authorize(call, tool) {
@@ -126,6 +131,7 @@ function makeRunAuthority(opts) {
       return { ok: false, impact, reason: impact + ' is unavailable to ordinary StarNet runs; no native one-shot user lease exists' };
     }
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      if (ownerTrusted) return { ok: true, impact, surface, isTask, isolated, ownerTrusted: true };
       // A granted routine calling one of the Commander's own connected MCP servers: the recorded per-routine
       // grant IS the approval, so this needs no live confirmation. Returned BEFORE the interactive-confirm
       // branch and deliberately WITHOUT oneShot, so the ordinary consent broker still runs for it downstream.
@@ -158,19 +164,20 @@ function makeRunAuthority(opts) {
       }, () => ({ ok: false, impact, reason: 'exact external-effect confirmation failed' }));
     }
     // Full Access, cached grants, and task text never turn an unattended run into authority over a host
-    // process or the user's active media session. This gate runs before consent. The ONLY key that opens the
-    // host-process door unattended is the host-recorded per-run grant above — see its comment for why that is
-    // not the same escape: it cannot be minted by anything the model can influence.
-    if (surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) {
+    // process or the user's active media session. This gate runs before consent. Apart from a host-minted
+    // authenticated owner DM, the ONLY key that opens the host-process door unattended is the host-recorded
+    // per-run grant above — see its comment for why that is not the same escape: it cannot be minted by
+    // anything the model can influence.
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) {
       return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' even under Full Access' };
     }
-    if (surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS && !workbenchGranted) {
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS && !workbenchGranted) {
       return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' without an explicit per-routine terminal grant (Full Access does not imply one)' };
     }
-    return { ok: true, impact, surface, isTask, isolated, granted: (impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
+    return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, granted: (!ownerTrusted && impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
   }
   return Object.freeze({
-    mode: 'preserve-user-control', surface, isTask, isolated, project, authorize,
+    mode: 'preserve-user-control', surface, isTask, isolated, ownerTrusted, project, authorize,
     unattendedGrants: Object.freeze(Array.from(unattendedGrants).sort())   // diagnostics/telemetry: what this run was actually granted
   });
 }

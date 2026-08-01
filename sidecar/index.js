@@ -5614,6 +5614,10 @@ function startTelegram(token, key, model, agentCfg) {
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
+    // Only the adapter can mint owner trust: its owner is claimed from an admitted DM and group traffic never
+    // claims it. A token-reachable group member therefore stays an ordinary channel caller.
+    ownerTrusted: (msg) => !!(adapterRef && adapterRef._internals && msg && msg.chatType === 'dm'
+      && adapterRef._internals.owner && String(msg.userId || '') === String(adapterRef._internals.owner)),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
@@ -5846,6 +5850,8 @@ function startTelegramBot(botId) {
     channel: 'telegram:' + botId, runOnce: runOnce, store: botStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
+    ownerTrusted: (msg) => !!(adapterRef && adapterRef._internals && msg && msg.chatType === 'dm'
+      && adapterRef._internals.owner && String(msg.userId || '') === String(adapterRef._internals.owner)),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
@@ -9787,8 +9793,8 @@ const slashActions = slashActionsMod.makeSlashActions({
    placed=[] and answered "This agent has no tools yet", while the very same agent's Telegram RUNS were being
    handed the full autonomous office (web, files, memory, studio, jukebox) all along. The readout was wrong, not
    the grant. It is deliberately NOT the desktop floor: a headless surface keeps the default office by design
-   (see capability/office.js), so quoting heroCaps here would trade one lie for another — a placed WORKBENCH
-   still grants no terminal over Telegram, and only the LEAD (a browser-commanded run) gets TASK DELEGATION. */
+   (see capability/office.js). An authenticated owner DM additionally receives the workbench, connected tools,
+   and lead orchestration object through runOnce, so this readout must compute the same owner-aware office. */
 /* ---- COMMANDER-DEFINED COMMANDS (sidecar/usercommands.js) --------------------------------------------
    Loaded from WORKSPACES/usercommands.json — deliberately OUTSIDE any agent's fs jail, so an agent cannot
    author one. That is the whole safety argument for the exec type: these are the Commander's own snippets,
@@ -9872,18 +9878,25 @@ async function runSlashForChannel(input, ctx) {
     placed = st
       ? placedTypesFrom((st.rooms && st.rooms.bay && st.rooms.bay.objects) || [])
       // No bay -> the run composes the autonomous office (hub.js passes station:undefined). Compose the SAME
-      // one, with the SAME lead:false a channel run carries, so the readout and the grant are one fact.
-      : placedTypesFrom(composeOffice({ surface: 'autonomous', lead: false, connectorIds: connectors.ids() }));
+      // one, with the SAME owner-aware lead shape the channel run carries, so the readout and the grant are one fact.
+      : placedTypesFrom(composeOffice({ surface: 'autonomous', lead: !!ctx.ownerTrusted, connectorIds: connectors.ids() }));
   } catch (_) { placed = []; }
+  // A bay station bypasses composeOffice, while runOnce adds these owner-DM objects to that exact room before
+  // resolving tools. Mirror that non-mutating augmentation here so /tools never under-reports live authority.
+  if (ctx.ownerTrusted) {
+    for (const type of ['workbench', 'orchestrator']) if (placed.indexOf(type) < 0) placed.push(type);
+    if (connectors.ids().length && placed.indexOf('connector') < 0) placed.push('connector');
+  }
   let out;
   try { out = slash.dispatch(String(input || ''), slashOptions(placed)); }
   catch (e) { return { ok: false, text: 'That command could not be read.' }; }
   if (!out || !out.ok || !out.directive) return { ok: false, text: 'Unknown command.' };
-  // A Commander-defined EXEC command is a shell snippet. It runs from the desktop, but NOT from a messaging
-  // surface by default: a chat app is reachable by anyone who gets the bot token, and "remote shell" is a much
-  // larger blast radius than "read my spend". Conservative on purpose — easy to relax, impossible to un-leak.
+  // A Commander-defined EXEC command is a shell snippet. It remains unavailable to every ordinary messaging
+  // caller, but an authenticated owner Telegram DM is the Commander's remote control surface and executes the
+  // exact same snippet path as the desktop palette.
   if (out.directive.type === 'exec') {
-    return { ok: false, text: 'That is one of your shell commands — for safety those only run in the StarNet desktop app, not over messaging.' };
+    if (!ctx.ownerTrusted) return { ok: false, text: 'That is one of your shell commands — for safety those only run in the StarNet desktop app, not over messaging.' };
+    return runUserExec(out.directive);
   }
   // Only dispatch:'server' commands can answer off-browser. A client command would need the DOM, so say that
   // plainly rather than returning an empty reply that reads like a failure.
@@ -10320,6 +10333,12 @@ async function runOnce(o) {
   // Missing/unknown callers are unattended until proven otherwise. Only the watched /api/run
   // path passes the exact interactive value and a live prompt channel.
   const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
+  // A Telegram owner DM has already crossed that channel's owner-only admission gate. It is therefore the
+  // Commander's remote control surface: grant the same non-physical capability/credential reach as sitting at
+  // StarNet, while preserving `surface` for the separate question of whether this chat asked for approval cards.
+  // This bit is host-minted at channel ingress, never derived from text, tool output, or model state.
+  const ownerTrusted = !!o.ownerTrusted;
+  const accessSurface = ownerTrusted ? 'interactive' : surface;
   /* UNATTENDED CAPABILITY GRANT (2026-07-25): the capability families THIS run may use unattended, read off the
      durable routine record by the caller (the cron tick driver / Run Now) — never from prompt text, model
      output or Full Access. Interactive runs ignore it entirely: THE MOAT (floor-real placement) governs there,
@@ -10340,7 +10359,7 @@ async function runOnce(o) {
      Holds the FIRST tainting tool name, so the refusal can name the actual cause. Autonomous only: a watched
      run has a human and live consent prompts, and taking powers away mid-conversation there would be hostile. */
   let taintedBy = null;
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants });
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -10490,11 +10509,12 @@ async function runOnce(o) {
   const managedSkills = [];
   const seenLoadedSkills = new Set();
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
-  // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `surface` is HOST AUTHORITY here: it comes
-  // from the run, never from tool args, so an autonomous run cannot claim to be watched to unlock a key.
+  // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `accessSurface` is host authority: it comes
+  // from the run host, never from tool args. An authenticated owner DM has the same stored-key reach as the
+  // desktop; an ordinary autonomous caller remains restricted to explicitly unattended-approved keys.
   makeWebTools({
     openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
-    surface: surface,
+    surface: accessSurface,
     redact: redact,
     // the station READER: automatic real-Chrome rung for bot-walled fetches + throttled search
     // (webreader.js — headless, cookie-less, shared across runs, SKYNET_WEB_READER=0 disables)
@@ -10505,7 +10525,7 @@ async function runOnce(o) {
     // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
     // so an unattended run without the tick simply uses the direct fallback instead of failing.
     jinaKey: (() => {
-      try { const r = serviceKeysMod.resolveForRequest(serviceKeys, 'JINA_API_KEY', surface); return r.ok ? r.value : ''; }
+      try { const r = serviceKeysMod.resolveForRequest(serviceKeys, 'JINA_API_KEY', accessSurface); return r.ok ? r.value : ''; }
       catch (_) { return ''; }
     })()
   }).register(registry);
@@ -10886,19 +10906,15 @@ async function runOnce(o) {
      `floorless` states the second meaning on its own — a phone has no floor to place props on, whoever is
      answering the prompts — so opting into approvals can never again cost a channel run its office. */
   const officeSurface = o.floorless ? 'autonomous' : surface;
-  const defaultObjects = composeOffice({ surface: officeSurface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
+  const defaultObjects = composeOffice({ surface: officeSurface, lead: o.lead || ownerTrusted, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
   let station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
-  // UNATTENDED CAPABILITY GRANT (2026-07-25) — the OBJECT half. The authority gate below now lets a granted
-  // unattended run keep shell.exec/verify.run, but a capability still needs its object to exist or resolveTools
-  // projects nothing: fullOffice() carries no WORKBENCH, and a bay-docked agent's explicit `station` bypasses
-  // composeOffice entirely. Add it to whichever room this run actually resolves against — non-mutating, and a
-  // no-op when the room already has one, so an ungranted run stays byte-identical.
-  if (unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
-  // Same for CONNECTORS: composeOffice already rides every configured portal onto the default office, but a
-  // bay-docked agent's explicit station carries only its bay's objects — so a granted routine on a bay agent
-  // would otherwise resolve zero MCP tools. Adds only the portals the room is missing; a disabled connector
-  // contributes no tool defs downstream, so this never resurrects one the Commander switched off.
-  if (unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
+  // OWNER TELEGRAM PARITY + UNATTENDED GRANTS — the OBJECT half. A remote owner has the same workbench,
+  // connected tools and lead orchestration reach as the Commander at StarNet. The existing explicit routine
+  // grants retain their narrower behavior. Every addition is non-mutating and applies to a bay station too,
+  // whose explicit room otherwise bypasses composeOffice.
+  if (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
+  if (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
+  if (ownerTrusted) station = stationWithObject(station, agentId, 'orchestrator');
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
@@ -10947,7 +10963,9 @@ async function runOnce(o) {
   // lead's broker is autonomous (default-deny + exec-lockout), so its workers inherit "no self-approved shell"
   // — only a watched, interactive lead can let a worker write/run shell, and only with a human's click.
   const consent = o.consent || makeConsentBroker({
-    bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
+    // An owner DM with approvals OFF is the Commander acting directly, so it never waits on a second approval
+    // channel. If that chat explicitly enables approvals, preserve the chosen in-chat prompt behavior instead.
+    bypass: FULL_ACCESS || agentFullAccess || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist,
     /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
        is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
@@ -10969,7 +10987,7 @@ async function runOnce(o) {
         const refs = [];
         for (const k of Object.keys(hs)) String(hs[k]).replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, n) => { refs.push(n); return m; });
         if (!refs.length) return false;   // references no credential -> nothing was pre-approved; ask/deny as usual
-        return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, 'autonomous').ok);
+        return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, accessSurface).ok);
       } catch (_) { return false; }
     },
     // UNATTENDED TERMINAL GRANT: this routine's recorded "may use the terminal" approval. Read off the SAME
@@ -10978,17 +10996,17 @@ async function runOnce(o) {
     // The taint check is repeated here, not just at dispatch, so consent and the dispatch gate can never
     // disagree: a tool the gate will refuse must not be one consent says yes to (the incoherent state the
     // terminal lane hit). Same predicate source (`revokedByTaint`) on both sides.
-    terminalGrant: (call, tool) => unattendedGrants.indexOf('workbench') >= 0 && (!taintedBy || revokedByTaint.ok(tool)),
+    terminalGrant: (call, tool) => (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) && (!taintedBy || ownerTrusted || revokedByTaint.ok(tool)),
     // UNATTENDED CONNECTOR GRANT: same host-side source as the authority gate, so an offered MCP tool can
     // never be refused by consent (the incoherent state the terminal lane hit before this was wired).
-    connectorGrant: (call, tool) => unattendedGrants.indexOf('connectors') >= 0 && (!taintedBy || revokedByTaint.ok(tool)),
+    connectorGrant: (call, tool) => (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) && (!taintedBy || ownerTrusted || revokedByTaint.ok(tool)),
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
   let parkSeq = 0;   // distinguishes parked outputs within one run (see parkOutput below)
   const capCtx = makeCapCtx(resolved, Object.assign({
-    emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
+    emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal, ownerTrusted,
     origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
     authorize: userControlAuthority.authorize,
     userControl: userControlAuthority,
@@ -11013,7 +11031,7 @@ async function runOnce(o) {
     },
     // Explicitly false in all current runOnce flows. This makes the deny visible at the
     // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
-  }, runInputContext(surface, isTask)));
+  }, runInputContext(accessSurface, isTask)));
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -11294,7 +11312,10 @@ async function runOnce(o) {
     // TAINT ENFORCEMENT — see `taintedBy`. Runs before consent/dispatch so a revoked power never executes, and
     // returns an honest refusal naming the source rather than a silent failure, so the agent can report what it
     // could not finish instead of pretending. The tool STAYS in the wire list on purpose: consent-not-absence.
-    if (taintedBy && surface !== 'interactive' && !revokedByTaint.ok(liveTool)) {
+    // The taint lockout protects unattended automation after outside content enters context. An authenticated
+    // owner DM is the Commander at the controls, with the same deliberate tradeoff as an interactive desktop
+    // session: do not silently take its tools away mid-task. Physical-input/visible-desktop floors still apply.
+    if (taintedBy && surface !== 'interactive' && !ownerTrusted && !revokedByTaint.ok(liveTool)) {
       return {
         ok: false, isError: true, summary: 'untrusted-content-lockout',
         content: 'BLOCKED: "' + c.name + '" is no longer available on this run. This run has already read '
@@ -11660,7 +11681,7 @@ async function runOnce(o) {
   // reply, so e.g. session titles silently stayed on their first-words placeholder.
   const sys = internal
     ? String(system || '')
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
