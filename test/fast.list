@@ -480,3 +480,4 @@ test/lint-determinism.js
 test/station-bridge.test.js
 test/station-commands.test.js
 test/station-tools.test.js
+test/code-mode.test.js
