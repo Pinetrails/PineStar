@@ -111,18 +111,24 @@ function analyze(records, corrupt) {
   const first = records[0] || null;
   const last = records[records.length - 1] || null;
   const intents = new Map();
+  const completed = [];
   let checkpoint = first && first.type === 'begin' ? first.payload : null;
   for (const r of records) {
     if (r.type === 'checkpoint') checkpoint = r.payload;
     if (r.type === 'tool_intent' && r.payload && r.payload.callId) intents.set(String(r.payload.callId), r.payload);
-    if (r.type === 'tool_result' && r.payload && r.payload.callId) intents.delete(String(r.payload.callId));
+    if (r.type === 'tool_result' && r.payload && r.payload.callId) {
+      const callId = String(r.payload.callId);
+      if (intents.has(callId)) completed.push({ intent: intents.get(callId), result: r.payload });
+      intents.delete(callId);
+    }
   }
   const uncertain = Array.from(intents.values());
   const terminal = !!(last && last.type === 'finish');
   return {
     runId: first ? first.runId : '', records: records.length, corrupt: !!corrupt, terminal,
     status: terminal ? 'finished' : (uncertain.length ? 'needs_review' : 'resumable'),
-    uncertain, checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
+    meta: first && first.type === 'begin' ? first.payload : {},
+    uncertain, completed, checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
   };
 }
 

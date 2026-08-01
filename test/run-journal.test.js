@@ -29,6 +29,8 @@ j.checkpoint('r1', { phase: 'tool_results', messages: [{ role: 'assistant', cont
 state = j.inspect('r1');
 A.eq(state.status, 'resumable', 'a paired result is safe to resume');
 A.eq(state.checkpoint.phase, 'tool_results', 'latest provider-valid checkpoint wins');
+A.eq(state.completed.length, 1, 'paired intent/result evidence survives recovery analysis');
+A.eq(state.meta.agentId, 'a', 'run metadata remains available to the restart reconciler');
 
 j.finish('r1', { reason: 'done' });
 state = j.inspect('r1');
