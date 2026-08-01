@@ -32,9 +32,21 @@ def blink_still_fits(new_rot, old_rot, old_blink):
     o = Image.open(old_rot).convert("RGBA")
     b = Image.open(old_blink).convert("RGBA")
     if not (n.size == o.size == b.size):
-        return False, "size"
-    if n.getchannel("A").getbbox() != o.getchannel("A").getbbox():
-        return False, "placement"
+        return False, "size", None
+    nb, ob = n.getchannel("A").getbbox(), o.getchannel("A").getbbox()
+    if not (nb and ob):
+        return False, "empty", None
+    if (nb[2] - nb[0], nb[3] - nb[1]) != (ob[2] - ob[0], ob[3] - ob[1]):
+        return False, f"content {ob[2]-ob[0]}x{ob[3]-ob[1]}->{nb[2]-nb[0]}x{nb[3]-nb[1]}", None
+    # Allow a pure TRANSLATION. Centring rounds (CX - content_centre) to whole pixels, and the
+    # rebuild's source canvas is a different size from the original's, so a set whose content is
+    # an odd number of pixels wide can land one column over — morpheus did. That is the same art
+    # in a different spot, not a different build, so shift the old blink to match rather than
+    # throwing away a perfectly good frame.
+    off = (nb[0] - ob[0], nb[1] - ob[1])
+    if off != (0, 0):
+        o = o.transform(o.size, Image.AFFINE, (1, 0, -off[0], 0, 1, -off[1]))
+        b = b.transform(b.size, Image.AFFINE, (1, 0, -off[0], 0, 1, -off[1]))
     np_, op, bp = n.load(), o.load(), b.load()
     touched = drift = opaque = 0
     for y in range(o.height):
@@ -46,14 +58,15 @@ def blink_still_fits(new_rot, old_rot, old_blink):
             if np_[x, y] != op[x, y]:
                 drift += 1
     if touched == 0:
-        return False, "no blink in source"
+        return False, "no blink in source", None
     # Tolerance, not equality. The blink is a WHOLE replacement frame shown for ~130ms, so a
     # couple of drifted shading pixels just flicker imperceptibly (pepe: 2 of 1196). What must
     # not happen is the bear's failure — a different BUILD, where the whole head jumps. Size
     # and placement are already exact above, so cap the remaining drift well under a percent.
     if drift > max(4, opaque // 100):
-        return False, f"{drift}/{opaque}px drift"
-    return True, f"{touched}px" + (f", {drift}px drift" if drift else "")
+        return False, f"{drift}/{opaque}px drift", None
+    why = f"{touched}px" + (f", {drift}px drift" if drift else "") + (f", shifted {off}" if off != (0, 0) else "")
+    return True, why, b
 
 def apply_set(sprites_root, old_root, setname):
     setdir = os.path.join(sprites_root, setname)
@@ -65,11 +78,11 @@ def apply_set(sprites_root, old_root, setname):
         old_blink = os.path.join(olddir, f"blink_{d}.png")
         dst = os.path.join(setdir, f"blink_{d}.png")
         if not (os.path.exists(old_blink) and os.path.exists(old_rot) and os.path.exists(new_rot)):
-            fits, why = False, "no source"
+            fits, why, frame = False, "no source", None
         else:
-            fits, why = blink_still_fits(new_rot, old_rot, old_blink)
+            fits, why, frame = blink_still_fits(new_rot, old_rot, old_blink)
         if fits:
-            shutil.copy2(old_blink, dst)
+            frame.save(dst)          # the (possibly translated) shipped blink
             kept.append(f"{d}({why})")
         else:
             if os.path.exists(dst):
