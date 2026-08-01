@@ -40,9 +40,13 @@
     const trigger = oneLine(o.trigger, 'directive', 40);
     const agentId = oneLine(o.agentId, 'agent', 80);
     const runId = oneLine(o.runId, 'pending', 120);
+    const harness = oneLine(o.harness, 'unknown', 80);
+    const app = oneLine(o.app, 'unknown', 40);
     const fallbacks = listLine(o.fallbackModels, 6).filter(x => x !== model);
     const lines = [
       '[RUNTIME]',
+      'StarNet app version at run start: ' + app,
+      'StarNet harness build at run start: ' + harness,
       'Provider: ' + provider,
       'Requested model at run start: ' + model,
       'Agent id: ' + agentId,
@@ -51,7 +55,7 @@
       'Trigger: ' + trigger
     ];
     if (fallbacks.length) lines.push('Possible fallback models: ' + fallbacks.join(', '));
-    lines.push('If the Commander asks what model, provider, run, surface, or session you are using, answer from this block. Do not claim the current model name is unavailable unless this block says unknown.');
+    lines.push('If the Commander asks what StarNet build, model, provider, run, surface, or session you are using, answer from this block. For mutable harness state such as scheduler health, routines, connectors, or errors, call station.inspect. Do not guess or invent a CLI command.');
     return '\n\n' + lines.join('\n');
   }
 

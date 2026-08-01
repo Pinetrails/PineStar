@@ -401,7 +401,7 @@ async function waitUntil(fn, ms, label) {
        composeOffice. `interactive` means THE MOAT — the floor is real, so the office starts COMPUTE-ONLY and the
        browser appends the agent's actually-placed props via extraObjects. A phone never sends extraObjects and
        has no floor at all, so turning on approve/deny buttons silently cut the chat from the 59-tool autonomous
-       office to TWO tools (quest.update, tool.search) — while /tools, fixed just above to quote the autonomous
+       office to THREE tools (quest.update, station.inspect, tool.search) — while /tools, fixed just above to quote the autonomous
        office, went on describing the 59 the run no longer had. That is exactly the "/tools work and they don't"
        the user saw: the agent truthfully reported no web capability (its tool.search even answered "every tool
        you have been granted is already listed", which is only reachable with an EMPTY deferred set), and the

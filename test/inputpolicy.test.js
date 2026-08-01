@@ -115,6 +115,7 @@ A.ok(isConnectorTool(MCP_TOOL) && !isConnectorTool(UNCLASSIFIED), 'connector cla
 A.ok(!interactiveAuthority.authorize({}, { name: 'computer.use', capability: 'physical-input' }).ok, 'physical input has no ordinary-run authority');
 A.ok(!interactiveAuthority.authorize({}, { name: 'desktop.open', capability: 'visible-desktop' }).ok, 'visible desktop has no ordinary-run authority');
 A.eq(impactOfTool({ name: 'future.magic', capability: 'future-cap' }), IMPACTS.EXTERNAL_UNKNOWN, 'unknown future tools fail closed instead of defaulting safe');
+A.eq(impactOfTool({ name: 'station.inspect', capability: 'stationinfo' }), IMPACTS.NONE, 'local secret-free harness inspection is a safe built-in read');
 A.eq(impactOfTool({ name: 'browser.test_input', capability: 'workbench' }), IMPACTS.SYNTHETIC_BROWSER, 'synthetic CDP input is explicitly classified');
 
 const fakeDefs = {

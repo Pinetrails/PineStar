@@ -40,6 +40,9 @@ const { starnetManual } = require('../sidecar/manual.js');
 
   // 6) troubleshooting cues a stuck Commander actually hits
   A.ok(/NO COMPUTE/.test(m), 'troubleshoots the NO COMPUTE / needs-a-workstation case');
+  A.ok(/CALL station\.inspect first/.test(m), 'live harness-state questions route to the authoritative inspector');
+  A.ok(/needs no placed prop or approval/.test(m), 'self-inspection is correctly described as a base read');
+  A.ok(/Never[\s\S]{0,160}invent a StarNet CLI command/.test(m), 'manual forbids guessing a diagnostic command');
   A.ok(/place the matching prop/i.test(m), 'tells the agent to place the matching prop for a missing power');
   A.ok(/Windows Task Scheduler/.test(m) && /OS crontab/.test(m), 'routine guidance points away from OS schedulers');
 
