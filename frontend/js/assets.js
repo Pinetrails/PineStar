@@ -276,7 +276,10 @@ const SPRITES = (() => {
       // shuffle your feet. While the facing is actively sweeping, borrow the set's WALK frames and
       // spend the swept ANGLE on them, so the legs step the body around. Angle-phased, not
       // clock-phased, so the shuffle stops dead the instant the turn does.
-      if ((b._rW || 0) > TURN_STEP_W) {
+      // NOT while glancing: a glance is a ~380ms look toward something, i.e. a HEAD turn. Letting
+      // it drive the legs made a body take a full stride to look sideways and step back again.
+      // The facing still eases round; only the footwork is suppressed.
+      if (!glancing && (b._rW || 0) > TURN_STEP_W) {
         const wk = pick8(set, ['walk'], dir8, dir);
         if (wk) { key = wk; turnStep = true; bob *= 0.35; }
       }
