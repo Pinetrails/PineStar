@@ -180,6 +180,7 @@ const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B:
 const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
+const { makeRecommendationLedger } = require('./recommendation-ledger.js'); // one cross-surface recommendation/verdict lifecycle
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
 const TaskBriefPolicy = require('./taskbrief-policy.js');       // host validation + mutation boundary
 const { registerTaskBriefTools } = require('./taskbrief-tools.js'); // structured ask/proceed controls
@@ -1248,6 +1249,11 @@ const threadsStore = makeThreadsStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'threads'),
   warn: (...args) => console.warn.apply(console, args)
 });
+const recommendationLedger = makeRecommendationLedger({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[recommendations] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'recommendations')
+});
 const taskBriefStore = makeTaskBriefStore({
   fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
   onRecover: (key, file) => console.warn('[taskbrief] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
@@ -1461,10 +1467,7 @@ function cronIdentityFor(agentId) {
 // GROWTH Tier 2: the dossier block a cron persona folds in, with the active goal-arc note appended (direction the
 // unattended run should work toward). Empty when both are empty → withDossier stays a no-op (the cron test invariant).
 function dossierWithGoals() {
-  const block = commanderDossier.get();
-  const note = commanderGoals.note();
-  if (!note) return block;
-  return block ? (block + '\n\n' + note) : note;
+  return commanderEvidenceContext('');
 }
 function cronSystemFor(agentId) {
   const ident = cronIdentityFor(agentId);
@@ -1671,6 +1674,7 @@ function buildDeclinedIndex(agentId) {
   try { const d = notebookStore.get('declined:' + agentId); if (Array.isArray(d)) lists.push(d.map(String)); } catch (_) {}
   try { const s = studyDeclinedByAgent.get(agentId); if (Array.isArray(s)) lists.push(s.map(String)); } catch (_) {}
   try { lists.push((threadsStore.read().threads || []).filter(t => t && t.state === 'declined').map(t => String(t.title || ''))); } catch (_) {}
+  try { lists.push(recommendationLedger.declinedTexts()); } catch (_) {}
   try { lists.push((questStore.read().deniedTitles || []).map(String)); } catch (_) {}
   try { lists.push((QuestRefresh.normalize(questRefreshState).declinedNorthStars || []).map(String)); } catch (_) {}
   return DeclinedIndex.build(lists);
@@ -1766,17 +1770,22 @@ async function runReflection(o) {
    the browser StudyStore (which holds the structured beliefs); the server does a light block-text dedup + floor. */
 const STUDY_CAP = 32;
 const STUDY_DECLINED_CAP = 200;        // per-agent studyDeclined mirror (browser-owned; pushed on every /api/study/resolve)
-const studyByRun = new Map();          // runId -> { agentId, runId, createdAt, proposals:[{id,dim,kind,text,evidence,source,sourceRunId}] }
-const latestStudyRun = new Map();      // agentId -> newest pending study runId (fetch fallback when the runId is unknown)
-const lastStudyAt = new Map();         // agentId -> ts of the last study we fired (the cooldown gate)
+const STUDY_STATE_FILE = path.join(WORKSPACES, 'study.state.json');
+let _studySaved = {}; try { _studySaved = loadResilient(STUDY_STATE_FILE, 'study-state') || {}; } catch (_) { _studySaved = {}; }
+const studyByRun = new Map(Object.entries((_studySaved.byRun && typeof _studySaved.byRun === 'object') ? _studySaved.byRun : {}));
+const latestStudyRun = new Map(Object.entries((_studySaved.latest && typeof _studySaved.latest === 'object') ? _studySaved.latest : {}));
+const lastStudyAt = new Map(Object.entries((_studySaved.lastAt && typeof _studySaved.lastAt === 'object') ? _studySaved.lastAt : {}).map(([k, v]) => [k, Number(v) || 0]));
 const studyingNow = new Set();         // agentIds with a study in flight — closes the gap before lastStudyAt is armed
-const studyDeclinedByAgent = new Map();   // agentId -> [text] — the browser's PERMANENT studyDeclined denylist, mirrored
-                                          // here (via /api/study/resolve) so runStudy() dedups at the source. In-memory
-                                          // like the proposal stash: a restart just re-learns it on the next resolve.
+const studyDeclinedByAgent = new Map(Object.entries((_studySaved.declined && typeof _studySaved.declined === 'object') ? _studySaved.declined : {}));
+function persistStudyState() {
+  try { saveResilient(STUDY_STATE_FILE, { v: 1, byRun: Object.fromEntries(studyByRun), latest: Object.fromEntries(latestStudyRun), lastAt: Object.fromEntries(lastStudyAt), declined: Object.fromEntries(studyDeclinedByAgent) }); }
+  catch (e) { console.warn('[study] state persist failed:', (e && e.message) || e); }
+}
 function stashStudy(agentId, runId, proposals) {
   studyByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
   latestStudyRun.set(agentId, runId);
   while (studyByRun.size > STUDY_CAP) { const k = studyByRun.keys().next().value; studyByRun.delete(k); }
+  persistStudyState();
 }
 // pull the existing-belief texts out of the composed dossier block ("- Goals: a; b" → ['a','b']) so the pure
 // study() can dedup an ADD vs what's already known WITHOUT the sidecar mirroring the structured beliefs.
@@ -1826,7 +1835,7 @@ async function runStudy(o) {
     if (proposals.length) {
       // arm the cooldown ONLY when proposals actually survive — a floored/all-dedup run never blocks the next study.
       lastStudyAt.set(agentId, Date.now());
-      stashStudy(agentId, runId, proposals.map(p => ({ id: p.id, dim: p.dim, kind: p.kind, text: p.text, evidence: p.evidence || '', source: 'study', sourceRunId: p.sourceRunId || runId })));
+      stashStudy(agentId, runId, proposals.map(p => ({ id: p.id, dim: p.dim, kind: p.kind, text: p.text, evidence: p.evidence || '', evidenceRef: p.evidenceRef || { runId: p.sourceRunId || runId, kind: 'directive' }, source: 'study', sourceRunId: p.sourceRunId || runId })));
       // NB: NO chanEmit — study needs no bus event. The browser fetches /api/study/proposals on agent.run.end
       // (a frozen event it already listens to), so the shared/events.js contract stays untouched.
     }
@@ -3859,7 +3868,9 @@ async function runScoutCycle(o) {
       else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
       else if (declinedIdx.has(parsed.draft.name) || declinedIdx.has(parsed.draft.name + ' ' + parsed.draft.tagline)) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'declined elsewhere', title: parsed.draft.name });
       else {
-        scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'recipe', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
+        const recId = crypto.randomUUID();
+        scoutState = Scout.stage(scoutState, { id: recId, kind: 'recipe', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
+        recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'recipe', title: parsed.draft.name, target: parsed.draft.id || '', evidence: [{ id: 'scout-context', type: 'context', quote: parsed.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(() => {});
         scoutNote({ kind: 'recipe', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
       }
     } else if (d.kind === 'prospect') {
@@ -3877,7 +3888,9 @@ async function runScoutCycle(o) {
           scoutState = Scout.stampAttempt(scoutState, 'prospect', { now: Date.now() });
           scoutNote({ kind: 'prospect', outcome: 'rejected', reason: 'archetype match declined elsewhere', title: draft.name });
         } else {
-          scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'prospect', draft: draft, why: archMatch.why, fingerprint: archMatch.fingerprint }, { now: Date.now() });
+          const recId = crypto.randomUUID();
+          scoutState = Scout.stage(scoutState, { id: recId, kind: 'prospect', draft: draft, why: archMatch.why, fingerprint: archMatch.fingerprint }, { now: Date.now() });
+          recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'prospect', title: draft.name, target: draft.id || '', evidence: [{ id: 'learned-topic', type: 'topic', quote: archMatch.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(() => {});
           scoutNote({ kind: 'prospect', outcome: 'staged', reason: archMatch.why, title: draft.name });
         }
         return;
@@ -3905,7 +3918,9 @@ async function runScoutCycle(o) {
       else if (!parsed || denied) scoutNote({ kind: 'prospect', outcome: 'rejected', reason: denied ? 'dismissed-shape denylist' : 'draft failed hard validation (bad kit/skills, near-duplicate, or malformed)' });
       else if (declinedIdx.has(parsed.draft.name) || declinedIdx.has(parsed.draft.name + ' ' + parsed.draft.tagline)) scoutNote({ kind: 'prospect', outcome: 'rejected', reason: 'declined elsewhere', title: parsed.draft.name });
       else {
-        scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'prospect', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
+        const recId = crypto.randomUUID();
+        scoutState = Scout.stage(scoutState, { id: recId, kind: 'prospect', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
+        recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'prospect', title: parsed.draft.name, target: parsed.draft.id || '', evidence: [{ id: 'scout-context', type: 'context', quote: parsed.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(() => {});
         scoutNote({ kind: 'prospect', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
       }
     }
@@ -3977,8 +3992,35 @@ async function handleScoutDecide(req, res) {
   if (!item) return json(200, { ok: false, error: 'unknown id' });
   scoutState = decision === 'accept' ? Scout.accept(scoutState, id, { now: Date.now() }) : Scout.dismiss(scoutState, id, { now: Date.now() });
   scoutState = Scout.note(scoutState, { kind: item.kind, outcome: decision === 'accept' ? 'accepted' : 'dismissed', reason: 'commander verdict', title: (item.draft && item.draft.name) || '' }, { now: Date.now() });
+  await recommendationLedger.verdict('scout:' + id, decision === 'accept' ? 'accepted' : 'declined', decision === 'accept' ? 'accepted' : String(body.reason || 'not_relevant'), Date.now()).catch(() => null);
   persistScout();
   json(200, { ok: true, item: item });
+}
+
+// ONE recommendation lifecycle API. Browser and server surfaces write the same bounded envelope, so "not now"
+// remains a deferral, "never" becomes a cross-surface decline, and replay metrics can measure compounding.
+function handleRecommendationsGet(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
+    const state = String(u.searchParams.get('state') || '').slice(0, 20);
+    const limit = Math.max(1, Math.min(250, Number(u.searchParams.get('limit')) || 100));
+    json(200, { entries: recommendationLedger.list({ surface: surface || undefined, state: state || undefined, limit }), metrics: recommendationLedger.summary({ surface: surface || undefined }) });
+  } catch (_) { json(200, { entries: [], metrics: recommendationLedger.summary() }); }
+}
+async function handleRecommendationsPost(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  let body; try { body = JSON.parse(await readBody(req, 1 << 18, res)) || {}; } catch (_) { if (!res.headersSent) json(400, { error: 'bad json' }); return; }
+  try {
+    if (body.state || body.verdict) {
+      const state = String(body.state || body.verdict || '');
+      const entry = await recommendationLedger.verdict(body.id, state, String(body.reason || ''), Date.now());
+      return json(200, { ok: !!entry, entry });
+    }
+    const entry = await recommendationLedger.record(body, Date.now());
+    return json(entry ? 200 : 400, entry ? { ok: true, entry } : { ok: false, reason: 'id and title required' });
+  } catch (e) { return json(200, { ok: false, error: (e && e.message) || 'recommendation ledger failed' }); }
 }
 
 /* the return-card verdict → LEARN + LEDGER bridge (NS-3). A night-shift act's runId maps to an archetype; a keep
@@ -3997,6 +4039,7 @@ function nightshiftDecideLearn(agentId, runId, useful) {
   }
   if (!arch) return;   // not a night-shift act (or already reaped) → nothing to learn
   recordNightshiftVerdict(arch, useful);
+  recommendationLedger.verdict('nightshift:' + String(runId || ''), useful ? 'completed' : 'declined', useful ? 'completed' : 'bad_quality', Date.now()).catch(() => {});
   try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: String(runId || ''), reason: useful ? 'approved' : 'denied', detail: { phase: 'verdict', archetype: arch, useful: !!useful } }); } catch (_) {}
   try { delete nightshiftActs[String(runId || '')]; saveResilient(NIGHTSHIFT_ACTS_FILE, { v: 1, acts: nightshiftActs }); } catch (_) {}   // decided once
 }
@@ -4029,6 +4072,10 @@ function nightshiftContextPack() {
   // excludes internal streams, takes first-lines, re-redacts as a backstop. Bound the tail we hand over (RAM-safe).
   let chats = [];
   try { const all = transcriptStore.all() || []; chats = all.slice(-400).map(m => ({ role: m.role, content: m.content, ts: m.ts, streamId: m.streamId })); } catch (_) { chats = []; }
+  // Completed task briefs retain the full original directive (bounded by the pure pack), so topic extraction and
+  // grounding can see durable evidence that did not happen to fit in a generated title or chat first line.
+  let briefs = [];
+  try { briefs = (taskBriefStore.list({ status: 'done', limit: 30 }) || []).map(b => ({ originalDirective: b.originalDirective, ts: b.completedAt || b.updatedAt })); } catch (_) { briefs = []; }
   // the active GOAL ARC (single object or null).
   let goal = null;
   try { goal = commanderGoals.get() || null; } catch (_) { goal = null; }
@@ -4049,13 +4096,29 @@ function nightshiftContextPack() {
   } catch (_) { landed = []; }
   const beliefs = nightshiftBeliefMap();
   const learn = (nightshiftLearn && typeof nightshiftLearn === 'object') ? nightshiftLearn : {};
-  const pack = contextpack.assemble({ runs, chats, goal, landed, beliefs, learn, redact }, { now });
+  const pack = contextpack.assemble({ runs, briefs, chats, goal, landed, beliefs, learn, redact }, { now });
   // the count of recent USER-INITIATED runs the pack recognized — the ACTIVITY-as-grounding evidence for readiness.
   pack.userRunCount = (pack.counts && pack.counts.runs) || 0;
   // NS-6: the top OPEN threads (durable ideas the Commander raised but never acted on), recency-ranked. The propose
   // step draws from these FIRST (improv is the fallback); citing a thread's tag in GROUNDS is the preferred grounding.
   try { pack.threads = threadsStore.openThreads(6); } catch (_) { pack.threads = []; }
   return pack;
+}
+
+// The one server-side evidence read used by interactive tasks, channels, cron, scout-adjacent runs and autonomy.
+// Consumers may add task-specific facts, but they no longer maintain private versions of "what we know".
+function commanderEvidenceInputs() {
+  let topics = [], threads = [], activity = [], worksignal = '';
+  try { topics = Interests.summary(interestsState, { now: Date.now(), limit: 8 }); } catch (_) {}
+  try { threads = threadsStore.openThreads(6); } catch (_) {}
+  try { activity = (nightshiftContextPack().activityLines || []).slice(0, 8); } catch (_) {}
+  try { worksignal = String((scoutState.context && scoutState.context.worksignalSummary) || ''); } catch (_) {}
+  let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
+  let verdicts = null; try { verdicts = recommendationLedger.summary(); } catch (_) {}
+  return { dossier: commanderDossier.get(), goal, topics, threads, activity, worksignal, verdicts };
+}
+function commanderEvidenceContext(existingSystem, extra) {
+  return CommanderContext.compose(Object.assign({}, commanderEvidenceInputs(), extra || {}, { existingSystem: existingSystem || '' }));
 }
 
 // NS-2: the PURELY-LOCAL pre-spend readiness gate for the night-shift driver (the cold-leash fix). Answers, with NO
@@ -4171,6 +4234,10 @@ async function runNightshiftBeat(opts) {
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
+  const draftRecId = 'nightshift-draft:' + String(opts.runId || crypto.randomUUID());
+  recommendationLedger.record({ id: draftRecId, surface: 'nightshift', kind: sel.selected.archetype || 'draft', title: sel.selected.title,
+    target: sel.selected.threadId || '', evidence: [{ id: sel.selected.threadId ? 'thread:' + sel.selected.threadId : 'nightshift-grounds', type: sel.selected.threadId ? 'thread' : 'context', quote: sel.selected.grounds || '' }],
+    readiness: { ready: rd.tier === 'hot', reasons: rd.tier === 'hot' ? [] : [rd.tier] }, score: sel.selected.score, modelVersion: 'autopilot-v2' }, Date.now()).catch(() => {});
   // NS-6 writeback: the selected candidate cited an open thread → mark it PICKED (it's being worked this beat).
   if (sel.selected.threadId) { try { await threadsStore.pick(sel.selected.threadId, Date.now()); } catch (_) {} }
   // CONVEYOR TRUTH (2026-07-18): the crate used to be dropped AFTER the draft landed, keyed to a runId no run.end
@@ -4281,6 +4348,9 @@ async function runNightshiftActShift(opts) {
   //    the deliverable lands in /pending + /decide exactly like a workshop build (the return card + ship gate are
   //    keyed on a backlog item carrying builtRunId). The item id is deterministic from the runId so it can't collide.
   const runId = opts.runId || crypto.randomUUID();
+  recommendationLedger.record({ id: 'nightshift:' + runId, surface: 'nightshift', kind: sel.selected.archetype || 'build', title: sel.selected.title,
+    target: sel.selected.threadId || targetRoot || '', evidence: [{ id: sel.selected.threadId ? 'thread:' + sel.selected.threadId : (targetRoot ? 'project:' + targetRoot : 'nightshift-grounds'), type: sel.selected.threadId ? 'thread' : (targetRoot ? 'project' : 'context'), quote: sel.selected.grounds || focusHeader || '' }],
+    readiness: { ready: rd.tier === 'hot', reasons: rd.tier === 'hot' ? [] : [rd.tier] }, score: sel.selected.score, modelVersion: 'autopilot-v2' }, Date.now()).catch(() => {});
   const backlogId = 'ns-act-' + runId;
   const title = String(sel.selected.title || 'Night-shift build').slice(0, 200);
   try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift', grounds: String(sel.selected.grounds || '') }, Date.now()); }
@@ -6434,6 +6504,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/scout/context', h: handleScoutContext },
   { m: 'POST', exact: '/api/scout/decide', h: handleScoutDecide },
   { m: 'POST', exact: '/api/scout/telemetry', h: handleScoutTelemetry },
+  { m: 'GET', qsplit: '/api/recommendations', h: handleRecommendationsGet },
+  { m: 'POST', exact: '/api/recommendations', h: handleRecommendationsPost },
   { m: 'POST', exact: '/api/summon/ack', h: handleSummonAck },
   { m: 'POST', exact: '/api/key', h: handleSetKey },
   { m: 'POST', exact: '/api/channels/token', h: handleSetChannelToken },
@@ -9614,6 +9686,7 @@ async function handleAgentDelete(req, res) {
     latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
     for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
     latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
+    persistStudyState();
   } catch (_) {}
   return json(200, { ok: true, agentId, rosterRemoved: removed, archived, cronRemoved });
   } finally {
@@ -10472,9 +10545,13 @@ async function runOnce(o) {
     // recipes.js — the same data the launch chips rendered), so a mid-run question arrives pre-aimed.
     let recipeIntake = [];
     try { const rr = o.recipeId ? Recipes.get(String(o.recipeId)) : null; if (rr && Array.isArray(rr.intake)) recipeIntake = rr.intake; } catch (_) {}
-    taskContextBlock = CommanderContext.compose({
-      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, deferredDimensions, recipeIntake, existingSystem: system || ''
+    taskContextBlock = commanderEvidenceContext(system || '', {
+      brief: taskBrief, goal, patterns, deferredDimensions, recipeIntake
     });
+  } else if (isTask) {
+    // Channels and integrations may not carry a durable taskKey. They still receive the SAME bounded Commander
+    // evidence as an interactive briefed run; only the task-specific brief section is absent.
+    taskContextBlock = commanderEvidenceContext(system || '');
   }
 
   // ---- tools (registered fresh per run; cheap) ----
@@ -14523,6 +14600,7 @@ async function handleStudyResolve(req, res) {
     batch.proposals = batch.proposals.filter(p => p && p.id !== id);
     if (!batch.proposals.length) { studyByRun.delete(runId); if (latestStudyRun.get(agentId) === runId) latestStudyRun.delete(agentId); }
   }
+  persistStudyState();
   json(200, { ok: true });
 }
 
@@ -14784,6 +14862,7 @@ async function handleMemoryReset(req, res) {
   // GROWTH Tier 1: also drop any pending STUDY proposals so a fresh Commander never inherits a stranger's belief-update queue.
   for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
   latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
+  persistStudyState();
   return json(200, { ok: true, agent: agentId });
 }
 

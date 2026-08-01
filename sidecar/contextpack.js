@@ -47,6 +47,7 @@
   const DEFAULT_WINDOW_DAYS = 7;          // "recently" = the last week of activity
   const DEFAULT_MAX_CHARS = 2400;         // hard ceiling on the whole pack text (keeps the propose prompt bounded)
   const MAX_RUNS = 8;                     // newest user-run titles to carry
+  const MAX_BRIEFS = 6;                   // newest completed directives; richer evidence than a generated title
   const MAX_CHATS = 6;                    // newest user chat first-lines to carry
   const MAX_LANDED = 5;                   // newest kept/discarded deliverables to carry
   const LINE_MAX = 140;                   // per activity line (a title/first-line is a label, not a document)
@@ -112,7 +113,7 @@
 
     const sections = [];
     const activityLines = [];
-    const counts = { runs: 0, chats: 0, landed: 0, beliefs: 0 };
+    const counts = { runs: 0, briefs: 0, chats: 0, landed: 0, beliefs: 0 };
 
     // ── WORKED RECENTLY — user-initiated run titles, newest-first, windowed, internal excluded, de-duped by title.
     const runLines = [];
@@ -134,6 +135,27 @@
     }
     counts.runs = runLines.length;
     if (runLines.length) { sections.push({ label: 'What they worked on recently', lines: runLines.slice() }); for (const l of runLines) activityLines.push(l); }
+
+    // Completed task briefs preserve the Commander's full request, collapsed to one bounded line. Unlike run
+    // titles and chat openings, this can retain evidence that appeared after a newline in a multi-part directive.
+    const briefLines = [];
+    {
+      const rows = (Array.isArray(inputs.briefs) ? inputs.briefs : [])
+        .filter(b => b && str(b.originalDirective).trim() && withinWindow(b.ts))
+        .slice().sort((a, b) => num(b.ts) - num(a.ts));
+      const seen = {};
+      for (const b of rows) {
+        if (briefLines.length >= MAX_BRIEFS) break;
+        const directive = oneLine(redact(b.originalDirective), 220);
+        const key = directive.toLowerCase();
+        if (!directive || seen[key]) continue;
+        seen[key] = 1;
+        const tag = dayTag(b.ts, now);
+        briefLines.push(tag ? (directive + ' (' + tag + ')') : directive);
+      }
+    }
+    counts.briefs = briefLines.length;
+    if (briefLines.length) { sections.push({ label: 'Completed task evidence', lines: briefLines.slice() }); for (const l of briefLines) activityLines.push(l); }
 
     // ── ASKED RECENTLY — user chat first-lines, newest-first, windowed, internal excluded, de-duped, redacted.
     const chatLines = [];
@@ -246,7 +268,7 @@
 
   return {
     assemble, composeText, isInternalStream, dayTag, oneLine,
-    DAY_MS, DEFAULT_WINDOW_DAYS, DEFAULT_MAX_CHARS, MAX_RUNS, MAX_CHATS, MAX_LANDED, LINE_MAX,
+    DAY_MS, DEFAULT_WINDOW_DAYS, DEFAULT_MAX_CHARS, MAX_RUNS, MAX_BRIEFS, MAX_CHATS, MAX_LANDED, LINE_MAX,
     ACTIVITY_POOL_MAX, INTERNAL_STREAM_PREFIXES
   };
 });
