@@ -70,6 +70,64 @@ const SPRITES = (() => {
       return DEFAULT_FOOT;
     } catch (e) { return DEFAULT_FOOT; }   // tainted/unreadable → safe fallback
   }
+  /* ---------- how far one walk CYCLE carries the body ----------
+     The walk is distance-phased, so this number decides whether the feet plant or skate: if the
+     body covers more ground per cycle than the animation's legs actually swing, every foot slides.
+     It used to be `drawnHeight × 0.56` for everyone, which assumes every character's legs swing the
+     same fraction of its height. They don't — measured across the roster the true figure lands
+     between 0.58 and 1.0 of that, so most skins were over-striding by about a third.
+     Derive it per set instead, from the set's OWN side view: at full extension the span across the
+     foot band is one step (leading foot to trailing foot), and a cycle is two steps. Side views
+     only — front and back foreshorten the swing to nothing.
+     Sets whose feet never separate (pikachu, capybara — wide-stance animals whose walk is a bob,
+     not a stride) have no step length to read, so they keep the old constant rather than being
+     handed a fabricated one. */
+  const CYCLE_PER_HEIGHT = 0.56;   // fallback when a set's swing can't be measured
+  const cycleCache = {};
+  function bandGap(img, lo) {
+    try {
+      const w = img.width | 0, h = img.height | 0;
+      if (!w || !h) return null;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, w, h).data;
+      let top = -1, bot = -1, minX = w, maxX = -1;
+      for (let y = 0; y < h; y++) {
+        for (let px = 0; px < w; px++) {
+          if (d[(y * w + px) * 4 + 3] > 16) { if (top < 0) top = y; bot = y; break; }
+        }
+      }
+      if (top < 0) return null;
+      const band = Math.floor(bot - (bot - top) * (lo || 0.16));
+      for (let y = band; y <= bot; y++) {
+        for (let px = 0; px < w; px++) {
+          if (d[(y * w + px) * 4 + 3] > 16) { if (px < minX) minX = px; if (px > maxX) maxX = px; }
+        }
+      }
+      return maxX < minX ? null : (maxX - minX + 1);
+    } catch (e) { return null; }   // tainted/unreadable → caller falls back
+  }
+  function cycleUnitsFor(set, sc, frameH) {
+    if (cycleCache[set] != null) return cycleCache[set];
+    const fallback = frameH * sc * CYCLE_PER_HEIGHT;
+    const side = frames[set + '.walk.east'] || frames[set + '.walk.west'];
+    const idleFr = frames[set + '.rot.east'] || frames[set + '.rot.west'];
+    let out = fallback;
+    if (side && side.length && idleFr && idleFr[0]) {
+      const idle = bandGap(idleFr[0]);
+      let widest = 0;
+      for (const f of side) { const g = bandGap(f); if (g && g > widest) widest = g; }
+      // a real stride has to open the feet WIDER than standing; below that there is no swing to read
+      if (idle && widest && widest - idle >= 3) {
+        const measured = 2 * widest * sc;
+        // never trust the measurement past a sane window — a stray pixel must not halve the gait
+        out = Math.max(fallback * 0.5, Math.min(fallback, measured));
+      }
+    }
+    return (cycleCache[set] = out);
+  }
+
   function getFootPad(set) {
     if (footPad[set] != null) return footPad[set];
     let ref = null;
@@ -343,8 +401,7 @@ const SPRITES = (() => {
     // Do NOT replace this with a constant units-per-frame: that silently over-spins short or oversized sets.
     // Every other state keeps the clock; those aren't locomotion.
     const sc = drawScaleFor(set);
-    const CYCLE_PER_HEIGHT = 0.56;   // world units of ground covered per drawn pixel of character height
-    const stride = (fr[0].height * sc * CYCLE_PER_HEIGHT) / fr.length;
+    const stride = cycleUnitsFor(set, sc, fr[0].height) / fr.length;
     const idx = fixedIdx != null ? fixedIdx
       // a pivoting body spends SWEPT ANGLE on the walk cycle, the same way a travelling one spends
       // distance — the feet are driven by what the body actually did, never by the clock
