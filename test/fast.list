@@ -32,6 +32,7 @@ test/runroute.test.js
 test/checkpoint.test.js
 test/module-scope-shadowing.test.js
 test/verify.test.js
+test/lsp-edit-feedback.test.js
 test/provider.replay.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js

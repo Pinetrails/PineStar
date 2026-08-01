@@ -48,6 +48,13 @@
     // those files decode as UTF-8 noise. index.js wires it with zlib.inflateRawSync.
     const docExtract = (deps.docExtract && typeof deps.docExtract.sniff === 'function') ? deps.docExtract : null;
     const imageWire = (deps.imageWire && typeof deps.imageWire.sniff === 'function') ? deps.imageWire : null;
+    // Optional host-owned LSP provider. The fs tools own the mutation boundary, so they are the only place
+    // that can guarantee a diagnostic baseline was captured before bytes changed. Unwired callers (the
+    // route jail helper and focused fs tests) keep the historic byte-identical path.
+    const editDiagnostics = deps.editDiagnostics
+      && typeof deps.editDiagnostics.beginEdit === 'function'
+      && typeof deps.editDiagnostics.finishEdit === 'function'
+      ? deps.editDiagnostics : null;
 
     async function workspaceRoot(agentId) {
       if (environment && typeof environment.ensureWorkspace === 'function') return environment.ensureWorkspace(safeAgentId(agentId || 'agent'));
@@ -100,6 +107,54 @@
       return { base, abs };
     }
 
+    async function beginEditDiagnostics(aid, files, ctx) {
+      if (!editDiagnostics) return null;
+      try { return await editDiagnostics.beginEdit({ agentId: aid, files, signal: ctx && ctx.signal }); }
+      catch (e) {
+        // The new baseline wait must not turn an already-cancelled tool into a late file mutation. Other LSP
+        // failures degrade honestly; cancellation keeps the ordinary registry abort semantics.
+        if (e && e.name === 'AbortError') throw e;
+        return { failedAtBaseline: String((e && e.message) || e), items: [], unavailable: [], unsupported: [] };
+      }
+    }
+    function diagnosticLine(d) {
+      const where = String(d.file || '?') + ':' + String(d.line || 1) + ':' + String(d.col || 1);
+      return where + (d.code ? ' [' + d.code + ']' : '') + ' ' + String(d.message || 'diagnostic');
+    }
+    async function finishEditDiagnostics(ticket, result, ctx) {
+      if (!editDiagnostics || !ticket) return result;
+      let delta;
+      if (ticket.failedAtBaseline) {
+        delta = { status: 'unavailable', reason: ticket.failedAtBaseline, added: [], removed: [], addedCount: 0, removedCount: 0 };
+      } else {
+        try { delta = await editDiagnostics.finishEdit(ticket, { signal: ctx && ctx.signal }); }
+        catch (e) { delta = { status: 'unavailable', reason: String((e && e.message) || e), added: [], removed: [], addedCount: 0, removedCount: 0 }; }
+      }
+      result.diagnostics = delta;
+      if (delta.status === 'available' || delta.status === 'partial') {
+        const rows = (delta.added || []).slice(0, 12).map(diagnosticLine);
+        let note = delta.addedCount
+          ? 'LSP: ' + delta.addedCount + ' new diagnostic' + (delta.addedCount === 1 ? '' : 's') + '\n' + rows.join('\n')
+          : 'LSP: no new diagnostics';
+        if (delta.removedCount) note += '\nLSP: ' + delta.removedCount + ' pre-existing diagnostic' + (delta.removedCount === 1 ? '' : 's') + ' cleared';
+        if (delta.status === 'partial') note += '\nLSP: some edited files were not confirmed; run verify.run for the full project check';
+        result.content += '\n\n[' + note + ']';
+        try {
+          if (ctx && typeof ctx.emit === 'function') ctx.emit('verify.result', {
+            agentId: (ctx && ctx.agentId) || 'agent', runId: ctx.runId || '', tool: 'language server',
+            passed: delta.addedCount === 0, added: delta.addedCount, removed: delta.removedCount,
+            summary: delta.addedCount ? delta.addedCount + ' new language-server diagnostic(s)' : 'no new language-server diagnostics'
+          });
+        } catch (_) {}
+      } else {
+        const why = String(delta.reason || (delta.status === 'unsupported'
+          ? 'no detected language server supports this file type'
+          : 'language-server diagnostics were unavailable'));
+        result.content += '\n\n[LSP unavailable: ' + why + '. Run verify.run for project-level proof.]';
+      }
+      return result;
+    }
+
     /* STALE-WRITE GUARD (2026-07-27). A delegated worker, a second agent, or the Commander's own editor can
        change a file between the moment this agent READ it and the moment it writes back. Nothing here noticed,
        so the write silently reverted the other change — the classic lost update, and the harder kind to spot
@@ -140,15 +195,19 @@
       schema: { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
-        const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
+        const { abs, base } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         const data = Buffer.from(String(args.content), 'utf8');
         if (data.length > WRITE_BYTES) throw new Error('file too large (' + data.length + ' > ' + WRITE_BYTES + ' bytes)');
         await assertFresh(aid, abs, args.path);   // refuse to overwrite a file that moved under us
+        let before = '';
+        try { before = await fsp.readFile(abs, 'utf8'); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
+        const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: before }], ctx);
         await fsp.mkdir(P.dirname(abs), { recursive: true });
         await fsp.writeFile(abs, data);
         await stampSeen(aid, abs);                // our own write is the new baseline, so a rewrite never self-trips
         emitDeliverable(ctx, aid, args.path);
-        return { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).', summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')' };
+        return finishEditDiagnostics(diagnosticTicket,
+          { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).', summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')' }, ctx);
       }
     };
 
@@ -238,17 +297,19 @@
       schema: { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
-        const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
+        const { abs, base } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         let existing = '';
         try { existing = await fsp.readFile(abs, 'utf8'); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
         const combined = existing + String(args.content);
         const bytes = Buffer.byteLength(combined, 'utf8');
         if (bytes > WRITE_BYTES) throw new Error('file too large after append (' + bytes + ' > ' + WRITE_BYTES + ' bytes)');
+        const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: existing }], ctx);
         await fsp.mkdir(P.dirname(abs), { recursive: true });
         await fsp.writeFile(abs, Buffer.from(combined, 'utf8'));
         emitDeliverable(ctx, aid, args.path);
         const added = Buffer.byteLength(String(args.content), 'utf8');
-        return { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').', summary: 'appended ' + args.path + ' (+' + kb(added) + ')' };
+        return finishEditDiagnostics(diagnosticTicket,
+          { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').', summary: 'appended ' + args.path + ' (+' + kb(added) + ')' }, ctx);
       }
     };
 
@@ -258,7 +319,7 @@
       schema: { type: 'object', required: ['path', 'find', 'replace'], properties: { path: { type: 'string' }, find: { type: 'string' }, replace: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
-        const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
+        const { abs, base } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         let txt;
         try { txt = await fsp.readFile(abs, 'utf8'); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
@@ -269,9 +330,11 @@
         const next = txt.split(find).join(String(args.replace));
         const bytes = Buffer.byteLength(next, 'utf8');
         if (bytes > WRITE_BYTES) throw new Error('file too large after edit (' + bytes + ' > ' + WRITE_BYTES + ' bytes)');
+        const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: txt }], ctx);
         await fsp.writeFile(abs, Buffer.from(next, 'utf8'));
         emitDeliverable(ctx, aid, args.path);
-        return { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').', summary: 'edited ' + args.path + ' (' + count + 'x)' };
+        return finishEditDiagnostics(diagnosticTicket,
+          { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').', summary: 'edited ' + args.path + ' (' + count + 'x)' }, ctx);
       }
     };
 
@@ -292,7 +355,7 @@
           let content = null, exists = false;
           try { content = await fsp.readFile(key, 'utf8'); exists = true; }
           catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
-          const plan = { rel: String(rel), abs: key, exists, content, touched: false };
+          const plan = { rel: String(rel), abs: key, base: resolved.base, exists, content, initialContent: content, touched: false };
           plans.set(key, plan);
           return plan;
         }
@@ -371,6 +434,8 @@
         }
 
         const touched = Array.from(plans.values()).filter(p => p.touched);
+        const diagnosticTicket = await beginEditDiagnostics(aid,
+          touched.map(plan => ({ abs: plan.abs, base: plan.base, rel: plan.rel, text: plan.initialContent == null ? '' : plan.initialContent })), ctx);
         for (const plan of touched) {
           if (plan.content == null) {
             await fsp.rm(plan.abs, { force: true });
@@ -380,10 +445,10 @@
             emitDeliverable(ctx, aid, plan.rel);
           }
         }
-        return {
+        return finishEditDiagnostics(diagnosticTicket, {
           content: 'Applied patch: ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' changed.',
           summary: 'patched ' + touched.length + ' file' + (touched.length === 1 ? '' : 's')
-        };
+        }, ctx);
       }
     };
 
