@@ -18,6 +18,25 @@ green. Live seeded Chromium proved the four mobile controls on the UI lane; the 
 gate re-proved malformed requests, route boundaries, MCP gating, restart persistence, and failure
 paths. No publish, push, PR, deployment, release, credential, or production-data action occurred.
 
+## 2026-08-01 — HARNESS SELF-AWARENESS (`agent/harness-self-awareness-reconcile`)
+
+RECONCILED at `9c68794a` against bridge trunk `25f8b053`; full re-verification pending. StarNet now gives every compute-capable agent a local, read-only,
+consent-free `station.inspect` tool backed by the same build, scheduler, connector, and diagnostic
+collectors as the UI APIs. Its output is bounded and allowlisted; secrets and filesystem paths do
+not cross the tool boundary, and any failed collector is labelled unavailable rather than rendered
+as a confident empty/healthy state. The run identity block now includes the exact app and harness
+build, and the operator manual directs mutable harness questions to `station.inspect` instead of
+invented CLI commands or requests for WORKBENCH/INTEL CAB.
+
+Verification: focused snapshot/tool/policy/runtime/manual tests are green; the real MCP-sidecar e2e
+passes 76 assertions and proves the provider sees and calls the legal `station_inspect` wire name
+against a planted routine, connected MCP server, and diagnostic failure. `test:fast` is 477/477
+green and the full `test:http` gate is green. A seeded live station on `:8976` preserved the original
+failure in its transcript (NOVA invented `starnet --version` and asked for WORKBENCH/INTEL CAB), then
+the patched run used one tool and reported exact build `v0.8.0-36-g56626c1f-dirty`, disarmed/unhealthy
+scheduler, zero routines, zero connectors, and zero recorded errors in seven seconds. The seed was
+stopped. No merge, push, PR, deploy, publish, credential, or production-data change was performed.
+
 ## 2026-07-31 — BROWSER REACH 0.8.5 (`agent/browser-reach-085`)
 
 READY TO MERGE at `dd01c8d3` (five commits from `7b2550e0`). The station-owned Chromium launch now
