@@ -68,74 +68,6 @@
       "caseyjones/walk_west_4.png",
       "caseyjones/walk_west_5.png"
     ],
-    "dario.blink.east": [
-      "dario/blink_east.png"
-    ],
-    "dario.blink.north": [
-      "dario/blink_north.png"
-    ],
-    "dario.blink.south": [
-      "dario/blink_south.png"
-    ],
-    "dario.blink.west": [
-      "dario/blink_west.png"
-    ],
-    "dario.rot.east": [
-      "dario/rot_east.png"
-    ],
-    "dario.rot.north": [
-      "dario/rot_north.png"
-    ],
-    "dario.rot.south": [
-      "dario/rot_south.png"
-    ],
-    "dario.rot.west": [
-      "dario/rot_west.png"
-    ],
-    "dario.sit.east": [
-      "dario/sit_east.png"
-    ],
-    "dario.sit.north": [
-      "dario/sit_north.png"
-    ],
-    "dario.sit.south": [
-      "dario/sit_south.png"
-    ],
-    "dario.sit.west": [
-      "dario/sit_west.png"
-    ],
-    "dario.walk.east": [
-      "dario/walk_east_0.png",
-      "dario/walk_east_1.png",
-      "dario/walk_east_2.png",
-      "dario/walk_east_3.png",
-      "dario/walk_east_4.png",
-      "dario/walk_east_5.png"
-    ],
-    "dario.walk.north": [
-      "dario/walk_north_0.png",
-      "dario/walk_north_1.png",
-      "dario/walk_north_2.png",
-      "dario/walk_north_3.png",
-      "dario/walk_north_4.png",
-      "dario/walk_north_5.png"
-    ],
-    "dario.walk.south": [
-      "dario/walk_south_0.png",
-      "dario/walk_south_1.png",
-      "dario/walk_south_2.png",
-      "dario/walk_south_3.png",
-      "dario/walk_south_4.png",
-      "dario/walk_south_5.png"
-    ],
-    "dario.walk.west": [
-      "dario/walk_west_0.png",
-      "dario/walk_west_1.png",
-      "dario/walk_west_2.png",
-      "dario/walk_west_3.png",
-      "dario/walk_west_4.png",
-      "dario/walk_west_5.png"
-    ],
     "finn.blink.east": [
       "finn/blink_east.png"
     ],
@@ -271,74 +203,6 @@
       "freddyfazbear/walk_west_3.png",
       "freddyfazbear/walk_west_4.png",
       "freddyfazbear/walk_west_5.png"
-    ],
-    "grimreaper.blink.east": [
-      "grimreaper/blink_east.png"
-    ],
-    "grimreaper.blink.north": [
-      "grimreaper/blink_north.png"
-    ],
-    "grimreaper.blink.south": [
-      "grimreaper/blink_south.png"
-    ],
-    "grimreaper.blink.west": [
-      "grimreaper/blink_west.png"
-    ],
-    "grimreaper.rot.east": [
-      "grimreaper/rot_east.png"
-    ],
-    "grimreaper.rot.north": [
-      "grimreaper/rot_north.png"
-    ],
-    "grimreaper.rot.south": [
-      "grimreaper/rot_south.png"
-    ],
-    "grimreaper.rot.west": [
-      "grimreaper/rot_west.png"
-    ],
-    "grimreaper.sit.east": [
-      "grimreaper/sit_east.png"
-    ],
-    "grimreaper.sit.north": [
-      "grimreaper/sit_north.png"
-    ],
-    "grimreaper.sit.south": [
-      "grimreaper/sit_south.png"
-    ],
-    "grimreaper.sit.west": [
-      "grimreaper/sit_west.png"
-    ],
-    "grimreaper.walk.east": [
-      "grimreaper/walk_east_0.png",
-      "grimreaper/walk_east_1.png",
-      "grimreaper/walk_east_2.png",
-      "grimreaper/walk_east_3.png",
-      "grimreaper/walk_east_4.png",
-      "grimreaper/walk_east_5.png"
-    ],
-    "grimreaper.walk.north": [
-      "grimreaper/walk_north_0.png",
-      "grimreaper/walk_north_1.png",
-      "grimreaper/walk_north_2.png",
-      "grimreaper/walk_north_3.png",
-      "grimreaper/walk_north_4.png",
-      "grimreaper/walk_north_5.png"
-    ],
-    "grimreaper.walk.south": [
-      "grimreaper/walk_south_0.png",
-      "grimreaper/walk_south_1.png",
-      "grimreaper/walk_south_2.png",
-      "grimreaper/walk_south_3.png",
-      "grimreaper/walk_south_4.png",
-      "grimreaper/walk_south_5.png"
-    ],
-    "grimreaper.walk.west": [
-      "grimreaper/walk_west_0.png",
-      "grimreaper/walk_west_1.png",
-      "grimreaper/walk_west_2.png",
-      "grimreaper/walk_west_3.png",
-      "grimreaper/walk_west_4.png",
-      "grimreaper/walk_west_5.png"
     ],
     "masterchief.blink.east": [
       "masterchief/blink_east.png"
@@ -676,74 +540,6 @@
       "pikachu/walk_west_4.png",
       "pikachu/walk_west_5.png"
     ],
-    "plaguedoctor.blink.east": [
-      "plaguedoctor/blink_east.png"
-    ],
-    "plaguedoctor.blink.north": [
-      "plaguedoctor/blink_north.png"
-    ],
-    "plaguedoctor.blink.south": [
-      "plaguedoctor/blink_south.png"
-    ],
-    "plaguedoctor.blink.west": [
-      "plaguedoctor/blink_west.png"
-    ],
-    "plaguedoctor.rot.east": [
-      "plaguedoctor/rot_east.png"
-    ],
-    "plaguedoctor.rot.north": [
-      "plaguedoctor/rot_north.png"
-    ],
-    "plaguedoctor.rot.south": [
-      "plaguedoctor/rot_south.png"
-    ],
-    "plaguedoctor.rot.west": [
-      "plaguedoctor/rot_west.png"
-    ],
-    "plaguedoctor.sit.east": [
-      "plaguedoctor/sit_east.png"
-    ],
-    "plaguedoctor.sit.north": [
-      "plaguedoctor/sit_north.png"
-    ],
-    "plaguedoctor.sit.south": [
-      "plaguedoctor/sit_south.png"
-    ],
-    "plaguedoctor.sit.west": [
-      "plaguedoctor/sit_west.png"
-    ],
-    "plaguedoctor.walk.east": [
-      "plaguedoctor/walk_east_0.png",
-      "plaguedoctor/walk_east_1.png",
-      "plaguedoctor/walk_east_2.png",
-      "plaguedoctor/walk_east_3.png",
-      "plaguedoctor/walk_east_4.png",
-      "plaguedoctor/walk_east_5.png"
-    ],
-    "plaguedoctor.walk.north": [
-      "plaguedoctor/walk_north_0.png",
-      "plaguedoctor/walk_north_1.png",
-      "plaguedoctor/walk_north_2.png",
-      "plaguedoctor/walk_north_3.png",
-      "plaguedoctor/walk_north_4.png",
-      "plaguedoctor/walk_north_5.png"
-    ],
-    "plaguedoctor.walk.south": [
-      "plaguedoctor/walk_south_0.png",
-      "plaguedoctor/walk_south_1.png",
-      "plaguedoctor/walk_south_2.png",
-      "plaguedoctor/walk_south_3.png",
-      "plaguedoctor/walk_south_4.png",
-      "plaguedoctor/walk_south_5.png"
-    ],
-    "plaguedoctor.walk.west": [
-      "plaguedoctor/walk_west_0.png",
-      "plaguedoctor/walk_west_1.png",
-      "plaguedoctor/walk_west_2.png",
-      "plaguedoctor/walk_west_3.png",
-      "plaguedoctor/walk_west_4.png",
-      "plaguedoctor/walk_west_5.png"
-    ],
     "ricksanchez.blink.east": [
       "ricksanchez/blink_east.png"
     ],
@@ -879,74 +675,6 @@
       "robocop/walk_west_3.png",
       "robocop/walk_west_4.png",
       "robocop/walk_west_5.png"
-    ],
-    "samaltman.blink.east": [
-      "samaltman/blink_east.png"
-    ],
-    "samaltman.blink.north": [
-      "samaltman/blink_north.png"
-    ],
-    "samaltman.blink.south": [
-      "samaltman/blink_south.png"
-    ],
-    "samaltman.blink.west": [
-      "samaltman/blink_west.png"
-    ],
-    "samaltman.rot.east": [
-      "samaltman/rot_east.png"
-    ],
-    "samaltman.rot.north": [
-      "samaltman/rot_north.png"
-    ],
-    "samaltman.rot.south": [
-      "samaltman/rot_south.png"
-    ],
-    "samaltman.rot.west": [
-      "samaltman/rot_west.png"
-    ],
-    "samaltman.sit.east": [
-      "samaltman/sit_east.png"
-    ],
-    "samaltman.sit.north": [
-      "samaltman/sit_north.png"
-    ],
-    "samaltman.sit.south": [
-      "samaltman/sit_south.png"
-    ],
-    "samaltman.sit.west": [
-      "samaltman/sit_west.png"
-    ],
-    "samaltman.walk.east": [
-      "samaltman/walk_east_0.png",
-      "samaltman/walk_east_1.png",
-      "samaltman/walk_east_2.png",
-      "samaltman/walk_east_3.png",
-      "samaltman/walk_east_4.png",
-      "samaltman/walk_east_5.png"
-    ],
-    "samaltman.walk.north": [
-      "samaltman/walk_north_0.png",
-      "samaltman/walk_north_1.png",
-      "samaltman/walk_north_2.png",
-      "samaltman/walk_north_3.png",
-      "samaltman/walk_north_4.png",
-      "samaltman/walk_north_5.png"
-    ],
-    "samaltman.walk.south": [
-      "samaltman/walk_south_0.png",
-      "samaltman/walk_south_1.png",
-      "samaltman/walk_south_2.png",
-      "samaltman/walk_south_3.png",
-      "samaltman/walk_south_4.png",
-      "samaltman/walk_south_5.png"
-    ],
-    "samaltman.walk.west": [
-      "samaltman/walk_west_0.png",
-      "samaltman/walk_west_1.png",
-      "samaltman/walk_west_2.png",
-      "samaltman/walk_west_3.png",
-      "samaltman/walk_west_4.png",
-      "samaltman/walk_west_5.png"
     ],
     "ultron.rot.east": [
       "ultron/rot_east.png"
@@ -3465,6 +3193,418 @@
       "blank_amber/walk_south-west_3.png",
       "blank_amber/walk_south-west_4.png",
       "blank_amber/walk_south-west_5.png"
+    ],
+    "samaltman.rot.south": [
+      "samaltman/rot_south.png"
+    ],
+    "samaltman.sit.south": [
+      "samaltman/sit_south.png"
+    ],
+    "samaltman.blink.south": [
+      "samaltman/blink_south.png"
+    ],
+    "samaltman.walk.south": [
+      "samaltman/walk_south_0.png",
+      "samaltman/walk_south_1.png",
+      "samaltman/walk_south_2.png",
+      "samaltman/walk_south_3.png",
+      "samaltman/walk_south_4.png",
+      "samaltman/walk_south_5.png"
+    ],
+    "samaltman.rot.south-east": [
+      "samaltman/rot_south-east.png"
+    ],
+    "samaltman.walk.south-east": [
+      "samaltman/walk_south-east_0.png",
+      "samaltman/walk_south-east_1.png",
+      "samaltman/walk_south-east_2.png",
+      "samaltman/walk_south-east_3.png",
+      "samaltman/walk_south-east_4.png",
+      "samaltman/walk_south-east_5.png"
+    ],
+    "samaltman.rot.east": [
+      "samaltman/rot_east.png"
+    ],
+    "samaltman.sit.east": [
+      "samaltman/sit_east.png"
+    ],
+    "samaltman.walk.east": [
+      "samaltman/walk_east_0.png",
+      "samaltman/walk_east_1.png",
+      "samaltman/walk_east_2.png",
+      "samaltman/walk_east_3.png",
+      "samaltman/walk_east_4.png",
+      "samaltman/walk_east_5.png"
+    ],
+    "samaltman.rot.north-east": [
+      "samaltman/rot_north-east.png"
+    ],
+    "samaltman.walk.north-east": [
+      "samaltman/walk_north-east_0.png",
+      "samaltman/walk_north-east_1.png",
+      "samaltman/walk_north-east_2.png",
+      "samaltman/walk_north-east_3.png",
+      "samaltman/walk_north-east_4.png",
+      "samaltman/walk_north-east_5.png"
+    ],
+    "samaltman.rot.north": [
+      "samaltman/rot_north.png"
+    ],
+    "samaltman.sit.north": [
+      "samaltman/sit_north.png"
+    ],
+    "samaltman.walk.north": [
+      "samaltman/walk_north_0.png",
+      "samaltman/walk_north_1.png",
+      "samaltman/walk_north_2.png",
+      "samaltman/walk_north_3.png",
+      "samaltman/walk_north_4.png",
+      "samaltman/walk_north_5.png"
+    ],
+    "samaltman.rot.north-west": [
+      "samaltman/rot_north-west.png"
+    ],
+    "samaltman.walk.north-west": [
+      "samaltman/walk_north-west_0.png",
+      "samaltman/walk_north-west_1.png",
+      "samaltman/walk_north-west_2.png",
+      "samaltman/walk_north-west_3.png",
+      "samaltman/walk_north-west_4.png",
+      "samaltman/walk_north-west_5.png"
+    ],
+    "samaltman.rot.west": [
+      "samaltman/rot_west.png"
+    ],
+    "samaltman.sit.west": [
+      "samaltman/sit_west.png"
+    ],
+    "samaltman.walk.west": [
+      "samaltman/walk_west_0.png",
+      "samaltman/walk_west_1.png",
+      "samaltman/walk_west_2.png",
+      "samaltman/walk_west_3.png",
+      "samaltman/walk_west_4.png",
+      "samaltman/walk_west_5.png"
+    ],
+    "samaltman.rot.south-west": [
+      "samaltman/rot_south-west.png"
+    ],
+    "samaltman.walk.south-west": [
+      "samaltman/walk_south-west_0.png",
+      "samaltman/walk_south-west_1.png",
+      "samaltman/walk_south-west_2.png",
+      "samaltman/walk_south-west_3.png",
+      "samaltman/walk_south-west_4.png",
+      "samaltman/walk_south-west_5.png"
+    ],
+    "dario.rot.south": [
+      "dario/rot_south.png"
+    ],
+    "dario.sit.south": [
+      "dario/sit_south.png"
+    ],
+    "dario.blink.south": [
+      "dario/blink_south.png"
+    ],
+    "dario.walk.south": [
+      "dario/walk_south_0.png",
+      "dario/walk_south_1.png",
+      "dario/walk_south_2.png",
+      "dario/walk_south_3.png",
+      "dario/walk_south_4.png",
+      "dario/walk_south_5.png"
+    ],
+    "dario.rot.south-east": [
+      "dario/rot_south-east.png"
+    ],
+    "dario.walk.south-east": [
+      "dario/walk_south-east_0.png",
+      "dario/walk_south-east_1.png",
+      "dario/walk_south-east_2.png",
+      "dario/walk_south-east_3.png",
+      "dario/walk_south-east_4.png",
+      "dario/walk_south-east_5.png"
+    ],
+    "dario.rot.east": [
+      "dario/rot_east.png"
+    ],
+    "dario.sit.east": [
+      "dario/sit_east.png"
+    ],
+    "dario.walk.east": [
+      "dario/walk_east_0.png",
+      "dario/walk_east_1.png",
+      "dario/walk_east_2.png",
+      "dario/walk_east_3.png",
+      "dario/walk_east_4.png",
+      "dario/walk_east_5.png"
+    ],
+    "dario.rot.north-east": [
+      "dario/rot_north-east.png"
+    ],
+    "dario.walk.north-east": [
+      "dario/walk_north-east_0.png",
+      "dario/walk_north-east_1.png",
+      "dario/walk_north-east_2.png",
+      "dario/walk_north-east_3.png",
+      "dario/walk_north-east_4.png",
+      "dario/walk_north-east_5.png"
+    ],
+    "dario.rot.north": [
+      "dario/rot_north.png"
+    ],
+    "dario.sit.north": [
+      "dario/sit_north.png"
+    ],
+    "dario.walk.north": [
+      "dario/walk_north_0.png",
+      "dario/walk_north_1.png",
+      "dario/walk_north_2.png",
+      "dario/walk_north_3.png",
+      "dario/walk_north_4.png",
+      "dario/walk_north_5.png"
+    ],
+    "dario.rot.north-west": [
+      "dario/rot_north-west.png"
+    ],
+    "dario.walk.north-west": [
+      "dario/walk_north-west_0.png",
+      "dario/walk_north-west_1.png",
+      "dario/walk_north-west_2.png",
+      "dario/walk_north-west_3.png",
+      "dario/walk_north-west_4.png",
+      "dario/walk_north-west_5.png"
+    ],
+    "dario.rot.west": [
+      "dario/rot_west.png"
+    ],
+    "dario.sit.west": [
+      "dario/sit_west.png"
+    ],
+    "dario.walk.west": [
+      "dario/walk_west_0.png",
+      "dario/walk_west_1.png",
+      "dario/walk_west_2.png",
+      "dario/walk_west_3.png",
+      "dario/walk_west_4.png",
+      "dario/walk_west_5.png"
+    ],
+    "dario.rot.south-west": [
+      "dario/rot_south-west.png"
+    ],
+    "dario.walk.south-west": [
+      "dario/walk_south-west_0.png",
+      "dario/walk_south-west_1.png",
+      "dario/walk_south-west_2.png",
+      "dario/walk_south-west_3.png",
+      "dario/walk_south-west_4.png",
+      "dario/walk_south-west_5.png"
+    ],
+    "grimreaper.rot.south": [
+      "grimreaper/rot_south.png"
+    ],
+    "grimreaper.sit.south": [
+      "grimreaper/sit_south.png"
+    ],
+    "grimreaper.blink.south": [
+      "grimreaper/blink_south.png"
+    ],
+    "grimreaper.walk.south": [
+      "grimreaper/walk_south_0.png",
+      "grimreaper/walk_south_1.png",
+      "grimreaper/walk_south_2.png",
+      "grimreaper/walk_south_3.png",
+      "grimreaper/walk_south_4.png",
+      "grimreaper/walk_south_5.png"
+    ],
+    "grimreaper.rot.south-east": [
+      "grimreaper/rot_south-east.png"
+    ],
+    "grimreaper.walk.south-east": [
+      "grimreaper/walk_south-east_0.png",
+      "grimreaper/walk_south-east_1.png",
+      "grimreaper/walk_south-east_2.png",
+      "grimreaper/walk_south-east_3.png",
+      "grimreaper/walk_south-east_4.png",
+      "grimreaper/walk_south-east_5.png"
+    ],
+    "grimreaper.rot.east": [
+      "grimreaper/rot_east.png"
+    ],
+    "grimreaper.sit.east": [
+      "grimreaper/sit_east.png"
+    ],
+    "grimreaper.walk.east": [
+      "grimreaper/walk_east_0.png",
+      "grimreaper/walk_east_1.png",
+      "grimreaper/walk_east_2.png",
+      "grimreaper/walk_east_3.png",
+      "grimreaper/walk_east_4.png",
+      "grimreaper/walk_east_5.png"
+    ],
+    "grimreaper.rot.north-east": [
+      "grimreaper/rot_north-east.png"
+    ],
+    "grimreaper.walk.north-east": [
+      "grimreaper/walk_north-east_0.png",
+      "grimreaper/walk_north-east_1.png",
+      "grimreaper/walk_north-east_2.png",
+      "grimreaper/walk_north-east_3.png",
+      "grimreaper/walk_north-east_4.png",
+      "grimreaper/walk_north-east_5.png"
+    ],
+    "grimreaper.rot.north": [
+      "grimreaper/rot_north.png"
+    ],
+    "grimreaper.sit.north": [
+      "grimreaper/sit_north.png"
+    ],
+    "grimreaper.walk.north": [
+      "grimreaper/walk_north_0.png",
+      "grimreaper/walk_north_1.png",
+      "grimreaper/walk_north_2.png",
+      "grimreaper/walk_north_3.png",
+      "grimreaper/walk_north_4.png",
+      "grimreaper/walk_north_5.png"
+    ],
+    "grimreaper.rot.north-west": [
+      "grimreaper/rot_north-west.png"
+    ],
+    "grimreaper.walk.north-west": [
+      "grimreaper/walk_north-west_0.png",
+      "grimreaper/walk_north-west_1.png",
+      "grimreaper/walk_north-west_2.png",
+      "grimreaper/walk_north-west_3.png",
+      "grimreaper/walk_north-west_4.png",
+      "grimreaper/walk_north-west_5.png"
+    ],
+    "grimreaper.rot.west": [
+      "grimreaper/rot_west.png"
+    ],
+    "grimreaper.sit.west": [
+      "grimreaper/sit_west.png"
+    ],
+    "grimreaper.walk.west": [
+      "grimreaper/walk_west_0.png",
+      "grimreaper/walk_west_1.png",
+      "grimreaper/walk_west_2.png",
+      "grimreaper/walk_west_3.png",
+      "grimreaper/walk_west_4.png",
+      "grimreaper/walk_west_5.png"
+    ],
+    "grimreaper.rot.south-west": [
+      "grimreaper/rot_south-west.png"
+    ],
+    "grimreaper.walk.south-west": [
+      "grimreaper/walk_south-west_0.png",
+      "grimreaper/walk_south-west_1.png",
+      "grimreaper/walk_south-west_2.png",
+      "grimreaper/walk_south-west_3.png",
+      "grimreaper/walk_south-west_4.png",
+      "grimreaper/walk_south-west_5.png"
+    ],
+    "plaguedoctor.rot.south": [
+      "plaguedoctor/rot_south.png"
+    ],
+    "plaguedoctor.sit.south": [
+      "plaguedoctor/sit_south.png"
+    ],
+    "plaguedoctor.blink.south": [
+      "plaguedoctor/blink_south.png"
+    ],
+    "plaguedoctor.walk.south": [
+      "plaguedoctor/walk_south_0.png",
+      "plaguedoctor/walk_south_1.png",
+      "plaguedoctor/walk_south_2.png",
+      "plaguedoctor/walk_south_3.png",
+      "plaguedoctor/walk_south_4.png",
+      "plaguedoctor/walk_south_5.png"
+    ],
+    "plaguedoctor.rot.south-east": [
+      "plaguedoctor/rot_south-east.png"
+    ],
+    "plaguedoctor.walk.south-east": [
+      "plaguedoctor/walk_south-east_0.png",
+      "plaguedoctor/walk_south-east_1.png",
+      "plaguedoctor/walk_south-east_2.png",
+      "plaguedoctor/walk_south-east_3.png",
+      "plaguedoctor/walk_south-east_4.png",
+      "plaguedoctor/walk_south-east_5.png"
+    ],
+    "plaguedoctor.rot.east": [
+      "plaguedoctor/rot_east.png"
+    ],
+    "plaguedoctor.sit.east": [
+      "plaguedoctor/sit_east.png"
+    ],
+    "plaguedoctor.walk.east": [
+      "plaguedoctor/walk_east_0.png",
+      "plaguedoctor/walk_east_1.png",
+      "plaguedoctor/walk_east_2.png",
+      "plaguedoctor/walk_east_3.png",
+      "plaguedoctor/walk_east_4.png",
+      "plaguedoctor/walk_east_5.png"
+    ],
+    "plaguedoctor.rot.north-east": [
+      "plaguedoctor/rot_north-east.png"
+    ],
+    "plaguedoctor.walk.north-east": [
+      "plaguedoctor/walk_north-east_0.png",
+      "plaguedoctor/walk_north-east_1.png",
+      "plaguedoctor/walk_north-east_2.png",
+      "plaguedoctor/walk_north-east_3.png",
+      "plaguedoctor/walk_north-east_4.png",
+      "plaguedoctor/walk_north-east_5.png"
+    ],
+    "plaguedoctor.rot.north": [
+      "plaguedoctor/rot_north.png"
+    ],
+    "plaguedoctor.sit.north": [
+      "plaguedoctor/sit_north.png"
+    ],
+    "plaguedoctor.walk.north": [
+      "plaguedoctor/walk_north_0.png",
+      "plaguedoctor/walk_north_1.png",
+      "plaguedoctor/walk_north_2.png",
+      "plaguedoctor/walk_north_3.png",
+      "plaguedoctor/walk_north_4.png",
+      "plaguedoctor/walk_north_5.png"
+    ],
+    "plaguedoctor.rot.north-west": [
+      "plaguedoctor/rot_north-west.png"
+    ],
+    "plaguedoctor.walk.north-west": [
+      "plaguedoctor/walk_north-west_0.png",
+      "plaguedoctor/walk_north-west_1.png",
+      "plaguedoctor/walk_north-west_2.png",
+      "plaguedoctor/walk_north-west_3.png",
+      "plaguedoctor/walk_north-west_4.png",
+      "plaguedoctor/walk_north-west_5.png"
+    ],
+    "plaguedoctor.rot.west": [
+      "plaguedoctor/rot_west.png"
+    ],
+    "plaguedoctor.sit.west": [
+      "plaguedoctor/sit_west.png"
+    ],
+    "plaguedoctor.walk.west": [
+      "plaguedoctor/walk_west_0.png",
+      "plaguedoctor/walk_west_1.png",
+      "plaguedoctor/walk_west_2.png",
+      "plaguedoctor/walk_west_3.png",
+      "plaguedoctor/walk_west_4.png",
+      "plaguedoctor/walk_west_5.png"
+    ],
+    "plaguedoctor.rot.south-west": [
+      "plaguedoctor/rot_south-west.png"
+    ],
+    "plaguedoctor.walk.south-west": [
+      "plaguedoctor/walk_south-west_0.png",
+      "plaguedoctor/walk_south-west_1.png",
+      "plaguedoctor/walk_south-west_2.png",
+      "plaguedoctor/walk_south-west_3.png",
+      "plaguedoctor/walk_south-west_4.png",
+      "plaguedoctor/walk_south-west_5.png"
     ]
   }
 }
