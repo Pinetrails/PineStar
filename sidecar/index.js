@@ -259,7 +259,7 @@ function applyApiCors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-StarNet-Token,X-Skynet-Token');   // accept the legacy header name too (old Tauri shell)
   res.setHeader('Access-Control-Max-Age', '600');
 }
@@ -872,10 +872,23 @@ const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now()
    `block` verdicts are absent from this file by design: nothing in it can bless one. */
 const SKILLS_ALLOW_FILE = path.join(WORKSPACES, 'skills-allowed.json');
 let skillApprovals = {};
-try { skillApprovals = JSON.parse(fs.readFileSync(SKILLS_ALLOW_FILE, 'utf8')) || {}; } catch (_) { skillApprovals = {}; }
-function persistSkillApprovals() {
-  try { fs.writeFileSync(SKILLS_ALLOW_FILE, JSON.stringify(skillApprovals, null, 2), 'utf8'); return true; }
-  catch (e) { console.warn('[skills] approval write failed:', (e && e.message) || e); return false; }
+try {
+  const loaded = loadResilient(SKILLS_ALLOW_FILE, 'skill approvals');
+  if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) skillApprovals = loaded;
+} catch (e) { console.warn('[skills] approval load failed:', (e && e.message) || e); }
+function persistSkillApprovals(next) {
+  const candidate = next && typeof next === 'object' ? next : {};
+  saveResilient(SKILLS_ALLOW_FILE, candidate);
+  // Approval changes expose reviewed bytes to the model. Read back the exact map before changing RAM or claiming
+  // success, so a swallowed/partial/redirected write can never create a session-only approval.
+  const proven = loadResilient(SKILLS_ALLOW_FILE, 'skill approvals');
+  if (JSON.stringify(proven) !== JSON.stringify(candidate)) {
+    const e = new Error('skill approval read-back did not match the committed decision');
+    e.code = 'ESTORE_UNVERIFIED';
+    throw e;
+  }
+  skillApprovals = candidate;
+  return true;
 }
 const skillGate = makeSkillGate({
   guard: skillGuard,
@@ -3566,7 +3579,12 @@ function loadNightshiftState() {
   catch (e) { console.warn('[nightshift] load failed:', (e && e.message) || e); return nightshift.fresh(Date.now()); }
 }
 let nightshiftState = loadNightshiftState();
-function saveNightshiftState() { try { saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(nightshiftState, Date.now())); } catch (e) { console.warn('[nightshift] persist failed:', (e && e.message) || e); } }
+function saveNightshiftState(next) {
+  const candidate = next || nightshiftState;
+  saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(candidate, Date.now()));
+  nightshiftState = candidate;
+  return candidate;
+}
 
 /* ---- NS-5b: the FOCUS state — a sibling JSON so a restart resumes the SAME night's declared priority (not a
    re-scatter). Holds { v, day, focus, steer }. The pure resolver (nightfocus.js) owns every decision; this is glue:
@@ -3577,7 +3595,12 @@ function loadNightFocusState() {
   catch (e) { console.warn('[nightfocus] load failed:', (e && e.message) || e); return nightfocus.fresh(Date.now()); }
 }
 let nightFocusState = loadNightFocusState();
-function saveNightFocusState() { try { saveResilient(NIGHTFOCUS_STATE_FILE, nightfocus.toEnvelope(nightFocusState, Date.now())); } catch (e) { console.warn('[nightfocus] persist failed:', (e && e.message) || e); } }
+function saveNightFocusState(next) {
+  const candidate = next || nightFocusState;
+  saveResilient(NIGHTFOCUS_STATE_FILE, nightfocus.toEnvelope(candidate, Date.now()));
+  nightFocusState = candidate;
+  return candidate;
+}
 
 // gather the evidence the pure resolver ranks: blessed project roots (+ light run-mention frequency), open threads,
 // the active goal arc. Bounded + fail-open (a store hiccup degrades that one field to empty). Reused by the beat +
@@ -3660,19 +3683,25 @@ function nightFocusTargetAvailable(target) {
 }
 function reconcileNightFocusAuthority() {
   const before = JSON.stringify(nightFocusState);
-  if (nightFocusState && nightFocusState.steer && !nightFocusTargetAvailable(nightFocusState.steer))
-    nightFocusState = nightfocus.clearSteer(nightFocusState);
-  if (nightFocusState && nightFocusState.focus && !nightFocusTargetAvailable(nightFocusState.focus))
-    nightFocusState = Object.assign({}, nightFocusState, { focus: null });
-  if (JSON.stringify(nightFocusState) !== before) saveNightFocusState();
+  let candidate = nightFocusState;
+  if (candidate && candidate.steer && !nightFocusTargetAvailable(candidate.steer))
+    candidate = nightfocus.clearSteer(candidate);
+  if (candidate && candidate.focus && !nightFocusTargetAvailable(candidate.focus))
+    candidate = Object.assign({}, candidate, { focus: null });
+  if (JSON.stringify(candidate) !== before) saveNightFocusState(candidate);
 }
 
 function resolveNightFocus() {
   reconcileNightFocusAuthority();
   const inp = nightFocusInputs();
   const r = nightfocus.ensureFocus(nightFocusState, inp, { now: inp.now });
-  if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) { nightFocusState = r.state; saveNightFocusState(); }
+  if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) saveNightFocusState(r.state);
   return { focus: r.focus, resolved: r.resolved };
+}
+
+function resolvedNightFocusCandidate(candidate) {
+  const inp = nightFocusInputs();
+  return nightfocus.ensureFocus(candidate, inp, { now: inp.now });
 }
 
 // same-night prior beat outputs (titles) so beat 2+ EXTENDS the same work (the compounding shape). Drafts carry `at`;
@@ -4471,7 +4500,7 @@ async function runNightshiftActShift(opts) {
 // ---- the driver: all ambient deps injected, so nightshift-driver.js stays determinism-clean.
 const nightshiftDriver = makeNightshiftDriver({
   getState: () => nightshiftState,
-  setState: (s) => { nightshiftState = s; saveNightshiftState(); },
+  setState: (s) => { saveNightshiftState(s); },
   getPosture: () => commanderPosture.summary(),
   // presence truth: a LIVE interactive run counts as activity-now — the Commander watching their own run must
   // never read as "away" no matter how long the run streams (idle-detection bug, 2026-07-17).
@@ -6504,8 +6533,8 @@ function attachmentFailPolicy(res, e) { try { if (!res.headersSent) { res.writeH
      do NOT "normalize" a route onto a different matcher):
        exact:   req.url === path                      (query string makes it MISS — intentional)
        qsplit:  req.url.split('?')[0] === path        (path match; the url may carry ?token= etc.)
-       prefix:  req.url.indexOf(path) === 0           (raw prefix; query string rides along)
-       qprefix: req.url.split('?')[0].indexOf(path) === 0
+       prefix:  segment-safe prefix on req.url        (exact, query, or /child; no sibling alias)
+       qprefix: segment-safe prefix on the query-stripped path
        rx:      req.url.match(rx) — the match array is passed to h as its 3rd arg
        qrx:     rx.test(req.url.split('?')[0])
    - h: the handler (req, res[, match]).
@@ -6784,8 +6813,8 @@ function dispatchRoute(req, res) {
     let gm = null;
     if (r.exact !== undefined) { if (url !== r.exact) continue; }
     else if (r.qsplit !== undefined) { if (bare !== r.qsplit) continue; }
-    else if (r.prefix !== undefined) { if (url.indexOf(r.prefix) !== 0) continue; }
-    else if (r.qprefix !== undefined) { if (bare.indexOf(r.qprefix) !== 0) continue; }
+    else if (r.prefix !== undefined) { if (!routePrefixMatches(url, r.prefix)) continue; }
+    else if (r.qprefix !== undefined) { if (!routePrefixMatches(bare, r.qprefix)) continue; }
     else if (r.rx) { gm = url.match(r.rx); if (!gm) continue; }
     else if (r.qrx) { if (!r.qrx.test(bare)) continue; }
     else continue;   // malformed entry: never match (fail closed to the static fallthrough)
@@ -6793,6 +6822,15 @@ function dispatchRoute(req, res) {
     return r.errorPolicy ? out.catch((e) => r.errorPolicy(res, e)) : out;
   }
   return serveStatic(req, res);
+}
+
+// Prefix routes are route families, not arbitrary string aliases. A route whose declared prefix already
+// ends in '/' owns every child below it; otherwise the next byte must be a real URL boundary.
+function routePrefixMatches(url, prefix) {
+  if (url.indexOf(prefix) !== 0) return false;
+  if (prefix.charAt(prefix.length - 1) === '/') return true;
+  const next = url.charAt(prefix.length);
+  return next === '' || next === '?' || next === '/';
 }
 server.on('error', (e) => {
   if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
@@ -7888,7 +7926,8 @@ function spotifyHtml(res, code, title, body) {
 }
 
 async function handleSpotifyStart(req, res) {
-  let body = {}; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return spotifyJson(res, 400, { error: 'bad json' });
   let clientId = String(body.clientId || '').trim();
   if (clientId) { try { await spotifyStore.setClientId(clientId); } catch (_) {} }
   else { try { clientId = (await spotifyStore.getClientId()) || ''; } catch (_) {} }
@@ -10192,8 +10231,9 @@ async function handleAgentSkillAllow(req, res) {
   if (!skill) return json(404, { error: 'no such skill' });
   const key = agentId + '\x00' + skill.id;
   if (body.allow === false) {
-    delete skillApprovals[key];
-    persistSkillApprovals();
+    const next = Object.assign({}, skillApprovals); delete next[key];
+    try { persistSkillApprovals(next); }
+    catch (e) { console.warn('[skills] approval revoke persist failed:', (e && e.message) || e); return json(507, { ok: false, approved: true, error: 'approval change could not be persisted; the existing decision was kept' }); }
     return json(200, { ok: true, approved: false, skill: skillGate.annotate([skill])[0] });
   }
   const decision = skillGate.decide(skill);
@@ -10204,8 +10244,9 @@ async function handleAgentSkillAllow(req, res) {
      stamp-keyed approval could never clear the drift. Fall back to the lifecycle stamp only when there is
      no body to digest. */
   const digest = typeof skill.body === 'string' ? skillGate.digestOf(skill) : skillGate.stampOf(skill);
-  skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
-  persistSkillApprovals();
+  const next = Object.assign({}, skillApprovals, { [key]: { digest, action: 'allow', at: Date.now(), name: skill.name } });
+  try { persistSkillApprovals(next); }
+  catch (e) { console.warn('[skills] approval persist failed:', (e && e.message) || e); return json(507, { ok: false, approved: false, error: 'approval could not be persisted; the skill remains withheld' }); }
   const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
   json(200, { ok: true, approved: true, digest, skill: after });
 }
@@ -12614,7 +12655,9 @@ async function handleAutonomyPosture(req, res) {
   commanderPosture.set(posture, body.beliefs);
   // deliberately re-writing the dial is the Commander's "autonomy back on" signal, so it LIFTS any durable E-STOP
   // halt on the night shift (engaged in handleHalt). Without this an E-STOP would wedge the shift stood-down forever.
-  try { if (nightshift.isHalted(nightshiftState)) { nightshiftState = nightshift.clearHalt(nightshiftState, Date.now()); saveNightshiftState(); } } catch (_) {}
+  let nightshiftStatePersisted = true;
+  try { if (nightshift.isHalted(nightshiftState)) saveNightshiftState(nightshift.clearHalt(nightshiftState, Date.now())); }
+  catch (e) { nightshiftStatePersisted = false; console.warn('[nightshift] halt-lift persist failed:', (e && e.message) || e); }
   // Lane 4D symmetry: the same "autonomy back on" signal lifts the durable cron E-STOP halt (engaged in
   // handleHalt) and re-arms the timer when the user's arm intent still stands — routines resume with no restart.
   try { liftCronHalt(); } catch (_) {}
@@ -12639,7 +12682,7 @@ async function handleAutonomyPosture(req, res) {
       workshopGranted = workshopOf(NIGHTSHIFT_AGENT);
     }
   } catch (_) { workshopGranted = null; }   // a grant hiccup must never fail the posture write; null = unknown (honest)
-  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, workshopGranted: workshopGranted });
+  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, nightshiftStatePersisted: nightshiftStatePersisted, workshopGranted: workshopGranted });
 }
 // GET /api/autonomy/posture — the server copy (posture summary + whether a beliefs snapshot is present). Never
 // echoes the raw beliefs texts back to the browser (it already has them); just reports presence + freshness.
@@ -12802,19 +12845,32 @@ async function handleNightshiftFocus(req, res) {
     const requestedKind = (body.kind == null || body.kind === '') ? 'project' : body.kind;
     const checked = await validateNightFocusSteer(requestedKind, ref);
     if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
-    nightFocusState = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
-    saveNightFocusState();
-    const foc = resolveNightFocus();   // re-resolve toward the steer NOW so status reflects it immediately
+    const candidate = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused steer whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'night focus could not be persisted; previous focus kept' });
+    }
     return json(200, { ok: true, focus: nightFocusView(), steered: true, resolved: !!(foc && foc.resolved) });
   }
   if (req.method === 'DELETE') {
-    nightFocusState = nightfocus.clearSteer(nightFocusState);
-    saveNightFocusState();
-    const foc = resolveNightFocus();
+    const candidate = nightfocus.clearSteer(nightFocusState);
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused clear whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'night focus could not be persisted; previous focus kept' });
+    }
     return json(200, { ok: true, cleared: true, focus: nightFocusView() || (foc && foc.focus) || null, resolved: !!(foc && foc.resolved) });
   }
   // GET — a read-only preview: resolve (persist iff changed) so a first-ever read still shows what the night WOULD chase.
-  const foc = resolveNightFocus();
+  let foc;
+  try { foc = resolveNightFocus(); }
+  catch (e) {
+    console.warn('[nightfocus] could not persist resolved focus:', e && e.message || e);
+    return json(507, { ok: false, error: 'night focus state is unavailable' });
+  }
   return json(200, { ok: true, focus: nightFocusView() || (foc && foc.focus) || null, steer: (nightFocusState.steer || null), avoid: nightFocusAvoidView() });
 }
 
@@ -12841,17 +12897,25 @@ async function handleNightshiftAvoid(req, res) {
     const checked = await validateNightFocusSteer(requestedKind, ref);
     if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
     const label = checked.kind === 'thread' ? String((liveNightThread(checked.ref) || {}).title || '') : '';
-    nightFocusState = nightfocus.applyAvoid(nightFocusState, { ref: checked.ref, kind: checked.kind, label }, Date.now());
-    saveNightFocusState();
-    const foc = resolveNightFocus();   // if the avoid dethroned tonight's focus, re-declare from what remains NOW
+    const candidate = nightfocus.applyAvoid(nightFocusState, { ref: checked.ref, kind: checked.kind, label }, Date.now());
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused off-limits change whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'off-limits directive could not be persisted; previous boundaries kept' });
+    }
     return json(200, { ok: true, avoid: nightFocusAvoidView(), focus: nightFocusView() || (foc && foc.focus) || null });
   }
   // DELETE — remove one entry by ref.
   const u = new URL(req.url, 'http://127.0.0.1');
   const ref = String(u.searchParams.get('ref') || '').trim();
   if (!ref) return json(400, { ok: false, error: 'which entry? DELETE /api/nightshift/avoid?ref=<ref>' });
-  nightFocusState = nightfocus.removeAvoid(nightFocusState, ref);
-  saveNightFocusState();
+  const candidate = nightfocus.removeAvoid(nightFocusState, ref);
+  try { saveNightFocusState(candidate); }
+  catch (e) {
+    console.warn('[nightfocus] refused off-limits removal whose durable state could not be written:', e && e.message || e);
+    return json(507, { ok: false, error: 'off-limits directive could not be persisted; previous boundaries kept' });
+  }
   return json(200, { ok: true, avoid: nightFocusAvoidView() });
 }
 
@@ -12893,8 +12957,9 @@ async function handleSummonAck(req, res) {
 }
 
 async function handleCancel(req, res) {
-  let runId;
-  try { runId = (JSON.parse(await readBody(req, 4096)) || {}).runId; } catch (e) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const runId = body.runId;
   const ac = runId && runs.get(runId);
   if (ac) ac.abort();
   res.writeHead(200); res.end('ok');
@@ -13065,7 +13130,15 @@ function handleHalt(req, res) {
   // were already spent at accept-time, so the ~45-min cooldown was the ONLY thing pausing autonomy — beats resumed
   // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
-  try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
+  let nightshiftHaltPersisted = true;
+  const haltedNightshiftState = nightshift.engageHalt(nightshiftState, Date.now());
+  try { saveNightshiftState(haltedNightshiftState); }
+  catch (e) {
+    // E-STOP still governs this process immediately, but a failed disk write is not a restart-durability claim.
+    nightshiftState = haltedNightshiftState;
+    nightshiftHaltPersisted = false;
+    console.warn('[nightshift] halt persist failed:', (e && e.message) || e);
+  }
   // Lane 4D symmetry: ROUTINES get the same durable stand-down the night shift got above. Without this the
   // cron timer kept re-firing due jobs unattended right after an E-STOP, and the lifecycle aggregate kept
   // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
@@ -13083,7 +13156,7 @@ function handleHalt(req, res) {
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted + loop iterations aborted (additive fields)
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, nightshiftHaltPersisted }));   // honest counts + restart-durability receipt
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
@@ -13142,8 +13215,9 @@ async function handleChannelSync(req, res) {
 // record + runtime + durable marker cleared and the .bak scrubbed. Explicit user destruction, so exempt from the
 // never-remove-a-secret-silently rule. Additive: a body-less POST keeps the old disable-only behaviour.
 async function handleChannelDisconnect(req, res) {
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopTelegram();
   let persisted = true;
   if (channelSecrets && channelSecrets.telegram) {
@@ -13230,8 +13304,9 @@ async function handleTelegramBotAction(req, res, botId, verb) {
     try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
     return json(200, { botId: botId, state: 'connecting', persisted: !!persisted });
   }
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return json(400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopTelegramBot(botId);
   const persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the record left the disk.
@@ -13447,8 +13522,9 @@ async function handleGenericChannelSync(req, res, id) {
 // reconnect). With { purge:true } (the FORGET action) also destroy the stored token (record + runtime + durable
 // marker) and scrub the .bak — mirrors handleChannelDisconnect. Additive: a body-less POST disables only.
 async function handleGenericChannelDisconnect(req, res, id) {
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopGenericChannel(id);
   let persisted = true;
   let removedConfiguration = false;

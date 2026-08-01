@@ -287,14 +287,44 @@ async function stop(child) {
     A.eq(afterThreadRestart.steer, null, 'a cleared thread steer stays cleared through restart');
     A.ok(!afterThreadRestart.focus || afterThreadRestart.focus.source !== 'steer', 'restart preserves only fresh derived focus/null after thread clear');
 
-    const projectAgain = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers: headers3, body: JSON.stringify({ ref: repo, kind: 'project' }) })).json();
+    // Durable user directives fail closed: neither clearing focus nor adding an off-limits boundary may become
+    // a session-only success when the atomic rename target is unwritable.
+    const durableGoal = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers: headers3, body: JSON.stringify({ ref: 'goal', kind: 'goal' }) })).json();
+    A.ok(durableGoal.ok === true && durableGoal.focus && durableGoal.focus.ref === 'goal', 'precondition: a goal steer is durably selected');
+    const focusFile = path.join(ws, 'nightfocus.state.json');
+    const focusBytes = fs.readFileSync(focusFile);
+    fs.rmSync(focusFile);
+    fs.mkdirSync(focusFile);
+    const failedClearResponse = await fetch(B + '/api/nightshift/focus', { method: 'DELETE', headers: headers3 });
+    const failedClear = await failedClearResponse.json();
+    A.eq(failedClearResponse.status, 507, 'an unwritable focus store refuses to acknowledge clearing a steer');
+    A.eq(failedClear.ok, false, 'the failed clear is explicitly reported as unsuccessful');
+    const failedAvoidResponse = await fetch(B + '/api/nightshift/avoid', { method: 'POST', headers: headers3, body: JSON.stringify({ ref: 'goal', kind: 'goal' }) });
+    const failedAvoid = await failedAvoidResponse.json();
+    A.eq(failedAvoidResponse.status, 507, 'an unwritable focus store refuses to acknowledge an off-limits directive');
+    A.eq(failedAvoid.ok, false, 'the failed off-limits mutation is explicitly reported as unsuccessful');
+    const stillInRam = await (await fetch(B + '/api/nightshift/focus', { headers: headers3 })).json();
+    A.eq(stillInRam.steer && stillInRam.steer.ref, 'goal', 'failed mutations leave the last proven steer in process memory');
+    A.ok(!(stillInRam.avoid || []).some(e => e && e.ref === 'goal'), 'failed off-limits mutation is not exposed from process memory');
+    fs.rmSync(focusFile, { recursive: true });
+    fs.writeFileSync(focusFile, focusBytes);
+    await stop(child);
+    const restartedAfterWriteFailure = await boot(port, env, 0);
+    child = restartedAfterWriteFailure.child;
+    const token4 = await bootToken(B, B);
+    const headers4 = { 'Content-Type': 'application/json', 'X-StarNet-Token': token4, Origin: B };
+    const afterWriteFailureRestart = await (await fetch(B + '/api/nightshift/focus', { headers: headers4 })).json();
+    A.eq(afterWriteFailureRestart.steer && afterWriteFailureRestart.steer.ref, 'goal', 'restart preserves the last proven steer after failed writes');
+    A.ok(!(afterWriteFailureRestart.avoid || []).some(e => e && e.ref === 'goal'), 'restart confirms the failed off-limits directive never became durable');
+
+    const projectAgain = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers: headers4, body: JSON.stringify({ ref: repo, kind: 'project' }) })).json();
     A.ok(projectAgain.ok === true && projectAgain.focus && projectAgain.focus.ref === repo, 'precondition: the blessed project can be selected before revocation');
-    const revoke = await (await fetch(B + '/api/permissions/revoke', { method: 'POST', headers: headers3, body: JSON.stringify({ key: 'path:' + repo }) })).json();
+    const revoke = await (await fetch(B + '/api/permissions/revoke', { method: 'POST', headers: headers4, body: JSON.stringify({ key: 'path:' + repo }) })).json();
     A.ok(revoke.ok === true, 'the project standing grant is revoked through the real authority route');
-    const afterRevoke = await (await fetch(B + '/api/nightshift/focus', { headers: headers3 })).json();
+    const afterRevoke = await (await fetch(B + '/api/nightshift/focus', { headers: headers4 })).json();
     A.eq(afterRevoke.steer, null, 'revoking a selected project retires its durable steer');
     A.ok(!afterRevoke.focus || afterRevoke.focus.ref !== repo, 'focus read never advertises the now-unavailable project');
-    const statusAfterRevoke = await (await fetch(B + '/api/nightshift/status', { headers: headers3 })).json();
+    const statusAfterRevoke = await (await fetch(B + '/api/nightshift/status', { headers: headers4 })).json();
     A.ok(!statusAfterRevoke.focus || statusAfterRevoke.focus.ref !== repo, 'night-shift status never advertises the now-unavailable project');
   } finally {
     await stop(child);

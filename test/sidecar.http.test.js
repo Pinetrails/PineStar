@@ -197,6 +197,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const preflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: B, 'Access-Control-Request-Method': 'POST' } });
     A.eq(preflight.status, 204, 'trusted API preflight -> 204');
     A.eq(preflight.headers.get('access-control-allow-origin'), B, 'trusted preflight mirrors loopback origin');
+    const preflightMethods = preflight.headers.get('access-control-allow-methods') || '';
+    A.ok(preflightMethods.split(',').map(s => s.trim()).indexOf('DELETE') >= 0, 'trusted preflight advertises the DELETE routes the API actually serves');
     const badPreflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' } });
     A.eq(badPreflight.status, 403, 'foreign API preflight -> 403');
 
@@ -324,6 +326,15 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(signalConnect.status, 200, 'Signal accepts endpoint/account configuration against an offline bridge');
     const signalSaved = await j('GET', '/api/channels/signal/status');
     A.eq(signalSaved.body.configured, true, 'Signal status is configured from saved endpoint/account');
+    const channelsFile = path.join(ws, 'channels', 'secrets.json');
+    const signalBeforeMalformed = fs.readFileSync(channelsFile, 'utf8');
+    const signalBadJson = await fetch(B + '/api/channels/signal/disconnect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': apiToken }, body: '{bad'
+    });
+    A.eq(signalBadJson.status, 400, 'Signal disconnect with malformed JSON -> 400');
+    A.eq(fs.readFileSync(channelsFile, 'utf8'), signalBeforeMalformed, 'malformed Signal disconnect leaves durable configuration byte-identical');
+    const signalStillSaved = await j('GET', '/api/channels/signal/status');
+    A.eq(signalStillSaved.body.configured, true, 'malformed Signal disconnect does not stop or deconfigure the channel');
     const signalRemove = await j('POST', '/api/channels/signal/disconnect', { purge: true });
     A.eq(signalRemove.body.removedConfiguration, true, 'Signal removal is read-back-proven');
     A.eq(signalRemove.body.purged, false, 'Signal removal never claims token purging');
@@ -350,6 +361,12 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
       A.eq(noTok.status, 403, 'GET ' + label + ' WITHOUT a token -> 403');
       const withTok = await fetch(B + p, { headers: Object.assign({ Origin: B }, tok) });
       A.eq(withTok.status, 200, 'GET ' + label + ' WITH trusted browser token -> 200');
+    }
+    // Prefix families stop only at a URL segment boundary. Sibling aliases must not inherit a real handler,
+    // while the exact/query forms above and the real /api/models/<provider> child route remain live.
+    for (const p of ['/api/toolsets-typo', '/api/saveXYZ', '/api/runsXYZ', '/api/subagentsXYZ', '/api/skillsXYZ', '/api/connectors/oauth/callbackevil']) {
+      const alias = await fetch(B + p, { headers: tok });
+      A.eq(alias.status, 404, 'segment-unsafe route alias ' + p + ' -> 404');
     }
 
     // ---- GROUND_UP_AUDIT P2: /api/version env-first fallback is HONEST (never a silent blank) ----
@@ -560,6 +577,18 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(noModel.status, 400, 'POST /api/run without a model -> 400');
     const badJson = await fetch(B + '/api/run', { method: 'POST', headers: { 'X-StarNet-Token': apiToken }, body: '{not json' });
     A.eq(badJson.status, 400, 'POST /api/run with malformed JSON -> 400');
+    const cancelBadJson = await fetch(B + '/api/cancel', { method: 'POST', headers: { 'X-StarNet-Token': apiToken }, body: '{not json' });
+    A.eq(cancelBadJson.status, 400, 'POST /api/cancel with malformed JSON -> 400');
+
+    const spotifyStart = await j('POST', '/api/spotify/auth/start', { clientId: 'spotify-http-test-client' });
+    A.eq(spotifyStart.status, 200, 'Spotify auth start accepts a valid client id without network I/O');
+    const spotifyFile = path.join(ws, '.secrets', 'spotify.json');
+    const spotifyBeforeMalformed = fs.readFileSync(spotifyFile, 'utf8');
+    const spotifyBadJson = await fetch(B + '/api/spotify/auth/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': apiToken }, body: '{not json'
+    });
+    A.eq(spotifyBadJson.status, 400, 'Spotify auth start with malformed JSON -> 400 even when a client id is already saved');
+    A.eq(fs.readFileSync(spotifyFile, 'utf8'), spotifyBeforeMalformed, 'malformed Spotify auth start leaves durable OAuth configuration byte-identical');
 
     // ---- /api/file media serving: typed content-type + HTTP Range (so COMMS <video>/<audio> can seek) ----
     // write a known-size clip into the agent's jailed workspace (<ws>/agent/clips/clip.webm)
