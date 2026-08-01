@@ -34,6 +34,24 @@ was stopped. No external-site benchmark was run because no authorized origin was
 claim about third-party wall reach is made. No merge, push, PR, deploy, publish, credential, or
 production-data change was performed.
 
+POST-MERGE SWEEP (`agent/browser-reach-sweep`, implementation head `94a034dd`): the first gauntlet
+covered only legacy UA + `navigator.webdriver` and missed real contradictions. On the production
+resolver, Playwright headless-shell still exposed `HeadlessChrome` through Client Hints, zero plugins,
+no `window.chrome`, SwiftShader, mismatched 800x600 screen geometry, and fixed product-named page
+globals. The corrective lane now prefers full Chrome/Chromium/Edge, derives one UA + Client-Hints
+identity from the connected browser's own loopback high-entropy values, retains the hardware renderer,
+sets coherent 1440x900 screen/window metrics, and uses opaque per-profile safety/settle slots. The
+authorized reach receipt measures both legacy and Client-Hints headless exposure, full-browser surface,
+and geometry. The same sweep made host cooldowns elapsed-time-aware, queued cancellation immediate,
+and idle host state LRU-bounded.
+
+Corrective verification: browser contract 293; reach receipt 18; browser parity 111; wait recovery 39;
+attach 33; browser PIE 53; web politeness 13; real-Chromium gauntlet 86; `test:fast` 475/475 green;
+full `test:http` green. Seeded branch `v0.8.0-32-g94a034dd` returned 200 from `/health` and the app
+shell, then the proof process was stopped. `qa:ready` is separately `NOT READY` because this isolated
+worktree has no Guardian, journeys, Beginner Run, or installed-exe receipts; no station-wide release
+readiness claim is made. External-site reach remains unmeasured without an authorized target.
+
 
 ## 2026-07-31 — NEXT UPDATE PLAN: v0.9.0 LEGIBLE · SOLID · UNBLOCKED
 
