@@ -57,7 +57,8 @@ invented CLI commands or requests for WORKBENCH/INTEL CAB.
 Verification: focused snapshot/tool/policy/runtime/manual tests are green; the real MCP-sidecar e2e
 passes 76 assertions and proves the provider sees and calls the legal `station_inspect` wire name
 against a planted routine, connected MCP server, and diagnostic failure. The reconciled `test:fast`
-gate is 485/485 green and the full `test:http` gate is green. In a seeded live station on `:8977`,
+gate is 491/491 green after synchronization with trunk `6819a1af`, and the full `test:http` gate is
+green. In a seeded live station on `:8977`,
 NOVA used both granted tools in one run: it reported exact clean build
 `v0.8.0-73-g30c9a53b`, the disarmed/unhealthy scheduler, zero routines, zero connectors, and zero
 recorded errors, then used bounded code composition to calculate `17 * 23 = 391`. The seed was
