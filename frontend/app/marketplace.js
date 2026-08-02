@@ -681,7 +681,7 @@ const Marketplace = (() => {
   // second copy of the console. Hidden the moment it's acked; the panel below remains the place to pause or wipe.
   function consentStripHTML() {
     const ps = profileApi(); if (!ps || !ps.summary || !ps.summary()) return '';
-    return '<div class="mkt-consent-strip">◉ STARNET tailors these picks from what you work on — <b>locally, on this machine, 0 bytes sent.</b> ' +
+    return '<div class="mkt-consent-strip">◉ STARNET keeps a local preference profile. When Scout drafts a new option, a bounded summary is sent only to your configured model. ' +
       'Pause or wipe it anytime in STATION FAMILIARITY below. <button class="bb sm mkt-fam-ack">GOT IT</button></div>';
   }
 
@@ -1168,10 +1168,10 @@ const Marketplace = (() => {
         '<span class="mkt-fam-v">' + v + '%</span></div>';
     }).join('');
     const consent = !acked()
-      ? '<div class="mkt-fam-consent">STARNET learns what you work on to tailor these picks — <b>locally, on this machine, 0 bytes sent.</b> ' +
+      ? '<div class="mkt-fam-consent">STARNET learns what you work on to tailor these picks. The profile is stored locally; bounded summaries are sent to your configured model only when it drafts a recommendation. ' +
         'Pause or wipe it anytime, right here. <button class="bb sm mkt-fam-ack">GOT IT</button></div>' : '';
     const acts = '<div class="mkt-fam-acts">' +
-        '<span class="mkt-fam-priv">◇ local-first · your profile never leaves this machine</span>' +
+        '<span class="mkt-fam-priv">◇ local-first · pause stops browser and sidecar personalization</span>' +
         '<button class="bb sm mkt-fam-pause">' + (on ? '❚❚ PAUSE LEARNING' : '▸ RESUME LEARNING') + '</button>' +
         '<button class="bb sm danger mkt-fam-forget">⌫ FORGET</button></div>';
     return '<div class="mkt-fam open' + (on ? '' : ' paused') + '">' + head +
@@ -1267,6 +1267,13 @@ const Marketplace = (() => {
       return { s, why: 'covers the ' + lbl.toLowerCase() + ' lane' };
     }) };
   }
+  function trackRecommendation(surface, item, why, rank) {
+    try {
+      if (typeof ProspectStore === 'undefined' || !ProspectStore.noteRecommendation || !item) return;
+      const traits = [item.id, item.category].concat(item.kit || [], Object.keys(item.tags || {}).filter(k => Number(item.tags[k]) > 0)).filter(Boolean);
+      ProspectStore.noteRecommendation(surface, item, { kind: surface, traits, why: why || '', rank, readiness: { ready: recommendationsReady(), reasons: recommendationsReady() ? ['grounded_profile'] : ['cold_start'] } });
+    } catch (_) {}
+  }
   function recShelfHTML() {
     if (typeof Specialties === 'undefined' || !Specialties.builtins().length) return '';
     // ADAPTIVE RECRUITMENT: when the station has a WARM read of the Commander's real workflow (the capability
@@ -1278,6 +1285,7 @@ const Marketplace = (() => {
     if (curated) return curated;
     const res = rankSpecs(Specialties.builtins(), ctx && ctx.currentSpecialtyId);
     if (!res.items.length) return '';
+    res.items.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     const head = res.personalized
       ? '★ RECOMMENDED FOR YOU — based on your recent runs'
       : '◈ STARTING LINEUP — one per lane while the station learns what you work on · this shelf changes as you use agents';
@@ -1295,6 +1303,7 @@ const Marketplace = (() => {
       .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
       .filter(x => x.s && x.s.id !== excludeId);
     if (!cards.length) return '';
+    cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — based on your recent runs · the next hire your real work points to</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
@@ -1313,6 +1322,7 @@ const Marketplace = (() => {
       .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
       .filter(x => x.s && x.s.id !== excludeId);
     if (!cards.length) return '';
+    cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">◆ UNCOVERED — work you keep doing that nobody on the crew handles</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
@@ -1363,7 +1373,7 @@ const Marketplace = (() => {
     // leans on goal text, then the honest category-spread fallback.
     const scoreFn = (ps && ps.score && !learningOff) ? (tags => ps.score(tags)) : null;
     // launches = the Commander's OWN real per-recipe launch counts (scout usage read) — engagement feeds the rank.
-    let launches = null; try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {}
+    let launches = null; if (!learningOff) { try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {} }
     // topics ride the SAME glass-box switch as the affinity scorer: the learned histogram IS a model of the
     // Commander, so learning OFF means it may not rank anything (consent), and — because a positive term flips
     // `anySignal` — it also guarantees the row can never shrink: whenever topics are live the profile is live
@@ -1373,7 +1383,8 @@ const Marketplace = (() => {
     // THREE, not four: the rail wraps to a second row at four cards on a standard bay, and a shelf that spends
     // two rows above the library is the thing that pushed the catalog off screen. Three also matches the
     // specialists shelf next door, so both tabs speak the same visual language.
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, limit: 3 });
+    const preferenceModel = (typeof ProspectStore !== 'undefined' && ProspectStore.preferenceModel) ? ProspectStore.preferenceModel() : null;
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3 });
     if (!items || !items.length) return '';
     // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
     // shelf blends four real signals and used to explain NONE of them — every other shelf in the bay names its
@@ -1384,6 +1395,7 @@ const Marketplace = (() => {
       return why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
     };
     const head = ready ? '◈ FOR YOU' : '◈ STARTING POINTS — a varied lineup while the station gets to know you';
+    items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));
     return '<div class="mkt-sect-h mkt-foryou-sect">' + head + '</div><div class="mkt-rec-rail">' +
       items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
   }
@@ -1556,6 +1568,7 @@ const Marketplace = (() => {
   /* ---------- wiring: roster ---------- */
   function focusFromCard(id) {
     if (!id) return;
+    try { if (typeof ProspectStore !== 'undefined' && ProspectStore.recommendationVerdict) ProspectStore.recommendationVerdict(tab === 'recipes' ? 'recipe' : 'recruit', id, 'opened', 'accepted'); } catch (_) {}
     if (tab === 'recipes') focusRecipe = id; else focusAgent = id;
     sfx('click'); renderDossier();
     const dos = root.querySelector('#mkt-dossier'); if (dos) dos.scrollTop = 0;
@@ -1744,6 +1757,12 @@ const Marketplace = (() => {
               if (ctx.summon) ctx.onPick(Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null, agentName: summonCandidateName(s) }), { activate: true });
               else ctx.onPick(s);
             }
+            try {
+              if (typeof ProspectStore !== 'undefined' && ProspectStore.recommendationVerdict) {
+                ProspectStore.recommendationVerdict('recruit', s.id, 'completed', 'completed');
+                ProspectStore.recommendationOutcome('recruit', s.id, { adopted: true, quality: 1, completedAt: Date.now() });
+              }
+            } catch (_) {}
             close();
           };
           if (ctx.summon && summonNameIssue()) {
@@ -1763,6 +1782,7 @@ const Marketplace = (() => {
           const adoptVoice = !!(cb && cb.checked);
           sfx('close');
           if (ctx && ctx.onDeploy) ctx.onDeploy(s, { adoptVoice });
+          try { if (typeof ProspectStore !== 'undefined' && ProspectStore.recommendationVerdict) { ProspectStore.recommendationVerdict('recruit', s.id, 'completed', 'completed'); ProspectStore.recommendationOutcome('recruit', s.id, { adopted: true, quality: 1, completedAt: Date.now() }); } } catch (_) {}
           note(s.name + ' deployed to ' + ((ctx && ctx.agentName) || 'your agent') + (adoptVoice ? ' (+ voice)' : ''), 'good');
           close();
         });
@@ -1874,20 +1894,34 @@ const Marketplace = (() => {
     sc.querySelectorAll('.mkt-fam-ack').forEach(b =>
       b.addEventListener('click', e => { e.stopPropagation(); setAcked(); sfx('click'); renderStage(); }));
     const famPause = sc.querySelector('.mkt-fam-pause');
-    if (famPause) famPause.addEventListener('click', () => {
+    if (famPause) famPause.addEventListener('click', async () => {
       const ps = profileApi(); if (!ps || !ps.setEnabled) return;
       const on = ps.enabled ? ps.enabled() : true;
-      ps.setEnabled(!on);
-      if (mintApi() && MintStore.setEnabled) MintStore.setEnabled(!on);
-      sfx(on ? 'bad' : 'click');
-      if (on) note('learning paused — nothing new will be folded in'); else note('learning resumed', 'good');
-      renderStage();
+      famPause.disabled = true;
+      try {
+        const f = (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch : fetch;
+        const response = await f('/api/personalization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !on }) });
+        if (!response.ok) throw new Error('http ' + response.status);
+        const verified = await response.json();
+        if (!verified || !!verified.enabled !== !on) throw new Error('state mismatch');
+        ps.setEnabled(!on);
+        if (mintApi() && MintStore.setEnabled) MintStore.setEnabled(!on);
+        sfx(on ? 'bad' : 'click');
+        note(on ? 'learning paused — browser and sidecar confirmed' : 'learning resumed — browser and sidecar confirmed', on ? '' : 'good');
+        renderStage();
+      } catch (_) {
+        famPause.disabled = false;
+        note('could not verify the sidecar setting; personalization was not changed', 'bad');
+      }
     });
     const famForget = sc.querySelector('.mkt-fam-forget');
     if (famForget) famForget.addEventListener('click', () => armDelete(famForget, '⌫ FORGET', () => {
       const ps = profileApi(); if (ps && ps.forget) ps.forget();
+      if (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.forget) WorkSignalStore.forget();
       if (mintApi() && MintStore.forget) MintStore.forget();
-      sfx('close'); note('profile wiped — the station forgot what it learned', 'good'); renderStage();
+      if (typeof ProspectStore !== 'undefined' && ProspectStore.reset) ProspectStore.reset();
+      try { const f = (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch : fetch; f('/api/personalization', { method: 'DELETE' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(() => { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) ProspectStore.refresh(); note('derived preference profile wiped; your explicit dossier, goals, projects, and threads were preserved', 'good'); }).catch(() => note('local profile wiped; server-side erase could not be verified', 'bad')); } catch (_) {}
+      sfx('close'); renderStage();
     }, 'SURE? WIPE'));
   }
 

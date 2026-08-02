@@ -180,6 +180,16 @@ const ndRT = R.normalize(JSON.parse(JSON.stringify(nd)));
 A.ok(ndRT.declinedNorthStars.indexOf('grow the channel to a living') >= 0, 'the decline denylist survives a round-trip');
 A.eq(R.effectiveNorthStar(R.fresh()), null, 'a cold state has no effective star');
 
+// Quests inferred alongside an unconfirmed north star remain staged. They cannot steer autonomy or appear as
+// adopted work until the Commander confirms the direction; decline clears both the proposal and its draft slate.
+const stagedQuest = { title: 'Publish episode 4', contract: { type: 'attest', key: '' }, groundedIn: 'channel goal' };
+let nsq = R.proposeNorthStar(R.fresh(), { text: 'Grow the channel', source: 'model' }, { now: T0 });
+nsq = R.stageQuests(nsq, [stagedQuest]);
+A.eq(R.pendingQuests(nsq).map(q => q.title), ['Publish episode 4'], 'quests wait behind an unconfirmed inferred direction');
+A.eq(R.normalize(JSON.parse(JSON.stringify(nsq))).pendingQuests.length, 1, 'the pending quest slate survives restart');
+A.eq(R.declineNorthStar(nsq, { now: T0 + 1 }).pendingQuests, [], 'declining the direction also drops its staged quests');
+A.eq(R.clearPendingQuests(nsq).pendingQuests, [], 'pending quests have an explicit clear seam');
+
 A.eq(R.normalize(null).ledger, [], 'normalize(null) is a fresh state');
 A.eq(R.normalize({ northStar: { text: '' }, ledger: 'junk', lastCycleAt: 'x' }).northStar, null, 'junk hydrates safely');
 const roundTrip = R.normalize(JSON.parse(JSON.stringify(st)));

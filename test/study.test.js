@@ -177,10 +177,13 @@ const S = require('../frontend/app/study.js');
   StudyStore.init({ now: () => 1000 });
   A.eq(StudyStore.nextLive([addProp]), null, 'the resolved set survives a re-init (persisted) — no post-reload re-offer');
   // every verdict CONSUMES the proposal server-side too, carrying the current denylist
-  A.ok(resolveCalls.length >= 2 && resolveCalls.every(c => c.url === '/api/study/resolve'), 'each verdict POSTs /api/study/resolve (server batch consumption)');
-  A.eq(resolveCalls[0].body.id, 'study_1', 'the resolve call names the decided proposal id');
-  A.eq(resolveCalls[0].body.runId, 'run_9', 'the resolve call names the batch runId (sourceRunId)');
-  A.ok(Array.isArray(resolveCalls[0].body.declined), 'the resolve call mirrors the studyDeclined denylist to the sidecar');
+  const studyResolveCalls = resolveCalls.filter(c => c.url === '/api/study/resolve');
+  const recommendationCalls = resolveCalls.filter(c => c.url === '/api/recommendations');
+  A.ok(studyResolveCalls.length >= 2, 'each verdict POSTs /api/study/resolve (server batch consumption)');
+  A.ok(recommendationCalls.length >= 2, 'study impressions and verdicts join the shared recommendation lifecycle');
+  A.eq(studyResolveCalls[0].body.id, 'study_1', 'the resolve call names the decided proposal id');
+  A.eq(studyResolveCalls[0].body.runId, 'run_9', 'the resolve call names the batch runId (sourceRunId)');
+  A.ok(Array.isArray(studyResolveCalls[0].body.declined), 'the resolve call mirrors the studyDeclined denylist to the sidecar');
 
   // ---- RETIRE SAFETY (finding 5): a pinned belief is untouchable; the card shows the REAL target ----
   dossierBeliefs.goals = [{ id: 'cd_7', text: 'keep improving the harness pipeline', pinned: true }];

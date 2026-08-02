@@ -3351,7 +3351,7 @@ const Chat = (() => {
       if (!target) return false;
     }
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
-    if (typeof StudyStore.markShown === 'function') StudyStore.markShown();   // spend one session-cap slot
+    if (typeof StudyStore.markShown === 'function') StudyStore.markShown(prop, agentId);   // spend one session-cap slot + record the shown recommendation
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('study');
     const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === prop.dim) || {}).label || prop.dim) : prop.dim;
     const verb = prop.kind === 'retire' ? 'thinks one of your beliefs no longer holds' : 'learned something about your ' + String(dimName).toLowerCase();
