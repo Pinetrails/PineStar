@@ -19,6 +19,7 @@
   const FS = require('node:fs');
   const CP = require('node:child_process');
   const NET = require('node:net');
+  const Challenge = require('./browserchallenge.js');
   // UNTRUSTED-CONTENT FENCE (2026-07-25): page text, snapshots, console rows and dialog messages are all
   // authored by the SITE, not the Commander. web_* has fenced since the web lane; these reads did not, so
   // the most direct "read a hostile page" path arrived raw. Same marker pair as web — one model contract.
@@ -64,10 +65,11 @@
      catches the ordinary handler/animation-frame delay while still being adaptive - a slow page
      keeps waiting well past it, unlike the fixed sleeps this replaced. */
   const SETTLE_MIN_OBSERVE_MS = 400;
-  const SETTLE_BOOTSTRAP = String.raw`(() => {
-    if (globalThis.__STARNET_SETTLE__) return;
+  const SETTLE_BOOTSTRAP_TEMPLATE = String.raw`(() => {
+    const SLOT = __STARNET_SETTLE_SLOT__;
+    if (globalThis[SLOT]) return;
     const s = { n: 0 };
-    try { Object.defineProperty(globalThis, '__STARNET_SETTLE__', { value: s, configurable: false, writable: false }); } catch (e) { return; }
+    try { Object.defineProperty(globalThis, SLOT, { value: s, configurable: false, writable: false }); } catch (e) { return; }
     const bump = () => { s.n++; };
     const observe = () => {
       try { new MutationObserver(bump).observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, characterData: true }); } catch (e) {}
@@ -78,15 +80,20 @@
     try { addEventListener('load', bump); addEventListener('popstate', bump); } catch (e) {}
   })()`;
   // Cheap per-poll read: is the document done, and how many mutations has it seen so far?
-  const SETTLE_PROBE = `(() => { const s = globalThis.__STARNET_SETTLE__;
+  const SETTLE_PROBE_TEMPLATE = `(() => { const s = globalThis[__STARNET_SETTLE_SLOT__];
     return { ok: !!s, ready: document.readyState, n: s ? s.n : -1 }; })()`;
+  function settleSource(slot) { return SETTLE_BOOTSTRAP_TEMPLATE.replace('__STARNET_SETTLE_SLOT__', JSON.stringify(slot)); }
+  function settleProbeSource(slot) { return SETTLE_PROBE_TEMPLATE.replace('__STARNET_SETTLE_SLOT__', JSON.stringify(slot)); }
+  const SETTLE_BOOTSTRAP = settleSource('__STARNET_SETTLE__');
+  const SETTLE_PROBE = settleProbeSource('__STARNET_SETTLE__');
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
   // Installed Chrome's "new" headless mode can still enter the platform pointer-lock path after
   // a CDP click. On Windows that path calls ClipCursor and moves the REAL cursor. Install this
   // bootstrap before every navigation so game code observes a faithful logical lock while the
   // browser never reaches native pointer/keyboard lock. CDP Input.* remains fully synthetic.
   const SYNTHETIC_INPUT_TEMPLATE = String.raw`(() => {
-    if (globalThis.__STARNET_SYNTHETIC_INPUT__) return;
+    const SLOT = __STARNET_INPUT_SLOT__;
+    if (globalThis[SLOT]) return;
     const ALLOW_POPUPS = __STARNET_ALLOW_POPUPS__;
     const state = { pointer: null, fullscreen: null, keyboard: false, ready: false, popupBlocked: false, error: null };
     let request = null, exit = null, fullscreenRequest = null, fullscreenExit = null, blockedOpen = null, keyboardLock = null, keyboardUnlock = null, wakeRequest = null, orientationLock = null, orientationUnlock = null;
@@ -110,7 +117,7 @@
       orientationUnlock: { get: () => orientationUnlock }
     });
     Object.freeze(attestation);
-    Object.defineProperty(globalThis, '__STARNET_SYNTHETIC_INPUT__', { value: attestation, configurable: false, writable: false });
+    Object.defineProperty(globalThis, SLOT, { value: attestation, configurable: false, writable: false });
     const fire = (name) => queueMicrotask(() => document.dispatchEvent(new Event(name)));
     try {
       request = function () { state.pointer = this; fire('pointerlockchange'); return Promise.resolve(); };
@@ -211,10 +218,20 @@
   /* The bootstrap above is a TEMPLATE: __STARNET_ALLOW_POPUPS__ is substituted per run. The exported
      constant keeps the fail-closed (popups blocked) form, which is also what every rig that installs
      the raw string gets. */
-  function syntheticInputSource(allowPopups) {
-    return SYNTHETIC_INPUT_TEMPLATE.replace('__STARNET_ALLOW_POPUPS__', allowPopups === true ? 'true' : 'false');
+  function syntheticInputSource(allowPopups, slot) {
+    return SYNTHETIC_INPUT_TEMPLATE
+      .replace('__STARNET_ALLOW_POPUPS__', allowPopups === true ? 'true' : 'false')
+      .replace('__STARNET_INPUT_SLOT__', JSON.stringify(slot || '__STARNET_SYNTHETIC_INPUT__'));
   }
   const SYNTHETIC_INPUT_BOOTSTRAP = syntheticInputSource(false);
+
+  function internalMarker(seed, purpose) {
+    let n = 2166136261;
+    for (const ch of String(seed || '') + ':' + String(purpose || '')) {
+      n ^= ch.charCodeAt(0); n = Math.imul(n, 16777619) >>> 0;
+    }
+    return '__' + n.toString(16).padStart(8, '0');
+  }
 
   function headlessRequested(env) {
     env = env || process.env;
@@ -255,6 +272,9 @@
     { path: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: false },
     { path: 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe', headless: false },
     process.env.LOCALAPPDATA && { path: P.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'), headless: false },
+    { path: 'C:/Program Files/Microsoft/Edge/Application/msedge.exe', headless: false },
+    { path: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: false },
+    process.env.LOCALAPPDATA && { path: P.join(process.env.LOCALAPPDATA, 'Microsoft', 'Edge', 'Application', 'msedge.exe'), headless: false },
     { path: '/usr/bin/google-chrome', headless: false },
     { path: '/usr/bin/chromium-browser', headless: false },
     { path: '/usr/bin/chromium', headless: false },
@@ -263,17 +283,118 @@
 
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-  /* A private, per-run CDP endpoint that does NOT announce itself as automation.
+  function normalizeBrowserLocale(value) {
+    const raw = String(value || '').trim().replace(/_/g, '-');
+    return /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(raw) ? raw : 'en-US';
+  }
+  function hostBrowserLocale(deps) {
+    if (deps && deps.locale) return normalizeBrowserLocale(deps.locale);
+    try { return normalizeBrowserLocale(Intl.DateTimeFormat().resolvedOptions().locale); }
+    catch (_) { return 'en-US'; }
+  }
+  function detectBrowserVersion(chromePath, deps) {
+    const injected = String(deps && deps.browserVersion || '').trim();
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(injected)) return injected;
+    const run = deps && deps.spawnSync || CP.spawnSync;
+    try {
+      const out = run(chromePath, ['--version'], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+      const text = String(out && (out.stdout || out.stderr) || '');
+      const hit = text.match(/(\d+\.\d+\.\d+\.\d+)/);
+      if (hit) return hit[1];
+    } catch (_) {}
+    // GUI Chrome on Windows commonly detaches without writing `--version` to stdout. FileVersion is
+    // the same installed-binary fact and does not require launching a browser window.
+    if (String(deps && deps.platform || process.platform) === 'win32' && chromePath) {
+      try {
+        const ps = deps && deps.powerShellPath || 'powershell.exe';
+        const literal = String(chromePath).replace(/'/g, "''");
+        const out = run(ps, ['-NoProfile', '-NonInteractive', '-Command',
+          "(Get-Item -LiteralPath '" + literal + "').VersionInfo.ProductVersion"],
+        { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+        const hit = String(out && (out.stdout || out.stderr) || '').match(/(\d+\.\d+\.\d+\.\d+)/);
+        if (hit) return hit[1];
+      } catch (_) {}
+    }
+    return '';
+  }
+  function makeLaunchIdentity(chromePath, deps) {
+    deps = deps || {};
+    const locale = hostBrowserLocale(deps);
+    const version = detectBrowserVersion(chromePath, deps);
+    if (!version) return { locale, version: '', userAgent: '' };
+    const platform = String(deps.platform || process.platform);
+    const arch = String(deps.arch || process.arch);
+    let osToken = 'X11; Linux ' + (arch === 'arm64' ? 'aarch64' : 'x86_64');
+    if (platform === 'win32') osToken = 'Windows NT 10.0; Win64; x64';
+    else if (platform === 'darwin') osToken = 'Macintosh; Intel Mac OS X 10_15_7';
+    return {
+      locale, version,
+      userAgent: 'Mozilla/5.0 (' + osToken + ') AppleWebKit/537.36 (KHTML, like Gecko) Chrome/' + version + ' Safari/537.36'
+    };
+  }
+
+  function browserVersionFrom(value) {
+    const hit = String(value || '').match(/(?:Headless)?Chrome\/(\d+\.\d+\.\d+\.\d+)|\b(\d+\.\d+\.\d+\.\d+)\b/);
+    return hit ? (hit[1] || hit[2]) : '';
+  }
+  function cleanBrandRows(rows, version, full) {
+    const major = String(version || '').split('.')[0];
+    const out = [], seen = new Set();
+    for (const row of (Array.isArray(rows) ? rows : [])) {
+      let brand = String(row && row.brand || '');
+      if (!brand) continue;
+      if (/headlesschrome/i.test(brand)) brand = 'Chromium';
+      if (seen.has(brand)) continue;
+      seen.add(brand);
+      out.push({ brand, version: brand === 'Chromium' ? (full ? version : major) : String(row.version || '') });
+    }
+    if (!seen.has('Chromium')) out.unshift({ brand: 'Chromium', version: full ? version : major });
+    return out;
+  }
+  /* Build one CDP-owned identity from the browser's OWN pre-navigation Client Hints, changing only
+     the headless product label and matching the UA version. This avoids the worse failure modes of
+     hand-invented fingerprint tables: blank high-entropy hints, a Windows UA paired with Linux hints,
+     or a Chrome/149 UA paired with HeadlessChrome/149 brands. */
+  function makeCdpIdentity(browserInfo, natural, deps) {
+    natural = natural || {};
+    const hints = natural.hints || {};
+    const version = browserVersionFrom(browserInfo && (browserInfo.product || browserInfo.userAgent)) ||
+      browserVersionFrom(natural.ua) || detectBrowserVersion(deps && deps.chromePath, deps);
+    if (!version) return null;
+    const launch = makeLaunchIdentity(deps && deps.chromePath || '', Object.assign({}, deps, { browserVersion: version }));
+    const nativeUa = String(natural.ua || '');
+    // Preserve the browser family and its native OS token (notably Edge's trailing Edg/* token);
+    // replace only Chromium's headless product component with the connected engine version.
+    const userAgent = /(?:HeadlessChrome|Chrome)\/\d+(?:\.\d+){0,3}/.test(nativeUa)
+      ? nativeUa.replace(/(?:HeadlessChrome|Chrome)\/\d+(?:\.\d+){0,3}/, 'Chrome/' + version)
+      : launch.userAgent;
+    return {
+      userAgent,
+      platform: natural.platform || (String(deps && deps.platform || process.platform) === 'win32' ? 'Win32' : ''),
+      userAgentMetadata: {
+        brands: cleanBrandRows(hints.brands, version, false),
+        fullVersionList: cleanBrandRows(hints.fullVersionList, version, true),
+        fullVersion: version,
+        platform: String(hints.platform || ''),
+        platformVersion: String(hints.platformVersion || ''),
+        architecture: String(hints.architecture || ''),
+        model: String(hints.model || ''),
+        mobile: hints.mobile === true,
+        bitness: String(hints.bitness || ''),
+        wow64: hints.wow64 === true
+      }
+    };
+  }
+
+  /* A private, per-run CDP endpoint plus an explicit automation-signal override.
      `--remote-debugging-port=0` asks Chromium to pick the port, but Chromium's
      content/child/runtime_features.cc special-cases port 0 and calls
-     WebRuntimeFeatures::EnableAutomationControlled(true) — i.e. it sets navigator.webdriver.
-     Sites key off that flag; Google refuses sign-in to browsers "being controlled through
-     software automation" (support.google.com/accounts/answer/7675428), which would break the
-     attended-login takeover for the very human who is supposed to be driving. A NON-zero port
-     carries no such flag, and a CDP client attaching later cannot set it (it is a startup-time
-     Blink runtime feature). So we do the ephemeral allocation ourselves: bind 127.0.0.1:0, keep
-     whatever the OS hands us, release it, and pass that number to Chromium. Same private
-     per-run endpoint as before — no process-wide port another agent's run could attach to. */
+     WebRuntimeFeatures::EnableAutomationControlled(true). A non-zero private port avoids that
+     specific trigger and prevents cross-run attachment, but the real-browser gauntlet proved current
+     headless Chromium can still expose navigator.webdriver. Station-launched browsers therefore also
+     disable the AutomationControlled Blink feature. Attached Commander-owned Chrome is never launched
+     or modified here. We allocate the private endpoint ourselves: bind 127.0.0.1:0, keep whatever the
+     OS hands us, release it, and pass that number to Chromium. */
   function allocateEphemeralPort() {
     return new Promise((resolve, reject) => {
       let srv;
@@ -383,20 +504,15 @@
     }
     return u;
   }
-  // Resolve a Chrome binary. When wantHeaded is true, PREFER a full Chrome (headless-shell
-  // builds can't show a window); only fall back to a headless-shell binary if nothing else
-  // exists. Returns { path, headless } where headless=true means "this binary is headless-only,
-  // a visible window is impossible" so the caller can report the truth.
+  // Resolve a Chrome binary. Always prefer a full browser: headless-shell exposes a materially
+  // different browser surface (no plugins/window.chrome and HeadlessChrome Client Hints) even when
+  // its legacy UA is overridden. A shell remains a compatibility fallback when no full build exists.
+  // Returns { path, headless } where headless=true means a visible window is impossible.
   function resolveChrome(wantHeaded, existsSync) {
     existsSync = existsSync || FS.existsSync;
     const exists = (c) => { try { return existsSync(c.path); } catch (_) { return false; } };
-    if (wantHeaded) {
-      for (const c of CHROME_CANDIDATES) { if (!c.headless && exists(c)) return { path: c.path, headless: false }; }
-      // no full Chrome found — fall back to a headless-only binary (window impossible)
-      for (const c of CHROME_CANDIDATES) { if (c.headless && exists(c)) return { path: c.path, headless: true }; }
-      return null;
-    }
-    for (const c of CHROME_CANDIDATES) { if (exists(c)) return { path: c.path, headless: c.headless }; }
+    for (const c of CHROME_CANDIDATES) { if (!c.headless && exists(c)) return { path: c.path, headless: false }; }
+    for (const c of CHROME_CANDIDATES) { if (c.headless && exists(c)) return { path: c.path, headless: true }; }
     return null;
   }
   // Back-compat shim (tests/other callers): return just the path of the first existing binary.
@@ -471,6 +587,15 @@
     const cdpPort = deps.cdpPort == null ? DEFAULT_PORT : Number(deps.cdpPort);
     const privatePort = cdpPort === 0;
     const profileDir = deps.profileDir || P.join(OS.tmpdir(), 'starnet-browser-' + process.pid);
+    // Page-realm safety/settle state must be readable by the driver, but fixed product-named globals
+    // are an avoidable signature. Opaque per-profile slots preserve the contract without publishing
+    // `__STARNET_*` on every site.
+    const inputMarker = internalMarker(profileDir, 'input');
+    const settleMarker = internalMarker(profileDir, 'settle');
+    const inputStateExpr = 'globalThis[' + JSON.stringify(inputMarker) + ']';
+    const settleBootstrap = settleSource(settleMarker);
+    const settleProbe = settleProbeSource(settleMarker);
+    const stationMetrics = { width: 1440, height: 900, screenWidth: 1440, screenHeight: 900, deviceScaleFactor: 1, mobile: false };
     // Stale from a previous run on this profile; cleared so nothing can mistake it for live state.
     const activePortFile = P.join(profileDir, 'DevToolsActivePort');
     const timeoutMs = deps.timeoutMs || 15000;
@@ -487,6 +612,7 @@
     const settleActionBudgetMs = deps.settleActionBudgetMs == null ? SETTLE_ACTION_BUDGET_MS : Number(deps.settleActionBudgetMs);
     const settleEmptyGraceMs = deps.settleEmptyGraceMs == null ? SETTLE_EMPTY_GRACE_MS : Number(deps.settleEmptyGraceMs);
     const settleMinObserveMs = deps.settleMinObserveMs == null ? SETTLE_MIN_OBSERVE_MS : Number(deps.settleMinObserveMs);
+    const inputSleep = typeof deps.inputSleep === 'function' ? deps.inputSleep : sleep;
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
     /* ATTACH MODE. deps.attachPort names an ALREADY-RUNNING Chrome's DevTools port (the Commander started
        it with --remote-debugging-port). We launch nothing, so we need no Chromium binary of our own — the
@@ -501,12 +627,17 @@
     const headed = wantHeaded && !binIsHeadlessOnly;
 
     let proc = null, procExited = false, procError = null, procClosePromise = null, cdp = null, consoleLog = [], dialog = null, attachedPort = null;
+    // Owned-browser identity is derived after CDP connects. Windows Chrome GUI binaries often emit
+    // nothing for `chrome.exe --version`; launch-time probing alone left their UA as HeadlessChrome.
+    // Attached Commander-owned Chrome is intentionally excluded from every override.
+    let stationIdentity = null;
     /* NETWORK TRUTH. navigate() used to return only location.href, so a 403, a 404 and a page that
        simply rendered nothing were indistinguishable to the agent — it would "read" an error page and
        report its contents as the answer. The Network domain gives the main document's real status, and
        an in-flight request count that makes auto-wait aware of XHR that has not landed yet. */
     let mainFrameId = null, lastResponse = null;
     const inflight = new Set();
+    const runtimeConsoleSessions = new Set();
     /* REQUEST LOG. `browser.console` already lets the agent see what the page SAID; this is what the
        page DID. Without it "the button did nothing" is unfalsifiable — you cannot tell a 401 from a
        CORS refusal from a request that was never made. Bounded like consoleLog, and deliberately
@@ -523,6 +654,37 @@
        (Emulation.* overrides are per-session too), and the tool must be able to report truthfully
        what is currently being emulated instead of guessing. */
     let emulation = null;
+    /* INPUT CADENCE. One deterministic seed per run gives natural-looking bounded paths without
+       ambient randomness, flaky tests, or unbounded latency. Long text is grouped into at most 40
+       paced inserts, so a large form body cannot turn into minutes of artificial delay. */
+    let inputSeed = 2166136261;
+    for (const ch of String(deps.inputSeed || profileDir)) {
+      inputSeed ^= ch.charCodeAt(0); inputSeed = Math.imul(inputSeed, 16777619) >>> 0;
+    }
+    function inputRandom() {
+      inputSeed ^= inputSeed << 13; inputSeed ^= inputSeed >>> 17; inputSeed ^= inputSeed << 5;
+      return (inputSeed >>> 0) / 4294967296;
+    }
+    function inputBetween(min, max) { return Math.round(min + inputRandom() * (max - min)); }
+    async function inputPause(min, max) { await inputSleep(inputBetween(min, max)); }
+    let pointer = { x: 720, y: 450 };
+    async function movePointer(c, target, button) {
+      const start = { x: pointer.x, y: pointer.y };
+      const dx = target.x - start.x, dy = target.y - start.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const steps = Math.max(3, Math.min(9, Math.ceil(dist / 180) + inputBetween(2, 4)));
+      const bend = (inputRandom() - 0.5) * Math.min(70, dist * 0.18);
+      const nx = dist ? -dy / dist : 0, ny = dist ? dx / dist : 0;
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps, eased = t * t * (3 - 2 * t);
+        const arc = Math.sin(Math.PI * t) * bend;
+        const x = Math.round(start.x + dx * eased + nx * arc);
+        const y = Math.round(start.y + dy * eased + ny * arc);
+        await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: button || 'none' });
+        await inputPause(6, 18);
+      }
+      pointer = { x: target.x, y: target.y };
+    }
     function netRecord(requestId, patch) {
       let row = netById.get(requestId);
       if (!row) {
@@ -550,6 +712,33 @@
        endpoint with popups BLOCKED, which is the old behaviour. openerSession is the original tab -
        under browser-level auto-attach every command is session-scoped, including tab 0's. */
     let popupsAdopted = false, openerSession = null;
+    async function deriveStationIdentity(sessionId) {
+      if (attachPort !== null) return null;
+      let browserInfo = null, natural = null;
+      try { browserInfo = await cdp.send('Browser.getVersion', {}); } catch (_) {}
+      if (!browserVersionFrom(browserInfo && (browserInfo.product || browserInfo.userAgent)) &&
+          !/^\d+\.\d+\.\d+\.\d+$/.test(String(deps.browserVersion || ''))) return null;
+      for (let attempt = 0; attempt < 10 && !natural; attempt++) {
+        try {
+          const raw = await cdp.send('Runtime.evaluate', {
+            expression: `(async()=>{let hints={};try{hints=navigator.userAgentData?await navigator.userAgentData.getHighEntropyValues(['architecture','bitness','model','platformVersion','uaFullVersion','fullVersionList','wow64']):{};}catch(e){}return{ua:navigator.userAgent,platform:navigator.platform,hints};})()`,
+            awaitPromise: true, returnByValue: true
+          }, sessionId);
+          const value = raw && raw.result && raw.result.value;
+          if (value && typeof value === 'object') natural = value;
+        } catch (_) {}
+        if (!natural) await sleep(40);
+      }
+      return makeCdpIdentity(browserInfo, natural, Object.assign({}, deps, { chromePath }));
+    }
+    function installStationIdentity(sessionId) {
+      if (!stationIdentity || attachPort !== null) return Promise.resolve();
+      return cdp.send('Emulation.setUserAgentOverride', stationIdentity, sessionId);
+    }
+    function installStationMetrics(sessionId) {
+      if (attachPort !== null || headed) return Promise.resolve();
+      return cdp.send('Emulation.setDeviceMetricsOverride', stationMetrics, sessionId);
+    }
     async function connect() {
       if (cdp) return cdp;
       /* ATTACH: no spawn, no profile dir, no proc ledger entry. `proc` deliberately stays null, which is
@@ -570,9 +759,10 @@
       // Allocated here, not by Chromium, so the launch carries no automation flag. Chromium still
       // writes the bound port into this profile's DevToolsActivePort, which stays the readiness proof.
       launchPort = privatePort ? await allocateEphemeralPort() : cdpPort;
-      const args = ['--disable-gpu', '--no-first-run', '--no-default-browser-check',
+      const args = ['--disable-blink-features=AutomationControlled', '--no-first-run', '--no-default-browser-check',
         '--remote-debugging-port=' + launchPort, '--window-size=1440,900',
         '--user-data-dir=' + profileDir];
+      args.push('--lang=' + hostBrowserLocale(deps));
       if (headed) {
         // Visible window the user can watch (and hear — no --mute-audio in headed mode).
         args.push('--new-window');
@@ -674,12 +864,14 @@
                      paused out-of-process iframe caused, just reached from the other side. Measured law:
                      Page.* does not acknowledge on a paused page target, so awaiting the preload here
                      would stall until the CDP timeout and take the opener down with it.
-                     The websocket is ordered, so queueing the preloads before the resume is enough for
+                  The websocket is ordered, so queueing the preloads before the resume is enough for
                      them to apply to the document the popup is about to load - nothing needs awaiting.
                      about:blank is deliberately not shimmed: it has no content to protect, and reaching
                      for it is what made this path block. */
-                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: syntheticInputSource(popupsAdopted) }, sid).catch(() => {});
-                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid).catch(() => {});
+                  installStationIdentity(sid).catch(() => {});
+                  installStationMetrics(sid).catch(() => {});
+                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: syntheticInputSource(popupsAdopted, inputMarker) }, sid).catch(() => {});
+                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: settleBootstrap }, sid).catch(() => {});
                   pageSessions.set(sid, info.targetId);
                   cdp.send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {
                     pageSessions.delete(sid);
@@ -705,8 +897,9 @@
                    Page.addScriptToEvaluateOnNewDocument DOES acknowledge on a paused OOPIF (~1ms) and
                    applies to the document the frame is about to load. Then resume. */
                 Promise.resolve()
-                  .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid))
-                  .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid))
+                  .then(() => installStationIdentity(sid))
+                  .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: syntheticInputSource(false, inputMarker) }, sid))
+                  .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: settleBootstrap }, sid))
                   // Remember the adopted frame. It was already attached and shimmed, but nothing ever
                   // recorded its session, so snapshot/get_text could never look inside it: a login form
                   // in an Auth0/Okta/Stripe iframe, or a consent banner, was simply invisible.
@@ -735,10 +928,12 @@
             }
             // Popups are only unblocked once adoption is proven armed. Anything else - no browser
             // endpoint, isolation disabled, the opener never attaching - keeps the old block.
-            const shimSource = syntheticInputSource(popupsAdopted);
+            const shimSource = syntheticInputSource(popupsAdopted, inputMarker);
             const S = openerSession || undefined;   // under browser-level attach, even tab 0 is a session
             await cdp.send('Page.enable', {}, S);
-            await cdp.send('Runtime.enable', {}, S);
+            // Runtime.evaluate does not require Runtime.enable. Leave the observable Runtime domain
+            // disabled during ordinary browsing; browser.console enables it lazily for the active tab
+            // only when the agent explicitly asks for console diagnostics.
             if (deps.syntheticInputOnly !== false) {
               // Install for all future documents AND the current about:blank. A page click can
               // now satisfy its logical pointer-lock contract without touching Win32 ClipCursor.
@@ -747,8 +942,8 @@
             }
             // The settle marker is measurement, not a security shim, so it installs UNCONDITIONALLY —
             // auto-wait must still work on a rig that disabled the synthetic-input isolation.
-            await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, S);
-            await cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, S);
+            await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: settleBootstrap }, S);
+            await cdp.send('Runtime.evaluate', { expression: settleBootstrap }, S);
             await cdp.send('Network.enable', {}, S);
             await cdp.send('DOM.enable', {}, S);
             // waitForDebuggerOnStart pauses EVERY page target, the original tab included. Its setup is
@@ -760,6 +955,16 @@
               try { await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, openerSession); } catch (_) {}
             }
             if (openerSession) { try { await cdp.send('Runtime.runIfWaitingForDebugger', {}, openerSession); } catch (_) {} }   // getFrameOwner/getBoxModel, for placing iframe content in the top page
+            if (attachPort === null && !headed) {
+              /* Client Hints reveal their high-entropy values only in a trustworthy origin. Probe the
+                 browser's own loopback DevTools endpoint before any site is visited, then preserve those
+                 native values while replacing only the headless brand/legacy-UA label. Network listeners
+                 are installed below, so this owned bootstrap navigation never appears as page telemetry. */
+              try { await cdp.send('Page.navigate', { url: 'http://127.0.0.1:' + launchPort + '/json/version' }, S, navTimeoutMs); } catch (_) {}
+              stationIdentity = await deriveStationIdentity(S);
+              await installStationIdentity(S);
+              await installStationMetrics(S);
+            }
             // Identify the top frame so a sub-frame's document response can never be mistaken for the
             // page's own status (an ad iframe 404 must not read as "the page 404'd").
             try {
@@ -867,7 +1072,7 @@
         for (;;) {
           let probe = null;
           try {
-            const r = await c.send('Runtime.evaluate', { expression: SETTLE_PROBE, returnByValue: true });
+            const r = await c.send('Runtime.evaluate', { expression: settleProbe, returnByValue: true });
             probe = r && r.result && r.result.value;
           } catch (_) { probe = null; }
           // Marker absent (or a non-object answer from a stub endpoint): we cannot measure quiescence.
@@ -917,7 +1122,7 @@
       const finalUrl = await evalJS('location.href');
       if (deps.syntheticInputOnly !== false) {
         const isolation = await evalJS(`(() => {
-          const s=globalThis.__STARNET_SYNTHETIC_INPUT__;
+          const s=${inputStateExpr};
            const rd=Object.getOwnPropertyDescriptor(Element.prototype,'requestPointerLock');
            const ed=Object.getOwnPropertyDescriptor(Document.prototype,'exitPointerLock');
            const fd=Object.getOwnPropertyDescriptor(Element.prototype,'requestFullscreen');
@@ -1046,7 +1251,9 @@
       const c = await page();
       const x = node.x + Math.max(1, Math.floor(node.w / 2));
       const y = node.y + Math.max(1, Math.floor(node.h / 2));
+      await movePointer(c, { x, y }, 'none');
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      await inputPause(35, 90);
       await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'clicked';
@@ -1054,7 +1261,15 @@
     async function type(node, text) {
       await click(node);
       const c = await page();
-      await c.send('Input.insertText', { text: String(text || '') });
+      const chars = Array.from(String(text || ''));
+      const paced = Math.min(chars.length, 40);
+      let at = 0;
+      for (let i = 0; i < paced; i++) {
+        const take = Math.ceil((chars.length - at) / (paced - i));
+        await c.send('Input.insertText', { text: chars.slice(at, at + take).join('') });
+        at += take;
+        if (i + 1 < paced) await inputPause(25, 70);
+      }
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'typed';
     }
@@ -1062,6 +1277,7 @@
       const c = await page();
       key = String(key || 'Enter');
       await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key });
+      await inputPause(25, 70);
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key });
       // Enter/Escape routinely submit or dismiss, so a keypress gets a navigation-sized budget.
       await waitForSettle(c, { budgetMs: settleNavBudgetMs });
@@ -1072,7 +1288,7 @@
     async function hover(node) {
       const c = await page();
       const p = center(node);
-      await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' });
+      await movePointer(c, p, 'none');
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'hovered';
     }
@@ -1081,15 +1297,10 @@
     async function drag(from, to) {
       const c = await page();
       const a = center(from), b = center(to);
+      await movePointer(c, a, 'none');
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: a.x, y: a.y, button: 'left', clickCount: 1 });
-      const steps = 6;
-      for (let i = 1; i <= steps; i++) {
-        await c.send('Input.dispatchMouseEvent', {
-          type: 'mouseMoved', button: 'left',
-          x: Math.round(a.x + (b.x - a.x) * i / steps),
-          y: Math.round(a.y + (b.y - a.y) * i / steps)
-        });
-      }
+      await inputPause(45, 100);
+      await movePointer(c, b, 'left');
       await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: b.x, y: b.y, button: 'left', clickCount: 1 });
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'dragged';
@@ -1160,15 +1371,18 @@
       await applyIntercept(await page());
       return interceptKinds.slice();
     }
-    /* EMULATION. Overrides are all-or-nothing per call for the fields given; reset:true clears every
-       override. UA clearing rides Chromium's own contract (an empty userAgent disables the override);
-       locale clears by omission; timezone by empty string; metrics by clearDeviceMetricsOverride. */
+    /* EMULATION. Overrides are all-or-nothing per call for the fields given; reset returns an owned
+       browser to its station identity (not Chromium's HeadlessChrome default). Attached Chrome still
+       clears to its real identity because stationIdentity is intentionally never created there. */
     async function applyEmulation(c) {
       const e = emulation;
       if (!e) {
-        try { await c.send('Emulation.clearDeviceMetricsOverride', {}); } catch (_) {}
+        try {
+          if (attachPort === null && !headed) await c.send('Emulation.setDeviceMetricsOverride', stationMetrics);
+          else await c.send('Emulation.clearDeviceMetricsOverride', {});
+        } catch (_) {}
         try { await c.send('Emulation.setTouchEmulationEnabled', { enabled: false }); } catch (_) {}
-        try { await c.send('Emulation.setUserAgentOverride', { userAgent: '' }); } catch (_) {}
+        try { await c.send('Emulation.setUserAgentOverride', stationIdentity || { userAgent: '' }); } catch (_) {}
         try { await c.send('Emulation.setLocaleOverride', {}); } catch (_) {}
         try { await c.send('Emulation.setTimezoneOverride', { timezoneId: '' }); } catch (_) {}
         return;
@@ -1338,7 +1552,7 @@
         // receives movementX/Y while no platform cursor exists to confine or warp.
         const dx = Number(a.dx) || 0, dy = Number(a.dy) || 0;
         await evalJS(`(() => {
-          const s=globalThis.__STARNET_SYNTHETIC_INPUT__;
+          const s=${inputStateExpr};
           if(!s||!s.ready) throw new Error('synthetic input isolation is not active');
           const e=new MouseEvent('mousemove',{bubbles:true,clientX:${JSON.stringify(x)},clientY:${JSON.stringify(y)}});
           Object.defineProperty(e,'movementX',{value:${JSON.stringify(dx)}});
@@ -1366,7 +1580,7 @@
     async function testState(selector) {
       const sel = selector == null ? 'null' : JSON.stringify(String(selector));
       return evalJS(`(() => {
-        const s=globalThis.__STARNET_SYNTHETIC_INPUT__;
+        const s=${inputStateExpr};
         const q=${sel}; const el=q?document.querySelector(q):null;
         let element=null;
         if(q){
@@ -1379,8 +1593,20 @@
     // Scrolling is what triggers lazy-load / infinite-scroll, so it settles too — otherwise the very
     // content the scroll was meant to reveal is missing from the next snapshot.
     async function scroll(x, y) {
-      await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')');
-      await waitForSettle(await page(), { budgetMs: settleActionBudgetMs });
+      const c = await page();
+      const totalX = Number(x) || 0, totalY = Number(y) || 0;
+      const steps = inputBetween(3, 6);
+      let sentX = 0, sentY = 0;
+      for (let i = 1; i <= steps; i++) {
+        const nextX = Math.round(totalX * i / steps), nextY = Math.round(totalY * i / steps);
+        await c.send('Input.dispatchMouseEvent', {
+          type: 'mouseWheel', x: pointer.x, y: pointer.y,
+          deltaX: nextX - sentX, deltaY: nextY - sentY
+        });
+        sentX = nextX; sentY = nextY;
+        if (i < steps) await inputPause(20, 55);
+      }
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'scrolled';
     }
     async function back() {
@@ -1418,6 +1644,27 @@
       }
       return parts.join('').trim();
     }
+    async function challengeStatus() {
+      const pageState = await evalJS(`(() => ({
+        title: String(document.title || '').slice(0, 300),
+        text: String(document.body && (document.body.innerText || document.body.textContent) || '').trim().slice(0, 1200)
+      }))()`);
+      const detected = Challenge.detectChallenge(pageState || {});
+      return Object.assign({ title: pageState && pageState.title || '' }, detected);
+    }
+    async function readConsoleLog() {
+      const c = await page();
+      const sessionKey = activeSession || openerSession || '__root__';
+      if (!runtimeConsoleSessions.has(sessionKey)) {
+        await c.send('Runtime.enable', {});
+        runtimeConsoleSessions.add(sessionKey);
+        // Runtime.enable flushes buffered console entries asynchronously. Give that bounded protocol
+        // delivery one turn before reading the local ring.
+        await sleep(20);
+      }
+      return consoleLog.slice();
+    }
+
     /* waitFor — poll a NAMED condition until it holds or the budget expires.
 
        This is the piece that was missing. Every action already auto-settles, but settling answers "has the
@@ -1511,7 +1758,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, waitFor, pdf, intercept, emulate, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, waitFor, pdf, intercept, emulate, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, challengeStatus, handleDialog, screenshot, close, consoleLog: readConsoleLog, networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -1901,6 +2148,12 @@
     async function scroll(x, y) { return ensureDriver().scroll(x, y); }
     async function back() { version++; navEpoch++; return ensureDriver().back(); }
     async function getText(selector) { return ensureDriver().getText(selector); }
+    async function challengeStatus() {
+      const d = ensureDriver();
+      return typeof d.challengeStatus === 'function'
+        ? d.challengeStatus()
+        : { challenged: false, signal: null, title: '' };
+    }
     // A driver without network visibility reports an empty log rather than pretending.
     function networkLog(limit) {
       const d = driver;
@@ -1908,7 +2161,7 @@
       return rows.slice(-(limit || 60));
     }
     async function consoleLog(limit) {
-      const list = ensureDriver().consoleLog ? ensureDriver().consoleLog() : [];
+      const list = ensureDriver().consoleLog ? await ensureDriver().consoleLog() : [];
       return list.slice(-(limit || 40));
     }
     async function dialog(action, promptText) { return ensureDriver().handleDialog(action || 'accept', promptText || ''); }
@@ -1996,7 +2249,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, evalAllowed, wait, find, pdf, intercept, emulate, attach, detach, attachedToUser: () => attachedToUserBrowser, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, navEpoch: () => navEpoch, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, evalAllowed, wait, find, pdf, intercept, emulate, attach, detach, attachedToUser: () => attachedToUserBrowser, testInput, testEval, testState, testSnapshot, scroll, back, getText, challengeStatus, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, navEpoch: () => navEpoch, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -2066,6 +2319,16 @@
         async a => {
           if (a && a.visible === true && !allowVisible) throw new Error('visible browser mode is disabled: this run is headless-only');
           const url = await session.navigate(a.url, ('visible' in (a || {})) ? { visible: a.visible === true } : undefined);
+          const challenge = await session.challengeStatus();
+          if (challenge && challenge.challenged) {
+            let host = url;
+            try { host = new URL(url).host; } catch (_) {}
+            const http = describeResponse(session.lastResponse && session.lastResponse());
+            return {
+              content: 'Browser reached a human-verification wall at ' + host + http.text + '. This is not page content. If the Commander is available, use browser.attach for their own Chrome or browser.login when sign-in is required; otherwise report the wall plainly.',
+              summary: 'verification wall' + http.summary
+            };
+          }
           let vis = true;
           try { vis = session.visible(); } catch (_) {}
           const suffix = vis
@@ -2265,8 +2528,17 @@
           const d = await session.dialog(a.action || 'accept', a.promptText || '');
           return { content: 'Dialog ' + (d.type || 'none') + ': ' + fenceExternal(d.message || '', 'javascript dialog text from the page'), summary: 'dialog' };
         }),
-      read('browser.get_text', 'Return visible page text, optionally scoped by CSS selector.', { type: 'object', properties: { selector: { type: 'string' } } },
-        async a => ({ content: fenceExternal(clamp(await session.getText(a.selector || ''), MAX_TEXT), 'page text from the controlled browser'), summary: 'text' })),
+      read('browser.get_text', 'Return visible page text, optionally scoped by CSS selector. A detected verification wall is reported as a wall, never returned as page content.', { type: 'object', properties: { selector: { type: 'string' } } },
+        async a => {
+          const challenge = await session.challengeStatus();
+          if (challenge && challenge.challenged) {
+            return {
+              content: 'The current page is a human-verification wall, not readable page content. Use browser.attach for the Commander\'s own Chrome or browser.login when sign-in is required; otherwise report the wall plainly.',
+              summary: 'verification wall'
+            };
+          }
+          return { content: fenceExternal(clamp(await session.getText(a.selector || ''), MAX_TEXT), 'page text from the controlled browser'), summary: 'text' };
+        }),
       // ATTENDED LOGIN: requiresConsent stays false because the flow runs its OWN two-phase live consent
       // (open-window ask + done-wait) — the generic broker card would double-prompt. timeoutMs must outlive
       // both consent waits (each fail-closes on its own CONSENT timer + rendered-ack extension), so the only
@@ -2378,5 +2650,5 @@
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, normalizeBrowserLocale, detectBrowserVersion, makeLaunchIdentity, browserVersionFrom, cleanBrandRows, makeCdpIdentity, CHROME_CANDIDATES } };
 });

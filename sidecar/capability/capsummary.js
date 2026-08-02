@@ -43,6 +43,9 @@ const CORE = ['web', 'cabinet', 'workbench'];
 function summarizeCapabilities(resolved, opts) {
   opts = opts || {};
   const interactive = !opts.surface || opts.surface === 'interactive';
+  // An authenticated owner Telegram DM has desktop-equivalent authority, but no physical floor UI. Keep its
+  // capability prose distinct from both a watched browser floor and ordinary unattended automation.
+  const ownerTrusted = !!opts.ownerTrusted;
 
   const capIds = new Set(((resolved && resolved.grants) || []).map((g) => g && g.capId).filter(Boolean));
   const toolNames = Array.isArray(resolved && resolved.tools) ? resolved.tools : [];
@@ -70,13 +73,17 @@ function summarizeCapabilities(resolved, opts) {
   // block must render even when lackCore is EMPTY (a routine granted the terminal has no lacking core cap, yet
   // still needs to be told whether its Commander's connectors are reachable). Interactive is unchanged.
   const lackAutonomous = lackCore.map((c) => c.have).concat(hasConnectorTools ? [] : ['use live MCP connector tools']);
-  if (interactive ? lackCore.length : lackAutonomous.length) {
-    note += '- You do NOT have: ' + (interactive ? lackCore.map((c) => c.have) : lackAutonomous).join(', ') + '.\n';
+  const missing = interactive ? lackCore.map((c) => c.have) : lackAutonomous;
+  if (missing.length) {
+    note += '- You do NOT have: ' + missing.join(', ') + '.\n';
     if (interactive) {
       note += 'If the Commander asks for something you lack, do NOT claim, promise, or pretend to do it. Say plainly you can\'t yet, ' +
         'and name the object to place to grant it: ' +
         lackCore.map((c) => c.have + ' -> place ' + c.object).join('; ') + '. ' +
         'You can always think and reply; that needs nothing.\n';
+    } else if (ownerTrusted) {
+      note += 'This is an authenticated owner Telegram session: it has the same non-physical authority as the StarNet desktop app. ' +
+        'Do NOT claim, promise, or pretend to do what is genuinely absent; state the actual missing setup or tool plainly.\n';
     } else {
       // GRANT-AWARE (2026-07-25): a routine can now be granted the terminal and/or its Commander's MCP
       // connectors for unattended use, so this branch must NOT assert a blanket "no shell, no connectors" --

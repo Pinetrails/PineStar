@@ -119,6 +119,12 @@
       return { kind: c.kind, target: c.target, result: result || 'launched' };
     }
 
+    function remoteDesktopAllowed(ctx) {
+      ctx = ctx || {};
+      return deps.allowRemoteDesktop === true && ctx.remoteDesktopAuthorized === true
+        && ctx.ownerTrusted === true && ctx.surface === 'interactive' && ctx.inputMode === 'remote-owner';
+    }
+
     const openTool = {
       name: 'desktop.open',
       // Separate danger class: a cached web click/type grant must never authorize a real
@@ -136,8 +142,10 @@
           target: { type: 'string', description: 'A public http(s) URL (or bare host like youtube.com), or a bare app name like "notepad".' }
         }
       },
-      run: async () => {
-        throw new Error('visible desktop launch is not available to agent tools; the Commander must use a trusted desktop-shell button');
+      run: async (args, ctx) => {
+        if (!remoteDesktopAllowed(ctx)) throw new Error('visible desktop launch is disabled: no authenticated remote-owner desktop lease');
+        const out = await open(args && args.target);
+        return { content: 'desktop.open ok: ' + out.target, summary: 'opened ' + out.target };
       }
     };
 
@@ -145,7 +153,7 @@
     return {
       tools,
       register(reg) { tools.forEach(t => reg.register(t)); return reg; },
-      _internals: { classify, makeShellOpener, open, APP_NAME_RE }
+      _internals: { classify, makeShellOpener, open, remoteDesktopAllowed, APP_NAME_RE }
     };
   }
 

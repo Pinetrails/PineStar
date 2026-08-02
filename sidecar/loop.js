@@ -16,9 +16,9 @@
    typed error rather than a crash. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./providers/sanitize.js'), require('./providers/errorClass.js'));
-  else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize, root.SK.providers && root.SK.providers.errorClass); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize, errorClass) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./providers/sanitize.js'), require('./providers/errorClass.js'), require('./output-continuation.js'));
+  else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize, root.SK.providers && root.SK.providers.errorClass, root.SK.outputContinuation); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize, errorClass, outputContinuation) {
   'use strict';
 
   // tool-call argument repair (L2): recover mechanically-broken JSON from non-Anthropic models. Degrades to
@@ -26,6 +26,11 @@
   const repairToolCallArguments = (sanitize && sanitize.repairToolCallArguments) || ((s) => s);
   // API error classification (L3): makes `transient` on agent.run.error honest. Degrades to non-retryable if absent.
   const classifyApiError = (errorClass && errorClass.classifyApiError) || (() => ({ retryable: false, message: '' }));
+  const continuation = outputContinuation || {
+    maxFor: () => 0, shouldContinue: () => false, prompt: () => '',
+    novelText: (_before, after) => ({ text: String(after == null ? '' : after), removed: 0 }),
+    novelChunks: chunks => (chunks || []).slice()
+  };
 
   function summarize(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) : s; }
   function clip(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) + '…' : s; }
@@ -417,6 +422,9 @@
        every existing caller and test byte-identical. The tool-call sites live in tools/registry.js, which is
        where the gates are; only the LLM-call and compaction sites belong here. */
     const hooks = (o.hooks && typeof o.hooks.invoke === 'function') ? o.hooks : null;
+    // OPTIONAL durable-boundary seam for the run-journal lane. Awaited before any tool dispatch so a host can
+    // persist the provider-valid assistant turn before side effects begin. Absent = no extra await or behavior.
+    const onCheckpoint = (typeof o.onCheckpoint === 'function') ? o.onCheckpoint : null;
     let lastHookContext = '';   // dedupe: a standing brief injected every turn would otherwise stack N copies
     // OPTIONAL tool-result images (see SCREENSHOTS AS PIXELS below). OFF unless the host opts in, so every
     // internal/aux loop and every existing test is byte-identical; index.js turns it on for real runs.
@@ -445,6 +453,53 @@
     const unpricedUsage = [];
     let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
     let lastFinishReason = null;   // the last done-event finishReason ('length'/'content_filter' surfaced at run end)
+    // SEMANTIC OUTPUT CONTINUATION. Unlike a broken transport (`truncated:true`), finishReason:length is a valid,
+    // billable partial response. Keep it, then make up to four new paid calls to finish the same answer. The next
+    // call's text is buffered until its stop marker so a model that restarts the last sentence cannot duplicate
+    // bytes already emitted to COMMS. Partial tool calls are never repaired or dispatched (see the append seam).
+    const OUTPUT_CONTINUE_MAX = continuation.maxFor(limits);
+    let outputContinuesUsed = 0;
+    let continuationText = '';
+    let dedupeAgainst = null;
+    const continuationParts = [];
+    const continuationPrompts = [];
+
+    function emitContinuationText(acc, chunks) {
+      if (dedupeAgainst == null) return;
+      const novel = continuation.novelText(dedupeAgainst, acc.text);
+      acc.text = novel.text;
+      for (const delta of continuation.novelChunks(chunks, novel.removed)) {
+        emit('agent.token', { agentId, runId, delta });
+      }
+      dedupeAgainst = null;
+    }
+
+    // Only called when no further model call will consume the messages. It turns a multi-call text continuation
+    // back into one assistant turn for durable transcript/delivery consumers; internal continuation prompts vanish.
+    function collapseContinuation(finalPart) {
+      const parts = continuationParts.slice();
+      if (finalPart) parts.push(finalPart);
+      if (!parts.length) return;
+      const first = parts[0];
+      first.content = parts.map(m => String((m && m.content) || '')).join('');
+      const remove = new Set(parts.slice(1).concat(continuationPrompts));
+      if (remove.size) {
+        const kept = messages.filter(m => !remove.has(m));
+        messages.length = 0;
+        for (const m of kept) messages.push(m);
+      }
+    }
+
+    async function saveCheckpoint(phase) {
+      if (!onCheckpoint) return null;
+      try {
+        await onCheckpoint({ phase, messages, agentId, runId, turn: turns });
+        return null;
+      } catch (e) {
+        emit('agent.run.error', { agentId, runId, message: 'run checkpoint failed: ' + String((e && e.message) || e), transient: false });
+        return end('error');
+      }
+    }
     // OPTIONAL injected sleep for bounded mid-stream retry backoff (o.sleep(ms) -> Promise). Absent = retry with
     // NO wait (keeps the loop deterministic + test-fast); when present it honors the classifier's retryAfterMs.
     const sleep = (typeof o.sleep === 'function') ? o.sleep : null;
@@ -626,6 +681,7 @@
       //     transient backend failure retries the SAME turn instead of killing the run. Bounded: at most one
       //     compaction plus one switch per fallback entry, so a degraded backend can't spin.
       const acc = { text: '', toolCalls: {}, reasoning: [] };
+      let streamedTextChunks = [];
       let usage = null, fatal = null;
       let recoveries = 0;
       const maxRecoveries = 1 + fallbacks.length;
@@ -636,14 +692,19 @@
       let truncRetries = 0;
       const MAX_TRUNC_RETRIES = 1;
       while (true) {
-        acc.text = ''; acc.toolCalls = {}; acc.reasoning = []; usage = null; lastFinishReason = null;
+        acc.text = ''; acc.toolCalls = {}; acc.reasoning = []; streamedTextChunks = []; usage = null; lastFinishReason = null;
         let streamErr = null;
         let sawTruncation = false;
         try {
           const req = { model, messages, tools, signal, stream: true };
           for await (const ev of provider.stream(req)) {
             if (signal.aborted) break;
-            if (ev.type === 'text') { acc.text += ev.delta; emit('agent.token', { agentId, runId, delta: ev.delta }); }
+            if (ev.type === 'text') {
+              const delta = String(ev.delta == null ? '' : ev.delta);
+              acc.text += delta;
+              if (dedupeAgainst == null) emit('agent.token', { agentId, runId, delta });
+              else streamedTextChunks.push(delta);
+            }
             else if (ev.type === 'reasoning') { if (ev.block) acc.reasoning.push(ev.block); }
             else if (ev.type === 'tool_start') { acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '' }; }
             else if (ev.type === 'tool_args') { if (acc.toolCalls[ev.index]) acc.toolCalls[ev.index].args += (ev.chunk || ''); }
@@ -731,8 +792,18 @@
         return end('error');
       }
 
-      // cancellation mid-stream: keep partial text, then stop
-      if (signal.aborted) { messages.push(assistantTurn(acc.text, [], acc.reasoning)); return end('cancelled'); }
+      // cancellation mid-stream: keep partial text, then stop. A continuation call buffered its opening bytes for
+      // overlap filtering; flush only its novel suffix before persisting the partial response.
+      if (signal.aborted) {
+        emitContinuationText(acc, streamedTextChunks);
+        const cancelledPart = assistantTurn(acc.text, [], acc.reasoning);
+        messages.push(cancelledPart);
+        collapseContinuation(cancelledPart);
+        const checkpointEnd = await saveCheckpoint('assistant');
+        return checkpointEnd || end('cancelled');
+      }
+
+      emitContinuationText(acc, streamedTextChunks);
 
       // (3) RECONCILE cost (authoritative; overwrites the estimate)
       const final = cost ? cost.reconcile(usage, model) : { usd: 0, tokensIn: 0, tokensOut: 0, reasoningTokens: 0, cachedTokens: 0 };
@@ -763,8 +834,43 @@
         const scrubbed = scrubTextToolCallMarkup(acc.text);
         if (scrubbed) { textMarkup = true; acc.text = scrubbed.text; }
       }
+      // OUTPUT-LIMIT STOP: keep the valid partial text, but NEVER repair/dispatch a tool call whose generation hit
+      // the semantic cap — even apparently-valid JSON may be missing a later argument or sibling call. The next
+      // paid turn is explicitly told to reissue the complete call. Content-filter/policy stops do not enter here.
+      if (lastFinishReason === 'length') {
+        const partial = assistantTurn(acc.text, [], acc.reasoning);
+        messages.push(partial);
+        const checkpointEnd = await saveCheckpoint('assistant');
+        if (checkpointEnd) return checkpointEnd;
+        continuationParts.push(partial);
+        continuationText += String(acc.text || '');
+        if (continuation.shouldContinue(lastFinishReason, outputContinuesUsed, OUTPUT_CONTINUE_MAX)) {
+          outputContinuesUsed++;
+          const nudge = { role: 'system', content: continuation.prompt(calls.length > 0) };
+          messages.push(nudge);
+          continuationPrompts.push(nudge);
+          dedupeAgainst = continuationText;
+          continue;
+        }
+        collapseContinuation();
+        return end(String(acc.text || '').trim() || continuationText.trim() ? 'done' : 'empty');
+      }
+
+      // A clean continuation may legitimately reissue the complete tool call that was cut off. Keep the earlier
+      // text turns in their original provider-safe order; they cannot be folded across a tool call/result pair.
+      if (calls.length > 0 && continuationParts.length) {
+        continuationParts.length = 0;
+        continuationPrompts.length = 0;
+        continuationText = '';
+      }
+
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
-      messages.push(assistantTurn(acc.text, calls, acc.reasoning));
+      const assistant = assistantTurn(acc.text, calls, acc.reasoning);
+      messages.push(assistant);
+      {
+        const checkpointEnd = await saveCheckpoint('assistant');
+        if (checkpointEnd) return checkpointEnd;
+      }
 
       // (5) STOP iff no tool calls accumulated. A no-op turn (no tool call + no NEW assistant content) is refunded
       //     so it doesn't burn the iteration budget — bounded by REFUND_MAX (the hard floor guaranteeing termination).
@@ -814,7 +920,8 @@
           messages.push({ role: 'system', content: '<verify_before_done>You changed code in this run (' + touched + ') and are ending without running anything against it. Code that compiles is not code that works, and an unverified claim of "done" is the one thing this station never ships. Run the narrowest real check that proves the change — the project\'s own test/build command via verify_run, or shell_exec if that fits better — then report what it actually returned. If you genuinely cannot run a check here, say so plainly and state what you did NOT verify.</verify_before_done>' });
           continue;
         }
-        if ((empty || duplicate) && refundsUsed < REFUND_MAX) {
+        const continuedTextExists = continuationParts.some(m => String((m && m.content) || '').trim());
+        if ((empty || duplicate) && !continuedTextExists && refundsUsed < REFUND_MAX) {
           refundsUsed++;
           turns = turnStart;                                          // refund: this turn didn't advance the budget
           emit('iteration.refunded', { agentId, runId, turn: turnStart, reason: empty ? 'empty' : 'duplicate', refundsUsed });
@@ -825,7 +932,8 @@
         // skill-review, the cron settle path never emits workitem.delivered, and the frontend renders "ended: empty"
         // instead of a delivered crate. A DUPLICATE turn is different: it re-emitted a REAL prior answer, so it stays
         // 'done' (the answer exists — only the genuinely empty final turn is degraded).
-        return end(empty ? 'empty' : 'done');
+        if (continuationParts.length) collapseContinuation(assistant);
+        return end(empty && !continuedTextExists ? 'empty' : 'done');
       }
 
       // (6) EXECUTE — needs a dispatcher (M1.2+)
@@ -843,6 +951,10 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+      {
+        const checkpointEnd = await saveCheckpoint('tool_results');
+        if (checkpointEnd) return checkpointEnd;
+      }
 
       /* SCREENSHOTS AS PIXELS. A tool result is a STRING on every wire we speak, so an image could never
          travel as one — browser.screenshot saved a PNG and handed back a path, and browser.vision handed back

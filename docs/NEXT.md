@@ -1,5 +1,141 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-01 — ROUTINES P0-P2 CLOSURE (`agent/routines-closure`)
+
+FOLLOW-UP READY TO MERGE after the first closure merge. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,
+`300b34ab`, `600f4982`, and `aa9cd1cd` are now closed in the canonical QA ledger. This
+closure completes truthful E-STOP state across the ROUTINES panel/countdowns, widgets, `/cron`,
+AutoJobStore, and model-facing routine output; preserves the durable stop across background
+beliefs-only page-load sync; retains explicit resume paths; keeps first cron fire aligned with the
+host timezone; gives halted channel runs one explicit stop notice; and prevents revoke/delete/toggle
+success claims on non-2xx responses.
+
+Verification on the current trunk-based candidate: focused routine/cron/halt/channel/connector tests
+green (including 585 assertions before the page-load escape was discovered); restart-level E-STOP
+HTTP regressions green; `qa-product-perfect-claims.test.js` 64/64; `test:fast` 493/493; full
+`test:http` green (sidecar 459, cron API 79, lifecycle 59, route coverage 75). Seeded Chromium proved
+the stopped banner, `next —`, widget `stopped · E-STOP`, `/cron` resume guidance, and the
+model-facing E-STOP note. A reload initially exposed the beliefs-only resume escape; the final code
+and the follow-up `b7e18ce8` plus two real-host suites prove both boot posture and beliefs mirrors stay halted across sync and restart; only an explicit dial write carries resume consent. No external message,
+provider spend, push, PR, deploy, publish, credential, or production-data change was performed.
+
+## 2026-08-01 — UNIFIED COMMANDER RECOMMENDATIONS (`agent/recommendation-unify`)
+
+READY TO MERGE. Three scoped commits implement the recommendation-system audit actions: `475aa6d3`
+adds the durable cross-surface lifecycle/evidence ledger, bounded Commander evidence composer, richer
+completed-task context, and replay CLI; `b882665b` gates recruitment and marketplace personalization on
+shared understanding readiness, labels cold shelves as starting points, preserves validated study evidence,
+and adds typed suggestion verdicts; `70afe07c` normalizes capability learning per completed run instead of
+raw tool-call frequency. Seed beliefs no longer inflate visible familiarity. The candidate was merged with
+current trunk in `b97b1201`; `7e7ae8e7` re-locked the resulting release surface.
+
+The lifecycle retains bounded transitions and typed reasons (`shown -> deferred -> accepted -> completed`),
+survives restart, and feeds bounded preference weights without treating wrong-time deferrals as rejection.
+Study proposals may carry a verbatim run quote; invented quotes are rejected, legacy proposals retain an
+explicit directive receipt, and pending/declined study state is durable. Ordinary task runs and autonomous
+lanes now read the same provenance-labelled topics, threads, workflow, recent activity, active goal, dossier,
+and verdict summary; weak observed evidence is explicitly forbidden from overriding the current request.
+
+Verification on the synced final tree: `test:fast` 486/486 green; full `test:http` green (including sidecar 459 and
+route coverage 75). Focused recommendation/readiness/workflow/context/study tests are green. A seeded station
+on `:18799` recorded `live:sync-7e7ae8e7`, applied deferred/accepted/completed verdicts, restarted with `--keep`,
+and reloaded the exact four-state transition plus its evidence. `recommendation-replay.mjs` then reported
+acceptance/completion/evidence/readiness coverage of 1 across the two completed samples and a bounded research
+weight of 0.5. No provider run, external write, trunk merge, push, PR, deploy, publish, credential, or
+production-data change was performed. The seeded proof process was stopped. A byte-identical voice test exposed a 20ms-vs-30ms
+timer race in this longer worktree; the test-only compressed ceiling is now 50ms and passed twice plus the gate.
+
+## 2026-08-01 — DEEP-DIVE BUG FIX WAVE — MERGED (`8ef6c2c4`)
+
+Three isolated audit/fix lanes found and fixed 15 previously unregistered defects: four mobile
+control-reachability failures, six API/CORS/Task-Brief boundary failures, and five
+persistence/recovery failures. The combined integration preserves desktop layout and built-in read
+behavior while keeping E-STOP, REFIT actions, dock menus, and Genesis phosphor controls reachable at
+320/360/390px; makes DELETE CORS, malformed-body rejection, segment-safe routing, and untrusted MCP
+gating consistent; and fails closed when Night Shift accounting, focus/avoid authority, skill
+approvals, durable writes, or process ownership probes cannot be proven durable.
+
+Lane commits: UI `f1e5cc75`; backend `e169ab9c` + `9726ce60`; state `517c4398` +
+`e17d0294` + `0773b22c` + `654c7e1f`. Combined candidate merge `0ffc9a9f`, canonical claims
+re-lock `eb7c2fc4`, trunk merge `8ef6c2c4`. Final clean detached proof at the exact trunk commit:
+claims planning PASS (37 claims / 190 locked files), `test:fast` 476/476 green, full `test:http`
+green. Live seeded Chromium proved the four mobile controls on the UI lane; the exact merged HTTP
+gate re-proved malformed requests, route boundaries, MCP gating, restart persistence, and failure
+paths. No publish, push, PR, deployment, release, credential, or production-data action occurred.
+
+## 2026-08-01 — HARNESS SELF-AWARENESS (`agent/harness-self-awareness-reconcile`)
+
+RECONCILED against bridge trunk `25f8b053`. StarNet now gives every compute-capable agent a local, read-only,
+consent-free `station.inspect` tool backed by the same build, scheduler, connector, and diagnostic
+collectors as the UI APIs. Its output is bounded and allowlisted; secrets and filesystem paths do
+not cross the tool boundary, and any failed collector is labelled unavailable rather than rendered
+as a confident empty/healthy state. The run identity block now includes the exact app and harness
+build, and the operator manual directs mutable harness questions to `station.inspect` instead of
+invented CLI commands or requests for WORKBENCH/INTEL CAB.
+
+Verification: focused snapshot/tool/policy/runtime/manual tests are green; the real MCP-sidecar e2e
+passes 76 assertions and proves the provider sees and calls the legal `station_inspect` wire name
+against a planted routine, connected MCP server, and diagnostic failure. The reconciled `test:fast`
+gate is 491/491 green after synchronization with trunk `6819a1af`, and the full `test:http` gate is
+green. In a seeded live station on `:8977`,
+NOVA used both granted tools in one run: it reported exact clean build
+`v0.8.0-73-g30c9a53b`, the disarmed/unhealthy scheduler, zero routines, zero connectors, and zero
+recorded errors, then used bounded code composition to calculate `17 * 23 = 391`. The seed was
+stopped. No push, PR, deploy, publish, credential, or production-data change was performed.
+
+## 2026-07-31 — BROWSER REACH 0.8.5 (`agent/browser-reach-085`)
+
+READY TO MERGE at `dd01c8d3` (five commits from `7b2550e0`). The station-owned Chromium launch now
+derives its UA generation from the installed binary, carries the host locale, removes the
+`HeadlessChrome` product token, and disables Chromium's AutomationControlled signal. Attached
+Commander-owned Chrome is never launched or modified by this posture. Challenge telemetry is one
+conservative classifier across the honest reader and interactive browser; verification walls are a
+distinct outcome rather than successful page content. No CAPTCHA solving or wall-bypass claim exists.
+
+CDP's Runtime domain now stays disabled during ordinary browsing and is enabled lazily only when the
+agent asks for console diagnostics; the real browser proves buffered console messages still arrive.
+Click, type, press, hover, drag, and wheel input now use deterministic seeded cadence with hard step
+and delay bounds, exact text preservation, and exact aggregate scroll distance. This is bounded input
+fidelity, not an attempt to synthesize an individual person's behavior.
+
+All reader traffic shares one process-wide per-host scheduler. Same-host work serializes with a 350ms
+minimum gap; 403/429/503 responses add capped exponential delay (up to 30s), numeric `Retry-After` is
+honored, success clears the penalty, and responses are never auto-retried or rewritten. Different
+hosts remain independent. The scheduler covers search, Jina, direct reader fetch, and `web_request`.
+
+`scripts/browser-reach-measure.js` produces aggregate authorized-reach receipts without clicking or
+submitting: status, challenge signal, text length, identity exposure, elapsed time, and redirect
+authorization. Entry origins require an exact explicit allowlist; subdomains are not inherited,
+off-authorization redirect content is not read, and escaped redirects cannot count as reach. The
+owned real-Chromium fixture records ordinary content as reached and a verification page as blocked.
+
+Verification: focused browser contract 281 assertions; reach-measure contract 15; web-politeness 10;
+real-Chromium gauntlet 77; `test:fast` 475/475 green; full `test:http` green (including sidecar 445).
+A seeded station booted on `:8897`; `/health` returned 200 with `v0.8.0-18-gdd01c8d3`, the app shell
+returned 200/67,131 bytes, and unauthenticated `/api/toolsets` correctly returned 403. The proof seed
+was stopped. No external-site benchmark was run because no authorized origin was supplied, so no
+claim about third-party wall reach is made. No merge, push, PR, deploy, publish, credential, or
+production-data change was performed.
+
+POST-MERGE SWEEP (`agent/browser-reach-sweep`, implementation head `94a034dd`): the first gauntlet
+covered only legacy UA + `navigator.webdriver` and missed real contradictions. On the production
+resolver, Playwright headless-shell still exposed `HeadlessChrome` through Client Hints, zero plugins,
+no `window.chrome`, SwiftShader, mismatched 800x600 screen geometry, and fixed product-named page
+globals. The corrective lane now prefers full Chrome/Chromium/Edge, derives one UA + Client-Hints
+identity from the connected browser's own loopback high-entropy values, retains the hardware renderer,
+sets coherent 1440x900 screen/window metrics, and uses opaque per-profile safety/settle slots. The
+authorized reach receipt measures both legacy and Client-Hints headless exposure, full-browser surface,
+and geometry. The same sweep made host cooldowns elapsed-time-aware, queued cancellation immediate,
+and idle host state LRU-bounded.
+
+Corrective verification: browser contract 293; reach receipt 18; browser parity 111; wait recovery 39;
+attach 33; browser PIE 53; web politeness 13; real-Chromium gauntlet 86; `test:fast` 475/475 green;
+full `test:http` green. Seeded branch `v0.8.0-32-g94a034dd` returned 200 from `/health` and the app
+shell, then the proof process was stopped. `qa:ready` is separately `NOT READY` because this isolated
+worktree has no Guardian, journeys, Beginner Run, or installed-exe receipts; no station-wide release
+readiness claim is made. External-site reach remains unmeasured without an authorized target.
+
+
 ## 2026-07-31 — NEXT UPDATE PLAN: v0.9.0 LEGIBLE · SOLID · UNBLOCKED
 
 Andrew's mandate for the update after v0.8.0: (1) make StarNet dramatically easier for a
@@ -8,8 +144,8 @@ beginner to understand — users are asking a lot of questions; (2) fix as many 
 with evidence re-grepped against trunk `129801b1`: **[docs/PLAN_v0.9.0.md](PLAN_v0.9.0.md)**.
 
 Headlines a lane should know before claiming work from it:
-- `qa/bugs/` is stale in the *fixed* direction — 25 of its 28 `status: open` records were closed
-  by merge `0a6a14e1` and never flipped. Only `4962c3ad`, `e05cdba8`, `f42a5f46` are really open.
+- The six routine/cron P0-P2 records from the July sweep are reconciled as fixed by the closure lane
+  above. Treat `qa/BUGS.md` (generated from the per-bug files) as the current backlog authority.
 - 10 `agent/*` lanes are ahead of trunk carrying built, gated fixes. Merge order in the plan;
   `agent/quality-loop-0730f` (E-STOP does not survive a page reload) is the worst live defect.
 - `test:fast` ran 473/473 green at `129801b1` on 2026-07-31 while the Guardian recorded

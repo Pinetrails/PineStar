@@ -37,7 +37,7 @@ const IMPACT_SET = new Set(Object.keys(IMPACTS).map(k => IMPACTS[k]));
 // it cannot even call what it finds, it only makes it advertisable. Same live-caught failure as 'taskbrief'
 // above: without an entry here it fell through to EXTERNAL_UNKNOWN and the authority layer refused it, so
 // every DEFERRED tool became permanently unreachable while looking, from the outside, merely "not found".
-const SAFE_BUILTIN_CAPS = new Set(['compute', 'cabinet', 'memory', 'quest', 'studio', 'orchestrator', 'taskbrief', 'toolsearch']);
+const SAFE_BUILTIN_CAPS = new Set(['compute', 'cabinet', 'memory', 'quest', 'studio', 'orchestrator', 'taskbrief', 'toolsearch', 'code', 'stationinfo']);
 
 function impactOfTool(tool) {
   tool = tool || {};
@@ -85,6 +85,14 @@ function makeRunAuthority(opts) {
   opts = opts || {};
   const surface = opts.surface === 'interactive' ? 'interactive' : 'autonomous';
   const isTask = !!opts.isTask;
+  // `ownerTrusted` is minted only by an authenticated owner DM at the channel ingress. It grants that
+  // Commander the same tool authority as a watched StarNet session without changing the ordinary autonomous
+  // policy used by cron, delegated workers, other channels, or group messages.
+  const ownerTrusted = !!opts.ownerTrusted;
+  // This bit is minted by the desktop host only when a locally paired Telegram owner reaches this run. It is
+  // deliberately separate from ownerTrusted: a bare sidecar or ordinary web session cannot turn an identity
+  // claim into control of the foreground Windows desktop.
+  const remoteDesktopAuthorized = ownerTrusted && opts.remoteDesktopAuthorized === true;
   const environment = opts.environment || null;
   const confirm = typeof opts.confirm === 'function' ? opts.confirm : null;
   const isolated = !!(environment && environment.supports && (environment.supports.userControlIsolation === true || environment.supports.hostileCodeSandbox === true));
@@ -109,23 +117,27 @@ function makeRunAuthority(opts) {
   }
   function project(tool) {
     const impact = impactOfTool(tool);
-    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return false;
+    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return remoteDesktopAuthorized;
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      if (ownerTrusted) return true;
       if (surface === 'interactive') return !!confirm;
       return connectorAllowedUnattended(tool);
     }
-    if (surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) return false;
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) return false;
     // A host-process capability unattended requires the explicit per-run grant above — absent it, the
     // pre-2026-07-25 blanket denial is unchanged.
-    if (surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS) return workbenchGranted;
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS) return workbenchGranted;
     return true;
   }
   function authorize(call, tool) {
     const impact = impactOfTool(tool);
     if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) {
-      return { ok: false, impact, reason: impact + ' is unavailable to ordinary StarNet runs; no native one-shot user lease exists' };
+      return remoteDesktopAuthorized
+        ? { ok: true, impact, surface: 'interactive', isTask, isolated, ownerTrusted: true, remoteDesktopAuthorized: true }
+        : { ok: false, impact, reason: impact + ' is unavailable without an authenticated remote-owner desktop lease' };
     }
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      if (ownerTrusted) return { ok: true, impact, surface, isTask, isolated, ownerTrusted: true };
       // A granted routine calling one of the Commander's own connected MCP servers: the recorded per-routine
       // grant IS the approval, so this needs no live confirmation. Returned BEFORE the interactive-confirm
       // branch and deliberately WITHOUT oneShot, so the ordinary consent broker still runs for it downstream.
@@ -158,19 +170,20 @@ function makeRunAuthority(opts) {
       }, () => ({ ok: false, impact, reason: 'exact external-effect confirmation failed' }));
     }
     // Full Access, cached grants, and task text never turn an unattended run into authority over a host
-    // process or the user's active media session. This gate runs before consent. The ONLY key that opens the
-    // host-process door unattended is the host-recorded per-run grant above — see its comment for why that is
-    // not the same escape: it cannot be minted by anything the model can influence.
-    if (surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) {
+    // process or the user's active media session. This gate runs before consent. Apart from a host-minted
+    // authenticated owner DM, the ONLY key that opens the host-process door unattended is the host-recorded
+    // per-run grant above — see its comment for why that is not the same escape: it cannot be minted by
+    // anything the model can influence.
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) {
       return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' even under Full Access' };
     }
-    if (surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS && !workbenchGranted) {
+    if (!ownerTrusted && surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS && !workbenchGranted) {
       return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' without an explicit per-routine terminal grant (Full Access does not imply one)' };
     }
-    return { ok: true, impact, surface, isTask, isolated, granted: (impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
+    return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, granted: (!ownerTrusted && impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
   }
   return Object.freeze({
-    mode: 'preserve-user-control', surface, isTask, isolated, project, authorize,
+    mode: remoteDesktopAuthorized ? 'remote-owner-desktop' : 'preserve-user-control', surface, isTask, isolated, ownerTrusted, remoteDesktopAuthorized, project, authorize,
     unattendedGrants: Object.freeze(Array.from(unattendedGrants).sort())   // diagnostics/telemetry: what this run was actually granted
   });
 }
@@ -198,8 +211,12 @@ function enforceRunAuthority(resolved, registry, authority) {
   });
 }
 
-function enforceSyntheticOnly(resolved) {
+function enforceSyntheticOnly(resolved, remoteDesktopAuthorized) {
   resolved = resolved || {};
+  if (remoteDesktopAuthorized === true) return Object.assign({}, resolved, {
+    tools: (resolved.tools || []).slice(), grants: (resolved.grants || []).slice(),
+    approvalRules: Object.assign({}, resolved.approvalRules || {}), networkCaps: Object.assign({}, resolved.networkCaps || {})
+  });
   const approvalRules = Object.assign({}, resolved.approvalRules || {});
   const networkCaps = Object.assign({}, resolved.networkCaps || {});
   for (const tool of REAL_DESKTOP_TOOLS) {
@@ -214,12 +231,40 @@ function enforceSyntheticOnly(resolved) {
   });
 }
 
-function runInputContext(surface, isTask) {
+/* Per-run toolsets are attenuation only: null preserves the station grant, while an explicit array
+   intersects it. Compute and the two computer freebies are not toggleable tool families. */
+function enforceEnabledToolsets(resolved, registry, enabledToolsets) {
+  if (enabledToolsets == null) return resolved;
+  const enabled = new Set(Array.isArray(enabledToolsets) ? enabledToolsets.map(String) : []);
+  const free = new Set(['quest', 'toolsearch']);
+  const allowed = new Set();
+  for (const name of ((resolved && resolved.tools) || [])) {
+    const tool = registry && typeof registry.get === 'function' ? registry.get(name) : null;
+    const cap = String((tool && tool.capability) || '');
+    const family = cap.indexOf('mcp:') === 0 ? 'connectors' : cap;
+    if (free.has(family) || enabled.has(family)) allowed.add(name);
+  }
+  const approvalRules = {}, networkCaps = {};
+  for (const name of allowed) {
+    if (resolved.approvalRules && resolved.approvalRules[name]) approvalRules[name] = resolved.approvalRules[name];
+    if (resolved.networkCaps && resolved.networkCaps[name]) networkCaps[name] = resolved.networkCaps[name];
+  }
+  return Object.assign({}, resolved, {
+    tools: (resolved.tools || []).filter(n => allowed.has(n)),
+    deferred: (resolved.deferred || []).filter(n => allowed.has(n)),
+    grants: (resolved.grants || []).filter(g => g && allowed.has(g.tool)),
+    approvalRules, networkCaps
+  });
+}
+
+function runInputContext(surface, isTask, remoteDesktopAuthorized) {
+  const remote = remoteDesktopAuthorized === true;
   return {
-    surface: surface || 'autonomous',
+    surface: remote ? 'interactive' : (surface || 'autonomous'),
     isTask: !!isTask,
-    physicalInputAuthorized: false,
-    inputMode: 'synthetic'
+    physicalInputAuthorized: remote,
+    remoteDesktopAuthorized: remote,
+    inputMode: remote ? 'remote-owner' : 'synthetic'
   };
 }
 
@@ -281,4 +326,4 @@ async function backgroundOwnsLocalUrl(status, rawUrl, listenerProbe) {
   try { return await listenerProbe(status, rawUrl) === true; } catch (_) { return false; }
 }
 
-module.exports = { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS, GRANTABLE_UNATTENDED, normalizeUnattendedGrants, isConnectorTool };
+module.exports = { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS, GRANTABLE_UNATTENDED, normalizeUnattendedGrants, isConnectorTool };

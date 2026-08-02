@@ -1616,8 +1616,13 @@ const PropSprites = (() => {
     // community cards INSIDE the line and the rail outside it, which is where they actually belong.
     // STATIC by law: nothing here has a mechanism (no dealer, no motor, no emitter), so v4's river-flip
     // clock, its blinking mid-toss chip and its pulsing "ambient" are gone — a lit room does not throb.
+    // v6 felt values. v5's #1b2c55 bed was HALF the pool table's felt luminance, and the lightmap
+    // multiplies props down ~35% — in-situ the bed went near-black inside a near-black rail and the
+    // whole top read as a SCREEN (only the bone cards survived). Indigo stays the identity axis, but
+    // it now sits at the pool green's value (#2f5d3a ≈ lum 76 → #2e4a8e ≈ lum 78): same room, same
+    // lamps, both felts read as lit cloth.
     const LEA_DK = '#120d10', LEA = '#1e1519', LEA_MID = '#2b2025', LEA_LIT = '#3a2b31';
-    const feltDk = '#101c39', felt = '#1b2c55', feltLit = '#26406f';
+    const feltDk = '#1b2d5e', felt = '#2e4a8e', feltLit = '#3f5fae';
     const RH = 18, rtop = y - 4, R = (RH - 1) / 2;
     // Racetrack capsule: horizontal inset of the outline lying `o` px (perpendicular) inside the rail's
     // outer edge. Returns null on rows the shape does not reach, which is what lets the ring/band helper
@@ -1652,40 +1657,48 @@ const PropSprites = (() => {
       }
     };
     const north = (j) => j < R;                              // which half of the roll the light reaches
-    const outer = cap(0), inner = cap(4);
+    // roll thinned 4 -> 3 in v6: with the outline + shadow ring the old roll cost ~6px of dark border
+    // all round, and a bright plane inside a thick dark ring is the anatomy of a SCREEN IN A BEZEL.
+    const outer = cap(0), inner = cap(3);
     const pcx = x + (w >> 1);
-    shadow2(pcx - 12, y + h - 1, 24);
-    // PEDESTAL — drawn first so the apron and the rail overhang it. The stack under the bed reads in three
-    // steps: apron (the table's own edge thickness) -> turned column -> splayed cross foot. v4 had none of
-    // the first two, which is why its oval hovered over a stand instead of being a table.
-    chamf(pcx - 12, y + 20, 24, 4, LINE, 3);                   // splayed cross foot
-    chamf(pcx - 11, y + 21, 22, 3, LEA_MID, 2);
-    px(pcx - 10, y + 21, 20, 1, LEA_LIT); keyEdge(pcx - 10, y + 21, 8, 1, 0.16);
-    px(pcx - 11, y + 23, 22, 1, '#0a0d10');
-    rimEdge(pcx + 9, y + 21, 1, 2, 0.16);
-    underAO(pcx - 9, y + 19, 18, 2);
-    px(pcx - 5, y + 14, 10, 8, LINE);                          // turned column, tucked up under the apron
-    px(pcx - 4, y + 15, 8, 6, LEA_MID);
-    px(pcx - 4, y + 15, 1, 6, LEA_LIT); keyEdge(pcx - 4, y + 15, 1, 4, 0.20);
-    px(pcx + 3, y + 15, 1, 6, LEA_DK); rimEdge(pcx + 3, y + 16, 1, 4, 0.18);
-    px(pcx - 3, y + 17, 6, 1, LEA); px(pcx - 3, y + 19, 6, 1, LEA);   // turned collars
-    // APRON — narrow, so it reads as the boss under the bed and not as a shelf the table is standing on
-    const ax = pcx - 10, aw = 20;
-    chamf(ax - 1, y + 14, aw + 2, 4, LINE, 2);
-    chamf(ax, y + 15, aw, 3, LEA, 1);
-    px(ax + 1, y + 15, aw - 2, 1, LEA_MID); keyEdge(ax + 2, y + 15, 7, 1, 0.14);
-    px(ax + 1, y + 17, aw - 2, 1, '#0a0d10');
+    shadow2(pcx - 15, y + h - 1, 30);
+    // BASE — v6. v5's stack (narrow turned column + splayed cross foot) was the second half of the
+    // monitor misread: a slim column under a wide dark oval is a MIC STAND, whatever sits on it.
+    // "One pedestal, never four legs" is the locked axis against the pool table — so the pedestal is
+    // now a broad upholstered DRUM nearly as wide as the bed, the base a real casino table stands on.
+    // Drawn first so the apron and rail overhang it.
+    chamf(pcx - 14, y + 17, 28, 7, LINE, 2);                   // drum plinth
+    chamf(pcx - 13, y + 18, 26, 5, LEA_MID, 2);
+    px(pcx - 12, y + 18, 24, 1, LEA_LIT); keyEdge(pcx - 12, y + 18, 9, 1, 0.18);
+    px(pcx - 13, y + 19, 1, 3, LEA); px(pcx + 12, y + 19, 1, 3, LEA_DK);
+    rimEdge(pcx + 12, y + 19, 1, 3, 0.18);
+    for (let i = 0; i < 4; i++) px(pcx - 9 + i * 6, y + 20, 1, 2, LEA_DK);   // upholstery fluting
+    px(pcx - 12, y + 22, 24, 1, '#0a0d10');                    // toe kick, reads as weight on the deck
+    underAO(pcx - 12, y + 16, 24, 2);
+    // CURVED SKIRT — v6, replacing v5's narrow rectangular apron. The apron only ran under the bed's
+    // middle 20px, so the oval's east/west lobes HOVERED over open floor — half the monitor misread.
+    // The skirt is the capsule's own outline dropped 5px: the table's edge thickness follows the oval
+    // the whole way round, exactly what topFace+frontFace does for a rectangle.
+    for (let j = 0; j <= RH; j++) {
+      const i = outer(Math.max(0, Math.min(RH - 1, j)));
+      px(x + i - 1, rtop + j + 5, w - i * 2 + 2, 1, LINE);
+    }
+    for (let j = (RH >> 1); j < RH; j++) {                     // only the south half shows under the rail
+      const i = outer(j);
+      px(x + i, rtop + j + 4, w - i * 2, 1, LEA_DK);
+      px(x + i + 2, rtop + j + 4, 6, 1, LEA);                  // lit west quarter of the skirt
+    }
     // PADDED OVAL RAIL — silhouette halo, base roll, then the roll modelled as three concentric bands:
     // outer wall, lit crown, inner slope falling to the felt.
     for (let j = -1; j <= RH; j++) {
       const i = outer(Math.max(0, Math.min(RH - 1, j)));
       px(x + i - 1, rtop + j, w - i * 2 + 2, 1, LINE);
     }
-    band(0, 4, LEA);                                           // the roll's body
+    band(0, 3, LEA);                                           // the roll's body
     band(0, 1, (j) => north(j) ? LEA_MID : LEA_DK, LEA_DK);    // outer wall
     band(1, 2, (j) => north(j) ? LEA_LIT : LEA_MID,            // the crown of the padding — 1px, and the
               (j) => north(j) ? LEA_MID : LEA);                // south crown never takes the full key
-    band(3, 4, LEA_DK);                                        // inner slope, dropping into the bed
+    band(2, 3, LEA_DK);                                        // inner slope, dropping into the bed
     keyEdge(x + 12, rtop + 1, 14, 1, 0.16);                    // the key lands on the north-west crown
     for (let i = 0; i < 6; i++) {                              // brass upholstery studs — the leather's tell
       px(x + 11 + i * 5, rtop + 1, 1, 1, '#6e5830');
@@ -1697,7 +1710,13 @@ const PropSprites = (() => {
       px(x + i - 1, rtop + j, w - i * 2 + 2, 1, feltDk);       // rail shadow ringing the bed
       px(x + i, rtop + j, w - i * 2, 1, felt);
       const lw = Math.round((w - i * 2) * (0.86 - (j - 4) / 6));  // NW nap, falling off to the south-east
-      if (lw > 0) px(x + i, rtop + j, lw, 1, feltLit);
+      if (lw > 0) {
+        px(x + i, rtop + j, lw, 1, feltLit);
+        // dither the nap's trailing edge: a hard diagonal boundary on 10 rows of cloth reads as GLARE
+        // on glass; two checker px per row break it into brushed nap
+        if (lw + 1 < w - i * 2) px(x + i + lw + (j & 1), rtop + j, 1, 1, feltLit);
+        if (lw > 2) px(x + i + lw - 2 + ((j + 1) & 1), rtop + j, 1, 1, felt);
+      }
       if (j >= 11) px(x + i, rtop + j, w - i * 2, 1, U.shade(felt, -0.20));   // bed darkens into the near rail
     }
     // NO betting line. It was tried and cut: the felt is ten rows deep, so an inner ring degenerates into
@@ -3928,14 +3947,20 @@ const PropSprites = (() => {
     // Geometry — cap line, panel height, arm extents, cushion seams — is untouched on purpose: the renderer
     // y-sorts a seated body against this silhouette (seat foot at (y+h)*T-2), so moving any of it breaks sitting.
     shadow2(x + 1, y + h - 1, w - 2);                             // floor contact; lounge tier stays freestanding
-    // throw-pillow tops leaning on the far seat, just proud of the back line
+    // throw-pillow tops leaning on the far seat, just proud of the back line. Same 7x4 boxes as ever
+    // (their columns are part of the locked occlusion silhouette) — v6 only gives them PATTERN and a
+    // rounded shoulder, so they read as cushions instead of chiclets on a shelf.
     px(x + 6, y - 8, 7, 4, LINE);
     px(x + 7, y - 7, 5, 3, '#2f6a62'); px(x + 7, y - 7, 5, 1, '#4a8a82');
+    px(x + 8, y - 6, 1, 2, U.shade('#4a8a82', 0.16)); px(x + 10, y - 6, 1, 2, U.shade('#4a8a82', 0.16));   // woven stripes
     px(x + 7, y - 7, 1, 3, U.shade('#2f6a62', 0.18)); px(x + 11, y - 7, 1, 3, U.shade('#2f6a62', -0.24));
-    keyEdge(x + 7, y - 7, 3, 1, 0.20);
+    px(x + 7, y - 7, 1, 1, LINE); px(x + 11, y - 7, 1, 1, LINE);   // rounded shoulders — a stuffed corner, not a card
+    keyEdge(x + 8, y - 7, 3, 1, 0.20);
     px(x + w - 13, y - 8, 7, 4, LINE);
     px(x + w - 12, y - 7, 5, 3, '#8a6a3a'); px(x + w - 12, y - 7, 5, 1, '#caa84a');
+    px(x + w - 11, y - 6, 3, 1, U.shade('#8a6a3a', -0.20));        // a band across the amber one — the pair differ
     px(x + w - 12, y - 7, 1, 3, U.shade('#8a6a3a', 0.18)); px(x + w - 8, y - 7, 1, 3, U.shade('#8a6a3a', -0.24));
+    px(x + w - 12, y - 7, 1, 1, LINE); px(x + w - 8, y - 7, 1, 1, LINE);
     rimEdge(x + w - 8, y - 7, 1, 3, 0.20);
     // backrest from behind: rounded lit cap + ONE tall rear panel dropping to the floor
     rr(x + 1, y - 5, w - 2, h + 5, LINE);
@@ -3943,9 +3968,31 @@ const PropSprites = (() => {
     px(x + 2, y - 4, 8, 1, U.shade(r.lit, 0.10));
     keyEdge(x + 2, y - 4, 14, 1, 0.26);                           // warm ceiling strip along the crown
     rimEdge(x + w - 6, y - 4, 4, 1, 0.20);                        // cool sky bounce at the far end of the cap
+    px(x + 2, y - 4, 1, 1, U.shade(r.lit, -0.14));                // cap corners rounded off — a roll, not a plank
+    px(x + w - 3, y - 4, 1, 1, U.shade(r.lit, -0.18));
     px(x + 2, y - 3, w - 4, 1, U.shade(r.lit, -0.22));            // piping seam where the cap rolls into the panel
     px(x + 2, y - 2, w - 4, h, r.face);                           // rear upholstery panel
-    for (let j = 0; j < h; j += 2) px(x + 3, y - 2 + j, w - 6, 1, U.shade(r.face, -0.07));   // weave — fabric, not painted steel
+    // v6 MATERIAL: each 14px channel between the locked seams BULGES — a lit center column falling to
+    // shaded edges — so the back reads as padded upholstery instead of one flat board. Geometry (cap
+    // line, seam pitch, arm extents) is untouched: the sitter y-sort still matches this silhouette.
+    // NO horizontal weave rows here — striped rows across lit channel bellies turned the back into a
+    // louvre bank ("evenly spaced horizontals over a face = server rack", the locker law). Fabric is
+    // sold by the VERTICAL roundness of each channel + sparse nap instead.
+    for (let i = 0; i <= (w - 4) / 14; i++) {
+      const c0 = x + 3 + i * 14, c1 = Math.min(x + 2 + (i + 1) * 14, x + w - 3);
+      const cwd = c1 - c0; if (cwd < 6) continue;
+      px(c0 + 2, y - 1, cwd - 4, h - 3, U.shade(r.face, 0.05));   // the bulge's lit belly
+      px(c0 + 3, y - 1, 3, h - 4, U.shade(r.face, 0.10));         // west-biased crown of the bulge
+      px(c0 + 4, y - 1, 1, h - 5, U.shade(r.face, 0.15));         // crown core — a genuine round, 3 steps
+      px(c0, y - 1, 1, h - 2, U.shade(r.face, -0.09));            // falling into the seam shade
+      px(c1 - 1, y - 1, 1, h - 2, U.shade(r.face, -0.09));
+      px(c0 + 1, y + h - 5, cwd - 2, 1, U.shade(r.face, -0.04));  // upholstery settles darker toward the skirt
+      const bx = c0 + (cwd >> 1);                                 // tuft button, its catch above and shade below
+      px(bx, y + 1, 1, 1, U.shade(r.face, -0.32));
+      px(bx, y, 1, 1, U.shade(r.face, 0.18));
+      px(bx - 1, y + 2, 1, 1, U.shade(r.face, -0.10));            // the button pulls a little diagonal crease
+      px(bx + 1, y + 2, 1, 1, U.shade(r.face, -0.10));
+    }
     px(x + 2, y - 2, 1, h, U.shade(r.face, 0.10));                // lit west facet
     px(x + w - 3, y - 2, 1, h, r.dk);                             // dark east facet
     rimEdge(x + w - 3, y - 2, 1, h - 2, 0.22);                    // cool bounce down the shade flank
@@ -3954,8 +4001,12 @@ const PropSprites = (() => {
       px(x + 3 + i * 14, y - 1, 1, h - 3, U.shade(r.face, 0.09)); // the catch beside each seam gives the panel depth
     }
     wear(x + 2, y - 1, w - 4, h - 2, 6, U.shade(r.face, -0.08));
+    px(x + 2, y + h - 4, w - 4, 1, U.shade(r.face, -0.12));       // skirt band: the upholstery stops before the floor
     px(x + 2, y + h - 3, w - 4, 1, U.shade(r.face, -0.18));       // kick-line shadow near the floor
     px(x + 2, y + h - 2, w - 4, 1, r.ao);                         // floor-line ambient occlusion
+    // the pillows GROUND: each casts a soft notch onto the cap it leans over (they floated before)
+    px(x + 7, y - 4, 5, 1, U.shade(r.lit, -0.16));
+    px(x + w - 12, y - 4, 5, 1, U.shade(r.lit, -0.16));
     // arms: rounded caps that step DOWN from the back and wrap the ends to the floor
     for (const ax of [x, x + w - 4]) {
       rr(ax - 1, y - 3, 6, h + 3, LINE);
@@ -3964,6 +4015,8 @@ const PropSprites = (() => {
       if (ax === x) { keyEdge(ax, y - 2, 4, 1, 0.24); px(ax, y, 1, h - 2, U.shade(r.face, 0.10)); }
       else { rimEdge(ax + 3, y - 2, 1, h, 0.20); px(ax + 3, y, 1, h - 2, r.dk); }
       px(ax, y, 4, 1, U.shade(r.face, -0.20));                    // roll seam under the arm cap
+      px(ax === x ? ax + 4 : ax - 1, y - 1, 1, h - 1, U.shade(r.face, -0.16)); // elbow crease against the panel
+      px(ax + 1, y + 2, 2, h - 5, U.shade(r.face, 0.05));         // the arm's own soft belly
       px(ax, y + h - 2, 4, 1, r.ao);                              // arm base AO
     }
   };
@@ -7423,80 +7476,184 @@ const PropSprites = (() => {
      descriptors, which is the point of the batch: the catalog had plenty of lounge furniture and
      almost none of it was a destination. */
 
-  F.bookshelf = (x, y, w, h, f) => {   // 2x1 low shelf — a WALL of spines, which no other prop has
-    const r = RAMP.gun, cw = w, ph = (f && f.x) || 0;   // w/h are PIXELS here, never tiles
+  F.bookshelf = (x, y, w, h, f) => {   // 2x1 — v6 REBUILD. v5 packed 1-2px spines into a 12px-rise steel
+    // frame: at game scale the books were confetti and the case a picture frame. Now it is a WOODEN case
+    // (the one warm-timber body in a steel catalog — the books' home names the material), risen to 17px,
+    // with CHUNKY 2-3px spines a reader could pull, a lying stack, a bookend, and a little brass reading
+    // lamp on top. Books over noise: fewer, fatter, deliberate.
+    const cw = w, ph = (f && f.x) || 0;   // w/h are PIXELS here, never tiles
+    const WD = { top: '#6a4a30', face: '#553a22', lit: '#7d5c3e', dk: '#33220f', sheen: '#8f6d4a' };
+    const top = y + h - 17, caseH = 15;
     shadow2(x + 1, y + h - 1, cw - 2);
-    const top = y + h - 12;
-    topFace(x + 1, top, cw - 2, 3, r);                             // the case's top surface, looked down on
-    frontFace(x + 1, top + 3, cw - 2, 8, r);
-    // TWO shelves of spines. Colour varies per slot off a stable hash, so a row of shelves never repeats.
-    const SP = ['#5b3a52', '#2f5a56', '#7a4a2e', '#3d4a6b', '#6b3a3a', '#4a5a2e', '#5a4a6b'];
+    // carcass: outline, top plate we look down onto, side stiles, dark interior
+    px(x - 1, top - 1, cw + 2, caseH + 2, LINE);
+    px(x, top, cw, 3, WD.top);
+    px(x, top, cw, 1, WD.sheen); keyEdge(x, top, 8, 1, 0.26);      // warm key along the case's crown
+    px(x, top + 2, cw, 1, U.shade(WD.top, -0.24));                 // top plate front lip
+    px(x, top + 3, 2, caseH - 5, WD.lit);                          // west stile, lit
+    px(x + cw - 2, top + 3, 2, caseH - 5, WD.dk);                  // east stile, shaded
+    rimEdge(x + cw - 1, top + 3, 1, caseH - 6, 0.18);
+    px(x + 2, top + 3, cw - 4, caseH - 5, '#191009');              // interior — books sit IN a case, not on a wall
+    // base plinth
+    px(x, top + caseH - 2, cw, 2, WD.dk);
+    px(x, top + caseH - 2, cw, 1, U.shade(WD.face, 0.06));
+    px(x + 1, y + h - 1, cw - 2, 1, '#0b0704');                    // toe shadow
+    // TWO shelf cavities of CHUNKY books. Colour + height vary per slot off a stable hash, so a row of
+    // shelves never repeats; every spine is 2-3px wide with a real top catch and a foot shadow.
+    const SP = ['#7a4030', '#2f6058', '#8a6a2e', '#3d4f7d', '#7d3a44', '#55682f', '#5f4a80', '#a06a38'];
     for (let row = 0; row < 2; row++) {
-      const sy = top + 4 + row * 4;
-      px(x + 2, sy + 3, cw - 4, 1, U.shade(r.face, -0.42));        // shelf board + its shadow
-      let bx = x + 2;
-      while (bx < x + cw - 3) {
+      const cavY = top + 3 + row * 6, cavH = row ? caseH - 11 : 5; // upper cavity 5 rows, lower to the plinth
+      let bx = x + 3;
+      const bxEnd = x + cw - 4;
+      while (bx <= bxEnd - 1) {
         const k = U.hash('bk' + x + ',' + row + ',' + bx);
-        const bw = 1 + (k % 2), lean = (k >>> 6) % 7 === 0;
-        const c = SP[(k >>> 3) % SP.length];
-        if (lean) { px(bx, sy + 1, bw, 2, U.shade(c, -0.1)); px(bx, sy + 1, bw, 1, U.shade(c, 0.2)); }
-        else {
-          px(bx, sy, bw, 3, c);
-          px(bx, sy, bw, 1, U.shade(c, 0.30));                     // top edge of the spine catches the key
-          px(bx, sy + 2, bw, 1, U.shade(c, -0.36));
-          if ((k >>> 9) % 4 === 0) px(bx, sy + 1, bw, 1, U.shade('#c9a24a', 0.05));   // a gilt band
+        const bw = 2 + (k % 2);
+        if (bx + bw > bxEnd + 1) break;
+        // the lower shelf's east end holds a LYING STACK instead of standing spines
+        if (row === 1 && bx > bxEnd - 6) {
+          for (let s = 0; s < 3; s++) {
+            const sc = SP[(k >>> (s * 3)) % SP.length], sw = 6 - (s === 1 ? 1 : 0);
+            px(bxEnd - sw + 1, cavY + cavH - 1 - s, sw, 1, sc);
+            px(bxEnd - sw + 1, cavY + cavH - 1 - s, 1, 1, U.shade(sc, 0.25));
+          }
+          break;
         }
-        bx += bw + 1;
+        const c = SP[(k >>> 3) % SP.length];
+        const bh = cavH - (k >>> 7) % 2;                           // heights vary: a real shelf, not a bar code
+        const lean = (k >>> 6) % 6 === 0 && bx > x + 4;
+        px(bx + (lean ? 1 : 0), cavY + cavH - bh, bw, bh, c);
+        px(bx + (lean ? 1 : 0), cavY + cavH - bh, bw, 1, U.shade(c, 0.30));   // top edge catches the key
+        px(bx + (lean ? 1 : 0), cavY + cavH - 1, bw, 1, U.shade(c, -0.34));   // foot in shelf shadow
+        if ((k >>> 9) % 3 === 0) px(bx + (lean ? 1 : 0), cavY + cavH - bh + 1, bw, 1, U.shade('#c9a24a', -0.10)); // gilt band
+        bx += bw + ((k >>> 11) % 3 === 0 ? 1 : 0);                 // occasional breathing gap
+      }
+      if (row === 0) {                                             // shelf board between the cavities
+        px(x + 2, cavY + 5, cw - 4, 1, WD.lit);
+        px(x + 2, cavY + 6, cw - 4, 1, '#0e0803');                 // board's cast into the cavity below
       }
     }
-    px(x + 1, top + 3, cw - 2, 1, U.shade(r.top, -0.30));          // under-lip AO
-    if (blink(3400, ph + x)) px(x + cw - 3, top + 1, 1, 1, U.shade(ACC.mem, -0.2));   // a reading lamp pip
+    px(x + cw - 10, top + 4, 2, 4, '#39424d');                     // steel bookend holding the upper row
+    px(x + cw - 10, top + 7, 3, 1, '#39424d');
+    px(x + cw - 10, top + 4, 1, 4, '#525e6b');
+    // brass reading lamp on the case top — the one live point on an otherwise still prop
+    const lampOn = blink(3400, ph + x);
+    px(x + cw - 5, top - 4, 1, 4, '#6e5830');                      // stem
+    px(x + cw - 7, top - 5, 4, 2, LINE); px(x + cw - 6, top - 5, 3, 1, '#8a7434');   // shade
+    if (lampOn) {
+      px(x + cw - 6, top - 4, 2, 1, '#ffe2a0');
+      bloom(x + cw - 6, top - 4, 2, 1, '#ffc86a', 0.22);
+      spill(x + cw - 8, top, 6, '#ffc86a', 0.10, 3);               // lamp light pooling on the case top
+    }
   };
 
-  F.beanbag = (x, y, w, h, f) => {   // a slumped sack — the ONLY prop with no straight lines
+  F.beanbag = (x, y, w, h, f) => {   // v6 REBUILD — the ONLY prop with no straight lines, and agents SIT on
+    // it. v5's sack was 8 rows of near-monochrome mauve: in-situ it read as a PEBBLE. Now it fills the
+    // tile: a tall slumped teardrop in warm lounge fabric with a real sitting DENT, a piping seam, and a
+    // proper value range (lit crown -> deep tuck) so the slump models instead of silhouetting.
     const ph = (f && f.x) || 0;
-    ctx.globalAlpha = 0.24; px(x + 1, y + 10, 10, 2, '#000'); ctx.globalAlpha = 1;
-    const c = '#6b4a5e', lit = U.shade(c, 0.26), dk = U.shade(c, -0.34);
-    // built as stacked runs of decreasing width — a genuine slump, wider at the base
-    const rows = [[2, 8], [1, 10], [0, 12], [0, 12], [1, 10], [2, 8], [3, 6]];
-    rows.forEach((s, j) => px(x + s[0] - 1, y + 4 + j, s[1] + 2, 1, LINE));
-    rows.forEach((s, j) => px(x + s[0], y + 4 + j, s[1], 1, j < 2 ? lit : j > 4 ? dk : c));
-    px(x + 3, y + 3, 6, 1, LINE); px(x + 3, y + 4, 6, 1, U.shade(lit, 0.18));   // the crown, where someone sat
-    keyEdge(x + 3, y + 4, 4, 1, 0.20);
-    px(x + 2, y + 7, 8, 1, U.shade(c, -0.12));                     // the seam that runs round the middle
-    for (let i = 0; i < 5; i++) { const k = U.hash('bb' + x + i); px(x + 2 + (k % 8), y + 5 + ((k >>> 5) % 5), 1, 1, U.shade(c, 0.12)); }   // fabric nap
-    if (blink(4200, ph + x)) px(x + 8, y + 6, 1, 1, U.shade(lit, 0.2));
+    ctx.globalAlpha = 0.26; px(x + 1, y + 10, 11, 2, '#000'); ctx.globalAlpha = 1;
+    const c = '#8a4460', lit = '#b06584', dk = '#54293c', deep = '#3a1b2a';
+    // stacked runs — crown, swell, floor spread, tuck. The east lean keeps it off-axis: sacks slump.
+    const rows = [[4, 5], [3, 7], [2, 9], [1, 10], [1, 11], [0, 12], [0, 12], [0, 12], [1, 11]];
+    rows.forEach((s, j) => px(x + s[0] - 1, y + 2 + j - 1, s[1] + 2, 3, LINE));  // fat halo, blob not box
+    rows.forEach((s, j) => px(x + s[0], y + 2 + j, s[1], 1, j < 3 ? lit : j > 6 ? dk : c));
+    // the sitting DENT — a dark bowl pressed into the crown, its far rim catching light
+    px(x + 5, y + 2, 3, 1, U.shade(lit, 0.22)); keyEdge(x + 5, y + 2, 3, 1, 0.24);
+    px(x + 4, y + 3, 4, 2, U.shade(c, -0.26));
+    px(x + 4, y + 4, 3, 1, deep);
+    px(x + 3, y + 5, 2, 1, U.shade(c, -0.14));                     // crease running out of the dent
+    // piping seam round the middle — lit on the west shoulder, lost in shade on the east
+    px(x + 1, y + 6, 5, 1, U.shade(lit, 0.10));
+    px(x + 6, y + 6, 5, 1, U.shade(c, -0.20));
+    px(x + 1, y + 7, 1, 1, U.shade(lit, 0.02));                    // seam rolls down the west flank
+    // west highlight + floor-tuck shadow: the value range that makes it read as PLUSH, not stone
+    px(x + 1, y + 4, 1, 3, U.shade(lit, 0.12));
+    px(x + 1, y + 10, 10, 1, deep);                                // fabric tucking under its own weight
+    for (let i = 0; i < 6; i++) {                                  // nap flecks, kept off the dent
+      const k = U.hash('bb' + x + i);
+      px(x + 2 + (k % 9), y + 5 + ((k >>> 5) % 5), 1, 1, U.shade(c, 0.14));
+    }
+    px(x + 10, y + 5, 1, 1, '#c9a24a');                            // the little brand tag on the east seam
+    if (blink(4200, ph + x)) px(x + 3, y + 3, 1, 1, U.shade(lit, 0.30));   // a slow satin glint on the crown
   };
 
-  F.pinball = (x, y, w, h, f) => {   // 1x2 cabinet — TALL 3/4 like the arcades, but the PLAYFIELD is the read
+  F.pinball = (x, y, w, h, f) => {   // 1x2 — v6 REBUILD. A pinball machine IS its playfield ("a prop is its
+    // top surface"), and v5 gave the playfield 4 rows of dark glass under a 9-row backbox — the identity
+    // was a sliver under a head. Now the machine is a WEDGE first: a raked 10-row playfield plane between
+    // side walls, a plunger knob breaking the silhouette east, chrome legs, and the backbox sized to serve
+    // the field, not outrank it. f.work = an agent is really on the sticks.
     const r = RAMP.steel, ph = (f && f.x) || 0, base = y + h;   // h is PIXELS here, never tiles
-    shadow2(x + 1, base - 1, 10);
-    // legs + the raked body: a pinball table is a wedge, which is what tells it from an arcade cabinet
-    px(x + 1, base - 6, 2, 5, LINE); px(x + 9, base - 6, 2, 5, LINE);
-    px(x + 1, base - 6, 1, 5, r.lit); px(x + 10, base - 6, 1, 5, r.dk);
-    underAO(x + 3, base - 5, 6, 3);
-    chamf(x + 0, base - 12, 12, 7, LINE, 2);
-    chamf(x + 1, base - 11, 10, 5, r.face, 1);
-    // PLAYFIELD, raked toward the viewer — dark glass with bumpers under it
-    px(x + 2, base - 11, 8, 4, '#0d1a18');
-    px(x + 2, base - 11, 8, 1, U.shade('#0d1a18', 0.5));           // glass catching the room
-    const bump = (bx, by, c) => { px(bx, by, 2, 1, c); px(bx, by, 1, 1, U.shade(c, 0.4)); };
-    bump(x + 3, base - 10, blink(430, ph) ? ACC.alert : U.shade(ACC.alert, -0.6));
-    bump(x + 6, base - 10, blink(610, ph + 1) ? ACC.flow : U.shade(ACC.flow, -0.6));
-    bump(x + 4, base - 8, blink(790, ph + 2) ? ACC.data : U.shade(ACC.data, -0.6));
-    px(x + 3, base - 7, 1, 1, '#9fb0b2'); px(x + 8, base - 7, 1, 1, '#9fb0b2');   // flippers
-    const ball = 3 + ((Math.floor(now / 260) + ph) % 6);
-    px(x + ball, base - 9, 1, 1, '#e8f2f4');                       // the ball, actually moving
-    // BACKGLASS: the tall lit head, the silhouette's whole personality
-    px(x + 1, base - 21, 10, 9, LINE);
-    px(x + 2, base - 20, 8, 7, '#161d24');
-    px(x + 2, base - 20, 8, 1, U.shade('#161d24', 0.5));
-    const hot = blink(900, ph);
-    px(x + 3, base - 19, 6, 2, hot ? U.shade(ACC.lounge, 0.1) : U.shade(ACC.lounge, -0.45));
-    bloom(x + 3, base - 19, 6, 2, ACC.lounge, hot ? 0.42 : 0.18);
-    for (let i = 0; i < 4; i++) px(x + 3 + i * 2, base - 16, 1, 1, U.shade(ACC.flow, blink(700, ph + i) ? 0.1 : -0.6));
-    px(x + 3, base - 14, 6, 1, U.shade(ACC.data, -0.1));           // the score reel
-    scanl(x + 2, base - 20, 8, 7, 0.16);
+    const played = !!(f && f.work);
+    shadow2(x + 1, base - 1, 11);
+    // chrome legs — front pair splayed a px outward at the foot, the machine's stance
+    for (const [lx, dxx] of [[x + 1, -1], [x + 10, 1]]) {
+      px(lx + dxx, base - 2, 2, 2, LINE); px(lx, base - 5, 2, 3, LINE);
+      px(lx + dxx, base - 2, 1, 2, '#8a97a0'); px(lx, base - 5, 1, 3, '#8a97a0');
+      px(lx + dxx + 1, base - 2, 1, 2, '#3c464d'); px(lx + 1, base - 5, 1, 3, '#3c464d');
+    }
+    underAO(x + 3, base - 4, 7, 3);
+    // CABINET — the wedge. Body walls rise to hold the raked field; the west wall carries the side art.
+    chamf(x - 1, base - 17, 15, 13, LINE, 1);
+    px(x, base - 16, 13, 11, r.face);
+    px(x, base - 16, 1, 11, r.lit); keyEdge(x, base - 16, 1, 6, 0.22);          // lit west wall
+    px(x + 12, base - 16, 1, 11, r.dk); rimEdge(x + 12, base - 16, 1, 11, 0.20); // shaded east wall
+    px(x, base - 9, 1, 3, ACC.lounge); px(x, base - 12, 1, 2, U.shade(ACC.lounge, -0.30));   // side art flash
+    // PLAYFIELD — the raked plane, far edge lifted: brighter at the north, falling to the near lip
+    const pf = base - 15, pw = 9, pfx = x + 2;                  // field x+2..x+10; x+11 is the shooter lane
+    px(pfx - 1, pf - 1, pw + 3, 9, LINE);
+    for (let j = 0; j < 8; j++) {
+      const t = j / 7;
+      px(pfx, pf + j, pw, 1, U.shade('#1b3038', 0.30 - t * 0.52));   // rake: light falls off toward the player
+    }
+    px(pfx, pf - 1, pw, 1, '#4d666f');                          // far edge catches the room — the tilt's tell
+    px(pfx + pw, pf - 1, 1, 9, U.shade(r.face, -0.34));         // shooter-lane wall
+    px(pfx + pw + 1, pf, 1, 8, '#101b20');                      // the lane itself
+    // rollover arcs at the head of the field — two stepped guides, pure pinball vocabulary
+    px(pfx, pf, 2, 1, '#33555f'); px(pfx + 1, pf + 1, 1, 1, '#33555f');
+    px(pfx + pw - 2, pf, 2, 1, '#33555f'); px(pfx + pw - 2, pf + 1, 1, 1, '#33555f');
+    // pop bumpers — round caps with a lit core; they FIRE under play, breathe dim in attract
+    const bump = (bx, by, c, per, k) => {
+      const on = played ? blink(per, ph + k) : blink(per * 3, ph + k);
+      px(bx, by, 2, 2, U.shade(c, on ? -0.05 : -0.55));
+      px(bx, by, 1, 1, U.shade(c, on ? 0.38 : -0.35));
+      if (on && played) bloom(bx, by, 2, 2, c, 0.30);
+    };
+    bump(pfx + 1, pf + 2, ACC.alert, 430, 0);
+    bump(pfx + 5, pf + 1, ACC.flow, 610, 1);
+    bump(pfx + 3, pf + 4, ACC.data, 790, 2);
+    // slingshots + flippers at the near end — the two little levers ARE the game
+    px(pfx + 1, pf + 6, 2, 1, '#9fb0b2'); px(pfx + 1, pf + 5, 1, 1, U.shade('#9fb0b2', -0.3));
+    px(pfx + 6, pf + 6, 2, 1, '#9fb0b2'); px(pfx + 7, pf + 5, 1, 1, U.shade('#9fb0b2', -0.3));
+    // the ball: in play it ricochets the field on a hash walk; idle it waits in the shooter lane
+    if (played) {
+      const bk = U.hash('pb' + (Math.floor(now / 240) + ph));
+      px(pfx + 1 + (bk % (pw - 2)), pf + 1 + ((bk >>> 4) % 5), 1, 1, '#eef6f8');
+    } else {
+      px(pfx + pw + 1, pf + 7, 1, 1, '#b9c6cb');
+    }
+    // FRONT FACE under the near lip — coin door west, and the plunger knob jutting out the east flank
+    px(x + 1, base - 6, 11, 1, U.shade(r.face, -0.42));         // near lip shadow line
+    px(x + 3, base - 5, 3, 2, '#10161a'); px(x + 4, base - 4, 1, 1, '#c9a24a');   // coin door + slot glint
+    px(x + 12, base - 8, 3, 2, LINE); px(x + 13, base - 8, 2, 1, '#b8434f');      // plunger rod + red knob
+    px(x + 14, base - 8, 1, 1, U.shade('#b8434f', 0.30));
+    // BACKBOX — narrower than the cab, standing at the head: marquee, score reels, speaker dots
+    px(x + 1, base - 27, 11, 11, LINE);
+    px(x + 2, base - 26, 9, 9, '#161d24');
+    px(x + 2, base - 26, 9, 1, '#2c3944'); keyEdge(x + 2, base - 26, 5, 1, 0.24);
+    px(x + 10, base - 25, 1, 8, '#0c1116');                     // shaded east reveal
+    const hot = played || blink(1400, ph);
+    px(x + 3, base - 25, 7, 2, U.shade(ACC.lounge, hot ? 0.05 : -0.45));          // marquee band
+    px(x + 4, base - 25, 2, 1, '#ffd0ee'); px(x + 7, base - 24, 2, 1, U.shade(ACC.lounge, 0.30));  // title
+    bloom(x + 3, base - 25, 7, 2, ACC.lounge, played ? 0.40 : hot ? 0.22 : 0.10);
+    px(x + 3, base - 22, 7, 3, '#0d0a14');                      // backglass art well
+    for (let i = 0; i < 4; i++) {                               // score reels — they ROLL under play
+      const dg = played ? (Math.floor(now / 180) + i * 3 + ph) % 4 : 0;
+      px(x + 3 + i * 2, base - 21, 1, 1, played ? ['#ffd34a', '#e8b83a', '#ffe27a', '#caa22e'][dg] : '#4a3a1a');
+    }
+    px(x + 3, base - 18, 1, 1, '#232d33'); px(x + 9, base - 18, 1, 1, '#232d33'); // speaker dots
+    scanl(x + 3, base - 22, 7, 3, 0.16);
+    px(x + 2, base - 16, 9, 1, U.shade(r.face, -0.30));         // neck shadow where the head meets the body
+    spill(pfx, pf, pw, ACC.lounge, played ? 0.16 : 0.06, 3);    // marquee light pooling down the glass
   };
 
   F.steamvent = (x, y, w, h, f) => {   // FLUSH deck grate (walk-over) — all the presence is the plume above it

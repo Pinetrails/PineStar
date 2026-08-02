@@ -114,7 +114,11 @@ const entriesOf = (defs) => { const u = store({ commands: defs }); return u.cata
   A.ok(hits >= 3, 'both the driver wrapper and Run Now redirect to it (found ' + hits + ' references)');
   A.ok(idx.indexOf('turns: 0, usd: 0') >= 0, 'a command routine reports zero turns and zero spend');
   A.ok(idx.indexOf('EXEC_ENV_DENY_RE') >= 0, 'exec commands get a sanitized environment');
-  A.ok(idx.indexOf('not over messaging') >= 0, 'shell commands are refused off-desktop');
+  A.ok(idx.indexOf('not over messaging') >= 0, 'shell commands remain refused to ordinary messaging callers');
+  A.ok(/if \(!ctx\.ownerTrusted\) return \{ ok: false, text: 'That is one of your shell commands/.test(idx),
+    'only a host-admitted Telegram owner DM bypasses the messaging exec refusal');
+  A.ok(/if \(out\.directive\.type === 'exec'\) \{\s*if \(!ctx\.ownerTrusted\)[\s\S]*return runUserExec\(out\.directive\);/.test(idx),
+    'the admitted owner executes the exact desktop user-command path');
   A.ok(idx.indexOf('USER_COMMANDS_FILE') >= 0 && idx.indexOf("path.join(WORKSPACES, 'usercommands.json')") >= 0,
     'user commands live in the WORKSPACES root, OUTSIDE any agent fs jail (the whole safety argument for exec)');
 }

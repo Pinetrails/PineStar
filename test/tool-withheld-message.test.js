@@ -102,8 +102,8 @@ A.ok(/connectorAutonomy\(call, tool\)\) return \{ allow: true/.test(perms), 'the
 A.ok(perms.indexOf('connectorAutonomy(call, tool)) return { allow: true') <
      perms.indexOf("surface === 'autonomous' && scope === 'execute'"),
   'the connector tier also sits ABOVE the exec lockout (a non-read MCP tool is scope execute)');
-A.ok(/connectorGrant: \(call, tool\) => unattendedGrants\.indexOf\('connectors'\) >= 0 && \(!taintedBy \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
-  'consent and the tool list read the SAME host value for connectors too, taint included');
+A.ok(/connectorGrant: \(call, tool\) => \(ownerTrusted \|\| unattendedGrants\.indexOf\('connectors'\) >= 0\) && \(!taintedBy \|\| ownerTrusted \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
+  'consent grants connectors only to an owner DM or an explicit routine grant, taint included');
 A.ok(/stationWithConnectors\(station, agentId, connectors\.ids\(\)\)/.test(src),
   'connector portals are injected into a bay-docked room too (composeOffice is bypassed there)');
 // the capability note must not re-assert the old blanket "no connectors unattended" lie
@@ -111,16 +111,16 @@ const capsum = fs.readFileSync(path.join(root, 'sidecar', 'capability', 'capsumm
 A.ok(!/shell\/terminal, desktop control and live connector tools/.test(capsum),
   'the unattended note no longer hardcodes a blanket no-shell/no-connector claim');
 A.ok(/lackAutonomous/.test(capsum), 'the unattended note names only what is genuinely absent from THIS run');
-A.ok(/if \(surface !== 'interactive' && impact === IMPACTS\.MEDIA_CONTROL\) return false;/.test(policy),
-  'media-control stays denied unattended — the grant did not widen past workspace-process');
+A.ok(/if \(!ownerTrusted && surface !== 'interactive' && impact === IMPACTS\.MEDIA_CONTROL\) return false;/.test(policy),
+  'media-control stays denied to ordinary unattended automation — only a host-admitted owner DM widens it');
 A.ok(/terminalAutonomy\(call, tool\)\) return \{ allow: true/.test(perms), 'the consent broker has the matching grant tier');
 // ORDERING IS LOAD-BEARING: below the exec lockout the tier would be dead code.
 A.ok(perms.indexOf('terminalAutonomy(call, tool)) return { allow: true') <
      perms.indexOf("surface === 'autonomous' && scope === 'execute'"),
   'the grant tier sits ABOVE the exec lockout');
 // the grant must never be derivable from anything the model can influence
-A.ok(/terminalGrant: \(call, tool\) => unattendedGrants\.indexOf\('workbench'\) >= 0 && \(!taintedBy \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
-  'consent and the tool list read the SAME host-side value, taint included (they can never disagree)');
+A.ok(/terminalGrant: \(call, tool\) => \(ownerTrusted \|\| unattendedGrants\.indexOf\('workbench'\) >= 0\) && \(!taintedBy \|\| ownerTrusted \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
+  'consent grants terminal only to an owner DM or an explicit routine grant, taint included');
 A.ok(/surface === 'interactive' \? \[\] : Array\.from\(normalizeUnattendedGrants\(o\.unattendedGrants\)\)/.test(src),
   'the grant is ignored on the watched surface, where floor placement governs');
 
@@ -138,8 +138,8 @@ A.ok(/surface === 'interactive' \? \[\] : Array\.from\(normalizeUnattendedGrants
   // edit door — a clean routine must not be patchable into a payload
   A.ok(/cronGuard\.scanRoutinePrompt\(patch\.prompt\)/.test(src), 'the update/patch path scans the new prompt');
   // fire doors — defense in depth for prompts authored before the scanner, and for runtime-loaded content
-  A.ok(/cronGuard\.scanAssembled\(job\.prompt/.test(src), 'Run Now re-scans the assembled prompt before spending');
-  A.ok(/cronGuard\.scanAssembled\(job\.prompt/.test(driver), 'the scheduled tick re-scans before firing');
+  A.ok(/cronGuard\.scanAssembled\(assembledPrompt/.test(src), 'Run Now re-scans the actual prompt after upstream context assembly');
+  A.ok(/cronGuard\.scanAssembled\(assembledPrompt/.test(driver), 'the scheduled tick re-scans the actual prompt after upstream context assembly');
   // a fire-time block must be VISIBLE, not a silent skip
   A.ok(/status: 'error', reason: 'blocked'/.test(driver), 'a blocked fire is recorded as a real failed run');
   A.ok(/outcome: 'failed', reason: 'blocked: '/.test(driver), 'and reported on the cron.result event');

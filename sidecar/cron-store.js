@@ -57,7 +57,7 @@
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
   // fields a user may edit via updateJob. `id`, timestamps, run-state and counters are NOT editable here.
-  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'workdir', 'contextFrom', 'misfire', 'unattendedGrants'];
+  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'scriptTimeoutMs', 'workdir', 'contextFrom', 'misfire', 'unattendedGrants', 'noAgent', 'enabledToolsets', 'attachToSession', 'origin'];
 
   /* UNATTENDED CAPABILITY GRANT (2026-07-25) — the capability families the Commander explicitly approved for
      THIS routine to use with nobody watching. Default EMPTY: a routine grants nothing extra unless the user
@@ -85,6 +85,12 @@
   // null = derive the default from the schedule (cron/slow-interval -> fire_once, fast interval -> skip;
   // see cron.misfirePolicy). Normalized here so a bogus patch value can never persist an unknown policy.
   function normMisfire(v) { return (v === 'skip' || v === 'fire_once') ? v : null; }
+  function normList(v, max, re) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const raw of v) { const s = String(raw == null ? '' : raw).trim(); if (s && (!re || re.test(s)) && out.indexOf(s) < 0) out.push(s.slice(0, 120)); if (out.length >= max) break; }
+    return out;
+  }
 
   function isValidId(id) { return typeof id === 'string' && ID_RE.test(id); }
 
@@ -140,12 +146,15 @@
       model: spec.model != null ? String(spec.model) : null,        // null -> host's boot-frozen default
       provider: spec.provider != null ? String(spec.provider) : null, // null -> selected agent/global provider
       deliver: String(spec.deliver || 'local'),
+      origin: normOrigin(spec.origin),
       enabled: enabled,
       state: enabled ? 'scheduled' : 'paused',
       repeat: { times: times, completed: 0 },
       createdAt: iso(now),
       nextRunAt: (enabled && fireable) ? armAt(schedule, null, now, ctx.defaultTz) : null,
       lastRunAt: null, lastRunId: null, lastStatus: null, lastError: null, lastReason: null,
+      // Bounded final output is the durable data plane for contextFrom. It is runtime data, never editable.
+      lastOutput: null,
       retryCount: 0,
       // misfire policy for a recurring job (see normMisfire above). null -> schedule-derived default.
       misfire: normMisfire(spec.misfire),
@@ -167,16 +176,31 @@
       // ---- record-the-field, defer-the-consumer (no v1 runtime consumer; stored so a later commit wires it) ----
       // UNATTENDED CAPABILITY GRANT (see normGrants): [] on every existing job, so this is purely additive.
       unattendedGrants: normGrants(spec.unattendedGrants),
-      skills: Array.isArray(spec.skills) ? spec.skills.slice() : [],
+      skills: normList(spec.skills, 8, /^[A-Za-z0-9_. -]{1,120}$/),
       script: spec.script != null ? String(spec.script) : null,
+      scriptTimeoutMs: spec.scriptTimeoutMs != null ? Math.min(120000, Math.max(1000, parseInt(spec.scriptTimeoutMs, 10) || 30000)) : 30000,
       workdir: spec.workdir != null ? String(spec.workdir) : null,
-      contextFrom: Array.isArray(spec.contextFrom) ? spec.contextFrom.slice() : null,
+      contextFrom: spec.contextFrom == null ? null : normList(spec.contextFrom, 8, ID_RE),
+      noAgent: spec.noAgent === true,
+      enabledToolsets: spec.enabledToolsets == null ? null : normList(spec.enabledToolsets, 16, /^[A-Za-z0-9:_-]{1,80}$/),
+      attachToSession: spec.attachToSession === true,
       // ADDITIVE provenance (Recipe Marketplace R3): a sibling `meta` bag for caller-supplied provenance, e.g.
       // { recipeId } stamped by MAKE ROUTINE so the ROUTINES console + the recipe dossier can show the link. Old
       // jobs with no `meta` load as null and every consumer tolerates its absence — this NEVER breaks an existing
       // job. Normalized to a plain shallow object (or null); the driver/schedule math never reads it.
       meta: normMeta(spec.meta)
     };
+  }
+  function normOrigin(origin) {
+    if (!origin || typeof origin !== 'object' || Array.isArray(origin)) return null;
+    const target = origin.target != null ? String(origin.target).slice(0, 200) : '';
+    const channel = origin.channel != null ? String(origin.channel).slice(0, 80) : '';
+    const chatId = origin.chatId != null ? String(origin.chatId).slice(0, 200) : '';
+    const threadId = origin.threadId != null ? String(origin.threadId).slice(0, 200) : '';
+    const sessionId = origin.sessionId != null ? String(origin.sessionId).slice(0, 200) : '';
+    const streamId = origin.streamId != null ? String(origin.streamId).slice(0, 200) : '';
+    const sessionTitle = origin.sessionTitle != null ? String(origin.sessionTitle).slice(0, 200) : '';
+    return (target || (channel && chatId) || sessionId || streamId) ? { target: target || null, channel: channel || null, chatId: chatId || null, threadId: threadId || null, sessionId: sessionId || null, streamId: streamId || null, sessionTitle: sessionTitle || null } : null;
   }
   // normalize a caller-supplied meta bag: keep it only if it is a plain object, shallow-cloned; else null. This is
   // pure provenance (no runtime behavior keys), so we don't validate its shape beyond "plain object" — a recipeId
@@ -207,6 +231,14 @@
       // re-normalize through the whitelist: the EDITABLE loop above copies the RAW patch value, so without this
       // a patch could persist an ungrantable capability name (same trap misfire guards against).
       if (Object.prototype.hasOwnProperty.call(patch, 'unattendedGrants')) next.unattendedGrants = normGrants(patch.unattendedGrants);
+      if (Object.prototype.hasOwnProperty.call(patch, 'origin')) next.origin = normOrigin(patch.origin);
+      if (Object.prototype.hasOwnProperty.call(patch, 'noAgent')) next.noAgent = patch.noAgent === true;
+      if (Object.prototype.hasOwnProperty.call(patch, 'attachToSession')) next.attachToSession = patch.attachToSession === true;
+      if (Object.prototype.hasOwnProperty.call(patch, 'scriptTimeoutMs')) next.scriptTimeoutMs = Math.min(120000, Math.max(1000, parseInt(patch.scriptTimeoutMs, 10) || 30000));
+      if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolsets')) next.enabledToolsets = Array.isArray(patch.enabledToolsets) ? patch.enabledToolsets.slice() : null;
+      if (Object.prototype.hasOwnProperty.call(patch, 'skills')) next.skills = normList(patch.skills, 8, /^[A-Za-z0-9_. -]{1,120}$/);
+      if (Object.prototype.hasOwnProperty.call(patch, 'contextFrom')) next.contextFrom = patch.contextFrom == null ? null : normList(patch.contextFrom, 8, ID_RE);
+      if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolsets')) next.enabledToolsets = patch.enabledToolsets == null ? null : normList(patch.enabledToolsets, 16, /^[A-Za-z0-9:_-]{1,80}$/);
       if (patch.repeat && patch.repeat.times !== undefined) {
         const t = patch.repeat.times;
         next.repeat = Object.assign({}, job.repeat, { times: t == null ? null : Math.max(1, parseInt(t, 10) || 1) });
@@ -319,6 +351,7 @@
       next.lastReason = result.reason != null ? String(result.reason) : null;
       next.lastStatus = ok ? 'ok' : 'error';
       next.lastError = ok ? null : (result.error != null ? String(result.error) : 'error');
+      if (ok && result.output != null) next.lastOutput = String(result.output).slice(0, 32000);
       // G4.5: ANY settlement (success, terminal failure, OR transient failure) means the run is no longer
       // in flight, so CLEAR the one-shot fire-claim. The not-due guard must only suppress re-fire WHILE
       // actually running — a transient settlement clears the claim so the backoff path below can re-arm

@@ -5,7 +5,7 @@
    the platform. The hub knows nothing of the loop/provider/broker internals — it is handed `runOnce`, the
    durable `store`, a `send`, the current `secrets` (OR key+model), and a `classify` (task-vs-talk), all injected.
 
-     makeChannelHub({ channel, runOnce, store, send, secrets, persona, classify, redact, emit, newId,
+     makeChannelHub({ channel, runOnce, store, send, secrets, persona, classify, ownerTrusted?, redact, emit, newId,
                       maxMessageLength?, agentPrefix? }) -> { onInbound, onCallback, onStatus }
 
    Per inbound it: (1) maps chatId -> a per-chat agentId (`tg_<chatId>`, isolated notebook/workspace/history);
@@ -307,6 +307,9 @@
     const runSlashFn = typeof o.runSlash === 'function' ? o.runSlash : null;
     // names of the Commander's own commands, so this hub can recognise one without owning the list
     const userCommandNames = typeof o.userCommandNames === 'function' ? o.userCommandNames : (() => []);
+    // The composition root may mint this only for an authenticated Telegram owner DM. It deliberately lives at
+    // the hub edge so every other channel and every Telegram group message stays on its ordinary policy.
+    const ownerTrustedFor = typeof o.ownerTrusted === 'function' ? o.ownerTrusted : (() => false);
     const rosterFn = typeof o.roster === 'function' ? o.roster : null;
     const setModelFn = typeof o.setModel === 'function' ? o.setModel : null;
     const modelCatalogFn = typeof o.modelCatalog === 'function' ? o.modelCatalog : null;
@@ -773,8 +776,9 @@
     // only claims success after saveChatRecord returns; a model change only confirms after setModel reports ok.
     // boundRec is this chat's persisted record (or null) — /approvals reads its opt-in flag and writes it back.
     // chatType (optional, additive) — only /mention needs it, to say honestly that the setting is group-only
-    // rather than storing a value that can never apply in a DM.
-    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec, chatType) {
+    // rather than storing a value that can never apply in a DM. `ownerTrusted` is host-minted at ingress and is
+    // forwarded to the shared slash registry so its /tools answer matches this owner DM's actual run authority.
+    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec, chatType, ownerTrusted) {
       const cmd = parsed.cmd, arg = parsed.arg;
       // rosterFn is an INJECTED callback (Discord/other wire-ups pass it straight through); a throwing roster must
       // degrade to a logged error + polite reply, never an unhandled rejection that swallows the whole inbound.
@@ -814,7 +818,7 @@
       if (SLASH_CMDS[cmd]) {
         if (!runSlashFn) { await deliver(chatId, '⚠ ' + '/' + cmd + ' is not available on this channel.', '', 'command'); return; }
         let r;
-        try { r = await runSlashFn('/' + cmd + (arg ? ' ' + arg : ''), { agentId: boundId }); }
+        try { r = await runSlashFn('/' + cmd + (arg ? ' ' + arg : ''), { agentId: boundId, ownerTrusted: !!ownerTrusted }); }
         catch (e) { try { console.error('[' + channel + '] /' + cmd + ' threw:', (e && e.message) || e); } catch (_) {} r = null; }
         if (!r) { await deliver(chatId, '⚠ Could not run /' + cmd + ' right now — try again in a moment.', '', 'command'); return; }
         const body = (r.lines && r.lines.length)
@@ -1105,18 +1109,53 @@
     // takes the normal path. Deterministic: the wait rides the injected `sleep`; no clocks read.
     const ALBUM_WAIT_MS = Number.isFinite(o.albumWaitMs) ? Math.max(0, o.albumWaitMs) : 800;
     const albums = new Map();   // chatId+'|'+groupId -> { msg (merged), seq, done, resolve }
+    // Quick successive text bubbles are one human thought, not competing requests. Batch only plain, non-command
+    // text from the same author/topic; media, corrections, commands and cross-speaker group traffic keep their
+    // exact existing delivery semantics.
+    // The shared hub stays byte-identical for other platforms unless their composition root opts in. Telegram
+    // supplies 350ms below; this prevents a platform-specific polish feature from changing generic semantics.
+    const TEXT_BATCH_WAIT_MS = Number.isFinite(o.textBatchWaitMs) ? Math.max(0, o.textBatchWaitMs) : 0;
+    const textBatches = new Map();
 
-    async function onInbound(msg) {
+    async function onInbound(msg, intake) {
       const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
         ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
-      if (gid) return albumInbound(msg, gid);
-      return processInbound(msg);
+      if (gid) return albumInbound(msg, gid, intake);
+      if (TEXT_BATCH_WAIT_MS > 0 && textBatchable(msg)) return textInbound(msg, intake);
+      return processInbound(msg, intake);
     }
 
-    async function albumInbound(msg, gid) {
+    function textBatchable(msg) {
+      if (!msg || msg.edited || (Array.isArray(msg.media) && msg.media.length)) return false;
+      const text = String(msg.text || '').trim();
+      return !!text && !/^\/[A-Za-z0-9_-]+(?:\s|$)/.test(text);
+    }
+
+    async function textInbound(msg, intake) {
+      const key = String(msg.chatId) + '|' + String(msg.userId || '') + '|' + String(msg.threadId || '');
+      let rec = textBatches.get(key);
+      if (!rec) {
+        rec = { msg: Object.assign({}, msg), intake: intake, seq: 0, resolve: null, done: null };
+        rec.done = new Promise(r => { rec.resolve = r; });
+        textBatches.set(key, rec);
+      } else {
+        const prior = String(rec.msg.text || '').trim();
+        const next = String(msg.text || '').trim();
+        rec.msg.text = prior && next ? prior + '\n' + next : (prior || next);
+        rec.msg.messageId = msg.messageId == null ? rec.msg.messageId : msg.messageId;
+      }
+      const mySeq = ++rec.seq;
+      await sleep(TEXT_BATCH_WAIT_MS);
+      if (textBatches.get(key) !== rec || rec.seq !== mySeq) return rec.done;
+      textBatches.delete(key);
+      try { await processInbound(rec.msg, rec.intake); }
+      finally { rec.resolve(); }
+    }
+
+    async function albumInbound(msg, gid, intake) {
       let rec = albums.get(gid);
       if (!rec) {
-        rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), seq: 0, resolve: null, done: null };
+        rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), intake: intake, seq: 0, resolve: null, done: null };
         rec.done = new Promise(r => { rec.resolve = r; });
         albums.set(gid, rec);
       } else {
@@ -1127,11 +1166,11 @@
       await sleep(ALBUM_WAIT_MS);
       if (albums.get(gid) !== rec || rec.seq !== mySeq) return rec.done;   // a newer part re-armed the debounce
       albums.delete(gid);
-      try { await processInbound(rec.msg); }
+      try { await processInbound(rec.msg, rec.intake); }
       finally { rec.resolve(); }
     }
 
-    async function processInbound(msg) {
+    async function processInbound(msg, intake) {
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
@@ -1173,6 +1212,8 @@
       let boundRec = null;
       try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
+      let ownerTrusted = false;
+      try { ownerTrusted = ownerTrustedFor(msg) === true; } catch (_) { ownerTrusted = false; }
 
       /* OBSERVE-ONLY: heard, filed, never answered. The mention gate stopped the bot replying to a room it was
          not addressed in, and in doing so gave it amnesia — asked later to "summarise that", it had never seen
@@ -1193,7 +1234,7 @@
       // through the SAME deliver() path so chunking/limits apply. Channel-agnostic: this lives in the hub, so
       // Telegram/Discord/any future adapter get identical behavior.
       const parsed = parseCommand(msg.text);
-      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec, msg.chatType); return; }
+      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec, msg.chatType, ownerTrusted); return; }
 
       // COMMANDER-DEFINED commands are not in this hub's table (the sidecar owns them), so a "/standup" would
       // otherwise fall through and be answered by the MODEL — spending a turn to say it doesn't understand.
@@ -1206,7 +1247,7 @@
         // is actually talking to rather than a default
         const ucAgent = currentBoundAgent(chatId, boundAgentId, sec);
         let r;
-        try { r = await runSlashFn(String(msg.text).trim(), { agentId: ucAgent }); }
+        try { r = await runSlashFn(String(msg.text).trim(), { agentId: ucAgent, ownerTrusted: ownerTrusted }); }
         catch (e) { try { console.error('[' + channel + '] user command threw:', (e && e.message) || e); } catch (_) {} r = null; }
         const body = (r && Array.isArray(r.lines) && r.lines.length)
           ? ((r.title ? r.title + '\n' : '') + r.lines.join('\n'))
@@ -1257,7 +1298,9 @@
       // exist. (The belt crate + onResolved fire here, before the audio is downloaded, so a spoken directive
       // still visualizes as talk — visualization only; the RUN gets the right prompt.)
       let isTask = !!classify(msg.text);
-      if (onResolved) { try { onResolved({ chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask }); } catch (_) {} }
+      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask };
+      if (onResolved) { try { onResolved(resolvedInfo); } catch (_) {} }
+      if (intake && typeof intake.onResolved === 'function') { try { intake.onResolved(resolvedInfo); } catch (_) {} }
 
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
       // agentId, so two chats routed to the SAME agent (via a splitter/filter) never cross-cancel each other.
@@ -1437,6 +1480,7 @@
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
             surface: wantApprovals ? 'interactive' : 'autonomous',
+            ownerTrusted: ownerTrusted,
             // ...but ONLY for who answers a consent prompt. A phone has no floor to place props on, so this run
             // composes the headless office either way. Without this, /approvals on silently cut the agent from
             // the full autonomous office to compute-only (2 tools) — THE MOAT is floor-real placement, and there
@@ -1451,7 +1495,8 @@
             reflect: true,
             station: bayStation || undefined,
             taskKey: 'channel:' + channel + ':' + chatId,
-            taskSource: channel
+            taskSource: channel,
+            deliveryOrigin: { channel: channel, chatId: String(chatId), threadId: (routes.get(String(chatId)) || {}).threadId || null }
           });
         } catch (e) {
           state.errMsg = state.errMsg || ('run failed: ' + ((e && e.message) || e));
@@ -1509,7 +1554,7 @@
                 key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
                 system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
                 agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
-                surface: 'autonomous', broadcast: true, reflect: true,
+                surface: 'autonomous', ownerTrusted: ownerTrusted, broadcast: true, reflect: true,
                 station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,
                 taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel
               });

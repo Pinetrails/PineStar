@@ -38,6 +38,7 @@
     "dev:seed:keep": "node dev/seed.js --keep",
     "shoot": "node scripts/shoot.mjs",
     "audit": "node scripts/audit.mjs",
+    "eval:recommendations": "node scripts/recommendation-replay.mjs",
     "golden": "node scripts/golden.mjs",
     "golden:bless": "node scripts/golden.mjs --bless",
     "phase2": "node scripts/phase2.mjs",

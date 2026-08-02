@@ -100,7 +100,7 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
 {
   const src = fs.readFileSync(path.join(root, 'sidecar', 'index.js'), 'utf8');
   A.ok(/const taintPolicy = require\('\.\/taint\.js'\)/.test(src), 'index.js uses the shared taint policy (no second copy)');
-  A.ok(/let taintedBy = null;/.test(src), 'the run tracks whether untrusted content has landed');
+  A.ok(/let taintedBy = o\.initialTaint \? 'scheduled upstream context' : null;/.test(src), 'the run tracks whether untrusted content has landed, including initial cron pipeline data');
   A.ok(/revokedByTaint\.isSource\(liveTool\)/.test(src), 'taint is latched from the tool that produced the content');
   // A result with real content taints WHETHER OR NOT the call succeeded. The old rule required !r.isError on
   // the reasoning that "a failed fetch put nothing in front of the model" — true for web_fetch (it throws a
@@ -110,8 +110,8 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
     'any untrusted-source result carrying real content taints — an isError flag is not an exemption');
   A.ok(!/!r\.isError && typeof r\.content === 'string' && r\.content\.length && revokedByTaint\.isSource/.test(src),
     'the isError exemption is gone (a hostile connector cannot opt out of taint by failing)');
-  A.ok(/if \(taintedBy && surface !== 'interactive' && !revokedByTaint\.ok\(liveTool\)\)/.test(src),
-    'the dispatch gate enforces it, and ONLY on unattended runs');
+  A.ok(/if \(taintedBy && surface !== 'interactive' && !ownerTrusted && !revokedByTaint\.ok\(liveTool\)\)/.test(src),
+    'the dispatch gate enforces it on ordinary unattended runs, but keeps the authenticated owner DM on desktop-equivalent authority');
   A.ok(/summary: 'untrusted-content-lockout'/.test(src), 'the refusal is telemetered distinctly');
   A.ok(/outside content \(via ' \+ taintedBy \+ '\)/.test(src),
     'the refusal names the actual source so the agent can report it honestly');
@@ -119,7 +119,7 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
   A.ok(/terminalGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the terminal grant respects taint');
   A.ok(/connectorGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the connector grant respects taint');
   // enforcement must run BEFORE the tool executes
-  A.ok(src.indexOf("if (taintedBy && surface !== 'interactive'") < src.indexOf('let r = await registry.dispatch(c, dctx)'),
+  A.ok(src.indexOf("if (taintedBy && surface !== 'interactive' && !ownerTrusted") < src.indexOf('let r = await registry.dispatch(c, dctx)'),
     'the lockout is checked BEFORE dispatch, so a revoked power never executes');
 }
 

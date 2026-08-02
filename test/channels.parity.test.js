@@ -69,8 +69,19 @@ function build(over) {
     await hub.onInbound(dm('/usage'));
     A.eq(calls[0].input, '/usage', 'the raw command line is handed to the shared registry verbatim');
     A.eq(calls[0].ctx.agentId, 'ultron', 'the bound agent rides the dispatch, so per-agent answers are scoped');
+    A.eq(calls[0].ctx.ownerTrusted, false, 'ordinary control commands do not inherit owner authority');
     A.ok(/Spend/.test(sends[0]) && /Today: \$1\.50\./.test(sends[0]) && /All time/.test(sends[0]),
       'a card-shaped reply is flattened to plain text with every line preserved');
+  }
+
+  {
+    const calls = [];
+    const { hub } = build({
+      ownerTrusted: (msg) => msg.chatType === 'dm' && msg.userId === 'u1',
+      runSlash: async (input, ctx) => { calls.push({ input, ctx }); return { ok: true, text: 'ok' }; }
+    });
+    await hub.onInbound(dm('/tools'));
+    A.eq(calls[0].ctx.ownerTrusted, true, 'admitted owner authority reaches shared slash commands such as /tools');
   }
 
   {
@@ -216,7 +227,21 @@ function build(over) {
     A.eq(ran, false, 'a user command never spawns an LLM run on a channel');
     A.eq(calls[0].input, '/standup today', 'the whole line reaches the registry');
     A.eq(calls[0].ctx.agentId, 'ultron', 'the user command is scoped to the agent this chat is bound to');
+    A.eq(calls[0].ctx.ownerTrusted, false, 'ordinary channel callers do not inherit owner command authority');
     A.ok(/your standup/.test(sends[0]), 'its output is delivered');
+  }
+
+  {
+    // A Commander-defined exec reaches the desktop-equivalent slash path only when the composition root admits
+    // this exact direct message as the Telegram owner. The hub does not infer it from the text or chat id.
+    const calls = [];
+    const { hub } = build({
+      userCommandNames: () => ['shellproof'],
+      ownerTrusted: (msg) => msg.chatType === 'dm' && msg.userId === 'u1',
+      runSlash: async (input, ctx) => { calls.push({ input, ctx }); return { ok: true, text: 'ran' }; }
+    });
+    await hub.onInbound(dm('/shellproof'));
+    A.eq(calls[0].ctx.ownerTrusted, true, 'the admitted owner flag reaches Commander-defined commands too');
   }
 
   {

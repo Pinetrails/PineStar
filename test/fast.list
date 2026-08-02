@@ -5,6 +5,8 @@ test/events-contract.test.js
 test/clock-rng.test.js
 test/context.test.js
 test/runtimeinfo.test.js
+test/harness-snapshot.test.js
+test/station-inspect.test.js
 test/diagnostics.test.js
 test/diagnostics-support-email.test.js
 test/diagnostics-build.test.js
@@ -32,7 +34,9 @@ test/runroute.test.js
 test/checkpoint.test.js
 test/module-scope-shadowing.test.js
 test/verify.test.js
+test/lsp-edit-feedback.test.js
 test/provider.replay.test.js
+test/agent-eval.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
 test/realtime-voice.test.js
@@ -73,6 +77,7 @@ test/loop.parallel-tools.test.js
 test/loop.tool-images.test.js
 test/loop.turn-budget.test.js
 test/loop.provider-recovery.test.js
+test/output-continuation.test.js
 test/compaction.test.js
 test/loopguard.test.js
 test/loopguard.dispatch.test.js
@@ -144,6 +149,8 @@ test/questrefresh.test.js
 test/threads-store.test.js
 test/threadmine.test.js
 test/declinedindex.test.js
+test/recommendation-ledger.test.js
+test/recruiterstore-readiness.test.js
 test/auxgovernor.test.js
 test/threadstore.test.js
 test/autopilot-threads.test.js
@@ -172,6 +179,8 @@ test/roster-clause.test.js
 test/agent-config-target.test.js
 test/notebookrestore.test.js
 test/runstore.test.js
+test/run-journal.test.js
+test/run-journal.loop.test.js
 test/autonomy-ledger.test.js
 test/artifacts.test.js
 test/deliverable-store.test.js
@@ -196,6 +205,7 @@ test/qa-janitor.test.js
 test/qa-evidence-sweep.test.js
 test/qa-installed-smoke.test.js
 test/transcript.test.js
+test/transcript-history-v2.test.js
 test/recall.test.js
 test/fs.jail.test.js
 test/fs.patch.test.js
@@ -204,17 +214,20 @@ test/docextract.test.js
 test/imagewire.test.js
 test/web.ssrf.test.js
 test/web.search.test.js
+test/web.politeness.test.js
 test/web.fence.test.js
 test/web.fetch-jina.test.js
 test/web.calm.test.js
 test/web.reach.test.js
 test/browser.test.js
+test/browser.reach-measure.test.js
 test/browser.tool-parity.test.js
 test/browser.wait-recovery.test.js
 test/browser.attach.test.js
 test/browser.pie.test.js
 test/desktop.test.js
 test/computer.test.js
+test/win32desktop.test.js
 test/inputpolicy.test.js
 test/image.test.js
 test/voice-tool.test.js
@@ -227,6 +240,7 @@ test/classify.test.js
 test/specialties.test.js
 test/profile.test.js
 test/worksignal.test.js
+test/worksignalstore.test.js
 test/recruiter.test.js
 test/topicmatch.test.js
 test/prospect.test.js
@@ -324,6 +338,7 @@ test/newhero-reset.test.js
 test/harness-internal.test.js
 test/chat-runmeta.test.js
 test/chat-stopped-retry.test.js
+test/comms-history-pin.test.js
 test/chat-linkify.test.js
 test/mint.test.js
 test/ctxgauge.test.js
@@ -412,7 +427,10 @@ test/toolsearch.test.js
 test/consent.interactive.test.js
 test/consentwait.test.js
 test/consent-visibility.test.js
+test/estop-persistence-ui.test.js
 test/channels.adapter.test.js
+test/channels.proxy-fetch.test.js
+test/channels.owner-pairing.test.js
 test/channels.telegram.test.js
 test/channels.telegram.format.test.js
 test/channels.telegram.context.test.js
@@ -451,6 +469,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/mobile-control-reachability.test.js
 test/station-tooltip.test.js
 test/channels.discord-wire.test.js
 test/widgets.test.js
@@ -472,3 +491,4 @@ test/lint-determinism.js
 test/station-bridge.test.js
 test/station-commands.test.js
 test/station-tools.test.js
+test/code-mode.test.js

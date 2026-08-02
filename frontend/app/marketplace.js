@@ -1184,6 +1184,12 @@ const Marketplace = (() => {
     const t = ps.explain(s.tags || {});
     return t ? (BECAUSE[t] || '') : '';
   }
+  function recommendationsReady() {
+    try {
+      const r = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null;
+      return !!(r && r.ready);
+    } catch (_) { return false; }
+  }
   /* ---------- specialist recommendations (deploy AND summon/pick) ----------
      Mirrors Recipes.rankRecipes: (profile affinity × 4) + (goal-keyword hits × 2), catalog-order tie-break.
      When BOTH signals are silent (cold start) we fall back to an HONEST lane spread — the first class of each
@@ -1226,9 +1232,10 @@ const Marketplace = (() => {
   }
   function rankSpecs(items, excludeId) {
     const ps = profileApi();
-    const learningOn = !!(ps && (!ps.enabled || ps.enabled()));
+    const ready = recommendationsReady();
+    const learningOn = ready && !!(ps && (!ps.enabled || ps.enabled()));
     const scoreFn = (learningOn && ps && ps.score) ? (t => ps.score(t)) : null;
-    const gt = goalText();
+    const gt = ready ? goalText() : '';
     const topics = learningOn ? learnedTopics() : [];   // same glass-box gate as the affinity scorer (see forYouShelfHTML)
     const pool = (items || []).filter(s => s && s.id !== excludeId);
     let anySignal = false;
@@ -1350,7 +1357,8 @@ const Marketplace = (() => {
     if (!hasRecipes()) return '';
     if (catFilter !== 'all' || query) return '';   // only in the clean top-level view
     const ps = profileApi();
-    const learningOff = !!(ps && ps.enabled && !ps.enabled());
+    const ready = recommendationsReady();
+    const learningOff = !ready || !!(ps && ps.enabled && !ps.enabled());
     // the affinity scorer only feeds the rank when learning is ON and the profile has signal; else rankRecipes
     // leans on goal text, then the honest category-spread fallback.
     const scoreFn = (ps && ps.score && !learningOff) ? (tags => ps.score(tags)) : null;
@@ -1361,7 +1369,7 @@ const Marketplace = (() => {
     // `anySignal` — it also guarantees the row can never shrink: whenever topics are live the profile is live
     // too, so the positive filter was already engaged and an additive term can only ever ADD survivors.
     const topics = learningOff ? [] : learnedTopics();
-    const gt = goalText();
+    const gt = ready ? goalText() : '';
     // THREE, not four: the rail wraps to a second row at four cards on a standard bay, and a shelf that spends
     // two rows above the library is the thing that pushed the catalog off screen. Three also matches the
     // specialists shelf next door, so both tabs speak the same visual language.
@@ -1375,7 +1383,8 @@ const Marketplace = (() => {
       try { why = Recipes.forYouReason ? (Recipes.forYouReason(r, { topics: topics, goalText: gt, launches: launches }) || '') : ''; } catch (_) { why = ''; }
       return why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
     };
-    return '<div class="mkt-sect-h mkt-foryou-sect">◈ FOR YOU</div><div class="mkt-rec-rail">' +
+    const head = ready ? '◈ FOR YOU' : '◈ STARTING POINTS — a varied lineup while the station gets to know you';
+    return '<div class="mkt-sect-h mkt-foryou-sect">' + head + '</div><div class="mkt-rec-rail">' +
       items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
   }
   // the station's LEARNED interest topics (server truth: GET /api/scout, cached in ProspectStore). Empty until a

@@ -168,6 +168,26 @@ function seedSkills(ws) {
     L = await list();
     A.eq(L.by['Risky Deploy'].withheld, true, 'editing the body RE-ASKS — the approval was bound to the bytes, not the name');
     A.eq(L.by['Risky Deploy'].guardApprovable, true, 'and it can be re-approved');
+
+    // ---- 6. a failed durable write cannot create a session-only approval ----
+    const approvalFile = path.join(ws, 'skills-allowed.json');
+    const durableBeforeFailure = fs.readFileSync(approvalFile);
+    fs.rmSync(approvalFile);
+    fs.mkdirSync(approvalFile); // deterministic EISDIR at the product's final atomic-rename target
+    const failedApproval = await api('/api/agent-skills/allow', { method: 'POST', body: JSON.stringify({ agentId: 'agent', id: riskyId }) });
+    A.eq(failedApproval.status, 507, 'an unwritable approval store fails closed with 507');
+    A.eq(failedApproval.body && failedApproval.body.approved, false, 'the route does not claim the skill was approved');
+    L = await list();
+    A.eq(L.by['Risky Deploy'].withheld, true, 'the failed approval is not exposed from process memory');
+
+    fs.rmSync(approvalFile, { recursive: true });
+    fs.writeFileSync(approvalFile, durableBeforeFailure);
+    try { child.kill(); } catch (_) {}
+    await new Promise(r => setTimeout(r, 400));
+    booted = await boot(booted.port + 1, ws, 20);
+    child = booted.child; B = 'http://' + HOST + ':' + booted.port; apiToken = await bootToken(B);
+    L = await list();
+    A.eq(L.by['Risky Deploy'].withheld, true, 'a real restart confirms the failed approval never became durable');
   } finally {
     try { child.kill(); } catch (_) {}
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}

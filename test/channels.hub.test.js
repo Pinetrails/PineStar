@@ -49,6 +49,24 @@ async function run() {
     A.ok(events.some(e => e.n === 'channel.delivery' && e.p.ok === true && e.p.chunks === 1 && e.p.reason === 'done'), 'channel.delivery ok=true');
   }
 
+  // ---- A2. ingress authority is passed only when the composition root identifies this exact message as owner DM ----
+  {
+    const store = fakeStore(); const seen = [];
+    const runOnce = async (o) => {
+      seen.push(o.ownerTrusted);
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done' });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false,
+      ownerTrusted: (msg) => msg.channel === 'telegram' && msg.chatType === 'dm' && msg.userId === 'owner', newId: idGen()
+    });
+    await hub.onInbound(Object.assign(dm('owner request', 'owner-chat'), { userId: 'owner' }));
+    await hub.onInbound(dm('ordinary request', 'guest-chat'));
+    A.eq(seen, [true, false], 'only the admitted owner DM carries trusted remote-control authority into runOnce');
+  }
+
   // ---- B. prior history is replayed; isTask=true adds the task suffix to the system prompt ----
   {
     const store = fakeStore(); store.hist.set('tg_9', [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'sure' }]);
@@ -631,6 +649,32 @@ async function run() {
     await hub.onInbound(dm('second'));
     await p1;
     A.eq(sends, ['second-reply'], 'a supersede by a newer message is still SILENT — no stop notice, no stale partial');
+  }
+
+  // ---- W. quick plain-text bubbles become one thought; commands/media stay exact ---------------------
+  {
+    const store = fakeStore(); const runs = []; const resolved = [];
+    const runOnce = async (o) => {
+      runs.push(o);
+      o.emit('agent.token', { delta: 'batched' });
+      o.emit('agent.run.end', { reason: 'done' });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      textBatchWaitMs: 1, sleep: () => new Promise(r => setTimeout(r, 0)), onResolved: info => resolved.push(info)
+    });
+    const p1 = hub.onInbound(dm('first bubble', 'batch'));
+    const p2 = hub.onInbound(dm('second bubble', 'batch'));
+    const p3 = hub.onInbound(dm('third bubble', 'batch'));
+    await Promise.all([p1, p2, p3]);
+    A.eq(runs.length, 1, 'three quick plain-text bubbles produce one run, not a supersede storm');
+    A.eq(runs[0].messages[runs[0].messages.length - 1].content, 'first bubble\nsecond bubble\nthird bubble', 'the single turn preserves bubble order with clear newlines');
+    A.eq(resolved.length, 1, 'one batch resolves once, so host work telemetry also stays singular');
+    await hub.onInbound(dm('/help', 'batch'));
+    A.eq(runs.length, 1, 'a command bypasses text batching and does not reach the model');
+    const media = dm('caption', 'batch'); media.media = [{ kind: 'photo', fileId: 'p', name: 'p.jpg', mime: 'image/jpeg', size: 1 }];
+    await hub.onInbound(media);
+    A.eq(runs.length, 2, 'a media turn bypasses text batching and keeps its existing delivery path');
   }
 
   A.report('channels.hub.test');

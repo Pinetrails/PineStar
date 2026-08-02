@@ -50,6 +50,11 @@ let clk = 1000; const clock = { now: () => clk };
     const r = await recallTool.run({ query: 'airlock friday' }, { streamId: 's9' });
     A.ok(r.content.indexOf('airlock') >= 0, 'tool surfaces the matching dialogue');
     A.ok(/match/.test(r.summary), 'summary reports match count');
+    s.append({ streamId: 's9', role: 'user', content: '\u041f\u0440\u0438\u0432\u0435\u0442 \u043a\u043e\u043c\u0430\u043d\u0434\u0438\u0440 \u6771\u4eac\u8a08\u753b' });
+    const unicode = await recallTool.run({ query: '\u041f\u0440\u0438\u0432\u0435\u0442' }, { streamId: 's9' });
+    A.ok(unicode.content.indexOf('\u041f\u0440\u0438\u0432\u0435\u0442') >= 0, 'tool surfaces a matching Cyrillic dialogue turn');
+    const cjk = await recallTool.run({ query: '\u6771\u4eac' }, { streamId: 's9' });
+    A.ok(cjk.content.indexOf('\u6771\u4eac\u8a08\u753b') >= 0, 'tool surfaces a matching unspaced CJK phrase');
   }
 
   // ---- E. the tool guards an empty transcript + a missing store ----

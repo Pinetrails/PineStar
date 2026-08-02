@@ -230,6 +230,27 @@ async function run() {
     A.ok(/not wired/.test(JSON.parse(bareRes.content).filesFailed.join(' ')), 'and says attaching is not wired rather than pretending');
   }
 
+  // ---- I. forum command scopes and Bot API-backed chat lookup are explicit and truthful ----
+  {
+    const f = fakeFetch((url) => {
+      const method = String(url).split('/').pop();
+      if (method === 'getChat') return resp(200, { ok: true, result: { id: -10042, type: 'supergroup', title: 'Build forum' } });
+      return resp(200, { ok: true, result: true });
+    });
+    const t = makeTelegramTransport({ fetch: f, token: TOKEN });
+    const menu = [{ command: 'status', description: 'Show status' }];
+    const set = await t.setCommands(menu, { scope: { type: 'all_group_chats' } });
+    A.eq(set.ok, true, 'forum/group command menu publishes');
+    const commandPayload = JSON.parse(f.calls[0].body);
+    A.eq(commandPayload.scope, { type: 'all_group_chats' }, 'Bot API receives an explicit all-group scope, which includes forum supergroups');
+    A.eq(commandPayload.commands, menu, 'scope does not change the command table');
+    const found = await t.chatInfo('-10042');
+    A.eq(found, { ok: true, id: '-10042', type: 'supergroup', name: 'Build forum' }, 'numeric Telegram chat lookup returns the actual Bot API identity');
+    const unsupported = await t.chatInfo('a_person');
+    A.eq(unsupported.ok, false, 'a bare arbitrary user handle is not claimed to be a reachable chat');
+    A.ok(/not arbitrary user handles/.test(unsupported.error), 'the Bot API limitation is named to the caller');
+  }
+
   A.report('channels.telegram.media');
 }
 

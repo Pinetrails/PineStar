@@ -251,4 +251,15 @@ const redact = (s) => String(s).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.eq(loud[0].content, 'L180', 'the firehose dropped only its oldest turns');
 }
 
+// ---- recovery provenance: strict drains stamp every durable row before marking the source message ----
+{
+  const io = memIo();
+  io.appendDurable = io.append;
+  const s = makeTranscriptStore({ io, clock, redact });
+  const messages = [{ role: 'assistant', content: 'durable answer' }];
+  A.eq(s.appendNewStrict('recovery', 'a', messages, { sourceRunId: 'run-123' }), 1, 'strict drain persists one visible turn');
+  A.eq(s.history('recovery')[0].sourceRunId, 'run-123', 'durable transcript row carries opaque recovery provenance');
+  A.eq(s.appendNewStrict('recovery', 'a', messages, { sourceRunId: 'run-123' }), 0, 'strict drain remains idempotent for marked messages');
+}
+
 A.report('transcript.test');

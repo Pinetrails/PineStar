@@ -7,9 +7,9 @@
    interpret(), emits the verify.result rung (the war-room pass/fail glow), and hands the model a clear verdict.
 
    It is a 'workbench'/execute capability exactly like shell.exec — same danger gate: interactive prompts, the
-   autonomous EXEC-LOCKOUT denies it, and the host auto-checkpoints before it runs. Diagnostics-delta (the LSP
-   lint noise filter) is the pure diagnosticDelta() in verify.js, ready for a future linter provider; the
-   test-runner path reports added/removed = 0.
+   autonomous EXEC-LOCKOUT denies it, and the host auto-checkpoints before it runs. Edit-time LSP deltas are
+   supplied separately by lsp-manager.js at the fs mutation boundary; this test-runner path continues to report
+   added/removed = 0 because a project command is a different proof source.
 
    makeVerifyTool({ spawn, fs, pathMod, root, redact?, clock?, limits? }) -> { verifyTool, register(reg) } */
 'use strict';
@@ -24,7 +24,7 @@
   'use strict';
 
   const runCommand = shell.runCommand, escapesWorkspace = shell.escapesWorkspace,
-    commandSafetyRisk = shell.commandSafetyRisk, safeAgentId = shell.safeAgentId;
+    commandSafetyRisk = shell.commandSafetyRisk, safeAgentId = shell.safeAgentId, resolveShellCwd = shell.resolveShellCwd;
   const interpret = verifyCore.interpret;
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
   function clamp(n, lo, hi) { n = Number(n); if (!isFinite(n)) return lo; return Math.max(lo, Math.min(hi, n)); }
@@ -52,7 +52,8 @@
       run: function (args, ctx) {
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
-        const cwd = environment ? environment.getCwd(aid) : P.join(ROOT, aid);
+        let cwd = environment ? environment.getCwd(aid) : P.join(ROOT, aid);
+        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid), root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' });
         // Local execution may be inside a nested project after shell.cd. Inspect the
         // exact directory that will execute; only mapped backends need the host root.
         const hostCwd = environment && environment.backendId !== 'local' && typeof environment.workspaceRoot === 'function'

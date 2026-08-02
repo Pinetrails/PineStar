@@ -79,7 +79,9 @@ function boot(opts) {
   const statusLog = [];
   const win = {};
   // TIME-COMPRESS the long ceilings (12s gUM, 30s hard cap) so the test runs fast; short timers unchanged.
-  const st = (fn, ms, ...a) => setTimeout(fn, ms >= 1000 ? Math.min(ms, 20) : ms, ...a);
+  // Keep the compressed ceiling above the test's 30ms successful-audio injection. At 20ms the hard cap could
+  // fire first on a quiet event loop, turning the success assertion into a path/CPU-timing coin flip.
+  const st = (fn, ms, ...a) => setTimeout(fn, ms >= 1000 ? Math.min(ms, 50) : ms, ...a);
   const sandbox = {
     window: win,
     document: { getElementById: id => nodes[id] || null, addEventListener() {} },

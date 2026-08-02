@@ -154,6 +154,15 @@ async function waitUntil(fn, ms, label) { const deadline = Date.now() + ms; whil
     // ================= workitem.superseded =================
     // wait for the adapter's drop-pending poll so the hub is live, then HOLD run #1 in-flight.
     await waitUntil(() => tg.calls.some(c => c.method === 'getUpdates' && c.body && c.body.offset === -1), 6000, 'telegram drop-pending poll');
+    // First DM never claims a remote-control bot. Pair this test's owner via the authenticated local route.
+    const pair = await (await fetch(B + '/api/channels/telegram/owner/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+      body: '{}'
+    })).json();
+    A.ok(/^[-A-Z0-9]{11}$/.test(String(pair.code || '')), 'owner pairing issued a code');
+    tg.pushText(5555, 77, '/pair ' + pair.code);
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '5555' && /Owner paired/i.test(String(s.text || ''))), 8000, 'owner pairing acknowledgement');
     llm.gate.arm();
     const CHAT = 5555;
     tg.pushText(CHAT, 77, 'research the launch checklist now');   // task-phrased → rides the belt as a crate

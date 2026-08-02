@@ -107,6 +107,107 @@
   function stripTags(s) { return decodeEntities(String(s).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim(); }
   function clamp(s, n) { s = String(s); return s.length > n ? s.slice(0, n).trimEnd() + ' …' : s; }
 
+  function waitAbortable(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) { reject(signal.reason || new Error('request aborted')); return; }
+      const timer = setTimeout(resolve, Math.max(0, Number(ms) || 0));
+      if (signal) signal.addEventListener('abort', () => {
+        clearTimeout(timer); reject(signal.reason || new Error('request aborted'));
+      }, { once: true });
+    });
+  }
+
+  /* Process-owned per-host politeness. `run` serializes only matching hosts, spaces requests after
+     the first, and remembers bounded server backoff across agent runs. It never retries a request:
+     the caller still sees the original 403/429/503 and chooses another source. */
+  function makePoliteScheduler(deps) {
+    deps = deps || {};
+    const minGapMs = Math.max(0, Number(deps.minGapMs == null ? 350 : deps.minGapMs));
+    const initialBackoffMs = Math.max(minGapMs, Number(deps.initialBackoffMs == null ? 1200 : deps.initialBackoffMs));
+    const maxBackoffMs = Math.max(initialBackoffMs, Number(deps.maxBackoffMs == null ? 30000 : deps.maxBackoffMs));
+    const maxHosts = Math.max(1, Number(deps.maxHosts == null ? 512 : deps.maxHosts));
+    const wait = typeof deps.wait === 'function' ? deps.wait : waitAbortable;
+    // Production injects the wall clock at the composition root. A no-clock unit construction stays
+    // conservative (it may wait the full remembered delay) without smuggling ambient time into logic.
+    const now = typeof deps.now === 'function' ? deps.now : () => 0;
+    const hosts = new Map();
+    let touchSeq = 0;
+
+    function stateFor(host) {
+      let state = hosts.get(host);
+      if (!state) {
+        if (hosts.size >= maxHosts) {
+          let victim = null;
+          for (const [key, candidate] of hosts) {
+            if (candidate.queued === 0 && (!victim || candidate.touched < victim[1].touched)) victim = [key, candidate];
+          }
+          if (victim) hosts.delete(victim[0]);
+        }
+        state = { tail: Promise.resolve(), seen: false, backoffMs: 0, nextAllowedAt: 0, requests: 0, lastDelayMs: 0, lastStatus: 0, queued: 0, touched: ++touchSeq };
+        hosts.set(host, state);
+      }
+      state.touched = ++touchSeq;
+      return state;
+    }
+    function retryAfterMs(response) {
+      try {
+        const raw = response && response.headers && response.headers.get('retry-after');
+        if (!/^\s*\d+(?:\.\d+)?\s*$/.test(String(raw || ''))) return 0;
+        return Math.min(maxBackoffMs, Math.max(0, Math.round(Number(raw) * 1000)));
+      } catch (_) { return 0; }
+    }
+    function note(state, response) {
+      const status = Number(response && response.status) || 0;
+      state.lastStatus = status;
+      if (status === 403 || status === 429 || status === 503) {
+        const directed = retryAfterMs(response);
+        state.backoffMs = directed || Math.min(maxBackoffMs, state.backoffMs ? state.backoffMs * 2 : initialBackoffMs);
+        state.nextAllowedAt = Math.max(state.nextAllowedAt, now() + state.backoffMs);
+      } else if (status >= 200 && status < 400) {
+        state.backoffMs = 0;
+      }
+    }
+    function awaitTurn(previous, signal) {
+      if (!signal) return previous;
+      if (signal.aborted) return Promise.reject(signal.reason || new Error('request aborted'));
+      return new Promise((resolve, reject) => {
+        const aborted = () => reject(signal.reason || new Error('request aborted'));
+        signal.addEventListener('abort', aborted, { once: true });
+        previous.then(
+          value => { signal.removeEventListener('abort', aborted); resolve(value); },
+          error => { signal.removeEventListener('abort', aborted); reject(error); }
+        );
+      });
+    }
+    async function run(url, signal, request) {
+      let host = '';
+      try { host = hostOf(new URL(String(url))); } catch (_) { return request(); }
+      const state = stateFor(host);
+      const previous = state.tail;
+      let release;
+      state.tail = new Promise(resolve => { release = resolve; });
+      state.queued++;
+      try {
+        await awaitTurn(previous, signal);
+        const delayMs = state.seen ? Math.max(0, state.nextAllowedAt - now()) : 0;
+        state.lastDelayMs = delayMs;
+        if (delayMs) await wait(delayMs, signal);
+        state.seen = true; state.requests++;
+        state.nextAllowedAt = Math.max(state.nextAllowedAt, now() + minGapMs);
+        const response = await request();
+        note(state, response);
+        return response;
+      } finally { state.queued--; state.touched = ++touchSeq; release(); }
+    }
+    function snapshot() {
+      return Array.from(hosts.entries()).map(([host, state]) => ({
+        host, requests: state.requests, backoffMs: state.backoffMs, nextAllowedAt: state.nextAllowedAt,
+        lastDelayMs: state.lastDelayMs, lastStatus: state.lastStatus
+      }));
+    }
+    return { run, snapshot };
+  }
+
   // ---------- SSRF / URL guard for web_fetch ----------
   // The model picks the URL, so this guard is a real trust boundary: refuse loopback, RFC-1918,
   // link-local, ULA, CGNAT, IPv6 private/mapped, integer/hex IP encodings, and bare intranet names —
@@ -305,8 +406,14 @@
 
   function makeWebTools(deps) {
     deps = deps || {};
-    const doFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!doFetch) throw new Error('web.js requires global fetch (Node 18+) or deps.fetchImpl');
+    const rawFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!rawFetch) throw new Error('web.js requires global fetch (Node 18+) or deps.fetchImpl');
+    const politeness = deps.politeness || makePoliteScheduler({
+      wait: deps.politeWait, minGapMs: deps.politeMinGapMs,
+      initialBackoffMs: deps.politeInitialBackoffMs, maxBackoffMs: deps.politeMaxBackoffMs,
+      now: deps.politeNow, maxHosts: deps.politeMaxHosts
+    });
+    const doFetch = (url, opts) => politeness.run(url, opts && opts.signal, () => rawFetch(url, opts));
     const UA = deps.userAgent || DEFAULT_UA;
     const or = deps.openrouter || null;
     // DNS-rebinding guard resolver: default to real Node DNS; pass deps.lookup:null to disable (tests).
@@ -800,10 +907,10 @@
     return {
       searchTool, fetchTool, requestTool, webSearch, webFetch,
       // exported for unit tests
-      _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, fenceExternal, withTimeout },
+      _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, fenceExternal, withTimeout, politeness },
       register(reg) { reg.register(searchTool); reg.register(fetchTool); reg.register(requestTool); return reg; }
     };
   }
 
-  return { makeWebTools };
+  return { makeWebTools, makePoliteScheduler };
 });

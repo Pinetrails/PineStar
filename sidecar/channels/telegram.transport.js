@@ -210,6 +210,29 @@
         }
       },
 
+      /* getChat â€” resolve a numeric chat id (or a public @channel/@supergroup username) through the Bot API.
+         Telegram bots cannot resolve an arbitrary person's @username, so reject that shape honestly instead of
+         pretending a value is a contactable chat. This is a lookup helper only; outbound delivery remains
+         known-targets-only in the channel tool layer. */
+      async chatInfo(chatId) {
+        const id = String(chatId == null ? '' : chatId).trim();
+        if (!/^-?\d+$/.test(id) && !/^@[A-Za-z0-9_]{5,}$/.test(id)) {
+          return { ok: false, id: id, error: 'Telegram can look up numeric chat ids and public @channel usernames, not arbitrary user handles' };
+        }
+        try {
+          const { data, res } = await call('getChat', { chat_id: id });
+          if (data && data.ok && data.result) {
+            const c = data.result;
+            return { ok: true, id: String(c.id == null ? id : c.id), type: String(c.type || ''),
+              name: String(c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || '') };
+          }
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, id: id, error: redact((data && data.description) || ('http ' + code)) };
+        } catch (e) {
+          return { ok: false, id: id, error: errOf(e, 'network error') };
+        }
+      },
+
       async getUpdates(args) {
         const a = args || {};
         const { data, res } = await call('getUpdates', {
@@ -336,13 +359,24 @@
       // hub actually implements. Called once per connect from the hub's own command table (one source of truth),
       // so the menu can never drift from what `/help` claims or what parseCommand accepts. NEVER throws — an
       // empty menu is a cosmetic loss, never a reason to fail a connect.
-      async setCommands(list) {
+      async setCommands(list, commandOpts) {
         try {
           const commands = (Array.isArray(list) ? list : [])
             .filter(c => c && c.command)
             .map(c => ({ command: String(c.command).toLowerCase().slice(0, 32), description: String(c.description || '').slice(0, 256) }))
             .slice(0, 100);   // Bot API hard cap
-          const { data, res } = await call('setMyCommands', { commands: commands });
+          const o2 = commandOpts || {};
+          const payload = { commands: commands };
+          // Telegram's default scope covers DMs, but an explicit all-group scope makes the same command menu
+          // available in supergroups and forum topics even when a prior BotFather configuration was narrower.
+          const scope = o2.scope;
+          const scopeTypes = ['default', 'all_private_chats', 'all_group_chats', 'all_chat_administrators', 'chat', 'chat_administrators'];
+          if (scope && scopeTypes.indexOf(String(scope.type || '')) !== -1) {
+            payload.scope = { type: String(scope.type) };
+            if ((payload.scope.type === 'chat' || payload.scope.type === 'chat_administrators') && scope.chatId != null) payload.scope.chat_id = String(scope.chatId);
+          }
+          if (o2.languageCode) payload.language_code = String(o2.languageCode).slice(0, 16);
+          const { data, res } = await call('setMyCommands', payload);
           if (data && data.ok) return { ok: true, count: commands.length };
           const code = (data && data.error_code) || (res && res.status) || 0;
           return { ok: false, error: redact((data && data.description) || ('http ' + code)) };

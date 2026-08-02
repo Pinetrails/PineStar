@@ -103,12 +103,18 @@ A.ok(/searchActive = view === 'sessions' && !!\(search && search\.value\.trim\(\
 A.ok(/set\('ws-rail-search', pan\.sessionsList\)/.test(app), 'the PROJECTS view hides rail search along with the sessions list');
 A.ok(/item\('export-md', 'Export \.md'/.test(app) && /item\('export-json', 'Export \.json'/.test(app), 'both export formats live in the row actions menu');
 A.ok(/exportSession\(id, 'markdown'\)/.test(app) && /exportSession\(id, 'json'\)/.test(app), 'menu export acts on the exact row session, never an implicit active one');
-A.ok(app.includes('tabindex="0" role="button" aria-label="\' + U.esc(title + \' session; Enter to open; Shift+F10 for actions\') + \'" aria-keyshortcuts="Shift+F10"'),
-  'each session row is a named keyboard target and exposes its actions shortcut');
+A.ok(/role', 'listbox'/.test(app) && /role="option" aria-selected=/.test(app),
+  'the session rail exposes one named composite with selectable options');
+A.ok(/w\.id === railFocusId \? '0' : '-1'/.test(app) && /let railFocusId = null/.test(app),
+  'session rows use a roving tabindex instead of adding every session to the global Tab order');
 A.ok(/<button class="ws-kebab" tabindex="-1" aria-label="session actions"/.test(app),
-  'the pointer-only kebab stays out of the tab order so each session has one keyboard stop');
-A.ok(/li\.onkeydown = \(e\) => \{[\s\S]{0,450}e\.target !== li[\s\S]{0,450}e\.key === 'Enter'[\s\S]{0,450}e\.key === 'F10'[\s\S]{0,450}openWsMenu\(id, r\.left, r\.bottom \+ 2, li\)/.test(app),
-  'session rows open with Enter or Space and expose actions with Shift+F10');
+  'the pointer-only kebab stays out of the tab order so the rail has one keyboard stop');
+A.ok(/e\.key === 'ArrowDown'[\s\S]{0,500}e\.key === 'ArrowUp'[\s\S]{0,500}e\.key === 'Home'[\s\S]{0,500}e\.key === 'End'[\s\S]{0,700}target\.focus\(\)/.test(app),
+  'arrow, Home and End move the roving focus without opening sessions');
+A.ok(/e\.key === 'Enter'[\s\S]{0,150}switchWorkstream\(id\)[\s\S]{0,1500}e\.key === 'F10'[\s\S]{0,300}openWsMenu\(id, r\.left, r\.bottom \+ 2, li\)/.test(app),
+  'session options still open with Enter or Space and expose actions with Shift+F10');
+A.ok(/restoreFocus[\s\S]{0,2600}target\.focus\(\{ preventScroll: true \}\)/.test(app),
+  'a rail re-render restores focus to the same roving session row');
 A.ok(/openWsMenu\(id, r\.left, r\.bottom \+ 2, keb\)/.test(app),
   'session actions pass their keyboard-focus origin into the menu');
 A.ok(/menu\.querySelector\('\.ws-menu-item'\)\.focus\(\)/.test(app),

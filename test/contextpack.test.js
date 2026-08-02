@@ -34,6 +34,9 @@ function baseInputs(over) {
       { role: 'user', content: 'internal beat prompt', ts: ago(0), streamId: 'nightshift-x' }, // internal — dropped
       { role: 'user', content: 'my key is sk-secret-ABC123 keep it safe', ts: ago(2), streamId: '' } // secret — redacted
     ],
+    briefs: [
+      { originalDirective: 'Audit the recommendation system\nFocus on evidence provenance and replay evaluation', ts: ago(1) }
+    ],
     goal: { text: 'Launch to 100 users', done: 2, total: 5, next: 'write onboarding' },
     landed: [
       { title: 'Release checklist tool', verdict: 'kept', ts: ago(1) },
@@ -79,6 +82,9 @@ function baseInputs(over) {
   // the goal + landed lines are in the evidence pool (candidates may ground on them):
   A.ok(pack.activityLines.some(l => /Launch to 100 users/.test(l)), 'goal line is in the evidence pool');
   A.ok(pack.activityLines.some(l => /Release checklist tool/.test(l)), 'a landed line is in the evidence pool');
+  const briefSec = pack.sections.find(s => s.label === 'Completed task evidence');
+  A.ok(briefSec && /evidence provenance and replay evaluation/.test(briefSec.lines[0]), 'completed briefs retain evidence beyond the first directive line');
+  A.eq(pack.counts.briefs, 1, 'completed brief evidence is counted explicitly');
 })();
 
 /* ---------- determinism: same inputs → byte-identical ---------- */

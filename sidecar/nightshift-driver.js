@@ -142,15 +142,23 @@
 
       // record EVERY tick's decision — acted, or declined-with-which-gate-bound (the honest decision trail). A
       // pre-spend readiness stand-down is an honest 'decline' with binding:'readiness' (the new pre-spend decline kind).
-      try { ledger({ ts: nowMs, kind: fireNow ? 'beat' : 'decline', binding: binding, agentId: agentId, beatsLeft: decision.beatsLeft, away: decision.away, preSpend: (decision.fire && !preOk) || undefined }); } catch (_) {}
-
-      if (!fireNow) return { fired: false, binding: binding, decision: decision };
+      // Declines are final now, so ledger them immediately. A would-be beat is ledgered ONLY after its durable
+      // leash/accounting write succeeds below; otherwise the morning report would claim an unaccounted act.
+      if (!fireNow) {
+        try { ledger({ ts: nowMs, kind: 'decline', binding: binding, agentId: agentId, beatsLeft: decision.beatsLeft, away: decision.away, preSpend: (decision.fire && !preOk) || undefined }); } catch (_) {}
+        return { fired: false, binding: binding, decision: decision };
+      }
 
       // ACCEPT the beat: increment the leash + stamp lastBeatAt and PERSIST NOW (before the async pipeline
       // resolves), so a crash mid-beat cannot both spend nothing and re-fire on restart. This is the leash's
       // server-enforcement point. We are past the precheck, so this beat WILL reach a model call — spending here is
       // correct even if the pipeline then stands down (that stand-down cost a model call; anti-runaway holds).
-      try { setState(nightshift.recordBeat(getState(), nowMs)); } catch (e) { /* if we can't persist the spend, do NOT fire (fail closed) */ return { fired: false, binding: 'persist-failed', decision: decision }; }
+      try { setState(nightshift.recordBeat(getState(), nowMs)); }
+      catch (e) {
+        try { ledger({ ts: nowMs, kind: 'decline', binding: 'persist-failed', agentId: agentId, beatsLeft: decision.beatsLeft, away: decision.away, preSpend: true }); } catch (_) {}
+        return { fired: false, binding: 'persist-failed', decision: decision };
+      }
+      try { ledger({ ts: nowMs, kind: 'beat', binding: null, agentId: agentId, beatsLeft: decision.beatsLeft, away: decision.away }); } catch (_) {}
 
       beatRunning = true;
       const ac = newAbort();
