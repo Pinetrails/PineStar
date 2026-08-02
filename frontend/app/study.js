@@ -129,10 +129,11 @@
     if (body.length > cap) body = body.slice(body.length - cap);   // keep the most recent exchange
     return 'You just finished a task for your Commander. From the WORK below, update what the station believes ' +
       'about them. Propose ONLY durable, evidenced belief changes — one per line, tagged with a dimension and ' +
-      'ADD (a new belief) or RETIRE (a belief that now looks stale/shipped). Dimensions: goals, pain, ambition, ' +
+      'ADD (a new belief) or RETIRE (a belief that now looks stale/shipped), plus a short VERBATIM evidence quote. Dimensions: goals, pain, ambition, ' +
       'stack, style, identity, standing_orders, people, schedule. Examples:\n' +
-      'goals ADD: shipping a local-first agent harness\nstyle ADD: prefers terse, verified answers\n' +
-      'goals RETIRE: ship the dossier (this work shows it landed)\n' +
+      'goals ADD: shipping a local-first agent harness | EVIDENCE: "ship the local-first harness"\n' +
+      'style ADD: prefers terse, verified answers | EVIDENCE: "keep the answer terse and verify it"\n' +
+      'goals RETIRE: ship the dossier | EVIDENCE: "the dossier is shipped"\n' +
       'Skip anything transient, guessed, or already known. If nothing changed, reply NONE.\n\n' +
       (block ? 'WHAT THE STATION ALREADY BELIEVES:\n' + block + '\n\n' : '') +
       (directive ? 'THE DIRECTIVE:\n' + directive + '\n\n' : '') +
@@ -148,8 +149,10 @@
       const dim = canonDim(m[1]);
       if (!dim) continue;
       const kind = RETIRE_WORDS.has(String(m[2]).toLowerCase()) ? 'retire' : 'add';
-      const text = m[3].trim();
-      if (text) out.push({ dim: dim, kind: kind, text: text });
+      let text = m[3].trim(), evidence = '';
+      const em = /\s*\|\s*EVIDENCE\s*[:\-—]\s*["“]?(.+?)["”]?\s*$/i.exec(text);
+      if (em) { evidence = em[1].trim().replace(/^["“]|["”]$/g, ''); text = text.slice(0, em.index).trim(); }
+      if (text) out.push({ dim: dim, kind: kind, text: text, evidence: evidence });
     }
     return out;
   }
@@ -185,6 +188,9 @@
     try { raw = await propose(prompt); } catch (_) { return { proposals: [], prompt: prompt }; }   // a failed study never hurts the run
 
     const beliefTexts = existingTexts(opts.beliefs);
+    const evidenceHay = String(run.directive || '') + '\n' + (Array.isArray(run.messages) ? run.messages.map(m => (m && typeof m.content === 'string') ? m.content : '').join('\n') : '');
+    const normEvidence = s => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+    const evidenceBlob = normEvidence(evidenceHay);
     const declined = (Array.isArray(opts.declined) ? opts.declined : []).map(t => String(t).trim()).filter(Boolean);
     const now = clock.now();
     const seen = {};                 // exact-text dedup within the batch (keyed dim+text)
@@ -194,6 +200,11 @@
       let text = redact(String(cand.text)).trim();
       if (text.length > MAX_CONTENT) text = text.slice(0, MAX_CONTENT - 1) + '…';
       if (!text) continue;
+      let evidence = redact(String(cand.evidence || '')).trim();
+      // New-format proposals must ground their quote in the real run. Old-format replies remain compatible and
+      // fall back to the directive receipt while providers roll onto the stricter prompt.
+      if (evidence && (evidence.length < 6 || evidenceBlob.indexOf(normEvidence(evidence)) < 0)) continue;
+      if (!evidence) evidence = (typeof run.directive === 'string' && run.directive) ? String(run.directive).slice(0, 140) : '';
       if (lowValue(text)) continue;                       // trivia / run-narration floor
       const key = cand.dim + '::' + text.toLowerCase();
       if (seen[key]) continue;
@@ -220,7 +231,7 @@
       seen[key] = 1; acceptedTexts.push(text);
       proposals.push({
         id: 'study_' + (proposals.length + 1), dim: cand.dim, kind: cand.kind, text: text,
-        evidence: (typeof run.directive === 'string' && run.directive) ? String(run.directive).slice(0, 140) : '',
+        evidence: evidence.slice(0, 280), evidenceRef: { runId: run.runId || null, kind: cand.evidence ? 'verbatim' : 'directive' },
         source: 'study', sourceRunId: run.runId || null, createdAt: now
       });
       if (proposals.length >= max) break;

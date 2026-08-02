@@ -52,6 +52,9 @@
   // provenance weight: a Commander-authored (or onboarding-seeded) belief is asserted truth; a study-OBSERVED
   // belief is an inference that counts less until real work corroborates it. Matches the consent-gated learning model.
   const SOURCE_WEIGHT = { commander: 1, onboarding: 1, study: 0.6 };
+  // Evidence weight is the newer, more precise authority. In particular a mechanical onboarding seed may inform
+  // a prompt but must not inflate the visible FAMILIARITY meter while the readiness gate correctly rejects it.
+  const EVIDENCE_WEIGHT = { stated: 1, synth: 0.8, observed: 0.6, seed: 0 };
   const DEFAULT_SOURCE_WEIGHT = 0.8;              // an unknown/legacy source: between authored and observed
   const CORROB_UNIT = 0.5;                        // each corroborating run (P2) is worth ~half a fresh authored belief
   const DEPTH_SAT = 1.4;                          // evidence→confidence saturation: 1 fresh authored belief ≈ 0.51,
@@ -63,6 +66,10 @@
   function sourceWeight(src) {
     if (src && Object.prototype.hasOwnProperty.call(SOURCE_WEIGHT, src)) return SOURCE_WEIGHT[src];
     return DEFAULT_SOURCE_WEIGHT;
+  }
+  function beliefStrength(b) {
+    if (b && typeof b.weight === 'string' && Object.prototype.hasOwnProperty.call(EVIDENCE_WEIGHT, b.weight)) return EVIDENCE_WEIGHT[b.weight];
+    return sourceWeight(b && b.source);
   }
 
   // a belief's freshness ∈ [0,1], exponentially decayed by the silence since it was last touched. A PINNED belief
@@ -84,7 +91,7 @@
     let ev = 0;
     for (const b of (Array.isArray(beliefs) ? beliefs : [])) {
       if (!b || typeof b.text !== 'string' || !b.text) continue;
-      ev += sourceWeight(b.source) * freshness(b, now);
+      ev += beliefStrength(b) * freshness(b, now);
     }
     ev += num(corrob) * CORROB_UNIT;
     return Math.max(0, ev);
@@ -201,7 +208,7 @@
     understanding, readiness,
     // exposed for tests + downstream tuning (never mutate)
     freshness, dimEvidence, confFromEvidence, groundedCount, beliefWeightOf,
-    DIMS, DIM_KEYS, WEIGHT, HALF_LIFE_MS, SOURCE_WEIGHT, DEPTH_SAT, CORROB_UNIT, CALIBRATING,
+    DIMS, DIM_KEYS, WEIGHT, HALF_LIFE_MS, SOURCE_WEIGHT, EVIDENCE_WEIGHT, DEPTH_SAT, CORROB_UNIT, CALIBRATING,
     READY_MIN_FAMILIARITY, READY_DIRECTION_DIMS, READY_PERSON_DIMS
   };
 });

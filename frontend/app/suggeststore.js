@@ -19,7 +19,7 @@
 const SuggestStore = (() => {
   const KEY = 'starnet.suggest.v1';
   const RECENT_CAP = 8;    // remember the last N pitched-idea fingerprints so the agent never re-pitches the same idea
-  let state = null;        // { v:1, lastFamiliarity:number|null, tasksSinceLast:int, recent:[fingerprint] }
+  let state = null;        // { v:1, lastFamiliarity, tasksSinceLast, recent:[fp], declined:[fp] }
   let deps = {};           // accessors/actions injected by app.js
   let sessionShown = 0;    // ideas shown THIS session (in-memory; resets each app run)
   let firing = false;      // re-entrancy guard while an idea is mid-flight
@@ -36,20 +36,33 @@ const SuggestStore = (() => {
     const toks = String(title == null ? '' : title).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
     return Array.from(new Set(toks)).sort().join(' ');
   }
-  function seenRecently(fp) { return !!fp && Array.isArray(state.recent) && state.recent.indexOf(fp) >= 0; }
+  function seenRecently(fp) { return !!fp && ((Array.isArray(state.recent) && state.recent.indexOf(fp) >= 0) || (Array.isArray(state.declined) && state.declined.indexOf(fp) >= 0)); }
   function rememberIdea(fp) {
     if (!fp) return;
     if (!Array.isArray(state.recent)) state.recent = [];
     state.recent.push(fp);
     while (state.recent.length > RECENT_CAP) state.recent.shift();
   }
+  function rememberDeclined(fp) {
+    if (!fp) return;
+    if (!Array.isArray(state.declined)) state.declined = [];
+    if (state.declined.indexOf(fp) < 0) state.declined.push(fp);
+    while (state.declined.length > 200) state.declined.shift();
+  }
+  function ledgerPost(body) {
+    try {
+      const f = (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch : null;
+      if (f) f('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+    } catch (_) {}
+  }
 
   function hydrate(raw) {
-    const s = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] };
+    const s = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [], declined: [] };
     if (raw && typeof raw === 'object') {
       if (Number.isFinite(raw.lastFamiliarity)) s.lastFamiliarity = raw.lastFamiliarity;
       if (Number.isFinite(raw.tasksSinceLast) && raw.tasksSinceLast >= 0) s.tasksSinceLast = raw.tasksSinceLast;
       if (Array.isArray(raw.recent)) s.recent = raw.recent.filter(x => typeof x === 'string').slice(-RECENT_CAP);
+      if (Array.isArray(raw.declined)) s.declined = raw.declined.filter(x => typeof x === 'string').slice(-200);
     }
     return s;
   }
@@ -176,13 +189,20 @@ const SuggestStore = (() => {
         if (c) credit = ' ' + c;
       }
       const line = '✦ a fresh idea — ' + Pitch.titleSentence(parsed.title) + why + credit + gap;   // shared title→sentence join (no double period)
+      const recommendationId = 'suggest:' + fp + ':' + Date.now();
+      let rd = null; try { rd = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null; } catch (_) {}
+      ledgerPost({ id: recommendationId, surface: 'suggest', kind: (parsed.build && parsed.build.kind) || 'idea', title: parsed.title,
+        target: (parsed.build && parsed.build.recipeId) || '', evidence: parsed.why ? [{ id: 'suggest-why', type: 'context', quote: parsed.why }] : [],
+        readiness: rd ? { ready: !!rd.ready, reasons: rd.reasons || [] } : { ready: false, reasons: ['missing'] }, modelVersion: 'suggest-v2' });
       if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // G3a: the idea beat gets its soft chime (was mute)
-      Chat.nudge(line, [{ label: 'let’s build it', value: 'build' }, { label: 'not now', value: 'no', skip: true }], choice => {
+      Chat.nudge(line, [{ label: 'let’s build it', value: 'build' }, { label: 'not now', value: 'no', skip: true }, { label: 'never suggest this', value: 'never', skip: true }], choice => {
         const accepted = !!(choice && choice.value === 'build');
         // R3: settle the probe — the choice on an AIMED idea is evidence about the belief it was aimed at
         // (accept corroborates, decline counter-evidences). An un-aimed idea settles nothing.
         if (probe) { try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteProbe) UnderstandingStore.noteProbe(probe.dim, accepted); } catch (_) {} }
-        if (accepted) doBuild(parsed);
+        if (accepted) { ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' }); doBuild(parsed); }
+        else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' }); }
+        else ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
       });
 
       sessionShown++;                                   // spend this session's single idea (anti-nag)
@@ -219,7 +239,7 @@ const SuggestStore = (() => {
   }
 
   // S2: a brand-new hero starts fresh (no baseline, no cooldown carryover). Own key, like curiositystore.
-  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] }; sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [], declined: [] }; sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
   return { init, reset, onRunEnd, willSuggest, fire, armChain, noteGoalProgress, _state: () => state, _session: () => sessionShown, _chain: () => pendingChain };
