@@ -149,6 +149,12 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(afterBeliefsSync.body.categories.routines.halted, true, 'beliefs-only page-load sync preserves the routines E-STOP');
     A.eq(afterBeliefsSync.body.categories.nightshift.halted, true, 'beliefs-only page-load sync preserves the night-shift E-STOP');
     A.eq(afterBeliefsSync.body.armed, false, 'beliefs-only page-load sync cannot silently resume background work');
+    const postureMirror = await j('POST', '/api/autonomy/posture', { posture: { initiative: 'leash', reach: 'sandbox', leashPerDay: 2 }, resumeHalt: false });
+    A.eq(postureMirror.body.postureWritten, true, 'boot mirror may refresh the server posture');
+    A.eq(postureMirror.body.resumeRequested, false, 'boot mirror explicitly denies resume consent');
+    const afterPostureMirror = await j('GET', '/api/lifecycle/armed');
+    A.eq(afterPostureMirror.body.categories.routines.halted, true, 'boot posture mirror preserves the routines E-STOP');
+    A.eq(afterPostureMirror.body.categories.nightshift.halted, true, 'boot posture mirror preserves the night-shift E-STOP');
 
     // ---- EXPLICIT RESUME: POST /api/cron/arm lifts the halt and re-arms NOW ----
     const resume = await j('POST', '/api/cron/arm', { enabled: true });
