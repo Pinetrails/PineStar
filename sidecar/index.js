@@ -3144,15 +3144,16 @@ function loadCronHalted() {
   } catch (_) { return false; }
 }
 function saveCronHalted(halted) {
-  try { saveResilient(CRON_HALT_FILE, { version: 1, halted: halted === true, at: Date.now() }); } catch (_) {}
+  saveResilient(CRON_HALT_FILE, { version: 1, halted: halted === true, at: Date.now() });
 }
 let cronHalted = loadCronHalted();
 // The ONE resume seam: clear the durable halt and re-arm the live timer when the user's arm intent says so.
 // Called from every explicit resume path so halt-lift semantics can't drift between them.
 function liftCronHalt() {
   if (!cronHalted) return false;
-  cronHalted = false;
+  // Persist FIRST: a failed write must leave this process halted instead of creating a restart-only reversal.
   saveCronHalted(false);
+  cronHalted = false;
   if (cronArmed) armCron();
   return true;
 }
@@ -4522,7 +4523,7 @@ function loadLoopsHalted() {
   try { const raw = loadResilient(LOOPS_HALT_FILE, 'loops-halt'); return !!(raw && raw.halted); } catch (_) { return false; }
 }
 let loopsHalted = loadLoopsHalted();
-function saveLoopsHalted(v) { try { saveResilient(LOOPS_HALT_FILE, { halted: !!v }); } catch (e) { console.warn('[loops] halt persist failed:', (e && e.message) || e); } }
+function saveLoopsHalted(v) { saveResilient(LOOPS_HALT_FILE, { halted: !!v }); }
 
 /* loopPrecheck — the PURELY-LOCAL readiness gate, evaluated BEFORE any spend (the night shift's NS-2
    cold-leash discipline: a stand-down no model call could have avoided must cost neither money nor an
@@ -5286,7 +5287,13 @@ function handleLoopsControl(req, res) {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const action = String(body.action || '');
     if (action === 'unhalt') {
-      if (loopsHalted) { loopsHalted = false; saveLoopsHalted(false); }
+      if (loopsHalted) {
+        // Keep the live halt in force unless its removal is durable; a successful-looking unhalt must not
+        // reverse itself after restart.
+        try { saveLoopsHalted(false); }
+        catch (e) { return json(500, { error: 'could not persist the loop unhalt: ' + ((e && e.message) || e) }); }
+        loopsHalted = false;
+      }
       armLoops(true);
       return json(200, { ok: true, halted: loopsHalted, armed: !!loopTimer });
     }
@@ -8125,10 +8132,14 @@ function handleCronArm(req, res) {
     const want = body.enabled;
     try { saveCronArmed(want); }                       // durable persist FIRST so a crash can't drop the user's intent
     catch (e) { return json(500, { error: 'could not persist the arm flag: ' + ((e && e.message) || e) }); }
-    cronArmed = want;                                  // live in-memory state (GET /api/cron reflects this)
     // Lane 4D: a deliberate arm write IS the resume signal — it lifts a durable E-STOP halt in EITHER direction
     // (arming resumes; an explicit disarm supersedes the halt, leaving a plain disarmed scheduler).
-    if (cronHalted) { cronHalted = false; saveCronHalted(false); }
+    if (cronHalted) {
+      try { saveCronHalted(false); }
+      catch (e) { return json(500, { error: 'could not persist the cron unhalt: ' + ((e && e.message) || e) }); }
+      cronHalted = false;
+    }
+    cronArmed = want;                                  // live in-memory state (GET /api/cron reflects this)
     if (want) armCron(); else disarmCron();            // start/stop the live tick NOW — a due job fires within one tick
     json(200, { ok: true, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
@@ -12581,7 +12592,9 @@ async function handleAutonomyPosture(req, res) {
   catch (e) { nightshiftStatePersisted = false; console.warn('[nightshift] halt-lift persist failed:', (e && e.message) || e); }
   // Lane 4D symmetry: the same "autonomy back on" signal lifts the durable cron E-STOP halt (engaged in
   // handleHalt) and re-arms the timer when the user's arm intent still stands — routines resume with no restart.
-  try { liftCronHalt(); } catch (_) {}
+  let cronHaltPersisted = true;
+  try { liftCronHalt(); }
+  catch (e) { cronHaltPersisted = false; console.warn('[cron] halt-lift persist failed:', (e && e.message) || e); }
   // if the (new) posture permits acting and the timer isn't running yet, arm it NOW (no restart); if it dropped
   // below acting, we LEAVE the timer armed — its own gate returns binding:'posture' and no beat fires, which is
   // cheaper + simpler than tearing the timer down and matches how the driver already no-ops when not permitted.
@@ -12603,7 +12616,7 @@ async function handleAutonomyPosture(req, res) {
       workshopGranted = workshopOf(NIGHTSHIFT_AGENT);
     }
   } catch (_) { workshopGranted = null; }   // a grant hiccup must never fail the posture write; null = unknown (honest)
-  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, nightshiftStatePersisted: nightshiftStatePersisted, workshopGranted: workshopGranted });
+  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, nightshiftStatePersisted: nightshiftStatePersisted, cronHaltPersisted: cronHaltPersisted, workshopGranted: workshopGranted });
 }
 // GET /api/autonomy/posture — the server copy (posture summary + whether a beliefs snapshot is present). Never
 // echoes the raw beliefs texts back to the browser (it already has them); just reports presence + freshness.
@@ -13064,20 +13077,34 @@ function handleHalt(req, res) {
   // cron timer kept re-firing due jobs unattended right after an E-STOP, and the lifecycle aggregate kept
   // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
   // (survives restart) and lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write).
-  try { if (cronArmed && !cronHalted) { cronHalted = true; saveCronHalted(true); disarmCron(); } } catch (_) {}
+  let cronHaltPersisted = true;
+  if (cronArmed) {
+    // Immediate safety is RAM-owned and must never depend on disk. Retry the durable stamp on every E-STOP while
+    // armed, including after an earlier failed attempt left cronHalted=true only in this process.
+    cronHalted = true;
+    disarmCron();
+    try { saveCronHalted(true); }
+    catch (e) { cronHaltPersisted = false; console.warn('[cron] halt persist failed:', (e && e.message) || e); }
+  }
   // LOOPS get the same durable stand-down. An in-flight iteration is aborted (it settles as 'cancelled', which
   // costs neither the failure streak nor the convergence streak), the timer comes down, and the flag PERSISTS —
   // so a loop the Commander E-STOPped does not quietly resume itself after a restart. It lifts only on an
   // explicit POST /api/loops/control {action:'unhalt'}.
   let loopAborted = 0;
   try { loopAborted = loopDriver.abortAllLeases() || 0; } catch (_) {}
-  try { if (!loopsHalted) { loopsHalted = true; saveLoopsHalted(true); } disarmLoops(); } catch (_) {}
+  // Same ordering and retry rule as cron: stop live work first, then separately report whether restart durability
+  // was proven. A second E-STOP after storage recovery must be able to repair an earlier RAM-only halt.
+  loopsHalted = true;
+  disarmLoops();
+  let loopsHaltPersisted = true;
+  try { saveLoopsHalted(true); }
+  catch (e) { loopsHaltPersisted = false; console.warn('[loops] halt persist failed:', (e && e.message) || e); }
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, nightshiftHaltPersisted }));   // honest counts + restart-durability receipt
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, nightshiftHaltPersisted, cronHaltPersisted, loopsHaltPersisted }));   // honest counts + per-subsystem restart-durability receipts
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
