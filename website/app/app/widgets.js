@@ -94,6 +94,13 @@ const Widgets = (() => {
     return t;
   }
 
+  // Arm intent and runnable state are separate: E-STOP deliberately preserves `enabled` while freezing the timer.
+  function cronStateLabel(c) {
+    if (!c) return '';
+    if (c.halted) return 'stopped · E-STOP';
+    return c.enabled ? 'armed' : 'disarmed';
+  }
+
   // compact count: 950 → "950", 12400 → "12.4K", 3200000 → "3.2M" (tabular, no locale surprises)
   function fmtCount(n) {
     n = Number(n) || 0;
@@ -175,7 +182,7 @@ const Widgets = (() => {
       paint() {
         if (!cron) return { val: null, sub: '' };
         const n = Array.isArray(cron.jobs) ? cron.jobs.length : 0;
-        return { val: String(n), sub: cron.enabled ? 'armed' : 'disarmed' };
+        return { val: String(n), sub: cronStateLabel(cron) };
       }
     },
     tokens: {
@@ -578,7 +585,7 @@ const Widgets = (() => {
            _sanitizeFeedRecord: sanitizeFeedRecord, _fmtAge: fmtAge, _FEED_RE: FEED_RE, _pollFeed: pollFeed,
            _staleFor: staleFor, _pollFail: pollFail, _setInsights: (v) => { insights = v; },
            _setFeed: (recs) => { feed.clear(); for (const raw of (recs || [])) { const rec = sanitizeFeedRecord(raw); if (rec) feed.set(rec.slug, rec); } },
-           _sparkSvg: sparkSvg };
+           _sparkSvg: sparkSvg, _cronStateLabel: cronStateLabel };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Widgets };

@@ -141,6 +141,15 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(rebootLife.body.armed, false, 'REBOOT: aggregate still armed:false — a halted station never holds the tray open');
     A.ok(getOut().indexOf('cron tick armed') < 0, 'REBOOT: the timer did NOT arm at boot while halted');
 
+    // The dossier mirrors beliefs through the posture route during normal page load. That background write is
+    // not Commander consent to resume autonomous work and must leave both durable E-STOPs intact.
+    const beliefsOnly = await j('POST', '/api/autonomy/posture', { beliefs: { known: [], beliefs: {} } });
+    A.eq(beliefsOnly.body.postureWritten, false, 'beliefs-only sync reports that no autonomy dial was written');
+    const afterBeliefsSync = await j('GET', '/api/lifecycle/armed');
+    A.eq(afterBeliefsSync.body.categories.routines.halted, true, 'beliefs-only page-load sync preserves the routines E-STOP');
+    A.eq(afterBeliefsSync.body.categories.nightshift.halted, true, 'beliefs-only page-load sync preserves the night-shift E-STOP');
+    A.eq(afterBeliefsSync.body.armed, false, 'beliefs-only page-load sync cannot silently resume background work');
+
     // ---- EXPLICIT RESUME: POST /api/cron/arm lifts the halt and re-arms NOW ----
     const resume = await j('POST', '/api/cron/arm', { enabled: true });
     A.eq(resume.status, 200, 'resume: POST /api/cron/arm {enabled:true} -> 200');

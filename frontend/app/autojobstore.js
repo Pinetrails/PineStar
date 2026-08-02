@@ -40,6 +40,9 @@ const AutoJobStore = (() => {
   // on whether a just-scheduled routine will actually fire — the done-line must not promise a run the scheduler
   // won't make. Injected accessor wins (app.js already reads /api/cron); else a direct best-effort fetch. Undefined
   // on any failure so the caller can degrade to the neutral copy rather than assert a scheduler state it can't read.
+  function cronRunnable(j) {
+    return j && typeof j.enabled === 'boolean' ? !!(j.enabled && !j.halted) : undefined;
+  }
   async function schedulerArmed() {
     try { if (deps.schedulerArmed) return !!(await deps.schedulerArmed()); } catch (_) {}
     try {
@@ -47,7 +50,7 @@ const AutoJobStore = (() => {
       const r = await fetch('/api/cron', { cache: 'no-store' });
       if (!r.ok) return undefined;
       const j = await r.json().catch(() => null);
-      return j && typeof j.enabled === 'boolean' ? j.enabled : undefined;
+      return cronRunnable(j);
     } catch (_) { return undefined; }
   }
 
@@ -235,7 +238,7 @@ const AutoJobStore = (() => {
   function proposed() { return !!(state && state.proposed); }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, propose, proposed, pinProposals, pendingList, pendingCount, acceptPending, declinePending, _decide: decide, _state: () => state };
+  return { init, reset, onRunEnd, propose, proposed, pinProposals, pendingList, pendingCount, acceptPending, declinePending, _decide: decide, _state: () => state, _cronRunnable: cronRunnable };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { AutoJobStore };

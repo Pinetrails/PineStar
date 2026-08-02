@@ -161,7 +161,9 @@
     function row(j) {
       const on = j.enabled;
       const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>' : '<span class="dim">○ paused</span>';
-      const next = on && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
+      // A routine can remain scheduled while E-STOP has durably stood down the global scheduler. Keep the saved
+      // scheduled badge, but never run a moving countdown for work the host has proven will not fire.
+      const next = on && schedulerArmed && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
       // R3 provenance: a routine minted from a recipe (meta.recipeId) shows "from recipe: <name>". Resolve the live
       // recipe name when we can; fall back to the id (never lies — a deleted recipe still shows its id). Tolerates
       // an absent meta (every pre-R3 job) — no badge then.

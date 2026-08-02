@@ -74,7 +74,13 @@ function kill(child) { return new Promise(r => { try { child.on('exit', () => r(
     s = await status();
     A.eq(s.halted, true, 'the halt survived the sidecar restart (durable, not in-memory)');
 
-    // ===== 3. a deliberate dial re-write LIFTS the halt (not wedged forever) =====
+    // ===== 3. a background beliefs mirror must NOT impersonate an explicit resume =====
+    const beliefsOnly = await (await fetch(B + '/api/autonomy/posture', { method: 'POST', headers, body: JSON.stringify({ beliefs: { known: [], beliefs: {} } }) })).json();
+    A.eq(beliefsOnly.postureWritten, false, 'beliefs-only posture sync identifies that no dial was written');
+    s = await status();
+    A.eq(s.halted, true, 'beliefs-only page-load sync does not lift the durable E-STOP');
+
+    // ===== 4. a deliberate dial re-write LIFTS the halt (not wedged forever) =====
     await (await fetch(B + '/api/autonomy/posture', { method: 'POST', headers, body: JSON.stringify({ posture: { initiative: 'leash', reach: 'sandbox', leashPerDay: 3 } }) })).json();
     s = await status();
     A.eq(s.halted, false, 're-writing the autonomy dial lifts the halt');

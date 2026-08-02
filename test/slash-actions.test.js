@@ -23,6 +23,7 @@ function deps(over) {
     cron: {
       jobs: () => [],
       armed: () => true,
+      halted: () => false,
       preview: (s) => ({ ok: true, display: 'every 30m', localNext: ['Fri, Jul 24, 10:00 AM EDT'] }),
       create: async (spec) => { calls.push(['create', spec]); return { ok: true, job: job({ name: spec.name }) }; },
       setEnabled: async (id, on) => { calls.push(['setEnabled', id, on]); return { ok: true, job: job({ enabled: on }) }; },
@@ -58,6 +59,13 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
     const r = await S.run('routine', 'list');
     A.ok(r.lines.some(l => /NOT armed/.test(l)), 'a disarmed scheduler is stated in the listing');
     A.ok(r.lines.some(l => /\/cron on/.test(l)), 'the listing names the command that fixes it');
+  }
+
+  {
+    const { S } = mk({ cron: { armed: () => false, halted: () => true, jobs: () => [job()] } });
+    const r = await S.run('routine', 'list');
+    A.ok(r.lines.some(l => /STOPPED.*E-STOP/.test(l)), 'a halted scheduler names E-STOP, not merely disarmed intent');
+    A.ok(r.lines.some(l => /\/cron on to resume/.test(l)), 'the halted listing names the explicit resume seam');
   }
 
   {

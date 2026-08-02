@@ -10055,7 +10055,8 @@ const slashActions = slashActionsMod.makeSlashActions({
   now: () => Date.now(),
   cron: {
     jobs: () => cronJobs,
-    armed: () => cronArmed,
+    armed: () => cronArmed && !cronHalted,
+    halted: () => cronHalted,
     preview: (str) => cronPreviewOf(str, null),
     create: async (spec) => {
       const r = await createCronJobFromSpec(spec);
@@ -12929,16 +12930,18 @@ async function handleAutonomyPosture(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 18, res)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const posture = (body.posture && typeof body.posture === 'object') ? body.posture
     : ((body.initiative || body.reach || body.leashPerDay != null) ? body : null);   // tolerate a flat posture too
+  const postureWritten = !!posture;
   commanderPosture.set(posture, body.beliefs);
+  // A beliefs-only mirror is a background dossier sync, not Commander consent to resume after E-STOP.
   // deliberately re-writing the dial is the Commander's "autonomy back on" signal, so it LIFTS any durable E-STOP
   // halt on the night shift (engaged in handleHalt). Without this an E-STOP would wedge the shift stood-down forever.
   let nightshiftStatePersisted = true;
-  try { if (nightshift.isHalted(nightshiftState)) saveNightshiftState(nightshift.clearHalt(nightshiftState, Date.now())); }
+  try { if (postureWritten && nightshift.isHalted(nightshiftState)) saveNightshiftState(nightshift.clearHalt(nightshiftState, Date.now())); }
   catch (e) { nightshiftStatePersisted = false; console.warn('[nightshift] halt-lift persist failed:', (e && e.message) || e); }
   // Lane 4D symmetry: the same "autonomy back on" signal lifts the durable cron E-STOP halt (engaged in
   // handleHalt) and re-arms the timer when the user's arm intent still stands — routines resume with no restart.
   let cronHaltPersisted = true;
-  try { liftCronHalt(); }
+  try { if (postureWritten) liftCronHalt(); }
   catch (e) { cronHaltPersisted = false; console.warn('[cron] halt-lift persist failed:', (e && e.message) || e); }
   // if the (new) posture permits acting and the timer isn't running yet, arm it NOW (no restart); if it dropped
   // below acting, we LEAVE the timer armed — its own gate returns binding:'posture' and no beat fires, which is
@@ -12961,7 +12964,7 @@ async function handleAutonomyPosture(req, res) {
       workshopGranted = workshopOf(NIGHTSHIFT_AGENT);
     }
   } catch (_) { workshopGranted = null; }   // a grant hiccup must never fail the posture write; null = unknown (honest)
-  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, nightshiftStatePersisted: nightshiftStatePersisted, cronHaltPersisted: cronHaltPersisted, workshopGranted: workshopGranted });
+  return json(200, { ok: true, summary: commanderPosture.summary(), postureWritten: postureWritten, nightshiftArmed: !!nightshiftTimer, nightshiftStatePersisted: nightshiftStatePersisted, cronHaltPersisted: cronHaltPersisted, workshopGranted: workshopGranted });
 }
 // GET /api/autonomy/posture — the server copy (posture summary + whether a beliefs snapshot is present). Never
 // echoes the raw beliefs texts back to the browser (it already has them); just reports presence + freshness.

@@ -566,7 +566,16 @@
       if (act === 'resign') { sfx('click'); ccSignIn(id, msgEl); return; }
       btn.disabled = true;
       try {
-        if (act === 'remove') { await postJSON('/api/connectors/remove', { id }); notify('Connector "' + id + '" removed'); sfx('click'); if (editing === id) resetForm(); ccRefresh(); }
+        if (act === 'remove') {
+          const r = await postJSON('/api/connectors/remove', { id });
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            notify('Connector "' + id + '" was NOT removed', 'warn');
+            msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((j && j.error) || ('HTTP ' + r.status)); sfx('bad');
+          } else {
+            notify('Connector "' + id + '" removed'); sfx('click'); if (editing === id) resetForm(); ccRefresh();
+          }
+        }
         else if (act === 'reload') {
           msgEl.classList.remove('ok'); msgEl.textContent = 'reloading ' + id + '…';
           const j = await (await postJSON('/api/connectors/refresh', { id })).json().catch(() => ({}));
@@ -583,7 +592,13 @@
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
       const c = lastList.find(x => x.id === id) || {};
       cb.disabled = true;
-      try { await postJSON('/api/connectors', { id, transport: c.transport, enabled: cb.checked }); sfx('tick'); }
+      try {
+        const r = await postJSON('/api/connectors', { id, transport: c.transport, enabled: cb.checked });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          cb.checked = !cb.checked; msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((j && j.error) || ('HTTP ' + r.status)); sfx('bad');
+        } else sfx('tick');
+      }
       catch (e) { cb.checked = !cb.checked; msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((e && e.message) || 'request failed'); sfx('bad'); }
       cb.disabled = false;
       refresh();
