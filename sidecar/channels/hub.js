@@ -1109,18 +1109,53 @@
     // takes the normal path. Deterministic: the wait rides the injected `sleep`; no clocks read.
     const ALBUM_WAIT_MS = Number.isFinite(o.albumWaitMs) ? Math.max(0, o.albumWaitMs) : 800;
     const albums = new Map();   // chatId+'|'+groupId -> { msg (merged), seq, done, resolve }
+    // Quick successive text bubbles are one human thought, not competing requests. Batch only plain, non-command
+    // text from the same author/topic; media, corrections, commands and cross-speaker group traffic keep their
+    // exact existing delivery semantics.
+    // The shared hub stays byte-identical for other platforms unless their composition root opts in. Telegram
+    // supplies 350ms below; this prevents a platform-specific polish feature from changing generic semantics.
+    const TEXT_BATCH_WAIT_MS = Number.isFinite(o.textBatchWaitMs) ? Math.max(0, o.textBatchWaitMs) : 0;
+    const textBatches = new Map();
 
-    async function onInbound(msg) {
+    async function onInbound(msg, intake) {
       const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
         ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
-      if (gid) return albumInbound(msg, gid);
-      return processInbound(msg);
+      if (gid) return albumInbound(msg, gid, intake);
+      if (TEXT_BATCH_WAIT_MS > 0 && textBatchable(msg)) return textInbound(msg, intake);
+      return processInbound(msg, intake);
     }
 
-    async function albumInbound(msg, gid) {
+    function textBatchable(msg) {
+      if (!msg || msg.edited || (Array.isArray(msg.media) && msg.media.length)) return false;
+      const text = String(msg.text || '').trim();
+      return !!text && !/^\/[A-Za-z0-9_-]+(?:\s|$)/.test(text);
+    }
+
+    async function textInbound(msg, intake) {
+      const key = String(msg.chatId) + '|' + String(msg.userId || '') + '|' + String(msg.threadId || '');
+      let rec = textBatches.get(key);
+      if (!rec) {
+        rec = { msg: Object.assign({}, msg), intake: intake, seq: 0, resolve: null, done: null };
+        rec.done = new Promise(r => { rec.resolve = r; });
+        textBatches.set(key, rec);
+      } else {
+        const prior = String(rec.msg.text || '').trim();
+        const next = String(msg.text || '').trim();
+        rec.msg.text = prior && next ? prior + '\n' + next : (prior || next);
+        rec.msg.messageId = msg.messageId == null ? rec.msg.messageId : msg.messageId;
+      }
+      const mySeq = ++rec.seq;
+      await sleep(TEXT_BATCH_WAIT_MS);
+      if (textBatches.get(key) !== rec || rec.seq !== mySeq) return rec.done;
+      textBatches.delete(key);
+      try { await processInbound(rec.msg, rec.intake); }
+      finally { rec.resolve(); }
+    }
+
+    async function albumInbound(msg, gid, intake) {
       let rec = albums.get(gid);
       if (!rec) {
-        rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), seq: 0, resolve: null, done: null };
+        rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), intake: intake, seq: 0, resolve: null, done: null };
         rec.done = new Promise(r => { rec.resolve = r; });
         albums.set(gid, rec);
       } else {
@@ -1131,11 +1166,11 @@
       await sleep(ALBUM_WAIT_MS);
       if (albums.get(gid) !== rec || rec.seq !== mySeq) return rec.done;   // a newer part re-armed the debounce
       albums.delete(gid);
-      try { await processInbound(rec.msg); }
+      try { await processInbound(rec.msg, rec.intake); }
       finally { rec.resolve(); }
     }
 
-    async function processInbound(msg) {
+    async function processInbound(msg, intake) {
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
@@ -1263,7 +1298,9 @@
       // exist. (The belt crate + onResolved fire here, before the audio is downloaded, so a spoken directive
       // still visualizes as talk — visualization only; the RUN gets the right prompt.)
       let isTask = !!classify(msg.text);
-      if (onResolved) { try { onResolved({ chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask }); } catch (_) {} }
+      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask };
+      if (onResolved) { try { onResolved(resolvedInfo); } catch (_) {} }
+      if (intake && typeof intake.onResolved === 'function') { try { intake.onResolved(resolvedInfo); } catch (_) {} }
 
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
       // agentId, so two chats routed to the SAME agent (via a splitter/filter) never cross-cancel each other.

@@ -107,6 +107,14 @@ A.ok(!ownerAuthority.authorize({}, { name: 'computer.use', capability: 'physical
   'owner Telegram parity never fabricates a physical-input lease');
 A.ok(!ownerAuthority.authorize({}, { name: 'desktop.open', capability: 'visible-desktop' }).ok,
   'owner Telegram parity never fabricates a visible-desktop lease');
+const remoteOwnerAuthority = makeRunAuthority({ surface: 'autonomous', isTask: true, ownerTrusted: true, remoteDesktopAuthorized: true });
+A.ok(remoteOwnerAuthority.remoteDesktopAuthorized, 'a host-minted paired-owner desktop lease is visible in authority diagnostics');
+A.ok(remoteOwnerAuthority.project({ name: 'computer.use', capability: 'physical-input' }), 'only that lease projects physical input');
+A.ok(remoteOwnerAuthority.authorize({}, { name: 'computer.use', capability: 'physical-input' }).ok, 'only that lease authorizes physical input');
+A.ok(remoteOwnerAuthority.authorize({}, { name: 'desktop.open', capability: 'visible-desktop' }).ok, 'only that lease authorizes visible desktop launch');
+const remoteCtx = runInputContext('autonomous', true, true);
+A.eq(remoteCtx.inputMode, 'remote-owner', 'remote owner context is explicitly distinct from synthetic input');
+A.ok(remoteCtx.remoteDesktopAuthorized, 'remote owner context carries the host lease bit');
 
 /* UNATTENDED CONNECTOR GRANT — the Commander's own MCP servers, callable by a granted routine. The critical
    property: external-unknown is ALSO the fail-closed default for anything the host cannot classify, so the

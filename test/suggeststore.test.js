@@ -130,7 +130,7 @@ global.DossierStore.summary = _summ;
     A.eq(call.internal, true, 'the idea call is flagged internal → harness.js suppresses its run.start/end bus re-emit (no phantom task counted, no cooldown self-tick)');
     A.eq(chat.nudges.length, 1, 'it renders exactly one gentle COMMS nudge (not the heavy Dialogue panel)');
     A.ok(chat.nudges[0].text.indexOf('a weekly digest of your repo') >= 0, 'the nudge carries the idea');
-    A.eq(chat.nudges[0].opts.length, 2, 'the nudge offers two options — build it / not now (never a menu)');
+    A.eq(chat.nudges[0].opts.length, 3, 'the nudge offers build / defer / never-suggest-this with distinct verdicts');
     A.eq(SuggestStore._session(), 1, 'firing spends this session\'s one idea');
     A.eq(SuggestStore._state().lastFamiliarity, 0.6, 'the baseline advances to the new familiarity');
     A.eq(SuggestStore._state().tasksSinceLast, 0, 'the cooldown restarts after an idea');

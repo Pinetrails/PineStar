@@ -65,6 +65,9 @@
     const onInbound = typeof o.onInbound === 'function' ? o.onInbound : function () {};
     const onCallback = typeof o.onCallback === 'function' ? o.onCallback : null;   // C6: inline-keyboard taps
     const onStatus = typeof o.onStatus === 'function' ? o.onStatus : null;         // channel.connect telemetry
+    // Delivery health is intentionally separate from poll health: a bot can still receive updates while Telegram
+    // refuses outbound sends (blocked chat, an outbound-only proxy fault, or a transient API outage).
+    const onDelivery = typeof o.onDelivery === 'function' ? o.onDelivery : null;
     const onMembership = typeof o.onMembership === 'function' ? o.onMembership : null;   // we were added/blocked/kicked
     const pollTimeoutSec = o.pollTimeoutSec || DEFAULT_POLL_TIMEOUT_SEC;
     const backoff = Array.isArray(o.backoffMs) && o.backoffMs.length ? o.backoffMs.slice() : DEFAULT_BACKOFF.slice();
@@ -77,6 +80,9 @@
     // stays governed by allowedChats, independently.
     let owner = o.ownerUserId ? String(o.ownerUserId) : '';
     const onOwnerClaim = typeof o.onOwnerClaim === 'function' ? o.onOwnerClaim : null;
+    // Optional explicit-enrollment hook. Absent it, existing adapters retain TOFU behavior.
+    // It receives (message, userId) and returns true or { allow, consume, reply }.
+    const ownerAdmission = typeof o.ownerAdmission === 'function' ? o.ownerAdmission : null;
     // Chats whose offline backlog we discarded while the owner was still UNCLAIMED (a fresh install, or any
     // first contact). We cannot apologise at connect: claiming ownership from stale backlog is exactly the
     // anti-stale-directive behaviour we preserve, and answering a chat we have NOT yet proven is the owner
@@ -90,11 +96,25 @@
     // SEE would under-report what we actually DROPPED, and "1 message arrived" when three did is exactly the
     // kind of confident-but-wrong claim this project treats as a defect.
     const OFFLINE_NOTICE = 'I was offline — anything you sent while I was away was not processed. Please resend whatever still matters.';
-    function ownerOk(userId) {
+    function ownerDecision(userId, message) {
       const uid = String(userId == null ? '' : userId);
-      if (!owner) { if (!uid) return false; owner = uid; if (onOwnerClaim) { try { onOwnerClaim(uid); } catch (_) {} } return true; }
-      return uid === owner;
+      if (owner) return { ok: uid === owner, claimed: false, consume: false, reply: '' };
+      if (!uid) return { ok: false, claimed: false, consume: false, reply: '' };
+      let decision = true; // preserve trust-on-first-use for adapter callers that have not opted in
+      if (ownerAdmission) {
+        try { decision = ownerAdmission(message || {}, uid); } catch (_) { decision = false; }
+      }
+      if (decision !== true && !(decision && decision.allow === true)) return { ok: false, claimed: false, consume: false, reply: '' };
+      owner = uid;
+      if (onOwnerClaim) { try { onOwnerClaim(uid); } catch (_) {} }
+      return {
+        ok: true,
+        claimed: true,
+        consume: !!(decision && decision.consume),
+        reply: decision && typeof decision.reply === 'string' ? decision.reply : ''
+      };
     }
+    function ownerOk(userId, message) { return ownerDecision(userId, message).ok; }
 
     /* GROUP DISCIPLINE (2026-07-29). We used to answer EVERY message in a whitelisted group, and never checked
        whether the sender was a bot. In a room with any traffic that is a model call per message — the member
@@ -267,7 +287,17 @@
         const m = n.message;
         const verdict = admission(m);
         if (verdict === 'drop') return;
-        if (m.chatType === 'dm' && !ownerOk(m.userId)) return;   // a non-owner DM never reaches the run host
+        let own = null;
+        if (m.chatType === 'dm') {
+          own = ownerDecision(m.userId, m);
+          if (!own.ok) return;   // a non-owner DM never reaches the run host
+          // Enrollment is an authentication exchange, not an agent instruction. Keep its code out of the
+          // transcript/model prompt and acknowledge success directly on the transport.
+          if (own.claimed && own.consume) {
+            if (own.reply) Promise.resolve(transport.send(String(m.chatId), own.reply, {})).catch(() => {});
+            return;
+          }
+        }
         // This chat had backlog discarded while the owner was unclaimed, and has now PROVEN it is the owner by
         // getting admitted. Pay the deferred apology before its reply — otherwise the Commander's first
         // impression of a bot that was simply switched off is silence, which is what a broken bot looks like.
@@ -448,12 +478,20 @@
       async send(chatId, text, sendOpts) {
         const t = text == null ? '' : String(text);
         let r = await transport.send(String(chatId), t, sendOpts || {});
+        let attempts = 1;
         if (r && r.ok === false && r.retryable) {
           const waitMs = Math.min((Number(r.retryAfter) > 0 ? Number(r.retryAfter) : 1) * 1000, 30000);
           await sleep(waitMs);
           r = await transport.send(String(chatId), t, sendOpts || {});
+          attempts++;
         }
         if (r && r.ok) rememberSent(chatId, r.messageId);   // so a channel echoing this back is not taken for input
+        if (onDelivery) {
+          try {
+            onDelivery({ ok: !!(r && r.ok), chatId: String(chatId), attempts: attempts,
+              detail: r && r.ok ? '' : String((r && r.error) || 'send failed').slice(0, 240) });
+          } catch (_) {}
+        }
         return r;
       },
 
@@ -489,9 +527,9 @@
       },
 
       // Publish the bot's slash-command menu (one-shot, at connect).
-      setCommands(list) {
+      setCommands(list, commandOpts) {
         if (typeof transport.setCommands !== 'function') return Promise.resolve({ ok: false, error: 'command menus not supported on this channel' });
-        try { return Promise.resolve(transport.setCommands(list)); }
+        try { return Promise.resolve(transport.setCommands(list, commandOpts || {})); }
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setCommands threw' }); }
       },
 
@@ -554,7 +592,7 @@
         return { id: String(chatId), type: allowed.has(String(chatId)) ? 'group' : 'dm' };
       },
 
-      _internals: { admitted, admission, ownerOk, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, wakeWords, namedUs, MIN_WAKE_WORD, get offset() { return offset; }, get owner() { return owner; } }
+      _internals: { admitted, admission, ownerOk, ownerDecision, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, wakeWords, namedUs, MIN_WAKE_WORD, get offset() { return offset; }, get owner() { return owner; } }
     };
   }
 

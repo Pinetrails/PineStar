@@ -26,7 +26,7 @@
 
   // ---- tunables (kept in lock-step with profile.js so the two engines calibrate identically) ----
   const HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;  // a lane's weight halves every ~2 weeks of silence (recency)
-  const CALIBRATING_N = 3;                         // total tool observations before the histogram is "known" (else: calibrating). Lowered 5→3 with the scout lane (2026-07-08): the old floor + hero-only counting kept the adaptive shelves cold for whole sessions.
+  const CALIBRATING_N = 3;                         // completed-run observations before the histogram is "known"
   const TAGS = ['code', 'research', 'general'];    // the interest vocabulary (mirrors profile.js / classify.js)
 
   // the capability lanes tracked — the CAP_REGISTRY objectTypes that class KITS draw on (shared/specialties.js).
@@ -61,6 +61,27 @@
     const tags = Object.assign({}, cur.tags);
     if (sig && sig.tag != null) { const tg = normTag(sig.tag); tags[tg] = (tags[tg] || 0) + 1; }   // per-lane task volume by interest tag
     signal.lanes[lane] = { w: nextW, n: (cur.n || 0) + 1, t: now, tags };
+    signal.total = (signal.total || 0) + 1;
+    return signal;
+  }
+
+  // Fold one completed run, independent of how chatty its tool loop was. Each unique lane shares one unit of
+  // outcome-weight, while signal.total advances exactly once.
+  function observeRun(signal, run, now) {
+    if (!signal) return signal;
+    const src = run && Array.isArray(run.lanes) ? run.lanes : [];
+    const lanes = [];
+    for (const lane of src) if (isLane(lane) && lanes.indexOf(lane) < 0) lanes.push(lane);
+    if (!lanes.length) return signal;
+    const outcomeWeight = (run && Number.isFinite(run.weight) && run.weight > 0) ? run.weight : 1;
+    const share = outcomeWeight / lanes.length;
+    const tag = run && run.tag != null ? normTag(run.tag) : null;
+    for (const lane of lanes) {
+      const cur = signal.lanes[lane] || { w: 0, n: 0, t: 0, tags: {} };
+      const tags = Object.assign({}, cur.tags);
+      if (tag) tags[tag] = (tags[tag] || 0) + 1;
+      signal.lanes[lane] = { w: decayedW(cur, now) + share, n: (cur.n || 0) + 1, t: now, tags };
+    }
     signal.total = (signal.total || 0) + 1;
     return signal;
   }
@@ -126,5 +147,5 @@
   // wipe the learned histogram (shares the profile's FORGET button — one glass-box control clears both).
   function forget() { return fresh(); }
 
-  return { fresh, observe, vector, laneWeight, laneTag, summary, hydrate, forget, LANES, TAGS, CALIBRATING_N, HALF_LIFE_MS };
+  return { fresh, observe, observeRun, vector, laneWeight, laneTag, summary, hydrate, forget, LANES, TAGS, CALIBRATING_N, HALF_LIFE_MS };
 });

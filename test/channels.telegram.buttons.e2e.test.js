@@ -198,6 +198,16 @@ const lastUserTurn = (req) => {
     A.ok(token.length >= 32, 'got a session API token');
     await waitUntil(() => tg.calls.some(c => c.method === 'getUpdates' && c.body && c.body.offset === -1), 5000, 'telegram drop-pending poll');
 
+    // Enrol the Telegram account through the same explicit local pairing flow as the desktop UI.
+    const pair = await (await fetch(B + '/api/channels/telegram/owner/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+      body: '{}'
+    })).json();
+    A.ok(/^[-A-Z0-9]{11}$/.test(String(pair.code || '')), 'local owner pairing issued a code');
+    tg.pushText(4242, 99, '/pair ' + pair.code);
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '4242' && /Owner paired/i.test(String(s.text || ''))), 8000, 'owner pairing acknowledgement');
+
     // ---- 1. the "/" menu is published, and matches what the hub actually implements ----
     await waitUntil(() => tg.menus.length >= 1, 5000, 'setMyCommands');
     const names = tg.menus[0].commands.map(c => c.command);
@@ -212,8 +222,8 @@ const lastUserTurn = (req) => {
     llm.script.push({ when: 'deploy the app', text: 'TASK_QUESTION: Which deployment target should I use? || staging | the production cluster' });
     llm.script.push({ when: 'the production cluster', text: 'Deploying now.' });
     tg.pushText(4242, 99, 'deploy the app');
-    await waitUntil(() => tg.sends.length >= 1, 8000, 'question reply');
-    const q = tg.sends[0];
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '4242' && s.reply_markup), 8000, 'question reply');
+    const q = tg.sends.find(s => String(s.chat_id) === '4242' && s.reply_markup);
     A.eq(String(q.chat_id), '4242', 'reply goes to the inbound chat');
     A.ok(!!q.reply_markup && Array.isArray(q.reply_markup.inline_keyboard), 'the reply carries reply_markup.inline_keyboard');
     const kb = q.reply_markup.inline_keyboard;
@@ -239,8 +249,8 @@ const lastUserTurn = (req) => {
     await waitUntil(() => llm.requests.length > beforeRuns, 8000, 'follow-up run');
     A.ok(llm.requests.some(r => lastUserTurn(r) === 'the production cluster'),
       'the model receives the option\'s OWN TEXT as the next user turn — identical to the Commander typing it');
-    await waitUntil(() => tg.sends.length >= 2, 8000, 'follow-up reply');
-    A.ok(tg.sends[tg.sends.length - 1].text.indexOf('Deploying now.') >= 0, 'the follow-up answer is delivered');
+    await waitUntil(() => tg.sends.some(s => /Deploying now\./.test(String(s.text || ''))), 8000, 'follow-up reply');
+    A.ok(tg.sends.some(s => /Deploying now\./.test(String(s.text || ''))), 'the follow-up answer is delivered');
 
     // ---- 4. a stale second tap is acknowledged but starts nothing ----
     // Count the runs that carry THIS OPTION'S text, not every request the station makes. A raw total is moved

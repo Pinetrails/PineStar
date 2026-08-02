@@ -24,6 +24,7 @@ const WorkSignalStore = (() => {
   let learningOn = () => true;   // shared with the profile's glass-box flag (injected by app.js)
   let getRunTag = () => null;    // resolve a run's interest tag (from RUN_META / active workstream) — injected
   let wired = false;
+  const pending = new Map();     // runId -> { lanes:Set, tag }; raw tool frequency never enters the model
 
   const now = () => Date.now();
   const ready = () => typeof WorkSignal !== 'undefined' && signal;
@@ -53,10 +54,24 @@ const WorkSignalStore = (() => {
     if (!p) return;
     const lane = laneForTool(p.name);
     if (!lane) return;
-    let tag = null;
-    try { tag = getRunTag(p.runId) || null; } catch (_) {}
-    WorkSignal.observe(signal, { lane, tag }, now());
-    try { persistFn(); } catch (_) {}   // capture the accrual to disk (rides the same save envelope as the profile)
+    const runId = String(p.runId || '').trim();
+    if (!runId) return;
+    let row = pending.get(runId);
+    if (!row) {
+      let tag = null; try { tag = getRunTag(runId) || null; } catch (_) {}
+      row = { lanes: new Set(), tag }; pending.set(runId, row);
+    }
+    row.lanes.add(lane);
+  }
+
+  function onRunEnd(p) {
+    if (!ready() || !p) return;
+    const runId = String(p.runId || '').trim();
+    if (!runId) return;
+    const row = pending.get(runId); pending.delete(runId);
+    if (!row || p.reason !== 'done' || !learningOn()) return;
+    WorkSignal.observeRun(signal, { lanes: Array.from(row.lanes), tag: row.tag }, now());
+    try { persistFn(); } catch (_) {}
   }
 
   // opts: { signal, persist, learningOn(), getRunTag(runId) }
@@ -68,6 +83,7 @@ const WorkSignalStore = (() => {
     signal = (typeof WorkSignal !== 'undefined') ? WorkSignal.hydrate(opts.signal) : (opts.signal || null);
     if (!wired && typeof U !== 'undefined' && U.bus && U.bus.on) {
       U.bus.on('agent.tool_call', p => { try { onToolCall(p); } catch (e) { console.warn('[worksignal]', e); } });
+      U.bus.on('agent.run.end', p => { try { onRunEnd(p); } catch (e) { console.warn('[worksignal]', e); } });
       wired = true;
     }
   }
@@ -78,9 +94,9 @@ const WorkSignalStore = (() => {
   function serialize() { return signal || undefined; }        // folded into the save envelope by App.persist()
 
   // shares the profile's FORGET (one glass-box control wipes both learned models).
-  function forget() { if (typeof WorkSignal !== 'undefined') { signal = WorkSignal.forget(); try { persistFn(); } catch (_) {} } }
+  function forget() { pending.clear(); if (typeof WorkSignal !== 'undefined') { signal = WorkSignal.forget(); try { persistFn(); } catch (_) {} } }
 
-  return { init, summary, model, serialize, forget, _laneForTool: laneForTool, _onToolCall: onToolCall };
+  return { init, summary, model, serialize, forget, _laneForTool: laneForTool, _onToolCall: onToolCall, _onRunEnd: onRunEnd, _pending: pending };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkSignalStore };

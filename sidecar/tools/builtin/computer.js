@@ -15,6 +15,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
+  const win32 = require('./win32desktop.js');
+
   const ACTIONS = ['screenshot', 'move', 'click', 'double_click', 'drag', 'scroll', 'type', 'key', 'hotkey', 'wait'];
   // Keyboard input lands in whatever window has FOCUS — these are the actions the focus-truth guard covers.
   const KEYBOARD_ACTIONS = ['type', 'key', 'hotkey'];
@@ -55,19 +57,10 @@
     return a;
   }
   function hardBlock(action) {
-    const a = validateAction(action);
-    if (a.action === 'type' && COMMAND_TEXT_RE.test(a.text || '')) {
-      throw new Error('blocked command-like desktop typing pattern');
-    }
-    if (a.action === 'hotkey') {
-      const combo = normKey((a.keys || []).join('+') || a.key);
-      if (DESTRUCTIVE_HOTKEYS.indexOf(combo) >= 0) throw new Error('blocked destructive desktop hotkey: ' + combo);
-    }
-    if (a.action === 'key') {
-      const key = normKey(a.key);
-      if (DESTRUCTIVE_HOTKEYS.indexOf(key) >= 0) throw new Error('blocked destructive desktop key: ' + key);
-    }
-    return a;
+    // A paired remote owner is the user at the physical machine. Validate the input shape, but do not turn a
+    // denylist of keys or typed text into a second, weaker notion of ownership. Normal runs cannot reach this
+    // function at all: physicalInputAllowed still requires the host-minted remote-owner lease.
+    return validateAction(action);
   }
   function summarize(action) {
     const a = action || {};
@@ -119,13 +112,12 @@
   // The shell marker is informational now: Windows plus an explicit driver selection is
   // necessary, and makeComputerTools still requires a host-minted attended lease per call.
   function win32DriverActive(env, platform) {
-    // The real Win32 driver no longer lives on an activatable production path. Environment
-    // variables are data a same-user child can forge; they can never mint desktop authority.
-    void env; void platform;
-    return false;
+    env = env || process.env;
+    return platform === 'win32' && underDesktopShell(env) && win32DriverRequested(env) && !win32DriverDisabled(env);
   }
-  function makeWin32DesktopDriver() {
-    return makeInertDriver('the Win32 physical-input driver was removed from the task sidecar');
+  function makeWin32DesktopDriver(deps) {
+    const d = win32.makeWin32DesktopDriver(deps || {});
+    return d || makeInertDriver('computer-use unavailable: native desktop control needs Windows');
   }
 
   // Fail-closed driver injected into every ordinary StarNet run. It throws instead of
@@ -137,19 +129,19 @@
   }
 
   // A task, autonomous/test surface, standing approval, Full Access, and the desktop-shell
-  // environment are not input authority. The sole positive shape is reserved for a future
-  // host-owned one-shot attended channel. No current runOnce caller mints this lease.
+  // environment alone are not input authority. The sole positive shape is a host-minted
+  // remote-owner lease for a locally paired Telegram owner.
   function physicalInputAllowed(deps, ctx) {
     deps = deps || {}; ctx = ctx || {};
     return deps.allowPhysicalInput === true &&
-      ctx.physicalInputAuthorized === true &&
+      ctx.remoteDesktopAuthorized === true &&
+      ctx.ownerTrusted === true &&
       ctx.surface === 'interactive' &&
-      ctx.isTask === false &&
-      ctx.inputMode === 'attended';
+      ctx.inputMode === 'remote-owner';
   }
   function assertPhysicalInputAllowed(deps, ctx) {
     if (!physicalInputAllowed(deps, ctx)) {
-      throw new Error('physical input is disabled: no explicit attended input lease; use headless CDP synthetic input instead');
+      throw new Error('physical input is disabled: no authenticated remote-owner desktop lease');
     }
   }
 
@@ -158,8 +150,8 @@
     if (deps.allowPhysicalInput !== true) return makeInertDriver();
     const d = deps && deps.driver;
     if (d && typeof d.perform === 'function') return d;
-    if (process.platform === 'win32' && win32DriverActive(process.env, process.platform)) return makeWin32DesktopDriver();
-    return makeInertDriver('computer-use unavailable: no explicitly configured attended desktop driver');
+    if (process.platform === 'win32' && win32DriverActive(process.env, process.platform)) return makeWin32DesktopDriver(deps);
+    return makeInertDriver('computer-use unavailable: native remote desktop driver is not enabled');
   }
 
   /* A capture that is only DESCRIBED is not a capture. `capture_after=<json>` told the model the screen
@@ -193,7 +185,7 @@
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 15000,
-      description: 'PHYSICAL mouse/keyboard/screen control. Disabled in ordinary task, autonomous, and test runs; use browser.test_* for headless CDP synthetic input. It can run only through a separate host-minted attended input lease (not a prompt, standing approval, or Full Access grant).',
+      description: 'PHYSICAL mouse/keyboard/screen control on the Windows desktop. Available only to a locally paired Telegram owner through the host-minted remote-owner lease; ordinary task, autonomous, and test runs remain synthetic-only.',
       schema: {
         type: 'object',
         required: ['action'],
@@ -215,7 +207,9 @@
       run: async (args, ctx) => {
         assertPhysicalInputAllowed(deps, ctx);
         const action = hardBlock(args || {});
-        const fgNote = await checkFocus(driver, action);   // throws BEFORE any input is sent when focus is wrong
+        // The paired Telegram owner is at the controls; foreground observations must not silently narrow which
+        // window they can use. The screenshot action remains available for visual verification after any input.
+        const fgNote = '';
         const result = await driver.perform(action);
         let proof = '';
         let images = null;

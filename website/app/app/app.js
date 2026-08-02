@@ -2711,7 +2711,7 @@ const App = (() => {
           const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
           if (!s || !s.dominant) return '';
           const lanes = Object.keys(s.laneTags || {}).map(l => l + ' (' + s.laneTags[l] + ')').join(', ');
-          return 'dominant lane: ' + s.dominant + '; ' + s.samples + ' tool-samples; lanes worked: ' + (lanes || s.dominant);
+          return 'dominant lane: ' + s.dominant + '; ' + s.samples + ' completed task-runs; lanes worked: ' + (lanes || s.dominant);
         } catch (_) { return ''; }
       };
       ProspectStore.init({
