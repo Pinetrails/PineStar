@@ -1,3 +1,7 @@
+**2026-08-01 merge digest (TELEGRAM CAPABILITY PARITY):** `agent/telegram-final-parity` -> `feat/harness-backend` merge `a8a9ddba` -- a local one-time `/pair` binds the Telegram owner, after which that owner receives the full agent workbench, including shell and native desktop mouse/keyboard/screen control during an interactive Desktop run. Non-owner and group traffic keep their existing limits. Trunk `test:fast` 486 steps GREEN; full `test:http` GREEN, including owner-pairing and Telegram E2E coverage. Live Bot API pairing and owner-lock status were verified; the temporary test configuration was purged afterward.
+
+**2026-08-01 merge digest (TELEGRAM OWNER CONTROL):** `agent/telegram-owner-control` -> `feat/harness-backend` merge `6b0c4f26` -- adapter-admitted owner Telegram DMs now receive the desktop agent's non-physical workbench: shell, verification, media, connectors, delegation, service-key access, and Commander-defined exec. Groups and non-owner traffic retain their prior limits; physical-input and visible-desktop capabilities remain unavailable. Trunk `test:fast` 475 steps GREEN; full `test:http` GREEN, including `channels.telegram.e2e` (52 assertions). No real external Telegram DM was claimed as a verification result.
+
 **2026-07-31 merge digest (COST PLUMBING — Hermes gap lane 3 of 3; the ×3 sweep is COMPLETE):** `agent/cost-plumbing` -> `feat/harness-backend` no-ff merge `4e4bdc84` (lane commits `7f6e42d1` + `abc504bd` + the owner's trunk-sync `f644da6c`, which pre-gated the exact merged tree at 469 steps EXIT=0 in the lane worktree; built by the calm-errors session, merged by the coordination session). Gate ON TRUNK after the merge: see the FAST/HTTP line below this digest's commit. No claims re-lock owed — no measured-surface files.
 
 - **Prompt caching 2 -> 4 breakpoints:** the static-prefix anchor plus SLIDING anchors on the last THREE messages. ⛔ **One trailing anchor was mechanically fragile** — a breakpoint only walks back 20 content blocks for its predecessor, and one parallel-tool turn can append more than that, silently re-billing the whole conversation as a cold write.
@@ -840,8 +844,8 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-31 23:10Z @ f1ca9e1e | RED | 4 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-31T13:01:47.949Z · ui-only · 105569ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-02 01:11Z @ 25f8b053 | RED | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-01T13:02:25.727Z · ui-only · 142130ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |

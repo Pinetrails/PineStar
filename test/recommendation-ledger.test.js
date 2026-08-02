@@ -1,0 +1,53 @@
+'use strict';
+const A = require('./_assert.js');
+const R = require('../sidecar/recommendation-ledger.js');
+
+const raw = { entries: [
+  { id: '1', surface: 'suggest', kind: 'research', title: 'Weekly GPU price brief', evidence: [{ id: 'topic:gpu', type: 'topic', quote: 'gpu prices' }], readiness: { ready: true }, state: 'completed', createdAt: 1 },
+  { id: '2', surface: 'suggest', kind: 'research', title: 'GPU weekly price brief', evidence: [{ id: 'topic:gpu', type: 'topic' }], readiness: { ready: true }, state: 'accepted', createdAt: 2 },
+  { id: '3', surface: 'suggest', kind: 'writing', title: 'Draft a blog post', evidence: [], readiness: { ready: false, reasons: ['too-thin'] }, state: 'declined', reason: 'wrong_thing', createdAt: 3 },
+  { id: '4', surface: 'nightshift', kind: 'writing', title: 'Write release notes', evidence: [{ id: 'run:4', quote: 'release' }], readiness: { ready: true }, state: 'deferred', reason: 'wrong_time', createdAt: 4 }
+] };
+const n = R.normalize(raw);
+A.eq(n.entries.length, 4, 'normalizes recommendation history');
+A.eq(n.entries[2].reason, 'wrong_thing', 'preserves a typed verdict reason');
+A.eq(n.entries[2].transitions.map(t => t.state), ['shown', 'declined'], 'legacy final-state rows backfill an honest bounded lifecycle');
+const m = R.replay(raw);
+A.eq(m.counts.shown, 4, 'replay counts shown recommendations');
+A.eq(m.counts.accepted, 2, 'completed work also counts as accepted');
+A.eq(m.counts.completed, 1, 'completion is measured separately');
+A.eq(m.counts.declined, 1, 'declines remain distinct from deferrals');
+A.eq(m.counts.deferred, 1, 'wrong-time deferrals do not poison relevance');
+A.ok(m.kinds.research.weight > 0, 'two positive research outcomes shift research upward');
+A.ok(m.kinds.writing.weight < 0, 'a declined writing idea shifts writing downward');
+A.ok(m.repeatRate > 0, 'semantic fingerprint replay detects a repeated idea shape');
+A.ok(m.evidenceCoverage === 0.75, 'evidence coverage is auditable');
+A.eq(R.normalizeEntry({ id: 'x', title: 'x', state: 'constructor' }).state, 'shown', 'prototype keys never bypass state validation');
+
+const cycles = { entries: [] };
+for (let i = 0; i < 7; i++) cycles.entries.push({ id: 'r' + i, surface: 'suggest', kind: 'research', title: 'Research topic ' + i, state: i < 5 ? 'completed' : 'accepted' });
+for (let i = 0; i < 3; i++) cycles.entries.push({ id: 'w' + i, surface: 'suggest', kind: 'writing', title: 'Writing topic ' + i, state: 'declined', reason: 'wrong_thing' });
+const shifted = R.replay(cycles);
+A.ok(shifted.kinds.research.weight > shifted.kinds.writing.weight, 'ten-cycle replay shifts toward work the Commander kept');
+A.ok(shifted.kinds.research.weight <= 0.75 && shifted.kinds.writing.weight >= -0.75, 'preference shifts stay bounded');
+
+(async () => {
+  // The durable writer retains every materially distinct transition instead of overwriting the prior verdict.
+  const files = new Map();
+  const memfs = {
+    readFileSync: file => { if (!files.has(file)) { const e = new Error('missing'); e.code = 'ENOENT'; throw e; } return files.get(file); },
+    mkdirSync: () => {},
+    writeFileSync: (file, body) => { files.set(file, String(body)); },
+    renameSync: (a, b) => { files.set(b, files.get(a)); files.delete(a); },
+    openSync: () => 1, fsyncSync: () => {}, closeSync: () => {}, copyFileSync: (a, b) => files.set(b, files.get(a)),
+    unlinkSync: file => files.delete(file)
+  };
+  const path = require('path').win32;
+  const store = R.makeRecommendationLedger({ fs: memfs, path, workspaces: 'C:\\ws', writeDurable: (_deps, file, body) => files.set(file, String(body)) });
+  await store.record({ id: 'life', surface: 'suggest', title: 'Audit recommendations' }, 10);
+  await store.verdict('life', 'deferred', 'wrong_time', 20);
+  await store.verdict('life', 'accepted', 'accepted', 30);
+  await store.verdict('life', 'completed', 'completed', 40);
+  A.eq(store.list({ limit: 1 })[0].transitions.map(t => t.state), ['shown', 'deferred', 'accepted', 'completed'], 'shown-to-completed lifecycle survives durable updates');
+  A.report('recommendation-ledger.test');
+})().catch(e => { A.ok(false, e.stack || e); A.report('recommendation-ledger.test'); });

@@ -89,6 +89,10 @@ function makeRunAuthority(opts) {
   // Commander the same tool authority as a watched StarNet session without changing the ordinary autonomous
   // policy used by cron, delegated workers, other channels, or group messages.
   const ownerTrusted = !!opts.ownerTrusted;
+  // This bit is minted by the desktop host only when a locally paired Telegram owner reaches this run. It is
+  // deliberately separate from ownerTrusted: a bare sidecar or ordinary web session cannot turn an identity
+  // claim into control of the foreground Windows desktop.
+  const remoteDesktopAuthorized = ownerTrusted && opts.remoteDesktopAuthorized === true;
   const environment = opts.environment || null;
   const confirm = typeof opts.confirm === 'function' ? opts.confirm : null;
   const isolated = !!(environment && environment.supports && (environment.supports.userControlIsolation === true || environment.supports.hostileCodeSandbox === true));
@@ -113,7 +117,7 @@ function makeRunAuthority(opts) {
   }
   function project(tool) {
     const impact = impactOfTool(tool);
-    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return false;
+    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return remoteDesktopAuthorized;
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
       if (ownerTrusted) return true;
       if (surface === 'interactive') return !!confirm;
@@ -128,7 +132,9 @@ function makeRunAuthority(opts) {
   function authorize(call, tool) {
     const impact = impactOfTool(tool);
     if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) {
-      return { ok: false, impact, reason: impact + ' is unavailable to ordinary StarNet runs; no native one-shot user lease exists' };
+      return remoteDesktopAuthorized
+        ? { ok: true, impact, surface: 'interactive', isTask, isolated, ownerTrusted: true, remoteDesktopAuthorized: true }
+        : { ok: false, impact, reason: impact + ' is unavailable without an authenticated remote-owner desktop lease' };
     }
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
       if (ownerTrusted) return { ok: true, impact, surface, isTask, isolated, ownerTrusted: true };
@@ -177,7 +183,7 @@ function makeRunAuthority(opts) {
     return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, granted: (!ownerTrusted && impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
   }
   return Object.freeze({
-    mode: 'preserve-user-control', surface, isTask, isolated, ownerTrusted, project, authorize,
+    mode: remoteDesktopAuthorized ? 'remote-owner-desktop' : 'preserve-user-control', surface, isTask, isolated, ownerTrusted, remoteDesktopAuthorized, project, authorize,
     unattendedGrants: Object.freeze(Array.from(unattendedGrants).sort())   // diagnostics/telemetry: what this run was actually granted
   });
 }
@@ -205,8 +211,12 @@ function enforceRunAuthority(resolved, registry, authority) {
   });
 }
 
-function enforceSyntheticOnly(resolved) {
+function enforceSyntheticOnly(resolved, remoteDesktopAuthorized) {
   resolved = resolved || {};
+  if (remoteDesktopAuthorized === true) return Object.assign({}, resolved, {
+    tools: (resolved.tools || []).slice(), grants: (resolved.grants || []).slice(),
+    approvalRules: Object.assign({}, resolved.approvalRules || {}), networkCaps: Object.assign({}, resolved.networkCaps || {})
+  });
   const approvalRules = Object.assign({}, resolved.approvalRules || {});
   const networkCaps = Object.assign({}, resolved.networkCaps || {});
   for (const tool of REAL_DESKTOP_TOOLS) {
@@ -221,12 +231,14 @@ function enforceSyntheticOnly(resolved) {
   });
 }
 
-function runInputContext(surface, isTask) {
+function runInputContext(surface, isTask, remoteDesktopAuthorized) {
+  const remote = remoteDesktopAuthorized === true;
   return {
-    surface: surface || 'autonomous',
+    surface: remote ? 'interactive' : (surface || 'autonomous'),
     isTask: !!isTask,
-    physicalInputAuthorized: false,
-    inputMode: 'synthetic'
+    physicalInputAuthorized: remote,
+    remoteDesktopAuthorized: remote,
+    inputMode: remote ? 'remote-owner' : 'synthetic'
   };
 }
 

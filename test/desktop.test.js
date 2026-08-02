@@ -29,31 +29,36 @@ function fakeOpener() {
 
   // opener + tool posture
   const opener = fakeOpener();
-  const D = makeDesktopTools({ opener: opener.open });
+  const D = makeDesktopTools({ opener: opener.open, allowRemoteDesktop: true });
   const tool = D.tools[0];
+  const REMOTE_OWNER = { surface: 'interactive', ownerTrusted: true, remoteDesktopAuthorized: true, inputMode: 'remote-owner' };
   A.eq(tool.name, 'desktop.open', 'tool is desktop.open');
   A.eq(tool.scope, 'execute', 'desktop.open is execute scoped');
   A.eq(tool.requiresConsent, true, 'desktop.open requires consent');
   A.ok(/real screen|user/i.test(tool.description) && /visible/i.test(tool.description), 'description promises a visible window on the user screen');
 
-  await rejects(tool.run({ target: 'youtube.com' }), /not available to agent tools/i, 'agent tools cannot launch a visible desktop even with a direct call');
+  await rejects(tool.run({ target: 'youtube.com' }), /remote-owner desktop lease/i, 'direct calls without the remote-owner lease stay denied');
   A.eq(opener.log.length, 0, 'inert tool never reaches the opener');
+
+  const leased = await tool.run({ target: 'youtube.com' }, REMOTE_OWNER);
+  A.ok(/desktop\.open ok/.test(leased.content), 'paired owner lease may launch a visible desktop target');
+  A.eq(opener.log.length, 1, 'leased remote desktop call reaches the opener');
 
   const out = await D._internals.open('youtube.com');
   A.eq(out.target, 'https://youtube.com/', 'internal user-click helper normalizes a bare host');
-  A.eq(opener.log[0].kind, 'url', 'opener received a url kind');
-  A.eq(opener.log[0].target, 'https://youtube.com/', 'opener received the assertSafeUrl-normalized href');
+  A.eq(opener.log[1].kind, 'url', 'opener received a url kind');
+  A.eq(opener.log[1].target, 'https://youtube.com/', 'opener received the assertSafeUrl-normalized href');
 
   const appOut = await D._internals.open('notepad');
   A.eq(appOut.target, 'notepad', 'internal user-click helper preserves the app name');
-  A.eq(opener.log[1].kind, 'app', 'opener received an app kind');
+  A.eq(opener.log[2].kind, 'app', 'opener received an app kind');
 
   // URL safety is reused from browser.js — private/loopback/intranet refused
   await rejects(D._internals.open('http://localhost:8787'), /private|loopback|intranet/i, 'localhost URL refused');
   await rejects(D._internals.open('127.0.0.1'), /private|loopback|intranet|not a valid/i, 'loopback IP refused');
   await rejects(D._internals.open('http://192.168.1.5/admin'), /private|loopback|intranet/i, 'LAN IP refused');
   await rejects(D._internals.open('file:///etc/passwd'), /http\(s\)|not a valid/i, 'non-http scheme refused');
-  A.eq(opener.log.length, 2, 'refused targets never reach the opener');
+  A.eq(opener.log.length, 3, 'refused targets never reach the opener');
 
   // app-name allowlist rejects paths / args / shell metacharacters
   await rejects(D._internals.open('notepad.exe & calc'), /not a valid/i, 'app name with shell metachar refused');

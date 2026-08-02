@@ -116,7 +116,7 @@ A.eq(iw.sniff('tiny', Buffer.from([1, 2, 3])), null, 'a buffer too short to hold
     perform: async () => '', capture: async () => PNG.toString('base64'),
     foreground: async () => ({ title: 'Notepad', process: 'notepad.exe' })
   };
-  const lease = { physicalInputAuthorized: true, surface: 'interactive', isTask: false, inputMode: 'attended' };
+  const lease = { ownerTrusted: true, remoteDesktopAuthorized: true, surface: 'interactive', isTask: false, inputMode: 'remote-owner' };
   const c = makeComputerTools({ allowPhysicalInput: true, driver, imageWire: iw });
   const cr = await c.useTool.run({ action: 'screenshot' }, lease);
   A.ok(Array.isArray(cr.images) && cr.images.length === 1, 'computer.use returns the capture as pixels');

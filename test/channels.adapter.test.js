@@ -114,6 +114,27 @@ async function run() {
     await a.disconnect();
   }
 
+  // ---- B2a. explicit owner enrollment: an unclaimed bot stays silent until a local pairing callback admits it ----
+  {
+    const inbox = [], claims = [];
+    const t = fakeTransport([[
+      { id: 1, chat: 'dmA', type: 'dm', user: 'stranger', text: 'hello', mid: '1' },
+      { id: 2, chat: 'dmA', type: 'dm', user: 'owner', text: '/pair ABCDE-FGHIJ', mid: '2' },
+      { id: 3, chat: 'dmA', type: 'dm', user: 'owner', text: 'run this', mid: '3' }
+    ]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: m => inbox.push(m), onOwnerClaim: u => claims.push(u),
+      ownerAdmission: (m, uid) => (uid === 'owner' && m.text === '/pair ABCDE-FGHIJ')
+        ? { allow: true, consume: true, reply: 'Owner paired.' } : false,
+      clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && !inbox.length; i++) await tick();
+    A.eq(claims, ['owner'], 'only a valid local enrollment can claim an unclaimed bot');
+    A.eq(inbox.map(m => m.text), ['run this'], 'the pairing exchange never reaches the agent transcript');
+    A.eq(t.sends.map(s => s.text), ['Owner paired.'], 'the owner receives a direct enrollment acknowledgement');
+    await a.disconnect();
+  }
+
   // ---- B4. dropPendingOnConnect: prime the offset past the backlog and discard it (no stale replay) ----
   {
     const inbox = [];
@@ -294,6 +315,19 @@ async function run() {
     A.eq(t.sends.length, 2, 'resend fired (after the wait)');
     A.eq(r.messageId, 'ok', 'resend result returned');
     A.ok(waits.indexOf(3000) !== -1, 'waited retry_after (3s) before the resend');
+  }
+
+  // ---- D3. poll health and delivery health are separate, with the final retry verdict reported ----
+  {
+    const delivery = [];
+    const t = fakeTransport([[]], [{ ok: false, retryable: true, error: 'temporary' }, { ok: false, retryable: false, error: 'blocked' }]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', onInbound: () => {}, clock: CLOCK,
+      sleep: () => Promise.resolve(), onDelivery: d => delivery.push(d) });
+    await a.send('chat-1', 'reply');
+    A.eq(delivery.length, 1, 'one aggregate delivery outcome after bounded retry');
+    A.eq(delivery[0].ok, false, 'the final send failure is visible even while inbound polling may remain healthy');
+    A.eq(delivery[0].attempts, 2, 'health reports both bounded send attempts');
+    A.eq(delivery[0].detail, 'blocked', 'health exposes the transport-sanitized final reason only');
   }
 
   // ---- E. disconnect stops the loop; no further onInbound; the parked getUpdates aborts cleanly ----

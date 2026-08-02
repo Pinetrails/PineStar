@@ -43,6 +43,9 @@ const S = require('../frontend/app/study.js');
   A.eq(p[0].dim, 'goals', 'dimension parsed'); A.eq(p[0].kind, 'add', 'ADD -> add');
   A.eq(p[2].kind, 'retire', 'RETIRE -> retire');
   A.eq(p[3].dim, 'ambition', 'a "new" tag word maps to add on a real dim'); A.eq(p[3].kind, 'add', '"new" -> add');
+  const pe = S.parse('style ADD: prefers terse answers | EVIDENCE: "I prefer terse answers"');
+  A.eq(pe[0].text, 'prefers terse answers', 'evidence metadata is separated from the belief text');
+  A.eq(pe[0].evidence, 'I prefer terse answers', 'the verbatim evidence quote is parsed explicitly');
   A.eq(S.canonDim('goal'), 'goals', 'singular "goal" canonicalises to goals');
   A.eq(S.canonDim('Standing Orders'), 'standing_orders', 'loose "Standing Orders" canonicalises');
   A.eq(S.canonDim('nonsense'), null, 'an unknown dimension is rejected');
@@ -58,6 +61,10 @@ const S = require('../frontend/app/study.js');
   A.eq(out.proposals[0].createdAt, 100, 'createdAt from the injected clock');
   A.ok(out.proposals[0].evidence.indexOf('ship the dossier feature') >= 0, 'evidence carries the directive');
   A.eq(out.proposals[2].kind, 'retire', 'the RETIRE that matched an existing belief survives');
+  const grounded = await S.study(run, { propose: async () => 'style ADD: prefers terse verified answers | EVIDENCE: "I prefer terse answers"', clock: makeClock(101), redact, beliefs: {}, declined: [] });
+  A.eq(grounded.proposals[0].evidenceRef.kind, 'verbatim', 'a verified quote is stamped as verbatim run evidence');
+  const invented = await S.study(run, { propose: async () => 'style ADD: prefers colorful long answers | EVIDENCE: "make everything purple and verbose"', clock: makeClock(102), redact, beliefs: {}, declined: [] });
+  A.eq(invented.proposals.length, 0, 'an invented evidence quote cannot become a learned belief');
 
   // ---- retire MUST match an existing belief (no hallucinated retractions) ----
   const noMatch = await S.study(run, { propose: async () => 'goals RETIRE: a goal we never held', clock: makeClock(0), redact, beliefs, declined: [] });

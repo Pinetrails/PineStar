@@ -18,6 +18,14 @@
 const RecruiterStore = (() => {
   const now = () => (typeof Date !== 'undefined' ? Date.now() : 0);
   const learningOn = () => (typeof ProfileStore !== 'undefined' && ProfileStore.enabled) ? ProfileStore.enabled() : true;
+  // ONE recommendation gate: tool use proves workflow, not direction or who the work serves. Personalized and
+  // proactive hiring waits for the dossier-owned readiness verdict; a missing read fails closed.
+  function recommendationsReady() {
+    try {
+      const r = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null;
+      return !!(r && r.ready);
+    } catch (_) { return false; }
+  }
 
   // the occupied specialtyIds — a class already represented on the crew is never re-recommended.
   function rosterIds() {
@@ -41,6 +49,7 @@ const RecruiterStore = (() => {
   function recommend() {
     if (typeof Recruiter === 'undefined' || typeof Specialties === 'undefined' || !Specialties.builtins) return { warm: false, items: [] };
     if (!learningOn()) return { warm: false, items: [] };
+    if (!recommendationsReady()) return { warm: false, items: [] };
     const sig = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.model) ? WorkSignalStore.model() : null;
     if (!sig) return { warm: false, items: [] };
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore : null;   // Recruiter uses profile.score(tags)
@@ -64,6 +73,7 @@ const RecruiterStore = (() => {
     if (typeof Recruiter === 'undefined' || !Recruiter.interestGaps) return { items: [] };
     if (typeof Specialties === 'undefined' || !Specialties.builtins) return { items: [] };
     if (!learningOn()) return { items: [] };
+    if (!recommendationsReady()) return { items: [] };
     let topics = [];
     try { topics = (typeof ProspectStore !== 'undefined' && ProspectStore.interests) ? (ProspectStore.interests() || []) : []; } catch (_) { topics = []; }
     if (!topics.length) return { items: [] };
@@ -103,7 +113,7 @@ const RecruiterStore = (() => {
     return { classId: top.classId, spec, why: top.why, confidence: top.confidence, evidence: top.evidence };
   }
 
-  return { recommend, topPick, interestGaps };
+  return { recommend, topPick, interestGaps, recommendationsReady };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { RecruiterStore };
