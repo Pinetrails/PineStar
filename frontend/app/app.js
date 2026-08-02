@@ -2716,6 +2716,7 @@ const App = (() => {
       };
       ProspectStore.init({
         fetch: (u, o) => (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch(u, o) : fetch(u, o),
+        setLearningEnabled: (on) => { if (typeof ProfileStore !== 'undefined' && ProfileStore.setEnabled) ProfileStore.setEnabled(on); if (typeof MintStore !== 'undefined' && MintStore.setEnabled) MintStore.setEnabled(on); },
         getWorksignalSummary: worksignalSummaryText,
         getCustomClasses: () => { try { return (typeof Specialties !== 'undefined' && Specialties.customs) ? (Specialties.customs() || []).map(s => ({ name: s.name, tagline: s.tagline })) : []; } catch (_) { return []; } },
         getCustomRecipes: () => { try { return (typeof Recipes !== 'undefined' && Recipes.customs) ? (Recipes.customs() || []).map(r => ({ name: r.name, tagline: r.tagline })) : []; } catch (_) { return []; } },
@@ -2743,6 +2744,7 @@ const App = (() => {
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.init({
       getSystem: () => agent ? agent.systemPrompt : '',
       getName: () => agent ? agent.name : 'AGENT',
+      readiness: () => (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null,
       getBeliefs: () => {
         const out = {};
         if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return out;

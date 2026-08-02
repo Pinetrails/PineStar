@@ -76,6 +76,17 @@
     const sig = opts.worksignal || null;
     const catalog = Array.isArray(opts.catalog) ? opts.catalog : [];
     const rostered = new Set((opts.roster || []).filter(Boolean));
+    const preferenceModel = opts.preferenceModel && typeof opts.preferenceModel === 'object' ? opts.preferenceModel : null;
+    const preferenceFor = (cls) => {
+      if (!preferenceModel) return 0;
+      const rows = [];
+      const kind = preferenceModel.kinds && (preferenceModel.kinds.recruit || preferenceModel.kinds.prospect);
+      if (kind && Number.isFinite(kind.weight)) rows.push(kind.weight);
+      const traits = preferenceModel.traits || {};
+      const keys = [cls.id].concat(cls.kit || [], Object.keys(cls.tags || {}).filter(k => Number(cls.tags[k]) > 0));
+      for (const key of keys) { const row = traits[String(key || '').toLowerCase()]; if (row && Number.isFinite(row.weight)) rows.push(row.weight); }
+      return rows.length ? rows.reduce((a, b) => a + b, 0) / rows.length : 0;
+    };
 
     // WARM GATE: below the shared sample floor the histogram hasn't earned a read — return empty so the bay falls
     // back to the honest cold-start lineup (never a fabricated "curated" pick).
@@ -120,8 +131,9 @@
 
       // (d) PROFILE affinity — a mild interest prior (0..1), only when a profile scorer is supplied.
       const profAff = (opts.profile && typeof opts.profile.score === 'function') ? (Number(opts.profile.score(cls.tags || {})) || 0) : 0;
+      const outcomePreference = preferenceFor(cls);
 
-      const v = kitAff * W_KIT + gap * W_GAP + Math.min(dossierHits, 3) * W_DOSSIER + profAff * W_PROFILE;
+      const v = kitAff * W_KIT + gap * W_GAP + Math.min(dossierHits, 3) * W_DOSSIER + profAff * W_PROFILE + outcomePreference * 3;
       // (only classes the Commander's work actually TOUCHES are eligible — a zero-kit-affinity class has no honest
       // workflow reason to be "curated", so it never surfaces even if the dossier keyword-matches.)
       if (kitAff <= 0) return;
@@ -143,7 +155,7 @@
       const confidence = clamp01(0.35 + 0.5 * share * (0.5 + 0.5 * volume));
 
       scored.push({ classId: cls.id, why, confidence,
-        evidence: { kitAffinity: round(kitAff), dominantLane, bestLane, coversGap, dossierHits, profileAffinity: round(profAff), samples },
+        evidence: { kitAffinity: round(kitAff), dominantLane, bestLane, coversGap, dossierHits, profileAffinity: round(profAff), outcomePreference: round(outcomePreference), samples },
         _v: v, _idx: idx });
     });
 

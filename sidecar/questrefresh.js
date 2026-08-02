@@ -64,7 +64,7 @@
   const DECLINED_NS_CAP = 20;                // FIFO cap on the declined-inference denylist (never re-propose these)
 
   function fresh() {
-    return { v: STATE_VERSION, northStar: null, proposedNorthStar: null, declinedNorthStars: [], lastCycleAt: 0, lastMintAt: 0, ledger: [] };
+    return { v: STATE_VERSION, northStar: null, proposedNorthStar: null, pendingQuests: [], declinedNorthStars: [], lastCycleAt: 0, lastMintAt: 0, ledger: [] };
   }
 
   // clamp one raw north-star-ish object into the stored shape (or null). `defStatus` is what an unstamped
@@ -88,6 +88,12 @@
       if (s.northStar) s.northStar.status = 'adopted';                 // the adopted slot is always adopted
       const prop = normStar(raw.proposedNorthStar, 'proposed');
       s.proposedNorthStar = prop ? Object.assign(prop, { status: 'proposed', source: 'model' }) : null;
+      if (Array.isArray(raw.pendingQuests)) s.pendingQuests = raw.pendingQuests.slice(0, MAX_MINTS_PER_CYCLE).map(q => ({
+        title: str(q && q.title).slice(0, TITLE_MAX), desc: str(q && q.desc).slice(0, DESC_MAX), reward: str(q && q.reward).slice(0, REWARD_MAX),
+        contract: q && q.contract && CONTRACT_TYPES.indexOf(q.contract.type) >= 0 ? { type: q.contract.type, key: str(q.contract.key).slice(0, KEY_MAX) } : null,
+        steps: Array.isArray(q && q.steps) ? q.steps.slice(0, MAX_STEPS).map((st, i) => ({ key: str(st && st.key) || ('s' + (i + 1)), label: str(st && st.label).slice(0, 80) })) : [],
+        groundedIn: str(q && q.groundedIn).slice(0, WHY_MAX)
+      })).filter(q => q.title && q.contract);
       if (Array.isArray(raw.declinedNorthStars)) {
         s.declinedNorthStars = raw.declinedNorthStars.map(t => norm(t)).filter(Boolean).slice(-DECLINED_NS_CAP);
       }
@@ -345,6 +351,15 @@
     });
   }
 
+  // Quests generated in the same pass as an inferred north star are only CANDIDATES. They remain staged until
+  // the Commander confirms that direction; otherwise an unconfirmed inference would become autonomy authority.
+  function stageQuests(state, quests) {
+    const s = normalize(state);
+    return Object.assign({}, s, { pendingQuests: (Array.isArray(quests) ? quests : []).slice(0, MAX_MINTS_PER_CYCLE).map(q => Object.assign({}, q)) });
+  }
+  function pendingQuests(state) { return normalize(state).pendingQuests.map(q => Object.assign({}, q)); }
+  function clearPendingQuests(state) { return Object.assign({}, normalize(state), { pendingQuests: [] }); }
+
   // DECLINE the pending proposal → durably denylist it (so it's never re-proposed) and drop it; the previously
   // adopted star (if any) stands. Next cycle re-infers — a DIFFERENT inference may propose, the same one won't.
   function declineNorthStar(state, opts) {
@@ -352,12 +367,13 @@
     if (!s.proposedNorthStar) return s;
     const nt = norm(s.proposedNorthStar.text);
     const denied = s.declinedNorthStars.filter(t => t !== nt).concat([nt]).slice(-DECLINED_NS_CAP);
-    return Object.assign({}, s, { proposedNorthStar: null, declinedNorthStars: denied });
+    return Object.assign({}, s, { proposedNorthStar: null, pendingQuests: [], declinedNorthStars: denied });
   }
 
   return {
     fresh, normalize, decide, buildDirective, parse, parseContract, hasEvidence, slateFull,
     note, stampCycle, stampMint, setNorthStar, effectiveNorthStar, proposeNorthStar, confirmNorthStar, declineNorthStar,
+    stageQuests, pendingQuests, clearPendingQuests,
     REFRESH_EVERY_MS, CAUGHT_UP_GAP_MS, MAX_MINTS_PER_CYCLE, OPEN_GENERATED_CAP, LEDGER_CAP, DECLINED_NS_CAP, CONTRACT_TYPES,
     _internals: { norm: norm, grabFrom: grabFrom, MIN_FACT_KEY: MIN_FACT_KEY, MAX_STEPS: MAX_STEPS }
   };

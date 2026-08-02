@@ -783,6 +783,17 @@
       return g - 2 * m;
     };
     const topics = Array.isArray(opts.topics) ? opts.topics : null;
+    const preferenceModel = opts.preferenceModel && typeof opts.preferenceModel === 'object' ? opts.preferenceModel : null;
+    const preferenceScore = (recipe) => {
+      if (!preferenceModel) return 0;
+      const rows = [];
+      const kind = preferenceModel.kinds && preferenceModel.kinds.recipe;
+      if (kind && Number.isFinite(kind.weight)) rows.push(kind.weight);
+      const traits = preferenceModel.traits || {};
+      const keys = [recipe.category, recipe.id].concat(Object.keys(recipe.tags || {}).filter(k => Number(recipe.tags[k]) > 0));
+      for (const key of keys) { const row = traits[String(key || '').toLowerCase()]; if (row && Number.isFinite(row.weight)) rows.push(row.weight); }
+      return rows.length ? rows.reduce((a, b) => a + b, 0) / rows.length : 0;
+    };
     const pool = list0.filter(r => r && r.id !== exclude);
     let anySignal = false;
     const scored = pool.map((r, idx) => {
@@ -792,8 +803,9 @@
       // a WARM learned topic is real evidence in its own right (it is only ever folded from observed activity),
       // so it counts as signal — a station that has learned a habit but launched nothing is NOT cold-start.
       const topic = topics ? topicScore(r, topics) : 0;
-      if (aff > 0 || goal > 0 || use > 0 || topic > 0) anySignal = true;   // ratings never signal alone: a rating implies a launch
-      return { r, idx, s: aff * 4 + goal * 2 + use + outcomeScore(r.id) + topic };
+      const preference = preferenceScore(r);
+      if (aff > 0 || goal > 0 || use > 0 || topic > 0 || preference !== 0) anySignal = true;   // ratings never signal alone: a rating implies a launch
+      return { r, idx, s: aff * 4 + goal * 2 + use + outcomeScore(r.id) + topic + preference * 3 };
     });
     if (anySignal) {
       let top = scored
