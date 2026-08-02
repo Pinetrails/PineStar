@@ -77,6 +77,7 @@ const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice, stationWithObject, stationWithConnectors } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
+const { makeHarnessSnapshot } = require('./harness-snapshot.js');   // bounded secret-free build/scheduler/connectors/diagnostics truth for station.inspect
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
 const localVoice = require('./local-voice.js');
@@ -118,6 +119,7 @@ const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } =
 let Study = null; try { Study = require('../frontend/app/study.js'); } catch (_) { Study = null; }
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
 const { makeDiagnostics, proxyHostOnly } = require('./diagnostics.js');   // T3.9: pure paste-ready bug-report assembler (redacted, truthful)
+const { makeStationInspectTool } = require('./tools/builtin/station-inspect.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
@@ -7636,9 +7638,10 @@ async function handleToolsetToggle(req, res) {
 
 /* ---- /api/connectors: the Connectors panel manages MCP servers. A token is accepted here, persisted to the
    protected sibling file, and NEVER echoed back (list/status carry `hasToken` only, never the value). ---- */
+function connectedConnectorSnapshot() { return connectors.list(); }
 function handleConnectorsList(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connectors: connectors.list() }));
+  res.end(JSON.stringify({ connectors: connectedConnectorSnapshot() }));
 }
 /* ---- /api/servicekeys: the KEYS tab's custom platform keys. The value is accepted on POST, persisted to the
    protected sibling file, applied to process.env, and NEVER echoed back (the list carries a masked last4). ---- */
@@ -8037,8 +8040,8 @@ function handleWidgetsList(req, res) {
   res.end(JSON.stringify({ widgets: widgetTools.list() }));
 }
 
-function handleCronList(req, res) {
-  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+function cronStateSnapshot(now) {
+  now = Number(now) || Date.now();
   // TICKER HEALTH (additive, 2026-07-15 audit): armed alone can't prove ticks are completing. `healthy`
   // is true only when the scheduler is armed AND a tick succeeded within the last 3 tick periods — real
   // observed state, never synthesized (a disarmed scheduler is healthy:false with no error, honestly idle).
@@ -8046,11 +8049,16 @@ function handleCronList(req, res) {
     lastTickAt: cronHealth.lastTickAt,
     lastSuccessAt: cronHealth.lastSuccessAt,
     lastTickError: cronHealth.lastTickError,
-    healthy: !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (Date.now() - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS)
+    healthy: !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (now - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS)
   };
   // `halted` (additive, Lane 4D): the durable E-STOP stand-down — enabled records the user's arm INTENT while
   // halted says the timer is frozen anyway, so the panel can say "paused by E-STOP" instead of a false "armed".
-  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS, health: health }));
+  return { jobs: cronJobs, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS, health: health };
+}
+
+function handleCronList(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(cronStateSnapshot(Date.now())));
 }
 
 /* GET /api/lifecycle/armed — Lane 4D: the ONE aggregate the desktop tray supervisor polls to decide whether
@@ -10727,6 +10735,12 @@ async function runOnce(o) {
     connectorCatalog: connectorCatalog,
     keysCatalog: serviceKeysCatalog
   }).register(registry);
+  // HARNESS SELF-KNOWLEDGE: always-present COMPUTER grant, local/read-only and secret-free. The reader
+  // closes over this run's identity while every mutable section is collected fresh at call time from the
+  // same helpers that serve /api/version, /api/cron, /api/connectors and /api/diagnostics.
+  makeStationInspectTool({
+    inspect: () => harnessSnapshotForRun({ provider: providerId, model, agentId, runId, surface, trigger })
+  }).register(registry);
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
   // STARNET_IMAGE_MODEL overrides the studio's default text->image model (image.js picks the current-gen
@@ -11824,7 +11838,8 @@ async function runOnce(o) {
   // only (same gate as capsummary — a Commander is present to help and the build UI exists). Sits right
   // BEFORE the authoritative <capabilities_ground_truth>, which it defers to, so the two never disagree.
   const manualBlock = (surface === 'interactive') ? starnetManual() : '';
-  const runtimeBlock = runtimeIdentityBlock({ provider: providerId, model, agentId, runId, surface, trigger, fallbackModels });
+  const runtimeVersion = computeVersionSurface();
+  const runtimeBlock = runtimeIdentityBlock({ provider: providerId, model, agentId, runId, surface, trigger, fallbackModels, harness: runtimeVersion.harness, app: runtimeVersion.app });
   // RUNTIME SKILL LIBRARY (skill-builder-gap): index the agent's own authored skills + preload any it invokes,
   // riding the same skill.view/skill.manage capability gate. Never breaks a run.
   try {
@@ -13051,24 +13066,23 @@ function handleVersion(req, res) {
 // route table) like all /api. Assembled SERVER-SIDE from real stores/state (never scraped from the DOM). The
 // diagnostics module (sidecar/diagnostics.js) does the pure formatting + a second redact() backstop; here we just
 // collect the honest snapshot. TRUTHFUL TELEMETRY: every field is provable — anything we can't prove is omitted.
-function handleDiagnostics(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let out;
-  try {
+function collectDiagnosticsInput(opts) {
+  opts = opts || {};
     // version (reuse the cached honest build surface — same env-first fallback as GET /api/version, so a packaged
     // desktop's STARNET_APP_VERSION shows up in the bug report instead of a blank app version)
     const ver = computeVersionSurface();
     // desktop vs browser — provable from the request origin (Tauri custom-scheme origins are the desktop shell)
-    const origin = String((req && req.headers && req.headers.origin) || '').toLowerCase();
-    const mode = TAURI_ORIGINS.has(origin) ? 'desktop' : (origin ? 'browser' : '');
+    const origin = String(opts.origin || '').toLowerCase();
+    const mode = opts.mode === 'desktop' || opts.mode === 'browser'
+      ? opts.mode : (TAURI_ORIGINS.has(origin) ? 'desktop' : (origin ? 'browser' : ''));
     // active provider + model SLUG (never a key): the newest run is the strongest proof of what actually ran; fall
     // back to the primary roster agent's configured identity when no run has happened yet.
     const recent = (() => { try { return runStore.list(null, { limit: 1 })[0] || null; } catch (_) { return null; } })();
-    let provider = '', model = '';
+    let provider = String(opts.provider || ''), model = String(opts.model || '');
     try {
       const first = agentRoster.size ? [...agentRoster.values()][0] : null;
-      provider = (first && first.provider) || (runtimeKey ? 'openrouter' : (codexTokens && codexTokens.access_token ? 'codex' : ''));
-      model = (recent && recent.model) || (first && first.model) || '';
+      provider = provider || (first && first.provider) || (runtimeKey ? 'openrouter' : (codexTokens && codexTokens.access_token ? 'codex' : ''));
+      model = model || (recent && recent.model) || (first && first.model) || '';
     } catch (_) {}
     // is ANY credential configured for that provider? bool ONLY — the key itself is never read into the snapshot.
     let keyPresent = false;
@@ -13078,7 +13092,7 @@ function handleDiagnostics(req, res) {
     } catch (_) {}
     let workspacePresent = false;
     try { workspacePresent = fs.existsSync(WORKSPACES); } catch (_) {}
-    const snapshot = {
+    return {
       version: ver,
       platform: { os: process.platform, arch: process.arch, node: process.version },
       mode: mode,
@@ -13095,7 +13109,29 @@ function handleDiagnostics(req, res) {
       errors: DIAG_ERR_RING.slice(),   // already redacted on write; the assembler redacts again as a backstop
       proxy: proxySnapshot()
     };
-    out = diagnostics.assemble(snapshot);
+}
+
+function harnessSnapshotForRun(runtime) {
+  runtime = runtime || {};
+  return makeHarnessSnapshot({
+    now: () => Date.now(),
+    redact: redact,
+    readBuild: () => computeVersionSurface(),
+    readScheduler: () => cronStateSnapshot(Date.now()),
+    readConnectors: () => connectedConnectorSnapshot(),
+    readDiagnostics: () => collectDiagnosticsInput({
+      mode: runtime.surface === 'interactive' ? 'browser' : '',
+      provider: runtime.provider,
+      model: runtime.model
+    })
+  }).snapshot(runtime);
+}
+
+function handleDiagnostics(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let out;
+  try {
+    out = diagnostics.assemble(collectDiagnosticsInput({ origin: String((req && req.headers && req.headers.origin) || '') }));
   } catch (e) {
     return json(500, { error: 'diagnostics failed' });
   }
