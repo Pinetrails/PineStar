@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-      "bytes": 302513,
-      "sha256": "30ea5f85f9de1a1cc0bc4534b4eba0d118d185a845ccc3a472ddcbe7ba8622e5"
+        "bytes": 302513,
+        "sha256": "30ea5f85f9de1a1cc0bc4534b4eba0d118d185a845ccc3a472ddcbe7ba8622e5"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -223,8 +223,8 @@
       },
       {
         "path": "frontend/app/dossier.js",
-      "bytes": 15853,
-      "sha256": "e72adaf77bdbc35fbdc05b30a31607ea75102dff3e3e76c5b10d93d5e8558bcd"
+        "bytes": 15853,
+        "sha256": "e72adaf77bdbc35fbdc05b30a31607ea75102dff3e3e76c5b10d93d5e8558bcd"
       },
       {
         "path": "frontend/app/dossierstore.js",
@@ -343,8 +343,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-      "bytes": 217073,
-      "sha256": "adb094c5917c72631ef764c3dc1706bca481a4255aa678c2752cd4cdddd9ce06"
+        "bytes": 217073,
+        "sha256": "adb094c5917c72631ef764c3dc1706bca481a4255aa678c2752cd4cdddd9ce06"
       },
       {
         "path": "frontend/app/mint.js",
@@ -548,8 +548,8 @@
       },
       {
         "path": "frontend/app/recruiterstore.js",
-      "bytes": 6834,
-      "sha256": "0e25352e11492a46618ea78e1dee3b45b5573b1733a8303c1411d32ed8fb5e3e"
+        "bytes": 6834,
+        "sha256": "0e25352e11492a46618ea78e1dee3b45b5573b1733a8303c1411d32ed8fb5e3e"
       },
       {
         "path": "frontend/app/resummonstore.js",
@@ -658,18 +658,18 @@
       },
       {
         "path": "frontend/app/study.js",
-      "bytes": 25774,
-      "sha256": "9c58b6d3fa4125ff883eb1d5ad1fcc43150764b38992b52189b106829a44565e"
+        "bytes": 25774,
+        "sha256": "9c58b6d3fa4125ff883eb1d5ad1fcc43150764b38992b52189b106829a44565e"
       },
       {
         "path": "frontend/app/studystore.js",
-      "bytes": 16616,
-      "sha256": "ae597a4d53b43596450efa1c1230cf92bcf938d39b6921313e57e57e8b8c5d97"
+        "bytes": 16616,
+        "sha256": "ae597a4d53b43596450efa1c1230cf92bcf938d39b6921313e57e57e8b8c5d97"
       },
       {
         "path": "frontend/app/suggeststore.js",
-      "bytes": 17266,
-      "sha256": "f66c9d99fb1bd60c2c62b3a92d4c909a1ae99cfdf7a733c0bb2593e912ad669a"
+        "bytes": 17266,
+        "sha256": "f66c9d99fb1bd60c2c62b3a92d4c909a1ae99cfdf7a733c0bb2593e912ad669a"
       },
       {
         "path": "frontend/app/terrain.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/understanding.js",
-      "bytes": 12338,
-      "sha256": "e0f2fc27463d8c98a77c711c1be61c43fc526e29b1780d9383036bfb14cd5f4c"
+        "bytes": 12338,
+        "sha256": "e0f2fc27463d8c98a77c711c1be61c43fc526e29b1780d9383036bfb14cd5f4c"
       },
       {
         "path": "frontend/app/understandingstore.js",
@@ -838,13 +838,13 @@
       },
       {
         "path": "frontend/app/worksignal.js",
-      "bytes": 8845,
-      "sha256": "13b2612c5e6b56153b891094d29feaf868fb14aee333394c088c32ee8a339641"
+        "bytes": 8845,
+        "sha256": "13b2612c5e6b56153b891094d29feaf868fb14aee333394c088c32ee8a339641"
       },
       {
         "path": "frontend/app/worksignalstore.js",
-      "bytes": 6565,
-      "sha256": "7848e1bccd3b35d74cda6ecfbeaa20fea9415be31fdd56265696d0b83561c27f"
+        "bytes": 6565,
+        "sha256": "7848e1bccd3b35d74cda6ecfbeaa20fea9415be31fdd56265696d0b83561c27f"
       },
       {
         "path": "frontend/app/workstreams.js",
