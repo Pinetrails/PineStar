@@ -306,11 +306,25 @@ async function waitUntil(fn, ms, label) {
     sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
 
     await waitUntil(() => tg.calls.some(c => c.method === 'getUpdates' && c.body && c.body.offset === -1), 5000, 'telegram drop-pending poll');
+
+    // Telegram is deliberately no longer trust-on-first-DM. Enrol this test account through the same local,
+    // authenticated pairing route a desktop owner uses, then prove the one-time code is consumed by Telegram
+    // before asking it to run anything.
+    const pair = await (await fetch(B + '/api/channels/telegram/owner/pair', {
+      method: 'POST',
+      headers: { 'X-StarNet-Token': token, Origin: B, 'Content-Type': 'application/json' },
+      body: '{}'
+    })).json();
+    A.ok(pair && /^[-A-Z0-9]{11}$/.test(String(pair.code || '')), 'local owner pairing issued a one-time code');
+    tg.pushText(4242, 99, '/pair ' + pair.code);
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '4242' && /Owner paired/i.test(String(s.text || ''))), 8000, 'Telegram owner-pair acknowledgement');
+
     tg.pushText(4242, 99, 'research AI trend now');
 
-    await waitUntil(() => tg.sends.length >= 1, 8000, 'telegram sendMessage reply');
-    A.eq(tg.sends[0].chat_id, '4242', 'reply sent to the inbound chat');
-    A.ok(String(tg.sends[0].text || '').indexOf('Telegram answer') >= 0, 'reply text came from the mocked provider');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '4242' && String(s.text || '').indexOf('Telegram answer') >= 0), 8000, 'telegram sendMessage reply');
+    const initialReply = tg.sends.find(s => String(s.chat_id) === '4242' && String(s.text || '').indexOf('Telegram answer') >= 0);
+    A.eq(initialReply.chat_id, '4242', 'reply sent to the inbound chat');
+    A.ok(String(initialReply.text || '').indexOf('Telegram answer') >= 0, 'reply text came from the mocked provider');
     A.ok(llm.requests.length >= 1, 'mock provider was called from Telegram ingress');
 
     await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.kind === 'telegram' && e.payload.agentId === 'tg_4242'), 5000, 'telegram workitem');

@@ -1084,11 +1084,11 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         .env("SKYNET_API_TOKEN", &state.api_token)
         .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
         .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
-        // Desktop identity is informational only. Physical input is explicitly OFF in
-        // the installed sidecar, and controlled browsing is pinned headless; ordinary
-        // agent runs use browser.test_* CDP events with in-page lock emulation.
+        // The sidecar can load the native Windows desktop driver, but that alone grants nothing:
+        // only a locally paired Telegram owner receives the per-run remote-owner lease. Ordinary
+        // agent runs remain synthetic/headless by policy in the sidecar.
         .env("STARNET_DESKTOP_SHELL", "1")
-        .env("STARNET_COMPUTER_DRIVER", "0")
+        .env("STARNET_COMPUTER_DRIVER", "1")
         .env("STARNET_BROWSER_HEADLESS", "1")
         .env("STARNET_USER_CONTROL_MODE", "preserve")
         .env("STARNET_MCP_STDIO", "0")

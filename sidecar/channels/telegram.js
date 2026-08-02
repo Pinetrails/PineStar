@@ -292,6 +292,7 @@
       onInbound: o.onInbound,
       onCallback: o.onCallback,
       onStatus: o.onStatus,
+      onDelivery: o.onDelivery,
       clock: o.clock,
       pollTimeoutSec: o.pollTimeoutSec,
       backoffMs: o.backoffMs,
@@ -299,6 +300,7 @@
       startOffset: o.startOffset,
       ownerUserId: o.ownerUserId,
       onOwnerClaim: o.onOwnerClaim,
+      ownerAdmission: o.ownerAdmission,
       // GROUP DISCIPLINE — see adapter.js. botUsername is what makes "was I addressed?" answerable at all; the
       // composition root learns it from getMe() at connect. Without it the mention gate deliberately admits
       // everything rather than silencing a room we cannot prove we were not addressed in.

@@ -56,6 +56,13 @@ const SLEEP = process.platform === 'win32' ? 'ping -n 5 127.0.0.1 > NUL' : 'slee
     A.eq(shell._internals.escapesWorkspace('mkdir foo\\bar'), null, 'relative mkdir foo\\bar is NOT a floor escape');
     A.throws(() => tool.run({ cmd: 'type \\Users\\andro\\hosts' }, ctx()), 'drive-root path refused by the tool');
 
+    // The paired Telegram owner is the person sitting at the machine: their shell may deliberately use a host
+    // directory outside the agent workspace. Ordinary calls above remain jailed and screened.
+    const remote = await tool.run({ cmd: 'echo remote-owner-host-shell', cwd: root }, ctx({
+      ownerTrusted: true, remoteDesktopAuthorized: true, inputMode: 'remote-owner', surface: 'interactive'
+    }));
+    A.ok(/remote-owner-host-shell/.test(remote.content), 'remote-owner shell runs from an explicit host directory');
+
     // ---- 5. output cap: a tiny maxBytes truncates ----
     const small = makeShellTool({ spawn, fs, pathMod: path, root, clock: makeClock(0), limits: { maxBytes: 5 } }).execTool;
     const r5 = await small.run({ cmd: 'echo hello world this is long' }, ctx());
