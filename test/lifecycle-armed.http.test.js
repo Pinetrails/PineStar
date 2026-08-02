@@ -55,6 +55,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
 (async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-lifecycle-'));
   const HALT_FILE = path.join(ws, 'cron.halt.json');
+  const LOOPS_HALT_FILE = path.join(ws, 'loops.halt.json');
   let booted = await boot(8990 + (process.pid % 40), ws, 20, { SKYNET_CRON_TICK_MS: '300' });
   let child = booted.child; let port = booted.port; let getOut = booted.out;
   const B = () => 'http://' + HOST + ':' + port;
@@ -108,6 +109,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     // count a frozen shift as armed work. (The same POST also durably halts cron — asserted in the next phase.)
     const halt = await j('POST', '/api/halt', {});
     A.eq(halt.status, 200, 'POST /api/halt (E-STOP) -> 200');
+    A.eq(halt.body.cronHaltPersisted, true, 'E-STOP proves the routine halt reached durable storage');
+    A.eq(halt.body.loopsHaltPersisted, true, 'E-STOP proves the loops halt reached durable storage');
     const nsHalted = await j('GET', '/api/lifecycle/armed');
     A.eq(nsHalted.body.categories.nightshift.halted, true, 'after E-STOP: nightshift.halted:true (durable stand-down)');
     A.eq(nsHalted.body.categories.nightshift.armed, true, 'after E-STOP: NS timer still armed (halt freezes beats, not the timer)');
@@ -146,6 +149,62 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(resumed.body.categories.routines.armed, true, 'resume: routines armed again');
     A.eq(resumed.body.categories.routines.halted, false, 'resume: halt flag cleared in the snapshot');
     A.ok(getOut().indexOf('cron tick armed') >= 0, 'resume: the live timer actually re-armed ("cron tick armed")');
+
+    // ---- DURABLE-WRITE FAILURE: immediate RAM halt remains effective, but the response never claims restart safety ----
+    // The first successful E-STOP halted loops even though none existed. Explicitly unhalt, then create one live loop
+    // so both autonomous schedulers have work to stand down during the injected EISDIR failure.
+    const loopUnhalt = await j('POST', '/api/loops/control', { action: 'unhalt' });
+    A.eq(loopUnhalt.status, 200, 'setup: loops explicitly unhalted');
+    const loopCreate = await j('POST', '/api/loops', { name: 'Durability probe', objective: 'summarize the local fixture' });
+    A.eq(loopCreate.status, 200, 'setup: a live loop is created');
+    const cronBeforeFault = fs.readFileSync(HALT_FILE);
+    const loopsBeforeFault = fs.readFileSync(LOOPS_HALT_FILE);
+    fs.unlinkSync(HALT_FILE); fs.mkdirSync(HALT_FILE);          // rename-over-directory => EISDIR/EPERM on durable save
+    fs.unlinkSync(LOOPS_HALT_FILE); fs.mkdirSync(LOOPS_HALT_FILE);
+
+    const failedHalt = await j('POST', '/api/halt', {});
+    A.eq(failedHalt.status, 200, 'write failure: E-STOP still succeeds for the live process');
+    A.eq(failedHalt.body.cronHaltPersisted, false, 'write failure: response denies durable routine halt');
+    A.eq(failedHalt.body.loopsHaltPersisted, false, 'write failure: response denies durable loops halt');
+    const failedCronNow = await j('GET', '/api/cron');
+    const failedLoopsNow = await j('GET', '/api/loops');
+    A.eq(failedCronNow.body.halted, true, 'write failure: routines are still halted immediately in RAM');
+    A.eq(failedLoopsNow.body.halted, true, 'write failure: loops are still halted immediately in RAM');
+    A.eq(failedLoopsNow.body.armed, false, 'write failure: the live loop timer still comes down');
+
+    // Restore the prior durable false records and restart: because the response said persistence failed, resumption is
+    // truthful rather than a hidden reversal. The earlier success-path restart already proves true flags stay halted.
+    try { child.kill(); } catch (_) {} await sleep(250);
+    fs.rmdirSync(HALT_FILE); fs.writeFileSync(HALT_FILE, cronBeforeFault);
+    fs.rmdirSync(LOOPS_HALT_FILE); fs.writeFileSync(LOOPS_HALT_FILE, loopsBeforeFault);
+    booted = await boot(port + 100, ws, 20, { SKYNET_CRON_TICK_MS: '300' });
+    child = booted.child; port = booted.port; getOut = booted.out;
+    apiToken = await bootToken(B(), B());
+    const failedRebootCron = await j('GET', '/api/cron');
+    const failedRebootLoops = await j('GET', '/api/loops');
+    A.eq(failedRebootCron.body.halted, false, 'failed durable routine halt is absent after restart, matching its false receipt');
+    A.eq(failedRebootLoops.body.halted, false, 'failed durable loops halt is absent after restart, matching its false receipt');
+    A.eq(failedRebootLoops.body.armed, true, 'the live loop resumes after the unpersisted halt, exactly as warned');
+
+    // A repaired store can be stamped by the next E-STOP even though the previous process had already set its RAM
+    // flags. Then prove explicit resume paths fail closed when clearing those durable flags cannot be saved.
+    const repairedHalt = await j('POST', '/api/halt', {});
+    A.eq(repairedHalt.body.cronHaltPersisted, true, 'storage recovery: the next E-STOP durably stamps routines');
+    A.eq(repairedHalt.body.loopsHaltPersisted, true, 'storage recovery: the next E-STOP durably stamps loops');
+    const cronHaltedBytes = fs.readFileSync(HALT_FILE);
+    const loopsHaltedBytes = fs.readFileSync(LOOPS_HALT_FILE);
+    fs.unlinkSync(HALT_FILE); fs.mkdirSync(HALT_FILE);
+    fs.unlinkSync(LOOPS_HALT_FILE); fs.mkdirSync(LOOPS_HALT_FILE);
+    const cronResumeFailure = await j('POST', '/api/cron/arm', { enabled: true });
+    const loopResumeFailure = await j('POST', '/api/loops/control', { action: 'unhalt' });
+    A.eq(cronResumeFailure.status, 500, 'cron resume fails when its durable halt cannot be cleared');
+    A.eq(loopResumeFailure.status, 500, 'loop resume fails when its durable halt cannot be cleared');
+    const stillHaltedCron = await j('GET', '/api/cron');
+    const stillHaltedLoops = await j('GET', '/api/loops');
+    A.eq(stillHaltedCron.body.halted, true, 'failed cron resume leaves the live halt in force');
+    A.eq(stillHaltedLoops.body.halted, true, 'failed loop resume leaves the live halt in force');
+    fs.rmdirSync(HALT_FILE); fs.writeFileSync(HALT_FILE, cronHaltedBytes);
+    fs.rmdirSync(LOOPS_HALT_FILE); fs.writeFileSync(LOOPS_HALT_FILE, loopsHaltedBytes);
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);
