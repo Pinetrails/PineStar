@@ -2,7 +2,7 @@
 
 ## 2026-08-01 — ROUTINES P0-P2 CLOSURE (`agent/routines-closure`)
 
-READY TO MERGE. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,
+FOLLOW-UP READY TO MERGE after the first closure merge. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,
 `300b34ab`, `600f4982`, and `aa9cd1cd` are now closed in the canonical QA ledger. This
 closure completes truthful E-STOP state across the ROUTINES panel/countdowns, widgets, `/cron`,
 AutoJobStore, and model-facing routine output; preserves the durable stop across background
@@ -16,7 +16,7 @@ HTTP regressions green; `qa-product-perfect-claims.test.js` 64/64; `test:fast` 4
 `test:http` green (sidecar 459, cron API 79, lifecycle 59, route coverage 75). Seeded Chromium proved
 the stopped banner, `next —`, widget `stopped · E-STOP`, `/cron` resume guidance, and the
 model-facing E-STOP note. A reload initially exposed the beliefs-only resume escape; the final code
-and two real-host suites prove it stays halted across that sync and restart. No external message,
+and the follow-up `b7e18ce8` plus two real-host suites prove both boot posture and beliefs mirrors stay halted across sync and restart; only an explicit dial write carries resume consent. No external message,
 provider spend, push, PR, deploy, publish, credential, or production-data change was performed.
 
 ## 2026-08-01 — UNIFIED COMMANDER RECOMMENDATIONS (`agent/recommendation-unify`)
