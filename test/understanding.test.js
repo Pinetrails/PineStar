@@ -146,7 +146,7 @@ A.eq(U.understanding(D.fresh(), { workSamples: 7.9 }).workSamples, 7, 'workSampl
   const b = U.readiness(blitz);
   A.eq(b.ready, false, 'seed-only beliefs NEVER open the gate (the blitzed-onboarding poison)');
   A.eq(b.grounded.goals, 0, 'a seed belief counts zero grounded evidence');
-  A.ok(b.familiarity > 0.3, 'breadth alone reads high — which is exactly why breadth alone cannot open the gate');
+  A.eq(b.familiarity, 0, 'seed field occupancy contributes no readiness breadth');
 
   // the earned case: direction (goals|ambition) + person (pain|identity) + breadth ≥ floor.
   const warm = D.fresh();

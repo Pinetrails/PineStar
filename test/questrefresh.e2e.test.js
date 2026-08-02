@@ -282,8 +282,12 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
       A.eq(st.northStar.source, 'model', 'the inferred star carries source:model');
       A.eq(st.northStar.status, 'proposed', 'an inference is labelled unconfirmed, never silently adopted');
       A.eq(st.northStarProposed, true, 'the status route flags a pending north-star proposal');
-      // the proposal does NOT block minting — the cycle still grounds on it and mints the grounded quest.
-      A.ok((st.ledger || []).some(e => e.outcome === 'minted'), 'a proposed star still grounds the cycle (the quest minted)');
+      // The model's inferred direction is not authority to create work. Its quest batch is durable but staged;
+      // only the Commander's confirm may turn it into the open quest ledger.
+      A.ok((st.ledger || []).some(e => e.outcome === 'staged'), 'quests inferred under the proposal remain staged');
+      A.eq(st.pendingQuestCount, 1, 'status exposes the pending quest count without claiming an open quest');
+      const beforeQuests = await (await fetch(B + '/api/quests', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      A.eq((beforeQuests.quests || []).filter(x => x.createdBy === 'system:quest-refresh').length, 0, 'no quest mints before direction confirmation');
       // on-disk: the proposal is durable, the adopted star is still empty (nothing silently persisted as adopted).
       const disk = JSON.parse(fs.readFileSync(path.join(ws, '_station.questrefresh.json'), 'utf8')).state;
       A.ok(disk.proposedNorthStar && disk.proposedNorthStar.text === STAR, 'the proposal persisted to disk');
@@ -292,11 +296,15 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
       // CONFIRM → the proposal becomes the adopted star.
       const cRes = await post({ decision: 'confirm' });
       A.ok(cRes.ok && cRes.applied, 'the confirm verdict applied');
+      A.eq(cRes.minted, 1, 'confirm mints the staged quest batch');
       A.eq(cRes.northStarProposed, false, 'after confirm no proposal is pending');
       const after = await (await fetch(B + '/api/quests/refresh', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
       A.eq(after.northStar.status, 'adopted', 'the confirmed star reads adopted');
       A.eq(after.northStar.text, STAR, 'the adopted star is the one the Commander confirmed');
       A.eq(after.northStarProposed, false, 'no proposal pending after confirm');
+      A.eq(after.pendingQuestCount, 0, 'the staged quest batch clears after confirm');
+      const afterQuests = await (await fetch(B + '/api/quests', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      A.eq((afterQuests.quests || []).filter(x => x.createdBy === 'system:quest-refresh').length, 1, 'the quest becomes open only after confirmation');
       const disk2 = JSON.parse(fs.readFileSync(path.join(ws, '_station.questrefresh.json'), 'utf8')).state;
       A.ok(disk2.northStar && disk2.northStar.text === STAR && !disk2.proposedNorthStar, 'confirm persisted the adoption + cleared the proposal');
     } finally {

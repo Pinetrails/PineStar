@@ -49,5 +49,13 @@ A.ok(shifted.kinds.research.weight <= 0.75 && shifted.kinds.writing.weight >= -0
   await store.verdict('life', 'accepted', 'accepted', 30);
   await store.verdict('life', 'completed', 'completed', 40);
   A.eq(store.list({ limit: 1 })[0].transitions.map(t => t.state), ['shown', 'deferred', 'accepted', 'completed'], 'shown-to-completed lifecycle survives durable updates');
+  A.eq(await store.verdict('life', 'declined', 'wrong_thing', 50), null, 'terminal recommendations cannot be rewritten after completion');
+  await store.outcome('life', { quality: 1, costUsd: 0.12, interventions: 1 }, 60);
+  A.eq(store.list({ limit: 1 })[0].outcome.costUsd, 0.12, 'downstream outcome telemetry survives independently of lifecycle state');
+  let learning = false;
+  const pausedStore = R.makeRecommendationLedger({ fs: memfs, path, workspaces: 'C:\\paused', learningEnabled: () => learning, writeDurable: (_deps, file, body) => files.set(file, String(body)) });
+  A.eq(await pausedStore.record({ id: 'paused', title: 'Must not fold' }, 70), null, 'pause blocks new recommendation learning at the durable seam');
+  learning = true;
+  A.ok(await pausedStore.record({ id: 'resumed', title: 'May fold' }, 80), 'resume re-opens the durable learning seam');
   A.report('recommendation-ledger.test');
 })().catch(e => { A.ok(false, e.stack || e); A.report('recommendation-ledger.test'); });

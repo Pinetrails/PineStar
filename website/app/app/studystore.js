@@ -75,12 +75,19 @@ const StudyStore = (() => {
   // the server stash so the latestStudyRun fallback can never re-serve it, and carry the CURRENT studyDeclined
   // denylist so the next runStudy() pass dedups at the source. Fire-and-forget; a failure just means the client-
   // side resolved/declined filters (nextLive) carry the guarantee alone.
-  function resolveOnServer(prop, agentId) {
+  function recommendationId(prop, agentId) { return 'study:' + String(agentId || 'agent') + ':' + String((prop && (prop.id || prop.sourceRunId)) || fingerprint(prop && prop.dim, prop && prop.text)).slice(0, 100); }
+  function ledgerPost(body) {
+    try {
+      const f = (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch : (typeof fetch === 'function' ? fetch : null);
+      if (f) f('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+    } catch (_) {}
+  }
+  function resolveOnServer(prop, agentId, decision) {
     if (!prop || typeof fetch !== 'function') return;
     try {
       fetch('/api/study/resolve', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: agentId || 'agent', runId: prop.sourceRunId || '', id: prop.id || '', declined: declinedList() })
+        body: JSON.stringify({ agentId: agentId || 'agent', runId: prop.sourceRunId || '', id: prop.id || '', decision: decision || '', declined: declinedList() })
       }).catch(() => {});
     } catch (_) {}
   }
@@ -131,7 +138,17 @@ const StudyStore = (() => {
     return null;
   }
   // count one shown proposal against the session budget (the caller calls this when it actually renders a card).
-  function markShown() { sessionShown++; }
+  function markShown(prop, agentId) {
+    sessionShown++;
+    if (!prop) return;
+    ledgerPost({
+      id: recommendationId(prop, agentId), surface: 'study', kind: prop.kind === 'retire' ? 'belief-retire' : 'belief-update',
+      title: String(prop.text || '').slice(0, 240), target: String(prop.id || fingerprint(prop.dim, prop.text)),
+      traits: ['study', String(prop.dim || 'belief')], modelVersion: 'study-v1',
+      evidence: prop.evidence ? [{ id: String(prop.sourceRunId || ''), type: 'run', quote: String(prop.evidence) }] : [],
+      readiness: { ready: true, reasons: ['post_run_evidence'] }
+    });
+  }
 
   // fetch the server-side study proposals for a run (with text). [] on any failure (fail-open).
   async function fetchProposals(runId, agentId) {
@@ -172,7 +189,8 @@ const StudyStore = (() => {
       }
     } catch (_) { ok = false; }
     markResolved(prop);
-    resolveOnServer(prop, agentId);
+    ledgerPost({ id: recommendationId(prop, agentId), state: ok ? 'completed' : 'declined', reason: ok ? 'completed' : 'bad_quality' });
+    resolveOnServer(prop, agentId, ok ? 'accepted' : 'failed');
     return ok;
   }
   // DISCARD: add the belief to the PERMANENT studyDeclined denylist so it's never re-proposed (mirrors the
@@ -182,7 +200,8 @@ const StudyStore = (() => {
     const t = String(prop.text || '').trim();
     if (t && state.declined.indexOf(t) < 0) { state.declined.push(t); while (state.declined.length > DECLINED_CAP) state.declined.shift(); }
     markResolved(prop);            // saves
-    resolveOnServer(prop, agentId);   // carries the updated denylist to the sidecar
+    ledgerPost({ id: recommendationId(prop, agentId), state: 'declined', reason: 'wrong_thing' });
+    resolveOnServer(prop, agentId, 'declined');   // carries the updated denylist to the sidecar
   }
   // FORGET → DENYLIST (2026-07-16 resurrect audit): the COMMANDER panel's Forget must be as durable as a
   // study discard — without this, the study loop re-proposed the exact belief the Commander just forgot

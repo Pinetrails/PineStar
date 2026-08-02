@@ -19,7 +19,7 @@ function registerAgent(id, color) {
    here + a matching sprite set in assets/sprites/manifest.json. `scale` is the
    per-set downscale applied at tint time (crew sprites render on a 92px canvas). */
 DATA.SKINS = {
-  bear:       { name: 'Teddy Bear', set: 'bear',       scale: 0.36 },
+  bear:       { name: 'Teddy Bear', set: 'bear',       scale: 0.425 },   // v2 8-dir master: south content is 39px (was 46) — 0.36*46/39 keeps the canonical on-floor size; kept sit/type/blink masters are pre-scaled x0.8471 to match
   pepe:       { name: 'Pepe',       set: 'pepe',       scale: 0.36 },
   alien:      { name: 'Alien',      set: 'alien',      scale: 0.376 },
   skeleton:   { name: 'Skeleton',   set: 'skeleton',   scale: 0.414 },

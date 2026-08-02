@@ -1,8 +1,41 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-01 — RECOMMENDATION FABRIC 1–5 (`agent/recommendation-fabric`)
+
+READY TO MERGE. The second recommendation audit is implemented as one cross-surface fabric.
+(1) Personalization pause is now durable sidecar authority as well as a browser control; it suppresses
+new interest, workflow-context, ranking-ledger, scout, and night-shift learning. Forget clears every
+derived browser/server model and returns a verified inventory while preserving explicit dossier, goals,
+projects, threads, and task history. Seed-only fields no longer contribute readiness breadth, and quests
+generated under an inferred north star remain staged until the Commander confirms that direction.
+
+(2) Recipes, recruit picks, study updates, routines, recurring ideas, scout drafts, quests, and night-shift
+work now write the same bounded shown/opened/accepted/started/deferred/declined/completed lifecycle. Quest
+completion is recorded only from the contract proof seam; recipe and suggested-work completion comes from
+the resulting run/rating; terminal outcomes cannot be rewritten. (3) One recency-decayed preference model
+over kinds, traits, and projects is served with the scout read and consumed by recipe, recruit, quest, and
+night-shift ranking while retaining each surface's policy/readiness gates. (4) The shared utility ranker
+balances relevance, impact, success, timeliness, novelty, preference, cost, risk, interruption, and duplicate
+penalties; typed wrong-time/already-done verdicts do not poison relevance. (5) The replay CLI now emits an
+offline evaluation scorecard: adoption/completion, precision@3, counterfactual regret, Brier calibration,
+repeat/contradiction, intervention/cost, temporal improvement, and per-surface rates. Its fixed eight-week
+simulation proves that a later automation preference overtakes an earlier research preference.
+
+Verification on the branch head: focused recommendation/readiness/quest/routine/study/suggestion/
+personalization tests green; every touched JavaScript file passes `node --check`; `test:fast` is 495/495
+green; full `test:http` is green (sidecar 459, quest refresh 47, cron API 79, lifecycle 59, route coverage
+75, browser gauntlet 86). A seeded station on `:8879` at `v0.8.0-135-g14b4fac9` proved the complete
+five-state lifecycle and quality outcome, durable pause across restart, model suppression while paused,
+and rejection of a paused write. Replay reported completion/acceptance/evidence/readiness coverage 1,
+precision@3 1, regret 0, Brier 0.0225, and bounded automation weight 0.5. The final Forget returned all
+five derived inventories at zero while explicitly preserving dossier, goals, threads, projects, and task
+history; the seed was stopped. The live single-sample receipt exposed and fixed a false temporal-decline
+metric, which now reports insufficient data. No provider run, external message/write, push, PR, deploy,
+publish, credential, or production-data change was performed.
+
 ## 2026-08-01 — ROUTINES P0-P2 CLOSURE (`agent/routines-closure`)
 
-READY TO MERGE. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,
+FOLLOW-UP READY TO MERGE after the first closure merge. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,
 `300b34ab`, `600f4982`, and `aa9cd1cd` are now closed in the canonical QA ledger. This
 closure completes truthful E-STOP state across the ROUTINES panel/countdowns, widgets, `/cron`,
 AutoJobStore, and model-facing routine output; preserves the durable stop across background
@@ -16,7 +49,7 @@ HTTP regressions green; `qa-product-perfect-claims.test.js` 64/64; `test:fast` 4
 `test:http` green (sidecar 459, cron API 79, lifecycle 59, route coverage 75). Seeded Chromium proved
 the stopped banner, `next —`, widget `stopped · E-STOP`, `/cron` resume guidance, and the
 model-facing E-STOP note. A reload initially exposed the beliefs-only resume escape; the final code
-and two real-host suites prove it stays halted across that sync and restart. No external message,
+and the follow-up `b7e18ce8` plus two real-host suites prove both boot posture and beliefs mirrors stay halted across sync and restart; only an explicit dial write carries resume consent. No external message,
 provider spend, push, PR, deploy, publish, credential, or production-data change was performed.
 
 ## 2026-08-01 — UNIFIED COMMANDER RECOMMENDATIONS (`agent/recommendation-unify`)
