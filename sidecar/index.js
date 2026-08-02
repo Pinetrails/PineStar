@@ -48,6 +48,8 @@ const imageWire = require('./tools/builtin/imagewire.js').makeImageWire({});
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
+const CodeMode = require('./tools/builtin/code.js');                      // code.run: bounded JS composition over this run's read-only grants
+const { makeCodeTools } = CodeMode;
 const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
@@ -61,7 +63,11 @@ const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
-const { makeTranscriptStore } = require('./transcriptstore.js');
+const transcriptStoreModule = require('./transcriptstore.js');
+const { makeTranscriptStore } = transcriptStoreModule;
+const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
+const { makeRunJournal } = require('./run-journal.js');
+const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
@@ -212,12 +218,14 @@ const { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, makeR
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
+const { makeLspManager } = require('./lsp-manager.js');             // lazy installed-language-server edit diagnostics
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeStationTools } = require('./tools/builtin/station.js');               // session verbs (list/create/focus) over the station bridge
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
 const { makeCommsTools } = require('./tools/builtin/comms.js');      // COMMS: outbound reach — an agent messages a connected chat
 const cronGuard = require('./cron-guard.js');                        // routine prompt-injection tripwire (pure, see file header)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
+let lspManager = null;   // initialized beside procLedger so abrupt desktop-sidecar death is recoverable on next boot
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser WebRTC voice coordinator; API key never leaves this process
@@ -566,7 +574,7 @@ function loadResilient(file, tag) {
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
 
 /* ---- P3 bounded append-only JSONL logs ----
-   The ledger / run-history / transcript are append-only and were read into RAM IN FULL at boot
+   The ledger / run-history are append-only and were read into RAM IN FULL at boot
    (fs.readFileSync(FILE).split('\n')) and never rotated, so months of 24/7 use grow them without bound
    until a single boot-time readFileSync crash-loops startup. readBoundedJsonl loads only the last
    LOG_MAX_BYTES of (archive + live) at boot (newest lines), and rotateJsonl rolls the live file to
@@ -816,26 +824,41 @@ function attachStreamKeepAlive(res) {
   return () => clearInterval(t);
 }
 
-// durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
+// durable per-workstream CONVERSATION transcript (P0.1): segmented append-only + fsync/read-back proven, a SIBLING of
 // the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
 // authoritative, append-only record covering EVERY surface, including headless cron/Telegram/delegated runs
 // that have no browser ws.history (the interactive browser conversation already persists durably via the
 // save-envelope mirror in cloudsave.js/savestore.js). The reference harness keeps a SQLite transcript for all surfaces; this
-// closes that gap for the headless paths + gives an autopsy/replay substrate. Content is redacted on write.
+// closes that gap for the headless paths + gives an autopsy/replay substrate. Closed numbered segments are
+// immutable and indexed; only a bounded recent tail enters RAM, while recall searches lifetime history lazily.
+// Content is redacted on write. Legacy transcript.jsonl(.1) files remain untouched after verified import.
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
-const transcriptIo = {
-  readAll() {
-    try { return readBoundedJsonl(TRANSCRIPT_FILE); } catch (e) { return []; }   // P3: bounded boot-load
-  },
-  append(entry) {
-    let fd = null;
-    try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
-    catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
-    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-    rotateJsonl(TRANSCRIPT_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
-  }
-};
+const transcriptIo = makeSegmentedTranscriptIo({
+  fs: fs,
+  path: path,
+  root: path.join(WORKSPACES, 'transcript-history-v2'),
+  legacyFiles: [TRANSCRIPT_FILE + '.1', TRANSCRIPT_FILE],
+  segmentBytes: Math.max(64 * 1024, num(ENV('TRANSCRIPT_SEGMENT_BYTES'), 4 * 1024 * 1024)),
+  recentPerStream: 1200,
+  writeDurable: writeFileDurable,
+  onWarning: (message) => console.warn('[transcript] ' + message)
+});
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
+// Active runs journal their provider-valid message and tool side-effect boundaries outside the agent fs jail.
+// Finished journals remain until the segmented transcript store acknowledges their final durable checkpoint;
+// this avoids deleting the only recovery copy after the legacy transcript writer's fail-open append.
+const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
+let recoveredRunJournals = [];
+try {
+  recoveredRunJournals = runJournal.recoverAll().filter(r => {
+    if (!r) return false;
+    // A durable transcript acknowledgement is the commit record. If the process died between that record and
+    // unlink, finish the idempotent retirement now; all other states remain visible for human-led recovery.
+    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
+    return true;
+  });
+  if (recoveredRunJournals.length) console.warn('[run-journal] interrupted run(s) awaiting recovery:', recoveredRunJournals.length);
+} catch (e) { console.warn('[run-journal] recovery scan failed:', (e && e.message) || e); }
 
 // H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of
 // the fs jail (the agent's fs.* tools can't reach it). Singleton (persists across runs); redacted on write.
@@ -2781,6 +2804,9 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 // TerminateProcess (uncatchable — see gracefulShutdown), so children recorded here are swept at the NEXT
 // boot, and a cursor confinement a dead child left stuck on the user's desktop is released.
 const procLedger = makeProcLedger({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'proc-ledger.json'), clock: { now: () => Date.now() }, log: (m) => console.log(m) });
+// Lazy: this starts no process at boot. A supported edit with an already-installed server is the first spawn;
+// every child is ledgered so the next boot can reap it after an uncatchable desktop TerminateProcess.
+lspManager = makeLspManager({ spawn: childSpawn, fs, fsp, pathMod: path, env: process.env, ledger: procLedger });
 const inputGuard = makeInputGuard({ log: (m) => console.log(m) });
 if (require.main === module) {
   // real host boot only (unit tests require() this file and must not probe/kill or touch the real cursor state)
@@ -6780,6 +6806,7 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/save', h: serveSaveLoad },
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
+  { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
@@ -6982,6 +7009,7 @@ function gracefulShutdown(signal) {
   // the boot-time ensureFree is the reliable cover for the force-kill path this handler can't see at all)
   try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.observe('shutdown').catch(() => {}); } catch (_) {}
   try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
+  try { if (typeof lspManager !== 'undefined' && lspManager && lspManager.closeAll) Promise.resolve(lspManager.closeAll()).catch(() => {}); } catch (_) {}   // reap detected language-server children
   try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
   try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
   try { stopTelegram(); } catch (_) {}   // disconnect the Telegram long-poll adapter
@@ -10869,7 +10897,7 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire, editDiagnostics: lspManager }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6); baseline-before-edit LSP feedback
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -10887,6 +10915,7 @@ async function runOnce(o) {
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
+  makeCodeTools({}).register(registry);   // code.run — child Node/vm owns no authority; every nested read returns through this run's parent dispatcher
   makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
@@ -11567,6 +11596,7 @@ async function runOnce(o) {
   // run PRODUCED (files/images/channel sends) — recorded onto the runStore row at run end and served over
   // GET /api/runs. Pure + capped (sidecar/artifacts.js); a collector hiccup must never break a run.
   const artifactLedger = makeArtifactCollector();
+  let journalStarted = false;
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
     else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
@@ -11656,7 +11686,19 @@ async function runOnce(o) {
       } catch (_) { /* a checkpoint failure must never break a run */ }
     }
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
+    // Persist the exact call before it can have side effects. If the process dies after this barrier but before a
+    // durable result, restart classifies the outcome as unknown and never replays it automatically.
+    if (journalStarted) runJournal.toolIntent(runId, {
+      callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
+      mutating: !!(liveTool && liveTool.scope !== 'read')
+    });
     let r = await registry.dispatch(c, dctx);
+    // Persist the full model-visible result before the loop advances to another call/turn. A journal write failure
+    // throws here, leaving the intent unmatched and therefore review-required after restart.
+    if (journalStarted) runJournal.toolResult(runId, {
+      callId: c.id, ok: !!(r && r.ok), isError: !!(r && r.isError),
+      content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
+    });
     // TASTE EXTRACTION (announce-and-act): a successful brief.proceed IS the product moment — the model's
     // settled READ (objective + correctable assumptions, incl. its taste guesses) surfaces to COMMS as a
     // non-blocking card while the run continues. Internal brief controls stay hidden from tool telemetry;
@@ -11700,6 +11742,48 @@ async function runOnce(o) {
     if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
     else seen.delete(sig);
     return r;
+  };
+
+  // CODE MODE COMPOSITION. The child process gets no registry, credentials or ambient authority; every
+  // `tool(name,args)` crosses this function and re-enters the SAME dispatch closure used by ordinary model
+  // calls. That preserves live withholding, authority, hooks, taint latching, output budgets and the run
+  // journal. V1 is intentionally READ-ONLY: programmatic composition is a context-saving reasoning primitive,
+  // not a way to batch mutations or route around consent. Mutation/team/code recursion is refused BEFORE an
+  // intent can be journaled. Nested results go only to the child; the model sees code.run's final aggregation.
+  capCtx.composeDispatch = async (request, nestedMeta) => {
+    const requested = String((request && request.name) || '').trim();
+    const realName = fromWire.get(requested) || allWire.get(requested) || requested;
+    const nestedTool = registry.get(realName);
+    const seq = Math.max(1, Number(nestedMeta && nestedMeta.sequence) || 1);
+    const parentCallId = String((nestedMeta && nestedMeta.parentCallId) || capCtx.callId || 'code');
+    const callId = parentCallId + ':nested:' + seq;
+    let args = request && request.args;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+    let argsRaw = '{}';
+    try { argsRaw = JSON.stringify(args); } catch (_) { throw new Error('nested tool arguments must be JSON-serializable'); }
+    const call = { id: callId, name: realName, args, argsRaw };
+    emit('agent.tool_call', { agentId, runId, callId, name: realName || 'unknown', argsSummary: argsRaw.slice(0, 240) });
+
+    const refusal = CodeMode._internals.refusalForNested(realName || requested, nestedTool, grantedSet);
+    if (refusal) {
+      emit('agent.tool_result', { agentId, runId, callId, ok: false, ms: 0, summary: 'code-nested-denied', isError: true });
+      throw new Error(refusal);
+    }
+
+    const started = Date.now();
+    const result = await dispatch(call, capCtx);
+    emit('agent.tool_result', {
+      agentId, runId, callId, ok: !!(result && result.ok), ms: Math.max(0, Date.now() - started),
+      summary: (result && result.summary) || (result && result.isError ? 'error' : 'ok'), isError: !!(result && result.isError)
+    });
+    if (!result || result.isError) throw new Error(String((result && result.content) || 'nested tool failed'));
+    const content = result.content == null ? '' : result.content;
+    if (typeof content !== 'string') return content;
+    const trimmed = content.trim();
+    if (trimmed && /^[\[{]/.test(trimmed)) {
+      try { return JSON.parse(trimmed); } catch (_) {}
+    }
+    return content;
   };
 
   // tell the model, plainly + capability-driven, that it has real tools right now (so it never claims it can't act)
@@ -12032,6 +12116,21 @@ async function runOnce(o) {
   // rebuilds the same array in place and SHORTER, leaving the index past the end and dropping the entire run's
   // dialogue with no error. See the PERSISTED marker in transcriptstore.js.
   transcriptStore.markPersisted(msgs);
+  if (!internal) {
+    try {
+      runJournal.begin({
+        runId, agentId, streamId: o.streamId || 'global', trigger, model,
+        userTitle: latestUserText(msgs), startedAt: Date.now()
+      });
+      runJournal.checkpoint(runId, { phase: 'initial', turn: 0, messages: msgs });
+      journalStarted = true;
+    } catch (e) {
+      emit('agent.run.start', { agentId, runId, trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: false, message: 'Run could not start safely because its recovery journal could not be persisted: ' + String((e && e.message) || e) });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+  }
   let bufferedTaskEnd = null;
   // Hold a successful user-facing Task Brief end until the final text is known; a question maps to the
   // contract's additive `clarifying` terminal (neither product nor slag — every success path keys on 'done').
@@ -12093,6 +12192,16 @@ async function runOnce(o) {
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       steer: () => drainSteer(runId),   // LIVE STEERING: fold any mid-run /steer notes into the next model call
       signal: signal, clock: { now: () => Date.now() },
+      onCheckpoint: journalStarted ? ({ phase, messages: checkpointMessages, turn }) => {
+        // Initial prompt messages carry transcriptStore's non-enumerable PERSISTED marker. Everything without it
+        // was created by this run, so compaction cannot invalidate the boundary and recovery avoids duplicating
+        // the historical seed. System continuation/guard messages remain included because provider resumption
+        // must receive a valid context, even though the user-facing transcript later omits them.
+        const fresh = Array.isArray(checkpointMessages)
+          ? checkpointMessages.filter(m => m && typeof m === 'object' && (!TRANSCRIPT_PERSISTED || !m[TRANSCRIPT_PERSISTED]))
+          : [];
+        runJournal.checkpoint(runId, { phase, turn, messages: fresh });
+      } : null,
       agentId, runId, model, trigger: trigger,
       // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
@@ -12174,8 +12283,20 @@ async function runOnce(o) {
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
-      if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
-      if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
+      if (journalStarted) {
+        // Retirement is ordered strictly: each transcript row is fsync/read-back proven, then the journal records
+        // that acknowledgement, then (and only then) is the recovery copy removed. A throw leaves it discoverable.
+        if (title) transcriptStore.appendStrict({ streamId: o.streamId, agentId, role: 'user', content: title, sourceRunId: runId });
+        if (result && Array.isArray(result.messages)) transcriptStore.appendNewStrict(o.streamId, agentId, result.messages, { sourceRunId: runId });
+        runJournal.finish(runId, {
+          reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd,
+          transcriptAck: true
+        });
+        runJournal.remove(runId);
+      } else {
+        if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
+        if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
+      }
     } catch (_) {}
     // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest
     // whose run-contract is bound to this runId (bound at the injection seam / the quest.update progress tick);
@@ -14766,6 +14887,38 @@ function serveRuns(req, res) {
     // on r.ok (chat.js, autosessions.js, returnstore.js, world.js) or a safe [] default (stationui.js).
     json(500, { error: 'could not read run history: ' + ((e && e.message) || e) });
   }
+}
+
+// GET /api/run-recoveries — authenticated by the shared /api gate, read-only, and intentionally conservative.
+// It exposes safe checkpoint dialogue plus tool names/call ids, never raw tool arguments or results. An uncertain
+// side effect is review-required; the harness does not replay it or claim that it did/didn't happen.
+function serveRunRecoveries(req, res) {
+  const safeMessage = m => {
+    const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
+    if (m && m.tool_call_id) out.tool_call_id = String(m.tool_call_id);
+    if (m && Array.isArray(m.tool_calls)) out.tool_calls = m.tool_calls.map(c => ({
+      id: String((c && c.id) || ''), type: 'function', function: { name: String((c && c.function && c.function.name) || '') }
+    }));
+    return out;
+  };
+  const rows = recoveredRunJournals.map(r => ({
+    runId: String(r.runId || ''),
+    agentId: String((r.meta && r.meta.agentId) || ''),
+    streamId: String((r.meta && r.meta.streamId) || 'global'),
+    startedAt: Number((r.meta && r.meta.startedAt) || 0),
+    userTitle: String((r.meta && r.meta.userTitle) || '').slice(0, 1000),
+    status: r.status,
+    corrupt: !!r.corrupt,
+    repaired: !!r.repairedFrom,
+    repairError: r.repairError ? String(r.repairError).slice(0, 500) : '',
+    uncertain: (r.uncertain || []).map(x => ({ callId: String(x.callId || ''), name: String(x.name || '') })),
+    checkpoint: {
+      phase: String((r.checkpoint && r.checkpoint.phase) || ''),
+      turn: Number((r.checkpoint && r.checkpoint.turn) || 0),
+      messages: Array.isArray(r.checkpoint && r.checkpoint.messages) ? r.checkpoint.messages.slice(-200).map(safeMessage) : []
+    }
+  }));
+  respondJson(res, 200, { recoveries: rows });
 }
 
 // GET /api/autonomy/ledger?limit=N&source=&kind= — NS-0: the recent AUTONOMY DECISION LEDGER (cron fire/skip/

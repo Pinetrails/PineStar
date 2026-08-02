@@ -36,7 +36,8 @@
       // would make this permanently absent — the exact trap quest.update hit). No TOOLSETS_META row, so it is
       // not a toggleable family: switching it off would strand every deferred tool behind a tool that no
       // longer exists. It is never itself deferred — the finder cannot be the thing that must be found.
-      { capId: 'toolsearch', tool: 'tool.search', scope: 'read', requiresConsent: false, network: false }
+      { capId: 'toolsearch', tool: 'tool.search', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'code', tool: 'code.run', scope: 'read', requiresConsent: false, network: false }
     ],
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)

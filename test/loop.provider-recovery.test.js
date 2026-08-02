@@ -118,8 +118,8 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
     A.eq(res.tokens, 0, 'no usage -> zero tokens');
   }
 
-  // (3) finishReason SURFACED: a turn that finishes with 'length' (truncated) puts finishReason on the return
-  //     value, WITHOUT changing reason (still 'done', so the reflection/study gate in index.js is unaffected).
+  // (3) finishReason SURFACED when semantic continuation is explicitly disabled: the legacy/cut-short result
+  //     remains available for callers that opt out of automatic continuation.
   {
     const { emit } = setup();
     const provider = scriptedProvider(async function* () {
@@ -127,7 +127,7 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
       yield { type: 'usage', usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } };
       yield { type: 'done', finishReason: 'length' };
     });
-    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r', limits: { outputContinuation: false } });
     A.eq(res.reason, 'done', 'a length-truncated turn still ends reason=done (gate unbroken)');
     A.eq(res.finishReason, 'length', 'finishReason=length is surfaced additively on the return value');
   }

@@ -7,9 +7,9 @@
    interpret(), emits the verify.result rung (the war-room pass/fail glow), and hands the model a clear verdict.
 
    It is a 'workbench'/execute capability exactly like shell.exec — same danger gate: interactive prompts, the
-   autonomous EXEC-LOCKOUT denies it, and the host auto-checkpoints before it runs. Diagnostics-delta (the LSP
-   lint noise filter) is the pure diagnosticDelta() in verify.js, ready for a future linter provider; the
-   test-runner path reports added/removed = 0.
+   autonomous EXEC-LOCKOUT denies it, and the host auto-checkpoints before it runs. Edit-time LSP deltas are
+   supplied separately by lsp-manager.js at the fs mutation boundary; this test-runner path continues to report
+   added/removed = 0 because a project command is a different proof source.
 
    makeVerifyTool({ spawn, fs, pathMod, root, redact?, clock?, limits? }) -> { verifyTool, register(reg) } */
 'use strict';
