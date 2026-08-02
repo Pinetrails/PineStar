@@ -336,6 +336,7 @@ test/newhero-reset.test.js
 test/harness-internal.test.js
 test/chat-runmeta.test.js
 test/chat-stopped-retry.test.js
+test/comms-history-pin.test.js
 test/chat-linkify.test.js
 test/mint.test.js
 test/ctxgauge.test.js
@@ -424,6 +425,7 @@ test/toolsearch.test.js
 test/consent.interactive.test.js
 test/consentwait.test.js
 test/consent-visibility.test.js
+test/estop-persistence-ui.test.js
 test/channels.adapter.test.js
 test/channels.proxy-fetch.test.js
 test/channels.owner-pairing.test.js
