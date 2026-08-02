@@ -11,11 +11,11 @@
  * THE LAW IT ENFORCES (READY-GATE, docs/DECISIONS.md + .claude/skills/starnet-verify): no session,
  * report, or doc may claim StarNet is release-ready / "ready" / "go-public-able" without a fresh
  * `npm run qa:ready` receipt printed alongside the claim. Lane-level done stays lane-level.
- * Scope boundary: READY is this five-check release-readiness aggregate only. It is not exhaustive
+ * Scope boundary: READY is this six-check release-readiness aggregate only. It is not exhaustive
  * product-perfection proof and must never be reported as `PRODUCT PERFECT`; that exact verdict is
  * reserved to `npm run qa:product-perfect` after its candidate-bound W0–W7 campaign passes.
  *
- * THE FIVE CHECKS (each grounded in a real artifact; a check that CANNOT run is NOT READY — loud):
+ * THE SIX CHECKS (each grounded in a real artifact; a check that CANNOT run is NOT READY — loud):
  *   1. ledger      — open P0/P1 findings == 0. Counted by the ledger's OWN authority
  *                    (scripts/qa/ledger.mjs openBySeverity()); we never re-parse status/severity.
  *   2. guardian    — last cycle GREEN, FRESH (<=24h), and it saw the CURRENT trunk head (no drift):
@@ -49,6 +49,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { makeLedger } from './ledger.mjs';
+import { makeBugRegister } from './bugs.mjs';
 import {
   KINDS,
   classifyProvenance,
@@ -127,6 +128,22 @@ export function checkLedger(input) {
     return { id: 'ledger', label: 'Ledger open P0/P1', ok: false, reason: blocking + ' open blocking finding' + (blocking === 1 ? '' : 's') + ' (' + p0 + ' P0 · ' + p1 + ' P1) — the ledger must be clear of P0/P1', receipt: receipt(artifact, '', value) };
   }
   return { id: 'ledger', label: 'Ledger open P0/P1', ok: true, reason: 'no open P0/P1 findings', receipt: receipt(artifact, '', value) };
+}
+
+// Canonical per-bug register check. Counts must come from bugs.mjs, which owns status parsing.
+export function checkBugRegister(input) {
+  input = input || {};
+  const artifact = input.artifact || 'qa/bugs/ (via bugs.mjs)';
+  const mk = (ok, reason, value) => ({ id: 'bugs', label: 'Bug register open P0/P1', ok, reason, receipt: receipt(artifact, '', value) });
+  if (input.error) return mk(false, 'could not read or validate the bug register: ' + str(input.error), 'ERROR');
+  const c = input.counts || {};
+  const p0 = num(c.P0), p1 = num(c.P1), p2 = num(c.P2);
+  const blocking = p0 + p1;
+  const value = p0 + ' P0 Â· ' + p1 + ' P1 Â· ' + p2 + ' P2';
+  if (blocking > 0) {
+    return mk(false, blocking + ' open blocking bug' + (blocking === 1 ? '' : 's') + ' (' + p0 + ' P0 Â· ' + p1 + ' P1) â€” qa/bugs must be clear of P0/P1', value);
+  }
+  return mk(true, 'no open/claimed P0/P1 bugs', value);
 }
 
 // ---- CHECK 2: guardian last cycle GREEN + fresh + saw current trunk ------------------------------
@@ -419,6 +436,7 @@ export function evaluate(artifacts, cfg) {
   artifacts = artifacts || {}; cfg = cfg || {};
   const checks = [
     checkLedger(artifacts.ledger),
+    checkBugRegister(artifacts.bugs),
     checkGuardian(artifacts.guardian, cfg),
     checkJourneys(artifacts.journeys, cfg),
     checkBeginner(artifacts.beginner, cfg),
@@ -521,6 +539,31 @@ if (INVOKED_DIRECTLY) {
     } catch (e) { return { error: e && e.message || String(e) }; }
   })();
 
+  // ---- CHECK 2 input: the canonical per-bug register's own parser, validator and counts ----
+  const bugsInput = (() => {
+    try {
+      const bugsDir = path.join(QA_DIR, 'bugs');
+      const reg = makeBugRegister({
+        io: {
+          listBugs() {
+            let names; try { names = fs.readdirSync(bugsDir); }
+            catch (e) { throw new Error('bugs directory unreadable: ' + (e && e.message || e)); }
+            return names.filter(n => n.endsWith('.md') && n !== 'README.md').sort().map(n => {
+              try { return { file: n, text: fs.readFileSync(path.join(bugsDir, n), 'utf8') }; }
+              catch (e) { throw new Error('bug unreadable ' + n + ': ' + (e && e.message || e)); }
+            });
+          },
+          writeBug() { throw new Error('READY gate bug register is read-only'); },
+          knownFingerprints() { return readKnownFingerprints(); },
+        },
+      });
+      const valid = reg.validate();
+      if (!valid.ok) return { error: valid.errors.join('; ') };
+      const c = reg.counts();
+      return { counts: { P0: c.bySeverity.P0, P1: c.bySeverity.P1, P2: c.bySeverity.P2 } };
+    } catch (e) { return { error: e && e.message || String(e) }; }
+  })();
+
   // ---- git: current trunk head + how far the guardian's cycle is BEHIND it (trunk drift) ----
   const git = (args) => {
     const r = spawnSync('git', args, { cwd: REPO, encoding: 'utf8', windowsHide: true });
@@ -569,7 +612,7 @@ if (INVOKED_DIRECTLY) {
   cfg.currentTree = installedInspection.candidateTree;
   const installedInput = installedInspection.input;
 
-  const verdict = evaluate({ ledger: ledgerInput, guardian: guardianInput, journeys: journeysInput, beginner: beginnerInput, installed: installedInput }, cfg);
+  const verdict = evaluate({ ledger: ledgerInput, bugs: bugsInput, guardian: guardianInput, journeys: journeysInput, beginner: beginnerInput, installed: installedInput }, cfg);
 
   if (process.argv.includes('--json')) {
     process.stdout.write(JSON.stringify({
