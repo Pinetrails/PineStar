@@ -52,8 +52,10 @@ A.ok(/Get-AuthenticodeSignature/.test(trust) && /Status -ne 'Valid'/.test(trust)
 A.ok(/TimeStamperCertificate/.test(trust), 'trust proof requires a trusted timestamp');
 A.ok(/skynet-desktop\.exe/.test(trust), 'trust proof checks the StarNet executable');
 A.ok(/\*-setup\.exe/.test(trust), 'trust proof checks the NSIS installer');
-A.ok(/node-x86_64-pc-windows-msvc\.exe/.test(trust),
-  'trust proof checks the bundled Node runtime');
+A.ok(/Start-Process[\s\S]*-ArgumentList '\/S',[\s\S]*\/D=\$installRoot/.test(trust),
+  'trust proof silently installs the exact NSIS candidate into an isolated root');
+A.ok(/Get-ChildItem -LiteralPath \$installRoot[\s\S]*-Filter 'node\.exe'/.test(trust),
+  'trust proof checks the bundled Node runtime from the installed payload');
 A.ok(/CN=Andrew Sims/.test(trust), 'StarNet binaries must carry the verified publisher identity');
 A.ok(/CN=OpenJS Foundation/.test(trust), 'bundled Node must retain its upstream publisher identity');
 

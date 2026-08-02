@@ -52,6 +52,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # A manual recovery run executes the repaired workflow from trunk, but every
+          # release assertion and build input must still come from the immutable tag.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -99,6 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -249,7 +253,12 @@ jobs:
             SIGN_CFG='{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a starnet-signing -c starnet-public %1"}}}'
             echo "::notice::Windows Authenticode signing ENABLED (Azure Artifact Signing: starnet-signing/starnet-public)"
           fi
-          npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET} ${SIGN_CFG:+--config "$SIGN_CFG"}
+          # linuxdeploy otherwise collapses every plugin/download/dependency error into the
+          # same opaque `failed to run linuxdeploy` line. Keep Linux verbose permanently so
+          # a failed public train is actionable on its first attempt.
+          VERBOSE=""
+          if [ "$RUNNER_OS" = "Linux" ]; then VERBOSE="--verbose"; fi
+          npm run tauri -- build --bundles ${{ matrix.bundles }} $VERBOSE ${RUST_TARGET:+--target $RUST_TARGET} ${SIGN_CFG:+--config "$SIGN_CFG"}
 
       # P1.5 build provenance assertion — prove the binary this leg produced was built from a CLEAN checkout at the
       # tagged commit, and that build.rs actually embedded that commit into the exe. Two independent checks:
@@ -414,20 +423,41 @@ jobs:
             Write-Host "::notice::[$env:TARGET] $Label Authenticode valid + timestamped: $($signature.SignerCertificate.Subject)"
           }
 
-          $app = Get-ChildItem -Path 'src-tauri/target' -Recurse -File -Filter 'skynet-desktop.exe' |
-            Where-Object { $_.Directory.Name -eq 'release' } |
-            Select-Object -First 1
           $installer = Get-ChildItem -Path 'src-tauri/target' -Recurse -File -Filter '*-setup.exe' |
             Where-Object { $_.FullName -match '[\\/]bundle[\\/]nsis[\\/]' } |
             Select-Object -First 1
-          $node = 'src-tauri/binaries/node-x86_64-pc-windows-msvc.exe'
 
-          if ($null -eq $app) { throw "[$env:TARGET] could not locate skynet-desktop.exe" }
           if ($null -eq $installer) { throw "[$env:TARGET] could not locate the NSIS setup executable" }
 
-          Assert-Authenticode -Label 'StarNet executable' -Path $app.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
+          # Tauri temporarily patches + signs target/release/skynet-desktop.exe for NSIS,
+          # embeds those signed bytes, then restores the raw build output. Verifying that
+          # restored file produces a false NotSigned verdict. Install the exact candidate
+          # silently into the ephemeral runner and verify what users will actually execute.
+          $installRoot = Join-Path $env:RUNNER_TEMP 'starnet-authenticode-install'
+          if (Test-Path -LiteralPath $installRoot) {
+            $resolvedTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\\') + '\\'
+            $resolvedInstall = [IO.Path]::GetFullPath($installRoot).TrimEnd('\\') + '\\'
+            if (-not $resolvedInstall.StartsWith($resolvedTemp, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "[$env:TARGET] refusing to clean install proof outside RUNNER_TEMP: $resolvedInstall"
+            }
+            Remove-Item -LiteralPath $installRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $installRoot | Out-Null
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installRoot" -PassThru -Wait
+          if ($install.ExitCode -ne 0) {
+            throw "[$env:TARGET] NSIS verification install exited $($install.ExitCode)"
+          }
+
+          $app = Get-ChildItem -LiteralPath $installRoot -Recurse -File -Filter 'skynet-desktop.exe' |
+            Select-Object -First 1
+          $node = Get-ChildItem -LiteralPath $installRoot -Recurse -File -Filter 'node.exe' |
+            Select-Object -First 1
+          if ($null -eq $app) { throw "[$env:TARGET] installed payload has no skynet-desktop.exe" }
+          if ($null -eq $node) { throw "[$env:TARGET] installed payload has no bundled node.exe" }
+
           Assert-Authenticode -Label 'NSIS installer' -Path $installer.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
-          Assert-Authenticode -Label 'bundled Node runtime' -Path $node -PublisherPattern 'CN=OpenJS Foundation(?:,|$)'
+          Assert-Authenticode -Label 'installed StarNet executable' -Path $app.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
+          Assert-Authenticode -Label 'installed bundled Node runtime' -Path $node.FullName -PublisherPattern 'CN=OpenJS Foundation(?:,|$)'
 
       # macOS pre-notarization trust proof. Signing can fail SILENTLY GREEN in three ways,
       # each of which ships
@@ -572,6 +602,8 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -606,6 +638,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -668,6 +702,8 @@ jobs:
       REPO: androoAGI/starnet-releases
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Resolve version
         id: ver
