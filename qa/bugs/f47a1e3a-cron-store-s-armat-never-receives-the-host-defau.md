@@ -4,10 +4,10 @@ slug: cron-store-s-armat-never-receives-the-host-defau
 title: cron-store's armAt never receives the host defaultTz, so a tz-less cron routine's FIRST nextRunAt is UTC-anchored while every later advance uses local — the mar
 surface: autonomy
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/autonomy
-fix: 
+fix: 226cec3c
 ---
 
 # cron-store's armAt never receives the host defaultTz, so a tz-less cron routine's FIRST nextRunAt is UTC-anchored while every later advance uses local — the mar
@@ -42,4 +42,4 @@ _Found by the `sweep/autonomy` lane, 2026-07-28. Finder confidence: high. Severi
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Confirmed and fixed in `226cec3c`. The sidecar now injects its resolved host timezone through every store arm/re-arm path, while an explicit routine timezone still wins. The live API preview/create comparison in America/New_York produced the identical first fire (`2026-08-02T13:00:00.000Z`), and the cron-store regression suite covers create, update, resume, and terminal-error re-arm behavior.
