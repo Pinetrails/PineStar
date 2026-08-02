@@ -244,7 +244,15 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
     tg.pushText(TOK_A, 900, 77, 'owner again');
     await waitUntil(() => tg.perToken[TOK_A].sends.length > aSendsBefore, 8000, 'owner still gets replies after the stranger');
 
-    // ---- 7. disconnect bot A: ITS poller stops; bot B keeps polling ----
+    // ---- 7. malformed disconnect is inert; then a valid disconnect stops exactly bot A ----
+    const botsBeforeMalformed = fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8');
+    const badDisconnect = await fetch(B + '/api/channels/telegram/bots/111/disconnect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: '{bad'
+    });
+    A.eq(badDisconnect.status, 400, 'malformed per-bot disconnect -> 400');
+    A.eq(fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8'), botsBeforeMalformed, 'malformed per-bot disconnect leaves durable bot configuration byte-identical');
+    A.ok((await api('GET', '/api/channels/telegram/status')).j.bots.find(b => b.botId === '111').connected, 'malformed per-bot disconnect leaves its poller connected');
+
     const off = await api('POST', '/api/channels/telegram/bots/111/disconnect', {});
     A.eq(off.status, 200, 'bot A disconnect 200');
     await sleep(400);

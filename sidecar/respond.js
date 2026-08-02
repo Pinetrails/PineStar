@@ -37,7 +37,10 @@ function json(res, code, obj) {
 // failure (bad JSON, or a readBody rejection — incl. 413 too-large, which readBody itself already
 // answered when `res` was passed; the caller's json() no-ops after that thanks to the guard above).
 async function readJsonBody(req, readBody, max, res) {
-  try { return JSON.parse(await readBody(req, max, res)) || {}; }
+  try {
+    const raw = await readBody(req, max, res);
+    return String(raw == null ? '' : raw).trim() ? (JSON.parse(raw) || {}) : {};
+  }
   catch (_) { return null; }
 }
 

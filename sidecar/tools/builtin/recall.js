@@ -61,6 +61,7 @@
         properties: {
           query: { type: 'string', description: 'words or a phrase to find in your earlier dialogue' },
           scope: { type: 'string', enum: ['stream', 'all'], description: 'search THIS workstream (default) or every workstream' },
+          anchor: { type: 'string', description: 'a stable id=tx-N anchor from a search result (preferred when timestamps collide)' },
           around: { type: 'integer', description: 'a t= stamp from an earlier result — returns the turns surrounding it' },
           stream: { type: 'string', description: 'workstream id for `around` (defaults to the active one)' },
           limit: { type: 'integer', description: 'max matches to return (default 5)' }
@@ -73,15 +74,16 @@
         const limit = (Number(a.limit) > 0) ? Math.min(Number(a.limit), 20) : 5;
 
         // ---- SCROLL: read around an anchor stamp ----
-        if (a.around != null && a.around !== '' && typeof transcriptStore.around === 'function') {
-          const anchor = Number(a.around);
-          if (!isFinite(anchor) || anchor <= 0) return { content: 'Pass `around` as a t= stamp copied from an earlier result.', summary: 'bad anchor' };
+        if ((a.anchor || (a.around != null && a.around !== '')) && typeof transcriptStore.around === 'function') {
+          const stable = a.anchor == null ? '' : String(a.anchor);
+          const anchor = stable || Number(a.around);
+          if ((!stable && (!isFinite(anchor) || anchor <= 0)) || (stable && !/^tx-\d+$/.test(stable))) return { content: 'Pass `anchor` as an id=tx-N value or `around` as a t= stamp copied from an earlier result.', summary: 'bad anchor' };
           const where = a.stream ? String(a.stream) : streamId;
           let win = [];
           try { win = transcriptStore.around(where, anchor, { window: limit }) || []; } catch (_) { win = []; }
-          if (!win.length) return { content: 'No turns found around t=' + anchor + (where ? ' in workstream "' + where + '"' : '') + '.', summary: '0 turns' };
+          if (!win.length) return { content: 'No turns found around ' + (stable ? 'id=' : 't=') + anchor + (where ? ' in workstream "' + where + '"' : '') + '.', summary: '0 turns' };
           const body = win.map(r => '[' + r.role + ' · t=' + r.ts + '] ' + oneLine(r.content, SNIPPET)).join('\n');
-          return { content: 'Turns around t=' + anchor + (where ? ' in "' + where + '"' : '') + ':\n' + body, summary: win.length + ' turn(s)' };
+          return { content: 'Turns around ' + (stable ? 'id=' : 't=') + anchor + (where ? ' in "' + where + '"' : '') + ':\n' + body, summary: win.length + ' turn(s)' };
         }
 
         // ---- BROWSE: which workstreams exist ----
@@ -124,13 +126,13 @@
         const crossStream = wantAll || widened;
         const body = hits.map((h, i) => {
           const tag = (crossStream && h.streamId ? '[' + h.streamId + ' · ' : '[') + h.role + ' · t=' + h.ts + (day(h.ts) ? ' · ' + day(h.ts) : '') + ']';
-          return (i + 1) + '. ' + tag + ' ' + oneLine(h.content, SNIPPET);
+          return (i + 1) + '. ' + tag + (h.rowId ? ' [id=tx-' + h.rowId + ']' : '') + ' ' + oneLine(h.content, SNIPPET);
         }).join('\n');
         const lead = widened
           ? 'Nothing matched in this workstream, so I searched all of them:\n'
           : (wantAll ? 'Matches across all workstreams:\n' : '');
         return {
-          content: lead + body + '\n\nPass `around` with one of the t= stamps above to read the turns surrounding it.',
+          content: lead + body + '\n\nPass `anchor` with an id=tx-N above (stable), or `around` with a t= stamp, to read the surrounding turns.',
           summary: hits.length + ' match(es)' + (crossStream ? ' (all workstreams)' : '')
         };
       }

@@ -94,6 +94,19 @@
 @media (max-width: 860px) {
   #topbar #sig { display: none; }
 }
+/* MOBILE CONTROL REACHABILITY: the emergency control is the one top-bar instrument that
+   may never be squeezed out. The logo still identifies the station; the pinnable rail and
+   level lamp move out of this one-row budget, leaving ONLINE + E-STOP fully touchable. */
+@media (max-width: 600px) {
+  #topbar { padding-inline: 8px; }
+  #topbar #wr-top,
+  #topbar #tb-station,
+  #topbar .tb-sep { display: none; }
+  #topbar .tb-stats { flex: 0 0 auto; padding-inline: 6px; }
+  #topbar .tb-status { gap: 4px; padding: 0; }
+  #topbar #status-pill { padding-inline: 6px; }
+  #topbar #estop-btn { margin-right: 0; flex: 0 0 auto; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   #tb-station.lvup .tb-xp-fill,
