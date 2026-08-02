@@ -223,7 +223,7 @@ function startControllableMock(model) {
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'working' } }] }) + '\n\n');
           if (state.mode === 'hold') {
             state.open.push(res);               // park the stream; release() finishes it later
-            req.on('close', () => { const i = state.open.indexOf(res); if (i >= 0) state.open.splice(i, 1); });
+            res.on('close', () => { const i = state.open.indexOf(res); if (i >= 0) state.open.splice(i, 1); });
           } else {
             setTimeout(() => {
               try {
@@ -437,6 +437,20 @@ async function parityCheck(cdp, A, step) {
   return res;
 }
 
+// Channels becomes busy before the streamed agent.run.start event is guaranteed to reach the crew panel.
+// The panel projects that event ledger immediately and reconciles once per second, so allow two full ticks
+// before judging the cross-authority count. This is bounded settling, not an exemption: a persistent mismatch
+// still reaches parityCheck below and fails loudly while the mock keeps the run genuinely in flight.
+async function waitCrewBusyProjection(cdp, tries = 15) {
+  for (let i = 0; i < tries; i++) {
+    const res = await evalJS(cdp, PARITY_PROBE).catch(() => null);
+    const check = res && Array.isArray(res.checks) && res.checks.find(c => c.name === 'crew/working-covers-busy');
+    if (check && check.ok) return true;
+    await sleep(150);
+  }
+  return false;
+}
+
 /* ═══════════════════════════ J1 — task lifecycle + taskboard truth ═══════════════════════════ */
 async function journeyTaskLifecycle(cdp, A, mock) {
   mock.control.setMode('quick');                                    // this journey wants runs that COMPLETE (→ DONE chip)
@@ -453,23 +467,30 @@ async function journeyTaskLifecycle(cdp, A, mock) {
   await clickSel(cdp, '[data-term="commander"]').catch(() => {});   // ensure a compose surface; harmless if absent
   const plain = await sendChat(cdp, 'just a casual hello, no task');
   A.ok('J1/plain-chat-sent', plain === 'sent' || plain === 'NO_INPUT', plain);
-  await sleep(500);
+  await waitIdle(cdp, 60);
   await openBoard(cdp);
   await parityCheck(cdp, A, 'J1.1-after-plain-chat');
 
   // step 2: ADD + ASSIGN a real board directive (kind:'task'). Assign sends the title → a run fires.
+  // Keep the run genuinely live while cross-authority UI projections settle; quick mode can finish inside
+  // the measurement window and turn a named run-live checkpoint into a transition-race probe.
+  mock.control.setMode('hold');
   const tid = await addAndAssignTask(cdp, 'list three prime numbers, one per line');
   A.ok('J1/task-created', typeof tid === 'string' && tid.indexOf('ws_') === 0, 'workstream id=' + tid);
   const busyId = await waitBusy(cdp, 40);
   // reopen the board (Chat.load may have switched the panel) and check parity WHILE the run is live.
   await openBoard(cdp);
   A.ok('J1/run-in-flight', !!busyId, busyId ? 'busy on ' + busyId : 'no run went in-flight (mock/provider?)');
+  await waitCrewBusyProjection(cdp);
   await parityCheck(cdp, A, 'J1.2-run-live');
   // the assigned card must be in ACTIVE (hybrid-honest auto-advance) and show a truthful chip.
   const activeLane = await evalJS(cdp, `(() => { const c=document.querySelector('.kb-card[data-id="${tid}"]'); if(!c) return 'NO_CARD'; const col=c.closest('.kb-col'); const h=col&&col.querySelector('h4'); return h?h.textContent.trim():'NO_COL'; })()`).catch(() => 'ERR');
   A.ok('J1/assigned-card-active', /^ACTIVE\b/.test(String(activeLane)) && /(RUNNING|READY TO REVIEW)/.test(String(activeLane)), 'card column header = "' + activeLane + '"');
 
   // step 3: let the run complete → the chip must flip RUNNING → DONE (never forever-RUNNING).
+  for (let i = 0; i < 30 && mock.control.openCount() < 1; i++) await sleep(50);
+  mock.control.setMode('quick');
+  mock.control.release();
   const wentIdle = await waitIdle(cdp, 60);
   A.ok('J1/run-completed', wentIdle, wentIdle ? 'all channels idle after the quick run' : 'run never reached idle');
   await openBoard(cdp);
