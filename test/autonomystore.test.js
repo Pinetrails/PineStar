@@ -18,6 +18,8 @@ global.localStorage = {
   removeItem: k => { delete mem[k]; }
 };
 const KEY = 'starnet.autonomy.v1';
+const posturePosts = [];
+global.fetch = (_path, opts) => { posturePosts.push(JSON.parse(opts.body)); return Promise.resolve({ ok: true }); };
 
 const { AutonomyStore } = require('../frontend/app/autonomystore.js');
 
@@ -25,12 +27,14 @@ const { AutonomyStore } = require('../frontend/app/autonomystore.js');
 AutonomyStore.init();
 A.eq(AutonomyStore.get(), { v: 1, initiative: 'wait', reach: 'sandbox', leashPerDay: 3 }, 'a fresh store hydrates to the safe floor (fully wait-for-me, Sandbox ceiling)');
 A.eq(AutonomyStore.summary().enabled, false, 'the floor does nothing unattended');
+A.eq(posturePosts[posturePosts.length - 1].resumeHalt, false, 'boot posture mirror is not consent to lift E-STOP');
 
 /* ---------- applyPreset: commits + persists ---------- */
 AutonomyStore.applyPreset('build');
 A.eq(AutonomyStore.get().initiative, 'leash', "applyPreset('build') sets leash initiative");
 A.eq(AutonomyStore.get().reach, 'sandbox', "applyPreset('build') sets sandbox reach");
 A.ok(mem[KEY] && JSON.parse(mem[KEY]).initiative === 'leash', 'the posture persists to its own localStorage key');
+A.eq(posturePosts[posturePosts.length - 1].resumeHalt, true, 'a deliberate dial writer carries explicit resume consent');
 
 // even the most autonomous preset keeps reach at sandbox (the safety rule, end-to-end through the store)
 AutonomyStore.applyPreset('free');
@@ -54,6 +58,7 @@ A.ok(AutonomyStore.describe().indexOf('see everything it did') >= 0, 'describe()
 AutonomyStore.applyPreset('build'); AutonomyStore.setReach('observe');
 AutonomyStore.init();   // simulate a page reload (re-hydrate from the key)
 A.eq(AutonomyStore.get(), { v: 1, initiative: 'leash', reach: 'observe', leashPerDay: 7 }, 'a posture survives reload (re-hydrated from its own key)');
+A.eq(posturePosts[posturePosts.length - 1].resumeHalt, false, 'reload mirror cannot impersonate a deliberate dial write');
 
 /* ---------- corrupt / old key → the safe floor, never a crash ---------- */
 mem[KEY] = '{not valid json';
