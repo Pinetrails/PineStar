@@ -7,14 +7,36 @@
 const { makeDurableJsonStore } = require('./durable-store.js');
 
 const STORE_KEY = 'recommendations';
-const CAP = 2000;
-const STATES = new Set(['shown', 'accepted', 'deferred', 'declined', 'completed']);
+const CAP = 4000;
+const STATES = new Set(['shown', 'opened', 'accepted', 'started', 'deferred', 'declined', 'completed']);
 const REASONS = new Set(['accepted', 'wrong_thing', 'wrong_time', 'bad_quality', 'already_done', 'not_relevant', 'completed', 'unspecified']);
+const TERMINAL = new Set(['declined', 'completed']);
+const NEXT = Object.freeze({
+  shown: new Set(['opened', 'accepted', 'started', 'deferred', 'declined', 'completed']),
+  opened: new Set(['accepted', 'started', 'deferred', 'declined', 'completed']),
+  deferred: new Set(['opened', 'accepted', 'started', 'declined', 'completed']),
+  accepted: new Set(['started', 'declined', 'completed']),
+  started: new Set(['declined', 'completed']),
+  declined: new Set(), completed: new Set()
+});
+const PREF_HALF_LIFE_MS = 45 * 86400000;
 
 function clip(v, n) { return String(v == null ? '' : v).trim().slice(0, n); }
 function fingerprint(title) {
   const toks = clip(title, 300).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
   return Array.from(new Set(toks)).sort().join(' ');
+}
+function normTraits(raw) {
+  return Array.from(new Set((Array.isArray(raw) ? raw : []).map(x => clip(x, 80).toLowerCase()).filter(Boolean))).slice(0, 20);
+}
+function finite(v, fallback) { return Number.isFinite(Number(v)) ? Number(v) : fallback; }
+function normOutcome(raw) {
+  const x = raw && typeof raw === 'object' ? raw : {};
+  return {
+    runId: clip(x.runId, 120), artifactId: clip(x.artifactId, 240), quality: Math.max(-1, Math.min(1, finite(x.quality, 0))),
+    costUsd: Math.max(0, finite(x.costUsd, 0)), interventions: Math.max(0, finite(x.interventions, 0) | 0),
+    adopted: x.adopted === true, completedAt: Math.max(0, finite(x.completedAt, 0))
+  };
 }
 function normalizeEntry(raw) {
   const x = raw && typeof raw === 'object' ? raw : {};
@@ -40,7 +62,11 @@ function normalizeEntry(raw) {
       ready: !!x.readiness.ready,
       reasons: Array.isArray(x.readiness.reasons) ? x.readiness.reasons.map(r => clip(r, 40)).filter(Boolean).slice(0, 8) : []
     } : null,
+    traits: normTraits(x.traits), projectId: clip(x.projectId, 160), goalId: clip(x.goalId, 120), threadId: clip(x.threadId, 120),
+    contextId: clip(x.contextId, 120), rank: Number.isFinite(x.rank) ? Math.max(0, x.rank | 0) : null,
     score: Number.isFinite(x.score) ? x.score : null,
+    scoreComponents: x.scoreComponents && typeof x.scoreComponents === 'object' ? Object.fromEntries(Object.entries(x.scoreComponents).slice(0, 16).map(([k, v]) => [clip(k, 40), finite(v, 0)])) : {},
+    outcome: normOutcome(x.outcome),
     modelVersion: clip(x.modelVersion, 80), state, reason, transitions: transitions.slice(-20),
     createdAt, updatedAt,
     expiresAt: Number(x.expiresAt) || 0, completedAt: Number(x.completedAt) || 0
@@ -54,37 +80,82 @@ function normalize(raw) {
 function replay(raw, opts) {
   opts = opts || {};
   const rows = normalize(raw).entries.filter(e => !opts.surface || e.surface === opts.surface);
-  const counts = { shown: rows.length, accepted: 0, deferred: 0, declined: 0, completed: 0, evidenced: 0, ready: 0, repeats: 0 };
-  const seen = new Set(); const kinds = {};
+  const counts = { shown: rows.length, opened: 0, accepted: 0, started: 0, deferred: 0, declined: 0, completed: 0, evidenced: 0, ready: 0, repeats: 0 };
+  const transitions = { shown: rows.length, opened: 0, accepted: 0, started: 0, deferred: 0, declined: 0, completed: 0 };
+  const seen = new Set(); const kinds = {}; const traits = {}; const projects = {};
+  const now = Number.isFinite(opts.now) ? opts.now : rows.reduce((m, e) => Math.max(m, e.updatedAt || e.createdAt || 0), 0);
+  function foldPref(map, key, e) {
+    if (!key) return;
+    const k = map[key] || (map[key] = { shown: 0, positive: 0, negative: 0, deferred: 0, quality: 0, costUsd: 0, weight: 0 });
+    const age = Math.max(0, now - (e.updatedAt || e.createdAt || now));
+    const decay = Math.pow(0.5, age / PREF_HALF_LIFE_MS);
+    k.shown += decay;
+    if ((e.state === 'accepted' || e.state === 'started' || e.state === 'completed') && e.reason !== 'already_done') k.positive += decay;
+    else if (e.state === 'declined' && e.reason !== 'wrong_time' && e.reason !== 'already_done') k.negative += decay;
+    else if (e.state === 'deferred') k.deferred += decay;
+    k.quality += (e.outcome.quality || 0) * decay;
+    k.costUsd += (e.outcome.costUsd || 0) * decay;
+  }
   for (const e of rows) {
-    if (e.state === 'completed') { counts.completed++; counts.accepted++; }
+    if (e.state === 'completed') { counts.completed++; counts.accepted++; counts.started++; }
+    else if (e.state === 'started') { counts.started++; counts.accepted++; }
     else if (e.state !== 'shown' && counts[e.state] != null) counts[e.state]++;
+    const ever = new Set((e.transitions || []).map(t => t.state));
+    for (const st of ever) if (transitions[st] != null && st !== 'shown') transitions[st]++;
     if (e.evidence.length) counts.evidenced++;
     if (e.readiness && e.readiness.ready) counts.ready++;
     if (e.fingerprint) { if (seen.has(e.fingerprint)) counts.repeats++; else seen.add(e.fingerprint); }
-    const k = kinds[e.kind] || (kinds[e.kind] = { shown: 0, positive: 0, negative: 0, deferred: 0, weight: 0 });
-    k.shown++;
-    if (e.state === 'accepted' || e.state === 'completed') k.positive++;
-    else if (e.state === 'declined') k.negative++;
-    else if (e.state === 'deferred') k.deferred++;
+    foldPref(kinds, e.kind, e);
+    for (const trait of e.traits) foldPref(traits, trait, e);
+    if (e.projectId) foldPref(projects, e.projectId, e);
   }
-  for (const k of Object.keys(kinds)) {
-    const x = kinds[k];
+  for (const map of [kinds, traits, projects]) for (const k of Object.keys(map)) {
+    const x = map[k];
     // Bayesian-smoothed, bounded preference shift. A few clicks guide; they never freeze the system.
-    x.weight = Math.max(-0.75, Math.min(0.75, (x.positive - x.negative) / (x.shown + 2)));
+    x.weight = Math.max(-0.75, Math.min(0.75, (x.positive - x.negative + 0.5 * x.quality) / (x.shown + 2)));
+    for (const n of ['shown', 'positive', 'negative', 'deferred', 'quality', 'costUsd']) x[n] = Math.round(x[n] * 1000) / 1000;
   }
   const d = Math.max(1, counts.shown);
   return {
-    counts,
+    counts, transitions,
     acceptanceRate: (counts.accepted / d), completionRate: (counts.completed / d),
     evidenceCoverage: (counts.evidenced / d), readinessCoverage: (counts.ready / d), repeatRate: (counts.repeats / d),
-    kinds
+    kinds, traits, projects
   };
+}
+
+function preferenceFor(model, candidate) {
+  model = model || {}; candidate = candidate || {};
+  let sum = 0, n = 0;
+  const take = x => { if (x && Number.isFinite(x.weight)) { sum += x.weight; n++; } };
+  take(model.kinds && model.kinds[candidate.kind]);
+  if (candidate.projectId) take(model.projects && model.projects[candidate.projectId]);
+  for (const t of normTraits(candidate.traits)) take(model.traits && model.traits[t]);
+  return n ? Math.max(-0.75, Math.min(0.75, sum / n)) : 0;
+}
+
+/* One outcome-aware utility function for every recommendation family. Policy/eligibility remains a caller concern;
+   this ranks only candidates the surface is allowed to show or execute. All terms are normalized 0..1. */
+function rankCandidates(candidates, model, opts) {
+  opts = opts || {};
+  return (Array.isArray(candidates) ? candidates : []).map((raw, idx) => {
+    const c = Object.assign({}, raw); const f = c.features || {};
+    const components = {
+      relevance: finite(f.relevance, 0.5), impact: finite(f.impact, 0.5), success: finite(f.success, 0.5),
+      timeliness: finite(f.timeliness, 0.5), novelty: finite(f.novelty, 0.5), preference: preferenceFor(model, c),
+      cost: finite(f.cost, 0), risk: finite(f.risk, 0), interruption: finite(f.interruption, 0), duplicate: finite(f.duplicate, 0)
+    };
+    const utility = components.relevance * 2 + components.impact * 1.5 + components.success + components.timeliness
+      + components.novelty * 0.5 + components.preference
+      - components.cost * 0.75 - components.risk * 1.5 - components.interruption - components.duplicate * 2;
+    c.utility = Math.round(utility * 1000) / 1000; c.scoreComponents = components; c._idx = idx; return c;
+  }).sort((a, b) => (b.utility - a.utility) || (a._idx - b._idx)).map((c, rank) => { delete c._idx; c.rank = rank + 1; return c; });
 }
 
 function makeRecommendationLedger(deps) {
   deps = deps || {};
   if (!deps.path || !deps.workspaces) throw new Error('makeRecommendationLedger: path + workspaces required');
+  const learningEnabled = () => { try { return !deps.learningEnabled || deps.learningEnabled() !== false; } catch (_) { return false; } };
   const durable = makeDurableJsonStore({
     fs: deps.fs, path: deps.path,
     fileFor: () => deps.path.join(deps.workspaces, 'recommendations.json'),
@@ -98,6 +169,7 @@ function makeRecommendationLedger(deps) {
     return rows.slice(0, Number.isFinite(opts.limit) ? Math.max(0, opts.limit) : 100);
   }
   function record(input, now) {
+    if (!learningEnabled()) return Promise.resolve(null);
     const at = Number(now) || 0;
     const rec = normalizeEntry(Object.assign({}, input, { createdAt: at, updatedAt: at, state: 'shown', transitions: [{ state: 'shown', reason: '', at }] }));
     if (!rec.id || !rec.title) return Promise.resolve(null);
@@ -109,12 +181,15 @@ function makeRecommendationLedger(deps) {
     }).then(() => out);
   }
   function verdict(id, state, reason, now) {
+    if (!learningEnabled()) return Promise.resolve(null);
     const sid = clip(id, 120); const st = STATES.has(state) && state !== 'shown' ? state : null;
     if (!sid || !st) return Promise.resolve(null);
     let out = null;
     return durable.update(STORE_KEY, cur => {
       const s = normalize(cur); const e = s.entries.find(x => x.id === sid); if (!e) return undefined;
-      const why = REASONS.has(reason) ? reason : (st === 'deferred' ? 'wrong_time' : st === 'completed' ? 'completed' : st === 'accepted' ? 'accepted' : 'unspecified');
+      if (e.state === st) { out = e; return undefined; }
+      if (TERMINAL.has(e.state) || !NEXT[e.state] || !NEXT[e.state].has(st)) { out = null; return undefined; }
+      const why = REASONS.has(reason) ? reason : (st === 'deferred' ? 'wrong_time' : st === 'completed' ? 'completed' : (st === 'accepted' || st === 'started') ? 'accepted' : 'unspecified');
       e.state = st; e.reason = why; e.updatedAt = Number(now) || e.updatedAt;
       if (!Array.isArray(e.transitions)) e.transitions = [];
       const prior = e.transitions[e.transitions.length - 1];
@@ -123,9 +198,22 @@ function makeRecommendationLedger(deps) {
       if (st === 'completed') e.completedAt = e.updatedAt; out = e; return s;
     }).then(() => out);
   }
+  function verdictTarget(surface, target, state, reason, now) {
+    const row = list({ surface, limit: CAP }).find(e => e.target === clip(target, 240) && !TERMINAL.has(e.state));
+    return row ? verdict(row.id, state, reason, now) : Promise.resolve(null);
+  }
+  function outcome(id, patch, now) {
+    if (!learningEnabled()) return Promise.resolve(null);
+    const sid = clip(id, 120); let out = null;
+    return durable.update(STORE_KEY, cur => {
+      const s = normalize(cur); const e = s.entries.find(x => x.id === sid); if (!e) return undefined;
+      e.outcome = normOutcome(Object.assign({}, e.outcome, patch || {})); e.updatedAt = Number(now) || e.updatedAt; out = e; return s;
+    }).then(() => out);
+  }
+  function clear() { return durable.update(STORE_KEY, () => ({ v: 1, entries: [] })).then(() => true); }
   function declinedTexts() { return read().entries.filter(e => e.state === 'declined').map(e => e.title); }
   function summary(opts) { return replay(read(), opts); }
-  return { read, list, record, verdict, declinedTexts, summary, _durable: durable };
+  return { read, list, record, verdict, verdictTarget, outcome, clear, declinedTexts, summary, _durable: durable };
 }
 
-module.exports = { makeRecommendationLedger, normalize, normalizeEntry, replay, fingerprint, STATES, REASONS };
+module.exports = { makeRecommendationLedger, normalize, normalizeEntry, replay, fingerprint, preferenceFor, rankCandidates, STATES, REASONS, NEXT, TERMINAL };

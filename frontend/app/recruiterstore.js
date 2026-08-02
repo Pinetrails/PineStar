@@ -59,6 +59,7 @@ const RecruiterStore = (() => {
       dossier: { goals: beliefTexts('goals'), pain: beliefTexts('pain'), ambition: beliefTexts('ambition') },
       roster: rosterIds(),
       catalog: Specialties.builtins(),
+      preferenceModel: (typeof ProspectStore !== 'undefined' && ProspectStore.preferenceModel) ? ProspectStore.preferenceModel() : null,
       now: now()
     });
   }

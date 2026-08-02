@@ -194,7 +194,9 @@
     for (const k of DIM_KEYS) {
       const arr = beliefsOf(dossier, k);
       grounded[k] = groundedCount(arr);
-      if (arr.some(b => b && typeof b.text === 'string' && b.text)) knownAny++;
+      // Breadth is evidence breadth, not field occupancy. A canned/document seed may inform a prompt, but it
+      // cannot be the third dimension that silently tips familiarity over the recommendation threshold.
+      if (grounded[k] > 0) knownAny++;
     }
     const familiarity = DIM_KEYS.length ? knownAny / DIM_KEYS.length : 0;
     const reasons = [];

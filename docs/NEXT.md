@@ -1,5 +1,31 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-01 — RECOMMENDATION FABRIC 1–5 (`agent/recommendation-fabric`)
+
+READY FOR LIVE PROOF. The second recommendation audit is implemented as one cross-surface fabric.
+(1) Personalization pause is now durable sidecar authority as well as a browser control; it suppresses
+new interest, workflow-context, ranking-ledger, scout, and night-shift learning. Forget clears every
+derived browser/server model and returns a verified inventory while preserving explicit dossier, goals,
+projects, threads, and task history. Seed-only fields no longer contribute readiness breadth, and quests
+generated under an inferred north star remain staged until the Commander confirms that direction.
+
+(2) Recipes, recruit picks, study updates, routines, recurring ideas, scout drafts, quests, and night-shift
+work now write the same bounded shown/opened/accepted/started/deferred/declined/completed lifecycle. Quest
+completion is recorded only from the contract proof seam; recipe and suggested-work completion comes from
+the resulting run/rating; terminal outcomes cannot be rewritten. (3) One recency-decayed preference model
+over kinds, traits, and projects is served with the scout read and consumed by recipe, recruit, quest, and
+night-shift ranking while retaining each surface's policy/readiness gates. (4) The shared utility ranker
+balances relevance, impact, success, timeliness, novelty, preference, cost, risk, interruption, and duplicate
+penalties; typed wrong-time/already-done verdicts do not poison relevance. (5) The replay CLI now emits an
+offline evaluation scorecard: adoption/completion, precision@3, counterfactual regret, Brier calibration,
+repeat/contradiction, intervention/cost, temporal improvement, and per-surface rates. Its fixed eight-week
+simulation proves that a later automation preference overtakes an earlier research preference.
+
+Verification so far: focused recommendation/readiness/quest/routine/study/suggestion/personalization tests
+green; every touched JavaScript file passes `node --check`; `test:fast` is 495/495 green. Full HTTP and seeded
+live-app proof remain before merge. No provider run, external message/write, push, PR, deploy, publish,
+credential, or production-data change was performed.
+
 ## 2026-08-01 — ROUTINES P0-P2 CLOSURE (`agent/routines-closure`)
 
 READY TO MERGE. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,

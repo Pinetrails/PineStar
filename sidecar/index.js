@@ -190,7 +190,9 @@ const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B:
 const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
-const { makeRecommendationLedger } = require('./recommendation-ledger.js'); // one cross-surface recommendation/verdict lifecycle
+const Recommendation = require('./recommendation-ledger.js');
+const { makeRecommendationLedger } = Recommendation; // one cross-surface recommendation/verdict lifecycle + shared utility ranker
+const { makePersonalizationStore } = require('./personalization-store.js'); // one durable pause/forget authority for every derived recommender
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
 const TaskBriefPolicy = require('./taskbrief-policy.js');       // host validation + mutation boundary
 const { registerTaskBriefTools } = require('./taskbrief-tools.js'); // structured ask/proceed controls
@@ -1289,8 +1291,14 @@ const threadsStore = makeThreadsStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'threads'),
   warn: (...args) => console.warn.apply(console, args)
 });
+const personalizationStore = makePersonalizationStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[personalization] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'personalization')
+});
 const recommendationLedger = makeRecommendationLedger({
   fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  learningEnabled: () => personalizationStore.read().enabled,
   onRecover: (key, file) => console.warn('[recommendations] recovered ' + file + ' from .bak last-known-good.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'recommendations')
 });
@@ -3699,7 +3707,7 @@ function nightFocusInputs() {
   // when two candidates are otherwise close on recency. Only WARM topics can move anything (TopicMatch's anchor
   // rule), so a cold histogram leaves the resolution byte-identical. Bounded + fail-open like every field above.
   let topics = [];
-  try { topics = Interests.summary(interestsState, { now: now, limit: 8 }); } catch (_) { topics = []; }
+  try { topics = personalizationStore.read().enabled ? Interests.summary(interestsState, { now: now, limit: 8 }) : []; } catch (_) { topics = []; }
   return { projects, threads, goal, quests, northStar, topics, now };
 }
 
@@ -3874,7 +3882,19 @@ function recordNightshiftDraft(entry) {
 const NIGHTSHIFT_LEARN_FILE = path.join(WORKSPACES, 'nightshift.learn.json');
 function loadNightshiftLearn() { try { const o = loadResilient(NIGHTSHIFT_LEARN_FILE, 'nightshift-learn'); return (o && o.learn && typeof o.learn === 'object') ? o.learn : {}; } catch (_) { return {}; } }
 let nightshiftLearn = loadNightshiftLearn();
-function nightshiftLearnWeights() { try { return Autopilot.learnWeightsFrom(nightshiftLearn); } catch (_) { return {}; } }
+function nightshiftLearnWeights() {
+  let out = {};
+  try { out = Object.assign({}, Autopilot.learnWeightsFrom(nightshiftLearn)); } catch (_) {}
+  try {
+    if (!personalizationStore.read().enabled) return out;
+    const kinds = recommendationLedger.summary().kinds || {};
+    for (const key of Object.keys(kinds)) {
+      if (!Number.isFinite(kinds[key].weight)) continue;
+      out[key] = (Number(out[key]) || 0) + kinds[key].weight;
+    }
+  } catch (_) {}
+  return out;
+}
 // record ONE verdict: approve (useful:true) up-weights the archetype, deny (useful:false) down-weights it. Best-effort
 // persist — a learn-write hiccup must never fail the decide route that calls it.
 function recordNightshiftVerdict(archetype, useful) {
@@ -3986,8 +4006,8 @@ function scoutDirectionBlock() {
     }
   } catch (_) {}
   try {
-    const eff = QuestRefresh.effectiveNorthStar(QuestRefresh.normalize(questRefreshState));
-    if (eff && eff.text) lines.push('NORTH STAR' + (eff.status === 'proposed' ? ' (proposed — unconfirmed)' : '') + ': ' + String(eff.text).slice(0, 200));
+    const eff = QuestRefresh.normalize(questRefreshState).northStar; // confirmed/adopted only; pending direction never steers recruiting
+    if (eff && eff.text) lines.push('NORTH STAR: ' + String(eff.text).slice(0, 200));
   } catch (_) {}
   try {
     const open = (questStore.list() || []).filter(q => q && q.status === 'open').slice(0, 8).map(q => '• ' + String(q.title || '')).filter(t => t.length > 2);
@@ -3999,6 +4019,7 @@ function scoutDirectionBlock() {
 /* runScoutCycle — ONE post-run cycle (fire-and-forget; never throws to the caller). Mirrors runReflection's
    aux plumbing: its OWN abort+timeout, ONE streamed completion per pass, spend reconciled + booked. */
 async function runScoutCycle(o) {
+  if (!personalizationStore.read().enabled) return; // PAUSE is server authority too: no extraction, drafting, or model spend
   const { runId, agentId, provider, model, cost } = o;
   const unmetered = !!(o && o.unmetered);
   const ac = new AbortController();
@@ -4152,7 +4173,9 @@ function handleScoutGet(req, res) {
     interests: Interests.summary(interestsState, { now: now, limit: 10 }),
     staged: scoutState.staged,
     ledger: scoutState.ledger.slice(-20),
-    usage: scoutState.usage
+    usage: scoutState.usage,
+    personalizationEnabled: personalizationStore.read().enabled,
+    preferenceModel: personalizationStore.read().enabled ? recommendationLedger.summary() : null
   }));
 }
 // POST /api/scout/telemetry — the engagement loop's writes (counters only, no content):
@@ -4162,6 +4185,7 @@ function handleScoutGet(req, res) {
 async function handleScoutTelemetry(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (!personalizationStore.read().enabled) return json(200, { ok: true, stored: false, reason: 'personalization-paused' });
   const id = String(body.id || '').slice(0, 60);
   if (body.kind === 'recipe.launch' && id) {
     scoutState = Scout.noteLaunch(scoutState, { id: id, name: body.name }, { now: Date.now() });
@@ -4179,6 +4203,10 @@ async function handleScoutTelemetry(req, res) {
 // summary, the recruiter's top pick) so server-side drafting dedupes against them. Bounded by the reducer.
 async function handleScoutContext(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 18)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  if (!personalizationStore.read().enabled) {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ok: true, stored: false, reason: 'personalization-paused' }));
+  }
   scoutState = Scout.setContext(scoutState, body, { now: Date.now() });
   persistScout();
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -4211,16 +4239,23 @@ function handleRecommendationsGet(req, res) {
     const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
     const state = String(u.searchParams.get('state') || '').slice(0, 20);
     const limit = Math.max(1, Math.min(250, Number(u.searchParams.get('limit')) || 100));
-    json(200, { entries: recommendationLedger.list({ surface: surface || undefined, state: state || undefined, limit }), metrics: recommendationLedger.summary({ surface: surface || undefined }) });
+    const learning = personalizationStore.read().enabled;
+    json(200, { entries: recommendationLedger.list({ surface: surface || undefined, state: state || undefined, limit }), metrics: recommendationLedger.summary({ surface: surface || undefined }), model: learning ? recommendationLedger.summary() : null, learningEnabled: learning });
   } catch (_) { json(200, { entries: [], metrics: recommendationLedger.summary() }); }
 }
 async function handleRecommendationsPost(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   let body; try { body = JSON.parse(await readBody(req, 1 << 18, res)) || {}; } catch (_) { if (!res.headersSent) json(400, { error: 'bad json' }); return; }
   try {
+    if (body.outcome && body.id) {
+      const entry = await recommendationLedger.outcome(body.id, body.outcome, Date.now());
+      return json(200, { ok: !!entry, entry });
+    }
     if (body.state || body.verdict) {
       const state = String(body.state || body.verdict || '');
-      const entry = await recommendationLedger.verdict(body.id, state, String(body.reason || ''), Date.now());
+      const entry = body.id
+        ? await recommendationLedger.verdict(body.id, state, String(body.reason || ''), Date.now())
+        : await recommendationLedger.verdictTarget(String(body.surface || ''), String(body.target || ''), state, String(body.reason || ''), Date.now());
       return json(200, { ok: !!entry, entry });
     }
     const entry = await recommendationLedger.record(body, Date.now());
@@ -4228,11 +4263,49 @@ async function handleRecommendationsPost(req, res) {
   } catch (e) { return json(200, { ok: false, error: (e && e.message) || 'recommendation ledger failed' }); }
 }
 
+// One truthful personalization control for BOTH halves of the app. The browser's local profile/worksignal are
+// cleared by the caller; this route owns every server-derived model that can otherwise keep learning or ranking.
+function personalizationInventory() {
+  let topics = 0, scoutDrafts = 0, recommendations = 0, studyDeclines = 0, nightTraits = 0;
+  try { topics = Object.keys((interestsState && interestsState.topics) || {}).length; } catch (_) {}
+  try { scoutDrafts = (scoutState.staged || []).length; } catch (_) {}
+  try { recommendations = recommendationLedger.read().entries.length; } catch (_) {}
+  try { for (const v of studyDeclinedByAgent.values()) studyDeclines += Array.isArray(v) ? v.length : 0; } catch (_) {}
+  try { nightTraits = Object.keys(nightshiftLearn || {}).length; } catch (_) {}
+  return { topics, scoutDrafts, recommendations, studyDeclines, nightTraits };
+}
+async function handlePersonalization(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  if (req.method === 'GET') {
+    const s = personalizationStore.read();
+    return json(200, { ok: true, enabled: s.enabled, revision: s.revision, updatedAt: s.updatedAt, inventory: personalizationInventory(),
+      disclosure: 'Derived summaries stay local except when a configured model is asked to draft a recommendation; explicit dossier, goals, threads, and projects are separate Commander records.' });
+  }
+  if (req.method === 'POST') {
+    let body; try { body = JSON.parse(await readBody(req, 4096, res)) || {}; } catch (_) { if (!res.headersSent) json(400, { ok: false, error: 'bad json' }); return; }
+    if (typeof body.enabled !== 'boolean') return json(400, { ok: false, error: 'enabled must be boolean' });
+    const s = await personalizationStore.setEnabled(body.enabled, Date.now());
+    return json(200, { ok: true, enabled: s.enabled, revision: s.revision, inventory: personalizationInventory() });
+  }
+  if (req.method === 'DELETE') {
+    interestsState = Interests.fresh(Date.now()); persistInterests();
+    scoutState = Scout.fresh(Date.now()); persistScout();
+    nightshiftLearn = {}; try { saveResilient(NIGHTSHIFT_LEARN_FILE, { v: 1, learn: {} }); } catch (_) {}
+    studyDeclinedByAgent.clear(); persistStudyState();
+    await recommendationLedger.clear();
+    const s = await personalizationStore.markForgotten(Date.now());
+    return json(200, { ok: true, enabled: s.enabled, revision: s.revision, inventory: personalizationInventory(),
+      preserved: ['commander dossier', 'explicit goals', 'open threads', 'projects', 'task history'] });
+  }
+  return json(405, { ok: false, error: 'method not allowed' });
+}
+
 /* the return-card verdict → LEARN + LEDGER bridge (NS-3). A night-shift act's runId maps to an archetype; a keep
    (approve) UP-weights it, a discard (deny) DOWN-weights it, so scoreAndSelect's per-archetype bias actually learns
    from the Commander's verdicts (the compounding moat). Also records the verdict in the autonomy ledger as an
    honest decision trail. A plain workshop-shift build (no archetype mapping) is a clean no-op. Best-effort. */
 function nightshiftDecideLearn(agentId, runId, useful) {
+  const learning = personalizationStore.read().enabled;
   const rec = nightshiftActs[String(runId || '')];
   const arch = archetypeForRun(runId);
   // NS-6 thread writeback: a KEPT deliverable on a cited thread → delivered; a DISCARDED one → declined PERMANENTLY
@@ -4243,8 +4316,10 @@ function nightshiftDecideLearn(agentId, runId, useful) {
     else { try { threadsStore.decline(threadId, 'discarded at return card', Date.now()); } catch (_) {} }
   }
   if (!arch) return;   // not a night-shift act (or already reaped) → nothing to learn
-  recordNightshiftVerdict(arch, useful);
-  recommendationLedger.verdict('nightshift:' + String(runId || ''), useful ? 'completed' : 'declined', useful ? 'completed' : 'bad_quality', Date.now()).catch(() => {});
+  if (learning) {
+    recordNightshiftVerdict(arch, useful);
+    recommendationLedger.verdict('nightshift:' + String(runId || ''), useful ? 'completed' : 'declined', useful ? 'completed' : 'bad_quality', Date.now()).catch(() => {});
+  }
   try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: String(runId || ''), reason: useful ? 'approved' : 'denied', detail: { phase: 'verdict', archetype: arch, useful: !!useful } }); } catch (_) {}
   try { delete nightshiftActs[String(runId || '')]; saveResilient(NIGHTSHIFT_ACTS_FILE, { v: 1, acts: nightshiftActs }); } catch (_) {}   // decided once
 }
@@ -4314,12 +4389,13 @@ function nightshiftContextPack() {
 // Consumers may add task-specific facts, but they no longer maintain private versions of "what we know".
 function commanderEvidenceInputs() {
   let topics = [], threads = [], activity = [], worksignal = '';
-  try { topics = Interests.summary(interestsState, { now: Date.now(), limit: 8 }); } catch (_) {}
+  const learning = personalizationStore.read().enabled;
+  try { topics = learning ? Interests.summary(interestsState, { now: Date.now(), limit: 8 }) : []; } catch (_) {}
   try { threads = threadsStore.openThreads(6); } catch (_) {}
   try { activity = (nightshiftContextPack().activityLines || []).slice(0, 8); } catch (_) {}
-  try { worksignal = String((scoutState.context && scoutState.context.worksignalSummary) || ''); } catch (_) {}
+  try { worksignal = learning ? String((scoutState.context && scoutState.context.worksignalSummary) || '') : ''; } catch (_) {}
   let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
-  let verdicts = null; try { verdicts = recommendationLedger.summary(); } catch (_) {}
+  let verdicts = null; try { verdicts = learning ? recommendationLedger.summary() : null; } catch (_) {}
   return { dossier: commanderDossier.get(), goal, topics, threads, activity, worksignal, verdicts };
 }
 function commanderEvidenceContext(existingSystem, extra) {
@@ -5621,6 +5697,41 @@ let questRefreshState = (() => { try { const o = loadResilient(QUESTREFRESH_FILE
 function persistQuestRefresh() { try { saveResilient(QUESTREFRESH_FILE, { v: 1, state: questRefreshState }); } catch (e) { console.warn('[questrefresh] persist failed:', (e && e.message) || e); } }
 function questRefreshNote(entry) { questRefreshState = QuestRefresh.note(questRefreshState, entry, { now: Date.now() }); persistQuestRefresh(); }
 function questRefreshOpenCount() { try { return questStore.list().filter(q => q.status === 'open').length; } catch (_) { return 0; } }
+async function mintQuestRecommendations(quests, why) {
+  const declinedIdx = buildDeclinedIndex(null); let minted = 0;
+  const ranked = Recommendation.rankCandidates((quests || []).map(q => ({
+    candidate: q, kind: 'quest', traits: ['quest', 'contract:' + ((q.contract && q.contract.type) || 'unknown')],
+    features: { relevance: 1, impact: 0.8, success: q.contract && q.contract.type === 'attest' ? 0.55 : 0.8,
+      timeliness: 0.75, novelty: 0.8, cost: q.contract && q.contract.type === 'artifact' ? 0.45 : 0.2,
+      risk: 0.1, interruption: q.contract && q.contract.type === 'attest' ? 0.35 : 0, duplicate: 0 }
+  })), personalizationStore.read().enabled ? recommendationLedger.summary() : null);
+  for (const rankedQ of ranked) {
+    const q = rankedQ.candidate;
+    if (declinedIdx.has(q.title)) { questRefreshNote({ outcome: 'rejected', reason: 'declined elsewhere', title: q.title }); continue; }
+    const r = await questStore.mint({
+      title: q.title, desc: q.desc, reward: q.reward, kind: 'generated', createdBy: 'system:quest-refresh',
+      agentId: null, contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
+    }, Date.now());
+    if (r && r.ok) {
+      minted++;
+      await recommendationLedger.record({ id: 'quest:' + r.id, surface: 'quest', kind: 'quest', title: q.title, target: r.id,
+        traits: rankedQ.traits, evidence: [{ id: 'quest-grounding', type: 'context', quote: q.groundedIn }],
+        readiness: { ready: true, reasons: [] }, contextId: 'quest-refresh:' + Math.floor(Date.now() / 60000), rank: rankedQ.rank, score: rankedQ.utility,
+        scoreComponents: rankedQ.scoreComponents, modelVersion: 'quest-refresh-v4' }, Date.now()).catch(() => null);
+      questRefreshNote({ outcome: 'minted', reason: why + ' refresh — ' + q.groundedIn, title: q.title });
+    } else questRefreshNote({ outcome: 'rejected', reason: (r && r.error) || 'the store rejected the mint', title: q.title });
+  }
+  if (minted) { questRefreshState = QuestRefresh.stampMint(questRefreshState, { now: Date.now() }); persistQuestRefresh(); }
+  return minted;
+}
+
+function completeQuestRecommendationIds(ids) {
+  for (const id of (Array.isArray(ids) ? ids : [])) {
+    recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => {});
+    recommendationLedger.outcome('quest:' + id, { adopted: true, quality: 1, completedAt: Date.now() }, Date.now()).catch(() => {});
+  }
+  return ids;
+}
 
 let questRefreshingNow = false;   // one cycle in flight, ever (the scout's in-flight-guard discipline)
 async function runQuestRefreshCycle(why) {
@@ -5642,7 +5753,7 @@ async function runQuestRefreshCycle(why) {
     // RELEVANCE: the interest histogram (what the Commander keeps asking about) is already distilled by the
     // scout lane — fold it into the evidence so quests can ground in real recurring topics, not just the dossier.
     let interestsBlock = '';
-    try { interestsBlock = Interests.topicsBlock(interestsState, { now: Date.now(), limit: 6 }); } catch (_) { interestsBlock = ''; }
+    try { interestsBlock = personalizationStore.read().enabled ? Interests.topicsBlock(interestsState, { now: Date.now(), limit: 6 }) : ''; } catch (_) { interestsBlock = ''; }
     const rec = questStore.read();
     const open = rec.quests.filter(q => q.status === 'open');
     // SLATE-FULL FAST PATH (cost + honesty): the store caps OPEN kind:'generated' quests at 3 per scope, and a
@@ -5671,7 +5782,7 @@ async function runQuestRefreshCycle(why) {
       goalNote: goalNote,
       // ground on the EFFECTIVE star: a pending (unconfirmed) inference still steers the directive so the cycle
       // isn't rudderless while awaiting the Commander's verdict — the UI is what labels it unconfirmed, not here.
-      northStar: QuestRefresh.effectiveNorthStar(questRefreshState),
+      northStar: QuestRefresh.normalize(questRefreshState).northStar,
       dossierBlock: dossierBlock,
       activityBlock: activityBlock,
       interestsBlock: interestsBlock,
@@ -5719,25 +5830,25 @@ async function runQuestRefreshCycle(why) {
     // is asked once, not every cycle. Persisted so the next cycle re-shows it (revise-on-evidence, not re-derive).
     const goal = commanderGoals.get();
     if (goal && goal.text) questRefreshState = QuestRefresh.setNorthStar(questRefreshState, { text: goal.text, groundedIn: 'the Commander\'s active goal arc', source: 'goal' }, { now: Date.now() });
-    else if (parsed.northStar && parsed.northStar.text) questRefreshState = QuestRefresh.proposeNorthStar(questRefreshState, { text: parsed.northStar.text, groundedIn: 'inferred from the dossier + recent activity', source: 'model' }, { now: Date.now() });
+    else if (parsed.northStar && parsed.northStar.text) {
+      questRefreshState = QuestRefresh.proposeNorthStar(questRefreshState, { text: parsed.northStar.text, groundedIn: 'inferred from the dossier + recent activity', source: 'model' }, { now: Date.now() });
+      const proposed = QuestRefresh.normalize(questRefreshState).proposedNorthStar;
+      if (proposed) recommendationLedger.record({ id: 'northstar:' + Recommendation.fingerprint(proposed.text), surface: 'northstar', kind: 'direction', title: proposed.text,
+        target: 'pending', traits: ['direction', 'north-star'], evidence: [{ id: 'quest-refresh-context', type: 'context', quote: proposed.groundedIn }],
+        readiness: { ready: true, reasons: [] }, modelVersion: 'quest-refresh-v4' }, Date.now()).catch(() => {});
+    }
     persistQuestRefresh();
 
     if (parsed.none) { questRefreshNote({ outcome: 'none', reason: 'model judged the open slate already covers the next steps (' + why + ' pass)' }); return; }
     if (!parsed.quests.length) { questRefreshNote({ outcome: 'rejected', reason: 'every proposed quest failed hard validation (contract / dedup / grounding)' }); return; }
-    // CROSS-WIRE: parse already deduped vs this engine's own deniedTitles; drop a quest whose title the Commander
-    // declined in ANOTHER surface (a declined thread / a declined north star) so it isn't re-proposed here.
-    const declinedIdx = buildDeclinedIndex(null);   // station-scoped: no single agent owns the refresh slate
-    let minted = 0;
-    for (const q of parsed.quests) {
-      if (declinedIdx.has(q.title)) { questRefreshNote({ outcome: 'rejected', reason: 'declined elsewhere', title: q.title }); continue; }
-      const r = await questStore.mint({
-        title: q.title, desc: q.desc, reward: q.reward, kind: 'generated', createdBy: 'system:quest-refresh',
-        agentId: null, contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
-      }, Date.now());
-      if (r && r.ok) { minted++; questRefreshNote({ outcome: 'minted', reason: why + ' refresh — ' + q.groundedIn, title: q.title }); }
-      else questRefreshNote({ outcome: 'rejected', reason: (r && r.error) || 'the store rejected the mint', title: q.title });
+    // AUTHORITY BOUNDARY: a pass that inferred a NEW north star may not turn its own guess into open quest
+    // authority. Stage the batch with the proposal; confirm mints it, decline erases it.
+    if (QuestRefresh.normalize(questRefreshState).proposedNorthStar) {
+      questRefreshState = QuestRefresh.stageQuests(questRefreshState, parsed.quests); persistQuestRefresh();
+      questRefreshNote({ outcome: 'staged', reason: 'quests wait for the Commander to confirm the inferred north star', title: parsed.quests[0].title });
+      return;
     }
-    if (minted) { questRefreshState = QuestRefresh.stampMint(questRefreshState, { now: Date.now() }); persistQuestRefresh(); }
+    await mintQuestRecommendations(parsed.quests, why);
   } catch (e) {
     try { questRefreshNote({ outcome: 'error', reason: (e && e.message) || 'quest refresh cycle failed' }); } catch (_) {}
   } finally {
@@ -6742,6 +6853,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/scout/telemetry', h: handleScoutTelemetry },
   { m: 'GET', qsplit: '/api/recommendations', h: handleRecommendationsGet },
   { m: 'POST', exact: '/api/recommendations', h: handleRecommendationsPost },
+  { m: ['GET', 'POST', 'DELETE'], exact: '/api/personalization', h: handlePersonalization },
   { m: 'POST', exact: '/api/summon/ack', h: handleSummonAck },
   { m: 'POST', exact: '/api/key', h: handleSetKey },
   { m: 'POST', exact: '/api/channels/token', h: handleSetChannelToken },
@@ -8991,6 +9103,7 @@ async function handleQuestsConfirm(req, res) {
   if (!id) return json(400, { ok: false, error: 'which quest?' });
   const ok = body.ok === true || body.ok === 'true';
   let did; try { did = await questStore.confirmAttest(id, ok, body.note, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not record that verdict' }); }
+  if (did && ok) await recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => null);
   // caught-up nudge (QUEST V3): confirming the last open quest should earn fresh direction within the
   // cooldown, not wait for the next timer tick. The gate itself decides; this is just an early look.
   if (did) { try { questRefreshTick(); } catch (_) {} }
@@ -9003,6 +9116,7 @@ async function handleQuestsDismiss(req, res) {
   const id = String(body.id || '');
   if (!id) return json(400, { ok: false, error: 'which quest?' });
   let did; try { did = await questStore.dismiss(id, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not dismiss that quest' }); }
+  if (did) await recommendationLedger.verdict('quest:' + id, 'declined', String(body.reason || 'wrong_thing'), Date.now()).catch(() => null);
   if (did) { try { questRefreshTick(); } catch (_) {} }   // caught-up nudge (QUEST V3) — same early look as confirm
   json(200, { ok: !!did });
 }
@@ -9038,6 +9152,7 @@ function handleQuestsRefreshStatus(req, res) {
     enabled: process.env.SKYNET_QUEST_REFRESH !== '0',
     northStar: eff,
     northStarProposed: !!s.proposedNorthStar,
+    pendingQuestCount: s.pendingQuests.length,
     lastCycleAt: s.lastCycleAt,
     dueAt: s.lastCycleAt + QuestRefresh.REFRESH_EVERY_MS,
     due: d.fire, why: d.why, binding: d.binding,
@@ -9056,13 +9171,19 @@ async function handleQuestsRefreshNorthStar(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad request' }); }
   const decision = String(body.decision || '');
   if (decision !== 'confirm' && decision !== 'decline') return json(400, { ok: false, error: 'decision must be confirm or decline' });
-  const had = !!QuestRefresh.normalize(questRefreshState).proposedNorthStar;
+  const before = QuestRefresh.normalize(questRefreshState);
+  const had = !!before.proposedNorthStar;
+  const staged = QuestRefresh.pendingQuests(before);
   questRefreshState = (decision === 'confirm')
     ? QuestRefresh.confirmNorthStar(questRefreshState, { now: Date.now() })
     : QuestRefresh.declineNorthStar(questRefreshState, { now: Date.now() });
+  if (decision === 'confirm') questRefreshState = QuestRefresh.clearPendingQuests(questRefreshState);
   persistQuestRefresh();
+  let minted = 0;
+  if (had && decision === 'confirm' && staged.length) minted = await mintQuestRecommendations(staged, 'confirmed-direction');
+  await recommendationLedger.verdictTarget('northstar', 'pending', decision === 'confirm' ? 'completed' : 'declined', decision === 'confirm' ? 'completed' : 'wrong_thing', Date.now()).catch(() => null);
   const s = QuestRefresh.normalize(questRefreshState);
-  json(200, { ok: true, applied: had, decision: decision, northStar: QuestRefresh.effectiveNorthStar(s), northStarProposed: !!s.proposedNorthStar });
+  json(200, { ok: true, applied: had, decision: decision, minted: minted, northStar: QuestRefresh.effectiveNorthStar(s), northStarProposed: !!s.proposedNorthStar });
 }
 
 // POST /api/workshop/grant { agentId, on } — record/clear the Commander's "Build things while I'm away" consent
@@ -11419,7 +11540,7 @@ async function runOnce(o) {
   // Fire-and-forget + fail-open: a quest-store hiccup never touches run admission.
   try {
     for (const _pk of QuestSweeps.livePropKeys(questStore.openForAgent(agentId), agentId, station, resolved)) {
-      questStore.completeByContract('prop', _pk, Date.now()).catch(() => {});
+      questStore.completeByContract('prop', _pk, Date.now()).then(completeQuestRecommendationIds).catch(() => {});
     }
   } catch (_) {}
   // P1.5: the real informed-consent broker. surface:'interactive' + prompt ⇒ ungranted mutations ask live;
@@ -12463,7 +12584,7 @@ async function runOnce(o) {
     // fact sweep at writeMemoryRecord (memory provably committed); see questsweeps.js.
     try {
       const _qReason = taskQuestionAsked ? 'clarifying' : ((result && result.reason) || 'done');
-      if (_qReason === 'done') questStore.completeByContract('run', runId, Date.now()).catch(() => {});
+      if (_qReason === 'done') questStore.completeByContract('run', runId, Date.now()).then(completeQuestRecommendationIds).catch(() => {});
       else questStore.stallRun(runId, _qReason, Date.now()).catch(() => {});
     } catch (_) {}
     // QUEST V2 §A — the ARTIFACT-contract sweep: a quest keyed to a deliverable completes ONLY when that file
@@ -12475,7 +12596,7 @@ async function runOnce(o) {
       for (const _aq of QuestSweeps.artifactQuestKeys(questStore.openForAgent(agentId), agentId)) {
         try {
           const { abs: _aAbs } = await fsJail.resolveInside(agentId, _aq.key);
-          if (fs.existsSync(_aAbs)) await questStore.completeByContract('artifact', _aq.key, Date.now());
+          if (fs.existsSync(_aAbs)) completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
         } catch (_) { /* a non-path or escaping key simply never completes — truthful telemetry */ }
       }
     })().catch(() => {});
@@ -15442,7 +15563,7 @@ async function writeMemoryRecord(agentId, prop, opts) {
   // open until a committed memory covers them. Fire-and-forget + fail-open: never fails the memory write.
   try {
     for (const _fk of QuestSweeps.learnedFactKeys(questStore.openForAgent(agentId), agentId, { id: writtenId, content: content })) {
-      questStore.completeByContract('fact', _fk, Date.now()).catch(() => {});
+      questStore.completeByContract('fact', _fk, Date.now()).then(completeQuestRecommendationIds).catch(() => {});
     }
   } catch (_) {}
   return { ok: true, id: writtenId, kind: rec.kind };
