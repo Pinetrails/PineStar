@@ -35,6 +35,7 @@
       baseUrl: 'https://openrouter.ai/api/v1',
       baseUrlEnv: ['OPENROUTER_BASE'],
       modelsPath: '/models',
+      credentialProbePath: '/auth/key',
       defaultReasoningEffort: 'medium',
       unmetered: false,
       credentialPool: true,

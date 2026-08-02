@@ -254,7 +254,7 @@ async function readNdjson(res) {
     A.ok(invalidBody.ok === false && invalidBody.saved === false && invalidBody.code === 'INVALID_URL', 'invalid URL response explicitly says it was not saved');
     const afterInvalid = await (await fetch(B + '/api/connectors', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok(!(afterInvalid.connectors || []).some(c => c.id === 'invalid-scheme'), 'invalid connector is absent from the live/config projection');
-    const connectorFile = path.join(ws, 'connectors', 'connectors.json');
+    const connectorFile = path.join(ws, 'connectors', 'state.json');
     const invalidDisk = fs.existsSync(connectorFile) ? fs.readFileSync(connectorFile, 'utf8') : '';
     A.ok(invalidDisk.indexOf('invalid-scheme') < 0 && invalidDisk.indexOf(invalidSecret) < 0, 'invalid connector id and secret never reach disk');
 
@@ -489,6 +489,13 @@ async function readNdjson(res) {
     A.eq(alwaysRun.results.filter(r => r.ok === true).length, 4, 'all four calls succeeded under the standing grant');
     const perms = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok(JSON.stringify(perms).indexOf('mcp:demo') >= 0, 'the "Always" grant is visible in the Permissions panel, so it can be revoked');
+
+    const remove = await fetch(B + '/api/connectors/remove', { method: 'POST', headers, body: JSON.stringify({ id: 'demo' }) });
+    const removed = await remove.json();
+    A.ok(remove.status === 200 && removed.saved === true && removed.removed === true, 'connector removal returns one verified durable result');
+    const removedDisk = JSON.parse(fs.readFileSync(connectorFile, 'utf8'));
+    A.ok(!(removedDisk.configs || []).some(c => c.id === 'demo'), 'connector removal read-back has no matching config');
+    A.ok(!(removedDisk.oauth && removedDisk.oauth.byId && removedDisk.oauth.byId.demo), 'connector removal read-back has no matching OAuth credential');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

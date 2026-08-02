@@ -25,6 +25,42 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (nodeCrypto) {
   'use strict';
 
+  const DEFAULT_TIMEOUT_MS = 15000;
+  const MAX_TIMEOUT_MS = 60000;
+
+  /* One deadline primitive for EVERY OAuth network leg. `deadlineAt` is the whole-flow ceiling; `timeoutMs`
+     is the per-leg ceiling. An external AbortSignal (user CANCEL / connector removal / request disconnect)
+     is composed without AbortSignal.any so the shipped Node floor and injected tests behave identically. */
+  async function withDeadline(opts, fn, label) {
+    opts = opts || {};
+    const external = opts.signal;
+    // Whole-flow callers inject a clock alongside deadlineAt. A leg-only timeout needs no wall clock.
+    const now = typeof opts.now === 'function' ? opts.now : () => 0;
+    const setTimer = opts.setTimeoutImpl || setTimeout;
+    const clearTimer = opts.clearTimeoutImpl || clearTimeout;
+    let ms = Number(opts.timeoutMs);
+    if (!isFinite(ms) || ms <= 0) ms = DEFAULT_TIMEOUT_MS;
+    ms = Math.min(ms, MAX_TIMEOUT_MS);
+    if (Number(opts.deadlineAt) > 0) ms = Math.min(ms, Math.max(0, Number(opts.deadlineAt) - now()));
+    if (ms <= 0) throw new Error((label || 'oauth request') + ' timed out');
+    const ctrl = new AbortController();
+    let timedOut = false;
+    const cancel = () => ctrl.abort();
+    if (external && external.aborted) throw new Error((label || 'oauth request') + ' cancelled');
+    if (external && typeof external.addEventListener === 'function') external.addEventListener('abort', cancel, { once: true });
+    const timer = setTimer(() => { timedOut = true; ctrl.abort(); }, ms);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    try { return await fn(ctrl.signal); }
+    catch (e) {
+      if (timedOut) throw new Error((label || 'oauth request') + ' timed out after ' + ms + 'ms');
+      if ((external && external.aborted) || ctrl.signal.aborted) throw new Error((label || 'oauth request') + ' cancelled');
+      throw e;
+    } finally {
+      clearTimer(timer);
+      if (external && typeof external.removeEventListener === 'function') external.removeEventListener('abort', cancel);
+    }
+  }
+
   function base64url(buf) {
     return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
@@ -85,13 +121,14 @@
     return u;
   }
 
-  async function getJson(fetchImpl, url, label) {
+  async function getJson(fetchImpl, url, label, net) {
     assertSafeUrl(url, label);
-    let res;
-    try { res = await fetchImpl(url, { headers: { 'Accept': 'application/json', 'MCP-Protocol-Version': '2025-06-18' }, redirect: 'manual' }); }
+    try { return await withDeadline(net, async signal => {
+      const res = await fetchImpl(url, { headers: { 'Accept': 'application/json', 'MCP-Protocol-Version': '2025-06-18' }, redirect: 'manual', signal });
+      if (!res || res.status < 200 || res.status >= 300) throw new Error((label || 'fetch') + ' HTTP ' + (res && res.status));
+      try { return await res.json(); } catch (e) { throw new Error((label || 'fetch') + ' returned non-JSON'); }
+    }, label); }
     catch (e) { throw new Error((label || 'fetch') + ' failed: ' + ((e && e.message) || e)); }
-    if (!res || res.status < 200 || res.status >= 300) throw new Error((label || 'fetch') + ' HTTP ' + (res && res.status));
-    try { return await res.json(); } catch (e) { throw new Error((label || 'fetch') + ' returned non-JSON'); }
   }
 
   // The default RFC 9728 metadata URL when the server didn't hand one over: origin + /.well-known/oauth-protected-
@@ -114,13 +151,13 @@
     const serverUrl = String(opts.serverUrl || ''); if (!serverUrl) throw new Error('discover: serverUrl required');
     const parsed = parseWwwAuthenticate(opts.wwwAuthenticate);
     const prmUrl = parsed.resourceMetadata || defaultResourceMetadataUrl(serverUrl);
-    const prm = await getJson(fetchImpl, prmUrl, 'protected-resource metadata');
+    const prm = await getJson(fetchImpl, prmUrl, 'protected-resource metadata', opts);
     const servers = prm.authorization_servers || (prm.authorization_server ? [prm.authorization_server] : []);
     if (!servers.length) throw new Error('no authorization_servers in resource metadata');
     const authServer = String(servers[0]);
     let asMeta = null, lastErr = null;
     for (const asUrl of asMetadataUrls(authServer)) {
-      try { asMeta = await getJson(fetchImpl, asUrl, 'authorization-server metadata'); break; } catch (e) { lastErr = e; }
+      try { asMeta = await getJson(fetchImpl, asUrl, 'authorization-server metadata', opts); break; } catch (e) { lastErr = e; }
     }
     if (!asMeta) throw lastErr || new Error('no authorization-server metadata');
     if (!asMeta.authorization_endpoint || !asMeta.token_endpoint) throw new Error('authorization-server metadata missing endpoints');
@@ -151,13 +188,14 @@
       application_type: 'native'
     };
     assertSafeUrl(opts.registrationEndpoint, 'client registration');
-    let res;
-    try { res = await fetchImpl(opts.registrationEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body), redirect: 'manual' }); }
+    try { return await withDeadline(opts, async signal => {
+      const res = await fetchImpl(opts.registrationEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body), redirect: 'manual', signal });
+      if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 160); } catch (_) {} throw new Error('client registration HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
+      let j; try { j = await res.json(); } catch (e) { throw new Error('client registration returned non-JSON'); }
+      if (!j.client_id) throw new Error('client registration response had no client_id');
+      return { clientId: String(j.client_id), clientSecret: j.client_secret ? String(j.client_secret) : '', raw: j };
+    }, 'client registration'); }
     catch (e) { throw new Error('client registration failed: ' + ((e && e.message) || e)); }
-    if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 160); } catch (_) {} throw new Error('client registration HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
-    let j; try { j = await res.json(); } catch (e) { throw new Error('client registration returned non-JSON'); }
-    if (!j.client_id) throw new Error('client registration response had no client_id');
-    return { clientId: String(j.client_id), clientSecret: j.client_secret ? String(j.client_secret) : '', raw: j };
   }
 
   function buildAuthorizeUrl(o) {
@@ -198,13 +236,14 @@
     return now >= (expiresAt - (skewMs == null ? 60000 : skewMs));
   }
 
-  async function postForm(fetchImpl, tokenEndpoint, params, label) {
+  async function postForm(fetchImpl, tokenEndpoint, params, label, net) {
     assertSafeUrl(tokenEndpoint, label);
-    let res;
-    try { res = await fetchImpl(tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: new URLSearchParams(params).toString(), redirect: 'manual' }); }
+    try { return await withDeadline(net, async signal => {
+      const res = await fetchImpl(tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: new URLSearchParams(params).toString(), redirect: 'manual', signal });
+      if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error((label || 'token request') + ' HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
+      try { return await res.json(); } catch (e) { throw new Error((label || 'token request') + ' returned non-JSON'); }
+    }, label); }
     catch (e) { throw new Error((label || 'token request') + ' failed: ' + ((e && e.message) || e)); }
-    if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error((label || 'token request') + ' HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
-    try { return await res.json(); } catch (e) { throw new Error((label || 'token request') + ' returned non-JSON'); }
   }
 
   async function exchangeCode(o) {
@@ -218,7 +257,7 @@
       code_verifier: o.verifier || ''
     };
     if (o.resource) params.resource = o.resource;
-    const json = await postForm(o.fetchImpl, o.tokenEndpoint, params, 'code exchange');
+    const json = await postForm(o.fetchImpl, o.tokenEndpoint, params, 'code exchange', o);
     return tokensFromResponse(json, o.now || 0, '');
   }
 
@@ -227,14 +266,15 @@
     if (!o.fetchImpl) throw new Error('refreshTokens: fetchImpl required');
     const params = { grant_type: 'refresh_token', refresh_token: o.refreshToken || '', client_id: o.clientId || '' };
     if (o.resource) params.resource = o.resource;
-    const json = await postForm(o.fetchImpl, o.tokenEndpoint, params, 'token refresh');
+    const json = await postForm(o.fetchImpl, o.tokenEndpoint, params, 'token refresh', o);
     return tokensFromResponse(json, o.now || 0, o.refreshToken || '');   // keep the old refresh_token if the AS omits a new one
   }
 
   return {
     base64url, makeVerifier, challengeOf, parseWwwAuthenticate,
     defaultResourceMetadataUrl, discover, registerClient, buildAuthorizeUrl,
-    exchangeCode, refreshTokens, tokensFromResponse, needsRefresh,
+    exchangeCode, refreshTokens, tokensFromResponse, needsRefresh, withDeadline,
+    DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS,
     _internals: { asMetadataUrls, getJson, postForm }
   };
 });

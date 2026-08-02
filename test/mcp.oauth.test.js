@@ -131,6 +131,33 @@ const REDIRECT = 'http://127.0.0.1:8787/api/connectors/oauth/callback';
   A.eq(O.needsRefresh(0, 5000, 60000), true, 'no expiry recorded → must refresh');
 }
 
+// ---- H. deadlines cover response bodies too; external CANCEL wins immediately ----
+{
+  const keepAlive = setInterval(() => {}, 1000);
+  let bodySignal = null;
+  const stalled = async (url, opts) => {
+    bodySignal = opts.signal;
+    return { status: 200, json: () => new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => reject(new Error('aborted body')), { once: true });
+    }) };
+  };
+  let timed = '';
+  try { await O._internals.getJson(stalled, 'https://oauth.example/meta', 'body read', { timeoutMs: 15 }); }
+  catch (e) { timed = e.message; }
+  A.ok(/timed out/.test(timed), 'deadline remains armed while a metadata response body is read');
+  A.ok(bodySignal && bodySignal.aborted, 'deadline aborts the actual fetch/body signal');
+
+  const external = new AbortController();
+  const pending = O.withDeadline({ signal: external.signal, timeoutMs: 1000 }, signal => new Promise((resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+  }), 'cancel test');
+  external.abort();
+  let cancelled = '';
+  try { await pending; } catch (e) { cancelled = e.message; }
+  A.ok(/cancelled/.test(cancelled), 'user cancellation aborts a pending OAuth network leg');
+  clearInterval(keepAlive);
+}
+
 console.log('ok - mcp.oauth');
   // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
   // without this a failed assertion still exits 0 and the gate scores it green.

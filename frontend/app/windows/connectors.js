@@ -650,6 +650,7 @@
     const ccPending = new Set();   // connector ids with an in-flight OAuth sign-in (guards duplicate popups/pollers)
     const ccTimers = new Map();    // id -> live poll interval, so a CANCEL / panel-close can clear it (EL-11 #13)
     const ccPendingWin = new Map();// id -> popup window handle (browser) so a CANCEL can close a still-open consent tab
+    const ccAttempts = new Map();  // id -> { attemptId, controller }; CANCEL reaches backend discovery too
     // Stop and forget the poll for a connector — used by success/error/cap paths, the CANCEL affordance, and the
     // panel-leaves-DOM self-terminate guard. Idempotent (a missing id is a no-op).
     function stopCcPoll(id) { const t = ccTimers.get(id); if (t) { clearInterval(t); ccTimers.delete(id); } }
@@ -737,18 +738,29 @@
       ccPending.add(id);   // one in-flight sign-in per connector — no duplicate popups / concurrent pollers
       const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
       out.classList.remove('ok'); out.textContent = 'starting sign-in for ' + label + '…';
+      const attemptId = 'cc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+      const controller = new AbortController();
+      ccAttempts.set(id, { attemptId, controller });
+      const earlyCancel = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] button[data-cc-act]');
+      if (earlyCancel) { earlyCancel.dataset.ccAct = 'signin-cancel'; earlyCancel.textContent = 'CANCEL'; earlyCancel.disabled = false; }
       let url;
       try {
-        const j = await (await postJSON('/api/connectors/oauth/start', { id: id })).json().catch(() => ({}));
-        if (j.error || !j.url) { out.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); return; }
+        const startRes = await fetch('/api/connectors/oauth/start', { method: 'POST', signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, attemptId: attemptId }) });
+        const j = await startRes.json().catch(() => ({}));
+        if (j.error || !j.url) { out.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); ccAttempts.delete(id); ccResetSignBtn(id); return; }
         url = j.url;
-      } catch (err) { out.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); ccPending.delete(id); return; }
+      } catch (err) {
+        ccPending.delete(id); ccAttempts.delete(id); ccResetSignBtn(id);
+        if (controller.signal.aborted) { out.textContent = 'sign-in for ' + label + ' cancelled — press SIGN IN to try again.'; return; }
+        out.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); return;
+      }
       const opened = await openSignIn(url);
       if (!opened.opened) {
         // The consent window never opened (popup-blocked in a browser, or the OS-browser hand-off failed on
         // desktop). Do NOT start the poll — a "waiting for sign-in" claim against a window that doesn't exist
         // is the exact lie this fix removes. Tell the truth and stop.
-        out.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); return;
+        out.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); ccAttempts.delete(id); ccResetSignBtn(id); return;
       }
       const win = opened.win;   // popup handle when in a browser; null on desktop (opened in the real browser)
       ccPendingWin.set(id, win || null);   // remembered so a CANCEL can close a still-open popup
@@ -761,15 +773,15 @@
       const timer = setInterval(async () => {
         // Self-terminate the moment the panel body leaves the DOM (window closed / rerendered) — the same guard
         // buildMessaging._poll uses. Without it an abandoned sign-in kept hitting /api/connectors for ~5 min.
-        if (!document.body.contains(body)) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); return; }
+        if (!document.body.contains(body)) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccAttempts.delete(id); return; }
         tries++;
         try {
           const j = await Harness.api.get('/api/connectors');
           const c = (j.connectors || []).find(x => x.id === id);
-          if (c && c.state === 'up') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); out.classList.add('ok'); out.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
-          if (c && c.state === 'error') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('bad'); out.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); refresh(); return; }
+          if (c && c.state === 'up') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccAttempts.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); out.classList.add('ok'); out.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
+          if (c && c.state === 'error') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccAttempts.delete(id); sfx('bad'); out.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); refresh(); return; }
         } catch (_) {}
-        if (tries > 150) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccResetSignBtn(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
+        if (tries > 150) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccAttempts.delete(id); ccResetSignBtn(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
       }, 2000);
       ccTimers.set(id, timer);
     }
@@ -778,6 +790,11 @@
     function ccCancelSignIn(id) {
       stopCcPoll(id);
       ccPending.delete(id);
+      const attempt = ccAttempts.get(id); ccAttempts.delete(id);
+      if (attempt) {
+        try { attempt.controller.abort(); } catch (_) {}
+        postJSON('/api/connectors/oauth/cancel', { id: id, attemptId: attempt.attemptId }).catch(() => {});
+      } else postJSON('/api/connectors/oauth/cancel', { id: id }).catch(() => {});
       const w = ccPendingWin.get(id); ccPendingWin.delete(id);
       try { if (w && !w.closed) w.close(); } catch (_) {}
       ccResetSignBtn(id);

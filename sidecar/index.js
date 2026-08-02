@@ -152,6 +152,7 @@ const connectorCatalog = require('./mcp/catalog.js');       // curated one-click
 const serviceKeysMod = require('./servicekeys.js');         // KEYS tab: custom service API keys (pure core — env injection + masked list)
 const serviceKeysCatalog = require('./servicekeys-catalog.js');   // KEYS tab: the curated PLATFORM directory (pure data)
 const mcpOauth = require('./mcp/oauth.js');                 // generic OAuth 2.1 client for MCP connectors (discover/DCR/PKCE/refresh)
+const connectorStateMod = require('./connectorstate.js');   // one transactional envelope for connector config + OAuth secrets
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
@@ -295,6 +296,7 @@ function rejectBadApiToken(req, res) {
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
 // runtimeKey remains the OpenRouter back-compat alias for older routes/tool shims.
 const runtimeKeys = Object.create(null);
+const runtimeKeyPools = Object.create(null);   // provider id -> alternate keys; never shared across providers
 const runtimeBaseUrls = Object.create(null);
 let runtimeKey = String(ENV('OPENROUTER_KEY') || '').trim();
 if (runtimeKey) runtimeKeys.openrouter = runtimeKey;
@@ -1540,6 +1542,15 @@ function providerRuntimeKey(provider, explicitKey) {
   const profile = getProviderProfile(id);
   if (id === 'openrouter') return runtimeKey || envFirst(profile && profile.keyEnv);
   return envFirst(profile && profile.keyEnv);
+}
+function providerRuntimeKeyPool(provider, explicitPool) {
+  const id = normalizeProvider(provider);
+  const source = Array.isArray(explicitPool)
+    ? explicitPool
+    : (Object.prototype.hasOwnProperty.call(runtimeKeyPools, id)
+      ? runtimeKeyPools[id]
+      : String(ENV('KEY_POOL_' + id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')) || '').split(','));
+  return Array.from(new Set(source.map(k => String(k || '').trim()).filter(Boolean))).slice(0, 8);
 }
 function providerRuntimeBaseUrl(provider, explicitBaseUrl) {
   const id = normalizeProvider(provider);
@@ -2963,17 +2974,52 @@ const ROUTING_FILE = path.join(WORKSPACES, 'routing.plan.json');
    its tools/list into per-agent registry tools at run time. Mirrors the Telegram channel's config lifecycle. */
 const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
-function loadConnectorConfigs() {
-  try { const raw = loadResilient(CONNECTORS_FILE, 'connectors'); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
-  catch (e) { return []; }   // unrecoverable -> nothing configured
+const CONNECTORS_OAUTH_FILE = path.join(CONNECTORS_DIR, 'oauth.json');       // legacy read-only migration source
+const CONNECTORS_STATE_FILE = path.join(CONNECTORS_DIR, 'state.json');       // authoritative v2 envelope
+function loadConnectorState() {
+  let current = null, legacyConfigs = [], legacyOauth = {};
+  try { current = loadResilient(CONNECTORS_STATE_FILE, 'connector-state'); } catch (_) {}
+  if (current && Array.isArray(current.configs) && current.oauth) return connectorStateMod.normalize(current);
+  try { const raw = loadResilient(CONNECTORS_FILE, 'connectors'); legacyConfigs = (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; } catch (_) {}
+  try { const raw = loadResilient(CONNECTORS_OAUTH_FILE, 'connector-oauth'); legacyOauth = (raw && typeof raw === 'object') ? { byId: raw.byId || {}, clients: raw.clients || {} } : {}; } catch (_) {}
+  const migrated = connectorStateMod.normalize(null, { configs: legacyConfigs, oauth: legacyOauth });
+  // Migration is best-effort at boot. Until the verified v2 write succeeds, the legacy files remain untouched
+  // and will be read again next boot, so a read-only disk never loses the last credential copy.
+  if (legacyConfigs.length || Object.keys(legacyOauth.byId || {}).length || Object.keys(legacyOauth.clients || {}).length) {
+    const r = saveJsonVerified({
+      mkdir: () => fs.mkdirSync(CONNECTORS_DIR, { recursive: true }),
+      save: () => saveResilient(CONNECTORS_STATE_FILE, migrated),
+      load: () => loadResilient(CONNECTORS_STATE_FILE, 'connector-state'),
+      proof: raw => connectorStateMod.same(raw, migrated)
+    });
+    if (!r.ok) console.warn('[connectors] v2 migration could not be verified; legacy state remains authoritative for the next boot');
+  }
+  return migrated;
 }
-let connectorConfigs = loadConnectorConfigs();
+let connectorState = loadConnectorState();
+let connectorConfigs = connectorState.configs;
+let connectorOauth = connectorState.oauth;
+function persistConnectorState(nextConfigs, nextOauth) {
+  const intended = connectorStateMod.envelope(nextConfigs, nextOauth);
+  const r = saveJsonVerified({
+    mkdir: () => fs.mkdirSync(CONNECTORS_DIR, { recursive: true }),
+    save: () => saveResilient(CONNECTORS_STATE_FILE, intended),
+    load: () => loadResilient(CONNECTORS_STATE_FILE, 'connector-state'),
+    proof: raw => connectorStateMod.same(raw, intended)
+  });
+  if (!r.ok) console.warn('[connectors] transactional persist UNVERIFIED after retry (' + (r.error || '?') + ')');
+  return r.ok;
+}
+function adoptConnectorState(next) {
+  connectorState = connectorStateMod.normalize(next);
+  connectorConfigs = connectorState.configs;
+  connectorOauth = connectorState.oauth;
+}
 function saveConnectorConfigs() {
-  try {
-    fs.mkdirSync(CONNECTORS_DIR, { recursive: true });
-    saveResilient(CONNECTORS_FILE, { version: 1, connectors: connectorConfigs });   // fsync-durable + .bak last-known-good
-    return true;
-  } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); return false; }
+  const next = connectorStateMod.envelope(connectorConfigs, connectorOauth);
+  if (!persistConnectorState(next.configs, next.oauth)) return false;
+  adoptConnectorState(next);
+  return true;
 }
 /* ---- Custom service API keys (the KEYS tab's "add an unlisted platform"): a third credential class beside
    provider keys and connector tokens. Persisted in a PROTECTED sibling file (outside the fs jail, never on the
@@ -3036,12 +3082,6 @@ const connectors = makeConnectorManager({
    returned by /api/connectors. The access token lives ONLY here — an oauth connector's persisted config carries
    `oauth:true` but no token, so a stale/expired token is never persisted or reused. ---- */
 const CONNECTOR_OAUTH_REDIRECT = 'http://127.0.0.1:' + PORT + '/api/connectors/oauth/callback';
-const CONNECTORS_OAUTH_FILE = path.join(CONNECTORS_DIR, 'oauth.json');
-function loadConnectorOauth() {
-  try { const raw = loadResilient(CONNECTORS_OAUTH_FILE, 'connector-oauth'); return (raw && typeof raw === 'object') ? { byId: raw.byId || {}, clients: raw.clients || {} } : { byId: {}, clients: {} }; }
-  catch (_) { return { byId: {}, clients: {} }; }
-}
-let connectorOauth = loadConnectorOauth();
 // Persist the connector-OAuth store (DCR clientId cache + per-connector access/refresh tokens). Returns true ONLY
 // when a READ-BACK proves the write reached disk. `verifyId`, when given, additionally confirms that connector's
 // token bundle is on disk — so the sign-in callback can prove the tokens it just exchanged are durable before it
@@ -3049,34 +3089,37 @@ let connectorOauth = loadConnectorOauth();
 // the NEXT boot, while the popup lied "connected"). Retries once. Never throws.
 function saveConnectorOauth(verifyId) {
   const intended = String((verifyId && connectorOauth.byId[verifyId] && connectorOauth.byId[verifyId].accessToken) || '');
-  const r = saveJsonVerified({
-    mkdir: () => fs.mkdirSync(CONNECTORS_DIR, { recursive: true }),
-    save: () => saveResilient(CONNECTORS_OAUTH_FILE, { version: 1, byId: connectorOauth.byId, clients: connectorOauth.clients }),
-    load: () => loadResilient(CONNECTORS_OAUTH_FILE, 'connector-oauth'),
-    proof: (raw) => {
-      if (!raw || typeof raw !== 'object') return false;
-      if (!verifyId) return true;   // no per-connector proof requested (e.g. clientId-only save) -> a clean read-back is enough
-      const got = raw.byId && raw.byId[verifyId];
-      return !!(got && String(got.accessToken || '') === intended);   // prove THIS connector's exchanged token is on disk
-    }
-  });
-  if (!r.ok) console.warn('[connectors] oauth persist UNVERIFIED after retry (' + r.error + ')');
-  return r.ok;
+  const next = connectorStateMod.envelope(connectorConfigs, connectorOauth);
+  if (!persistConnectorState(next.configs, next.oauth)) return false;
+  if (verifyId) {
+    let raw = null; try { raw = loadResilient(CONNECTORS_STATE_FILE, 'connector-state'); } catch (_) {}
+    const got = raw && raw.oauth && raw.oauth.byId && raw.oauth.byId[verifyId];
+    if (!got || String(got.accessToken || '') !== intended) return false;
+  }
+  adoptConnectorState(next);
+  return true;
 }
 // drop the cached dynamically-registered client for an authorization server (when the AS reports it invalid), so the
 // next sign-in RE-REGISTERS a fresh one instead of wedging forever on a pruned/rotated client id.
 function forgetOauthClient(authServer) {
-  if (authServer && connectorOauth.clients[authServer]) { delete connectorOauth.clients[authServer]; saveConnectorOauth(); }
+  if (!authServer || !connectorOauth.clients[authServer]) return;
+  const next = connectorStateMod.withOauthClient(connectorStateMod.envelope(connectorConfigs, connectorOauth), authServer, null);
+  if (persistConnectorState(next.configs, next.oauth)) adoptConnectorState(next);
 }
-const connectorOauthPending = new Map();   // csrf state -> { id, label, verifier, clientId, tokenEndpoint, authorizationServer, resource, serverUrl, redirectUri, at }
+const connectorOauthPending = new Map();   // csrf state -> { id, attemptId, label, verifier, clientId, tokenEndpoint, authorizationServer, resource, serverUrl, redirectUri, at }
+const connectorOauthAttempts = new Map();  // attemptId -> { id, controller }; cancellable discovery/registration work
+const CONNECTOR_OAUTH_LEG_MS = 15000;
+const CONNECTOR_OAUTH_FLOW_MS = 60000;
 // refresh an oauth connector's access token when it's near expiry; returns the freshest access token ('' if not authed).
 async function ensureConnectorOauthToken(id) {
   const t = connectorOauth.byId[id];
   if (!t || !t.accessToken) return '';
   if (mcpOauth.needsRefresh(t.expiresAt, Date.now()) && t.refreshToken && t.tokenEndpoint) {
     try {
-      const nt = await mcpOauth.refreshTokens({ fetchImpl: globalThis.fetch, tokenEndpoint: t.tokenEndpoint, refreshToken: t.refreshToken, clientId: t.clientId, resource: t.resource, now: Date.now() });
-      connectorOauth.byId[id] = Object.assign({}, t, nt); saveConnectorOauth();
+      const nt = await mcpOauth.refreshTokens({ fetchImpl: globalThis.fetch, tokenEndpoint: t.tokenEndpoint, refreshToken: t.refreshToken, clientId: t.clientId, resource: t.resource, now: Date.now(), timeoutMs: CONNECTOR_OAUTH_LEG_MS });
+      const next = connectorStateMod.withOauthEntry(connectorStateMod.envelope(connectorConfigs, connectorOauth), id, Object.assign({}, t, nt));
+      if (!persistConnectorState(next.configs, next.oauth)) throw new Error('refreshed token could not be saved');
+      adoptConnectorState(next);
       return nt.accessToken;
     } catch (e) { console.warn('[connectors] oauth refresh failed for ' + id + ':', (e && e.message) || e); return t.accessToken; }
   }
@@ -6807,12 +6850,14 @@ const ROUTES = [
   { m: 'POST', exact: '/api/auth/kimi/logout', h: (req, res) => handleOAuthLogout(req, res, 'kimi') },
   { m: 'GET', exact: '/api/providers', h: handleProviders },
   { m: 'POST', exact: '/api/providers/probe', h: handleProviderProbe },
+  { m: 'POST', exact: '/api/providers/validate', h: handleProviderValidate },
   // /api/models/openrouter is served by this same prefix (id='openrouter'). handleProviderModels answers 200
   // with {models:[]} + error on any catalog failure, so it never throws into the central guard.
   { m: 'GET', qprefix: '/api/models/', h: handleProviderModels },
   { m: 'POST', exact: '/api/auth/codex/logout', h: handleCodexLogout },
   { m: 'GET', exact: '/api/connectors/catalog', h: handleConnectorCatalog },
   { m: 'POST', exact: '/api/connectors/oauth/start', h: handleConnectorOauthStart },
+  { m: 'POST', exact: '/api/connectors/oauth/cancel', h: handleConnectorOauthCancel },
   { m: 'GET', prefix: '/api/connectors/oauth/callback', h: handleConnectorOauthCallback },
   { m: 'GET', exact: '/api/connectors', h: handleConnectorsList },
   { m: 'POST', exact: '/api/connectors', h: handleConnectorUpsert },
@@ -7524,8 +7569,13 @@ async function handleConfigImport(req, res) {
       if (live && live.headers) merged.headers = Object.assign({}, c.headers, redactSecretKeep(live.headers, c.headers));
       byId.set(c.id, merged);
     }
+    const priorConfigs = connectorConfigs;
     connectorConfigs = [...byId.values()];
-    saveConnectorConfigs(); applied.push('connectors');
+    if (!saveConnectorConfigs()) {
+      connectorConfigs = priorConfigs;
+      return json(500, { ok: false, applied, error: 'connector import could not be verified on disk; existing connectors were left unchanged' });
+    }
+    applied.push('connectors');
   }
 
   // browser-owned slices are echoed back for the app to restore into its own localStorage.
@@ -7563,7 +7613,14 @@ async function handleConfigReset(req, res) {
       try { persistAllowlist(grantsPermanent, {}); } catch (_) {}
       break;
     }
-    case 'connectors': connectorConfigs = []; saveConnectorConfigs(); break;
+    case 'connectors': {
+      const next = connectorStateMod.envelope([], { byId: {}, clients: {} });
+      if (!persistConnectorState(next.configs, next.oauth)) return json(500, { ok: false, section, error: 'connector reset could not be verified on disk; existing connectors were left unchanged' });
+      const oldIds = connectorConfigs.map(c => c && c.id).filter(Boolean);
+      adoptConnectorState(next);
+      for (const id of oldIds) { try { await connectors.remove(id); } catch (_) {} }
+      break;
+    }
     case 'servicekeys': serviceKeys = []; applyServiceKeysEnv(); saveServiceKeys(); break;   // scrubs the injected env vars too
     default: return json(400, { error: 'unknown or non-resettable section: ' + (section || '(empty)') });
   }
@@ -7663,6 +7720,11 @@ function setProviderRuntimeConfig(provider, patch) {
     if (baseUrl) runtimeBaseUrls[id] = baseUrl;
     else delete runtimeBaseUrls[id];
   }
+  if (Object.prototype.hasOwnProperty.call(patch, 'keyPool')) {
+    const pool = providerRuntimeKeyPool(id, Array.isArray(patch.keyPool) ? patch.keyPool : []);
+    if (pool.length) runtimeKeyPools[id] = pool;
+    else delete runtimeKeyPools[id];
+  }
   return id;
 }
 
@@ -7698,6 +7760,7 @@ async function handleSetKey(req, res) {
         if (Object.prototype.hasOwnProperty.call(body, 'api_key')) patch.key = body.api_key;
         if (Object.prototype.hasOwnProperty.call(body, 'baseUrl')) patch.baseUrl = body.baseUrl;
         if (Object.prototype.hasOwnProperty.call(body, 'base_url')) patch.baseUrl = body.base_url;
+        if (Object.prototype.hasOwnProperty.call(body, 'keyPool')) patch.keyPool = body.keyPool;
       }
     } catch (_) {}
   }
@@ -7706,7 +7769,7 @@ async function handleSetKey(req, res) {
   const key = providerRuntimeKey(id, '');
   const baseUrl = providerRuntimeBaseUrl(id, '');
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  return res.end(JSON.stringify({ ok: true, provider: id, configured: providerHasCredential(id, key, baseUrl) }));
+  return res.end(JSON.stringify({ ok: true, provider: id, configured: providerHasCredential(id, key, baseUrl), alternateCount: providerRuntimeKeyPool(id).length }));
 }
 
 /* desktop channel-token push (T1.4): the parent shell stores a bot token in the OS keychain and pushes it here
@@ -7942,18 +8005,20 @@ async function handleConnectorRemove(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const id = String(body.id || '').trim();
-  connectorConfigs = connectorConfigs.filter(c => c.id !== id);
-  saveConnectorConfigs();
-  if (connectorOauth.byId[id]) {
-    // forget the OAuth tokens AND the dynamically-registered client for this connector's authorization server, so a
-    // later re-add RE-REGISTERS a fresh client — a server-pruned/rotated DCR client would otherwise wedge sign-in.
-    const as = connectorOauth.byId[id].authorizationServer;
-    delete connectorOauth.byId[id];
-    if (as && connectorOauth.clients[as]) delete connectorOauth.clients[as];
-    saveConnectorOauth();
+  if (!id) return json(400, { error: 'connector id is required' });
+  const next = connectorStateMod.removeConnector(connectorStateMod.envelope(connectorConfigs, connectorOauth), id);
+  if (!persistConnectorState(next.configs, next.oauth)) {
+    return json(500, { ok: false, saved: false, removed: false, error: 'connector removal could not be verified on disk; the existing connector was left unchanged' });
   }
-  await connectors.remove(id);
-  json(200, { ok: true });
+  adoptConnectorState(next);
+  for (const [attemptId, a] of connectorOauthAttempts) {
+    if (a && a.id === id) { try { a.controller.abort(); } catch (_) {} connectorOauthAttempts.delete(attemptId); }
+  }
+  for (const [state, p] of connectorOauthPending) if (p && p.id === id) connectorOauthPending.delete(state);
+  let runtimeRemoved = true, detail = '';
+  try { await connectors.remove(id); }
+  catch (e) { runtimeRemoved = false; detail = (e && e.message) || 'runtime cleanup failed'; }
+  return json(200, { ok: true, saved: true, removed: true, runtimeRemoved, detail: detail || undefined });
 }
 async function handleConnectorRefresh(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -7973,37 +8038,79 @@ async function handleConnectorOauthStart(req, res) {
   if (!entry) return json(400, { error: 'unknown catalog connector' });
   if (entry.authType !== 'oauth') return json(400, { error: 'this connector does not use OAuth' });
   if (!entry.url) return json(400, { error: 'this connector has no endpoint configured yet' });
+  const rawAttempt = String(body.attemptId || '').trim();
+  const attemptId = /^[A-Za-z0-9_-]{8,80}$/.test(rawAttempt) ? rawAttempt : crypto.randomBytes(12).toString('hex');
+  if (connectorOauthAttempts.has(attemptId)) return json(409, { error: 'this sign-in attempt is already running', attemptId });
+  const controller = new AbortController();
+  const deadlineAt = Date.now() + CONNECTOR_OAUTH_FLOW_MS;
+  connectorOauthAttempts.set(attemptId, { id: entry.id, controller });
+  let completed = false;
+  const abortOnClose = () => { if (!completed) controller.abort(); };
+  req.once('aborted', abortOnClose);
+  res.once('close', abortOnClose);
+  const net = { signal: controller.signal, timeoutMs: CONNECTOR_OAUTH_LEG_MS, deadlineAt, now: () => Date.now() };
   try {
     // best-effort: read the 401 WWW-Authenticate pointer (discover() falls back to the default PRM url if absent).
     let www = '';
     try {
-      const pr = await globalThis.fetch(entry.url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'StarNet', version: '1' } } }) });
+      const pr = await mcpOauth.withDeadline(net, signal => globalThis.fetch(entry.url, { method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'StarNet', version: '1' } } }) }), 'connector authorization probe');
       www = (pr.headers && pr.headers.get && pr.headers.get('www-authenticate')) || '';
     } catch (_) {}
-    const disc = await mcpOauth.discover({ fetchImpl: globalThis.fetch, serverUrl: entry.url, wwwAuthenticate: www });
+    const disc = await mcpOauth.discover({ fetchImpl: globalThis.fetch, serverUrl: entry.url, wwwAuthenticate: www, signal: controller.signal, timeoutMs: CONNECTOR_OAUTH_LEG_MS, deadlineAt, now: net.now });
     // reuse a cached client for this authorization server, else dynamically register one (RFC 7591).
     let clientId = (connectorOauth.clients[disc.authorizationServer] || {}).clientId;
     if (!clientId) {
       if (!disc.registrationEndpoint) return json(502, { error: 'this server needs a pre-registered OAuth client (no dynamic registration)' });
-      const reg = await mcpOauth.registerClient({ fetchImpl: globalThis.fetch, registrationEndpoint: disc.registrationEndpoint, redirectUri: CONNECTOR_OAUTH_REDIRECT, clientName: 'StarNet' });
+      const reg = await mcpOauth.registerClient({ fetchImpl: globalThis.fetch, registrationEndpoint: disc.registrationEndpoint, redirectUri: CONNECTOR_OAUTH_REDIRECT, clientName: 'StarNet', signal: controller.signal, timeoutMs: CONNECTOR_OAUTH_LEG_MS, deadlineAt, now: net.now });
       clientId = reg.clientId;
       // Cache the freshly DCR-registered clientId. If it can't be proven on disk, warn but DON'T abort the sign-in:
       // the clientId is still valid in-memory for this flow, and a failed cache only costs a re-registration next
       // time (harmless — a fresh DCR client), unlike a lost token which forces a full re-sign-in.
-      connectorOauth.clients[disc.authorizationServer] = { clientId: clientId, at: Date.now() };
-      if (!saveConnectorOauth()) console.warn('[connectors] DCR clientId cache not persisted for ' + disc.authorizationServer + ' — a later sign-in will re-register a fresh client.');
+      const nextClientState = connectorStateMod.withOauthClient(connectorStateMod.envelope(connectorConfigs, connectorOauth), disc.authorizationServer, { clientId: clientId, at: Date.now() });
+      if (persistConnectorState(nextClientState.configs, nextClientState.oauth)) adoptConnectorState(nextClientState);
+      else console.warn('[connectors] DCR clientId cache not persisted for ' + disc.authorizationServer + ' — a later sign-in will re-register a fresh client.');
     }
     const verifier = mcpOauth.makeVerifier(crypto.randomBytes(48));
     const state = crypto.randomBytes(16).toString('hex');
-    connectorOauthPending.set(state, { id: entry.id, label: entry.name, verifier: verifier, clientId: clientId,
+    connectorOauthPending.set(state, { id: entry.id, attemptId, label: entry.name, verifier: verifier, clientId: clientId,
       tokenEndpoint: disc.tokenEndpoint, authorizationServer: disc.authorizationServer, resource: disc.resource,
       serverUrl: entry.url, redirectUri: CONNECTOR_OAUTH_REDIRECT, at: Date.now() });
     // bound the pending set (a stale/abandoned sign-in never accumulates); 10-minute TTL.
     for (const [k, v] of connectorOauthPending) { if (Date.now() - (v.at || 0) > 600000) connectorOauthPending.delete(k); }
     const url = mcpOauth.buildAuthorizeUrl({ authorizationEndpoint: disc.authorizationEndpoint, clientId: clientId, redirectUri: CONNECTOR_OAUTH_REDIRECT, challenge: mcpOauth.challengeOf(verifier), state: state, resource: disc.resource });
-    json(200, { url: url });
-  } catch (e) { json(502, { error: (e && e.message) || 'oauth start failed' }); }
+    completed = true;
+    json(200, { url: url, attemptId });
+  } catch (e) {
+    completed = true;
+    const msg = (e && e.message) || 'oauth start failed';
+    json(/cancelled/i.test(msg) ? 499 : 502, { error: msg, attemptId, cancelled: /cancelled/i.test(msg) });
+  } finally {
+    connectorOauthAttempts.delete(attemptId);
+    req.removeListener('aborted', abortOnClose);
+    res.removeListener('close', abortOnClose);
+  }
+}
+
+async function handleConnectorOauthCancel(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const attemptId = String(body.attemptId || '').trim();
+  const id = String(body.id || '').trim();
+  let cancelled = false;
+  const active = connectorOauthAttempts.get(attemptId);
+  if (active && (!id || active.id === id)) {
+    try { active.controller.abort(); } catch (_) {}
+    connectorOauthAttempts.delete(attemptId);
+    cancelled = true;
+  }
+  for (const [state, p] of connectorOauthPending) {
+    if (p && ((attemptId && p.attemptId === attemptId) || (!attemptId && id && p.id === id))) {
+      connectorOauthPending.delete(state);
+      cancelled = true;
+    }
+  }
+  return json(200, { ok: true, cancelled, attemptId: attemptId || undefined, id: id || undefined });
 }
 
 /* GET /api/connectors/oauth/callback?code&state — the redirect target (a top-level browser navigation, so it is
@@ -8033,21 +8140,22 @@ async function handleConnectorOauthCallback(req, res) {
   if (!code) return page('Sign-in failed', 'No authorization code was returned by the provider.', false);
   try {
     const tok = await mcpOauth.exchangeCode({ fetchImpl: globalThis.fetch, tokenEndpoint: pending.tokenEndpoint, code: code,
-      redirectUri: pending.redirectUri, clientId: pending.clientId, verifier: pending.verifier, resource: pending.resource, now: Date.now() });
+      redirectUri: pending.redirectUri, clientId: pending.clientId, verifier: pending.verifier, resource: pending.resource, now: Date.now(), timeoutMs: 30000 });
     if (!tok.accessToken) return page('Sign-in failed', 'The provider did not return an access token.', false);
-    connectorOauth.byId[pending.id] = { accessToken: tok.accessToken, refreshToken: tok.refreshToken, expiresAt: tok.expiresAt,
+    const oauthEntry = { accessToken: tok.accessToken, refreshToken: tok.refreshToken, expiresAt: tok.expiresAt,
       scope: tok.scope, tokenType: tok.tokenType, clientId: pending.clientId, tokenEndpoint: pending.tokenEndpoint,
       authorizationServer: pending.authorizationServer, resource: pending.resource, at: Date.now() };
     // FAIL THE SIGN-IN LOUDLY if the exchanged tokens can't be proven on disk (read-back + retry). A silent persist
     // failure would leave the connector unsigned + the DCR clientId orphaned on the NEXT boot while the popup lied
     // "connected" — never assert durable state the harness can't prove. Roll the in-memory entry back so this session
     // is consistent with disk (unsigned) rather than a phantom-connected connector that vanishes on restart.
-    if (!saveConnectorOauth(pending.id)) {
-      delete connectorOauth.byId[pending.id];
+    const cfg = { id: pending.id, transport: 'http', url: pending.serverUrl, label: pending.label, enabled: true, oauth: true };
+    let next = connectorStateMod.withOauthEntry(connectorStateMod.envelope(connectorConfigs, connectorOauth), pending.id, oauthEntry);
+    next = connectorStateMod.upsertConfig(next, cfg);
+    if (!persistConnectorState(next.configs, next.oauth)) {
       return page('Sign-in could not be saved', pending.label + ' authorized, but the sign-in could NOT be saved to disk (it would be lost on restart), so it was not activated. Check the sidecar console for the write error and try Sign in again.', false);
     }
-    const cfg = { id: pending.id, transport: 'http', url: pending.serverUrl, label: pending.label, enabled: true, oauth: true };
-    connectorConfigs = connectorConfigs.filter(c => c.id !== pending.id).concat([cfg]); saveConnectorConfigs();
+    adoptConnectorState(next);
     const result = await configureConnectorCfg(cfg);
     if (result && result.ok && result.state === 'up') return page(pending.label + ' connected', pending.label + ' is connected — ' + (result.toolCount || 0) + ' tool(s) now available to your agents.', true);
     return page('Almost there', pending.label + ' authorized, but the connection did not come up: ' + ((result && result.error) || 'unknown error') + '. Try Reload from the connectors panel.', false);
@@ -10594,7 +10702,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
+      key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
@@ -11549,7 +11657,8 @@ async function runOnce(o) {
   const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : effectiveFallbackChain())
     .map(s => String(s || '').trim()).filter(s => s && s !== model);
   // CREDENTIAL ROTATION (P0.2): on a rate-limit/auth/billing failure the loop rotates to an alternate KEY for the
-  // SAME model BEFORE trying alternate models. Pool source: o.keyPool (array) or env SKYNET_KEY_POOL (comma list).
+  // SAME model BEFORE trying alternate models. Pools are provider-scoped: an explicit per-run list or
+  // SKYNET_KEY_POOL_<PROVIDER>. A global pool is intentionally not accepted because keys are not portable.
   // credPool sinks cooled (recently-failed) keys to the back; each entry is a fresh provider on that key (priceOf
   // is key-independent → cost stays correct) tagged with credKey so the loop's onFallback can cool it on failure.
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
@@ -11557,7 +11666,7 @@ async function runOnce(o) {
   let activePrimaryKey = runKey;
   const primaryProfile = getProviderProfile(providerId);
   if (!usingCodex && !usingDeviceOAuth && primaryProfile && primaryProfile.credentialPool) {
-    const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
+    const pool = providerRuntimeKeyPool(providerId, Array.isArray(o.keyPool) ? o.keyPool : undefined)
       .map(s => String(s || '').trim()).filter(s => s && s !== runKey);
     /* THE COOLDOWN HAS TO REACH THE PRIMARY KEY. penalize() is called with the OUTGOING key, which on the first
        rotation is the run's PRIMARY — but the only consumer of a cooldown is credPool.order(), and the list
@@ -14040,6 +14149,52 @@ async function handleProviderProbe(req, res) {
   } catch (e) {
     json({ provider: id, reachable: false, catalogAvailable: false, credentialVerified: false, error: (e && e.message) || 'provider probe failed', code: (e && e.code) || '' });
   }
+}
+
+// Candidate-key validation is deliberately separate from persistence: Settings keeps the proven old key active,
+// sends the proposed value here in memory, and commits it only after this route proves provider authentication.
+// The candidate is never logged, echoed, placed on the bus, or written to disk.
+async function handleProviderValidate(req, res) {
+  const json = (obj) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return json({ ok: false, credentialVerified: false, error: 'bad json' }); }
+  const id = normalizeProvider(body.provider);
+  const profile = getProviderProfile(id);
+  if (!profile || providerUsesCodex(id) || providerUsesDeviceOAuth(id)) return json({ ok: false, provider: id, credentialVerified: false, error: 'this provider does not accept an API key' });
+  const candidate = String(body.key || '').trim();
+  const baseUrl = providerRuntimeBaseUrl(id, body.baseUrl || body.base_url || '');
+  if (providerRequiresKey(id) && !candidate) return json({ ok: false, provider: id, credentialVerified: false, error: 'a candidate key is required' });
+  if (providerRequiresBaseUrl(id) && !baseUrl) return json({ ok: false, provider: id, credentialVerified: false, error: 'a base URL is required' });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000); if (timer && timer.unref) timer.unref();
+  try {
+    // OpenRouter's catalog is public; its authenticated /auth/key endpoint proves the candidate without spending
+    // tokens. Other keyed providers protect /models, so a non-empty catalog proves both reachability and auth.
+    if (profile.credentialProbePath) {
+      const u = String(baseUrl || profile.baseUrl || '').replace(/\/$/, '') + profile.credentialProbePath;
+      const r = await globalThis.fetch(u, { signal: ctrl.signal, headers: { 'Authorization': 'Bearer ' + candidate, 'Accept': 'application/json' } });
+      if (!r.ok) return json({ ok: false, provider: id, reachable: true, credentialVerified: false, status: r.status, error: r.status === 401 || r.status === 403 ? 'provider rejected this key' : 'credential probe HTTP ' + r.status });
+      return json({ ok: true, provider: id, reachable: true, credentialVerified: true });
+    }
+    const provider = selectProvider({ provider: id, fetch: globalThis.fetch, key: candidate, baseUrl });
+    const models = await provider.listModels();
+    if (!models.length) return json({ ok: false, provider: id, reachable: false, credentialVerified: false, error: 'provider returned no usable models for this key' });
+    // A custom endpoint may expose /models without authenticating it. When a candidate key was supplied, prove
+    // the actual inference wire with a bounded tiny response before allowing replacement.
+    if (id === 'custom' && candidate) {
+      const model = String(body.model || (models[0] && models[0].id) || '').trim();
+      if (!model) return json({ ok: false, provider: id, reachable: true, credentialVerified: false, error: 'no model is available to validate this key' });
+      let answered = false;
+      for await (const ev of provider.stream({ model, messages: [{ role: 'user', content: 'Reply with OK.' }], signal: ctrl.signal })) {
+        if (ev && ((ev.type === 'text' && ev.delta) || ev.type === 'done')) answered = true;
+      }
+      if (!answered) return json({ ok: false, provider: id, reachable: true, credentialVerified: false, error: 'the endpoint accepted the request but did not answer' });
+      return json({ ok: true, provider: id, reachable: true, credentialVerified: true, model });
+    }
+    return json({ ok: true, provider: id, reachable: true, credentialVerified: true, modelCount: models.length });
+  } catch (e) {
+    const timedOut = ctrl.signal.aborted;
+    return json({ ok: false, provider: id, reachable: false, credentialVerified: false, error: timedOut ? 'credential validation timed out' : ((e && e.message) || 'credential validation failed') });
+  } finally { clearTimeout(timer); }
 }
 
 async function listModelsForProvider(providerId, opts) {

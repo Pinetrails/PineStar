@@ -8,7 +8,7 @@
 'use strict';
 
 const Harness = (() => {
-  const LS = { key: 'starnet.byok.key', model: 'starnet.byok.model', prov: 'starnet.byok.prov', baseUrl: 'starnet.byok.baseUrl', effort: 'starnet.byok.reasoningEffort' };
+  const LS = { key: 'starnet.byok.key', keyPool: 'starnet.byok.keyPool', model: 'starnet.byok.model', prov: 'starnet.byok.prov', baseUrl: 'starnet.byok.baseUrl', effort: 'starnet.byok.reasoningEffort' };
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
@@ -70,6 +70,7 @@ const Harness = (() => {
   }
   let _configured = false;   // desktop back-compat alias for "is the OpenRouter key stored?"
   let _configuredByProvider = Object.create(null);
+  let _alternateCountByProvider = Object.create(null);
   let apiToken = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
 
@@ -127,6 +128,7 @@ const Harness = (() => {
         status.forEach(s => {
           const p = normalizeProviderId(s && s.provider);
           _configuredByProvider[p] = !!(s && s.configured);
+          _alternateCountByProvider[p] = Math.max(0, Number(s && s.alternateCount) || 0);
         });
         _configured = !!_configuredByProvider.openrouter;
         loaded = true;
@@ -260,6 +262,34 @@ const Harness = (() => {
     }
     writeScoped(LS.key, p, k || '');
   };
+  function keyPoolSize(provider) {
+    const p = normalizeProviderId(provider || getProv());
+    if (DESKTOP) return Math.max(0, Number(_alternateCountByProvider[p]) || 0);
+    try { return JSON.parse(readScoped(LS.keyPool, p) || '[]').length || 0; } catch (_) { return 0; }
+  }
+  function setKeyPool(keys, provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const cleaned = Array.from(new Set((Array.isArray(keys) ? keys : []).map(k => String(k || '').trim()).filter(Boolean))).slice(0, 8);
+    if (DESKTOP) {
+      return invoke('harness_store_provider_key_pool', { provider: p, keys: cleaned })
+        .then(count => { _alternateCountByProvider[p] = Math.max(0, Number(count) || 0); return count; });
+    }
+    writeScoped(LS.keyPool, p, JSON.stringify(cleaned));
+    return Promise.resolve(cleaned.length);
+  }
+  async function validateAndSetKeyPool(keys, provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const cleaned = Array.from(new Set((Array.isArray(keys) ? keys : []).map(k => String(k || '').trim()).filter(Boolean))).slice(0, 8);
+    for (const candidate of cleaned) {
+      const r = await fetch('/api/providers/validate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: p, key: candidate, baseUrl: getBaseUrl(p) || '', model: p === getProv() ? getModel() : '' })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.credentialVerified) throw new Error(String(j.error || 'a backup key was rejected') + ' — your previous backup pool is unchanged');
+    }
+    return setKeyPool(cleaned, p);
+  }
   // Channel bot tokens (Telegram/Discord). Desktop: store in the OS keychain via Tauri (never over HTTP, never
   // plaintext) — mirrors setKey for provider keys. Returns a promise that resolves to true when the token was
   // routed to the keychain, false in the browser build (where the caller lets the token ride the connect POST as
@@ -425,6 +455,24 @@ const Harness = (() => {
     } catch (_) { return fallback; }
   }
 
+  // Replace a credential as one user-visible operation: prove the candidate first, then commit it. Validation
+  // never mutates provider state, so a rejection/timeout leaves the previous working key untouched.
+  async function validateAndSetKey(key, provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const candidate = String(key || '').trim();
+    if (!candidate) return setKey('', p);
+    const r = await fetch('/api/providers/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: p, key: candidate, baseUrl: getBaseUrl(p) || '', model: p === getProv() ? getModel() : '' })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.credentialVerified) {
+      throw new Error(String(j.error || 'the provider did not verify this key') + ' — your previous key is unchanged');
+    }
+    await Promise.resolve(setKey(candidate, p));
+    return Object.assign({}, j, { stored: true });
+  }
+
   // PURE (test-locked in harness-internal.test.js): fold a sidecar error-response body into the human tail of
   // the thrown "sidecar HTTP <status> — <detail>" message. JSON envelopes ({error}/{message}, + code when it
   // isn't already in the text) unwrap to their message; anything else passes through. Bounded, never throws.
@@ -479,6 +527,9 @@ const Harness = (() => {
       // class skills). Sent separately so the tool projection is untouched; the sidecar uses it for skills only.
       if (Array.isArray(stationPlaced) && stationPlaced.length) reqBody.stationPlaced = stationPlaced;
       if (!DESKTOP && !DEVMODE && provider !== 'codex' && provider !== 'grok' && provider !== 'kimi') reqBody.key = key;   // dev/desktop + the OAuth providers keep secrets server-side (custom/ollama may still ride an optional key)
+      if (!DESKTOP && !DEVMODE) {
+        try { const pool = JSON.parse(readScoped(LS.keyPool, provider) || '[]'); if (Array.isArray(pool) && pool.length) reqBody.keyPool = pool; } catch (_) {}
+      }
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
@@ -858,8 +909,8 @@ const Harness = (() => {
   return {
     pingEngine,
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
-    getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential, setDesktopConfigured,
-    listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, consentAnswer, summonAck, notebook,
+    getKey, setKey, setKeyPool, validateAndSetKeyPool, keyPoolSize, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential, setDesktopConfigured,
+    listModels, probeProvider, validateAndSetKey, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, consentAnswer, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,

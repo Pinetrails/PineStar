@@ -119,7 +119,7 @@ A.ok(/p !== 'codex' && p !== 'grok' && p !== 'kimi'/.test(keycta), 'keycta treat
   // desktop keychain writes: configured flips ONLY after the invoke proves itself; Settings callers await and
   // render the honest failure (the optimistic flip toasted "stored in your OS keychain" over a rejected write).
   A.ok(/\.then\(r => \{ setDesktopConfigured\(p, on\); return r; \}\)/.test(harness), 'setKey flips configured only after the keychain write resolves');
-  A.ok(/could not store the ' \+ provName\(provider\) \+ ' key in your OS keychain/.test(ui), 'Settings key save renders the honest keychain-failure copy');
+  A.ok(/err && err\.message/.test(ui) && /could not verify and store the ' \+ provName\(provider\) \+ ' key/.test(ui), 'Settings key save renders the exact validation/keychain failure copy');
   // Settings OAuth state changes mirror into the desktop configured-map (genesis already did; Settings must too).
   A.ok(/Harness\.setDesktopConfigured\('codex', true\)/.test(ui) && /Harness\.setDesktopConfigured\(pid, true\)/.test(ui), 'Settings sign-in feeds the desktop configured-map');
   A.ok(/Harness\.setDesktopConfigured\('codex', false\)/.test(ui) && /Harness\.setDesktopConfigured\(pid, false\)/.test(ui), 'Settings disconnect clears the desktop configured-map');

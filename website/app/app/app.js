@@ -2368,7 +2368,7 @@ const App = (() => {
       }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
-      if (key) await Harness.setKey(key, pickedProvider);
+      if (key) await (Harness.validateAndSetKey ? Harness.validateAndSetKey(key, pickedProvider) : Harness.setKey(key, pickedProvider));
       Harness.setModel(model); Harness.setProv(pickedProvider);
     }
 

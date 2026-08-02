@@ -259,6 +259,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(offlineProbe.body.reachable, false, 'offline custom endpoint is not reachable');
     A.eq(offlineProbe.body.catalogAvailable, false, 'offline custom endpoint has no proven catalog');
     const probeServer = http.createServer((rq, rs) => {
+      if (rq.url.indexOf('/chat/completions') >= 0) {
+        if (rq.headers.authorization !== 'Bearer probe-good-key') { rs.writeHead(401); return rs.end('rejected'); }
+        rs.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        rs.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'OK' } }] }) + '\n\n');
+        rs.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\n');
+        rs.write('data: [DONE]\n\n'); return rs.end();
+      }
       rs.writeHead(200, { 'Content-Type': 'application/json' });
       rs.end(JSON.stringify({ data: [{ id: 'local/proven-model' }] }));
     });
@@ -269,6 +276,10 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
       A.eq(liveProbe.body.reachable, true, 'reachable custom endpoint is proven by a real model-catalog round-trip');
       A.eq(liveProbe.body.catalogAvailable, true, 'reachable custom endpoint reports its real non-empty catalog');
       A.eq(liveProbe.body.credentialVerified, true, 'keyless custom endpoint needs no fabricated credential proof');
+      const wrongCandidate = await j('POST', '/api/providers/validate', { provider: 'custom', baseUrl: liveBase, key: 'probe-wrong-key', model: 'local/proven-model' });
+      A.eq(wrongCandidate.body.credentialVerified, false, 'candidate-key validation rejects a key that fails the inference wire');
+      const goodCandidate = await j('POST', '/api/providers/validate', { provider: 'custom', baseUrl: liveBase, key: 'probe-good-key', model: 'local/proven-model' });
+      A.eq(goodCandidate.body.credentialVerified, true, 'candidate-key validation proves the exact key on the inference wire');
     } finally { await new Promise(resolve => probeServer.close(resolve)); }
 
     const pushOpenAi = await fetch(B + '/api/key', {
@@ -281,6 +292,14 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(openAiAck.provider, 'openai', 'provider key ack names the configured provider');
     A.eq(openAiAck.configured, true, 'provider key ack reports configured');
     A.ok(JSON.stringify(openAiAck).indexOf('sk-provider-http-test-secret') < 0, 'provider key ack never echoes the secret');
+
+    const pushOpenAiPool = await fetch(B + '/api/key', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'openai', keyPool: ['openai-backup-a', 'openai-backup-b'] })
+    });
+    const openAiPoolAck = await pushOpenAiPool.json();
+    A.eq(openAiPoolAck.alternateCount, 2, 'OpenAI alternate pool is accepted only under the OpenAI provider id');
+    A.ok(JSON.stringify(openAiPoolAck).indexOf('openai-backup') < 0, 'alternate-pool acknowledgement never echoes a secret');
 
     const pushAnthropic = await fetch(B + '/api/key', {
       method: 'POST',

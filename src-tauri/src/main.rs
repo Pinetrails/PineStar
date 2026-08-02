@@ -137,6 +137,7 @@ struct KeepAwakeStatus {
 struct ProviderKeyStatus {
     provider: String,
     configured: bool,
+    alternate_count: usize,
 }
 
 #[cfg(windows)]
@@ -715,6 +716,11 @@ fn keychain_entry_for(provider: &str) -> keyring::Result<keyring::Entry> {
     keyring::Entry::new(KEYCHAIN_SERVICE, account.as_str())
 }
 
+fn keychain_pool_entry_for(provider: &str) -> keyring::Result<keyring::Entry> {
+    let account = format!("{}:pool", keychain_account_for(provider));
+    keyring::Entry::new(KEYCHAIN_SERVICE, account.as_str())
+}
+
 /// The stored BYOK key, or None if unset/empty.
 fn read_key() -> Option<String> {
     read_key_for("openrouter")
@@ -725,6 +731,19 @@ fn read_key_for(provider: &str) -> Option<String> {
         .ok()
         .and_then(|e| e.get_password().ok())
         .filter(|k| !k.trim().is_empty())
+}
+
+fn read_key_pool_for(provider: &str) -> Vec<String> {
+    keychain_pool_entry_for(provider)
+        .ok()
+        .and_then(|e| e.get_password().ok())
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .take(8)
+        .collect()
 }
 
 // ---- channel bot tokens (keychain account "channel:<id>") ----
@@ -1119,6 +1138,13 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
             cmd.env(env_name, key);
         }
     }
+    for provider in KEYCHAIN_PROVIDERS {
+        let pool = read_key_pool_for(provider);
+        if !pool.is_empty() {
+            let env_name = format!("SKYNET_KEY_POOL_{}", provider.to_ascii_uppercase().replace('-', "_"));
+            cmd.env(env_name, pool.join(","));
+        }
+    }
     // Channel bot tokens (Telegram/Discord) inject the same way — keychain -> env -> sidecar runtime layer.
     for (channel, env_name) in SIDECAR_CHANNEL_TOKEN_ENVS {
         if let Some(token) = read_channel_token(channel) {
@@ -1354,7 +1380,7 @@ fn push_provider_config(
     provider: &str,
     key: Option<&str>,
     base_url: Option<&str>,
-) {
+) -> Result<(), String> {
     use std::io::{Read, Write};
     let mut payload = serde_json::Map::new();
     payload.insert(
@@ -1379,18 +1405,51 @@ fn push_provider_config(
         state.ipc_token,
         body.as_bytes().len()
     );
-    if let Ok(mut s) = TcpStream::connect(("127.0.0.1", state.port)) {
-        let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
-        let _ = s.write_all(head.as_bytes());
-        let _ = s.write_all(body.as_bytes());
-        let _ = s.flush();
-        let mut buf = [0u8; 64];
-        let _ = s.read(&mut buf); // wait for the 200 ack before returning
+    let mut s = TcpStream::connect(("127.0.0.1", state.port))
+        .map_err(|e| format!("sidecar key push connect failed: {e}"))?;
+    s.set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("sidecar key push timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key push header failed: {e}"))?;
+    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key push body failed: {e}"))?;
+    s.flush().map_err(|e| format!("sidecar key push flush failed: {e}"))?;
+    let mut buf = [0u8; 96];
+    let n = s.read(&mut buf).map_err(|e| format!("sidecar key push acknowledgement failed: {e}"))?;
+    let head = String::from_utf8_lossy(&buf[..n]);
+    if !head.starts_with("HTTP/1.1 200") && !head.starts_with("HTTP/1.0 200") {
+        return Err(format!("sidecar rejected provider configuration: {}", head.lines().next().unwrap_or("no response")));
     }
+    Ok(())
 }
 
-fn push_key(state: &AppState, key: &str) {
-    push_provider_config(state, "openrouter", Some(key), None);
+fn push_key(state: &AppState, key: &str) -> Result<(), String> {
+    push_provider_config(state, "openrouter", Some(key), None)
+}
+
+fn push_provider_key_pool(state: &AppState, provider: &str, keys: &[String]) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let body = serde_json::json!({
+        "provider": normalize_provider(provider),
+        "keyPool": keys,
+    }).to_string();
+    let head = format!(
+        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        state.ipc_token,
+        body.as_bytes().len()
+    );
+    let mut s = TcpStream::connect(("127.0.0.1", state.port))
+        .map_err(|e| format!("sidecar key-pool push connect failed: {e}"))?;
+    s.set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("sidecar key-pool timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key-pool header failed: {e}"))?;
+    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key-pool body failed: {e}"))?;
+    s.flush().map_err(|e| format!("sidecar key-pool flush failed: {e}"))?;
+    let mut buf = [0u8; 96];
+    let n = s.read(&mut buf).map_err(|e| format!("sidecar key-pool acknowledgement failed: {e}"))?;
+    let response = String::from_utf8_lossy(&buf[..n]);
+    if !response.starts_with("HTTP/1.1 200") && !response.starts_with("HTTP/1.0 200") {
+        return Err(format!("sidecar rejected provider key pool: {}", response.lines().next().unwrap_or("no response")));
+    }
+    Ok(())
 }
 
 /// Push a channel bot token to the already-running sidecar (no restart), authenticated by the per-launch IPC
@@ -1627,13 +1686,20 @@ fn spawn_tray_updater(app: AppHandle) {
 #[tauri::command]
 fn harness_store_key(key: String, state: State<AppState>) -> Result<(), String> {
     let entry = keychain_entry().map_err(|e| e.to_string())?;
+    let previous = entry.get_password().ok().filter(|v| !v.trim().is_empty());
     let trimmed = key.trim();
     if trimmed.is_empty() {
-        let _ = entry.delete_credential();
+        delete_credential_honest(&entry)?;
     } else {
         entry.set_password(trimmed).map_err(|e| e.to_string())?;
     }
-    push_key(&state, trimmed);
+    if let Err(e) = push_key(&state, trimmed) {
+        match previous.as_deref() {
+            Some(old) => { let _ = entry.set_password(old); let _ = push_key(&state, old); }
+            None => { let _ = delete_credential_honest(&entry); let _ = push_key(&state, ""); }
+        }
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -1648,26 +1714,75 @@ fn harness_store_provider_key(
 ) -> Result<(), String> {
     let provider_id = normalize_provider(&provider);
     let key_trimmed = key.as_ref().map(|k| k.trim().to_string());
+    let mut rollback: Option<(keyring::Entry, Option<String>)> = None;
     if let Some(ref key_value) = key_trimmed {
         // codex + the device-OAuth providers (grok/kimi) authenticate by OAuth token (sidecar-owned), not a
         // keychain API key; ollama is keyless. None of them get a keychain entry.
         if provider_id != "codex" && provider_id != "ollama" && provider_id != "grok" && provider_id != "kimi" {
             let entry = keychain_entry_for(provider_id).map_err(|e| e.to_string())?;
+            let previous = entry.get_password().ok().filter(|v| !v.trim().is_empty());
             if key_value.is_empty() {
-                let _ = entry.delete_credential();
+                delete_credential_honest(&entry)?;
             } else {
                 entry.set_password(key_value).map_err(|e| e.to_string())?;
             }
+            rollback = Some((entry, previous));
         }
     }
     let base_trimmed = base_url.as_ref().map(|u| u.trim().to_string());
-    push_provider_config(
+    if let Err(e) = push_provider_config(
         &state,
         provider_id,
         key_trimmed.as_deref(),
         base_trimmed.as_deref(),
-    );
+    ) {
+        if let Some((entry, previous)) = rollback {
+            match previous.as_deref() {
+                Some(old) => { let _ = entry.set_password(old); let _ = push_provider_config(&state, provider_id, Some(old), None); }
+                None => { let _ = delete_credential_honest(&entry); let _ = push_provider_config(&state, provider_id, Some(""), None); }
+            }
+        }
+        return Err(e);
+    }
     Ok(())
+}
+
+/// Replace the complete alternate-key pool for exactly one provider. The old keychain value and live sidecar
+/// pool are restored if either half cannot be acknowledged, so the UI observes one atomic result.
+#[tauri::command]
+fn harness_store_provider_key_pool(
+    provider: String,
+    keys: Vec<String>,
+    state: State<AppState>,
+) -> Result<usize, String> {
+    let provider_id = normalize_provider(&provider);
+    if !KEYCHAIN_PROVIDERS.contains(&provider_id) {
+        return Err("this provider does not support alternate API keys".to_string());
+    }
+    let mut cleaned: Vec<String> = Vec::new();
+    for key in keys {
+        let trimmed = key.trim().to_string();
+        if !trimmed.is_empty() && !cleaned.contains(&trimmed) { cleaned.push(trimmed); }
+        if cleaned.len() == 8 { break; }
+    }
+    let entry = keychain_pool_entry_for(provider_id).map_err(|e| e.to_string())?;
+    let previous_raw = entry.get_password().ok();
+    let previous = read_key_pool_for(provider_id);
+    if cleaned.is_empty() {
+        delete_credential_honest(&entry)?;
+    } else {
+        let encoded = serde_json::to_string(&cleaned).map_err(|e| e.to_string())?;
+        entry.set_password(&encoded).map_err(|e| e.to_string())?;
+    }
+    if let Err(e) = push_provider_key_pool(&state, provider_id, &cleaned) {
+        match previous_raw.as_deref() {
+            Some(raw) => { let _ = entry.set_password(raw); }
+            None => { let _ = delete_credential_honest(&entry); }
+        }
+        let _ = push_provider_key_pool(&state, provider_id, &previous);
+        return Err(e);
+    }
+    Ok(cleaned.len())
 }
 
 /// Whether a BYOK key is configured — never returns the value itself.
@@ -1688,6 +1803,7 @@ fn harness_provider_key_status() -> Vec<ProviderKeyStatus> {
         .map(|provider| ProviderKeyStatus {
             provider: provider.to_string(),
             configured: read_key_for(provider).is_some(),
+            alternate_count: read_key_pool_for(provider).len(),
         })
         .collect()
 }
@@ -1698,7 +1814,7 @@ fn harness_clear_key(state: State<AppState>) -> Result<(), String> {
     if let Ok(entry) = keychain_entry() {
         let _ = entry.delete_credential();
     }
-    push_key(&state, "");
+    push_key(&state, "")?;
     Ok(())
 }
 
@@ -2131,6 +2247,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             harness_store_key,
             harness_store_provider_key,
+            harness_store_provider_key_pool,
             harness_has_key,
             harness_has_provider_key,
             harness_provider_key_status,

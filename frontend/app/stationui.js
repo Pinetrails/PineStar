@@ -3304,6 +3304,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // editable base URL. Onboarding is the only other place Harness.setBaseUrl is called; without this control the
       // endpoint was frozen at whatever onboarding stored. Only the 'custom' provider uses a base URL, so gate on it.
       const isCustomEp = k.provider === 'custom';
+      const poolCount = H() && H().keyPoolSize ? H().keyPoolSize(k.provider) : 0;
       const baseBtn = isCustomEp
         ? '<button class="bb sm" data-act="baseurl-edit" data-i="' + i + '" title="change this station link / endpoint URL without re-onboarding">✎ STATION LINK</button>'
         : '';
@@ -3324,12 +3325,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div>' +
         '<div class="key-acts">' +
         '<button class="bb sm" data-act="edit" data-i="' + i + '">✎ UPDATE</button>' +
+        '<button class="bb sm" data-act="pool-edit" data-i="' + i + '">↻ BACKUPS' + (poolCount ? ' (' + poolCount + ')' : '') + '</button>' +
         baseBtn +
         '<button class="bb sm danger" data-act="rm" data-i="' + i + '">✕ REMOVE</button>' +
         '</div></div>' +
         '<div class="key-edit" id="key-edit-' + i + '" hidden>' +
         '<input type="password" class="key-input" id="key-in-' + i + '" placeholder="paste new ' + esc(provName(k.provider)) + ' key…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="save" data-i="' + i + '">SAVE</button>' +
+        '</div>' +
+        '<div class="key-edit" id="pool-edit-' + i + '" hidden>' +
+        '<input type="password" class="key-input" id="pool-in-' + i + '" placeholder="paste backup keys, separated by commas…" autocomplete="off" spellcheck="false">' +
+        '<button class="bb sm" data-act="pool-save" data-i="' + i + '">REPLACE POOL</button>' +
+        '<button class="bb sm danger" data-act="pool-clear" data-i="' + i + '">CLEAR POOL</button>' +
+        '<span class="dim">up to 8 · scoped only to ' + esc(provName(k.provider)) + ' · existing backups stay active until this save succeeds</span>' +
         '</div>' +
         baseBlock;
     });
@@ -3450,14 +3458,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           // success UI waits for the PROVEN store: on desktop setKey resolves only after the keychain write lands
           // (browser localStorage resolves immediately). The old fire-and-forget toasted "✓ stored in your OS
           // keychain" over a rejected write — a keyless station that claimed connected with no re-entry hint.
-          Promise.resolve(h.setKey ? h.setKey(v, provider) : null).then(() => {
+          Promise.resolve(h.validateAndSetKey ? h.validateAndSetKey(v, provider) : h.setKey(v, provider)).then(() => {
             invalidateProviderHealth(provider);
             notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
             if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
             rerender('settings');
-          }).catch(() => {
-            notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+          }).catch(err => {
+            notify('✕ ' + ((err && err.message) || ('could not verify and store the ' + provName(provider) + ' key')), 'bad');
             sfx('bad');
             rerender('settings');
           });
@@ -3468,6 +3476,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (act === 'edit') {
           const ed = body.querySelector('#key-edit-' + i);
           if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#key-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'pool-edit') {
+          const ed = body.querySelector('#pool-edit-' + i);
+          if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#pool-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'pool-save' || act === 'pool-clear') {
+          const inp = body.querySelector('#pool-in-' + i);
+          const keys = act === 'pool-clear' ? [] : String((inp && inp.value) || '').split(/[\n,;]+/).map(v => v.trim()).filter(Boolean);
+          if (act === 'pool-save' && !keys.length) { notify('paste at least one backup key, or use CLEAR POOL', 'bad'); sfx('bad'); return; }
+          Promise.resolve(h.validateAndSetKeyPool ? h.validateAndSetKeyPool(keys, row.provider) : h.setKeyPool(keys, row.provider)).then(count => {
+            notify(count ? ('✓ ' + count + ' verified backup key' + (count === 1 ? '' : 's') + ' active only for ' + provName(row.provider)) : ('cleared backup keys for ' + provName(row.provider)), count ? 'good' : 'warn');
+            rerender('settings');
+          }).catch(err => { notify('✕ ' + ((err && err.message) || 'could not update backup keys'), 'bad'); sfx('bad'); });
         } else if (act === 'baseurl-edit') {
           const ed = body.querySelector('#base-edit-' + i);
           if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#base-in-' + i); if (inp) inp.focus(); } }
@@ -3501,14 +3520,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           // same proven-store contract as the add path: no success toast over a rejected keychain write.
-          Promise.resolve(h.setKey ? h.setKey(v, row.provider) : null).then(() => {
+          Promise.resolve(h.validateAndSetKey ? h.validateAndSetKey(v, row.provider) : h.setKey(v, row.provider)).then(() => {
             invalidateProviderHealth(row.provider);
             notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
             if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
             rerender('settings');
-          }).catch(() => {
-            notify('✕ could not store the ' + provName(row.provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+          }).catch(err => {
+            notify('✕ ' + ((err && err.message) || ('could not verify and store the ' + provName(row.provider) + ' key')), 'bad');
             sfx('bad');
             rerender('settings');
           });
@@ -3552,15 +3571,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
       if (!h || !h.setKey) { sfx('bad'); return; }
       // same proven-store contract as the key-list paths: success UI only after setKey resolves.
-      Promise.resolve(h.setKey(v, provider)).then(() => {
+      Promise.resolve(h.validateAndSetKey ? h.validateAndSetKey(v, provider) : h.setKey(v, provider)).then(() => {
         invalidateProviderHealth(provider);
         notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
         if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
         if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
         sfx('click');
         rerender('settings');
-      }).catch(() => {
-        notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+      }).catch(err => {
+        notify('✕ ' + ((err && err.message) || ('could not verify and store the ' + provName(provider) + ' key')), 'bad');
         sfx('bad');
         rerender('settings');
       });
