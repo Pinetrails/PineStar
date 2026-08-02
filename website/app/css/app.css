@@ -2911,14 +2911,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* Short desktop windows need an explicit vertical path to every major region. */
 @media (max-width: 860px) and (max-height: 680px) {
   #screen-game.active {
+    overflow-y: auto;
+    overscroll-behavior: contain;
     /* Landscape phones have very little vertical budget. Keep the fixed controls in-view first:
        a compact stage can scroll its own rails, while COMMS retains enough height for its header,
        identity line and full composer. The grid's overflow remains the fallback if docks wrap. */
-    grid-template-rows: 44px minmax(76px, 1fr) minmax(164px, 1fr) minmax(40px, auto);
-    padding: 5px;
-    gap: 4px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    grid-template-rows: 42px minmax(72px, 1fr) minmax(160px, 1fr) minmax(38px, auto);
+    padding: 4px;
+    gap: 3px;
   }
 }
 
