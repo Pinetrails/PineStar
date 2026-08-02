@@ -39,6 +39,12 @@
     const before = String(previous == null ? '' : previous);
     const after = String(next == null ? '' : next);
     if (!before || !after) return { text: after, removed: 0 };
+    // Some providers restart the whole response rather than only its last sentence. Check
+    // that exact prefix before the bounded tail scan; startsWith adds no second unbounded
+    // buffer and avoids duplicating an answer merely because it is larger than the scan cap.
+    if (after.length >= before.length && after.startsWith(before)) {
+      return { text: after.slice(before.length), removed: before.length };
+    }
     const scan = before.slice(-MAX_OVERLAP_SCAN);
     const max = Math.min(scan.length, after.length);
     let overlap = 0;

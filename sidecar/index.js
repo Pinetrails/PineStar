@@ -11659,7 +11659,8 @@ async function runOnce(o) {
     }
 
     const started = Date.now();
-    const result = await dispatch(call, capCtx);
+    const nestedSignal = nestedMeta && nestedMeta.signal;
+    const result = await dispatch(call, nestedSignal ? Object.assign({}, capCtx, { signal: nestedSignal }) : capCtx);
     emit('agent.tool_result', {
       agentId, runId, callId, ok: !!(result && result.ok), ms: Math.max(0, Date.now() - started),
       summary: (result && result.summary) || (result && result.isError ? 'error' : 'ok'), isError: !!(result && result.isError)

@@ -65,6 +65,22 @@ const usage = (input, output) => ({ type: 'usage', usage: { prompt_tokens: input
     A.eq(seq.filter(e => e.name === 'agent.cost').length, 2, 'each paid continuation call emits reconciled cost');
   }
 
+  // A provider may restart the complete response, not just its tail. The answer can be larger than
+  // the bounded suffix scan and still must remain byte-identical across stream and transcript.
+  {
+    const { seq, emit } = setup();
+    const block = 'A'.repeat(900) + 'B'.repeat(8124);
+    const provider = scripted([
+      [{ type: 'text', delta: block }, { type: 'done', finishReason: 'length' }],
+      [{ type: 'text', delta: block }, { type: 'done', finishReason: 'stop' }]
+    ]);
+    const messages = [{ role: 'user', content: 'long answer' }];
+    await runAgentLoop({ messages, provider, emit, cost: makeCost(), model: 'm', agentId: 'a', runId: 'r' });
+    const visible = seq.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('');
+    A.eq(visible.length, block.length, 'a full restart beyond the overlap window is not streamed twice');
+    A.eq(messages.find(m => m.role === 'assistant').content, block, 'a full restart beyond the overlap window is not persisted twice');
+  }
+
   // Bound: initial response + four continuations, then surface the still-incomplete length stop honestly.
   {
     const { emit } = setup();
@@ -164,7 +180,11 @@ const usage = (input, output) => ({ type: 'usage', usage: { prompt_tokens: input
     A.eq(res.reason, 'cancelled', 'abort during semantic continuation ends cancelled');
     A.eq(res.tokens, 15, 'only the first call with reported usage is charged');
     A.eq(seq.filter(e => e.name === 'agent.cost').length, 1, 'the aborted call emits no invented cost event');
-    A.eq(seq.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join(''), 'First complete repeated fragment. Novel partial', 'the buffered continuation partial is visible on cancel without duplicating the repeated suffix');
+    const visible = seq.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('');
+    A.eq(visible, 'First complete repeated fragment. Novel partial', 'the buffered continuation partial is visible on cancel without duplicating the repeated suffix');
+    A.eq(messages.filter(m => m.role === 'assistant').length, 1, 'cancelled continuation parts collapse into one durable assistant turn');
+    A.eq(messages.find(m => m.role === 'assistant').content, visible, 'cancelled durable transcript and visible stream are byte-identical');
+    A.eq(messages.some(m => m.role === 'system' && /output_continuation/.test(String(m.content || ''))), false, 'the internal continuation prompt is removed on cancellation');
   }
 
   A.report('output-continuation.test');

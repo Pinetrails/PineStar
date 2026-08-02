@@ -78,6 +78,18 @@ async function expectReject(p, pattern, label) {
     const timed = Code.makeCodeTools({ limits: { timeoutMs: 100 } }).codeTool;
     await expectReject(timed.run({ code: 'while (true) {}' }, { composeDispatch: async () => '' }), /timed out/, 'CPU loop is killed by the parent deadline');
 
+    let deadlineAbortedNested = false;
+    const nestedTimed = Code.makeCodeTools({ limits: { timeoutMs: 100 } }).codeTool;
+    await expectReject(nestedTimed.run({ code: `return await tool('slow.read', {});` }, {
+      composeDispatch: async (_request, meta) => await new Promise((resolve, reject) => {
+        meta.signal.addEventListener('abort', () => {
+          deadlineAbortedNested = true;
+          reject(Object.assign(new Error('nested aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      })
+    }), /timed out/, 'the code deadline still rejects with its timeout');
+    A.eq(deadlineAbortedNested, true, 'the code deadline aborts an in-flight nested dispatch');
+
     const ctrl = new AbortController();
     const cancelling = Code.makeCodeTools({ limits: { timeoutMs: 3000 } }).codeTool.run(
       { code: `while (true) {}` },
@@ -85,6 +97,25 @@ async function expectReject(p, pattern, label) {
     );
     setTimeout(() => ctrl.abort(), 30);
     await expectReject(cancelling, /cancelled/, 'run cancellation kills the isolated worker');
+
+    const nestedCtrl = new AbortController();
+    let parentAbortedNested = false;
+    let markNestedStarted;
+    const nestedStarted = new Promise(resolve => { markNestedStarted = resolve; });
+    const nestedCancelling = Code.makeCodeTools({ limits: { timeoutMs: 3000 } }).codeTool.run(
+      { code: `return await tool('slow.read', {});` },
+      { signal: nestedCtrl.signal, composeDispatch: async (_request, meta) => await new Promise((resolve, reject) => {
+        markNestedStarted();
+        meta.signal.addEventListener('abort', () => {
+          parentAbortedNested = true;
+          reject(Object.assign(new Error('nested aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      }) }
+    );
+    await nestedStarted;
+    nestedCtrl.abort();
+    await expectReject(nestedCancelling, /cancelled/, 'parent cancellation retains the public cancellation result');
+    A.eq(parentAbortedNested, true, 'parent cancellation also aborts the in-flight nested dispatch');
   }
 
   // Public shape: this is a computer-granted READ composition tool, never a disguised shell.

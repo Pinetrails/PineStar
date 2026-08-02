@@ -796,7 +796,9 @@
       // overlap filtering; flush only its novel suffix before persisting the partial response.
       if (signal.aborted) {
         emitContinuationText(acc, streamedTextChunks);
-        messages.push(assistantTurn(acc.text, [], acc.reasoning));
+        const cancelledPart = assistantTurn(acc.text, [], acc.reasoning);
+        messages.push(cancelledPart);
+        collapseContinuation(cancelledPart);
         const checkpointEnd = await saveCheckpoint('assistant');
         return checkpointEnd || end('cancelled');
       }

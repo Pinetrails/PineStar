@@ -16,6 +16,23 @@ function ioAt(base, extra) {
   }, extra || {}));
 }
 
+// Unicode words survive indexing/restart, and compatibility spellings normalize deterministically.
+{
+  const dir = temp('history-unicode');
+  try {
+    let io = ioAt(dir);
+    let store = makeTranscriptStore({ io, clock: { now: () => 8888 } });
+    const cyrillic = '\u041f\u0440\u0438\u0432\u0435\u0442 \u043a\u043e\u043c\u0430\u043d\u0434\u0438\u0440';
+    const cjk = '\u6771\u4eac\u8a08\u753b';
+    store.append({ streamId: 'unicode', role: 'user', content: cyrillic + ' ' + cjk + ' \uff21\uff22\uff23\uff11\uff12\uff13' });
+    io = ioAt(dir);
+    store = makeTranscriptStore({ io, clock: { now: () => 9999 } });
+    A.eq(store.search('unicode', '\u041f\u0440\u0438\u0432\u0435\u0442', { scope: 'all' }).length, 1, 'Cyrillic content is searchable after restart');
+    A.eq(store.search('unicode', '\u6771\u4eac', { scope: 'all' }).length, 1, 'CJK content is searchable after restart');
+    A.eq(store.search('unicode', 'abc123', { scope: 'all' }).length, 1, 'NFKC normalizes full-width letters and digits deterministically');
+  } finally { remove(dir); }
+}
+
 // More than 64 tiny segments is a scaled >64 MB lifetime: oldest recall survives restart
 // while the RAM mirror remains capped and every closed segment has a durable index.
 {

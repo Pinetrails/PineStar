@@ -44,6 +44,20 @@ const { tmpdir } = require('node:os');
   A.ok(failed.results[0].failures.some(x => x.includes('correctness')), 'correctness failure is named');
   A.ok(failed.results[0].failures.some(x => x.includes('retries')), 'retry regression is named');
 
+  const contradictory = JSON.parse(JSON.stringify(candidate));
+  const retryRow = contradictory.find(row => row.taskId === 'bridge-continuation');
+  retryRow.events.push(...Array.from({ length: 50 }, (_, index) => ({
+    seq: retryRow.events.length + index + 1,
+    at: `2026-08-01T12:15:00.${String(index).padStart(3, '0')}Z`,
+    type: 'provider.retry', data: {}
+  })));
+  retryRow.metrics = { retries: 0 };
+  const contradicted = core.evaluate({ tasks, baselineRows: baseline, candidateRows: contradictory });
+  const retryResult = contradicted.results.find(row => row.taskId === 'bridge-continuation');
+  A.eq(retryResult.metrics.retries, 50, 'observed retry events override a contradictory lower summary metric');
+  A.eq(retryResult.pass, false, 'a contradictory retry summary cannot false-green the trajectory');
+  A.ok(retryResult.failures.some(x => x.includes('retries')), 'the observed retry regression is named');
+
   const temp = mkdtempSync(join(tmpdir(), 'starnet-agent-eval-'));
   try {
     const reportFile = join(temp, 'report.json');
