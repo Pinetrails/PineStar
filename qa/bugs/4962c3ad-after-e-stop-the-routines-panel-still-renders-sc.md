@@ -7,7 +7,7 @@ severity: P0
 status: fixed
 found: 2026-07-28
 lane: sweep/autonomy
-fix: 8e68bf5c
+fix: b7e18ce8
 ---
 
 # After E-STOP the ROUTINES panel still renders "● scheduler armed — routines fire automatically" plus a live countdown; GET /api/cron's `halted` field has zero c
@@ -34,4 +34,4 @@ _Found by the `sweep/autonomy` lane, 2026-07-28. Finder confidence: high. Severi
 
 ## Verdict
 
-Confirmed and fixed. Every routine surface now derives runnable state from `enabled && !halted`: the panel renders the E-STOP banner and suppresses its countdown, the widget says `stopped · E-STOP`, `/cron` names the stop and resume command, AutoJobStore does not claim the job is armed, and the model-facing list/run note names the halt. Focused UI/tool tests pass, and the seeded app was live-proven with `GET /api/cron` returning `enabled:true, halted:true`, the row showing `next —`, and all three user-facing readouts naming E-STOP.
+Confirmed and fixed. Every routine surface now derives runnable state from `enabled && !halted`: the panel renders the E-STOP banner and suppresses its countdown, the widget says `stopped · E-STOP`, `/cron` names the stop and resume command, AutoJobStore does not claim the job is armed, and the model-facing list/run note names the halt. The closing live sweep also found that AutonomyStore's boot posture mirror could lift the halt after reload; `b7e18ce8` requires explicit `resumeHalt:true` from a real dial writer, while boot/beliefs mirrors preserve both E-STOPs. Focused UI/tool tests and restart-level HTTP regressions pass; seeded Chromium proved the stopped state survives reload.
