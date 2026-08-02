@@ -16,6 +16,9 @@ const { makeCodeTools } = require('../../../sidecar/tools/builtin/code.js');
 const { makeLspManager } = require('../../../sidecar/lsp-manager.js');
 const { makeFsTools } = require('../../../sidecar/tools/builtin/fs.js');
 const { makeSegmentedTranscriptIo } = require('../../../sidecar/transcript-history.js');
+const { makeCronDriver } = require('../../../sidecar/cron-driver.js');
+const cron = require('../../../sidecar/cron.js');
+const cronStore = require('../../../sidecar/cron-store.js');
 
 const T0 = '2026-08-01T14:00:00.000Z';
 const at = ms => new Date(Date.parse(T0) + ms).toISOString();
@@ -156,8 +159,56 @@ async function historyAdapter() {
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
-export async function runBridgeAdapters() {
-  return [await continuationAdapter(), await recoveryAdapter(), await codeAdapter(), await lspAdapter(), await historyAdapter()];
+async function cronRuntimeAdapter() {
+  const nowMs = Date.parse(T0);
+  const job = cronStore.makeJob({ id: 'routine-parity', name: 'Routine parity', prompt: 'produce the scheduled report', agentId: 'a', schedule: cron.parseSchedule('every 1m', nowMs - 60000) }, { id: 'routine-parity', now: nowMs - 60000 });
+  let jobs = [job], providerCalls = 0, deliveryCount = 0, deliveredText = '';
+  const io = memoryJournalIo();
+  const journal = makeRunJournal({ io, clock: { now: () => nowMs } });
+  const provider = { priceOf: () => ({ in: 1, out: 2 }), contextLimit: () => 8000, async *stream() {
+    providerCalls++;
+    if (providerCalls === 1) {
+      yield { type: 'text', delta: 'Scheduled report ends with repeated words.' };
+      yield { type: 'done', finishReason: 'length' };
+    } else {
+      yield { type: 'text', delta: 'repeated words. Then completes.' };
+      yield { type: 'done', finishReason: 'stop' };
+    }
+  } };
+  let deliveredResolve;
+  const delivered = new Promise(resolve => { deliveredResolve = resolve; });
+  const driver = makeCronDriver({
+    getJobs: () => jobs, setJobs: next => { jobs = next; return true; }, emit() {},
+    newId: () => 'cron-eval-run', newAbort: () => new AbortController(), now: () => nowMs,
+    getKey: () => 'test', hasCredential: () => true, defaultModel: 'm', persona: 'SYSTEM',
+    runOnce: async o => {
+      journal.begin({ runId: o.runId, agentId: o.agentId, trigger: o.trigger, cronJobId: o.cronJobId, cronJobName: o.cronJobName });
+      journal.checkpoint(o.runId, { phase: 'initial', turn: 0, messages: o.messages });
+      const result = await runAgentLoop({ messages: o.messages, provider, emit: o.emit, model: o.model, agentId: o.agentId, runId: o.runId,
+        onCheckpoint: ({ phase, turn, messages }) => journal.checkpoint(o.runId, { phase, turn, messages }) });
+      journal.finish(o.runId, { reason: result.reason, transcriptAck: true });
+      return result;
+    },
+    deliverResult: (_job, result) => { deliveryCount++; deliveredText = result.text; deliveredResolve(); }
+  });
+  driver.applyTick(nowMs);
+  await delivered;
+  const saved = cronStore.getJob(jobs, 'routine-parity');
+  const recovered = journal.inspect('cron-eval-run');
+  const data = {
+    providerCalls, duplicateFree: saved.lastOutput === 'Scheduled report ends with repeated words. Then completes.',
+    deliveryCount, deliveredExact: deliveredText === saved.lastOutput, persistedExact: saved.lastOutput === deliveredText,
+    recoveryStatus: recovered.status, cronJobId: recovered.meta.cronJobId, trigger: recovered.meta.trigger
+  };
+  return trajectory('bridge-cron-runtime', 50, saved.lastOutput, [
+    event(1, 0, 'cron.fire', { jobId: 'routine-parity' }),
+    event(2, 40, 'bridge.cron_runtime', data),
+    event(3, 50, 'agent.run.end', { reason: 'done' })
+  ]);
 }
 
-export const adapters = { continuationAdapter, recoveryAdapter, codeAdapter, lspAdapter, historyAdapter };
+export async function runBridgeAdapters() {
+  return [await continuationAdapter(), await recoveryAdapter(), await codeAdapter(), await lspAdapter(), await historyAdapter(), await cronRuntimeAdapter()];
+}
+
+export const adapters = { continuationAdapter, recoveryAdapter, codeAdapter, lspAdapter, historyAdapter, cronRuntimeAdapter };

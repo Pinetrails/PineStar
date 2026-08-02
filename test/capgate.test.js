@@ -28,7 +28,7 @@ function station(objsByRoom, assignedRoom) {
 {
   const full = resolveTools('ag', station({ quarters: ['computer', 'notebook'] }, 'quarters'));
   A.ok(full.hasCompute, 'computer grants compute');
-  A.eq(full.tools.slice().sort(), ['code.run', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'tool.search', 'widget.set'], 'notebook grants its tools; compute excluded from tools[]; code.run + quest.update + tool.search ride the COMPUTER placed in this same room');
+  A.eq(full.tools.slice().sort(), ['code.run', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'station.inspect', 'todo', 'tool.search', 'widget.set'], 'notebook grants its tools; compute excluded from tools[]; code.run + quest.update + station.inspect + tool.search ride the COMPUTER placed in this same room');
   A.eq(full.approvalRules['notebook.write'].requiresConsent, false, 'notebook write needs no consent (sandboxed private memory)');
   A.eq(full.approvalRules['notebook.read'].requiresConsent, false, 'read auto-allowed');
 
@@ -49,9 +49,8 @@ function station(objsByRoom, assignedRoom) {
   // therefore grants quest.update while granting NO notebook tool — the exact reach a bare interactive agent gets.
   const compOnly = resolveTools('ag', station({ quarters: ['computer'] }, 'quarters'));
   A.ok(compOnly.hasCompute, 'a computer grants compute');
-  // The bare compute-only office: both freebies ride the computer object so no surface is ever without them —
-  // quest.update because the prompt commands its use, tool.search because a deferred tool must stay reachable.
-  A.eq(compOnly.tools.slice().sort(), ['code.run', 'quest.update', 'tool.search'], 'computer-only room grants exactly the three computer primitives, no notebook tools');
+  // The bare compute-only office exposes four host-owned primitives and no notebook tools.
+  A.eq(compOnly.tools.slice().sort(), ['code.run', 'quest.update', 'station.inspect', 'tool.search'], 'computer-only room grants exactly the four computer primitives, no notebook tools');
   A.eq(compOnly.approvalRules['quest.update'].requiresConsent, false, 'quest.update is consent-free (freebie trust class)');
 
   // unknown agent -> nothing

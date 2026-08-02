@@ -100,7 +100,7 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
 {
   const src = fs.readFileSync(path.join(root, 'sidecar', 'index.js'), 'utf8');
   A.ok(/const taintPolicy = require\('\.\/taint\.js'\)/.test(src), 'index.js uses the shared taint policy (no second copy)');
-  A.ok(/let taintedBy = null;/.test(src), 'the run tracks whether untrusted content has landed');
+  A.ok(/let taintedBy = o\.initialTaint \? 'scheduled upstream context' : null;/.test(src), 'the run tracks whether untrusted content has landed, including initial cron pipeline data');
   A.ok(/revokedByTaint\.isSource\(liveTool\)/.test(src), 'taint is latched from the tool that produced the content');
   // A result with real content taints WHETHER OR NOT the call succeeded. The old rule required !r.isError on
   // the reasoning that "a failed fetch put nothing in front of the model" — true for web_fetch (it throws a

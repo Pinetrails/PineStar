@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f85399708f5df687f82bd7d81eeccad1419f3d53",
+    "sourceCommit": "e80789e6018b2beaa1006c0769062d4a5b64592a",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 306309,
-        "sha256": "d3677c4e1faf78eb2868a14fa922070f9585b85ad405699f5a102a39155e57e2"
+        "bytes": 302513,
+        "sha256": "30ea5f85f9de1a1cc0bc4534b4eba0d118d185a845ccc3a472ddcbe7ba8622e5"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 473262,
-        "sha256": "569751f5e007a92b51e8edcef7c25a16b1dbb91d2eedd92db152cfc383d00c9b"
+        "bytes": 471993,
+        "sha256": "b420e0ea8d05f5506ea2b0c90f6044660bd10c7c17aa508aff1db1a70e941966"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 56201,
-        "sha256": "6c77b3ed2567f7fb5622c3dcd60aff86c1043a3352931d0cf82bce505d3599dc"
+        "bytes": 55891,
+        "sha256": "9d456d7ad542799f18584ff5ef0b70c165e8eff1b94355789ed2effa8eca5a70"
       },
       {
         "path": "frontend/app/hint.js",
@@ -573,8 +573,8 @@
       },
       {
         "path": "frontend/app/safety.js",
-        "bytes": 3995,
-        "sha256": "0d9c166d2786022f6118fe5cfb1e8553513ecf3578d2b07dcd093424c030f3b8"
+        "bytes": 3421,
+        "sha256": "8cbd8332e133168c95f5ecf7204b040aea482e5fd81a983f292db5daa699a9da"
       },
       {
         "path": "frontend/app/save.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 31151,
-        "sha256": "7a282ab3098f2af714db5f34c84db8e048912126eded364557abb2ca89b2614e"
+      "bytes": 34346,
+      "sha256": "9a0f4c64aa8095f9728474d780dc47e89ae5c45fc0b7e2ded6a13f69fe3a5fb9"
       },
       {
         "path": "frontend/app/windows/trophies.js",
@@ -878,8 +878,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 252296,
-        "sha256": "b94cea10eb81601ed9af3c1833ab76450300fade59e89ab107670e27f71ed053"
+        "bytes": 251970,
+        "sha256": "e70315a4c6e0f4eca6a07cf0c74fd66db95738deed44f51281a47847e9299b87"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -888,8 +888,8 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 43913,
-        "sha256": "3b1c682375544103354c5ad48218099cb00dc33c3eda2e2e5f7e97eedb9981b5"
+        "bytes": 43137,
+        "sha256": "d52133225b54376720c1d6f2d1b8531499e627ee6e5d863d8bf1646c78c62149"
       },
       {
         "path": "frontend/css/marketplace.css",

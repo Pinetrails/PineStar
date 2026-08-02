@@ -7,7 +7,7 @@ const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
 const { makeComputerTools } = require('../sidecar/tools/builtin/computer.js');
 const { makeDesktopTools } = require('../sidecar/tools/builtin/desktop.js');
-const { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, normalizeUnattendedGrants, isConnectorTool } = require('../sidecar/inputpolicy.js');
+const { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, normalizeUnattendedGrants, isConnectorTool } = require('../sidecar/inputpolicy.js');
 
 const station = {
   agents: { ag: { id: 'ag', room: 'r' } },
@@ -39,6 +39,25 @@ A.eq(safe.approvalRules['desktop.open'], undefined, 'real-window launch has no o
 A.ok(safe.tools.includes('shell.exec') && safe.tools.includes('verify.run'), 'workbench build/test tools remain available');
 A.ok(safe.tools.includes('browser.test_navigate') && safe.tools.includes('browser.test_input') && safe.tools.includes('browser.test_state'), 'safe local CDP route replaces physical input');
 A.ok(legacyRaw.tools.includes('computer.use') && legacyRaw.tools.includes('desktop.open'), 'policy returns an isolated copy and does not corrupt source results');
+
+{
+  const defs = {};
+  for (const g of safe.grants) defs[g.tool] = { capability: g.capId };
+  defs['mcp:notion.read'] = { capability: 'mcp:notion' };
+  const projected = Object.assign({}, safe, {
+    tools: safe.tools.concat('mcp:notion.read'),
+    deferred: (safe.deferred || []).concat('mcp:notion.read'),
+    approvalRules: Object.assign({}, safe.approvalRules, { 'mcp:notion.read': { requiresConsent: false } }),
+    networkCaps: Object.assign({}, safe.networkCaps, { 'mcp:notion.read': true })
+  });
+  const onlyWeb = enforceEnabledToolsets(projected, { get: n => defs[n] }, ['web']);
+  A.ok(onlyWeb.tools.includes('web_search'), 'enabled web family remains available');
+  A.ok(!onlyWeb.tools.includes('shell.exec'), 'per-job toolsets remove workbench instead of adding authority');
+  A.ok(!onlyWeb.tools.includes('mcp:notion.read'), 'connectors require the explicit connectors family');
+  A.ok(onlyWeb.tools.includes('quest.update') && onlyWeb.tools.includes('tool.search'), 'non-toggleable computer freebies remain available');
+  A.eq(onlyWeb.approvalRules['shell.exec'], undefined, 'parallel approval map is attenuated with tool names');
+  A.eq(enforceEnabledToolsets(projected, { get: n => defs[n] }, null), projected, 'null keeps legacy station grants unchanged');
+}
 
 for (const [surface, isTask] of [['interactive', true], ['autonomous', true], ['test', false]]) {
   const ctx = runInputContext(surface, isTask);
@@ -123,6 +142,7 @@ A.ok(isConnectorTool(MCP_TOOL) && !isConnectorTool(UNCLASSIFIED), 'connector cla
 A.ok(!interactiveAuthority.authorize({}, { name: 'computer.use', capability: 'physical-input' }).ok, 'physical input has no ordinary-run authority');
 A.ok(!interactiveAuthority.authorize({}, { name: 'desktop.open', capability: 'visible-desktop' }).ok, 'visible desktop has no ordinary-run authority');
 A.eq(impactOfTool({ name: 'future.magic', capability: 'future-cap' }), IMPACTS.EXTERNAL_UNKNOWN, 'unknown future tools fail closed instead of defaulting safe');
+A.eq(impactOfTool({ name: 'station.inspect', capability: 'stationinfo' }), IMPACTS.NONE, 'local secret-free harness inspection is a safe built-in read');
 A.eq(impactOfTool({ name: 'browser.test_input', capability: 'workbench' }), IMPACTS.SYNTHETIC_BROWSER, 'synthetic CDP input is explicitly classified');
 
 const fakeDefs = {

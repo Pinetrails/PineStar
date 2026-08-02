@@ -265,6 +265,11 @@
           enabled: { type: 'boolean' },
           arm: { type: 'boolean', description: 'Default true. When true, also enables the scheduler so routines will fire.' },
           repeatTimes: { type: ['integer', 'null'], description: 'Omit/null for recurring forever; one-shot schedules still run once.' }
+          ,deliver: { type: 'string', enum: ['local', 'origin'], description: 'Where to send each result. origin returns it to this chat/session.' }
+          ,attachToSession: { type: 'boolean', description: 'Keep delivered results in the origin conversation so replies can continue from them.' }
+          ,skills: { type: 'array', items: { type: 'string' }, maxItems: 8, description: 'Saved runtime skills to preload on every run.' }
+          ,contextFrom: { type: 'array', items: { type: 'string' }, maxItems: 8, description: 'Routine ids whose latest successful outputs feed this routine.' }
+          ,enabledToolsets: { type: 'array', items: { type: 'string' }, maxItems: 16, description: 'Optional restriction-only list of capability families for this routine.' }
         }
       },
       run: async (args, ctx) => {
@@ -291,6 +296,12 @@
           provider: provider,
           model: args && args.model != null ? clean(args.model, 120) : null,
           enabled: !(args && args.enabled === false),
+          deliver: clean((args && args.deliver) || (ctx && ctx.deliveryOrigin ? 'origin' : 'local'), 40),
+          origin: ctx && ctx.deliveryOrigin ? ctx.deliveryOrigin : null,
+          attachToSession: !!(args && args.attachToSession),
+          skills: Array.isArray(args && args.skills) ? args.skills.slice(0, 8) : [],
+          contextFrom: Array.isArray(args && args.contextFrom) ? args.contextFrom.slice(0, 8) : null,
+          enabledToolsets: Array.isArray(args && args.enabledToolsets) ? args.enabledToolsets.slice(0, 16) : null,
           repeat: { times: repeatTimes == null ? null : Math.max(1, parseInt(repeatTimes, 10) || 1) }
         };
         const job = await createRoutine(spec);

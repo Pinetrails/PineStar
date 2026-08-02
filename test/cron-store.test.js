@@ -367,4 +367,22 @@ const iso = cron._internals.iso;
   A.eq(new Date(utc[0].nextRunAt).toISOString(), '2026-07-29T09:00:00.000Z', 'with no injected zone the old UTC anchor is unchanged');
 }
 
+// ---- Runtime parity fields are normalized, durable, and output is data rather than editable config. ----
+{
+  let jobs = store.createJob([], {
+    id: 'runtime1', schedule: cron.parseSchedule('every 1h', T0), noAgent: true, script: 'check.js',
+    skills: ['Research', 'Research', '', '../bad'], contextFrom: ['upstream', 'upstream', 'bad id'],
+    enabledToolsets: ['web', 'web', 'cabinet'], attachToSession: true,
+    origin: { channel: 'dev', chatId: 'chat-1', threadId: 'topic-2' }
+  }, { now: T0 });
+  const j = jobs[0];
+  A.eq(j.noAgent, true, 'script-only mode persists');
+  A.eq(j.skills, ['Research'], 'skills are bounded/deduplicated and unsafe refs dropped');
+  A.eq(j.contextFrom, ['upstream'], 'context refs are valid ids and deduplicated');
+  A.eq(j.enabledToolsets, ['web', 'cabinet'], 'per-job toolsets preserve explicit restriction');
+  A.eq(j.origin.threadId, 'topic-2', 'delivery origin preserves topic routing');
+  jobs = store.markRun(jobs, 'runtime1', { runId: 'r1', status: 'ok', reason: 'done', output: 'upstream result' }, { now: T0 + HOUR });
+  A.eq(store.getJob(jobs, 'runtime1').lastOutput, 'upstream result', 'successful final output persists for context pipelines');
+}
+
 A.report('cron-store');

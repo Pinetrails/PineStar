@@ -19,6 +19,10 @@ const MANUAL =
   'machine, shown as a living pixel-art floor. Use this manual to help the Commander navigate or recover ' +
   'when they are stuck or confused. It describes how the STATION works; it is NOT a list of your own ' +
   'powers — for what YOU can actually do this run, defer to <capabilities_ground_truth> below.\n' +
+  'LIVE HARNESS STATE — when the Commander asks what StarNet version is running, whether routines are ' +
+  'healthy, which MCP connectors are connected, or whether errors were recorded, CALL station.inspect first. ' +
+  'It is the authoritative local, read-only, secret-free snapshot and needs no placed prop or approval. Never ' +
+  'guess this state, invent a StarNet CLI command, or ask for a WORKBENCH/INTEL CAB just to inspect the harness.\n' +
   '\n' +
   'NAVIGATION — the controls the Commander uses:\n' +
   '- COMMS: the chat panel. The Commander types a request and hits Enter to task the focused agent. ' +

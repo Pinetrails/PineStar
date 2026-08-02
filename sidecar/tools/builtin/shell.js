@@ -730,6 +730,9 @@
         // that is still in-jail and still exists; otherwise fall back to the jail root.
         const sess = sessions.get(aid);
         let cwd = environment ? environment.getCwd(aid) : jailRoot;
+        // Scheduled project work is run-scoped. Prefer the host-validated project cwd without writing it to
+        // the agent-wide persistent cwd session (concurrent routines of one agent must not cross-contaminate).
+        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' });
         if (sess && sess.cwd) {
           try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || (environment && environment.backendId === 'local'), allowProtected: remoteOwner }); }
           catch (_) {}

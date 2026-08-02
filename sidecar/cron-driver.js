@@ -124,6 +124,8 @@
        job's own run settles but BEFORE finishFire, so the routine's recorded outcome and its session transcript
        carry the LINE's answer, not stage one's raw material. */
     const advanceChain = typeof d.advanceChain === 'function' ? d.advanceChain : null;
+    const contextFor = typeof d.contextFor === 'function' ? d.contextFor : function () { return ''; };
+    const deliverResult = typeof d.deliverResult === 'function' ? d.deliverResult : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
@@ -179,7 +181,7 @@
           const next = cronStore.markRun(getJobs(), jobId, {
             runId: runId, status: ok ? 'ok' : 'error',
             reason: state.reason || (ok ? 'done' : 'error'),
-            error: errMsg || undefined, transient: transient
+            error: errMsg || undefined, transient: transient, output: ok ? reply : undefined
           }, { now: at });
           setJobs(next);
         } catch (_) { /* a persist/markRun failure must never crash a settling run */ }
@@ -188,6 +190,11 @@
       const outcome = !ok ? 'failed' : (reply === SILENT_MARKER ? 'silent' : 'ok');
       const baseReason = state.reason || (errMsg ? 'error' : 'done');
       try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: owned ? baseReason : (baseReason + ' (stale-lease)') }); } catch (_) {}
+      if (owned && deliverResult) {
+        const liveJob = cronStore.getJob(getJobs(), jobId) || { id: jobId };
+        Promise.resolve(deliverResult(liveJob, { runId: runId, outcome: outcome, text: reply, error: errMsg || null }))
+          .catch(function (e) { warn('[cron] result delivery failed for ' + jobId + ': ' + ((e && e.message) || e)); });
+      }
       if (owned) leases.delete(jobId);   // a stale-lock sweep may have reclaimed+replaced it — never delete a successor's lease
     }
 
@@ -211,8 +218,19 @@
          than a silent skip: the Commander must be able to see WHY a routine stopped producing, and the reason
          lands in job.lastError, which the ROUTINES row already renders. cron.result's `reason` is a free string
          in the owned event contract, so this needs no schema change. */
+      let assembledPrompt = String(job.prompt || '');
+      try {
+        const upstream = contextFor(job, getJobs()) || '';
+        if (upstream) assembledPrompt = String(upstream) + '\n\n## ROUTINE DIRECTIVE\n' + assembledPrompt;
+      } catch (e) {
+        const blockedRunId = newId();
+        const msg = 'context pipeline unavailable: ' + ((e && e.message) || e);
+        try { setJobs(cronStore.markRun(getJobs(), job.id, { runId: blockedRunId, status: 'error', reason: 'context-error', error: msg, transient: false }, { now: nowMs })); } catch (_) {}
+        try { emit('cron.result', { jobId: job.id, runId: blockedRunId, outcome: 'failed', reason: 'context-error' }); } catch (_) {}
+        return false;
+      }
       {
-        const scan = cronGuard.scanAssembled(job.prompt, {
+        const scan = cronGuard.scanAssembled(assembledPrompt, {
           hasSkills: !!(job.skills && job.skills.length),
           hasInjectedData: !!(job.contextFrom && job.contextFrom.length)
         });
@@ -231,7 +249,7 @@
       const model = (job.model && String(job.model).trim()) || (ident.model && String(ident.model).trim()) || defaultModel;
       const provider = providerForJob(job, ident) || 'openrouter';
       const key = getKey(provider, job);
-      if (!model || !hasCredential(provider, key, job)) { try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {} return false; }
+      if (!job.noAgent && (!model || !hasCredential(provider, key, job))) { try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {} return false; }
 
       const runId = newId();
       const ac = newAbort();
@@ -244,7 +262,7 @@
       try { emit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: scheduledFor }); } catch (_) {}
       // ride the routine's instruction onto the CONVEYOR as a box bound for this agent — only NOW (past the
       // capability gate, lease taken), so a crate appears on the floor iff a run is genuinely firing.
-      try { placeWorkitem(job.agentId, job.prompt, runId); } catch (_) {}
+      try { placeWorkitem(job.agentId, assembledPrompt, runId); } catch (_) {}
 
       // in-process emit sink: assemble the reply from agent.token deltas (the SAME contract harness.js/hub.js use —
       // there is no agent.message event), capture the end reason / error / transient flag off the RAW payload
@@ -269,7 +287,7 @@
         if (view) { try { emit(name, view); } catch (_) {} }
       };
 
-      const messages = [{ role: 'user', content: String(job.prompt || '') }];
+      const messages = [{ role: 'user', content: assembledPrompt }];
       // launch the run SYNCHRONOUSLY (so the fire is ordered with the lease/cron.fire), but route both a
       // synchronous throw and an async rejection through the SAME terminal path so the lease always releases.
       let p;
@@ -284,6 +302,9 @@
           // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
           // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
           runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider,
+          // Host-minted recovery identity. The active-run journal can now tie an interrupted headless run back
+          // to the routine that launched it without trusting model text or guessing from the stream id.
+          cronJobId: job.id, cronJobName: job.name || '',
           // a scheduled run does real work; what it learns is durable memory, not scratch. Bounded downstream by
           // the aux budget + per-agent reflection cooldown, and stamped origin:'schedule' (see index.js /api/run).
           reflect: true,
@@ -291,6 +312,14 @@
           // routine, read straight off the durable job record. Empty on every routine that was not granted, so an
           // ungranted fire is byte-identical to the pre-grant behavior. Never sourced from the prompt.
           unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
+          preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [],
+          requiredPreloads: true,
+          cronScript: job.script || null,
+          scriptTimeoutMs: job.scriptTimeoutMs,
+          noAgent: job.noAgent === true,
+          workdir: job.workdir || null,
+          enabledToolsets: Array.isArray(job.enabledToolsets) ? job.enabledToolsets.slice() : null,
+          initialTaint: !!(job.contextFrom && job.contextFrom.length),
           // provenance spine (R3 meta bag → durable run row): a routine minted from a recipe carries its recipeId,
           // so scheduled recipe runs are attributable exactly like hand-launched ones. undefined for plain routines.
           recipeId: (job.meta && job.meta.recipeId) || undefined,
@@ -307,6 +336,10 @@
           Promise.resolve(advanceChain({
             agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''),
             signal: ac.signal, streamId: 'cron-' + runId, key: key, model: model, provider: provider,
+            preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [], requiredPreloads: true, workdir: job.workdir || null,
+            enabledToolsets: Array.isArray(job.enabledToolsets) ? job.enabledToolsets.slice() : null,
+            initialTaint: !!(job.contextFrom && job.contextFrom.length),
+            unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
             onHop: function () { renewLease(job.id, runId); }
           })).then(
             function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; finishFire(job.id, runId, state, null); },
