@@ -718,109 +718,6 @@
       "capybara/walk_west_4.png",
       "capybara/walk_west_5.png"
     ],
-    "caseyjones.blink.south": [
-      "caseyjones/blink_south.png"
-    ],
-    "caseyjones.rot.east": [
-      "caseyjones/rot_east.png"
-    ],
-    "caseyjones.rot.north-east": [
-      "caseyjones/rot_north-east.png"
-    ],
-    "caseyjones.rot.north-west": [
-      "caseyjones/rot_north-west.png"
-    ],
-    "caseyjones.rot.north": [
-      "caseyjones/rot_north.png"
-    ],
-    "caseyjones.rot.south-east": [
-      "caseyjones/rot_south-east.png"
-    ],
-    "caseyjones.rot.south-west": [
-      "caseyjones/rot_south-west.png"
-    ],
-    "caseyjones.rot.south": [
-      "caseyjones/rot_south.png"
-    ],
-    "caseyjones.rot.west": [
-      "caseyjones/rot_west.png"
-    ],
-    "caseyjones.sit.east": [
-      "caseyjones/sit_east.png"
-    ],
-    "caseyjones.sit.north": [
-      "caseyjones/sit_north.png"
-    ],
-    "caseyjones.sit.south": [
-      "caseyjones/sit_south.png"
-    ],
-    "caseyjones.sit.west": [
-      "caseyjones/sit_west.png"
-    ],
-    "caseyjones.walk.east": [
-      "caseyjones/walk_east_0.png",
-      "caseyjones/walk_east_1.png",
-      "caseyjones/walk_east_2.png",
-      "caseyjones/walk_east_3.png",
-      "caseyjones/walk_east_4.png",
-      "caseyjones/walk_east_5.png"
-    ],
-    "caseyjones.walk.north-east": [
-      "caseyjones/walk_north-east_0.png",
-      "caseyjones/walk_north-east_1.png",
-      "caseyjones/walk_north-east_2.png",
-      "caseyjones/walk_north-east_3.png",
-      "caseyjones/walk_north-east_4.png",
-      "caseyjones/walk_north-east_5.png"
-    ],
-    "caseyjones.walk.north-west": [
-      "caseyjones/walk_north-west_0.png",
-      "caseyjones/walk_north-west_1.png",
-      "caseyjones/walk_north-west_2.png",
-      "caseyjones/walk_north-west_3.png",
-      "caseyjones/walk_north-west_4.png",
-      "caseyjones/walk_north-west_5.png"
-    ],
-    "caseyjones.walk.north": [
-      "caseyjones/walk_north_0.png",
-      "caseyjones/walk_north_1.png",
-      "caseyjones/walk_north_2.png",
-      "caseyjones/walk_north_3.png",
-      "caseyjones/walk_north_4.png",
-      "caseyjones/walk_north_5.png"
-    ],
-    "caseyjones.walk.south-east": [
-      "caseyjones/walk_south-east_0.png",
-      "caseyjones/walk_south-east_1.png",
-      "caseyjones/walk_south-east_2.png",
-      "caseyjones/walk_south-east_3.png",
-      "caseyjones/walk_south-east_4.png",
-      "caseyjones/walk_south-east_5.png"
-    ],
-    "caseyjones.walk.south-west": [
-      "caseyjones/walk_south-west_0.png",
-      "caseyjones/walk_south-west_1.png",
-      "caseyjones/walk_south-west_2.png",
-      "caseyjones/walk_south-west_3.png",
-      "caseyjones/walk_south-west_4.png",
-      "caseyjones/walk_south-west_5.png"
-    ],
-    "caseyjones.walk.south": [
-      "caseyjones/walk_south_0.png",
-      "caseyjones/walk_south_1.png",
-      "caseyjones/walk_south_2.png",
-      "caseyjones/walk_south_3.png",
-      "caseyjones/walk_south_4.png",
-      "caseyjones/walk_south_5.png"
-    ],
-    "caseyjones.walk.west": [
-      "caseyjones/walk_west_0.png",
-      "caseyjones/walk_west_1.png",
-      "caseyjones/walk_west_2.png",
-      "caseyjones/walk_west_3.png",
-      "caseyjones/walk_west_4.png",
-      "caseyjones/walk_west_5.png"
-    ],
     "crewmate.blink.south": [
       "crewmate/blink_south.png"
     ],
@@ -1408,109 +1305,6 @@
       "endoskeleton/walk_west_3.png",
       "endoskeleton/walk_west_4.png",
       "endoskeleton/walk_west_5.png"
-    ],
-    "finn.blink.south": [
-      "finn/blink_south.png"
-    ],
-    "finn.rot.east": [
-      "finn/rot_east.png"
-    ],
-    "finn.rot.north-east": [
-      "finn/rot_north-east.png"
-    ],
-    "finn.rot.north-west": [
-      "finn/rot_north-west.png"
-    ],
-    "finn.rot.north": [
-      "finn/rot_north.png"
-    ],
-    "finn.rot.south-east": [
-      "finn/rot_south-east.png"
-    ],
-    "finn.rot.south-west": [
-      "finn/rot_south-west.png"
-    ],
-    "finn.rot.south": [
-      "finn/rot_south.png"
-    ],
-    "finn.rot.west": [
-      "finn/rot_west.png"
-    ],
-    "finn.sit.east": [
-      "finn/sit_east.png"
-    ],
-    "finn.sit.north": [
-      "finn/sit_north.png"
-    ],
-    "finn.sit.south": [
-      "finn/sit_south.png"
-    ],
-    "finn.sit.west": [
-      "finn/sit_west.png"
-    ],
-    "finn.walk.east": [
-      "finn/walk_east_0.png",
-      "finn/walk_east_1.png",
-      "finn/walk_east_2.png",
-      "finn/walk_east_3.png",
-      "finn/walk_east_4.png",
-      "finn/walk_east_5.png"
-    ],
-    "finn.walk.north-east": [
-      "finn/walk_north-east_0.png",
-      "finn/walk_north-east_1.png",
-      "finn/walk_north-east_2.png",
-      "finn/walk_north-east_3.png",
-      "finn/walk_north-east_4.png",
-      "finn/walk_north-east_5.png"
-    ],
-    "finn.walk.north-west": [
-      "finn/walk_north-west_0.png",
-      "finn/walk_north-west_1.png",
-      "finn/walk_north-west_2.png",
-      "finn/walk_north-west_3.png",
-      "finn/walk_north-west_4.png",
-      "finn/walk_north-west_5.png"
-    ],
-    "finn.walk.north": [
-      "finn/walk_north_0.png",
-      "finn/walk_north_1.png",
-      "finn/walk_north_2.png",
-      "finn/walk_north_3.png",
-      "finn/walk_north_4.png",
-      "finn/walk_north_5.png"
-    ],
-    "finn.walk.south-east": [
-      "finn/walk_south-east_0.png",
-      "finn/walk_south-east_1.png",
-      "finn/walk_south-east_2.png",
-      "finn/walk_south-east_3.png",
-      "finn/walk_south-east_4.png",
-      "finn/walk_south-east_5.png"
-    ],
-    "finn.walk.south-west": [
-      "finn/walk_south-west_0.png",
-      "finn/walk_south-west_1.png",
-      "finn/walk_south-west_2.png",
-      "finn/walk_south-west_3.png",
-      "finn/walk_south-west_4.png",
-      "finn/walk_south-west_5.png"
-    ],
-    "finn.walk.south": [
-      "finn/walk_south_0.png",
-      "finn/walk_south_1.png",
-      "finn/walk_south_2.png",
-      "finn/walk_south_3.png",
-      "finn/walk_south_4.png",
-      "finn/walk_south_5.png"
-    ],
-    "finn.walk.west": [
-      "finn/walk_west_0.png",
-      "finn/walk_west_1.png",
-      "finn/walk_west_2.png",
-      "finn/walk_west_3.png",
-      "finn/walk_west_4.png",
-      "finn/walk_west_5.png"
     ],
     "freddyfazbear.blink.south": [
       "freddyfazbear/blink_south.png"
@@ -2100,200 +1894,6 @@
       "heisenberg/walk_west_4.png",
       "heisenberg/walk_west_5.png"
     ],
-    "masterchief.blink.south": [
-      "masterchief/blink_south.png"
-    ],
-    "masterchief.rot.east": [
-      "masterchief/rot_east.png"
-    ],
-    "masterchief.rot.north-east": [
-      "masterchief/rot_north-east.png"
-    ],
-    "masterchief.rot.north-west": [
-      "masterchief/rot_north-west.png"
-    ],
-    "masterchief.rot.north": [
-      "masterchief/rot_north.png"
-    ],
-    "masterchief.rot.south-east": [
-      "masterchief/rot_south-east.png"
-    ],
-    "masterchief.rot.south-west": [
-      "masterchief/rot_south-west.png"
-    ],
-    "masterchief.rot.south": [
-      "masterchief/rot_south.png"
-    ],
-    "masterchief.rot.west": [
-      "masterchief/rot_west.png"
-    ],
-    "masterchief.sit.east": [
-      "masterchief/sit_east.png"
-    ],
-    "masterchief.sit.north": [
-      "masterchief/sit_north.png"
-    ],
-    "masterchief.sit.south": [
-      "masterchief/sit_south.png"
-    ],
-    "masterchief.sit.west": [
-      "masterchief/sit_west.png"
-    ],
-    "masterchief.walk.east": [
-      "masterchief/walk_east_0.png",
-      "masterchief/walk_east_1.png",
-      "masterchief/walk_east_2.png",
-      "masterchief/walk_east_3.png",
-      "masterchief/walk_east_4.png",
-      "masterchief/walk_east_5.png"
-    ],
-    "masterchief.walk.north-east": [
-      "masterchief/walk_north-east_0.png",
-      "masterchief/walk_north-east_1.png",
-      "masterchief/walk_north-east_2.png",
-      "masterchief/walk_north-east_3.png",
-      "masterchief/walk_north-east_4.png",
-      "masterchief/walk_north-east_5.png"
-    ],
-    "masterchief.walk.north-west": [
-      "masterchief/walk_north-west_0.png",
-      "masterchief/walk_north-west_1.png",
-      "masterchief/walk_north-west_2.png",
-      "masterchief/walk_north-west_3.png",
-      "masterchief/walk_north-west_4.png",
-      "masterchief/walk_north-west_5.png"
-    ],
-    "masterchief.walk.north": [
-      "masterchief/walk_north_0.png",
-      "masterchief/walk_north_1.png",
-      "masterchief/walk_north_2.png",
-      "masterchief/walk_north_3.png",
-      "masterchief/walk_north_4.png",
-      "masterchief/walk_north_5.png"
-    ],
-    "masterchief.walk.south-east": [
-      "masterchief/walk_south-east_0.png",
-      "masterchief/walk_south-east_1.png",
-      "masterchief/walk_south-east_2.png",
-      "masterchief/walk_south-east_3.png",
-      "masterchief/walk_south-east_4.png",
-      "masterchief/walk_south-east_5.png"
-    ],
-    "masterchief.walk.south-west": [
-      "masterchief/walk_south-west_0.png",
-      "masterchief/walk_south-west_1.png",
-      "masterchief/walk_south-west_2.png",
-      "masterchief/walk_south-west_3.png",
-      "masterchief/walk_south-west_4.png",
-      "masterchief/walk_south-west_5.png"
-    ],
-    "masterchief.walk.south": [
-      "masterchief/walk_south_0.png",
-      "masterchief/walk_south_1.png",
-      "masterchief/walk_south_2.png",
-      "masterchief/walk_south_3.png",
-      "masterchief/walk_south_4.png",
-      "masterchief/walk_south_5.png"
-    ],
-    "masterchief.walk.west": [
-      "masterchief/walk_west_0.png",
-      "masterchief/walk_west_1.png",
-      "masterchief/walk_west_2.png",
-      "masterchief/walk_west_3.png",
-      "masterchief/walk_west_4.png",
-      "masterchief/walk_west_5.png"
-    ],
-    "minionchar.blink.south": [
-      "minionchar/blink_south.png"
-    ],
-    "minionchar.rot.east": [
-      "minionchar/rot_east.png"
-    ],
-    "minionchar.rot.north-east": [
-      "minionchar/rot_north-east.png"
-    ],
-    "minionchar.rot.north-west": [
-      "minionchar/rot_north-west.png"
-    ],
-    "minionchar.rot.north": [
-      "minionchar/rot_north.png"
-    ],
-    "minionchar.rot.south-east": [
-      "minionchar/rot_south-east.png"
-    ],
-    "minionchar.rot.south-west": [
-      "minionchar/rot_south-west.png"
-    ],
-    "minionchar.rot.south": [
-      "minionchar/rot_south.png"
-    ],
-    "minionchar.rot.west": [
-      "minionchar/rot_west.png"
-    ],
-    "minionchar.walk.east": [
-      "minionchar/walk_east_0.png",
-      "minionchar/walk_east_1.png",
-      "minionchar/walk_east_2.png",
-      "minionchar/walk_east_3.png",
-      "minionchar/walk_east_4.png",
-      "minionchar/walk_east_5.png"
-    ],
-    "minionchar.walk.north-east": [
-      "minionchar/walk_north-east_0.png",
-      "minionchar/walk_north-east_1.png",
-      "minionchar/walk_north-east_2.png",
-      "minionchar/walk_north-east_3.png",
-      "minionchar/walk_north-east_4.png",
-      "minionchar/walk_north-east_5.png"
-    ],
-    "minionchar.walk.north-west": [
-      "minionchar/walk_north-west_0.png",
-      "minionchar/walk_north-west_1.png",
-      "minionchar/walk_north-west_2.png",
-      "minionchar/walk_north-west_3.png",
-      "minionchar/walk_north-west_4.png",
-      "minionchar/walk_north-west_5.png"
-    ],
-    "minionchar.walk.north": [
-      "minionchar/walk_north_0.png",
-      "minionchar/walk_north_1.png",
-      "minionchar/walk_north_2.png",
-      "minionchar/walk_north_3.png",
-      "minionchar/walk_north_4.png",
-      "minionchar/walk_north_5.png"
-    ],
-    "minionchar.walk.south-east": [
-      "minionchar/walk_south-east_0.png",
-      "minionchar/walk_south-east_1.png",
-      "minionchar/walk_south-east_2.png",
-      "minionchar/walk_south-east_3.png",
-      "minionchar/walk_south-east_4.png",
-      "minionchar/walk_south-east_5.png"
-    ],
-    "minionchar.walk.south-west": [
-      "minionchar/walk_south-west_0.png",
-      "minionchar/walk_south-west_1.png",
-      "minionchar/walk_south-west_2.png",
-      "minionchar/walk_south-west_3.png",
-      "minionchar/walk_south-west_4.png",
-      "minionchar/walk_south-west_5.png"
-    ],
-    "minionchar.walk.south": [
-      "minionchar/walk_south_0.png",
-      "minionchar/walk_south_1.png",
-      "minionchar/walk_south_2.png",
-      "minionchar/walk_south_3.png",
-      "minionchar/walk_south_4.png",
-      "minionchar/walk_south_5.png"
-    ],
-    "minionchar.walk.west": [
-      "minionchar/walk_west_0.png",
-      "minionchar/walk_west_1.png",
-      "minionchar/walk_west_2.png",
-      "minionchar/walk_west_3.png",
-      "minionchar/walk_west_4.png",
-      "minionchar/walk_west_5.png"
-    ],
     "morpheus.blink.south": [
       "morpheus/blink_south.png"
     ],
@@ -2744,109 +2344,6 @@
       "pepe/walk_west_4.png",
       "pepe/walk_west_5.png"
     ],
-    "pikachu.blink.south": [
-      "pikachu/blink_south.png"
-    ],
-    "pikachu.rot.east": [
-      "pikachu/rot_east.png"
-    ],
-    "pikachu.rot.north-east": [
-      "pikachu/rot_north-east.png"
-    ],
-    "pikachu.rot.north-west": [
-      "pikachu/rot_north-west.png"
-    ],
-    "pikachu.rot.north": [
-      "pikachu/rot_north.png"
-    ],
-    "pikachu.rot.south-east": [
-      "pikachu/rot_south-east.png"
-    ],
-    "pikachu.rot.south-west": [
-      "pikachu/rot_south-west.png"
-    ],
-    "pikachu.rot.south": [
-      "pikachu/rot_south.png"
-    ],
-    "pikachu.rot.west": [
-      "pikachu/rot_west.png"
-    ],
-    "pikachu.sit.east": [
-      "pikachu/sit_east.png"
-    ],
-    "pikachu.sit.north": [
-      "pikachu/sit_north.png"
-    ],
-    "pikachu.sit.south": [
-      "pikachu/sit_south.png"
-    ],
-    "pikachu.sit.west": [
-      "pikachu/sit_west.png"
-    ],
-    "pikachu.walk.east": [
-      "pikachu/walk_east_0.png",
-      "pikachu/walk_east_1.png",
-      "pikachu/walk_east_2.png",
-      "pikachu/walk_east_3.png",
-      "pikachu/walk_east_4.png",
-      "pikachu/walk_east_5.png"
-    ],
-    "pikachu.walk.north-east": [
-      "pikachu/walk_north-east_0.png",
-      "pikachu/walk_north-east_1.png",
-      "pikachu/walk_north-east_2.png",
-      "pikachu/walk_north-east_3.png",
-      "pikachu/walk_north-east_4.png",
-      "pikachu/walk_north-east_5.png"
-    ],
-    "pikachu.walk.north-west": [
-      "pikachu/walk_north-west_0.png",
-      "pikachu/walk_north-west_1.png",
-      "pikachu/walk_north-west_2.png",
-      "pikachu/walk_north-west_3.png",
-      "pikachu/walk_north-west_4.png",
-      "pikachu/walk_north-west_5.png"
-    ],
-    "pikachu.walk.north": [
-      "pikachu/walk_north_0.png",
-      "pikachu/walk_north_1.png",
-      "pikachu/walk_north_2.png",
-      "pikachu/walk_north_3.png",
-      "pikachu/walk_north_4.png",
-      "pikachu/walk_north_5.png"
-    ],
-    "pikachu.walk.south-east": [
-      "pikachu/walk_south-east_0.png",
-      "pikachu/walk_south-east_1.png",
-      "pikachu/walk_south-east_2.png",
-      "pikachu/walk_south-east_3.png",
-      "pikachu/walk_south-east_4.png",
-      "pikachu/walk_south-east_5.png"
-    ],
-    "pikachu.walk.south-west": [
-      "pikachu/walk_south-west_0.png",
-      "pikachu/walk_south-west_1.png",
-      "pikachu/walk_south-west_2.png",
-      "pikachu/walk_south-west_3.png",
-      "pikachu/walk_south-west_4.png",
-      "pikachu/walk_south-west_5.png"
-    ],
-    "pikachu.walk.south": [
-      "pikachu/walk_south_0.png",
-      "pikachu/walk_south_1.png",
-      "pikachu/walk_south_2.png",
-      "pikachu/walk_south_3.png",
-      "pikachu/walk_south_4.png",
-      "pikachu/walk_south_5.png"
-    ],
-    "pikachu.walk.west": [
-      "pikachu/walk_west_0.png",
-      "pikachu/walk_west_1.png",
-      "pikachu/walk_west_2.png",
-      "pikachu/walk_west_3.png",
-      "pikachu/walk_west_4.png",
-      "pikachu/walk_west_5.png"
-    ],
     "plaguedoctor.blink.south": [
       "plaguedoctor/blink_south.png"
     ],
@@ -3140,109 +2637,6 @@
       "ricksanchez/walk_west_3.png",
       "ricksanchez/walk_west_4.png",
       "ricksanchez/walk_west_5.png"
-    ],
-    "robocop.blink.south": [
-      "robocop/blink_south.png"
-    ],
-    "robocop.rot.east": [
-      "robocop/rot_east.png"
-    ],
-    "robocop.rot.north-east": [
-      "robocop/rot_north-east.png"
-    ],
-    "robocop.rot.north-west": [
-      "robocop/rot_north-west.png"
-    ],
-    "robocop.rot.north": [
-      "robocop/rot_north.png"
-    ],
-    "robocop.rot.south-east": [
-      "robocop/rot_south-east.png"
-    ],
-    "robocop.rot.south-west": [
-      "robocop/rot_south-west.png"
-    ],
-    "robocop.rot.south": [
-      "robocop/rot_south.png"
-    ],
-    "robocop.rot.west": [
-      "robocop/rot_west.png"
-    ],
-    "robocop.sit.east": [
-      "robocop/sit_east.png"
-    ],
-    "robocop.sit.north": [
-      "robocop/sit_north.png"
-    ],
-    "robocop.sit.south": [
-      "robocop/sit_south.png"
-    ],
-    "robocop.sit.west": [
-      "robocop/sit_west.png"
-    ],
-    "robocop.walk.east": [
-      "robocop/walk_east_0.png",
-      "robocop/walk_east_1.png",
-      "robocop/walk_east_2.png",
-      "robocop/walk_east_3.png",
-      "robocop/walk_east_4.png",
-      "robocop/walk_east_5.png"
-    ],
-    "robocop.walk.north-east": [
-      "robocop/walk_north-east_0.png",
-      "robocop/walk_north-east_1.png",
-      "robocop/walk_north-east_2.png",
-      "robocop/walk_north-east_3.png",
-      "robocop/walk_north-east_4.png",
-      "robocop/walk_north-east_5.png"
-    ],
-    "robocop.walk.north-west": [
-      "robocop/walk_north-west_0.png",
-      "robocop/walk_north-west_1.png",
-      "robocop/walk_north-west_2.png",
-      "robocop/walk_north-west_3.png",
-      "robocop/walk_north-west_4.png",
-      "robocop/walk_north-west_5.png"
-    ],
-    "robocop.walk.north": [
-      "robocop/walk_north_0.png",
-      "robocop/walk_north_1.png",
-      "robocop/walk_north_2.png",
-      "robocop/walk_north_3.png",
-      "robocop/walk_north_4.png",
-      "robocop/walk_north_5.png"
-    ],
-    "robocop.walk.south-east": [
-      "robocop/walk_south-east_0.png",
-      "robocop/walk_south-east_1.png",
-      "robocop/walk_south-east_2.png",
-      "robocop/walk_south-east_3.png",
-      "robocop/walk_south-east_4.png",
-      "robocop/walk_south-east_5.png"
-    ],
-    "robocop.walk.south-west": [
-      "robocop/walk_south-west_0.png",
-      "robocop/walk_south-west_1.png",
-      "robocop/walk_south-west_2.png",
-      "robocop/walk_south-west_3.png",
-      "robocop/walk_south-west_4.png",
-      "robocop/walk_south-west_5.png"
-    ],
-    "robocop.walk.south": [
-      "robocop/walk_south_0.png",
-      "robocop/walk_south_1.png",
-      "robocop/walk_south_2.png",
-      "robocop/walk_south_3.png",
-      "robocop/walk_south_4.png",
-      "robocop/walk_south_5.png"
-    ],
-    "robocop.walk.west": [
-      "robocop/walk_west_0.png",
-      "robocop/walk_west_1.png",
-      "robocop/walk_west_2.png",
-      "robocop/walk_west_3.png",
-      "robocop/walk_west_4.png",
-      "robocop/walk_west_5.png"
     ],
     "robot.blink.south": [
       "robot/blink_south.png"
@@ -4125,109 +3519,6 @@
       "vaultboy/walk_west_3.png",
       "vaultboy/walk_west_4.png",
       "vaultboy/walk_west_5.png"
-    ],
-    "voidwizard.blink.south": [
-      "voidwizard/blink_south.png"
-    ],
-    "voidwizard.rot.east": [
-      "voidwizard/rot_east.png"
-    ],
-    "voidwizard.rot.north-east": [
-      "voidwizard/rot_north-east.png"
-    ],
-    "voidwizard.rot.north-west": [
-      "voidwizard/rot_north-west.png"
-    ],
-    "voidwizard.rot.north": [
-      "voidwizard/rot_north.png"
-    ],
-    "voidwizard.rot.south-east": [
-      "voidwizard/rot_south-east.png"
-    ],
-    "voidwizard.rot.south-west": [
-      "voidwizard/rot_south-west.png"
-    ],
-    "voidwizard.rot.south": [
-      "voidwizard/rot_south.png"
-    ],
-    "voidwizard.rot.west": [
-      "voidwizard/rot_west.png"
-    ],
-    "voidwizard.sit.east": [
-      "voidwizard/sit_east.png"
-    ],
-    "voidwizard.sit.north": [
-      "voidwizard/sit_north.png"
-    ],
-    "voidwizard.sit.south": [
-      "voidwizard/sit_south.png"
-    ],
-    "voidwizard.sit.west": [
-      "voidwizard/sit_west.png"
-    ],
-    "voidwizard.walk.east": [
-      "voidwizard/walk_east_0.png",
-      "voidwizard/walk_east_1.png",
-      "voidwizard/walk_east_2.png",
-      "voidwizard/walk_east_3.png",
-      "voidwizard/walk_east_4.png",
-      "voidwizard/walk_east_5.png"
-    ],
-    "voidwizard.walk.north-east": [
-      "voidwizard/walk_north-east_0.png",
-      "voidwizard/walk_north-east_1.png",
-      "voidwizard/walk_north-east_2.png",
-      "voidwizard/walk_north-east_3.png",
-      "voidwizard/walk_north-east_4.png",
-      "voidwizard/walk_north-east_5.png"
-    ],
-    "voidwizard.walk.north-west": [
-      "voidwizard/walk_north-west_0.png",
-      "voidwizard/walk_north-west_1.png",
-      "voidwizard/walk_north-west_2.png",
-      "voidwizard/walk_north-west_3.png",
-      "voidwizard/walk_north-west_4.png",
-      "voidwizard/walk_north-west_5.png"
-    ],
-    "voidwizard.walk.north": [
-      "voidwizard/walk_north_0.png",
-      "voidwizard/walk_north_1.png",
-      "voidwizard/walk_north_2.png",
-      "voidwizard/walk_north_3.png",
-      "voidwizard/walk_north_4.png",
-      "voidwizard/walk_north_5.png"
-    ],
-    "voidwizard.walk.south-east": [
-      "voidwizard/walk_south-east_0.png",
-      "voidwizard/walk_south-east_1.png",
-      "voidwizard/walk_south-east_2.png",
-      "voidwizard/walk_south-east_3.png",
-      "voidwizard/walk_south-east_4.png",
-      "voidwizard/walk_south-east_5.png"
-    ],
-    "voidwizard.walk.south-west": [
-      "voidwizard/walk_south-west_0.png",
-      "voidwizard/walk_south-west_1.png",
-      "voidwizard/walk_south-west_2.png",
-      "voidwizard/walk_south-west_3.png",
-      "voidwizard/walk_south-west_4.png",
-      "voidwizard/walk_south-west_5.png"
-    ],
-    "voidwizard.walk.south": [
-      "voidwizard/walk_south_0.png",
-      "voidwizard/walk_south_1.png",
-      "voidwizard/walk_south_2.png",
-      "voidwizard/walk_south_3.png",
-      "voidwizard/walk_south_4.png",
-      "voidwizard/walk_south_5.png"
-    ],
-    "voidwizard.walk.west": [
-      "voidwizard/walk_west_0.png",
-      "voidwizard/walk_west_1.png",
-      "voidwizard/walk_west_2.png",
-      "voidwizard/walk_west_3.png",
-      "voidwizard/walk_west_4.png",
-      "voidwizard/walk_west_5.png"
     ],
     "xenomorph.blink.south": [
       "xenomorph/blink_south.png"
@@ -5247,6 +4538,1023 @@
       "bear/walk_west_3.png",
       "bear/walk_west_4.png",
       "bear/walk_west_5.png"
+    ],
+    "voidwizard.blink.south": [
+      "voidwizard/blink_south.png"
+    ],
+    "voidwizard.rot.east": [
+      "voidwizard/rot_east.png"
+    ],
+    "voidwizard.rot.north-east": [
+      "voidwizard/rot_north-east.png"
+    ],
+    "voidwizard.rot.north-west": [
+      "voidwizard/rot_north-west.png"
+    ],
+    "voidwizard.rot.north": [
+      "voidwizard/rot_north.png"
+    ],
+    "voidwizard.rot.south-east": [
+      "voidwizard/rot_south-east.png"
+    ],
+    "voidwizard.rot.south-west": [
+      "voidwizard/rot_south-west.png"
+    ],
+    "voidwizard.rot.south": [
+      "voidwizard/rot_south.png"
+    ],
+    "voidwizard.rot.west": [
+      "voidwizard/rot_west.png"
+    ],
+    "voidwizard.sit.east": [
+      "voidwizard/sit_east.png"
+    ],
+    "voidwizard.sit.north": [
+      "voidwizard/sit_north.png"
+    ],
+    "voidwizard.sit.south": [
+      "voidwizard/sit_south.png"
+    ],
+    "voidwizard.sit.west": [
+      "voidwizard/sit_west.png"
+    ],
+    "voidwizard.gesture.east": [
+      "voidwizard/gesture_east_0.png",
+      "voidwizard/gesture_east_1.png",
+      "voidwizard/gesture_east_2.png",
+      "voidwizard/gesture_east_3.png",
+      "voidwizard/gesture_east_4.png",
+      "voidwizard/gesture_east_5.png",
+      "voidwizard/gesture_east_6.png",
+      "voidwizard/gesture_east_7.png",
+      "voidwizard/gesture_east_8.png"
+    ],
+    "voidwizard.gesture.north": [
+      "voidwizard/gesture_north_0.png",
+      "voidwizard/gesture_north_1.png",
+      "voidwizard/gesture_north_2.png",
+      "voidwizard/gesture_north_3.png",
+      "voidwizard/gesture_north_4.png",
+      "voidwizard/gesture_north_5.png",
+      "voidwizard/gesture_north_6.png",
+      "voidwizard/gesture_north_7.png",
+      "voidwizard/gesture_north_8.png"
+    ],
+    "voidwizard.gesture.south": [
+      "voidwizard/gesture_south_0.png",
+      "voidwizard/gesture_south_1.png",
+      "voidwizard/gesture_south_2.png",
+      "voidwizard/gesture_south_3.png",
+      "voidwizard/gesture_south_4.png",
+      "voidwizard/gesture_south_5.png",
+      "voidwizard/gesture_south_6.png",
+      "voidwizard/gesture_south_7.png",
+      "voidwizard/gesture_south_8.png"
+    ],
+    "voidwizard.gesture.west": [
+      "voidwizard/gesture_west_0.png",
+      "voidwizard/gesture_west_1.png",
+      "voidwizard/gesture_west_2.png",
+      "voidwizard/gesture_west_3.png",
+      "voidwizard/gesture_west_4.png",
+      "voidwizard/gesture_west_5.png",
+      "voidwizard/gesture_west_6.png",
+      "voidwizard/gesture_west_7.png",
+      "voidwizard/gesture_west_8.png"
+    ],
+    "voidwizard.walk.east": [
+      "voidwizard/walk_east_0.png",
+      "voidwizard/walk_east_1.png",
+      "voidwizard/walk_east_2.png",
+      "voidwizard/walk_east_3.png",
+      "voidwizard/walk_east_4.png",
+      "voidwizard/walk_east_5.png"
+    ],
+    "voidwizard.walk.north-east": [
+      "voidwizard/walk_north-east_0.png",
+      "voidwizard/walk_north-east_1.png",
+      "voidwizard/walk_north-east_2.png",
+      "voidwizard/walk_north-east_3.png",
+      "voidwizard/walk_north-east_4.png",
+      "voidwizard/walk_north-east_5.png"
+    ],
+    "voidwizard.walk.north-west": [
+      "voidwizard/walk_north-west_0.png",
+      "voidwizard/walk_north-west_1.png",
+      "voidwizard/walk_north-west_2.png",
+      "voidwizard/walk_north-west_3.png",
+      "voidwizard/walk_north-west_4.png",
+      "voidwizard/walk_north-west_5.png"
+    ],
+    "voidwizard.walk.north": [
+      "voidwizard/walk_north_0.png",
+      "voidwizard/walk_north_1.png",
+      "voidwizard/walk_north_2.png",
+      "voidwizard/walk_north_3.png",
+      "voidwizard/walk_north_4.png",
+      "voidwizard/walk_north_5.png"
+    ],
+    "voidwizard.walk.south-east": [
+      "voidwizard/walk_south-east_0.png",
+      "voidwizard/walk_south-east_1.png",
+      "voidwizard/walk_south-east_2.png",
+      "voidwizard/walk_south-east_3.png",
+      "voidwizard/walk_south-east_4.png",
+      "voidwizard/walk_south-east_5.png"
+    ],
+    "voidwizard.walk.south-west": [
+      "voidwizard/walk_south-west_0.png",
+      "voidwizard/walk_south-west_1.png",
+      "voidwizard/walk_south-west_2.png",
+      "voidwizard/walk_south-west_3.png",
+      "voidwizard/walk_south-west_4.png",
+      "voidwizard/walk_south-west_5.png"
+    ],
+    "voidwizard.walk.south": [
+      "voidwizard/walk_south_0.png",
+      "voidwizard/walk_south_1.png",
+      "voidwizard/walk_south_2.png",
+      "voidwizard/walk_south_3.png",
+      "voidwizard/walk_south_4.png",
+      "voidwizard/walk_south_5.png"
+    ],
+    "voidwizard.walk.west": [
+      "voidwizard/walk_west_0.png",
+      "voidwizard/walk_west_1.png",
+      "voidwizard/walk_west_2.png",
+      "voidwizard/walk_west_3.png",
+      "voidwizard/walk_west_4.png",
+      "voidwizard/walk_west_5.png"
+    ],
+    "robocop.blink.south": [
+      "robocop/blink_south.png"
+    ],
+    "robocop.rot.east": [
+      "robocop/rot_east.png"
+    ],
+    "robocop.rot.north-east": [
+      "robocop/rot_north-east.png"
+    ],
+    "robocop.rot.north-west": [
+      "robocop/rot_north-west.png"
+    ],
+    "robocop.rot.north": [
+      "robocop/rot_north.png"
+    ],
+    "robocop.rot.south-east": [
+      "robocop/rot_south-east.png"
+    ],
+    "robocop.rot.south-west": [
+      "robocop/rot_south-west.png"
+    ],
+    "robocop.rot.south": [
+      "robocop/rot_south.png"
+    ],
+    "robocop.rot.west": [
+      "robocop/rot_west.png"
+    ],
+    "robocop.sit.east": [
+      "robocop/sit_east.png"
+    ],
+    "robocop.sit.north": [
+      "robocop/sit_north.png"
+    ],
+    "robocop.sit.south": [
+      "robocop/sit_south.png"
+    ],
+    "robocop.sit.west": [
+      "robocop/sit_west.png"
+    ],
+    "robocop.gesture.east": [
+      "robocop/gesture_east_0.png",
+      "robocop/gesture_east_1.png",
+      "robocop/gesture_east_2.png",
+      "robocop/gesture_east_3.png",
+      "robocop/gesture_east_4.png",
+      "robocop/gesture_east_5.png",
+      "robocop/gesture_east_6.png",
+      "robocop/gesture_east_7.png",
+      "robocop/gesture_east_8.png"
+    ],
+    "robocop.gesture.north": [
+      "robocop/gesture_north_0.png",
+      "robocop/gesture_north_1.png",
+      "robocop/gesture_north_2.png",
+      "robocop/gesture_north_3.png",
+      "robocop/gesture_north_4.png",
+      "robocop/gesture_north_5.png",
+      "robocop/gesture_north_6.png",
+      "robocop/gesture_north_7.png",
+      "robocop/gesture_north_8.png"
+    ],
+    "robocop.gesture.south": [
+      "robocop/gesture_south_0.png",
+      "robocop/gesture_south_1.png",
+      "robocop/gesture_south_2.png",
+      "robocop/gesture_south_3.png",
+      "robocop/gesture_south_4.png",
+      "robocop/gesture_south_5.png",
+      "robocop/gesture_south_6.png",
+      "robocop/gesture_south_7.png",
+      "robocop/gesture_south_8.png"
+    ],
+    "robocop.gesture.west": [
+      "robocop/gesture_west_0.png",
+      "robocop/gesture_west_1.png",
+      "robocop/gesture_west_2.png",
+      "robocop/gesture_west_3.png",
+      "robocop/gesture_west_4.png",
+      "robocop/gesture_west_5.png",
+      "robocop/gesture_west_6.png",
+      "robocop/gesture_west_7.png",
+      "robocop/gesture_west_8.png"
+    ],
+    "robocop.walk.east": [
+      "robocop/walk_east_0.png",
+      "robocop/walk_east_1.png",
+      "robocop/walk_east_2.png",
+      "robocop/walk_east_3.png",
+      "robocop/walk_east_4.png",
+      "robocop/walk_east_5.png"
+    ],
+    "robocop.walk.north-east": [
+      "robocop/walk_north-east_0.png",
+      "robocop/walk_north-east_1.png",
+      "robocop/walk_north-east_2.png",
+      "robocop/walk_north-east_3.png",
+      "robocop/walk_north-east_4.png",
+      "robocop/walk_north-east_5.png"
+    ],
+    "robocop.walk.north-west": [
+      "robocop/walk_north-west_0.png",
+      "robocop/walk_north-west_1.png",
+      "robocop/walk_north-west_2.png",
+      "robocop/walk_north-west_3.png",
+      "robocop/walk_north-west_4.png",
+      "robocop/walk_north-west_5.png"
+    ],
+    "robocop.walk.north": [
+      "robocop/walk_north_0.png",
+      "robocop/walk_north_1.png",
+      "robocop/walk_north_2.png",
+      "robocop/walk_north_3.png",
+      "robocop/walk_north_4.png",
+      "robocop/walk_north_5.png"
+    ],
+    "robocop.walk.south-east": [
+      "robocop/walk_south-east_0.png",
+      "robocop/walk_south-east_1.png",
+      "robocop/walk_south-east_2.png",
+      "robocop/walk_south-east_3.png",
+      "robocop/walk_south-east_4.png",
+      "robocop/walk_south-east_5.png"
+    ],
+    "robocop.walk.south-west": [
+      "robocop/walk_south-west_0.png",
+      "robocop/walk_south-west_1.png",
+      "robocop/walk_south-west_2.png",
+      "robocop/walk_south-west_3.png",
+      "robocop/walk_south-west_4.png",
+      "robocop/walk_south-west_5.png"
+    ],
+    "robocop.walk.south": [
+      "robocop/walk_south_0.png",
+      "robocop/walk_south_1.png",
+      "robocop/walk_south_2.png",
+      "robocop/walk_south_3.png",
+      "robocop/walk_south_4.png",
+      "robocop/walk_south_5.png"
+    ],
+    "robocop.walk.west": [
+      "robocop/walk_west_0.png",
+      "robocop/walk_west_1.png",
+      "robocop/walk_west_2.png",
+      "robocop/walk_west_3.png",
+      "robocop/walk_west_4.png",
+      "robocop/walk_west_5.png"
+    ],
+    "minionchar.blink.south": [
+      "minionchar/blink_south.png"
+    ],
+    "minionchar.rot.east": [
+      "minionchar/rot_east.png"
+    ],
+    "minionchar.rot.north-east": [
+      "minionchar/rot_north-east.png"
+    ],
+    "minionchar.rot.north-west": [
+      "minionchar/rot_north-west.png"
+    ],
+    "minionchar.rot.north": [
+      "minionchar/rot_north.png"
+    ],
+    "minionchar.rot.south-east": [
+      "minionchar/rot_south-east.png"
+    ],
+    "minionchar.rot.south-west": [
+      "minionchar/rot_south-west.png"
+    ],
+    "minionchar.rot.south": [
+      "minionchar/rot_south.png"
+    ],
+    "minionchar.rot.west": [
+      "minionchar/rot_west.png"
+    ],
+    "minionchar.gesture.east": [
+      "minionchar/gesture_east_0.png",
+      "minionchar/gesture_east_1.png",
+      "minionchar/gesture_east_2.png",
+      "minionchar/gesture_east_3.png",
+      "minionchar/gesture_east_4.png",
+      "minionchar/gesture_east_5.png",
+      "minionchar/gesture_east_6.png",
+      "minionchar/gesture_east_7.png",
+      "minionchar/gesture_east_8.png"
+    ],
+    "minionchar.gesture.north": [
+      "minionchar/gesture_north_0.png",
+      "minionchar/gesture_north_1.png",
+      "minionchar/gesture_north_2.png",
+      "minionchar/gesture_north_3.png",
+      "minionchar/gesture_north_4.png",
+      "minionchar/gesture_north_5.png",
+      "minionchar/gesture_north_6.png",
+      "minionchar/gesture_north_7.png",
+      "minionchar/gesture_north_8.png"
+    ],
+    "minionchar.gesture.south": [
+      "minionchar/gesture_south_0.png",
+      "minionchar/gesture_south_1.png",
+      "minionchar/gesture_south_2.png",
+      "minionchar/gesture_south_3.png",
+      "minionchar/gesture_south_4.png",
+      "minionchar/gesture_south_5.png",
+      "minionchar/gesture_south_6.png",
+      "minionchar/gesture_south_7.png",
+      "minionchar/gesture_south_8.png"
+    ],
+    "minionchar.gesture.west": [
+      "minionchar/gesture_west_0.png",
+      "minionchar/gesture_west_1.png",
+      "minionchar/gesture_west_2.png",
+      "minionchar/gesture_west_3.png",
+      "minionchar/gesture_west_4.png",
+      "minionchar/gesture_west_5.png",
+      "minionchar/gesture_west_6.png",
+      "minionchar/gesture_west_7.png",
+      "minionchar/gesture_west_8.png"
+    ],
+    "minionchar.walk.east": [
+      "minionchar/walk_east_0.png",
+      "minionchar/walk_east_1.png",
+      "minionchar/walk_east_2.png",
+      "minionchar/walk_east_3.png",
+      "minionchar/walk_east_4.png",
+      "minionchar/walk_east_5.png"
+    ],
+    "minionchar.walk.north-east": [
+      "minionchar/walk_north-east_0.png",
+      "minionchar/walk_north-east_1.png",
+      "minionchar/walk_north-east_2.png",
+      "minionchar/walk_north-east_3.png",
+      "minionchar/walk_north-east_4.png",
+      "minionchar/walk_north-east_5.png"
+    ],
+    "minionchar.walk.north-west": [
+      "minionchar/walk_north-west_0.png",
+      "minionchar/walk_north-west_1.png",
+      "minionchar/walk_north-west_2.png",
+      "minionchar/walk_north-west_3.png",
+      "minionchar/walk_north-west_4.png",
+      "minionchar/walk_north-west_5.png"
+    ],
+    "minionchar.walk.north": [
+      "minionchar/walk_north_0.png",
+      "minionchar/walk_north_1.png",
+      "minionchar/walk_north_2.png",
+      "minionchar/walk_north_3.png",
+      "minionchar/walk_north_4.png",
+      "minionchar/walk_north_5.png"
+    ],
+    "minionchar.walk.south-east": [
+      "minionchar/walk_south-east_0.png",
+      "minionchar/walk_south-east_1.png",
+      "minionchar/walk_south-east_2.png",
+      "minionchar/walk_south-east_3.png",
+      "minionchar/walk_south-east_4.png",
+      "minionchar/walk_south-east_5.png"
+    ],
+    "minionchar.walk.south-west": [
+      "minionchar/walk_south-west_0.png",
+      "minionchar/walk_south-west_1.png",
+      "minionchar/walk_south-west_2.png",
+      "minionchar/walk_south-west_3.png",
+      "minionchar/walk_south-west_4.png",
+      "minionchar/walk_south-west_5.png"
+    ],
+    "minionchar.walk.south": [
+      "minionchar/walk_south_0.png",
+      "minionchar/walk_south_1.png",
+      "minionchar/walk_south_2.png",
+      "minionchar/walk_south_3.png",
+      "minionchar/walk_south_4.png",
+      "minionchar/walk_south_5.png"
+    ],
+    "minionchar.walk.west": [
+      "minionchar/walk_west_0.png",
+      "minionchar/walk_west_1.png",
+      "minionchar/walk_west_2.png",
+      "minionchar/walk_west_3.png",
+      "minionchar/walk_west_4.png",
+      "minionchar/walk_west_5.png"
+    ],
+    "masterchief.blink.south": [
+      "masterchief/blink_south.png"
+    ],
+    "masterchief.rot.east": [
+      "masterchief/rot_east.png"
+    ],
+    "masterchief.rot.north-east": [
+      "masterchief/rot_north-east.png"
+    ],
+    "masterchief.rot.north-west": [
+      "masterchief/rot_north-west.png"
+    ],
+    "masterchief.rot.north": [
+      "masterchief/rot_north.png"
+    ],
+    "masterchief.rot.south-east": [
+      "masterchief/rot_south-east.png"
+    ],
+    "masterchief.rot.south-west": [
+      "masterchief/rot_south-west.png"
+    ],
+    "masterchief.rot.south": [
+      "masterchief/rot_south.png"
+    ],
+    "masterchief.rot.west": [
+      "masterchief/rot_west.png"
+    ],
+    "masterchief.sit.east": [
+      "masterchief/sit_east.png"
+    ],
+    "masterchief.sit.north": [
+      "masterchief/sit_north.png"
+    ],
+    "masterchief.sit.south": [
+      "masterchief/sit_south.png"
+    ],
+    "masterchief.sit.west": [
+      "masterchief/sit_west.png"
+    ],
+    "masterchief.gesture.east": [
+      "masterchief/gesture_east_0.png",
+      "masterchief/gesture_east_1.png",
+      "masterchief/gesture_east_2.png",
+      "masterchief/gesture_east_3.png",
+      "masterchief/gesture_east_4.png",
+      "masterchief/gesture_east_5.png",
+      "masterchief/gesture_east_6.png",
+      "masterchief/gesture_east_7.png",
+      "masterchief/gesture_east_8.png"
+    ],
+    "masterchief.gesture.north": [
+      "masterchief/gesture_north_0.png",
+      "masterchief/gesture_north_1.png",
+      "masterchief/gesture_north_2.png",
+      "masterchief/gesture_north_3.png",
+      "masterchief/gesture_north_4.png",
+      "masterchief/gesture_north_5.png",
+      "masterchief/gesture_north_6.png",
+      "masterchief/gesture_north_7.png",
+      "masterchief/gesture_north_8.png"
+    ],
+    "masterchief.gesture.south": [
+      "masterchief/gesture_south_0.png",
+      "masterchief/gesture_south_1.png",
+      "masterchief/gesture_south_2.png",
+      "masterchief/gesture_south_3.png",
+      "masterchief/gesture_south_4.png",
+      "masterchief/gesture_south_5.png",
+      "masterchief/gesture_south_6.png",
+      "masterchief/gesture_south_7.png",
+      "masterchief/gesture_south_8.png"
+    ],
+    "masterchief.gesture.west": [
+      "masterchief/gesture_west_0.png",
+      "masterchief/gesture_west_1.png",
+      "masterchief/gesture_west_2.png",
+      "masterchief/gesture_west_3.png",
+      "masterchief/gesture_west_4.png",
+      "masterchief/gesture_west_5.png",
+      "masterchief/gesture_west_6.png",
+      "masterchief/gesture_west_7.png",
+      "masterchief/gesture_west_8.png"
+    ],
+    "masterchief.walk.east": [
+      "masterchief/walk_east_0.png",
+      "masterchief/walk_east_1.png",
+      "masterchief/walk_east_2.png",
+      "masterchief/walk_east_3.png",
+      "masterchief/walk_east_4.png",
+      "masterchief/walk_east_5.png"
+    ],
+    "masterchief.walk.north-east": [
+      "masterchief/walk_north-east_0.png",
+      "masterchief/walk_north-east_1.png",
+      "masterchief/walk_north-east_2.png",
+      "masterchief/walk_north-east_3.png",
+      "masterchief/walk_north-east_4.png",
+      "masterchief/walk_north-east_5.png"
+    ],
+    "masterchief.walk.north-west": [
+      "masterchief/walk_north-west_0.png",
+      "masterchief/walk_north-west_1.png",
+      "masterchief/walk_north-west_2.png",
+      "masterchief/walk_north-west_3.png",
+      "masterchief/walk_north-west_4.png",
+      "masterchief/walk_north-west_5.png"
+    ],
+    "masterchief.walk.north": [
+      "masterchief/walk_north_0.png",
+      "masterchief/walk_north_1.png",
+      "masterchief/walk_north_2.png",
+      "masterchief/walk_north_3.png",
+      "masterchief/walk_north_4.png",
+      "masterchief/walk_north_5.png"
+    ],
+    "masterchief.walk.south-east": [
+      "masterchief/walk_south-east_0.png",
+      "masterchief/walk_south-east_1.png",
+      "masterchief/walk_south-east_2.png",
+      "masterchief/walk_south-east_3.png",
+      "masterchief/walk_south-east_4.png",
+      "masterchief/walk_south-east_5.png"
+    ],
+    "masterchief.walk.south-west": [
+      "masterchief/walk_south-west_0.png",
+      "masterchief/walk_south-west_1.png",
+      "masterchief/walk_south-west_2.png",
+      "masterchief/walk_south-west_3.png",
+      "masterchief/walk_south-west_4.png",
+      "masterchief/walk_south-west_5.png"
+    ],
+    "masterchief.walk.south": [
+      "masterchief/walk_south_0.png",
+      "masterchief/walk_south_1.png",
+      "masterchief/walk_south_2.png",
+      "masterchief/walk_south_3.png",
+      "masterchief/walk_south_4.png",
+      "masterchief/walk_south_5.png"
+    ],
+    "masterchief.walk.west": [
+      "masterchief/walk_west_0.png",
+      "masterchief/walk_west_1.png",
+      "masterchief/walk_west_2.png",
+      "masterchief/walk_west_3.png",
+      "masterchief/walk_west_4.png",
+      "masterchief/walk_west_5.png"
+    ],
+    "pikachu.blink.south": [
+      "pikachu/blink_south.png"
+    ],
+    "pikachu.rot.east": [
+      "pikachu/rot_east.png"
+    ],
+    "pikachu.rot.north-east": [
+      "pikachu/rot_north-east.png"
+    ],
+    "pikachu.rot.north-west": [
+      "pikachu/rot_north-west.png"
+    ],
+    "pikachu.rot.north": [
+      "pikachu/rot_north.png"
+    ],
+    "pikachu.rot.south-east": [
+      "pikachu/rot_south-east.png"
+    ],
+    "pikachu.rot.south-west": [
+      "pikachu/rot_south-west.png"
+    ],
+    "pikachu.rot.south": [
+      "pikachu/rot_south.png"
+    ],
+    "pikachu.rot.west": [
+      "pikachu/rot_west.png"
+    ],
+    "pikachu.sit.east": [
+      "pikachu/sit_east.png"
+    ],
+    "pikachu.sit.north": [
+      "pikachu/sit_north.png"
+    ],
+    "pikachu.sit.south": [
+      "pikachu/sit_south.png"
+    ],
+    "pikachu.sit.west": [
+      "pikachu/sit_west.png"
+    ],
+    "pikachu.gesture.east": [
+      "pikachu/gesture_east_0.png",
+      "pikachu/gesture_east_1.png",
+      "pikachu/gesture_east_2.png",
+      "pikachu/gesture_east_3.png",
+      "pikachu/gesture_east_4.png",
+      "pikachu/gesture_east_5.png",
+      "pikachu/gesture_east_6.png",
+      "pikachu/gesture_east_7.png",
+      "pikachu/gesture_east_8.png"
+    ],
+    "pikachu.gesture.north": [
+      "pikachu/gesture_north_0.png",
+      "pikachu/gesture_north_1.png",
+      "pikachu/gesture_north_2.png",
+      "pikachu/gesture_north_3.png",
+      "pikachu/gesture_north_4.png",
+      "pikachu/gesture_north_5.png",
+      "pikachu/gesture_north_6.png",
+      "pikachu/gesture_north_7.png",
+      "pikachu/gesture_north_8.png"
+    ],
+    "pikachu.gesture.south": [
+      "pikachu/gesture_south_0.png",
+      "pikachu/gesture_south_1.png",
+      "pikachu/gesture_south_2.png",
+      "pikachu/gesture_south_3.png",
+      "pikachu/gesture_south_4.png",
+      "pikachu/gesture_south_5.png",
+      "pikachu/gesture_south_6.png",
+      "pikachu/gesture_south_7.png",
+      "pikachu/gesture_south_8.png"
+    ],
+    "pikachu.gesture.west": [
+      "pikachu/gesture_west_0.png",
+      "pikachu/gesture_west_1.png",
+      "pikachu/gesture_west_2.png",
+      "pikachu/gesture_west_3.png",
+      "pikachu/gesture_west_4.png",
+      "pikachu/gesture_west_5.png",
+      "pikachu/gesture_west_6.png",
+      "pikachu/gesture_west_7.png",
+      "pikachu/gesture_west_8.png"
+    ],
+    "pikachu.walk.east": [
+      "pikachu/walk_east_0.png",
+      "pikachu/walk_east_1.png",
+      "pikachu/walk_east_2.png",
+      "pikachu/walk_east_3.png",
+      "pikachu/walk_east_4.png",
+      "pikachu/walk_east_5.png"
+    ],
+    "pikachu.walk.north-east": [
+      "pikachu/walk_north-east_0.png",
+      "pikachu/walk_north-east_1.png",
+      "pikachu/walk_north-east_2.png",
+      "pikachu/walk_north-east_3.png",
+      "pikachu/walk_north-east_4.png",
+      "pikachu/walk_north-east_5.png"
+    ],
+    "pikachu.walk.north-west": [
+      "pikachu/walk_north-west_0.png",
+      "pikachu/walk_north-west_1.png",
+      "pikachu/walk_north-west_2.png",
+      "pikachu/walk_north-west_3.png",
+      "pikachu/walk_north-west_4.png",
+      "pikachu/walk_north-west_5.png"
+    ],
+    "pikachu.walk.north": [
+      "pikachu/walk_north_0.png",
+      "pikachu/walk_north_1.png",
+      "pikachu/walk_north_2.png",
+      "pikachu/walk_north_3.png",
+      "pikachu/walk_north_4.png",
+      "pikachu/walk_north_5.png"
+    ],
+    "pikachu.walk.south-east": [
+      "pikachu/walk_south-east_0.png",
+      "pikachu/walk_south-east_1.png",
+      "pikachu/walk_south-east_2.png",
+      "pikachu/walk_south-east_3.png",
+      "pikachu/walk_south-east_4.png",
+      "pikachu/walk_south-east_5.png"
+    ],
+    "pikachu.walk.south-west": [
+      "pikachu/walk_south-west_0.png",
+      "pikachu/walk_south-west_1.png",
+      "pikachu/walk_south-west_2.png",
+      "pikachu/walk_south-west_3.png",
+      "pikachu/walk_south-west_4.png",
+      "pikachu/walk_south-west_5.png"
+    ],
+    "pikachu.walk.south": [
+      "pikachu/walk_south_0.png",
+      "pikachu/walk_south_1.png",
+      "pikachu/walk_south_2.png",
+      "pikachu/walk_south_3.png",
+      "pikachu/walk_south_4.png",
+      "pikachu/walk_south_5.png"
+    ],
+    "pikachu.walk.west": [
+      "pikachu/walk_west_0.png",
+      "pikachu/walk_west_1.png",
+      "pikachu/walk_west_2.png",
+      "pikachu/walk_west_3.png",
+      "pikachu/walk_west_4.png",
+      "pikachu/walk_west_5.png"
+    ],
+    "caseyjones.blink.south": [
+      "caseyjones/blink_south.png"
+    ],
+    "caseyjones.rot.east": [
+      "caseyjones/rot_east.png"
+    ],
+    "caseyjones.rot.north-east": [
+      "caseyjones/rot_north-east.png"
+    ],
+    "caseyjones.rot.north-west": [
+      "caseyjones/rot_north-west.png"
+    ],
+    "caseyjones.rot.north": [
+      "caseyjones/rot_north.png"
+    ],
+    "caseyjones.rot.south-east": [
+      "caseyjones/rot_south-east.png"
+    ],
+    "caseyjones.rot.south-west": [
+      "caseyjones/rot_south-west.png"
+    ],
+    "caseyjones.rot.south": [
+      "caseyjones/rot_south.png"
+    ],
+    "caseyjones.rot.west": [
+      "caseyjones/rot_west.png"
+    ],
+    "caseyjones.sit.east": [
+      "caseyjones/sit_east.png"
+    ],
+    "caseyjones.sit.north": [
+      "caseyjones/sit_north.png"
+    ],
+    "caseyjones.sit.south": [
+      "caseyjones/sit_south.png"
+    ],
+    "caseyjones.sit.west": [
+      "caseyjones/sit_west.png"
+    ],
+    "caseyjones.gesture.east": [
+      "caseyjones/gesture_east_0.png",
+      "caseyjones/gesture_east_1.png",
+      "caseyjones/gesture_east_2.png",
+      "caseyjones/gesture_east_3.png",
+      "caseyjones/gesture_east_4.png",
+      "caseyjones/gesture_east_5.png",
+      "caseyjones/gesture_east_6.png",
+      "caseyjones/gesture_east_7.png",
+      "caseyjones/gesture_east_8.png"
+    ],
+    "caseyjones.gesture.north": [
+      "caseyjones/gesture_north_0.png",
+      "caseyjones/gesture_north_1.png",
+      "caseyjones/gesture_north_2.png",
+      "caseyjones/gesture_north_3.png",
+      "caseyjones/gesture_north_4.png",
+      "caseyjones/gesture_north_5.png",
+      "caseyjones/gesture_north_6.png",
+      "caseyjones/gesture_north_7.png",
+      "caseyjones/gesture_north_8.png"
+    ],
+    "caseyjones.gesture.south": [
+      "caseyjones/gesture_south_0.png",
+      "caseyjones/gesture_south_1.png",
+      "caseyjones/gesture_south_2.png",
+      "caseyjones/gesture_south_3.png",
+      "caseyjones/gesture_south_4.png",
+      "caseyjones/gesture_south_5.png",
+      "caseyjones/gesture_south_6.png",
+      "caseyjones/gesture_south_7.png",
+      "caseyjones/gesture_south_8.png"
+    ],
+    "caseyjones.gesture.west": [
+      "caseyjones/gesture_west_0.png",
+      "caseyjones/gesture_west_1.png",
+      "caseyjones/gesture_west_2.png",
+      "caseyjones/gesture_west_3.png",
+      "caseyjones/gesture_west_4.png",
+      "caseyjones/gesture_west_5.png",
+      "caseyjones/gesture_west_6.png",
+      "caseyjones/gesture_west_7.png",
+      "caseyjones/gesture_west_8.png"
+    ],
+    "caseyjones.walk.east": [
+      "caseyjones/walk_east_0.png",
+      "caseyjones/walk_east_1.png",
+      "caseyjones/walk_east_2.png",
+      "caseyjones/walk_east_3.png",
+      "caseyjones/walk_east_4.png",
+      "caseyjones/walk_east_5.png"
+    ],
+    "caseyjones.walk.north-east": [
+      "caseyjones/walk_north-east_0.png",
+      "caseyjones/walk_north-east_1.png",
+      "caseyjones/walk_north-east_2.png",
+      "caseyjones/walk_north-east_3.png",
+      "caseyjones/walk_north-east_4.png",
+      "caseyjones/walk_north-east_5.png"
+    ],
+    "caseyjones.walk.north-west": [
+      "caseyjones/walk_north-west_0.png",
+      "caseyjones/walk_north-west_1.png",
+      "caseyjones/walk_north-west_2.png",
+      "caseyjones/walk_north-west_3.png",
+      "caseyjones/walk_north-west_4.png",
+      "caseyjones/walk_north-west_5.png"
+    ],
+    "caseyjones.walk.north": [
+      "caseyjones/walk_north_0.png",
+      "caseyjones/walk_north_1.png",
+      "caseyjones/walk_north_2.png",
+      "caseyjones/walk_north_3.png",
+      "caseyjones/walk_north_4.png",
+      "caseyjones/walk_north_5.png"
+    ],
+    "caseyjones.walk.south-east": [
+      "caseyjones/walk_south-east_0.png",
+      "caseyjones/walk_south-east_1.png",
+      "caseyjones/walk_south-east_2.png",
+      "caseyjones/walk_south-east_3.png",
+      "caseyjones/walk_south-east_4.png",
+      "caseyjones/walk_south-east_5.png"
+    ],
+    "caseyjones.walk.south-west": [
+      "caseyjones/walk_south-west_0.png",
+      "caseyjones/walk_south-west_1.png",
+      "caseyjones/walk_south-west_2.png",
+      "caseyjones/walk_south-west_3.png",
+      "caseyjones/walk_south-west_4.png",
+      "caseyjones/walk_south-west_5.png"
+    ],
+    "caseyjones.walk.south": [
+      "caseyjones/walk_south_0.png",
+      "caseyjones/walk_south_1.png",
+      "caseyjones/walk_south_2.png",
+      "caseyjones/walk_south_3.png",
+      "caseyjones/walk_south_4.png",
+      "caseyjones/walk_south_5.png"
+    ],
+    "caseyjones.walk.west": [
+      "caseyjones/walk_west_0.png",
+      "caseyjones/walk_west_1.png",
+      "caseyjones/walk_west_2.png",
+      "caseyjones/walk_west_3.png",
+      "caseyjones/walk_west_4.png",
+      "caseyjones/walk_west_5.png"
+    ],
+    "finn.blink.south": [
+      "finn/blink_south.png"
+    ],
+    "finn.rot.east": [
+      "finn/rot_east.png"
+    ],
+    "finn.rot.north-east": [
+      "finn/rot_north-east.png"
+    ],
+    "finn.rot.north-west": [
+      "finn/rot_north-west.png"
+    ],
+    "finn.rot.north": [
+      "finn/rot_north.png"
+    ],
+    "finn.rot.south-east": [
+      "finn/rot_south-east.png"
+    ],
+    "finn.rot.south-west": [
+      "finn/rot_south-west.png"
+    ],
+    "finn.rot.south": [
+      "finn/rot_south.png"
+    ],
+    "finn.rot.west": [
+      "finn/rot_west.png"
+    ],
+    "finn.sit.east": [
+      "finn/sit_east.png"
+    ],
+    "finn.sit.north": [
+      "finn/sit_north.png"
+    ],
+    "finn.sit.south": [
+      "finn/sit_south.png"
+    ],
+    "finn.sit.west": [
+      "finn/sit_west.png"
+    ],
+    "finn.gesture.east": [
+      "finn/gesture_east_0.png",
+      "finn/gesture_east_1.png",
+      "finn/gesture_east_2.png",
+      "finn/gesture_east_3.png",
+      "finn/gesture_east_4.png",
+      "finn/gesture_east_5.png",
+      "finn/gesture_east_6.png",
+      "finn/gesture_east_7.png",
+      "finn/gesture_east_8.png"
+    ],
+    "finn.gesture.north": [
+      "finn/gesture_north_0.png",
+      "finn/gesture_north_1.png",
+      "finn/gesture_north_2.png",
+      "finn/gesture_north_3.png",
+      "finn/gesture_north_4.png",
+      "finn/gesture_north_5.png",
+      "finn/gesture_north_6.png",
+      "finn/gesture_north_7.png",
+      "finn/gesture_north_8.png"
+    ],
+    "finn.gesture.south": [
+      "finn/gesture_south_0.png",
+      "finn/gesture_south_1.png",
+      "finn/gesture_south_2.png",
+      "finn/gesture_south_3.png",
+      "finn/gesture_south_4.png",
+      "finn/gesture_south_5.png",
+      "finn/gesture_south_6.png",
+      "finn/gesture_south_7.png",
+      "finn/gesture_south_8.png"
+    ],
+    "finn.gesture.west": [
+      "finn/gesture_west_0.png",
+      "finn/gesture_west_1.png",
+      "finn/gesture_west_2.png",
+      "finn/gesture_west_3.png",
+      "finn/gesture_west_4.png",
+      "finn/gesture_west_5.png",
+      "finn/gesture_west_6.png",
+      "finn/gesture_west_7.png",
+      "finn/gesture_west_8.png"
+    ],
+    "finn.walk.east": [
+      "finn/walk_east_0.png",
+      "finn/walk_east_1.png",
+      "finn/walk_east_2.png",
+      "finn/walk_east_3.png",
+      "finn/walk_east_4.png",
+      "finn/walk_east_5.png"
+    ],
+    "finn.walk.north-east": [
+      "finn/walk_north-east_0.png",
+      "finn/walk_north-east_1.png",
+      "finn/walk_north-east_2.png",
+      "finn/walk_north-east_3.png",
+      "finn/walk_north-east_4.png",
+      "finn/walk_north-east_5.png"
+    ],
+    "finn.walk.north-west": [
+      "finn/walk_north-west_0.png",
+      "finn/walk_north-west_1.png",
+      "finn/walk_north-west_2.png",
+      "finn/walk_north-west_3.png",
+      "finn/walk_north-west_4.png",
+      "finn/walk_north-west_5.png"
+    ],
+    "finn.walk.north": [
+      "finn/walk_north_0.png",
+      "finn/walk_north_1.png",
+      "finn/walk_north_2.png",
+      "finn/walk_north_3.png",
+      "finn/walk_north_4.png",
+      "finn/walk_north_5.png"
+    ],
+    "finn.walk.south-east": [
+      "finn/walk_south-east_0.png",
+      "finn/walk_south-east_1.png",
+      "finn/walk_south-east_2.png",
+      "finn/walk_south-east_3.png",
+      "finn/walk_south-east_4.png",
+      "finn/walk_south-east_5.png"
+    ],
+    "finn.walk.south-west": [
+      "finn/walk_south-west_0.png",
+      "finn/walk_south-west_1.png",
+      "finn/walk_south-west_2.png",
+      "finn/walk_south-west_3.png",
+      "finn/walk_south-west_4.png",
+      "finn/walk_south-west_5.png"
+    ],
+    "finn.walk.south": [
+      "finn/walk_south_0.png",
+      "finn/walk_south_1.png",
+      "finn/walk_south_2.png",
+      "finn/walk_south_3.png",
+      "finn/walk_south_4.png",
+      "finn/walk_south_5.png"
+    ],
+    "finn.walk.west": [
+      "finn/walk_west_0.png",
+      "finn/walk_west_1.png",
+      "finn/walk_west_2.png",
+      "finn/walk_west_3.png",
+      "finn/walk_west_4.png",
+      "finn/walk_west_5.png"
     ]
   }
 }
