@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "authority": "StarNet advertised claims",
   "auditBaseSha": "ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
-  "reviewedAt": "2026-07-12",
+  "reviewedAt": "2026-08-01",
   "scope": "Finite normalized material claims across tracked frontend JS/HTML and marketed docs; literal duplicate strings are folded into one family.",
   "requiredDomains": [
     "core",
@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0ffc9a9fb1d7d8e9f827e73e79e7351285a21a95",
+    "sourceCommit": "77a7f6973f5a9edd50d1e290732fa6f2287b62a8",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
@@ -798,8 +798,8 @@
       },
       {
         "path": "frontend/app/windows/messaging.js",
-        "bytes": 46483,
-        "sha256": "386a26cadafd6364f48d84f1a68862e435983870a0625e885c430867dff03412"
+        "bytes": 50789,
+        "sha256": "a9a7d2cf2329be5ea16ed2abe37c2de49e5d734f618132c669ec52151e283fb4"
       },
       {
         "path": "frontend/app/windows/outbox.js",
