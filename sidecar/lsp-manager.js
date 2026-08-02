@@ -224,8 +224,20 @@ function makeLspManager(deps) {
       const rows = Array.isArray(msg.params && msg.params.diagnostics) ? msg.params.diagnostics : [];
       this.latest.set(uri, rows);
       const waiting = this.waiters.get(uri) || [];
-      this.waiters.delete(uri);
-      for (const w of waiting) { clearTimeout(w.timer); if (w.abort) w.signal.removeEventListener('abort', w.abort); w.resolve({ confirmed: true, diagnostics: rows }); }
+      const publishedVersion = Number.isInteger(msg.params && msg.params.version) ? msg.params.version : null;
+      const remaining = [];
+      for (const w of waiting) {
+        // Versionless diagnostic servers are common and remain supported. When a version is
+        // supplied, however, it must describe the edit this waiter initiated; an older publish
+        // must not make a newer edit look confirmed and clean.
+        if (publishedVersion != null && w.expectedVersion != null && publishedVersion !== w.expectedVersion) {
+          remaining.push(w); continue;
+        }
+        clearTimeout(w.timer);
+        if (w.abort) w.signal.removeEventListener('abort', w.abort);
+        w.resolve({ confirmed: true, diagnostics: rows, version: publishedVersion });
+      }
+      if (remaining.length) this.waiters.set(uri, remaining); else this.waiters.delete(uri);
     }
 
     fail(err) {
@@ -281,10 +293,10 @@ function makeLspManager(deps) {
       return this.started;
     }
 
-    waitForDiagnostics(uri, signal, action) {
+    waitForDiagnostics(uri, signal, action, expectedVersion) {
       return new Promise((resolve, reject) => {
         if (signal && signal.aborted) return reject(Object.assign(new Error('diagnostic check aborted'), { name: 'AbortError' }));
-        const row = { resolve, reject, signal, abort: null, timer: null };
+        const row = { resolve, reject, signal, abort: null, timer: null, expectedVersion };
         row.timer = setTimeout(() => {
           const arr = this.waiters.get(uri) || [];
           this.waiters.set(uri, arr.filter(x => x !== row));
@@ -323,7 +335,7 @@ function makeLspManager(deps) {
         this.open.set(uri, { version, languageId });
         if (save) this.notify('textDocument/didSave', { textDocument: { uri }, text: String(text) });
       };
-      return this.waitForDiagnostics(uri, signal, action);
+      return this.waitForDiagnostics(uri, signal, action, version);
     }
 
     closeFile(file) {

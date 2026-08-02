@@ -28,6 +28,20 @@ const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
   const ctx = { agentId: 'a1', runId: 'r1', emit: (name, payload) => events.push({ name, payload }) };
 
   try {
+    const Client = manager._internals.Client;
+    const probe = new Client({ id: 'probe', args: [] }, 'probe', workspace);
+    const uri = 'file:///versioned.fake';
+    let staleResolved = false;
+    const versioned = probe.waitForDiagnostics(uri, null, () => {}, 2).then(value => { staleResolved = true; return value; });
+    probe.onMessage({ method: 'textDocument/publishDiagnostics', params: { uri, version: 1, diagnostics: [{ message: 'stale v1' }] } });
+    await Promise.resolve();
+    A.eq(staleResolved, false, 'a stale diagnostic version does not confirm the current edit');
+    probe.onMessage({ method: 'textDocument/publishDiagnostics', params: { uri, version: 2, diagnostics: [{ message: 'current v2' }] } });
+    A.eq((await versioned).diagnostics[0].message, 'current v2', 'the matching diagnostic version confirms the edit');
+    const versionless = probe.waitForDiagnostics(uri, null, () => {}, 3);
+    probe.onMessage({ method: 'textDocument/publishDiagnostics', params: { uri, diagnostics: [{ message: 'versionless' }] } });
+    A.eq((await versionless).confirmed, true, 'a genuinely versionless server remains supported');
+
     const source = path.join(workspace, 'main.fake');
     fs.writeFileSync(source, 'OLD\nclean\n', 'utf8');
     const first = await tools.editTool.run({ path: 'main.fake', find: 'clean', replace: 'BROKEN' }, ctx);
