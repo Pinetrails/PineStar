@@ -16,4 +16,6 @@ const perfect = E.evaluate({ entries: [
 A.eq(perfect.counterfactualRegret, 0, 'top-ranked adopted recommendation has zero regret');
 A.eq(perfect.precisionAt3, 0.5, 'precision uses proven outcomes in the top-three slate');
 A.ok(perfect.calibrationBrier < 0.02, 'well-calibrated predictions receive low Brier error');
+const one = E.evaluate({ entries: [{ id: 'one', surface: 'quest', title: 'Only sample', state: 'completed' }] });
+A.eq(one.temporal.improvement, null, 'a one-sample history reports insufficient temporal data instead of a fake decline');
 A.report('recommendation-eval.test');

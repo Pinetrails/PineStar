@@ -2,7 +2,7 @@
 
 ## 2026-08-01 — RECOMMENDATION FABRIC 1–5 (`agent/recommendation-fabric`)
 
-READY FOR LIVE PROOF. The second recommendation audit is implemented as one cross-surface fabric.
+READY TO MERGE. The second recommendation audit is implemented as one cross-surface fabric.
 (1) Personalization pause is now durable sidecar authority as well as a browser control; it suppresses
 new interest, workflow-context, ranking-ledger, scout, and night-shift learning. Forget clears every
 derived browser/server model and returns a verified inventory while preserving explicit dossier, goals,
@@ -21,10 +21,17 @@ offline evaluation scorecard: adoption/completion, precision@3, counterfactual r
 repeat/contradiction, intervention/cost, temporal improvement, and per-surface rates. Its fixed eight-week
 simulation proves that a later automation preference overtakes an earlier research preference.
 
-Verification so far: focused recommendation/readiness/quest/routine/study/suggestion/personalization tests
-green; every touched JavaScript file passes `node --check`; `test:fast` is 495/495 green. Full HTTP and seeded
-live-app proof remain before merge. No provider run, external message/write, push, PR, deploy, publish,
-credential, or production-data change was performed.
+Verification on the branch head: focused recommendation/readiness/quest/routine/study/suggestion/
+personalization tests green; every touched JavaScript file passes `node --check`; `test:fast` is 495/495
+green; full `test:http` is green (sidecar 459, quest refresh 47, cron API 79, lifecycle 59, route coverage
+75, browser gauntlet 86). A seeded station on `:8879` at `v0.8.0-135-g14b4fac9` proved the complete
+five-state lifecycle and quality outcome, durable pause across restart, model suppression while paused,
+and rejection of a paused write. Replay reported completion/acceptance/evidence/readiness coverage 1,
+precision@3 1, regret 0, Brier 0.0225, and bounded automation weight 0.5. The final Forget returned all
+five derived inventories at zero while explicitly preserving dossier, goals, threads, projects, and task
+history; the seed was stopped. The live single-sample receipt exposed and fixed a false temporal-decline
+metric, which now reports insufficient data. No provider run, external message/write, push, PR, deploy,
+publish, credential, or production-data change was performed.
 
 ## 2026-08-01 — ROUTINES P0-P2 CLOSURE (`agent/routines-closure`)
 

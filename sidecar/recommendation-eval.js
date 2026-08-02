@@ -49,7 +49,9 @@ function evaluate(raw, opts) {
   for (const e of decided) if (e.fingerprint) (fingerprints[e.fingerprint] || (fingerprints[e.fingerprint] = new Set())).add(positive(e) ? 'positive' : 'negative');
   const contradictions = Object.values(fingerprints).filter(s => s.size > 1).length;
   const midpoint = Math.ceil(rows.length / 2); const early = rows.slice(0, midpoint); const late = rows.slice(midpoint);
-  const earlyCompletion = rate(early, e => e.state === 'completed'); const lateCompletion = rate(late, e => e.state === 'completed');
+  const hasTemporalComparison = early.length > 0 && late.length > 0;
+  const earlyCompletion = hasTemporalComparison ? rate(early, e => e.state === 'completed') : null;
+  const lateCompletion = hasTemporalComparison ? rate(late, e => e.state === 'completed') : null;
   const replay = Ledger.replay({ entries: rows }, opts.now != null ? { now: opts.now } : undefined);
   return {
     sampleSize: rows.length, decided: decided.length,
@@ -60,7 +62,7 @@ function evaluate(raw, opts) {
     repeatRate: round(replay.repeatRate), contradictionRate: round(decided.length ? contradictions / decided.length : 0),
     meanInterventions: round(rows.length ? rows.reduce((s, e) => s + e.outcome.interventions, 0) / rows.length : 0),
     meanCostUsd: round(rows.length ? rows.reduce((s, e) => s + e.outcome.costUsd, 0) / rows.length : 0),
-    temporal: { earlyCompletionRate: round(earlyCompletion), lateCompletionRate: round(lateCompletion), improvement: round(lateCompletion - earlyCompletion) },
+    temporal: { earlyCompletionRate: earlyCompletion == null ? null : round(earlyCompletion), lateCompletionRate: lateCompletion == null ? null : round(lateCompletion), improvement: hasTemporalComparison ? round(lateCompletion - earlyCompletion) : null },
     surfaces: surfaceMetrics(rows), preferenceModel: { kinds: replay.kinds, traits: replay.traits, projects: replay.projects }
   };
 }
