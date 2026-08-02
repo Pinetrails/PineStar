@@ -4,10 +4,10 @@ slug: skill-view-s-hydrate-then-bump-stores-the-render
 title: skill.view's hydrate-then-bump stores the RENDERED SKILL.md as the skill's body, so every view→persist cycle re-appends '## Setup' and '## Support Files' — unbo
 surface: skills
 severity: P0
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/skills
-fix: 
+fix: 598ab4a4
 ---
 
 # skill.view's hydrate-then-bump stores the RENDERED SKILL.md as the skill's body, so every view→persist cycle re-appends '## Setup' and '## Support Files' — unbo

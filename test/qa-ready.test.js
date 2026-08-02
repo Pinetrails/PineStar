@@ -10,7 +10,7 @@ const A = require('./_assert.js');
 const crypto = require('crypto');
 const path = require('path');
 const {
-  evaluate, checkLedger, checkGuardian, checkJourneys, checkBeginner, checkInstalled,
+  evaluate, checkLedger, checkBugRegister, checkGuardian, checkJourneys, checkBeginner, checkInstalled,
   inspectInstalledIdentity, freshness, humanAge, renderVerdict, verifyContentIdentity, DAY_MS, DEFAULTS,
 } = require('../scripts/qa/ready.mjs');
 const { makeLedger } = require('../scripts/qa/ledger.mjs');
@@ -33,6 +33,7 @@ const EVIDENCE_IDENTITY = {
 function greenArtifacts() {
   return {
     ledger: { ok: true, counts: { P0: 0, P1: 0, P2: 3 } },
+    bugs: { counts: { P0: 0, P1: 0, P2: 7 } },
     guardian: { stampIso: FRESH, trunkHead: TRUNK, result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] },
     journeys: { stampIso: FRESH, trunkHead: TRUNK, result: 'pass', passed: 120, total: 120 },
     beginner: { stampIso: FRESH, trunkHead: TRUNK, result: 'PASS', mode: 'ui-only', totalMs: 84000 },
@@ -55,9 +56,9 @@ function greenCfg() {
 /* ─── A. the all-green baseline is READY (and only then) ─── */
 {
   const v = evaluate(greenArtifacts(), greenCfg());
-  A.eq(v.ready, true, 'all five checks green -> READY');
+  A.eq(v.ready, true, 'all six checks green -> READY');
   A.eq(v.reasons.length, 0, 'READY has zero reasons');
-  A.eq(v.checks.length, 5, 'exactly five checks are evaluated');
+  A.eq(v.checks.length, 6, 'exactly six checks are evaluated');
   A.ok(v.checks.every(c => c.ok), 'every check ok in the green baseline');
   // every check carries an auditable receipt (artifact + value).
   A.ok(v.checks.every(c => c.receipt && c.receipt.artifact && c.receipt.value), 'each check emits a receipt with artifact + value');
@@ -122,6 +123,18 @@ function greenCfg() {
   A.eq(counts.blocking, 2, 'blocking = open P0 + P1');
   // feed it straight into the gate: 2 blocking -> NOT READY.
   A.eq(checkLedger({ ok: true, counts }).ok, false, 'the ledger authority feeds the gate: 2 blocking -> NOT READY');
+}
+
+/* â”€â”€â”€ C3. canonical per-bug records independently block READY â”€â”€â”€ */
+{
+  A.eq(checkBugRegister({ counts: { P0: 0, P1: 0, P2: 9 } }).ok, true, 'P2-only bug register passes');
+  A.eq(checkBugRegister({ counts: { P0: 6, P1: 9, P2: 7 } }).ok, false, 'open P0/P1 bugs block READY');
+  A.eq(checkBugRegister({ error: 'malformed frontmatter' }).ok, false, 'an invalid bug register fails closed');
+  const arts = greenArtifacts();
+  arts.bugs = { counts: { P0: 0, P1: 1, P2: 0 } };
+  const v = evaluate(arts, greenCfg());
+  A.eq(v.ready, false, 'one open P1 bug makes the aggregate NOT READY');
+  A.eq(v.failing[0], 'bugs', 'bug register is named as the failing authority');
 }
 
 /* ─── D. staleness math: fresh passes, > window fails, unparseable fails-closed ─── */

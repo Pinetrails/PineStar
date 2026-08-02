@@ -4,10 +4,10 @@ slug: a-lost-race-consent-tap-stamps-allow-once-onto-t
 title: A lost-race consent tap stamps "▸ ✅ Allow once" onto the message before resolveConsent is asked, so a DENIED request keeps a permanent "approved" record
 surface: channels
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/channels
-fix: 
+fix: 96fe108d
 ---
 
 # A lost-race consent tap stamps "▸ ✅ Allow once" onto the message before resolveConsent is asked, so a DENIED request keeps a permanent "approved" record

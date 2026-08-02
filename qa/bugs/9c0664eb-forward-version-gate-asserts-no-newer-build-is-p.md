@@ -4,10 +4,10 @@ slug: forward-version-gate-asserts-no-newer-build-is-p
 title: Forward-version gate asserts "no newer build is published yet" for EVERY non-'available' phase — including check 'error' and the busy short-circuit — and the 'u
 surface: release
 severity: P0
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/release
-fix: 
+fix: 6afeb9ee
 ---
 
 # Forward-version gate asserts "no newer build is published yet" for EVERY non-'available' phase — including check 'error' and the busy short-circuit — and the 'u

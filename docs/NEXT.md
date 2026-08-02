@@ -1,8 +1,9 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-08-01 — RECOMMENDATION FABRIC 1–5 (`agent/recommendation-fabric`)
+## 2026-08-02 — RECOMMENDATION FABRIC 1–5 (MERGED)
 
-READY TO MERGE. The second recommendation audit is implemented as one cross-surface fabric.
+MERGED to `feat/harness-backend` at `68cc7af7`; the release surface was re-locked at `c8397e1f`.
+The second recommendation audit is implemented as one cross-surface fabric.
 (1) Personalization pause is now durable sidecar authority as well as a browser control; it suppresses
 new interest, workflow-context, ranking-ledger, scout, and night-shift learning. Forget clears every
 derived browser/server model and returns a verified inventory while preserving explicit dossier, goals,
@@ -21,9 +22,9 @@ offline evaluation scorecard: adoption/completion, precision@3, counterfactual r
 repeat/contradiction, intervention/cost, temporal improvement, and per-surface rates. Its fixed eight-week
 simulation proves that a later automation preference overtakes an earlier research preference.
 
-Verification on the branch head: focused recommendation/readiness/quest/routine/study/suggestion/
+Verification on merged trunk: focused recommendation/readiness/quest/routine/study/suggestion/
 personalization tests green; every touched JavaScript file passes `node --check`; `test:fast` is 495/495
-green; full `test:http` is green (sidecar 459, quest refresh 47, cron API 79, lifecycle 59, route coverage
+green; full `test:http` is green (sidecar 460, quest refresh 47, cron API 79, lifecycle 59, route coverage
 75, browser gauntlet 86). A seeded station on `:8879` at `v0.8.0-135-g14b4fac9` proved the complete
 five-state lifecycle and quality outcome, durable pause across restart, model suppression while paused,
 and rejection of a paused write. Replay reported completion/acceptance/evidence/readiness coverage 1,

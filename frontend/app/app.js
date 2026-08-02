@@ -3429,6 +3429,9 @@ const App = (() => {
   // the entered-project scope (null = overview). Persisted like the reference harness's projectScope, so a reload lands back
   // inside the project you were organizing — pure view state, deliberately outside the world save.
   let projScope = null;
+  // Last response the sidecar actually confirmed. A failed refresh must never become an authoritative empty
+  // ledger or erase an entered scope; keep rendering this snapshot with an explicit stale warning instead.
+  let lastConfirmedProjects = null;
   // A remembered project root is not necessarily still trusted. Default false on reload/entry and only
   // enable scoped session creation after GET /api/projects proves the current row is still blessed.
   let projScopeBlessed = false;
@@ -3477,26 +3480,43 @@ const App = (() => {
   function exitProjectScope() { setProjScope(null, false); SFX.click(); renderProjects(); }
   // the live dot class + git badge for one project row (pure read of the shaped row)
   function projDot(r) { return 'ws-dot ' + (!r.blessed ? 'proj-plain' : (r.isGitRepo ? 'proj-git' : 'proj-plain')); }
+  function renderProjectRows(ul, rows) {
+    if (projScope) {
+      // entered scope: the project may have been forgotten/renamed under us — fall back to the overview
+      // honestly instead of rendering a ghost. This runs only against a confirmed server snapshot.
+      const row = rows.filter(r => Projects.sameRoot && Projects.sameRoot(r.root, projScope))[0] || null;
+      if (!row) { setProjScope(null); return renderProjectsOverview(ul, rows); }
+      projScopeBlessed = row.blessed === true;
+      updateProjHeadAction();
+      return renderProjectEntered(ul, row);
+    }
+    renderProjectsOverview(ul, rows);
+  }
+  function renderProjectsUnavailable(ul) {
+    if (!lastConfirmedProjects) {
+      ul.innerHTML = '<li class="proj-empty" role="status">Could not load projects. Reload to reconnect.</li>';
+      return;
+    }
+    renderProjectRows(ul, lastConfirmedProjects);
+    const warning = document.createElement('li');
+    warning.className = 'proj-empty';
+    warning.setAttribute('role', 'status');
+    warning.textContent = 'Could not refresh projects — showing the last confirmed list. Reload to reconnect.';
+    ul.insertBefore(warning, ul.firstChild);
+  }
   function renderProjects() {
     const ul = el('projects'); if (!ul) return;
     ul.innerHTML = '<li class="proj-empty">loading projects…</li>';
     fetch('/api/projects', { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : { projects: [] })
+      .then(r => { if (!r.ok) throw new Error('projects unavailable'); return r.json(); })
       .then(j => {
         if (railView !== 'projects') return;   // toggled away while the fetch was in flight
-        const rows = (typeof Projects !== 'undefined') ? Projects.toRows(j && j.projects, Date.now()) : [];
-        if (projScope) {
-          // entered scope: the project may have been forgotten/renamed under us — fall back to the overview
-          // honestly instead of rendering a ghost.
-          const row = rows.filter(r => Projects.sameRoot && Projects.sameRoot(r.root, projScope))[0] || null;
-          if (!row) { setProjScope(null); return renderProjectsOverview(ul, rows); }
-          projScopeBlessed = row.blessed === true;
-          updateProjHeadAction();
-          return renderProjectEntered(ul, row);
-        }
-        renderProjectsOverview(ul, rows);
+        if (!j || !Array.isArray(j.projects)) throw new Error('invalid projects response');
+        const rows = (typeof Projects !== 'undefined') ? Projects.toRows(j.projects, Date.now()) : [];
+        lastConfirmedProjects = rows;
+        renderProjectRows(ul, rows);
       })
-      .catch(() => { if (railView === 'projects') ul.innerHTML = '<li class="proj-empty">Could not load projects.</li>'; });
+      .catch(() => { if (railView === 'projects') renderProjectsUnavailable(ul); });
   }
   // sessions attached to one project — the REAL stored w.projectRoot link, never a title guess.
   function projSessionsOf(root) {
