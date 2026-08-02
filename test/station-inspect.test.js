@@ -45,4 +45,3 @@ const { resolveTools } = require('../sidecar/capability/resolve.js');
 
   A.report('station-inspect');
 })().catch(error => { console.error(error); process.exit(1); });
-

@@ -55,4 +55,3 @@ A.eq(partial.connectors.status, 'unavailable', 'a failed connector read is not r
 A.eq(partial.diagnostics.status, 'unavailable', 'a failed diagnostics read is not rendered as no errors');
 
 A.report('harness-snapshot');
-
