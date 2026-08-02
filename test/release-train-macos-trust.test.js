@@ -43,8 +43,10 @@ const hydrate = hydrateStep[1];
 A.ok(/matrix\.target == 'darwin-x64'/.test(hydrate), 'Sharp hydration only runs for the Intel cross-build');
 A.ok(/package-lock\.json'[\s\S]*sharp-darwin-x64/.test(hydrate) && /sharp-libvips-darwin-x64/.test(hydrate),
   'Intel Sharp package versions are read from the immutable source lockfile');
-A.ok(/--no-save --package-lock=false --ignore-scripts/.test(hydrate),
-  'cross-build hydration cannot rewrite manifests or execute dependency lifecycle scripts');
+A.ok(/npm pack "\$spec@\$version"/.test(hydrate) && /tar -xzf/.test(hydrate),
+  'cross-build hydration extracts target packages without host-platform install checks or lifecycle scripts');
+A.ok(/openssl dgst -sha512/.test(hydrate) && /if \[ "\$actual" != "\$expected" \]/.test(hydrate),
+  'downloaded target packages must match their package-lock SHA-512 integrity');
 A.ok(/git diff --exit-code -- package\.json package-lock\.json/.test(hydrate),
   'cross-build hydration proves package manifests remain unchanged');
 
