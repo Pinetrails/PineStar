@@ -560,6 +560,20 @@
    Verified live at --chat-w 300/308/320/328/340/360/500 × idle+busy × MED/XHIGH: mic right edge
    never passes the panel's, .chat-tools scrollWidth never exceeds clientWidth. */
 .chat-tools .model-dock-toggle { flex: 0 1 auto; }
+/* A landscape phone has width but almost no height. Put the edit line and control cluster on one row
+   so the composer remains wholly inside COMMS instead of spilling over the dock. Attachments/counter
+   still own a full row when present, and long drafts retain a bounded scrollable textarea. */
+@media (max-width: 860px) and (max-height: 680px) {
+  #chat-inputrow {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end; column-gap: 7px; row-gap: 4px; padding: 4px 8px;
+  }
+  #chat-inputrow > .chat-editline { grid-column: 1; grid-row: 1; }
+  #chat-inputrow > .chat-tools { grid-column: 2; grid-row: 1; }
+  #chat-inputrow > .chat-attach-strip,
+  #chat-inputrow > .chat-charcount { grid-column: 1 / -1; }
+  #chat-input { max-height: 72px; }
+}
 @container comms-composer (max-width: 312px) {
   .chat-tools { gap: 5px; }
   .chat-tools .chat-stop,
