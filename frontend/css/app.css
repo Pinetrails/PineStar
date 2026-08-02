@@ -2489,9 +2489,16 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .prov-card.soon { opacity: 0.45; border-color: var(--ph-faint); }          /* not-yet-shipped: fully locked */
 .prov-card.avail { opacity: 0.8; border-color: var(--ph-dim); }            /* live but keyless: actionable, not locked */
 .prov-card.conn { box-shadow: var(--raise), inset 0 0 12px var(--ph-glow2); }
+.prov-select {
+  display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0;
+  border: 0; background: transparent; padding: 0; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.prov-select:focus-visible { outline: 1px solid var(--gold); outline-offset: 3px; }
 .conn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ph-dim); flex: none; }
 .prov-card.conn .conn-dot, .key-row .conn-dot { background: var(--ok); box-shadow: 0 0 8px rgba(123, 200, 138, 0.7); }
 .prov-main, .key-main { flex: 1; min-width: 0; }
+.prov-select .prov-main, .prov-select .prov-ep { display: block; }
 .prov-name { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
 .prov-badge, .key-stat.on {
   font-size: 10px; letter-spacing: 1px; color: var(--ink); background: var(--gold);

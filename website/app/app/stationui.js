@@ -3353,20 +3353,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // without it the row reads NOT SIGNED IN with zero recovery (the 2026-07-21 user-reported escape).
       // The ⏼ RE-SIGN-IN row below can't cover it: that row only exists once a live/known-dead sign-in exists.
       const wantsOAuthSignin = p.live && isOAuthProvider(p.id) && !credentialSaved && !codexDead;
-      return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
-        '<span class="conn-dot"></span>' +
-        '<div class="prov-main">' +
-        '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
-        '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
-        '</div>' +
-        // The status text lives in its OWN span so .prov-stat can be a flex row: the label and the action
-        // button then centre against each other by LAYOUT. They used to be inline siblings hanging off a
-        // shared text baseline, which measured 2.5px off-centre on every row (2026-08-03). The span also
-        // keeps the "1 key" <i> stacked UNDER its label instead of becoming a third flex item beside it.
-        '<div class="prov-stat"><span class="prov-stat-t">' + stat + (credentialSaved && !isOAuthProvider(p.id) ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') + '</span>' +
-          (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
-          (wantsOAuthSignin ? '<button class="bb sm prov-addkey" data-act="prov-oauth-signin" data-provider="' + esc(p.id) + '" aria-label="Sign in to ' + esc(p.name) + '" title="device-code sign-in — no API key needed">⏼ SIGN IN</button>' : '') +
-        '</div>' +
+      return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="group" aria-label="' + esc(p.name) + ' provider" style="--ci:' + pi + '">' +
+        '<button class="prov-select" data-act="prov-select" aria-label="Select ' + esc(p.name) + ' provider">' +
+          '<span class="conn-dot"></span>' +
+          '<span class="prov-main">' +
+            '<span class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</span>' +
+            '<span class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</span>' +
+          '</span>' +
+          '<span class="prov-stat"><span class="prov-stat-t">' + stat + (credentialSaved && !isOAuthProvider(p.id) ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') + '</span></span>' +
+        '</button>' +
+        (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
+        (wantsOAuthSignin ? '<button class="bb sm prov-addkey" data-act="prov-oauth-signin" data-provider="' + esc(p.id) + '" aria-label="Sign in to ' + esc(p.name) + '" title="device-code sign-in — no API key needed">⏼ SIGN IN</button>' : '') +
         (wantsInline
           ? '<div class="key-edit prov-key-edit" id="prov-key-edit-' + esc(p.id) + '" hidden>' +
             '<input type="password" class="key-input" id="prov-key-in-' + esc(p.id) + '" placeholder="paste ' + esc(p.name) + ' key…" autocomplete="off" spellcheck="false">' +
@@ -3857,17 +3854,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         inlineInput.addEventListener('click', ev => ev.stopPropagation());   // don't select the provider when focusing the field
         inlineInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); saveInline(card.dataset.provider); } });
       }
-      card.addEventListener('click', ev => {
-        // ignore clicks that originated inside the inline key row (handled above)
-        if (ev.target.closest && ev.target.closest('.prov-key-edit, [data-act="prov-add-toggle"]')) return;
-        activate();
-      });
-      card.addEventListener('keydown', ev => {
-        if (ev.key !== 'Enter' && ev.key !== ' ') return;
-        if (ev.target !== card) return;   // let the inline input/buttons handle their own keys
-        ev.preventDefault();
-        activate();
-      });
+      // Provider selection is its own native button. Card-local key and OAuth actions are siblings, never
+      // interactive descendants of a role=button card (invalid accessibility tree / conflicting activation).
+      const providerSelect = card.querySelector('[data-act="prov-select"]');
+      if (providerSelect) providerSelect.addEventListener('click', activate);
     });
   }
 

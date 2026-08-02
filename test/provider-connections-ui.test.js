@@ -35,6 +35,13 @@ for (const id of hostedProviders) {
 }
 ok(/PROVIDERS\.forEach\(p\s*=>\s*addProvider\(p\.id\)\)/.test(station), 'Settings lists any configured provider, not only the active provider');
 
+// Provider cards contain their own ADD KEY / SIGN IN / SAVE controls. The selectable card surface must therefore
+// be a separate native button, not a role=button ancestor that creates nested interactive controls in the a11y tree.
+ok(!/class="prov-card[^\n]+role="button"/.test(station), 'provider card container is not an interactive ancestor');
+ok(/role="group" aria-label="[^\n]+ provider"/.test(station), 'provider card is exposed as a named group');
+ok(/<button class="prov-select" data-act="prov-select" aria-label="Select /.test(station), 'provider selection has a dedicated native button');
+ok(/providerSelect\.addEventListener\('click', activate\)/.test(station), 'dedicated provider button owns activation');
+
 // settings-truth: the credential list must reflect ACTUALLY-stored keys, never DEVMODE-fabricated ones.
 // The honest getter (hasStoredCredential) is exported and used by the Settings list; configured() (which
 // reports true in DEVMODE for auto-resume) must NOT be the credential-list gate.
