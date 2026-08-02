@@ -116,4 +116,11 @@ r = runClamp(-20, 280, 1.25);
 A.ok(Math.abs(r.left - 8) < 0.01 && r.right <= 312,
   'left-overflowing zoomed dock clamps to the 8px viewport edge');
 
+// Short landscape: fixed controls fit before the grid's own overflow fallback is needed.
+has(/@media \(max-width: 860px\) and \(max-height: 680px\)[\s\S]*grid-template-rows:\s*44px minmax\(76px, 1fr\) minmax\(164px, 1fr\) minmax\(40px, auto\)[\s\S]*padding:\s*5px[\s\S]*gap:\s*4px/s,
+  'short landscape reserves compact stage and full composer/dock rows');
+const shortLandscapeMin = 44 + 76 + 164 + 40 + (3 * 4) + (2 * 5);
+A.ok(shortLandscapeMin <= 390,
+  'short-landscape minimum grid budget fits an 844x390 viewport (' + shortLandscapeMin + 'px)');
+
 A.report('mobile-control-reachability.test');

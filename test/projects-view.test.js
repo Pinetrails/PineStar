@@ -121,4 +121,18 @@ A.ok(/!r\.blessed[\s\S]{0,260}\/api\/projects\/forget/.test(removeProject),
 A.ok(/trust revoked for/.test(removeProject) && /forgot/.test(removeProject),
   'success telemetry distinguishes trust revocation from an actually forgotten project');
 
+/* ---------- project rail accessibility: every clickable row is keyboard + AT reachable ---------- */
+A.ok(/class="ws-row proj-row[\s\S]{0,300}tabindex="0" role="button" aria-label=/.test(appSrc),
+  'project overview rows are named keyboard buttons');
+A.ok(/class="proj-sess[\s\S]{0,300}tabindex="0" role="button" aria-label=/.test(appSrc),
+  'project preview sessions and overflow rows are named keyboard buttons');
+A.ok(/proj-sess-full[\s\S]{0,260}tabindex="0" role="button" aria-label=/.test(appSrc),
+  'entered-project session rows are named keyboard buttons');
+A.ok(/li\.onkeydown[\s\S]{0,240}e\.key === 'Enter'[\s\S]{0,160}li\.click\(\)/.test(appSrc),
+  'project preview/session rows activate with Enter or Space');
+A.ok(/openProjectMenu\(row, b\.left, b\.bottom \+ 2, li\)/.test(appSrc)
+  && /menu\.querySelector\('\.ws-menu-item'\)[\s\S]{0,100}first\.focus\(\)/.test(appSrc)
+  && /closeProjectMenu\(true\)/.test(appSrc),
+  'Shift+F10 enters the project action menu and Escape restores its row focus');
+
 A.report('projects-view.test');

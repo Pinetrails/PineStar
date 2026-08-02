@@ -589,7 +589,8 @@ const Harness = (() => {
   }
 
   // E-STOP: stop EVERY in-flight run on the sidecar in one call — browser runs AND any messaging-hub/Telegram
-  // runs. Returns how many were halted (0 if the sidecar is unreachable). Safe to call when nothing is running.
+  // runs. Returns the honest abort total plus the sidecar's durability receipt: current-process stopping and
+  // restart persistence are distinct facts, so callers must not collapse a false *HaltPersisted field into success.
   async function haltAll() {
     try {
       const r = await fetch('/api/halt', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
@@ -597,8 +598,13 @@ const Harness = (() => {
       // honest total: run controllers (browser/hub/force-fired beats) + cron leases + the driver-path beat —
       // everything the server ACTUALLY aborted, so the HALT toast never under-reports what the E-STOP stopped.
       const n = k => (j && typeof j[k] === 'number') ? j[k] : 0;
-      return n('halted') + n('cronAborted') + n('beatAborted');
-    } catch (_) { return 0; }
+      return {
+        halted: n('halted') + n('cronAborted') + n('beatAborted'),
+        nightshiftHaltPersisted: j.nightshiftHaltPersisted,
+        cronHaltPersisted: j.cronHaltPersisted,
+        loopsHaltPersisted: j.loopsHaltPersisted
+      };
+    } catch (_) { return { halted: 0 }; }
   }
 
   // answer a live permission.prompt: decision ∈ once|always|full|deny. Resolves the run's paused dispatch so it
