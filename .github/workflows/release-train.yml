@@ -116,6 +116,24 @@ jobs:
 
       - run: npm ci
 
+      # macos-latest currently runs on Apple Silicon even for the x64 cross-build. npm installs
+      # optional native packages for the HOST architecture, while the shipped voice runtime must
+      # match matrix.target. Hydrate the exact Sharp x64 packages pinned in package-lock before
+      # stage-voice-deps copies the production closure; the later signing step removes host-ARM
+      # variants and fails closed unless these target packages are present.
+      - name: Hydrate Intel Sharp runtime for macOS cross-build
+        if: runner.os == 'macOS' && matrix.target == 'darwin-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sharp_version=$(node -p "require('./package-lock.json').packages['node_modules/@img/sharp-darwin-x64'].version")
+          vips_version=$(node -p "require('./package-lock.json').packages['node_modules/@img/sharp-libvips-darwin-x64'].version")
+          npm install --no-save --package-lock=false --ignore-scripts \
+            "@img/sharp-darwin-x64@$sharp_version" \
+            "@img/sharp-libvips-darwin-x64@$vips_version"
+          node -e "for (const n of ['sharp-darwin-x64','sharp-libvips-darwin-x64']) require('./node_modules/@img/'+n+'/package.json')"
+          git diff --exit-code -- package.json package-lock.json
+
       - name: Stage bundled Node sidecar runtime
         run: |
           node scripts/prepare-node.mjs ${{ matrix.target }}

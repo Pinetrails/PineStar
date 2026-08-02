@@ -35,6 +35,19 @@ A.ok(/if: runner\.os == 'macOS'/.test(gate), 'credential gate only runs on macOS
 A.ok(/exit 1/.test(gate), 'missing Apple credentials fail the release train');
 A.ok(/Developer ID Application:/.test(gate), 'signing identity must be Developer ID Application');
 
+const hydrateStep = yml.match(
+  /- name: Hydrate Intel Sharp runtime for macOS cross-build([\s\S]*?)(?=\n      - name: Stage bundled Node sidecar runtime)/
+);
+A.ok(hydrateStep, 'release train hydrates the Intel Sharp runtime on ARM-hosted macOS runners');
+const hydrate = hydrateStep[1];
+A.ok(/matrix\.target == 'darwin-x64'/.test(hydrate), 'Sharp hydration only runs for the Intel cross-build');
+A.ok(/package-lock\.json'[\s\S]*sharp-darwin-x64/.test(hydrate) && /sharp-libvips-darwin-x64/.test(hydrate),
+  'Intel Sharp package versions are read from the immutable source lockfile');
+A.ok(/--no-save --package-lock=false --ignore-scripts/.test(hydrate),
+  'cross-build hydration cannot rewrite manifests or execute dependency lifecycle scripts');
+A.ok(/git diff --exit-code -- package\.json package-lock\.json/.test(hydrate),
+  'cross-build hydration proves package manifests remain unchanged');
+
 const nativeStep = yml.match(
   /- name: Prepare and sign bundled macOS native dependencies([\s\S]*?)(?=\n      - name: Build desktop bundles)/
 );
