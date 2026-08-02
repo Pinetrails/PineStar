@@ -4,10 +4,10 @@ slug: release-cut-mjs-stages-latest-json-with-no-crypt
 title: release-cut.mjs stages latest.json with no cryptographic signature check, and no downstream gate does one either — t1 checks .sig mtime, t5 text-compares it, ve
 surface: release
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/release
-fix: 
+fix: b315063b
 ---
 
 # release-cut.mjs stages latest.json with no cryptographic signature check, and no downstream gate does one either — t1 checks .sig mtime, t5 text-compares it, ve

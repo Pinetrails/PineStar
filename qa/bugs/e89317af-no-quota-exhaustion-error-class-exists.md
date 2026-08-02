@@ -4,10 +4,10 @@ slug: no-quota-exhaustion-error-class-exists
 title: No quota-exhaustion error class exists: a 429 from a spent Codex/subscription weekly quota renders as 'the provider is busy — wait a few seconds' and burns up t
 surface: providers
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/providers
-fix: 
+fix: fdbb12a2
 ---
 
 # No quota-exhaustion error class exists: a 429 from a spent Codex/subscription weekly quota renders as 'the provider is busy — wait a few seconds' and burns up t

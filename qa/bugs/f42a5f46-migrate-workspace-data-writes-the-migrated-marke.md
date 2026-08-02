@@ -4,10 +4,10 @@ slug: migrate-workspace-data-writes-the-migrated-marke
 title: migrate_workspace_data writes the .migrated marker unconditionally and drops copy_missing_dir's Err with no log — a partial legacy migration is permanent and lo
 surface: release
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/release
-fix: 
+fix: 5f8aa7ce
 ---
 
 # migrate_workspace_data writes the .migrated marker unconditionally and drops copy_missing_dir's Err with no log — a partial legacy migration is permanent and lo

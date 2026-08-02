@@ -4,10 +4,10 @@ slug: an-attachment-bearing-user-turn-is-dropped-from
 title: An attachment-bearing user turn is dropped from the durable transcript and the PREVIOUS turn is written in its place — the string-only scan at index.js:11299 fa
 surface: sessions
 severity: P0
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/sessions
-fix: 
+fix: 6afeb9ee
 ---
 
 # An attachment-bearing user turn is dropped from the durable transcript and the PREVIOUS turn is written in its place — the string-only scan at index.js:11299 fa
@@ -34,4 +34,4 @@ _Found by the `sweep/sessions` lane, 2026-07-28. Finder confidence: high. Severi
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Current trunk already flattens multipart attachment content through latestUserText. Live seeded reload preserved the typed attachment turn, and e2e.attachments now proves the successful-run transcript contains prior/current user turns exactly once while run titles remain truthful.

@@ -4,10 +4,10 @@ slug: channel-targets-derives-reachable-now-from-the-a
 title: `channel.targets` derives "reachable now" from the adapter handle's existence, so an errored (or still-connecting) channel is reported connected while telegramS
 surface: channels
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/channels
-fix: 
+fix: 96fe108d
 ---
 
 # `channel.targets` derives "reachable now" from the adapter handle's existence, so an errored (or still-connecting) channel is reported connected while telegramS

@@ -4,10 +4,10 @@ slug: the-permissions-panel-s-normalizegrants-regex-dr
 title: The Permissions panel's normalizeGrants regex drops every path: and mcp: standing grant — the ledger prints "No standing approvals yet" while the backend holds
 surface: safecell
 severity: P0
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/safecell
-fix: 
+fix: 6afeb9ee
 ---
 
 # The Permissions panel's normalizeGrants regex drops every path: and mcp: standing grant — the ledger prints "No standing approvals yet" while the backend holds

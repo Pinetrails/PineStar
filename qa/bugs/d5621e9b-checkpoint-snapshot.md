@@ -4,10 +4,10 @@ slug: checkpoint-snapshot
 title: checkpoint snapshot() uses the SYNC loadIndex despite being async — after an index+bak loss it re-stamps a 1-entry index that permanently blocks the git rebuild
 surface: sessions
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/sessions
-fix: 
+fix: b315063b
 ---
 
 # checkpoint snapshot() uses the SYNC loadIndex despite being async — after an index+bak loss it re-stamps a 1-entry index that permanently blocks the git rebuild

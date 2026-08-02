@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "efb3900a2ed2b09b4e175f3ddf57bc9c76230d42",
+    "sourceCommit": "edea0ecf1fe0a0106c59eec6ff1293b55ced8458",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 306309,
-        "sha256": "d3677c4e1faf78eb2868a14fa922070f9585b85ad405699f5a102a39155e57e2"
+        "bytes": 307699,
+        "sha256": "60592ea822f50dcf52aa61b004b802b04aafdde080b148e55116eb945d8d3cfd"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -83,8 +83,8 @@
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 16225,
-        "sha256": "7b855fa25a7eae68179a506cb69d207bb7a7f3ff2fa802acd0f37dc399626201"
+        "bytes": 18147,
+        "sha256": "2f5d39d135ff6c1290dffb4f64d673c1b22925be6389c4cbe8f5271dba8b23ca"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 473389,
-        "sha256": "50205a6019ea62988e1a9f1c029d9de9a235a95d5d1c0de3d09d0fc25e5294ab"
+        "bytes": 473436,
+        "sha256": "b9ef173b52f214ad38588eb0fc9bf81095e9ab1f8ed13bdffdb6801ba3212ac3"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -343,8 +343,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 217073,
-        "sha256": "adb094c5917c72631ef764c3dc1706bca481a4255aa678c2752cd4cdddd9ce06"
+        "bytes": 220585,
+        "sha256": "563ac9b65b99bfb9540862fc64920bc328b388737cb89b56295cf00becead0dc"
       },
       {
         "path": "frontend/app/mint.js",
@@ -468,8 +468,8 @@
       },
       {
         "path": "frontend/app/prospectstore.js",
-        "bytes": 11535,
-        "sha256": "a910611b213f0e7c0621c7f55c494886b557e9c4e051b51c5f0e4ad742fd91ce"
+        "bytes": 14343,
+        "sha256": "56a0a193d52a246f912f0e1626ee2bccc3aa66a78f0a81fa6a7f47d6c0b4fa28"
       },
       {
         "path": "frontend/app/questledgerstore.js",
@@ -538,18 +538,18 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 56350,
-        "sha256": "f880744f160c7c7ea617f1c4579d3e70578d189af3416b244f2345d62dd188a0"
+        "bytes": 57219,
+        "sha256": "5b399d7f9a1f51af85495a81d094495027e6a39b314eb475f3ff30205a3ceaa2"
       },
       {
         "path": "frontend/app/recruiter.js",
-        "bytes": 15067,
-        "sha256": "0999e9f999271784a2321cfa0cedf0962a158b59d99c760884f8165961844b92"
+        "bytes": 15996,
+        "sha256": "e071ea9b862866c7e35274e8f9dd26f3a61dee06c80c520536cc7052b6b1da9a"
       },
       {
         "path": "frontend/app/recruiterstore.js",
-        "bytes": 6834,
-        "sha256": "0e25352e11492a46618ea78e1dee3b45b5573b1733a8303c1411d32ed8fb5e3e"
+        "bytes": 6971,
+        "sha256": "605fd941a5090bbc5cd2294345b30eb42d6fdfc1e3512eaeb068252c0c47532e"
       },
       {
         "path": "frontend/app/resummonstore.js",
@@ -663,13 +663,13 @@
       },
       {
         "path": "frontend/app/studystore.js",
-        "bytes": 16616,
-        "sha256": "ae597a4d53b43596450efa1c1230cf92bcf938d39b6921313e57e57e8b8c5d97"
+        "bytes": 18070,
+        "sha256": "6298a8e6c635ff4b141820a906f699e2f5785e3d2bdeccb7352023404ec4f6d8"
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 17266,
-        "sha256": "f66c9d99fb1bd60c2c62b3a92d4c909a1ae99cfdf7a733c0bb2593e912ad669a"
+        "bytes": 18290,
+        "sha256": "8bef66b3feff3745d49042f254d8d6ed36007b5afe5eb9da06b35264559fb199"
       },
       {
         "path": "frontend/app/terrain.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/understanding.js",
-        "bytes": 12338,
-        "sha256": "e0f2fc27463d8c98a77c711c1be61c43fc526e29b1780d9383036bfb14cd5f4c"
+        "bytes": 12512,
+        "sha256": "c7c44f63caad0dc318d3e7181da36f514f77d689379fd7f40cffef3a1f5c8cf3"
       },
       {
         "path": "frontend/app/understandingstore.js",

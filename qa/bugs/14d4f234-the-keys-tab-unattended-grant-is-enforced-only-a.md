@@ -4,10 +4,10 @@ slug: the-keys-tab-unattended-grant-is-enforced-only-a
 title: The KEYS-tab UNATTENDED grant is enforced only at web_request — servicekeys.runEnv() has no surface argument, so an unattended shell child receives every ENABLE
 surface: providers
 severity: P0
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/providers
-fix: 
+fix: 6afeb9ee
 ---
 
 # The KEYS-tab UNATTENDED grant is enforced only at web_request — servicekeys.runEnv() has no surface argument, so an unattended shell child receives every ENABLE

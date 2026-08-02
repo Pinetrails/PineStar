@@ -418,6 +418,7 @@ fn copy_missing_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// Name of the one-shot done-marker dropped in the live workspace root after the FIRST
 /// successful legacy migration. Its presence is the sole signal to never migrate again.
 const MIGRATION_MARKER: &str = ".migrated";
+const MIGRATION_PENDING_MARKER: &str = ".migration-pending";
 
 /// True when the live workspace root already holds real data (anything other than our own
 /// marker file). A pre-existing populated root means an earlier install/migration already ran,
@@ -440,36 +441,142 @@ fn workspace_has_content(current: &Path) -> bool {
 ///   1. If the `.migrated` marker exists in the live root, skip entirely (the definitive signal).
 ///   2. Belt-and-suspenders: if the live root already has real content, skip and drop the marker
 ///      so a first-run-with-marker-missing but already-populated install never migrates either.
-/// The marker is written only AFTER the copy pass completes, so a crash mid-copy simply retries
-/// the (idempotent, copy-missing-only) migration next boot rather than stranding a half state.
-fn migrate_workspace_data(current: &Path, legacy_roots: &[PathBuf]) -> Vec<PathBuf> {
+/// A pending marker is written BEFORE copying. A crash or returned I/O error therefore retries
+/// the idempotent, copy-missing-only pass instead of mistaking its partial tree for live data.
+fn migrate_workspace_data(
+    current: &Path,
+    legacy_roots: &[PathBuf],
+    startup_log: &Option<PathBuf>,
+) -> Vec<PathBuf> {
     let mut migrated = Vec::new();
     let _ = std::fs::create_dir_all(current);
     let marker = current.join(MIGRATION_MARKER);
+    let pending = current.join(MIGRATION_PENDING_MARKER);
 
     // (1) Already migrated once — never touch legacy roots again.
     if marker.exists() {
+        let _ = std::fs::remove_file(&pending);
         return migrated;
     }
     // (2) Live root already populated (upgrade from a pre-marker build, or a manual copy): treat
     //     as already-migrated. Stamp the marker so future boots take the fast path at (1).
-    if workspace_has_content(current) {
+    if !pending.exists() && workspace_has_content(current) {
         let _ = std::fs::write(&marker, b"1");
         return migrated;
     }
 
+    // Stamp BEFORE copying so both a process crash and a returned I/O error remain retryable
+    // even when the partial pass created directories or copied some files.
+    if let Err(error) = std::fs::write(&pending, b"1") {
+        log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: RETRY required; could not create pending marker {}: {error}",
+                pending.display()
+            ),
+        );
+        return migrated;
+    }
+
+    let mut copy_failed = false;
     for legacy in legacy_roots {
         if !legacy.is_dir() {
             continue;
         }
-        if copy_missing_dir(legacy, current).is_ok() {
-            migrated.push(legacy.clone());
+        match copy_missing_dir(legacy, current) {
+            Ok(()) => migrated.push(legacy.clone()),
+            Err(error) => {
+                copy_failed = true;
+                log_startup(
+                    startup_log,
+                    format!(
+                        "workspace-migration: RETRY required; copy from {} failed: {error}",
+                        legacy.display()
+                    ),
+                );
+            }
         }
+    }
+    if copy_failed {
+        return migrated;
     }
     // Marker written LAST, after all copies land: crash-safe (a mid-copy crash leaves no marker,
     // so the idempotent copy-missing pass simply re-runs next boot).
-    let _ = std::fs::write(&marker, b"1");
+    match std::fs::write(&marker, b"1") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&pending);
+        }
+        Err(error) => log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: RETRY required; could not write completion marker {}: {error}",
+                marker.display()
+            ),
+        ),
+    }
     migrated
+}
+
+#[cfg(test)]
+mod workspace_migration_tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "starnet-workspace-migration-{}-{}-{name}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_copy_leaves_migration_retryable() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let base = temp_dir("locked-source");
+        let legacy = base.join("legacy");
+        let current = base.join("current");
+        let startup_log = base.join("startup.log");
+        std::fs::create_dir_all(legacy.join("sessions")).unwrap();
+        let source = legacy.join("sessions").join("history.jsonl");
+        std::fs::write(&source, b"important session").unwrap();
+
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&source)
+            .unwrap();
+        let migrated = migrate_workspace_data(
+            &current,
+            std::slice::from_ref(&legacy),
+            &Some(startup_log.clone()),
+        );
+        assert!(migrated.is_empty(), "a failed legacy root is not reported as migrated");
+        assert!(
+            !current.join(MIGRATION_MARKER).exists(),
+            "a failed copy must not stamp the one-shot marker"
+        );
+        assert!(current.join(MIGRATION_PENDING_MARKER).exists());
+        let failure_log = std::fs::read_to_string(&startup_log).unwrap();
+        assert!(failure_log.contains("RETRY required"));
+        assert!(failure_log.contains(&legacy.display().to_string()));
+
+        drop(lock);
+        let retried = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
+        assert_eq!(retried, vec![legacy.clone()], "the next boot retries the legacy root");
+        assert_eq!(
+            std::fs::read(current.join("sessions").join("history.jsonl")).unwrap(),
+            b"important session"
+        );
+        assert!(current.join(MIGRATION_MARKER).exists());
+        assert!(!current.join(MIGRATION_PENDING_MARKER).exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
 }
 
 fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
@@ -2161,6 +2268,7 @@ fn main() {
             let migrated_workspaces = migrate_workspace_data(
                 &workspaces,
                 &legacy_workspace_paths(&root, &workspaces),
+                &startup_log,
             );
             log_startup(
                 &startup_log,

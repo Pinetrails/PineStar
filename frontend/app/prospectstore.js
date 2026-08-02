@@ -31,6 +31,8 @@ const ProspectStore = (() => {
   let deps = {};
   let bound = false;
   let refreshTimer = null;
+  let recommendationSeq = 0;
+  let recommendationIds = {};
 
   const now = () => (deps.now ? deps.now() : (typeof Date !== 'undefined' ? Date.now() : 0));
   // the token-carrying fetch (Harness.apiFetch); injectable for tests.
@@ -77,6 +79,7 @@ const ProspectStore = (() => {
       const r = await api('/api/scout', { cache: 'no-store' });
       if (!r || !r.ok) return false;
       cache = await r.json();
+      if (cache && typeof cache.personalizationEnabled === 'boolean' && deps.setLearningEnabled) deps.setLearningEnabled(cache.personalizationEnabled);
       poke();
       return true;
     } catch (_) { return false; }
@@ -111,10 +114,42 @@ const ProspectStore = (() => {
   function interests() { return (cache && Array.isArray(cache.interests)) ? cache.interests : []; }
   function gate() { return (cache && cache.gate) || null; }
   function warm() { return !!(cache && cache.warm); }
+  function preferenceModel() { return (cache && cache.preferenceModel) || null; }
   // the scout's visible ATTEMPT LEDGER (server truth: GET /api/scout .ledger, tail already sliced server-side).
   // Every entry is one recorded mint outcome { at, kind, outcome, reason, title } — the bay renders it so a
   // dismissed draft is never the whole story (truthful telemetry). Empty until a /api/scout read lands.
   function ledger() { return (cache && Array.isArray(cache.ledger)) ? cache.ledger : []; }
+
+  function noteRecommendation(surface, item, meta) {
+    if (cache && cache.personalizationEnabled === false) return '';
+    const target = item && item.id ? String(item.id) : '';
+    const lane = String(surface || 'scout');
+    if (!target) return '';
+    const key = lane + ':' + target;
+    if (recommendationIds[key]) return recommendationIds[key];
+    const id = 'ui:' + lane + ':' + target.slice(0, 60) + ':' + now() + ':' + (++recommendationSeq);
+    recommendationIds[key] = id;
+    meta = meta || {};
+    try { api('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      id, surface: lane, kind: meta.kind || lane, title: item.name || item.title || target, target,
+      traits: meta.traits || [], evidence: meta.why ? [{ id: meta.evidenceId || 'rank', type: 'ranking', quote: meta.why }] : [],
+      readiness: meta.readiness || null, contextId: meta.contextId || (lane + ':minute:' + Math.floor(now() / 60000)), rank: meta.rank, scoreComponents: meta.scoreComponents || {}, modelVersion: 'unified-ui-v1'
+    }) }).catch(() => {}); } catch (_) {}
+    return id;
+  }
+  function recommendationVerdict(surface, target, state, reason) {
+    const key = String(surface || '') + ':' + String(target || '');
+    const id = recommendationIds[key];
+    if (!id) return false;
+    try { api('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, state, reason }) }).catch(() => {}); } catch (_) {}
+    return true;
+  }
+  function recommendationOutcome(surface, target, outcome) {
+    const id = recommendationIds[String(surface || '') + ':' + String(target || '')];
+    if (!id) return false;
+    try { api('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, outcome: outcome || {} }) }).catch(() => {}); } catch (_) {}
+    return true;
+  }
 
   /* ---- decide surface ----
      A legacy (local) draft is decided locally, same semantics as before (dismiss denylists the fingerprint).
@@ -158,6 +193,7 @@ const ProspectStore = (() => {
   // FOR-YOU rank reflects it immediately. Fire-and-forget; a miss just means a weaker rank this session.
   function noteLaunch(recipe) {
     if (!recipe || !recipe.id) return;
+    if (cache && cache.personalizationEnabled === false) return;
     try {
       if (cache) {
         cache.usage = cache.usage || { launches: {} };
@@ -168,6 +204,7 @@ const ProspectStore = (() => {
         cache.usage.launches[recipe.id] = { name: recipe.name || (cur && cur.name) || '', n: (cur && cur.n || 0) + 1, lastAt: now(), rated: (cur && cur.rated) || { great: 0, ok: 0, miss: 0 } };
       }
       api('/api/scout/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'recipe.launch', id: recipe.id, name: recipe.name || '' }) }).catch(() => {});
+      recommendationVerdict('recipe', recipe.id, 'started', 'accepted');
     } catch (_) {}
   }
   // outcome telemetry (lane B): fold a rate-the-work verdict onto the recipe that launched the run. What actually
@@ -177,6 +214,7 @@ const ProspectStore = (() => {
     const id = recipeId ? String(recipeId) : '';
     const v = (verdict === 'great' || verdict === 'ok' || verdict === 'miss') ? verdict : null;
     if (!id || !v) return;
+    if (cache && cache.personalizationEnabled === false) return;
     try {
       if (cache) {
         cache.usage = cache.usage || { launches: {} };
@@ -186,16 +224,18 @@ const ProspectStore = (() => {
         cache.usage.launches[id] = cur;
       }
       api('/api/scout/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'recipe.rated', id: id, verdict: v }) }).catch(() => {});
+      recommendationVerdict('recipe', id, v === 'miss' ? 'declined' : 'completed', v === 'miss' ? 'bad_quality' : 'completed');
+      recommendationOutcome('recipe', id, { quality: v === 'great' ? 1 : v === 'ok' ? 0.5 : -1, adopted: v !== 'miss', completedAt: now() });
     } catch (_) {}
   }
   // the per-recipe launch counters ({id: {name, n, lastAt, rated?}}) — rankRecipes' engagement + outcome signal.
   function launches() { return (cache && cache.usage && cache.usage.launches) || {}; }
 
   // a brand-new hero drops the browser-side state; the server store is the station's own memory (kept).
-  function reset() { legacy = hydrateLegacy(null); cache = null; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { legacy = hydrateLegacy(null); cache = null; recommendationIds = {}; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, ledger, dismiss, accept, reset,
-    noteLaunch, noteRated, launches,
+  return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, preferenceModel, ledger, dismiss, accept, reset,
+    noteLaunch, noteRated, launches, noteRecommendation, recommendationVerdict, recommendationOutcome,
     isDenied: fp => isDenied(fp), _hydrateLegacy: hydrateLegacy, _setCacheForTest: c => { cache = c; } };
 })();
 

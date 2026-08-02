@@ -51,6 +51,7 @@ const SYSTEM = 'SYSTEM PROMPT\nWHAT YOU KNOW ABOUT YOUR COMMANDER: goals — shi
 const deps = {
   getSystem: () => SYSTEM,
   getName: () => 'NOVA',
+  readiness: () => ({ ready: true, reasons: [] }),
   getBeliefs: () => ({ goals: ['ship StarNet'], pain: ['manual standups'] }),
   getExistingJobs: () => Promise.resolve(['Morning brief']),
   scheduleJob: (body) => { scheduled.push(body); return Promise.resolve({ ok: true }); },

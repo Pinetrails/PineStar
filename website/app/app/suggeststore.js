@@ -25,6 +25,7 @@ const SuggestStore = (() => {
   let firing = false;      // re-entrancy guard while an idea is mid-flight
   let pendingChain = null; // G1c: a just-unlocked capability label to chain a follow-up idea off (one-shot, in-memory)
   let goalProgressed = false; // Tier 2: a goal milestone just completed → allow ONE suggestion on progress (not only familiarity growth). One-shot, in-memory.
+  let acceptedRecommendation = null, acceptedRunId = null;
 
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
@@ -71,9 +72,10 @@ const SuggestStore = (() => {
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false;
-    if (typeof U !== 'undefined' && U.bus && U.bus.on) U.bus.on('agent.run.end', onRunEnd);
+    sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false; acceptedRecommendation = null; acceptedRunId = null;
+    if (typeof U !== 'undefined' && U.bus && U.bus.on) { U.bus.on('agent.run.start', onRunStart); U.bus.on('agent.run.end', onRunEnd); }
   }
+  function onRunStart(p) { if (acceptedRecommendation && !acceptedRunId && p && (p.agentId || 'agent') === 'agent') { acceptedRunId = String(p.runId || ''); if (acceptedRunId) ledgerPost({ id: acceptedRecommendation, state: 'started', reason: 'accepted' }); } }
 
   // G1c QUEST CHAINING: a station quest just closed a capability gap (a prop landed → a real capability is live).
   // Arm a ONE-SHOT follow-up so the NEXT natural suggestion (which already rides the cooldown + session cap) is
@@ -101,6 +103,12 @@ const SuggestStore = (() => {
   function onRunEnd(p) {
     if (!ready()) return;
     p = p || {};
+    if (acceptedRecommendation && acceptedRunId && String(p.runId || '') === acceptedRunId) {
+      const completed = p.reason === 'done';
+      ledgerPost({ id: acceptedRecommendation, state: completed ? 'completed' : 'declined', reason: completed ? 'completed' : 'bad_quality' });
+      ledgerPost({ id: acceptedRecommendation, outcome: { runId: acceptedRunId, quality: completed ? 1 : -1, completedAt: Date.now() } });
+      acceptedRecommendation = null; acceptedRunId = null;
+    }
     if (p.reason !== 'done') return;
     if ((p.agentId || 'agent') !== 'agent') return;
     state.tasksSinceLast = (state.tasksSinceLast || 0) + 1;
@@ -200,7 +208,7 @@ const SuggestStore = (() => {
         // R3: settle the probe — the choice on an AIMED idea is evidence about the belief it was aimed at
         // (accept corroborates, decline counter-evidences). An un-aimed idea settles nothing.
         if (probe) { try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteProbe) UnderstandingStore.noteProbe(probe.dim, accepted); } catch (_) {} }
-        if (accepted) { ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' }); doBuild(parsed); }
+        if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' }); doBuild(parsed); }
         else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' }); }
         else ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
       });
@@ -239,7 +247,7 @@ const SuggestStore = (() => {
   }
 
   // S2: a brand-new hero starts fresh (no baseline, no cooldown carryover). Own key, like curiositystore.
-  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [], declined: [] }; sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [], declined: [] }; sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false; acceptedRecommendation = null; acceptedRunId = null; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
   return { init, reset, onRunEnd, willSuggest, fire, armChain, noteGoalProgress, _state: () => state, _session: () => sessionShown, _chain: () => pendingChain };
