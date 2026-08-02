@@ -18,7 +18,7 @@ conformance, repository gates, restart/fault injection, and a live seeded-app jo
 | Continuable delivery | channel history + per-run transcript | delivered prompt/output can continue after restart | Implemented; HTTP + live proof |
 | Output-limit continuation | shared agent loop | scheduled model run deduplicates continuation and accounts every call | Implemented; active scheduled-runtime trajectory |
 | Active-run recovery | append-only run journal | interrupted cron is attributable; uncertain mutations never auto-replay | Shared runtime landed; cron attribution proof added |
-| Durable recall | segmented transcript index | old routine output remains searchable after restart/rotation | Shared runtime landed; cron-specific conformance required |
+| Durable recall | segmented transcript index | old routine output remains retrievable after restart/rotation | Implemented; boot-level cron transcript recovery proof |
 | Behavioral evaluation | trajectory evaluator | active cron task reproduces reviewed deterministic receipt | Implemented; 8/8 active scenarios pass |
 
 ## Execution order

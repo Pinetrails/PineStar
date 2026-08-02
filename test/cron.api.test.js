@@ -220,6 +220,8 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(interruptedCron.cronJobId, 'routine-recovery-proof', 'recovery truth identifies the originating routine');
     A.eq(interruptedCron.cronJobName, 'Recovery proof', 'recovery truth carries the human routine name');
     A.eq(interruptedCron.status, 'resumable', 'a checkpoint without an uncertain mutation is honestly resumable');
+    const restartedScriptTranscript = await j('GET', '/api/transcript?agent=cron_brief&stream=' + encodeURIComponent('cron-' + scriptJob.lastRunId) + '&limit=20');
+    A.ok((restartedScriptTranscript.body.turns || []).some(t => t.role === 'assistant' && t.content === 'script-only result'), 'completed routine output remains retrievable from durable history after host restart');
 
     // ---- protected-state recovery: a torn main file restores from the last-known-good .bak ----
     const cronPath = path.join(ws, 'cron.jobs.json');
