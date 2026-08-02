@@ -95,6 +95,7 @@ const Chat = (() => {
   const el = id => document.getElementById(id);
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
+  let historyPinSeq = 0, historyPinPending = 0;   // a load owns one final post-layout pin; a real user gesture cancels it
   function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
   function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; else if (log) showNewPill(true); }   // content landed while unstuck → "new messages"
 
@@ -105,6 +106,20 @@ const Chat = (() => {
      Anchored to #chat-log's bottom EDGE (just above the composer) by measuring the composer height each show,
      so it rides a one- or multi-line composer instead of a magic offset. Click jumps down + re-arms stickiness. */
   function jumpToBottom() { if (log) { log.scrollTop = log.scrollHeight; stick = true; hideNewPill(); } }
+  function cancelHistoryPin() { historyPinPending = 0; }
+  function pinLoadedHistoryAfterLayout(seq) {
+    const pin = () => {
+      if (!log || historyPinPending !== seq) return;
+      log.scrollTop = log.scrollHeight;
+      historyPinPending = 0;
+      stick = nearBottom();
+      if (stick) hideNewPill();
+    };
+    // Bulk history rows can grow after their synchronous append as markdown/font layout settles. Two paint
+    // frames make the final scroll use the rendered height, not the transient height seen by row().
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(pin));
+    else setTimeout(pin, 0);
+  }
   function positionNewPill(pill) {
     // sit the pill just above the composer: distance from the panel's bottom = the composer stack's height.
     const composer = el('chat-inputrow'), queuedEl = el('chat-queued');
@@ -485,7 +500,14 @@ const Chat = (() => {
     }
     attachInput = el('chat-attach-input'); attachStrip = el('chat-attach-strip');
     clearAttachments();   // a fresh agent session starts with no staged attachments (matches the clean-slate init above)
-    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); else showNewPill(false); });   // at the bottom → retire the pill; scrolled up → a persistent "↓ latest" affordance
+    if (log) {
+      log.addEventListener('scroll', () => {
+        if (historyPinPending) return;   // row()-driven replay scroll events cannot cancel the load's final pin
+        stick = nearBottom(); if (stick) hideNewPill(); else showNewPill(false);
+      });   // at the bottom → retire the pill; scrolled up → a persistent "↓ latest" affordance
+      // A real attempt to inspect history wins even during the two-frame settle window.
+      ['wheel', 'touchstart', 'pointerdown'].forEach(type => log.addEventListener(type, cancelHistoryPin, { passive: true }));
+    }
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
     // row's prose, then flashes a ✓ confirm. Wired once per log element so a re-init can't stack handlers.
     if (log && !log.__copyWired) {
@@ -928,6 +950,8 @@ const Chat = (() => {
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
+    const historyPin = ++historyPinSeq;
+    historyPinPending = historyPin;
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
     // SPEAKER IDENTITY: re-resolve `name` (the reply-chip + agent-beat speaker, else stuck at init's hero) from the
     // displayed stream's agent, so switching agents relabels replies. Guard: an unknown id keeps the current name.
@@ -964,6 +988,7 @@ const Chat = (() => {
     if (activeWs && typeof WorkshopStore !== 'undefined' && WorkshopStore.presentFor) {
       try { WorkshopStore.presentFor(activeWs.id).catch(() => {}); } catch (_) {}
     }
+    pinLoadedHistoryAfterLayout(historyPin);
   }
 
   async function restoreTaskQuestion(ws) {
