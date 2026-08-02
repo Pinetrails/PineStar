@@ -36,11 +36,21 @@ function printReport(report, reportFile = '') {
   if (reportFile) console.log('[agent-eval] report ' + resolve(reportFile));
 }
 
-function run(opts) {
+async function run(opts) {
   const tasksFile = resolve(opts.tasks || DEFAULTS.tasks);
-  const candidateFile = resolve(opts.candidate || DEFAULTS.candidate);
   const baselineFile = resolve(opts.baseline || DEFAULTS.baseline);
-  const report = evaluate({ tasks: readJsonl(tasksFile), candidateRows: readJsonl(candidateFile), baselineRows: readJsonl(baselineFile) });
+  let candidateRows;
+  if (opts.candidate) candidateRows = readJsonl(resolve(opts.candidate));
+  else {
+    const { runBridgeAdapters } = await import('./adapters/bridge.mjs');
+    candidateRows = readJsonl(DEFAULTS.candidate).filter(row => !String(row.taskId).startsWith('bridge-'));
+    candidateRows.push(...await runBridgeAdapters());
+  }
+  if (opts['candidate-out']) {
+    ensureParent(opts['candidate-out']);
+    writeJsonl(resolve(opts['candidate-out']), candidateRows);
+  }
+  const report = evaluate({ tasks: readJsonl(tasksFile), candidateRows, baselineRows: readJsonl(baselineFile) });
   if (opts.report) {
     ensureParent(opts.report);
     writeFileSync(resolve(opts.report), JSON.stringify(report, null, 2) + '\n', 'utf8');
@@ -63,7 +73,7 @@ function record(opts) {
 try {
   const opts = argsOf(process.argv.slice(2));
   const command = opts._[0] || 'run';
-  if (command === 'run') process.exitCode = run(opts);
+  if (command === 'run') process.exitCode = await run(opts);
   else if (command === 'record') process.exitCode = record(opts);
   else throw new Error('usage: runner.mjs [run|record] [--tasks file --candidate file --baseline file --report file]');
 } catch (error) {
