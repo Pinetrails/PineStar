@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b7e18ce81f63bc80aae8c33812182203bfb7dc8e",
+    "sourceCommit": "efb3900a2ed2b09b4e175f3ddf57bc9c76230d42",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
@@ -198,8 +198,8 @@
       },
       {
         "path": "frontend/app/data-shim.js",
-        "bytes": 3794,
-        "sha256": "8bef8b87d018c116d5062b682574b97f46cda02e98ed2c628d3443c7fec0297c"
+        "bytes": 3958,
+        "sha256": "79af3bc312c523c3ee60eb163280827cbc56e16b8648282b55b8a646e1f7fbd7"
       },
       {
         "path": "frontend/app/deliverables.js",
@@ -853,8 +853,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 489732,
-        "sha256": "28e451f2e9e87e1fc4cf92eb3962e109aed7f0d8c76e03e3626b691df13b23e4"
+        "bytes": 490825,
+        "sha256": "2af85d17721c5069fbd13b0659396df45cb6652acffe0ff7304fc27849051ea5"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -958,8 +958,8 @@
       },
       {
         "path": "frontend/js/assets.js",
-        "bytes": 17957,
-        "sha256": "a8eaba435a4046fb80bacc9e88dd2014a6d4f3ee0c956f74f8e75264956fea0c"
+        "bytes": 29069,
+        "sha256": "1e7f6237222127dfe78c87b898d449676912cd4171a43432525344ffb6fcab62"
       },
       {
         "path": "frontend/js/audio.js",
