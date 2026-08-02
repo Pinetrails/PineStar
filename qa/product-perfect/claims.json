@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "8e68bf5c3522538e41d008101e63befc3f099efa",
+    "sourceCommit": "b7e18ce81f63bc80aae8c33812182203bfb7dc8e",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
@@ -93,8 +93,8 @@
       },
       {
         "path": "frontend/app/autonomystore.js",
-        "bytes": 4844,
-        "sha256": "c44a32442ba6bb995efa6c68cc003e53116600441c697c82f3bdbe1b9efd8a55"
+        "bytes": 4862,
+        "sha256": "752494581752e8305f800e69e2a2f5add047a9388bff4e4a24adcc57b11b1305"
       },
       {
         "path": "frontend/app/autopilot.js",
