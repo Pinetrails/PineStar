@@ -3014,6 +3014,7 @@ const App = (() => {
   // row's hover tooltip so the one-line layout never has to spell it out.
   let railTicker = 0;
   let railShowArchived = false;   // when true the rail also lists archived (put-away) sessions, dimmed
+  let railFocusId = null;         // roving-tabindex cursor: one rail stop regardless of session count
   function railFmtElapsed(ms) {
     const s = Math.floor((ms < 0 ? 0 : ms) / 1000);
     if (s < 60) return s + 's';
@@ -3059,12 +3060,19 @@ const App = (() => {
     const ul = el('workstreams');
     if (!ul || typeof Workstreams === 'undefined') return;
     const activeId = Workstreams.activeId();
-    ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
+    const oldFocus = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.ws-row[data-id]') : null;
+    const restoreFocus = !!(oldFocus && ul.contains(oldFocus));
+    if (oldFocus && oldFocus.dataset.id) railFocusId = oldFocus.dataset.id;
+    const rows = Workstreams.list({ includeArchived: railShowArchived });
+    if (!rows.some(w => w.id === railFocusId)) railFocusId = rows.some(w => w.id === activeId) ? activeId : (rows[0] && rows[0].id);
+    ul.setAttribute('role', 'listbox');
+    ul.setAttribute('aria-label', 'Sessions');
+    ul.innerHTML = rows.map((w, index) => {
       const title = w.title || 'General';
       const st = railRowState(w);
       const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '')
         + (Workstreams.unread(w) ? ' · new activity' : '') + ' — Shift+F10 or right-click for actions';
-      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" tabindex="0" role="button" aria-label="' + U.esc(title + ' session; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
+      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" tabindex="' + (w.id === railFocusId ? '0' : '-1') + '" role="option" aria-selected="' + (w.id === activeId ? 'true' : 'false') + '" aria-posinset="' + (index + 1) + '" aria-setsize="' + rows.length + '" aria-label="' + U.esc(title + ' session; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
         (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
@@ -3079,6 +3087,21 @@ const App = (() => {
       li.onkeydown = (e) => {
         if (e.target !== li) return;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchWorkstream(id); return; }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+          e.preventDefault();
+          const items = Array.from(ul.querySelectorAll('.ws-row[data-id]'));
+          const at = items.indexOf(li);
+          let next = at;
+          if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = items.length - 1;
+          else next = Math.max(0, Math.min(items.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
+          const target = items[next];
+          if (target && target !== li) {
+            li.tabIndex = -1; target.tabIndex = 0; railFocusId = target.dataset.id;
+            target.focus(); if (target.scrollIntoView) target.scrollIntoView({ block: 'nearest' });
+          }
+          return;
+        }
         if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
           e.preventDefault();
           const r = li.getBoundingClientRect();
@@ -3090,6 +3113,10 @@ const App = (() => {
       const keb = li.querySelector('.ws-kebab');
       if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const r = keb.getBoundingClientRect(); openWsMenu(id, r.left, r.bottom + 2, keb); };
     });
+    if (restoreFocus && railFocusId) {
+      const target = Array.from(ul.querySelectorAll('.ws-row[data-id]')).find(li => li.dataset.id === railFocusId);
+      if (target) target.focus({ preventScroll: true });
+    }
     updateArchivedToggle();
     armRailTicker();
     if (typeof StationUI !== 'undefined' && StationUI.refreshBoard) StationUI.refreshBoard();
@@ -3486,7 +3513,7 @@ const App = (() => {
       const tip = (r.blessed ? '' : 'REVOKED (trust withdrawn) — ') + 'click to open this project · right-click for actions';
       const sess = projSessionsOf(r.root);
       const extra = Math.max(0, sess.length - 3);
-      return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
+      return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" tabindex="0" role="button" aria-label="' + U.esc(r.name + ' project' + (r.blessed ? '' : ', access revoked') + '; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
         '<span class="' + projDot(r) + '"></span>' +
         '<span class="proj-main">' +
           '<span class="proj-line">' +
@@ -3502,11 +3529,11 @@ const App = (() => {
         '</span>' +
         '</li>' +
         sess.slice(0, 3).map(s =>
-          '<li class="proj-sess' + (s.id === activeId ? ' on' : '') + '" data-ws="' + U.esc(s.id) + '" data-root="' + U.esc(r.root) + '" title="open this session">' +
+          '<li class="proj-sess' + (s.id === activeId ? ' on' : '') + '" data-ws="' + U.esc(s.id) + '" data-root="' + U.esc(r.root) + '" tabindex="0" role="button" aria-label="' + U.esc(s.title + ' session; Enter to open') + '"' + (s.id === activeId ? ' aria-current="true"' : '') + ' title="open this session">' +
             '<span class="ws-title">' + U.esc(s.title) + '</span>' +
             '<span class="ws-meta">' + U.esc(s.rel) + '</span>' +
           '</li>').join('') +
-        (extra ? '<li class="proj-sess proj-more" data-root="' + U.esc(r.root) + '" title="open this project">▸ ' + extra + ' more session' + (extra === 1 ? '' : 's') + '</li>' : '');
+        (extra ? '<li class="proj-sess proj-more" data-root="' + U.esc(r.root) + '" tabindex="0" role="button" aria-label="Open ' + extra + ' more session' + (extra === 1 ? '' : 's') + ' in ' + U.esc(r.name) + '" title="open this project">▸ ' + extra + ' more session' + (extra === 1 ? '' : 's') + '</li>' : '');
     }).join('');
     // preview sub-row click: open the session AND follow it into its project scope — the rail stays in PROJECTS.
     // The overflow "▸ N more" row just enters the project (where every session renders as a full row).
@@ -3521,13 +3548,19 @@ const App = (() => {
         const row = rows.find(x => Projects.sameRoot && Projects.sameRoot(x.root, li.dataset.root));
         enterProject(li.dataset.root, !!(row && row.blessed));
       };
+      li.onkeydown = (e) => { if (e.target === li && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); li.click(); } };
     });
     ul.querySelectorAll('.proj-row').forEach(li => {
       const row = rows.find(x => x.root === li.dataset.root);
       li.onclick = () => enterProject(row.root, row.blessed);
+      li.onkeydown = (e) => {
+        if (e.target !== li) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enterProject(row.root, row.blessed); return; }
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const b = li.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, li); }
+      };
       li.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
       const keb = li.querySelector('.ws-kebab');
-      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
+      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, keb); };
     });
   }
   /* ENTERED: breadcrumb back-row + project header + this project's sessions as FULL rail rows (they are real
@@ -3539,7 +3572,7 @@ const App = (() => {
     const byId = {}; try { for (const w of Workstreams.all()) byId[w.id] = w; } catch (_) {}
     let html =
       '<li class="proj-crumb"><button class="proj-back" title="back to all projects">◂ ALL PROJECTS</button></li>' +
-      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" title="right-click for project actions">' +
+      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" tabindex="0" role="button" aria-label="' + U.esc(row.name + ' project actions; Enter to open actions') + '" aria-keyshortcuts="Shift+F10" title="project actions">' +
         '<span class="' + projDot(row) + '"></span>' +
         '<span class="proj-main">' +
           '<span class="proj-line">' +
@@ -3560,7 +3593,7 @@ const App = (() => {
         const w = byId[s.id];
         const st = w ? railRowState(w) : { dot: 'ws-dot', meta: s.rel, busy: false, attn: false };
         const cls = w ? rowClass(w, st, activeId) : ('ws-row' + (s.id === activeId ? ' sel' : ''));
-        return '<li class="' + cls + ' proj-sess-full" data-ws="' + U.esc(s.id) + '" title="' + U.esc(s.title + ' — open this session') + '">' +
+        return '<li class="' + cls + ' proj-sess-full" data-ws="' + U.esc(s.id) + '" tabindex="0" role="button" aria-label="' + U.esc(s.title + ' session; Enter to open') + '"' + (s.id === activeId ? ' aria-current="true"' : '') + ' title="' + U.esc(s.title + ' — open this session') + '">' +
           '<span class="' + st.dot + '"></span>' +
           '<span class="ws-title">' + U.esc(s.title) + '</span>' +
           '<span class="ws-meta">' + U.esc(st.meta || s.rel) + '</span>' +
@@ -3571,9 +3604,13 @@ const App = (() => {
     { const back = ul.querySelector('.proj-back'); if (back) back.onclick = exitProjectScope; }
     { const head = ul.querySelector('.proj-head');
       if (head) {
+        head.onkeydown = (e) => {
+          if (e.target !== head) return;
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const b = head.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, head); }
+        };
         head.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
         const keb = head.querySelector('.ws-kebab');
-        if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
+        if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, keb); };
       } }
     ul.querySelectorAll('.proj-sess-full').forEach(li => {
       li.onclick = () => {
@@ -3582,6 +3619,7 @@ const App = (() => {
         SFX.open();
         renderProjects();   // stay HERE — the rail keeps the project scope, only the selection moves
       };
+      li.onkeydown = (e) => { if (e.target === li && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); li.click(); } };
     });
   }
   // + NEW inside an entered project: a fresh untitled session ANCHORED to the project (projectRoot rides every
@@ -3595,20 +3633,23 @@ const App = (() => {
     renderProjects();   // the new row appears under its project; the rail stays in the entered scope
   }
   // the project row actions menu (reuses the .ws-menu phosphor chrome): Jump in · Remove (revoke trust, arm/confirm).
-  let projMenuEl = null;
-  function closeProjectMenu() {
+  let projMenuEl = null, projMenuReturn = null;
+  function closeProjectMenu(returnFocus) {
     if (!projMenuEl) return;
     projMenuEl.remove(); projMenuEl = null;
     document.removeEventListener('pointerdown', onProjMenuOutside, true);
     document.removeEventListener('keydown', onProjMenuKey, true);
     window.removeEventListener('blur', closeProjectMenu);
     window.removeEventListener('resize', closeProjectMenu);
+    if (returnFocus === true && projMenuReturn && projMenuReturn.isConnected) projMenuReturn.focus();
+    projMenuReturn = null;
   }
   function onProjMenuOutside(e) { if (projMenuEl && !projMenuEl.contains(e.target)) closeProjectMenu(); }
-  function onProjMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeProjectMenu(); } }
-  function openProjectMenu(r, x, y) {
+  function onProjMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeProjectMenu(true); } }
+  function openProjectMenu(r, x, y, origin) {
     closeProjectMenu();
     if (!r) return;
+    projMenuReturn = origin || null;
     const menu = document.createElement('div');
     menu.className = 'ws-menu'; menu.setAttribute('role', 'menu');
     const item = (act, label, glyph, cls) =>
@@ -3649,6 +3690,7 @@ const App = (() => {
     document.addEventListener('keydown', onProjMenuKey, true);
     window.addEventListener('blur', closeProjectMenu);
     window.addEventListener('resize', closeProjectMenu);
+    { const first = menu.querySelector('.ws-menu-item'); if (first) first.focus(); }
     SFX.click();
   }
   // REMOVE has two explicit stages: a blessed row revokes its standing path:<root> grant, while a row whose trust
