@@ -82,6 +82,10 @@ function eventsOf(trajectory, type) {
   return trajectory.events.filter(event => event && event.type === type);
 }
 
+function valueAt(object, dotted) {
+  return String(dotted || '').split('.').filter(Boolean).reduce((value, key) => value == null ? undefined : value[key], object);
+}
+
 export function deriveMetrics(trajectory) {
   const events = trajectory.events || [];
   const artifacts = trajectory.artifacts || [];
@@ -133,6 +137,16 @@ function gradeOne(grader, trajectory) {
       const end = [...events].reverse().find(event => event.type === 'agent.run.end');
       actual = end && eventData(end).reason;
       return { pass: actual === grader.value, actual: actual || null, expected: grader.value };
+    }
+    case 'event_data_equals': {
+      const hit = events.find(event => event.type === grader.event);
+      actual = hit ? valueAt(eventData(hit), grader.path) : undefined;
+      return { pass: JSON.stringify(actual) === JSON.stringify(grader.value), actual: actual === undefined ? null : actual, expected: grader.value };
+    }
+    case 'event_data_min': {
+      const hit = events.find(event => event.type === grader.event);
+      actual = hit ? finite(valueAt(eventData(hit), grader.path), Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY;
+      return { pass: actual >= finite(grader.value), actual: Number.isFinite(actual) ? actual : null, expected: { min: grader.value } };
     }
     case 'artifact_hash': {
       const artifact = artifacts.find(item => item.path === grader.path);

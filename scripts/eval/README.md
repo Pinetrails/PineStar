@@ -40,7 +40,9 @@ reviewed fixtures belong in Git.
 
 ## Activating a bridge scenario
 
-Each future wave has one `status:"pending"` task in `fixtures/tasks.jsonl`. When its implementation
-lands, add a deterministic adapter that emits the v1 trajectory shape, add baseline/candidate rows,
-change only that task to `active`, and give it concrete graders and thresholds. This makes missing
-evidence fail closed while avoiding a fake pass before the feature exists.
+The five bridge scenarios are active and default runs execute their real adapters from
+`adapters/bridge.mjs`: semantic continuation through `runAgentLoop`, restart analysis through the
+append-only run journal, isolated `code.run`, stdio LSP edit deltas, and segmented-history recall
+after restart. `fixtures/candidate.jsonl` is the reviewed deterministic receipt; the test requires
+the live adapters to reproduce it byte-for-byte. New scenarios follow the same pattern: add an
+adapter, baseline/candidate evidence, concrete graders, and fail-closed thresholds.

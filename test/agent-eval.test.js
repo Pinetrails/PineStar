@@ -15,7 +15,7 @@ const { tmpdir } = require('node:os');
   const candidate = core.readJsonl(join(fixtures, 'candidate.jsonl'));
 
   const report = core.evaluate({ tasks, baselineRows: baseline, candidateRows: candidate });
-  A.eq(report.summary, { pass: true, active: 2, passed: 2, failed: 0, pending: 5 }, 'seed pack passes active tasks and labels future adapters pending');
+  A.eq(report.summary, { pass: true, active: 7, passed: 7, failed: 0, pending: 0 }, 'seed pack passes existing behavior and all five bridge scenarios');
   A.eq(report.results[1].metrics, {
     turns: 1, toolCalls: 1, retries: 0, tokensIn: 20, tokensOut: 8, tokens: 28, costUsd: 0.000036, durationMs: 190,
     artifactHashes: [{ path: 'output.md', sha256: '0da6d1b1911c49b32fb845247367d08532316038e81c2b524de8b192818e1e9f' }], verificationFresh: true
@@ -30,6 +30,12 @@ const { tmpdir } = require('node:os');
   A.eq(redacted.events[0].data.tokensIn, 12, 'ordinary token accounting is preserved');
   A.eq(redacted.events[0].data.apiKey, '[REDACTED]', 'sensitive field is redacted');
 
+  const { runBridgeAdapters } = await import('../scripts/eval/adapters/bridge.mjs');
+  const liveBridge = await runBridgeAdapters();
+  const recordedBridge = candidate.filter(row => row.taskId.startsWith('bridge-'));
+  A.eq(liveBridge, recordedBridge, 'real module adapters reproduce the committed candidate evidence byte-for-byte');
+  A.eq(liveBridge.map(row => row.taskId), ['bridge-continuation', 'bridge-recovery', 'bridge-code-mode', 'bridge-lsp-delta', 'bridge-full-history'], 'every runtime bridge has a deterministic adapter');
+
   const broken = JSON.parse(JSON.stringify(candidate));
   broken[0].finalText = 'wrong answer';
   broken[0].events.splice(2, 0, { seq: 3, at: '2026-08-01T12:10:00.020Z', type: 'provider.retry', data: {} });
@@ -43,7 +49,7 @@ const { tmpdir } = require('node:os');
     const reportFile = join(temp, 'report.json');
     const cli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'run', '--report', reportFile], { cwd: root, encoding: 'utf8' });
     A.eq(cli.status, 0, 'default CLI seed evaluation exits zero');
-    A.ok(/PASS active=2/.test(cli.stdout), 'CLI prints a compact pass receipt');
+    A.ok(/PASS active=7/.test(cli.stdout), 'CLI prints a compact pass receipt');
     A.eq(JSON.parse(readFileSync(reportFile, 'utf8')).summary.pass, true, 'CLI writes the report');
 
     const rawFile = join(temp, 'raw.jsonl');
