@@ -30,3 +30,8 @@ dd1d2468aa8fb6e78fca8f858890a5d2f0d9b0d6:test/saveversion.test.js:generic-api-ke
 f79ee6308764f85221a805bff14b905a12f759dc:test/servicekeys.http.test.js:generic-api-key:50
 2ed9fedf08e1c5aab5c26f9b045c16ab7b3ecee9:test/servicekeys.test.js:generic-api-key:75
 a5d72b7232f29e7c2d3ccf81a91d27217bc69559:test/openai-compat.e2e.test.js:generic-api-key:23
+
+# Reviewed 2026-08-02: synthetic values in a redaction unit fixture and a QA bug
+# reproduction. Exact fingerprints only; future findings in either file still fail.
+9ce703b633d1ed2a97149828809a1882ca257bf4:test/agent-eval.test.js:generic-api-key:26
+183a238dd36444e2d712b5585bdf0e00317ef529:qa/bugs/14d4f234-the-keys-tab-unattended-grant-is-enforced-only-a.md:generic-api-key:21
