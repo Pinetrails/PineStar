@@ -93,13 +93,17 @@ export function deriveMetrics(trajectory) {
   const starts = eventsOf(trajectory, 'agent.run.start');
   const ends = eventsOf(trajectory, 'agent.run.end');
   const explicit = trajectory.metrics || {};
+  const observedRetries = eventsOf(trajectory, 'provider.retry').length;
   const startedAt = Date.parse(trajectory.startedAt || (starts[0] && starts[0].at) || '');
   const endedAt = Date.parse(trajectory.endedAt || (ends[ends.length - 1] && ends[ends.length - 1].at) || '');
   const sum = (key) => costs.reduce((total, event) => total + finite(eventData(event)[key]), 0);
   return {
     turns: finite(explicit.turns, eventsOf(trajectory, 'model.turn').length),
     toolCalls: finite(explicit.toolCalls, eventsOf(trajectory, 'agent.tool_call').length),
-    retries: finite(explicit.retries, eventsOf(trajectory, 'provider.retry').length),
+    // Raw retry events are direct trajectory evidence and therefore a hard lower bound.
+    // Preserve summary-only adapters that provide an explicit count, but never let a stale
+    // or contradictory lower summary erase retries that the event stream proves occurred.
+    retries: Math.max(observedRetries, finite(explicit.retries, observedRetries)),
     tokensIn: finite(explicit.tokensIn, sum('tokensIn')),
     tokensOut: finite(explicit.tokensOut, sum('tokensOut')),
     tokens: finite(explicit.tokens, sum('tokensIn') + sum('tokensOut')),
