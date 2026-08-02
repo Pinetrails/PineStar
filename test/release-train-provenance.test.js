@@ -52,9 +52,15 @@ A.ok(/fetch-depth:\s*0\b/.test(checkoutStep),
 
 A.ok(/ref:\s*\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.tag \|\| github\.ref \}\}/.test(checkoutStep),
   'manual recovery runs build the immutable requested tag instead of the workflow branch');
-const exactTagCheckouts = yml.match(/ref:\s*\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.tag \|\| github\.ref \}\}/g) || [];
-A.eq(exactTagCheckouts.length, 5,
-  'all five source checkouts use the immutable requested tag during a manual recovery run');
+const checkoutSteps = Array.from(
+  yml.matchAll(/^      - uses: actions\/checkout@v4\s*$([\s\S]*?)(?=^      - |^  [a-z0-9_-]+:|$(?![\s\S]))/gm),
+  row => row[0]
+);
+A.eq(checkoutSteps.length, 5, 'release train has the expected five source checkouts');
+for (const [i, step] of checkoutSteps.entries()) {
+  A.ok(/^\s*ref:\s*\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.tag \|\| github\.ref \}\}\s*$/m.test(step),
+    `source checkout ${i + 1} uses the immutable requested tag during a manual recovery run`);
+}
 
 // 0.8.5 is distributed on Windows and macOS only. Linux must not enter the release matrix,
 // draft asset set, or required updater manifest while it remains unsupported.
