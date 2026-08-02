@@ -35,6 +35,21 @@ A.ok(/if: runner\.os == 'macOS'/.test(gate), 'credential gate only runs on macOS
 A.ok(/exit 1/.test(gate), 'missing Apple credentials fail the release train');
 A.ok(/Developer ID Application:/.test(gate), 'signing identity must be Developer ID Application');
 
+const nativeStep = yml.match(
+  /- name: Prepare and sign bundled macOS native dependencies([\s\S]*?)(?=\n      - name: Build desktop bundles)/
+);
+A.ok(nativeStep, 'release train has a pre-bundle native dependency signing step');
+const native = nativeStep[1];
+A.ok(/if: runner\.os == 'macOS'/.test(native), 'native signing only runs on macOS legs');
+A.ok(/security import/.test(native) && /security set-key-partition-list/.test(native),
+  'native signing imports the Developer ID certificate into an unlocked CI keychain');
+A.ok(/sharp-darwin-arm64/.test(native) && /sharp-darwin-x64/.test(native),
+  'each macOS leg prunes Sharp to its matching architecture');
+A.ok(/file -b "\$native" \| grep -q 'Mach-O'/.test(native),
+  'native signing discovers every Mach-O file instead of relying on filename extensions');
+A.ok(/codesign --force --options runtime --timestamp --sign "\$APPLE_SIGNING_IDENTITY" "\$native"/.test(native),
+  'every staged Mach-O dependency receives Developer ID signing with a secure timestamp');
+
 const buildStep = yml.match(
   /- name: Build desktop bundles \(signed updater artifacts required\)([\s\S]*?)(?=\n      # P1\.5)/
 );
@@ -52,6 +67,12 @@ const trust = trustStep[1];
 A.ok(/Authority=Developer ID Application/.test(trust), 'trust proof rejects ad-hoc signatures');
 A.ok(/flags=\.\*runtime/.test(trust), 'trust proof requires hardened runtime');
 A.ok(/allow-jit/.test(trust), 'trust proof checks the bundled Node JIT entitlement');
+A.ok(/find "\$app\/Contents\/Resources\/node_modules" -type f -print0/.test(trust),
+  'trust proof scans the complete bundled native dependency tree');
+A.ok(/nested native dependency is not Developer ID signed/.test(trust),
+  'trust proof rejects unsigned or ad-hoc nested native dependencies');
+A.ok(/nested native dependency has no secure timestamp/.test(trust),
+  'trust proof rejects nested native dependencies without secure timestamps');
 A.ok(/notarization-input-\$\{\{ matrix\.target \}\}/.test(yml),
   'exact submitted DMG and submission id are preserved as a retryable artifact');
 A.ok(/notarize-macos:[\s\S]*?needs: build[\s\S]*?timeout-minutes: 350/.test(yml),
