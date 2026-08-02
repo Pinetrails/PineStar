@@ -69,6 +69,7 @@ function makeCodeTools(deps) {
       let calls = 0, settled = false, stderr = '';
       const finishKill = () => { if (!child.killed) { try { child.kill(); } catch (_) {} } };
       const parentSignal = ctx.signal;
+      const nestedController = new AbortController();
 
       return await new Promise((resolve, reject) => {
         let timer = null;
@@ -81,6 +82,7 @@ function makeCodeTools(deps) {
           settled = true;
           clearTimeout(timer);
           if (parentSignal) { try { parentSignal.removeEventListener('abort', onAbort); } catch (_) {} }
+          if (!nestedController.signal.aborted) nestedController.abort();
           finishKill();
           if (err) reject(err); else resolve(value);
         };
@@ -104,7 +106,9 @@ function makeCodeTools(deps) {
               return;
             }
             try {
-              const result = await ctx.composeDispatch({ name: msg.name, args: msg.args || {} }, { parentCallId: ctx.callId, sequence: calls });
+              const result = await ctx.composeDispatch({ name: msg.name, args: msg.args || {} }, {
+                parentCallId: ctx.callId, sequence: calls, signal: nestedController.signal
+              });
               if (!settled) safeSend({ type: 'tool_result', id: msg.id, ok: true, result });
             } catch (e) {
               if (!settled) safeSend({ type: 'tool_result', id: msg.id, ok: false, error: String((e && e.message) || e) });
