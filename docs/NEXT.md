@@ -2231,3 +2231,34 @@ passes as publisher OpenJS Foundation with a DigiCert timestamp. The tagged rele
 now fails closed on missing Azure credentials and checks all three timestamped signatures
 before staging. A clean Windows SmartScreen/Defender launch remains the final reputation
 proof; a valid new publisher can still show a reputation prompt during early downloads.
+
+# IN PROGRESS 2026-08-01 — CONNECTOR RELIABILITY TO 9 (`agent/connector-reliability-9`)
+
+Commit `ac201720` lands Lanes 1–5: desktop restart now injects custom-provider credentials and
+provider-specific backup pools; connector config/OAuth/client state is one versioned,
+read-back-verified envelope; removal commits that envelope before touching runtime state; every
+MCP OAuth discovery/DCR/token leg has a bounded deadline and composed cancellation; candidate key
+and backup-pool replacement probes first and commits once; backup pools are explicitly provider
+scoped in browser storage, keychain storage, runtime state, and restart environment injection.
+
+Evidence on the exact clean source commit: `test:fast` 495/495 GREEN; full `test:http` GREEN
+(57 boot suites, sidecar 463 assertions, MCP E2E 79); Rust `cargo check` GREEN; real OpenRouter wire
+certificate PASS for models, chat, tools, cancellation, and cost. The locally installed Windows
+candidate (`sha256 3fe340dcc99dfcda9f0d445b03b20987475bc806b98bb750b493898b104aa728`)
+passed the provenance-bound installed smoke 9/9. A controlled provider driven through that running
+installed app passed: correct key; wrong replacement with the old key still live; 429 replacement
+with the old key still live; provider switch + restoration; custom-only backup pool with OpenRouter
+still empty; real desktop restart with the custom key/base/pool re-injected; post-restart revocation
+failed closed. The temporary custom key, base URL, pool, and mock server were then removed, and a
+second desktop restart proved the empty state persisted; the final installed smoke remained GREEN.
+
+**NOT YET A 9/10 RELEASE VERDICT.** The remaining Lane 6 row is a real installed-app MCP OAuth
+authorization callback followed by forced access-token expiry and refresh against an account the
+operator can authorize. Deterministic tests prove callback exchange, skew-aware expiry, refresh-token
+retention, response-body deadlines, cancellation, transactional persistence, and connector removal;
+the seeded live app also exposed and cancelled the real Notion discovery flow, but no provider account
+was authorized in this lane, so an installed callback/refresh claim would be fabricated. The local
+desktop bundle is also unsigned because updater signing material is not present in this worktree's
+environment; it is a certification candidate, not a public release artifact. Next: authorize one
+disposable OAuth connector account in the installed candidate, force expiry, observe the refresh and
+restart read-back, then build through the signed release train and merge only after those receipts pass.
