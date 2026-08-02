@@ -29,6 +29,7 @@ const { makeTodoTool } = require('../sidecar/tools/builtin/todo.js');
 const { makeRecallTool } = require('../sidecar/tools/builtin/recall.js');
 const { makeToolSearchTool } = require('../sidecar/tools/builtin/toolsearch.js');
 const { makeCodeTools } = require('../sidecar/tools/builtin/code.js');
+const { makeStationInspectTool } = require('../sidecar/tools/builtin/station-inspect.js');
 const { makeTranscriptStore } = require('../sidecar/transcriptstore.js');
 const { makeSkillTools } = require('../sidecar/tools/builtin/skills.js');
 const { makeSkillStore } = require('../sidecar/skillstore.js');
@@ -100,6 +101,7 @@ const fixture = {
   makeTodoTool({ store: new Map() }).register(registry);
   makeToolSearchTool({ registry }).register(registry);   // tool.search — rides the computer object, so it is in every office
   makeCodeTools({}).register(registry);
+  makeStationInspectTool({ inspect: () => ({ schemaVersion: 1 }) }).register(registry);
   makeRecallTool({ transcriptStore: makeTranscriptStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
   makeSkillTools({ store: makeSkillStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
   // QUEST V2 §B: quest.update rides the COMPUTER (the 'quest' freebie), present in this office. In-memory questStore
@@ -133,7 +135,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['browser.attach', 'browser.back', 'browser.click', 'browser.console', 'browser.detach', 'browser.dialog', 'browser.drag', 'browser.emulate', 'browser.eval', 'browser.find', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.intercept', 'browser.login', 'browser.navigate', 'browser.network', 'browser.pdf', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'browser.wait', 'channel.send', 'channel.targets', 'code.run', 'connectors.list', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'tool.search', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
+  const EXPECTED = ['browser.attach', 'browser.back', 'browser.click', 'browser.console', 'browser.detach', 'browser.dialog', 'browser.drag', 'browser.emulate', 'browser.eval', 'browser.find', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.intercept', 'browser.login', 'browser.navigate', 'browser.network', 'browser.pdf', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'browser.wait', 'channel.send', 'channel.targets', 'code.run', 'connectors.list', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'station.inspect', 'todo', 'tool.search', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 

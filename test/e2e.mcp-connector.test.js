@@ -73,7 +73,10 @@ function startMockOpenRouter() {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: [{ id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }] }));
+        res.end(JSON.stringify({ data: [
+          { id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] },
+          { id: 'test/no-tools', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: [] }
+        ] }));
         return;
       }
       if (req.url.indexOf('/chat/completions') >= 0) {
@@ -85,13 +88,23 @@ function startMockOpenRouter() {
           const toolResults = msgs.filter(m => m && m.role === 'tool').length;
           const hasToolResult = toolResults > 0;
           const hasMcpTool = (parsed.tools || []).some(t => t && t.function && t.function.name === 'mcp__demo__lookup');
+          const hasInspectTool = (parsed.tools || []).some(t => t && t.function && t.function.name === 'station_inspect');
+          const wantsInspect = msgs.some(m => m && m.role === 'user' && String(m.content || '').indexOf('SELF_INSPECT') >= 0);
+          const messageContent = m => typeof (m && m.content) === 'string' ? m.content : JSON.stringify((m && m.content) || '');
+          const hasInspectResult = msgs.some(m => m && m.role === 'tool' && /\"schemaVersion\":1/.test(messageContent(m)) && /\"scheduler\":/.test(messageContent(m)));
           // A conversation carrying this sentinel asks for FOUR connector calls in a row — the shape of the
           // reported repeated-approval bug. Sentinel-gated so every other scenario in this file is untouched.
           const wantsMany = msgs.some(m => m && m.role === 'user' && String(m.content || '').indexOf('FOURLOOKUPS') >= 0);
           requests.push(parsed);
 
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          if (wantsMany && hasMcpTool && toolResults < 4) {
+          if (wantsInspect && hasInspectTool && !hasInspectResult) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'station_inspect_1', type: 'function', function: { name: 'station_inspect', arguments: '{}' } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ finish_reason: 'tool_calls', delta: {} }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
+          } else if (wantsInspect && hasInspectResult) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Harness snapshot checked.' } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
+          } else if (wantsMany && hasMcpTool && toolResults < 4) {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'mcp_lookup_' + toolResults, type: 'function', function: { name: 'mcp__demo__lookup', arguments: JSON.stringify({ query: 'asset-' + toolResults }) } }] } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ finish_reason: 'tool_calls', delta: {} }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
           } else if (!hasToolResult && hasMcpTool) {
@@ -271,6 +284,43 @@ async function readNdjson(res) {
     const listed = await (await fetch(B + '/api/connectors', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok((listed.connectors || []).some(c => c.id === 'demo' && c.tools && c.tools.indexOf('lookup') >= 0), '/api/connectors lists the discovered MCP tool');
 
+    // HARNESS SELF-KNOWLEDGE: plant all three mutable sources, then make a REAL /api/run call the
+    // always-present station.inspect tool. The returned bytes must agree with the same live stores the
+    // APIs above use — not a prompt summary or scripted fixture inside the tool.
+    const cronCreate = await fetch(B + '/api/cron', {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: 'Inspect proof', prompt: 'report station health', schedule: 'every 1h', agentId: 'mcp-agent', model: 'test/model', provider: 'openrouter' })
+    });
+    A.eq(cronCreate.status, 200, 'planted one real routine for station.inspect');
+    const failedRun = await fetch(B + '/api/run', {
+      method: 'POST', headers,
+      body: JSON.stringify({ key: 'sk-or-v1-mcp-fake', model: 'test/no-tools', agentId: 'inspect-agent', streamId: 'inspect-fail', isTask: true, messages: [{ role: 'user', content: 'plant one diagnostic failure' }] })
+    });
+    await failedRun.text();
+    const inspectRun = await fetch(B + '/api/run', {
+      method: 'POST', headers,
+      body: JSON.stringify({ key: 'sk-or-v1-mcp-fake', model: 'test/model', agentId: 'inspect-agent', streamId: 'inspect-live', isTask: true, messages: [{ role: 'user', content: 'SELF_INSPECT the harness; do not guess' }] })
+    });
+    A.eq(inspectRun.status, 200, 'real run admitted the self-inspection request');
+    await readNdjson(inspectRun);
+    const inspectRequest = llm.requests.find(r => (r.messages || []).some(m => m && m.role === 'tool' && /\"schemaVersion\":1/.test(String(m.content || '')) && /\"scheduler\":/.test(String(m.content || ''))));
+    const inspectAdvertised = llm.requests.filter(r => (r.messages || []).some(m => m && m.role === 'user' && String(m.content || '').indexOf('SELF_INSPECT') >= 0))
+      .flatMap(r => (r.tools || []).map(t => t && t.function && t.function.name).filter(Boolean));
+    const inspectTrace = llm.requests.filter(r => (r.messages || []).some(m => m && m.role === 'user' && String(m.content || '').indexOf('SELF_INSPECT') >= 0))
+      .map(r => (r.messages || []).map(m => ({ role: m.role, name: m.name || '', calls: (m.tool_calls || []).map(c => c && c.function && c.function.name), content: String(m.content || '').slice(0, 120) })));
+    A.ok(!!inspectRequest, 'the model received station.inspect and called it through the real wire-name boundary (advertised: ' + inspectAdvertised.join(',') + '; trace: ' + JSON.stringify(inspectTrace) + ')');
+    A.ok(llm.requests.some(r => (r.tools || []).some(t => t && t.function && t.function.name === 'station_inspect')),
+      'station.inspect is advertised under its provider-legal wire name');
+    const inspectToolMessage = ((inspectRequest && inspectRequest.messages) || []).find(m => m && m.role === 'tool' && /\"scheduler\":/.test(String(m.content || '')));
+    const inspectSnapshot = JSON.parse((inspectToolMessage && inspectToolMessage.content) || '{}');
+    A.eq(inspectSnapshot.scheduler.status, 'confirmed', 'scheduler section is confirmed');
+    A.eq(inspectSnapshot.scheduler.data.jobCount, 1, 'station.inspect saw the planted real routine');
+    A.ok(inspectSnapshot.connectors.data.connected.some(c => c.id === 'demo' && c.state === 'up'), 'station.inspect saw the planted live MCP connector');
+    A.ok(inspectSnapshot.diagnostics.data.errorCount >= 1, 'station.inspect saw the planted recorded provider error');
+    A.ok(inspectSnapshot.diagnostics.data.recentErrors.some(e => /does not support tool calls/.test(e.message)), 'the planted error detail reached the bounded diagnostic tail');
+    A.eq(inspectSnapshot.build.status, 'confirmed', 'the exact build section is confirmed from the version authority');
+    A.eq(inspectSnapshot.runtime.data.agentId, 'inspect-agent', 'the snapshot identifies the live inspecting agent');
+
     // ── connector CATALOG (GET /api/connectors/catalog): the curated one-click browse route ──
     const catRes = await fetch(B + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': token, Origin: B } });
     A.eq(catRes.status, 200, 'catalog route responds 200');
@@ -343,7 +393,8 @@ async function readNdjson(res) {
     A.ok(panel.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('').indexOf('MCP unavailable in autonomous run') >= 0, 'panel stream truthfully completes without MCP authority');
     A.ok(!mcp.calls.some(c => c.msg && c.msg.method === 'tools/call'), 'autonomous run never reaches the MCP server tool endpoint');
     A.ok(mcp.calls.some(c => c.headers && c.headers.authorization === 'Bearer mcp-secret-token'), 'MCP transport sent bearer token to the configured connector');
-    A.ok(llm.requests.every(r => !(r.tools || []).some(t => t.function && t.function.name === 'mcp__demo__lookup')), 'autonomous model request does not expose the unknown MCP tool');
+    const autonomousRequests = llm.requests.filter(r => (r.messages || []).some(m => m && m.role === 'user' && String(m.content || '').indexOf('use the demo connector lookup for alpha') >= 0));
+    A.ok(autonomousRequests.length > 0 && autonomousRequests.every(r => !(r.tools || []).some(t => t.function && t.function.name === 'mcp__demo__lookup')), 'autonomous model request does not expose the unknown MCP tool');
 
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'mcp-agent'), 5000, 'SSE run end');
 
