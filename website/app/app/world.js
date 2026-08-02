@@ -342,7 +342,9 @@ const World = (() => {
      head-turn still wins instantly. `odo` is the walk odometer in world units; assets.js drawBody converts it
      to a frame via a stride DERIVED from each skin's drawn height and frame count, so this stays skin-agnostic. */
   const DIR_A = { east: 0, south: Math.PI / 2, west: Math.PI, north: -Math.PI / 2 };
-  const TURN_RATE = 12;      // rad/s — a 90° corner takes ~130ms (≈8 frames) instead of one
+  const TURN_RATE = 9;       // rad/s CEILING for the facing slew (see the easing in stepGait)
+  const TURN_ACCEL_A = 55;   // rad/s² — the facing spins up and brakes instead of slewing flat
+  const TURN_FOOT_R = 4.2;   // world units from the pivot axis to the feet: a 90° pivot ≈ one stride
   const DIR_HYST = 0.13;     // rad (~7.5°) a bucket holds PAST its own boundary before handing over
   const ACCEL = 150;         // world units/s² — spools up to hero pace in ~0.23s, and brakes at the same rate
   const CORNER_LOOK = 2.5;   // world units: hand over to the next waypoint this early (see the walk blocks)
@@ -371,9 +373,20 @@ const World = (() => {
     const step = Math.min(d, b.spd * dt / 1000);
     if (d > 1e-4) {
       const turn = angNorm(Math.atan2(dy, dx) - b.faceA);
-      const cap = TURN_RATE * dt / 1000;
-      b.faceA = angNorm(b.faceA + (Math.abs(turn) <= cap ? turn : Math.sign(turn) * cap));
-      b.odo += step;
+      const s = dt / 1000, remain = Math.abs(turn);
+      // Angular ACCELERATION, not a flat rate — the same easing the linear speed gets above. A
+      // constant slew made a cornering body read as a turntable: it pivoted at a machine-perfect
+      // rate while its legs stood still. Brake term arrives at the heading at rest.
+      const target = Math.min(TURN_RATE, Math.sqrt(2 * TURN_ACCEL_A * remain));
+      const curW = b.angW || 0;
+      b.angW = curW < target ? Math.min(target, curW + TURN_ACCEL_A * s)
+                             : Math.max(target, curW - TURN_ACCEL_A * s);
+      const swept = Math.min(remain, b.angW * s);
+      b.faceA = angNorm(b.faceA + Math.sign(turn) * swept);
+      // The feet also travel when the body pivots — they sweep an arc about the stance centre. Adding
+      // that arc to the stride odometer keeps the legs cycling through a corner instead of freezing
+      // mid-stride while the sprite rotates, which is what made cornering look like sliding.
+      b.odo += step + swept * TURN_FOOT_R;
     }
     b.dir = b.faceDir = bucketDir(b.faceA, b.dir);
     return step;
