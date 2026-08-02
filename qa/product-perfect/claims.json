@@ -18,11 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-<<<<<<< HEAD
-    "sourceCommit": "feee5263cdb6b868f4c9d2a88f2bbdb59ef16228",
-=======
-    "sourceCommit": "b7e18ce81f63bc80aae8c33812182203bfb7dc8e",
->>>>>>> feat/harness-backend
+    "sourceCommit": "4a085dca133f0979dbe06c0ee48c7255caf5f56b",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
