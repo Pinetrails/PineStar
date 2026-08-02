@@ -4,10 +4,10 @@ slug: e-stop-silences-the-channel-reply-path-via-the-s
 title: E-STOP silences the channel reply path via the supersede flag, so a deliberately stopped run is indistinguishable from a crashed bot on the phone
 surface: channels
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/channels
-fix: 
+fix: 96fe108d
 ---
 
 # E-STOP silences the channel reply path via the supersede flag, so a deliberately stopped run is indistinguishable from a crashed bot on the phone
@@ -34,4 +34,4 @@ _Found by the `sweep/channels` lane, 2026-07-28. Finder confidence: high. Severi
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Confirmed and fixed in `96fe108d`. Channel runs now distinguish E-STOP from ordinary supersession: both abandon stale partial output, but E-STOP delivers one explicit stopped notice while a newer-message supersede remains silent. The real hub/kill path is locked by `channels.hub.test.js` (124 assertions).

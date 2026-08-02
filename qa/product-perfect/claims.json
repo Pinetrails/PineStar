@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b38aa0fb2d65ccd83ee43e5693bf3eff63f08417",
+    "sourceCommit": "8e68bf5c3522538e41d008101e63befc3f099efa",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
@@ -83,8 +83,8 @@
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 16118,
-        "sha256": "225f9a0993751b4405d7c3fc58dfe4a147cec3f9151236aa66fb208a524e761f"
+        "bytes": 16225,
+        "sha256": "7b855fa25a7eae68179a506cb69d207bb7a7f3ff2fa802acd0f37dc399626201"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 473262,
-        "sha256": "569751f5e007a92b51e8edcef7c25a16b1dbb91d2eedd92db152cfc383d00c9b"
+        "bytes": 473389,
+        "sha256": "50205a6019ea62988e1a9f1c029d9de9a235a95d5d1c0de3d09d0fc25e5294ab"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -778,13 +778,13 @@
       },
       {
         "path": "frontend/app/widgets.js",
-        "bytes": 29411,
-        "sha256": "fccd1c9a90eb20c9d128aad636b19f4dc99c830459fd6069d95d34c82a9fbbf5"
+        "bytes": 29694,
+        "sha256": "062af23cfcc47d682a314131b0e6bc4f311aea3f86c32363c864b647a7561642"
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 79346,
-        "sha256": "4ee0725d5a22f2096eeeb9eacc882ed9dcfa9b03c1b6976d89cd51c43d5a2c60"
+        "bytes": 79954,
+        "sha256": "fee2e7ed69702f3899e0ce55185a7501a8cc2712370825bf8770cfd7616650d7"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 34346,
-        "sha256": "9a0f4c64aa8095f9728474d780dc47e89ae5c45fc0b7e2ded6a13f69fe3a5fb9"
+        "bytes": 34580,
+        "sha256": "c6ec3a5421fb01dabca68f2c0298f6e05cfe2086910368659a3f9d8e0507e439"
       },
       {
         "path": "frontend/app/windows/trophies.js",

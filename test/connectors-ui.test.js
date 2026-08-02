@@ -154,6 +154,10 @@ function fakeStack(tools) {
   A.ok(/\/api\/connectors\/refresh/.test(station), 'RELOAD hits the refresh endpoint');
   A.ok(/function badge/.test(station) && /connected/.test(station) && /error/.test(station), 'status badge (green/amber/red) present');
   A.ok(/mc-tools/.test(station), 'discovered-tools preview present');
+  A.ok(/act === 'remove'[\s\S]{0,500}if \(!r\.ok\)/.test(station),
+    'connector delete checks HTTP success before claiming removal');
+  A.ok(/postJSON\('\/api\/connectors', \{ id, transport: c\.transport, enabled: cb\.checked \}\)[\s\S]{0,250}if \(!r\.ok\)/.test(station),
+    'connector enable toggles reject and visibly revert a refused HTTP write');
 
   // beginner-first: inline help under fields + a discoverable send shape (transport is passed)
   A.ok(/class="mc-hint"/.test(station), 'one-line inline help under fields present');

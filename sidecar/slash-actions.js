@@ -68,6 +68,7 @@ function makeSlashActions(deps) {
   // The scheduler being DISARMED is the single most confusing state in this subsystem: routines exist, look
   // healthy, and never fire. Every routine readout that could be misread as "this will run" carries this.
   function armedNote() {
+    if (typeof cron.halted === 'function' && cron.halted()) return " Routines are STOPPED by the Commander's E-STOP, so nothing will fire — /cron on to resume them.";
     if (typeof cron.armed !== 'function') return '';
     return cron.armed() ? '' : ' Routines are NOT armed right now, so nothing will fire — /cron on to arm them.';
   }

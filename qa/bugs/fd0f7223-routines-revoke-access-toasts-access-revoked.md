@@ -4,10 +4,10 @@ slug: routines-revoke-access-toasts-access-revoked
 title: ROUTINES › REVOKE ACCESS toasts "access revoked" (green) on a 4xx/5xx — bare `fetch` resolves, so the unattended grant survives its own success message
 surface: world
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/world
-fix: 
+fix: 3f0d1205
 ---
 
 # ROUTINES › REVOKE ACCESS toasts "access revoked" (green) on a 4xx/5xx — bare `fetch` resolves, so the unattended grant survives its own success message
@@ -34,4 +34,4 @@ _Found by the `sweep/world` lane, 2026-07-28. Finder confidence: high. Severity 
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Confirmed and fixed in `3f0d1205`. REVOKE ACCESS checks the HTTP status before changing the row or emitting success; non-2xx responses retain the grant display and surface an error. The routines source regression is green alongside the real route/store suites.

@@ -4,10 +4,10 @@ slug: routine-create-s-default-arm
 title: routine.create's default `arm:true` bypasses the documented single resume seam and clears the durable cron E-STOP — the workshop auto-arm path at index.js:8214
 surface: autonomy
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/autonomy
-fix: 
+fix: 6afeb9ee
 ---
 
 # routine.create's default `arm:true` bypasses the documented single resume seam and clears the durable cron E-STOP — the workshop auto-arm path at index.js:8214
@@ -34,4 +34,4 @@ _Found by the `sweep/autonomy` lane, 2026-07-28. Finder confidence: medium. Seve
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Confirmed and fixed in `6afeb9ee`. Model-facing routine creation may preserve/set scheduler arm intent, but it cannot clear a durable E-STOP or restart the timer. Tool responses also expose the halted state instead of describing the routine as runnable. The routine-tool and lifecycle halt regressions pass.

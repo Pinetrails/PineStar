@@ -1,5 +1,24 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-01 — ROUTINES P0-P2 CLOSURE (`agent/routines-closure`)
+
+READY TO MERGE. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,
+`300b34ab`, `600f4982`, and `aa9cd1cd` are now closed in the canonical QA ledger. This
+closure completes truthful E-STOP state across the ROUTINES panel/countdowns, widgets, `/cron`,
+AutoJobStore, and model-facing routine output; preserves the durable stop across background
+beliefs-only page-load sync; retains explicit resume paths; keeps first cron fire aligned with the
+host timezone; gives halted channel runs one explicit stop notice; and prevents revoke/delete/toggle
+success claims on non-2xx responses.
+
+Verification on the current trunk-based candidate: focused routine/cron/halt/channel/connector tests
+green (including 585 assertions before the page-load escape was discovered); restart-level E-STOP
+HTTP regressions green; `qa-product-perfect-claims.test.js` 64/64; `test:fast` 493/493; full
+`test:http` green (sidecar 459, cron API 79, lifecycle 59, route coverage 75). Seeded Chromium proved
+the stopped banner, `next —`, widget `stopped · E-STOP`, `/cron` resume guidance, and the
+model-facing E-STOP note. A reload initially exposed the beliefs-only resume escape; the final code
+and two real-host suites prove it stays halted across that sync and restart. No external message,
+provider spend, push, PR, deploy, publish, credential, or production-data change was performed.
+
 ## 2026-08-01 — UNIFIED COMMANDER RECOMMENDATIONS (`agent/recommendation-unify`)
 
 READY TO MERGE. Three scoped commits implement the recommendation-system audit actions: `475aa6d3`
@@ -125,8 +144,8 @@ beginner to understand — users are asking a lot of questions; (2) fix as many 
 with evidence re-grepped against trunk `129801b1`: **[docs/PLAN_v0.9.0.md](PLAN_v0.9.0.md)**.
 
 Headlines a lane should know before claiming work from it:
-- `qa/bugs/` is stale in the *fixed* direction — 25 of its 28 `status: open` records were closed
-  by merge `0a6a14e1` and never flipped. Only `4962c3ad`, `e05cdba8`, `f42a5f46` are really open.
+- The six routine/cron P0-P2 records from the July sweep are reconciled as fixed by the closure lane
+  above. Treat `qa/BUGS.md` (generated from the per-bug files) as the current backlog authority.
 - 10 `agent/*` lanes are ahead of trunk carrying built, gated fixes. Merge order in the plan;
   `agent/quality-loop-0730f` (E-STOP does not survive a page reload) is the worst live defect.
 - `test:fast` ran 473/473 green at `129801b1` on 2026-07-31 while the Guardian recorded
