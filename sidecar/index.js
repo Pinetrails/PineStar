@@ -130,6 +130,8 @@ const { makeProjectBless, projectScopeLine, makeProjectInstructions } = require(
 const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
+const { makeEnvironmentProxyFetch } = require('./channels/proxy-fetch.js');
+const telegramOwnerPairing = require('./channels/owner-pairing.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub, menuCommands } = require('./channels/hub.js');
 const { makePromptRegistry } = require('./channels/prompts.js');   // C6: the bounded token→meaning map behind inline keyboards
@@ -2440,7 +2442,9 @@ const channelWarn = Object.create(null);
 // is retried immediately, and if it still fails we log loudly + raise the panel warning instead of pretending.
 function persistOwnerClaim(id, uid) {
   const cur = (channelSecrets && channelSecrets[id]) || {};
-  const patch = {}; patch[id] = Object.assign({}, cur, { ownerId: String(uid) });
+  const next = Object.assign({}, cur, { ownerId: String(uid) });
+  delete next.ownerPairing;   // enrollment code is single-use and must never survive a successful claim
+  const patch = {}; patch[id] = next;
   channelSecrets = Object.assign({}, channelSecrets, patch);
   const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);   // one immediate retry
   if (persisted) {
@@ -2450,6 +2454,18 @@ function persistOwnerClaim(id, uid) {
     channelWarn[id] = 'owner binding not saved to disk — it will reset on restart (the next first DM re-claims the bot)';
     console.error('  ! ' + id + ' owner claimed (userId ' + String(uid) + ') but the binding could NOT be persisted — it resets on restart');
   }
+}
+// A local pairing request persists only a salted verifier. The raw code goes straight back to the authenticated
+// desktop caller and is deliberately never written to status, logs, or the bot/model transcript.
+function telegramOwnerAdmission(record, message) {
+  const text = String(message && message.text || '');
+  const match = /^\/pair\s+([^\s]+)\s*$/i.exec(text);
+  if (!match || !telegramOwnerPairing.verify(record && record.ownerPairing, match[1], Date.now())) return false;
+  return { allow: true, consume: true, reply: 'Owner paired. This Telegram DM is now the trusted control channel.' };
+}
+function ownerPairingStatus(record) {
+  const state = record && record.ownerPairing;
+  return { active: telegramOwnerPairing.active(state, Date.now()), expiresAt: telegramOwnerPairing.active(state, Date.now()) ? Number(state.expiresAt) : 0 };
 }
 // Resolve the effective bot token for a channel: an explicit value (a fresh paste) wins; else the keychain-
 // injected/live-pushed runtime token; else — bare sidecar only — the token saved in the plaintext record.
@@ -5605,7 +5621,7 @@ const checkpointEmitValidated = makeEmitter(checkpointBus, e => console.warn('[c
 const checkpointEmit = (name, payload) => { try { return checkpointEmitValidated(name, redact(payload)); } catch (_) { return false; } };
 
 let telegram = null;                                    // { adapter, hub } when connected, else null
-let telegramStatus = { connected: false, state: 'down', detail: '' };
+let telegramStatus = { connected: false, state: 'down', detail: '', delivery: { state: 'unknown', detail: '', at: 0 } };
 // The station bot's own @username, learned from getMe() at connect. The group mention gate (channels/adapter.js)
 // reads it LAZILY through a function, so it arms as soon as this is populated and never captures the empty
 // startup value. Empty = "we don't know our own name", which the gate treats as "do not silence the room".
@@ -5646,6 +5662,11 @@ function resolveReasoningEffort(provider, value) {
   return normalizeReasoningEffort(value || defaultReasoningEffortForProvider(provider));
 }
 
+// Keep proxy routing narrow: Bot API calls honor the standard proxy environment variables, while provider fetches
+// remain untouched until their own transport has an audited routing path. A malformed proxy fails this channel's
+// request closed instead of leaking around a corporate egress policy.
+function telegramTransportFetch() { return makeEnvironmentProxyFetch(globalThis.fetch, process.env); }
+
 function startTelegram(token, key, model, agentCfg) {
   stopTelegram();
   const cfg = agentCfg || {};
@@ -5661,7 +5682,8 @@ function startTelegram(token, key, model, agentCfg) {
   channelSecrets = Object.assign({}, channelSecrets, { telegram: {
     token: token, key: key, model: model, provider: provider, baseUrl: cfg.baseUrl || cfg.base_url || '', reasoningEffort: reasoningEffort, enabled: true,
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
-    ownerId: cfg.ownerId || prev.ownerId || undefined
+    ownerId: cfg.ownerId || prev.ownerId || undefined,
+    ownerPairing: cfg.ownerPairing || prev.ownerPairing || undefined
   } });
   const secretsPersisted = saveChannelSecrets(channelSecrets);   // read-back-proven; surfaced by the connect route
   let adapterRef = null;
@@ -5699,7 +5721,7 @@ function startTelegram(token, key, model, agentCfg) {
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: the fallback line carries the stored recommendation
     groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
-    newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
+    newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096, textBatchWaitMs: 350,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
@@ -5726,16 +5748,12 @@ function startTelegram(token, key, model, agentCfg) {
       catch (e) { return { ok: false, reason: (e && e.message) || 'transcribe failed' }; }
     },
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
-    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
-    // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
-    // configured > tg_<chatId>). This one-shot slot feeds the work-item intercept below, so the crate on the
-    // belt and the queue HUD attribute to the SAME agent that actually works — never a parallel guess.
-    onResolved: (info) => { tgResolved = info; }
+    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
   });
-  let tgResolved = null;   // set synchronously by onResolved during hub.onInbound's first slice; consumed per message
   const adapter = makeTelegramAdapter({
-    fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
-    // owner-only admission: the first DM claims the bot; persist that userId so it survives restarts.
+    fetch: telegramTransportFetch(), token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
+    // Owner-only admission: a fresh bot requires a locally issued /pair code; existing persisted owners
+    // remain valid across restarts. The adapter consumes the successful pairing message before the hub sees it.
     // GROUP DISCIPLINE (adapter.js): only run on a group message that ADDRESSES us, never answer another bot.
     // Read lazily — the username is resolved by getMe below, after this object is built.
     botUsername: () => stationBotUsername,
@@ -5755,44 +5773,35 @@ function startTelegram(token, key, model, agentCfg) {
     },
     ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
     onOwnerClaim: (uid) => { try { persistOwnerClaim('telegram', uid); } catch (_) {} },
+    ownerAdmission: (message) => telegramOwnerAdmission((channelSecrets && channelSecrets.telegram) || {}, message),
     onInbound: (m) => {
       // WORK-ITEM INTERCEPT: an admitted message becomes a box that rides the player-laid belts to the
       // agent. Pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of belts.
-      // The agentId comes from the hub's onResolved hook (the ONE resolver: floor plan > /talk binding >
-      // configured > tg_<chatId>), so the crate/HUD attribute to the agent that ACTUALLY runs. The hook fires
-      // in onInbound's first synchronous slice (before any await, so before the run starts); /commands and
-      // refused messages never fire it — no more phantom crates for /agents. If the hub ever moves resolution
-      // behind an await, tgResolved stays null here and we honestly place NO crate (never a wrong one).
-      tgResolved = null;
-      const settled = Promise.resolve(hub.onInbound(m))
-        .catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e));
+      // A per-message resolver hook returns the EXACT agentId the run executes (floor plan > /talk binding >
+      // configured > tg_<chatId>), so the crate/HUD attribute to the agent that ACTUALLY runs. It fires before
+      // the asynchronous run begins; commands and refused messages never fire it, so no phantom crates appear.
       let agentId = '', workitemId = '';
       const chatKey = String((m && m.chatId) || '');
-      try {
-        // BELT IS WORK-ONLY (Andrew's ruling 2026-07-05): only a real TASK directive rides in as a crate.
-        // Pure chat ("hello") still gets its reply + dish pulse (channel.inbound) but leaves the floor alone —
-        // no crate, no queue bump, no delivered beat. Same classifier that gates the desk walk.
-        if (tgResolved && String(tgResolved.chatId) === chatKey && tgResolved.agentId && tgResolved.isTask) {
-          agentId = String(tgResolved.agentId);
-          workitemId = crypto.randomUUID();
-          const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
-          // a prior in-flight item for THIS CHAT is about to be ABORTED by the hub — drop its box off the belt
-          // (its agent may differ: floor routing sorts consecutive messages of one chat to different bays).
-          const prior = activeItem.get(chatKey);
-          if (prior) chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() });
-          activeItem.set(chatKey, { agentId, workitemId });
-          const depth = bumpQueue(agentId, +1);
-          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
-          chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
-        } else if (tgResolved && String(tgResolved.chatId) === chatKey) {
-          // a NON-task message still ABORTS this chat's in-flight run (hub: one run per conversation) — drop
-          // the aborted task's crate honestly so its settle can't read as delivered. Its own settle handler
-          // still owns the queue decrement (exactly once).
-          const prior = activeItem.get(chatKey);
-          if (prior) { activeItem.delete(chatKey); chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() }); }
-        }
-      } catch (e) { console.warn('[telegram] intake intercept error:', (e && e.message) || e); }
-      tgResolved = null;
+      const recordResolved = (info) => {
+        try {
+          if (!info || String(info.chatId) !== chatKey) return;
+          if (info.agentId && info.isTask) {
+            agentId = String(info.agentId); workitemId = crypto.randomUUID();
+            const prior = activeItem.get(chatKey);
+            if (prior) chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() });
+            activeItem.set(chatKey, { agentId, workitemId });
+            const depth = bumpQueue(agentId, +1);
+            const preview = String(info.text || '').replace(/\s+/g, ' ').slice(0, 40);
+            chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
+            chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+          } else {
+            const prior = activeItem.get(chatKey);
+            if (prior) { activeItem.delete(chatKey); chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() }); }
+          }
+        } catch (e) { console.warn('[telegram] intake intercept error:', (e && e.message) || e); }
+      };
+      const settled = Promise.resolve(hub.onInbound(m, { onResolved: recordResolved }))
+        .catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e));
       settled.then(() => {
         if (!agentId) return;
         const d = bumpQueue(agentId, -1);
@@ -5814,19 +5823,24 @@ function startTelegram(token, key, model, agentCfg) {
       // Truthful telemetry: CONNECTED only when the transport actually proved 'up' AND we still hold a live adapter.
       // The adapter emits 'up' on its FIRST successful poll round-trip (never optimistically), so this never claims
       // connected before proof; a fatal/transient error drops it honestly instead of the old assume-up.
-      telegramStatus = { connected: state === 'up' && !!telegram, state: state, detail: (s && s.detail) || '' };
+      telegramStatus = { connected: state === 'up' && !!telegram, state: state, detail: (s && s.detail) || '', delivery: telegramStatus.delivery || { state: 'unknown', detail: '', at: 0 } };
       hub.onStatus(s);
+    },
+    onDelivery: (d) => {
+      telegramStatus = Object.assign({}, telegramStatus, { delivery: {
+        state: d && d.ok ? 'up' : 'down', detail: d && d.ok ? '' : String((d && d.detail) || 'send failed'), at: Date.now()
+      } });
     }
   });
   adapterRef = adapter;
   telegram = { adapter: adapter, hub: hub };
   // start HONEST: 'connecting' (not an optimistic 'up') — the adapter's onStatus flips it to 'up' the moment its
   // first getUpdates round-trip succeeds, or to 'error' if the token is bad. The panel derives CONNECTED from this.
-  telegramStatus = { connected: false, state: 'connecting', detail: '' };
+  telegramStatus = { connected: false, state: 'connecting', detail: '', delivery: { state: 'unknown', detail: '', at: 0 } };
   /* Learn our own @username so the GROUP MENTION GATE can answer "was I addressed?". Best-effort and
      non-blocking: the adapter reads this lazily, so the gate arms the moment getMe answers and until then
      admits everything (we must never silence a room because we could not prove we were not addressed). */
-  Promise.resolve(makeTelegramTransport({ fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE }).getMe())
+  Promise.resolve(makeTelegramTransport({ fetch: telegramTransportFetch(), token: token, apiBase: TELEGRAM_API_BASE }).getMe())
     .then(me => {
       if (me && me.ok && me.username) stationBotUsername = String(me.username);
       if (me && me.ok && me.name) stationBotName = String(me.name);
@@ -5846,8 +5860,14 @@ function startTelegram(token, key, model, agentCfg) {
 // it had to move this off the connect path entirely after slow calls blew its connect timeout).
 function publishCommandMenu(adapter, label) {
   if (!adapter || typeof adapter.setCommands !== 'function') return;
-  Promise.resolve(adapter.setCommands(menuCommands()))
-    .then((r) => { if (r && r.ok === false) console.warn('[' + label + '] command menu not published: ' + (r.error || 'unknown')); })
+  // Telegram resolves its most-specific command scope first. Publish the same table for default + all groups so
+  // a forum topic never loses the command menu to an older/narrower BotFather scope. Other adapters ignore the
+  // optional scope argument and keep their original single publish.
+  Promise.all([
+    Promise.resolve(adapter.setCommands(menuCommands())),
+    Promise.resolve(adapter.setCommands(menuCommands(), { scope: { type: 'all_group_chats' } }))
+  ])
+    .then((results) => { for (const r of results) if (r && r.ok === false) console.warn('[' + label + '] command menu not published: ' + (r.error || 'unknown')); })
     .catch(() => {});
 }
 function stopTelegram() {
@@ -5855,7 +5875,7 @@ function stopTelegram() {
   if (telegram && telegram.adapter) telegramStatusLine(telegram.adapter, false);
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
   telegram = null;
-  telegramStatus = { connected: false, state: 'down', detail: '' };
+  telegramStatus = { connected: false, state: 'down', detail: '', delivery: { state: 'unknown', detail: '', at: 0 } };
 }
 
 /* ---- MULTI-BOT TELEGRAM: agent-bound bot profiles ------------------------------------------------------
@@ -5880,6 +5900,14 @@ function saveTelegramBotRecord(botId, patch) {   // merge-persist ONE bot's reco
   channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
   return saveChannelSecrets(channelSecrets);
 }
+function persistTelegramBotOwnerClaim(botId, uid) {
+  const all = Object.assign({}, telegramBotRecords());
+  const next = Object.assign({}, all[botId] || {}, { ownerId: String(uid) });
+  delete next.ownerPairing;
+  all[botId] = next;
+  channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
+  return saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+}
 // chat-record namespace wrapper: '<botId>|<chatId>' keys so two bots DM'd by the same user never cross-bind;
 // the REAL chatId + this instance's channel ride ON the record so the notifier can still address the chat.
 function makeBotScopedStore(botId) {
@@ -5897,7 +5925,7 @@ function startTelegramBot(botId) {
   const token = String(rec.token || '');
   if (!token) throw new Error('bot ' + botId + ' has no saved token');
   let adapterRef = null;
-  const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '' } };
+  const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '', delivery: { state: 'unknown', detail: '', at: 0 } } };
   // hoisted: the adapter's mention gate reads the SAME per-bot store the hub's /mention writes to. Two separate
   // instances would leave the command reporting success while the gate never changed.
   const botStore = makeBotScopedStore(botId);
@@ -5927,7 +5955,7 @@ function startTelegramBot(botId) {
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),
     groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
-    newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
+    newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096, textBatchWaitMs: 350,
     // HARD-LOCK: this bot IS its bound agent — resolveAgent (top of the hub's resolution order) always answers
     // it, so /talk bindings and floor routing can never quietly change who @ThisBot is. No roster/setModel
     // surface: /agents and /model answer their honest "not available here" fallback.
@@ -5958,7 +5986,7 @@ function startTelegramBot(botId) {
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
-    fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
+    fetch: telegramTransportFetch(), token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission per bot (trust-on-first-use): each contact is claimed independently.
     // GROUP DISCIPLINE (adapter.js): this bot's own  is already persisted on its record.
     // recOf() re-reads the LIVE record, so a bot renamed in BotFather (and re-probed by getMe on the next
@@ -5980,16 +6008,22 @@ function startTelegramBot(botId) {
     },
     ownerUserId: rec.ownerId || '',
     onOwnerClaim: (uid) => {
-      const ok = saveTelegramBotRecord(botId, { ownerId: String(uid) });
+      const ok = persistTelegramBotOwnerClaim(botId, uid);
       console.log('  · telegram bot ' + (rec.username ? '@' + rec.username : botId) + ' owner claimed (userId ' + String(uid) + ')' + (ok ? '' : ' — NOT persisted; re-claims on restart'));
     },
+    ownerAdmission: (message) => telegramOwnerAdmission(recOf(), message),
     onInbound: (m) => { Promise.resolve(hub.onInbound(m)).catch(e => console.warn('[telegram:' + botId + '] inbound error:', (e && e.message) || e)); },
     onCallback: hub.onCallback,
     onMembership: hub.onMembership,   // same unreachable consumer, per bot
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
-      entry.status = { connected: state === 'up' && telegramBots.get(botId) === entry, state: state, detail: (s && s.detail) || '' };
+      entry.status = { connected: state === 'up' && telegramBots.get(botId) === entry, state: state, detail: (s && s.detail) || '', delivery: entry.status.delivery || { state: 'unknown', detail: '', at: 0 } };
       hub.onStatus(s);
+    },
+    onDelivery: (d) => {
+      entry.status = Object.assign({}, entry.status, { delivery: {
+        state: d && d.ok ? 'up' : 'down', detail: d && d.ok ? '' : String((d && d.detail) || 'send failed'), at: Date.now()
+      } });
     }
   });
   adapterRef = adapter;
@@ -6111,7 +6145,7 @@ function stopDiscord() {
 const DEV_PERSONA = 'You are the Commander\'s AI agent on a DEV test channel. Keep replies short. When given a '
   + 'task you have REAL tools — use them and report what you actually did.';
 let devHub = null;            // lazy singleton — one hub, many injected messages
-let devResolved = null;       // one-shot resolution slot (same pattern as tgResolved)
+let devResolved = null;       // one-shot resolution slot for the desktop developer ingress
 const devReplies = new Map(); // chatId -> [{ text, ts }] captured outbound replies (ring, last 20)
 /* the DEV channel's one send: capture the outbound text so POST /api/dev/inbound can return it. Shared by the
    dev hub (an agent's reply to an injected message) and by liveChannelFor('dev') (an agent's channel.send to a
@@ -6134,7 +6168,7 @@ function devHubSecrets() {
 function getDevHub() {
   if (devHub) return devHub;
   devHub = makeChannelHub({
-    channel: 'dev', maxMessageLength: 4000, agentPrefix: 'dev_',
+    channel: 'dev', maxMessageLength: 4000, agentPrefix: 'dev_', textBatchWaitMs: 0,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     runOnce: runOnce, store: channelStore,
@@ -6444,7 +6478,8 @@ const GENERIC_CHANNEL_RX = {
 };
 // multi-bot telegram: add a new agent-bound bot (token probe via getMe), and per-bot resume/disconnect.
 const TG_BOT_RX = {
-  act: /^\/api\/channels\/telegram\/bots\/(\d+)\/(connect|disconnect)$/
+  act: /^\/api\/channels\/telegram\/bots\/(\d+)\/(connect|disconnect)$/,
+  owner: /^\/api\/channels\/telegram\/bots\/(\d+)\/owner\/(pair|revoke)$/
 };
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
@@ -6500,12 +6535,15 @@ const ROUTES = [
   { m: 'POST', exact: '/api/channels/token', h: handleSetChannelToken },
   { m: 'POST', exact: '/api/channels/telegram/connect', h: handleChannelConnect },
   { m: 'POST', exact: '/api/channels/telegram/sync', h: handleChannelSync },
+  { m: 'POST', exact: '/api/channels/telegram/owner/pair', h: handleTelegramOwnerPair },
+  { m: 'POST', exact: '/api/channels/telegram/owner/revoke', h: handleTelegramOwnerRevoke },
   { m: 'POST', exact: '/api/roster', h: handleRoster },
   { m: 'POST', exact: '/api/agent/delete', h: handleAgentDelete },
   { m: 'POST', exact: '/api/dossier', h: handleDossier },
   { m: 'POST', exact: '/api/goals', h: handleGoals },   // GROWTH Tier 2: the active goal-arc summary for cron personas
   { m: 'POST', exact: '/api/channels/telegram/disconnect', h: handleChannelDisconnect },
   { m: 'POST', exact: '/api/channels/telegram/bots/connect', h: handleTelegramBotAdd },
+  { m: 'POST', rx: TG_BOT_RX.owner, h: (req, res, gm) => handleTelegramBotOwner(req, res, gm[1], gm[2]) },
   { m: 'POST', rx: TG_BOT_RX.act, h: (req, res, gm) => handleTelegramBotAction(req, res, gm[1], gm[2]) },
   { m: 'POST', exact: '/api/channels/discord/connect', h: handleDiscordConnect },
   { m: 'POST', exact: '/api/channels/discord/sync', h: handleDiscordSync },
@@ -10428,7 +10466,11 @@ async function runOnce(o) {
      Holds the FIRST tainting tool name, so the refusal can name the actual cause. Autonomous only: a watched
      run has a human and live consent prompts, and taking powers away mid-conversation there would be hostile. */
   let taintedBy = null;
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted });
+  // The desktop shell is the native host boundary. Only an adapter-minted, locally paired owner DM gets its
+  // remote desktop lease; no prompt text, task flag, stored approval, or generic API caller can manufacture it.
+  const remoteDesktopAuthorized = ownerTrusted && DESKTOP_SHELL
+    && /^(1|true|yes|on|win32|windows)$/i.test(String(ENV('COMPUTER_DRIVER') || '').trim());
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted, remoteDesktopAuthorized });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -10670,7 +10712,7 @@ async function runOnce(o) {
     }
   });
   runBrowser.register(registry);   // browser.* + isolated browser.test_* automation
-  makeDesktopTools({}).register(registry);   // future attended host channel only; ordinary capability projection exposes none
+  makeDesktopTools({ allowRemoteDesktop: DESKTOP_SHELL }).register(registry);
   // NS-5: bind the per-run path-trust guard — the ONE way an fs call may reach outside the jail, mediated
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
@@ -10710,10 +10752,9 @@ async function runOnce(o) {
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
-  // computer.use remains registered behind an INERT driver as defense in depth against a
-  // forged dispatch. It is removed from ordinary tool definitions below; no current run host
-  // mints the separate one-shot attended-input lease required by computer.js.
-  makeComputerTools({ allowPhysicalInput: false, imageWire }).register(registry);
+  // Native driver registration is harmless by itself: the per-run remote-owner lease below is still required
+  // at authority, capability, consent, and tool boundaries before any desktop action can reach Windows.
+  makeComputerTools({ allowPhysicalInput: DESKTOP_SHELL, imageWire }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -10988,11 +11029,20 @@ async function runOnce(o) {
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
-  let resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() }));
-  // REAL DESKTOP ACCESS IS NOT A TASK CAPABILITY. computer.use and desktop.open are stripped
-  // from the provider, capability telemetry, and dispatch allowlist in every current runOnce
-  // flow. A future attended-control endpoint must mint a one-shot runId+callId lease; prompt
-  // text, Full Access, permanent grants, and surface:'interactive' are insufficient.
+  let resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() }), remoteDesktopAuthorized);
+  // This is a host authority injection, not a room prop: a paired owner asks to control the machine they own,
+  // regardless of which agent bay receives the message. It stays invisible to every other run.
+  if (remoteDesktopAuthorized) {
+    for (const g of [
+      { capId: 'remote-desktop', tool: 'computer.use', scope: 'execute', requiresConsent: true, network: false },
+      { capId: 'remote-desktop', tool: 'desktop.open', scope: 'execute', requiresConsent: true, network: false }
+    ]) {
+      if (resolved.tools.indexOf(g.tool) < 0) resolved.tools.push(g.tool);
+      if (!resolved.grants.some(x => x && x.tool === g.tool)) resolved.grants.push(g);
+      resolved.approvalRules[g.tool] = { requiresConsent: true, scope: 'execute', network: false };
+      resolved.networkCaps[g.tool] = false;
+    }
+  }
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
   // Register them into this run's fresh registry and union their names into the resolved set so the capability
   // gate, network classification, and the wire tool-list treat them exactly like a built-in. Never breaks a run.
@@ -11007,7 +11057,7 @@ async function runOnce(o) {
   } catch (e) { console.warn('[mcp] connector tool projection failed:', (e && e.message) || e); }
   // Connector projection happens after the base office is resolved. Re-apply the host floor so
   // no dynamic server or future registration order can restore a real-screen tool by name.
-  resolved = enforceSyntheticOnly(resolved);
+  resolved = enforceSyntheticOnly(resolved, remoteDesktopAuthorized);
   resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
   // Harness controls never grant reach into the world. They exist only while an attended Task Brief is active.
   for (const name of internalBriefTools) if (resolved.tools.indexOf(name) < 0) resolved.tools.push(name);
@@ -11099,9 +11149,9 @@ async function runOnce(o) {
         return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
       } catch (_) { return null; }
     },
-    // Explicitly false in all current runOnce flows. This makes the deny visible at the
-    // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
-  }, runInputContext(accessSurface, isTask)));
+    // The context carries the host-minted remote-owner lease only for a locally paired Telegram owner.
+    // All other run flows remain synthetic-only at the tool boundary.
+  }, runInputContext(accessSurface, isTask, remoteDesktopAuthorized)));
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -13111,8 +13161,49 @@ function handleChannelStatus(req, res) {
   // plaintext copy on disk. It is false ONLY for the pathological runtime-only state (token in memory, nowhere on
   // disk, not in the keychain) — which the durability fix prevents, but truthful telemetry must be able to say it.
   const durable = configured && (isChannelTokenDurable('telegram') || !!t.token);
+  const pairing = ownerPairingStatus(t);
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), bots: telegramBotsStatusList() }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', delivery: telegramStatus.delivery || { state: 'unknown', detail: '', at: 0 }, warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!t.ownerId, ownerPairingActive: pairing.active, ownerPairingExpiresAt: pairing.expiresAt, bots: telegramBotsStatusList() }));
+}
+
+// POST /api/channels/telegram/owner/pair -- mint a fresh local enrollment code. The raw code is in this one
+// response only; the durable record has a salted digest, so neither status nor a disk read can reveal it.
+async function handleTelegramOwnerPair(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const cur = (channelSecrets && channelSecrets.telegram) || {};
+  if (!channelToken('telegram', '', cur)) return json(409, { error: 'connect the Telegram bot before pairing an owner' });
+  if (cur.ownerId) return json(409, { error: 'an owner is already paired; revoke it locally before pairing a different account' });
+  const issued = telegramOwnerPairing.issue({ now: Date.now() });
+  const next = Object.assign({}, cur, { ownerPairing: issued.state });
+  channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
+  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+  if (!persisted) return json(500, { error: 'could not save the pairing challenge; no code was issued' });
+  json(200, { code: issued.code, expiresAt: issued.state.expiresAt, persisted: true });
+}
+
+function restartTelegramAfterOwnerRevoke(rec) {
+  if (!telegram) return;
+  const token = channelToken('telegram', '', rec);
+  if (!token || !rec.model) { stopTelegram(); return; }
+  const provider = normalizeProvider(rec.provider);
+  const key = providerUsesCodex(provider) ? '' : providerRuntimeKey(provider, rec.key || '');
+  startTelegram(token, key, rec.model, Object.assign({}, rec, { ownerId: '', ownerPairing: undefined }));
+}
+
+// POST /api/channels/telegram/owner/revoke -- local, authenticated ownership reset. It stops/rebuilds the
+// in-memory adapter so the old owner cannot continue using its already-claimed closure after disk state changes.
+async function handleTelegramOwnerRevoke(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const cur = (channelSecrets && channelSecrets.telegram) || {};
+  if (!channelToken('telegram', '', cur)) return json(404, { error: 'Telegram is not configured' });
+  const next = Object.assign({}, cur);
+  delete next.ownerId;
+  delete next.ownerPairing;
+  channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
+  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+  if (!persisted) return json(500, { error: 'could not prove the owner revocation was saved' });
+  try { restartTelegramAfterOwnerRevoke(next); } catch (e) { return json(500, { error: 'owner was revoked but adapter restart failed: ' + ((e && e.message) || 'unknown error') }); }
+  json(200, { revoked: true, persisted: true });
 }
 
 // POST /api/channels/telegram/bots/connect { token, agentId, system?, agentName?, key?, model?, provider?,
@@ -13136,7 +13227,7 @@ async function handleTelegramBotAdd(req, res) {
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   // getMe probe: proves the token AND names the bot before anything is saved or started.
   let me;
-  try { me = await makeTelegramTransport({ fetch: globalThis.fetch, token, apiBase: TELEGRAM_API_BASE }).getMe(); }
+  try { me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token, apiBase: TELEGRAM_API_BASE }).getMe(); }
   catch (e) { me = { ok: false, error: (e && e.message) || 'probe failed' }; }
   if (!me || !me.ok) return json(400, { error: 'Telegram rejected that token — ' + ((me && me.error) || 'check it against @BotFather') });
   const botId = String(me.id);
@@ -13156,7 +13247,7 @@ async function handleTelegramBotAdd(req, res) {
     name: String(body.agentName || '').trim() || prev.name || '',
     provider: provider, model: model, baseUrl: baseUrl || undefined,
     reasoningEffort: resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || prev.reasoningEffort),
-    enabled: true, ownerId: prev.ownerId || undefined
+    enabled: true, ownerId: prev.ownerId || undefined, ownerPairing: prev.ownerPairing || undefined
   });
   try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   const live = telegramBots.get(botId);
@@ -13182,6 +13273,31 @@ async function handleTelegramBotAction(req, res, botId, verb) {
   const persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the record left the disk.
   json(200, { connected: false, purged: purge && persisted, persisted: !!persisted });
+}
+
+async function handleTelegramBotOwner(req, res, botId, verb) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const cur = telegramBotRecords()[botId];
+  if (!cur) return json(404, { error: 'unknown bot' });
+  if (verb === 'pair') {
+    if (cur.ownerId) return json(409, { error: 'an owner is already paired; revoke it locally before pairing a different account' });
+    const issued = telegramOwnerPairing.issue({ now: Date.now() });
+    const persisted = saveTelegramBotRecord(botId, { ownerPairing: issued.state });
+    if (!persisted) return json(500, { error: 'could not save the pairing challenge; no code was issued' });
+    return json(200, { code: issued.code, expiresAt: issued.state.expiresAt, persisted: true });
+  }
+  const all = Object.assign({}, telegramBotRecords());
+  const next = Object.assign({}, cur);
+  delete next.ownerId;
+  delete next.ownerPairing;
+  all[botId] = next;
+  channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
+  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+  if (!persisted) return json(500, { error: 'could not prove the owner revocation was saved' });
+  if (telegramBots.has(botId)) {
+    try { startTelegramBot(botId); } catch (e) { return json(500, { error: 'owner was revoked but adapter restart failed: ' + ((e && e.message) || 'unknown error') }); }
+  }
+  json(200, { revoked: true, persisted: true });
 }
 
 // POST /api/channels/discord/connect { token, key?, model, provider? } — the Messaging tab's Discord card hands over
@@ -13279,8 +13395,9 @@ function telegramBotsStatusList() {
     const st = (live && live.status) || { connected: false, state: 'down', detail: '' };
     return {
       botId: bid, username: String(r.username || ''), agentId: String(r.agentId || ''), agentName: String(r.name || ''),
-      connected: !!st.connected, state: st.state || 'down', detail: st.detail || '',
-      configured: !!r.token, enabled: r.enabled !== false, ownerLocked: !!r.ownerId
+      connected: !!st.connected, state: st.state || 'down', detail: st.detail || '', delivery: st.delivery || { state: 'unknown', detail: '', at: 0 },
+      configured: !!r.token, enabled: r.enabled !== false, ownerLocked: !!r.ownerId,
+      ownerPairingActive: ownerPairingStatus(r).active
     };
   });
 }
@@ -13302,8 +13419,10 @@ function channelStatusPayload(id) {
   if (channelWarn[id]) { try { if (saveChannelSecrets(channelSecrets)) channelWarn[id] = ''; } catch (_) {} }
   const out = {
     id: id, connected: !!st.connected, configured: configured, durable: durable,
-    state: st.state || 'down', detail: st.detail || '', warning: String(channelWarn[id] || ''),
+    state: st.state || 'down', detail: st.detail || '', delivery: id === 'telegram' ? (st.delivery || { state: 'unknown', detail: '', at: 0 }) : undefined, warning: String(channelWarn[id] || ''),
     notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId,
+    ownerPairingActive: id === 'telegram' && ownerPairingStatus(rec).active,
+    ownerPairingExpiresAt: id === 'telegram' ? ownerPairingStatus(rec).expiresAt : 0,
     // the agent NAME the channel answers as (never a secret) — the panel renders "ANSWERS AS: <name>" so the
     // Commander can see which agent a DM will reach. Empty until a config is saved.
     agentName: String(rec.name || '')

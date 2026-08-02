@@ -583,7 +583,7 @@
     opts = opts || {};
     const P = opts.pathMod, fs = opts.fs, requested = opts.requested;
     const current = opts.current, jailRoot = opts.jailRoot, root = opts.root;
-    const isWin = !!opts.isWin, allowExternal = !!opts.allowExternal;
+    const isWin = !!opts.isWin, allowExternal = !!opts.allowExternal, allowProtected = !!opts.allowProtected;
     let raw = String(requested == null ? '' : requested).trim();
     if (!raw) return current;
     if (/[\0\r\n]/.test(raw)) throw new Error('cwd contains a control character');
@@ -591,7 +591,7 @@
     raw = normalizeWinCwd(P, raw, isWin);
     const abs = P.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw) ? P.resolve(raw) : P.resolve(current, raw);
     if (!withinJail(P, abs, jailRoot) && !allowExternal) throw new Error('cwd must stay inside your workspace');
-    if (!withinJail(P, abs, jailRoot) && root && pathInside(P, abs, root))
+    if (!allowProtected && !withinJail(P, abs, jailRoot) && root && pathInside(P, abs, root))
       throw new Error('cwd cannot point at another agent or protected StarNet workspace sibling');
     if (fs && fs.existsSync && !fs.existsSync(abs)) throw new Error('cwd does not exist: ' + raw);
     if (fs && fs.statSync) {
@@ -717,10 +717,13 @@
       schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, cwd: { type: 'string' }, timeoutMs: { type: 'number' }, background: { type: 'boolean' } } },
       run: function (args, ctx) {
         ctx = ctx || {};
+        // Host-minted at Telegram ingress: this is the paired Commander at the physical desktop, not a prompt
+        // claim or a cached capability. It is the one path allowed to leave the agent workspace and use host tools.
+        const remoteOwner = ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner';
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const cmd = String((args && args.cmd) || '').trim();
         if (!cmd) throw new Error('empty command');
-        const deny = escapesWorkspace(cmd);
+        const deny = remoteOwner ? null : escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
         // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
@@ -728,19 +731,19 @@
         const sess = sessions.get(aid);
         let cwd = environment ? environment.getCwd(aid) : jailRoot;
         if (sess && sess.cwd) {
-          try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' }); }
+          try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || (environment && environment.backendId === 'local'), allowProtected: remoteOwner }); }
           catch (_) {}
         }
-        if (!environment && sess && sess.cwd && withinJail(P, sess.cwd, jailRoot) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
+        if (!environment && sess && sess.cwd && (remoteOwner || withinJail(P, sess.cwd, jailRoot)) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
         if (args && args.cwd != null) {
-          if (environment && environment.backendId !== 'local') throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
-          cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment ? environment.backendId === 'local' : false });
+          if (environment && environment.backendId !== 'local' && !remoteOwner) throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
+          cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || (environment ? environment.backendId === 'local' : false), allowProtected: remoteOwner });
           sessions.set(aid, { cwd: cwd });
         }
         const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environment.backendId !== 'local'
           ? environment.workspaceRoot(aid) : cwd;
         const shellDialect = environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
-        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P, dialect: shellDialect, isWin });
+        const safetyDeny = remoteOwner ? null : commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P, dialect: shellDialect, isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this command ' + safetyDeny.reason + '. StarNet task processes preserve the user\'s control of their computer; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
@@ -768,9 +771,9 @@
           if (environment && pm.cwd && environment.backendId !== 'local') environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && withinJail(P, pm.cwd, jailRoot)) environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && environment.backendId === 'local') {
-            try { sessions.set(aid, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true }) }); } catch (_) {}
+            try { sessions.set(aid, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true, allowProtected: remoteOwner }) }); } catch (_) {}
           }
-          else if (pm.cwd && withinJail(P, pm.cwd, jailRoot)) sessions.set(aid, { cwd: pm.cwd });
+          else if (pm.cwd && (remoteOwner || withinJail(P, pm.cwd, jailRoot))) sessions.set(aid, { cwd: pm.cwd });
           const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
           const body = redact(pm.cleanOut || '(no output)');
@@ -873,7 +876,8 @@
         if (!input) throw new Error('input is required (or pass eof:true to close stdin)');
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
         const dialect = environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
-        const risk = commandSafetyRisk(input, { cwd: jailRoot, fs: fs, pathMod: P, dialect: dialect, isWin: isWin });
+        const remoteOwner = !!(ctx && ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner');
+        const risk = remoteOwner ? null : commandSafetyRisk(input, { cwd: jailRoot, fs: fs, pathMod: P, dialect: dialect, isWin: isWin });
         if (risk) throw new Error('refused [' + risk.kind + ']: this input ' + risk.reason + '. A line sent to a shell or REPL runs like a command, so it is screened the same way.');
         const r = source ? source.writeBackground(aid, id, { input: input, submit: args && args.submit }) : bg.write(aid, id, { input: input, submit: args && args.submit });
         return {
