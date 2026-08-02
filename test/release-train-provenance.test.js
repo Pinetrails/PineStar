@@ -56,6 +56,19 @@ const exactTagCheckouts = yml.match(/ref:\s*\$\{\{ github\.event_name == 'workfl
 A.eq(exactTagCheckouts.length, 5,
   'all five source checkouts use the immutable requested tag during a manual recovery run');
 
+// 0.8.5 is distributed on Windows and macOS only. Linux must not enter the release matrix,
+// draft asset set, or required updater manifest while it remains unsupported.
+A.ok(/target:\s*win-x64/.test(buildJob), 'release matrix includes Windows x64');
+A.ok(/target:\s*darwin-arm64/.test(buildJob), 'release matrix includes macOS arm64');
+A.ok(/target:\s*darwin-x64/.test(buildJob), 'release matrix includes macOS x64');
+A.ok(!/target:\s*linux-/.test(buildJob), 'release matrix excludes unsupported Linux builds');
+A.ok(/--allow-missing linux-x86_64,linux-x86_64-deb/.test(yml),
+  'manifest assembly explicitly omits unsupported Linux updater targets');
+A.ok(/--require-platforms windows-x86_64,darwin-aarch64,darwin-x86_64/.test(yml),
+  'draft verification requires every supported Windows and macOS updater target');
+A.ok(!/-name '\*\.deb'|-name '\*\.AppImage'/.test(yml),
+  'draft collection cannot attach Linux installers');
+
 // --- the provenance gate must still exist (guard against a future edit quietly removing it) ---
 A.ok(/git describe --tags --always --dirty/.test(buildJob),
   'provenance gate still computes `git describe --tags --always --dirty`');
