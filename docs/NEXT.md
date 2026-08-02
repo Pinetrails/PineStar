@@ -2266,7 +2266,7 @@ now fails closed on missing Azure credentials and checks all three timestamped s
 before staging. A clean Windows SmartScreen/Defender launch remains the final reputation
 proof; a valid new publisher can still show a reputation prompt during early downloads.
 
-# IN PROGRESS 2026-08-01 — CONNECTOR RELIABILITY TO 9 (`agent/connector-reliability-9`)
+# DONE 2026-08-02 — CONNECTOR RELIABILITY TO 9 (`agent/connector-reliability-9`)
 
 Commit `ac201720` lands Lanes 1–5: desktop restart now injects custom-provider credentials and
 provider-specific backup pools; connector config/OAuth/client state is one versioned,
@@ -2275,10 +2275,12 @@ MCP OAuth discovery/DCR/token leg has a bounded deadline and composed cancellati
 and backup-pool replacement probes first and commits once; backup pools are explicitly provider
 scoped in browser storage, keychain storage, runtime state, and restart environment injection.
 
-Evidence on the exact clean source commit: `test:fast` 495/495 GREEN; full `test:http` GREEN
-(57 boot suites, sidecar 463 assertions, MCP E2E 79); Rust `cargo check` GREEN; real OpenRouter wire
-certificate PASS for models, chat, tools, cancellation, and cost. The locally installed Windows
-candidate (`sha256 3fe340dcc99dfcda9f0d445b03b20987475bc806b98bb750b493898b104aa728`)
+Evidence on the synchronized candidate: `test:fast` 497/497 GREEN; full `test:http` GREEN
+(sidecar 464 assertions, MCP E2E 79); the production Rust/NSIS build completed; real OpenRouter wire
+certificate PASS for models, chat, tools, cancellation, and cost. The exact Windows installer
+(`sha256 a3d4fb87e095dc7e4647429907e2fc6a27bb17b091a9692aa1ca0bd43de08183`)
+installed cleanly, and the resulting executable
+(`sha256 0313968d4d4ec43af0520adb95b5885fcd207e3f52b05adc30e13322bb74d62e`)
 passed the provenance-bound installed smoke 9/9. A controlled provider driven through that running
 installed app passed: correct key; wrong replacement with the old key still live; 429 replacement
 with the old key still live; provider switch + restoration; custom-only backup pool with OpenRouter
@@ -2286,13 +2288,19 @@ still empty; real desktop restart with the custom key/base/pool re-injected; pos
 failed closed. The temporary custom key, base URL, pool, and mock server were then removed, and a
 second desktop restart proved the empty state persisted; the final installed smoke remained GREEN.
 
-**NOT YET A 9/10 RELEASE VERDICT.** The remaining Lane 6 row is a real installed-app MCP OAuth
-authorization callback followed by forced access-token expiry and refresh against an account the
-operator can authorize. Deterministic tests prove callback exchange, skew-aware expiry, refresh-token
-retention, response-body deadlines, cancellation, transactional persistence, and connector removal;
-the seeded live app also exposed and cancelled the real Notion discovery flow, but no provider account
-was authorized in this lane, so an installed callback/refresh claim would be fabricated. The local
-desktop bundle is also unsigned because updater signing material is not present in this worktree's
-environment; it is a certification candidate, not a public release artifact. Next: authorize one
-disposable OAuth connector account in the installed candidate, force expiry, observe the refresh and
-restart read-back, then build through the signed release train and merge only after those receipts pass.
+**9/10 CONNECTOR RELIABILITY CONDITION MET.** The real installed candidate completed Notion's OAuth
+authorization callback and enumerated 20 tools plus 2 resources. With the desktop stopped, the persisted
+access-token expiry was moved into the past and read back; restart exercised the real refresh endpoint,
+rotated both access and refresh token fingerprints, durably advanced expiry, and returned the connector
+to `up` with all 20 tools. A second untouched restart preserved the refreshed fingerprints and the same
+healthy tool/resource inventory without another prompt. Reinstalling the synchronized candidate then
+preserved that authorization and repeated the installed smoke plus connector read-back. Deterministic
+coverage remains green for callback exchange, skew-aware expiry, refresh-token retention, response-body
+deadlines, cancellation, atomic credential replacement, provider-scoped pools, transactional persistence,
+and connector removal. Rated outcome: MCP/API connector reliability **9/10**, multiple same-provider keys
+**9/10**, overall connector release confidence **9/10**.
+
+The local bundle is a certification candidate, not a public signed release artifact: NSIS finished, but
+the updater-signing step correctly failed closed because `TAURI_SIGNING_PRIVATE_KEY` is unavailable in this
+worktree. Public distribution still goes through the signed release train; this does not weaken the local
+installed-app reliability verdict or the merge gate.
