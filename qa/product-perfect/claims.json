@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "e016b7a1ac3da89d0fe29859e7118a89b48c83c4",
+    "sourceCommit": "0ffc9a9fb1d7d8e9f827e73e79e7351285a21a95",
     "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
     "files": [
       {
@@ -368,8 +368,8 @@
       },
       {
         "path": "frontend/app/navdock.js",
-        "bytes": 9552,
-        "sha256": "215df57e5533dc49e10c9d81cfde6ffc8c73633ff9b12e2d9a1f468cba5e9f3b"
+        "bytes": 11353,
+        "sha256": "ef6c92acffbe6769cf9278dc73ea02af670ca99e3caa9da15cedd14d1d0a7e51"
       },
       {
         "path": "frontend/app/nightnudge.js",
@@ -878,8 +878,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 250297,
-        "sha256": "916ef6fea5c2383c0d6ffbb6f510e72dfe46c69abc31f4041ab3317923f0c149"
+        "bytes": 251970,
+        "sha256": "e70315a4c6e0f4eca6a07cf0c74fd66db95738deed44f51281a47847e9299b87"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -928,8 +928,8 @@
       },
       {
         "path": "frontend/css/topbar.css",
-        "bytes": 5261,
-        "sha256": "2396ccd88954baabfbccf38ca0abc28c8b454914725c809c2fed94e245d6c45a"
+        "bytes": 5890,
+        "sha256": "46b9474e564b9716bb21e8d014b0afbb5ae577823d43461a64c564eb77377c33"
       },
       {
         "path": "frontend/css/tutorial.css",

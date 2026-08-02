@@ -167,12 +167,19 @@
     // Boot-time orphan sweep: reap what the previous sidecar life spawned and could not reap because it was
     // force-killed. Only kills a PID whose live command line still matches the recorded command.
     async function sweep() {
-      const entries = stale;
-      stale = [];
-      const summary = { examined: entries.length, killed: 0, reused: 0, gone: 0 };
+      const entries = stale.slice();
+      const summary = { examined: entries.length, killed: 0, reused: 0, gone: 0, probeFailed: false };
       if (!entries.length) { save(); return summary; }
-      let alive = new Map();
-      try { alive = await probe(entries.map(r => r.pid)); } catch (_) {}
+      let alive;
+      try { alive = await probe(entries.map(r => r.pid)); }
+      catch (e) {
+        // A failed OS probe proves NOTHING about liveness. Keep every prior-life receipt intact so the next boot
+        // can retry; treating an empty fallback map as "all gone" permanently orphaned owned children.
+        summary.probeFailed = true;
+        log('[proc-ledger] boot sweep probe failed — retained ' + entries.length + ' ownership receipt(s) for retry (' + ((e && e.message) || e) + ')');
+        return summary;
+      }
+      stale = [];
       for (const r of entries) {
         const info = alive.get(Number(r.pid));
         if (info == null) { summary.gone++; continue; }

@@ -73,6 +73,22 @@ A.eq(normalizeUnattendedGrants(['workbench', 'workbench', 'nope']).size, 1, 'gra
 const grantedInteractive = makeRunAuthority({ surface: 'interactive', isTask: true, unattendedGrants: ['workbench'] });
 A.ok(grantedInteractive.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'interactive shell is unchanged by the grant');
 
+/* AUTHENTICATED TELEGRAM OWNER — the ingress mints this bit only after adapter ownership admission. It grants
+   the owner the desktop agent's non-physical control surface without weakening the physical/visible floors. */
+const ownerAuthority = makeRunAuthority({ surface: 'autonomous', isTask: true, ownerTrusted: true });
+A.ok(ownerAuthority.ownerTrusted, 'owner authority retains its host-minted diagnostic bit');
+A.ok(ownerAuthority.project({ name: 'shell.exec', capability: 'workbench' }), 'an owner DM is offered shell without a routine grant');
+A.ok(ownerAuthority.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'an owner DM may execute shell commands');
+A.ok(ownerAuthority.authorize({}, { name: 'spotify_play', capability: 'jukebox' }).ok, 'an owner DM may control the active media session');
+A.ok(ownerAuthority.authorize({}, { name: 'mcp__demo__lookup', capability: 'mcp:demo' }).ok,
+  'an owner DM may call the Commander\'s connected tools');
+A.ok(ownerAuthority.authorize({}, { name: 'future.magic', capability: 'future-cap' }).ok,
+  'an owner DM has the desktop surface\'s non-physical external authority');
+A.ok(!ownerAuthority.authorize({}, { name: 'computer.use', capability: 'physical-input' }).ok,
+  'owner Telegram parity never fabricates a physical-input lease');
+A.ok(!ownerAuthority.authorize({}, { name: 'desktop.open', capability: 'visible-desktop' }).ok,
+  'owner Telegram parity never fabricates a visible-desktop lease');
+
 /* UNATTENDED CONNECTOR GRANT — the Commander's own MCP servers, callable by a granted routine. The critical
    property: external-unknown is ALSO the fail-closed default for anything the host cannot classify, so the
    grant must reach connector tools ONLY (capability 'mcp:<id>'), never that catch-all. */

@@ -32,7 +32,9 @@ test/runroute.test.js
 test/checkpoint.test.js
 test/module-scope-shadowing.test.js
 test/verify.test.js
+test/lsp-edit-feedback.test.js
 test/provider.replay.test.js
+test/agent-eval.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
 test/realtime-voice.test.js
@@ -73,6 +75,7 @@ test/loop.parallel-tools.test.js
 test/loop.tool-images.test.js
 test/loop.turn-budget.test.js
 test/loop.provider-recovery.test.js
+test/output-continuation.test.js
 test/compaction.test.js
 test/loopguard.test.js
 test/loopguard.dispatch.test.js
@@ -174,6 +177,8 @@ test/roster-clause.test.js
 test/agent-config-target.test.js
 test/notebookrestore.test.js
 test/runstore.test.js
+test/run-journal.test.js
+test/run-journal.loop.test.js
 test/autonomy-ledger.test.js
 test/artifacts.test.js
 test/deliverable-store.test.js
@@ -198,6 +203,7 @@ test/qa-janitor.test.js
 test/qa-evidence-sweep.test.js
 test/qa-installed-smoke.test.js
 test/transcript.test.js
+test/transcript-history-v2.test.js
 test/recall.test.js
 test/fs.jail.test.js
 test/fs.patch.test.js
@@ -456,6 +462,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/mobile-control-reachability.test.js
 test/station-tooltip.test.js
 test/channels.discord-wire.test.js
 test/widgets.test.js
@@ -477,3 +484,4 @@ test/lint-determinism.js
 test/station-bridge.test.js
 test/station-commands.test.js
 test/station-tools.test.js
+test/code-mode.test.js

@@ -48,6 +48,8 @@ const imageWire = require('./tools/builtin/imagewire.js').makeImageWire({});
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
+const CodeMode = require('./tools/builtin/code.js');                      // code.run: bounded JS composition over this run's read-only grants
+const { makeCodeTools } = CodeMode;
 const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
@@ -61,7 +63,11 @@ const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
-const { makeTranscriptStore } = require('./transcriptstore.js');
+const transcriptStoreModule = require('./transcriptstore.js');
+const { makeTranscriptStore } = transcriptStoreModule;
+const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
+const { makeRunJournal } = require('./run-journal.js');
+const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
@@ -213,12 +219,14 @@ const { enforceSyntheticOnly, enforceRunAuthority, makeRunAuthority, runInputCon
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
+const { makeLspManager } = require('./lsp-manager.js');             // lazy installed-language-server edit diagnostics
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeStationTools } = require('./tools/builtin/station.js');               // session verbs (list/create/focus) over the station bridge
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
 const { makeCommsTools } = require('./tools/builtin/comms.js');      // COMMS: outbound reach — an agent messages a connected chat
 const cronGuard = require('./cron-guard.js');                        // routine prompt-injection tripwire (pure, see file header)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
+let lspManager = null;   // initialized beside procLedger so abrupt desktop-sidecar death is recoverable on next boot
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser WebRTC voice coordinator; API key never leaves this process
@@ -260,7 +268,7 @@ function applyApiCors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-StarNet-Token,X-Skynet-Token');   // accept the legacy header name too (old Tauri shell)
   res.setHeader('Access-Control-Max-Age', '600');
 }
@@ -567,7 +575,7 @@ function loadResilient(file, tag) {
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
 
 /* ---- P3 bounded append-only JSONL logs ----
-   The ledger / run-history / transcript are append-only and were read into RAM IN FULL at boot
+   The ledger / run-history are append-only and were read into RAM IN FULL at boot
    (fs.readFileSync(FILE).split('\n')) and never rotated, so months of 24/7 use grow them without bound
    until a single boot-time readFileSync crash-loops startup. readBoundedJsonl loads only the last
    LOG_MAX_BYTES of (archive + live) at boot (newest lines), and rotateJsonl rolls the live file to
@@ -817,26 +825,41 @@ function attachStreamKeepAlive(res) {
   return () => clearInterval(t);
 }
 
-// durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
+// durable per-workstream CONVERSATION transcript (P0.1): segmented append-only + fsync/read-back proven, a SIBLING of
 // the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
 // authoritative, append-only record covering EVERY surface, including headless cron/Telegram/delegated runs
 // that have no browser ws.history (the interactive browser conversation already persists durably via the
 // save-envelope mirror in cloudsave.js/savestore.js). The reference harness keeps a SQLite transcript for all surfaces; this
-// closes that gap for the headless paths + gives an autopsy/replay substrate. Content is redacted on write.
+// closes that gap for the headless paths + gives an autopsy/replay substrate. Closed numbered segments are
+// immutable and indexed; only a bounded recent tail enters RAM, while recall searches lifetime history lazily.
+// Content is redacted on write. Legacy transcript.jsonl(.1) files remain untouched after verified import.
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
-const transcriptIo = {
-  readAll() {
-    try { return readBoundedJsonl(TRANSCRIPT_FILE); } catch (e) { return []; }   // P3: bounded boot-load
-  },
-  append(entry) {
-    let fd = null;
-    try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
-    catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
-    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-    rotateJsonl(TRANSCRIPT_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
-  }
-};
+const transcriptIo = makeSegmentedTranscriptIo({
+  fs: fs,
+  path: path,
+  root: path.join(WORKSPACES, 'transcript-history-v2'),
+  legacyFiles: [TRANSCRIPT_FILE + '.1', TRANSCRIPT_FILE],
+  segmentBytes: Math.max(64 * 1024, num(ENV('TRANSCRIPT_SEGMENT_BYTES'), 4 * 1024 * 1024)),
+  recentPerStream: 1200,
+  writeDurable: writeFileDurable,
+  onWarning: (message) => console.warn('[transcript] ' + message)
+});
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
+// Active runs journal their provider-valid message and tool side-effect boundaries outside the agent fs jail.
+// Finished journals remain until the segmented transcript store acknowledges their final durable checkpoint;
+// this avoids deleting the only recovery copy after the legacy transcript writer's fail-open append.
+const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
+let recoveredRunJournals = [];
+try {
+  recoveredRunJournals = runJournal.recoverAll().filter(r => {
+    if (!r) return false;
+    // A durable transcript acknowledgement is the commit record. If the process died between that record and
+    // unlink, finish the idempotent retirement now; all other states remain visible for human-led recovery.
+    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
+    return true;
+  });
+  if (recoveredRunJournals.length) console.warn('[run-journal] interrupted run(s) awaiting recovery:', recoveredRunJournals.length);
+} catch (e) { console.warn('[run-journal] recovery scan failed:', (e && e.message) || e); }
 
 // H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of
 // the fs jail (the agent's fs.* tools can't reach it). Singleton (persists across runs); redacted on write.
@@ -873,10 +896,23 @@ const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now()
    `block` verdicts are absent from this file by design: nothing in it can bless one. */
 const SKILLS_ALLOW_FILE = path.join(WORKSPACES, 'skills-allowed.json');
 let skillApprovals = {};
-try { skillApprovals = JSON.parse(fs.readFileSync(SKILLS_ALLOW_FILE, 'utf8')) || {}; } catch (_) { skillApprovals = {}; }
-function persistSkillApprovals() {
-  try { fs.writeFileSync(SKILLS_ALLOW_FILE, JSON.stringify(skillApprovals, null, 2), 'utf8'); return true; }
-  catch (e) { console.warn('[skills] approval write failed:', (e && e.message) || e); return false; }
+try {
+  const loaded = loadResilient(SKILLS_ALLOW_FILE, 'skill approvals');
+  if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) skillApprovals = loaded;
+} catch (e) { console.warn('[skills] approval load failed:', (e && e.message) || e); }
+function persistSkillApprovals(next) {
+  const candidate = next && typeof next === 'object' ? next : {};
+  saveResilient(SKILLS_ALLOW_FILE, candidate);
+  // Approval changes expose reviewed bytes to the model. Read back the exact map before changing RAM or claiming
+  // success, so a swallowed/partial/redirected write can never create a session-only approval.
+  const proven = loadResilient(SKILLS_ALLOW_FILE, 'skill approvals');
+  if (JSON.stringify(proven) !== JSON.stringify(candidate)) {
+    const e = new Error('skill approval read-back did not match the committed decision');
+    e.code = 'ESTORE_UNVERIFIED';
+    throw e;
+  }
+  skillApprovals = candidate;
+  return true;
 }
 const skillGate = makeSkillGate({
   guard: skillGuard,
@@ -2777,6 +2813,9 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 // TerminateProcess (uncatchable — see gracefulShutdown), so children recorded here are swept at the NEXT
 // boot, and a cursor confinement a dead child left stuck on the user's desktop is released.
 const procLedger = makeProcLedger({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'proc-ledger.json'), clock: { now: () => Date.now() }, log: (m) => console.log(m) });
+// Lazy: this starts no process at boot. A supported edit with an already-installed server is the first spawn;
+// every child is ledgered so the next boot can reap it after an uncatchable desktop TerminateProcess.
+lspManager = makeLspManager({ spawn: childSpawn, fs, fsp, pathMod: path, env: process.env, ledger: procLedger });
 const inputGuard = makeInputGuard({ log: (m) => console.log(m) });
 if (require.main === module) {
   // real host boot only (unit tests require() this file and must not probe/kill or touch the real cursor state)
@@ -3444,7 +3483,12 @@ function loadNightshiftState() {
   catch (e) { console.warn('[nightshift] load failed:', (e && e.message) || e); return nightshift.fresh(Date.now()); }
 }
 let nightshiftState = loadNightshiftState();
-function saveNightshiftState() { try { saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(nightshiftState, Date.now())); } catch (e) { console.warn('[nightshift] persist failed:', (e && e.message) || e); } }
+function saveNightshiftState(next) {
+  const candidate = next || nightshiftState;
+  saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(candidate, Date.now()));
+  nightshiftState = candidate;
+  return candidate;
+}
 
 /* ---- NS-5b: the FOCUS state — a sibling JSON so a restart resumes the SAME night's declared priority (not a
    re-scatter). Holds { v, day, focus, steer }. The pure resolver (nightfocus.js) owns every decision; this is glue:
@@ -3455,7 +3499,12 @@ function loadNightFocusState() {
   catch (e) { console.warn('[nightfocus] load failed:', (e && e.message) || e); return nightfocus.fresh(Date.now()); }
 }
 let nightFocusState = loadNightFocusState();
-function saveNightFocusState() { try { saveResilient(NIGHTFOCUS_STATE_FILE, nightfocus.toEnvelope(nightFocusState, Date.now())); } catch (e) { console.warn('[nightfocus] persist failed:', (e && e.message) || e); } }
+function saveNightFocusState(next) {
+  const candidate = next || nightFocusState;
+  saveResilient(NIGHTFOCUS_STATE_FILE, nightfocus.toEnvelope(candidate, Date.now()));
+  nightFocusState = candidate;
+  return candidate;
+}
 
 // gather the evidence the pure resolver ranks: blessed project roots (+ light run-mention frequency), open threads,
 // the active goal arc. Bounded + fail-open (a store hiccup degrades that one field to empty). Reused by the beat +
@@ -3538,19 +3587,25 @@ function nightFocusTargetAvailable(target) {
 }
 function reconcileNightFocusAuthority() {
   const before = JSON.stringify(nightFocusState);
-  if (nightFocusState && nightFocusState.steer && !nightFocusTargetAvailable(nightFocusState.steer))
-    nightFocusState = nightfocus.clearSteer(nightFocusState);
-  if (nightFocusState && nightFocusState.focus && !nightFocusTargetAvailable(nightFocusState.focus))
-    nightFocusState = Object.assign({}, nightFocusState, { focus: null });
-  if (JSON.stringify(nightFocusState) !== before) saveNightFocusState();
+  let candidate = nightFocusState;
+  if (candidate && candidate.steer && !nightFocusTargetAvailable(candidate.steer))
+    candidate = nightfocus.clearSteer(candidate);
+  if (candidate && candidate.focus && !nightFocusTargetAvailable(candidate.focus))
+    candidate = Object.assign({}, candidate, { focus: null });
+  if (JSON.stringify(candidate) !== before) saveNightFocusState(candidate);
 }
 
 function resolveNightFocus() {
   reconcileNightFocusAuthority();
   const inp = nightFocusInputs();
   const r = nightfocus.ensureFocus(nightFocusState, inp, { now: inp.now });
-  if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) { nightFocusState = r.state; saveNightFocusState(); }
+  if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) saveNightFocusState(r.state);
   return { focus: r.focus, resolved: r.resolved };
+}
+
+function resolvedNightFocusCandidate(candidate) {
+  const inp = nightFocusInputs();
+  return nightfocus.ensureFocus(candidate, inp, { now: inp.now });
 }
 
 // same-night prior beat outputs (titles) so beat 2+ EXTENDS the same work (the compounding shape). Drafts carry `at`;
@@ -4410,7 +4465,7 @@ async function runNightshiftActShift(opts) {
 // ---- the driver: all ambient deps injected, so nightshift-driver.js stays determinism-clean.
 const nightshiftDriver = makeNightshiftDriver({
   getState: () => nightshiftState,
-  setState: (s) => { nightshiftState = s; saveNightshiftState(); },
+  setState: (s) => { saveNightshiftState(s); },
   getPosture: () => commanderPosture.summary(),
   // presence truth: a LIVE interactive run counts as activity-now — the Commander watching their own run must
   // never read as "away" no matter how long the run streams (idle-detection bug, 2026-07-17).
@@ -5684,6 +5739,10 @@ function startTelegram(token, key, model, agentCfg) {
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
+    // Only the adapter can mint owner trust: its owner is claimed from an admitted DM and group traffic never
+    // claims it. A token-reachable group member therefore stays an ordinary channel caller.
+    ownerTrusted: (msg) => !!(adapterRef && adapterRef._internals && msg && msg.chatType === 'dm'
+      && adapterRef._internals.owner && String(msg.userId || '') === String(adapterRef._internals.owner)),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
@@ -5916,6 +5975,8 @@ function startTelegramBot(botId) {
     channel: 'telegram:' + botId, runOnce: runOnce, store: botStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
+    ownerTrusted: (msg) => !!(adapterRef && adapterRef._internals && msg && msg.chatType === 'dm'
+      && adapterRef._internals.owner && String(msg.userId || '') === String(adapterRef._internals.owner)),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
@@ -6437,8 +6498,8 @@ function attachmentFailPolicy(res, e) { try { if (!res.headersSent) { res.writeH
      do NOT "normalize" a route onto a different matcher):
        exact:   req.url === path                      (query string makes it MISS — intentional)
        qsplit:  req.url.split('?')[0] === path        (path match; the url may carry ?token= etc.)
-       prefix:  req.url.indexOf(path) === 0           (raw prefix; query string rides along)
-       qprefix: req.url.split('?')[0].indexOf(path) === 0
+       prefix:  segment-safe prefix on req.url        (exact, query, or /child; no sibling alias)
+       qprefix: segment-safe prefix on the query-stripped path
        rx:      req.url.match(rx) — the match array is passed to h as its 3rd arg
        qrx:     rx.test(req.url.split('?')[0])
    - h: the handler (req, res[, match]).
@@ -6686,6 +6747,7 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/save', h: serveSaveLoad },
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
+  { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
@@ -6719,8 +6781,8 @@ function dispatchRoute(req, res) {
     let gm = null;
     if (r.exact !== undefined) { if (url !== r.exact) continue; }
     else if (r.qsplit !== undefined) { if (bare !== r.qsplit) continue; }
-    else if (r.prefix !== undefined) { if (url.indexOf(r.prefix) !== 0) continue; }
-    else if (r.qprefix !== undefined) { if (bare.indexOf(r.qprefix) !== 0) continue; }
+    else if (r.prefix !== undefined) { if (!routePrefixMatches(url, r.prefix)) continue; }
+    else if (r.qprefix !== undefined) { if (!routePrefixMatches(bare, r.qprefix)) continue; }
     else if (r.rx) { gm = url.match(r.rx); if (!gm) continue; }
     else if (r.qrx) { if (!r.qrx.test(bare)) continue; }
     else continue;   // malformed entry: never match (fail closed to the static fallthrough)
@@ -6728,6 +6790,15 @@ function dispatchRoute(req, res) {
     return r.errorPolicy ? out.catch((e) => r.errorPolicy(res, e)) : out;
   }
   return serveStatic(req, res);
+}
+
+// Prefix routes are route families, not arbitrary string aliases. A route whose declared prefix already
+// ends in '/' owns every child below it; otherwise the next byte must be a real URL boundary.
+function routePrefixMatches(url, prefix) {
+  if (url.indexOf(prefix) !== 0) return false;
+  if (prefix.charAt(prefix.length - 1) === '/') return true;
+  const next = url.charAt(prefix.length);
+  return next === '' || next === '?' || next === '/';
 }
 server.on('error', (e) => {
   if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
@@ -6879,6 +6950,7 @@ function gracefulShutdown(signal) {
   // the boot-time ensureFree is the reliable cover for the force-kill path this handler can't see at all)
   try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.observe('shutdown').catch(() => {}); } catch (_) {}
   try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
+  try { if (typeof lspManager !== 'undefined' && lspManager && lspManager.closeAll) Promise.resolve(lspManager.closeAll()).catch(() => {}); } catch (_) {}   // reap detected language-server children
   try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
   try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
   try { stopTelegram(); } catch (_) {}   // disconnect the Telegram long-poll adapter
@@ -7823,7 +7895,8 @@ function spotifyHtml(res, code, title, body) {
 }
 
 async function handleSpotifyStart(req, res) {
-  let body = {}; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return spotifyJson(res, 400, { error: 'bad json' });
   let clientId = String(body.clientId || '').trim();
   if (clientId) { try { await spotifyStore.setClientId(clientId); } catch (_) {} }
   else { try { clientId = (await spotifyStore.getClientId()) || ''; } catch (_) {} }
@@ -9860,8 +9933,8 @@ const slashActions = slashActionsMod.makeSlashActions({
    placed=[] and answered "This agent has no tools yet", while the very same agent's Telegram RUNS were being
    handed the full autonomous office (web, files, memory, studio, jukebox) all along. The readout was wrong, not
    the grant. It is deliberately NOT the desktop floor: a headless surface keeps the default office by design
-   (see capability/office.js), so quoting heroCaps here would trade one lie for another — a placed WORKBENCH
-   still grants no terminal over Telegram, and only the LEAD (a browser-commanded run) gets TASK DELEGATION. */
+   (see capability/office.js). An authenticated owner DM additionally receives the workbench, connected tools,
+   and lead orchestration object through runOnce, so this readout must compute the same owner-aware office. */
 /* ---- COMMANDER-DEFINED COMMANDS (sidecar/usercommands.js) --------------------------------------------
    Loaded from WORKSPACES/usercommands.json — deliberately OUTSIDE any agent's fs jail, so an agent cannot
    author one. That is the whole safety argument for the exec type: these are the Commander's own snippets,
@@ -9945,18 +10018,25 @@ async function runSlashForChannel(input, ctx) {
     placed = st
       ? placedTypesFrom((st.rooms && st.rooms.bay && st.rooms.bay.objects) || [])
       // No bay -> the run composes the autonomous office (hub.js passes station:undefined). Compose the SAME
-      // one, with the SAME lead:false a channel run carries, so the readout and the grant are one fact.
-      : placedTypesFrom(composeOffice({ surface: 'autonomous', lead: false, connectorIds: connectors.ids() }));
+      // one, with the SAME owner-aware lead shape the channel run carries, so the readout and the grant are one fact.
+      : placedTypesFrom(composeOffice({ surface: 'autonomous', lead: !!ctx.ownerTrusted, connectorIds: connectors.ids() }));
   } catch (_) { placed = []; }
+  // A bay station bypasses composeOffice, while runOnce adds these owner-DM objects to that exact room before
+  // resolving tools. Mirror that non-mutating augmentation here so /tools never under-reports live authority.
+  if (ctx.ownerTrusted) {
+    for (const type of ['workbench', 'orchestrator']) if (placed.indexOf(type) < 0) placed.push(type);
+    if (connectors.ids().length && placed.indexOf('connector') < 0) placed.push('connector');
+  }
   let out;
   try { out = slash.dispatch(String(input || ''), slashOptions(placed)); }
   catch (e) { return { ok: false, text: 'That command could not be read.' }; }
   if (!out || !out.ok || !out.directive) return { ok: false, text: 'Unknown command.' };
-  // A Commander-defined EXEC command is a shell snippet. It runs from the desktop, but NOT from a messaging
-  // surface by default: a chat app is reachable by anyone who gets the bot token, and "remote shell" is a much
-  // larger blast radius than "read my spend". Conservative on purpose — easy to relax, impossible to un-leak.
+  // A Commander-defined EXEC command is a shell snippet. It remains unavailable to every ordinary messaging
+  // caller, but an authenticated owner Telegram DM is the Commander's remote control surface and executes the
+  // exact same snippet path as the desktop palette.
   if (out.directive.type === 'exec') {
-    return { ok: false, text: 'That is one of your shell commands — for safety those only run in the StarNet desktop app, not over messaging.' };
+    if (!ctx.ownerTrusted) return { ok: false, text: 'That is one of your shell commands — for safety those only run in the StarNet desktop app, not over messaging.' };
+    return runUserExec(out.directive);
   }
   // Only dispatch:'server' commands can answer off-browser. A client command would need the DOM, so say that
   // plainly rather than returning an empty reply that reads like a failure.
@@ -10075,8 +10155,9 @@ async function handleAgentSkillAllow(req, res) {
   if (!skill) return json(404, { error: 'no such skill' });
   const key = agentId + '\x00' + skill.id;
   if (body.allow === false) {
-    delete skillApprovals[key];
-    persistSkillApprovals();
+    const next = Object.assign({}, skillApprovals); delete next[key];
+    try { persistSkillApprovals(next); }
+    catch (e) { console.warn('[skills] approval revoke persist failed:', (e && e.message) || e); return json(507, { ok: false, approved: true, error: 'approval change could not be persisted; the existing decision was kept' }); }
     return json(200, { ok: true, approved: false, skill: skillGate.annotate([skill])[0] });
   }
   const decision = skillGate.decide(skill);
@@ -10087,8 +10168,9 @@ async function handleAgentSkillAllow(req, res) {
      stamp-keyed approval could never clear the drift. Fall back to the lifecycle stamp only when there is
      no body to digest. */
   const digest = typeof skill.body === 'string' ? skillGate.digestOf(skill) : skillGate.stampOf(skill);
-  skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
-  persistSkillApprovals();
+  const next = Object.assign({}, skillApprovals, { [key]: { digest, action: 'allow', at: Date.now(), name: skill.name } });
+  try { persistSkillApprovals(next); }
+  catch (e) { console.warn('[skills] approval persist failed:', (e && e.message) || e); return json(507, { ok: false, approved: false, error: 'approval could not be persisted; the skill remains withheld' }); }
   const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
   json(200, { ok: true, approved: true, digest, skill: after });
 }
@@ -10393,6 +10475,12 @@ async function runOnce(o) {
   // Missing/unknown callers are unattended until proven otherwise. Only the watched /api/run
   // path passes the exact interactive value and a live prompt channel.
   const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
+  // A Telegram owner DM has already crossed that channel's owner-only admission gate. It is therefore the
+  // Commander's remote control surface: grant the same non-physical capability/credential reach as sitting at
+  // StarNet, while preserving `surface` for the separate question of whether this chat asked for approval cards.
+  // This bit is host-minted at channel ingress, never derived from text, tool output, or model state.
+  const ownerTrusted = !!o.ownerTrusted;
+  const accessSurface = ownerTrusted ? 'interactive' : surface;
   /* UNATTENDED CAPABILITY GRANT (2026-07-25): the capability families THIS run may use unattended, read off the
      durable routine record by the caller (the cron tick driver / Run Now) — never from prompt text, model
      output or Full Access. Interactive runs ignore it entirely: THE MOAT (floor-real placement) governs there,
@@ -10413,7 +10501,7 @@ async function runOnce(o) {
      Holds the FIRST tainting tool name, so the refusal can name the actual cause. Autonomous only: a watched
      run has a human and live consent prompts, and taking powers away mid-conversation there would be hostile. */
   let taintedBy = null;
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants });
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -10567,11 +10655,12 @@ async function runOnce(o) {
   const managedSkills = [];
   const seenLoadedSkills = new Set();
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
-  // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `surface` is HOST AUTHORITY here: it comes
-  // from the run, never from tool args, so an autonomous run cannot claim to be watched to unlock a key.
+  // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `accessSurface` is host authority: it comes
+  // from the run host, never from tool args. An authenticated owner DM has the same stored-key reach as the
+  // desktop; an ordinary autonomous caller remains restricted to explicitly unattended-approved keys.
   makeWebTools({
     openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
-    surface: surface,
+    surface: accessSurface,
     redact: redact,
     // the station READER: automatic real-Chrome rung for bot-walled fetches + throttled search
     // (webreader.js — headless, cookie-less, shared across runs, SKYNET_WEB_READER=0 disables)
@@ -10582,7 +10671,7 @@ async function runOnce(o) {
     // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
     // so an unattended run without the tick simply uses the direct fallback instead of failing.
     jinaKey: (() => {
-      try { const r = serviceKeysMod.resolveForRequest(serviceKeys, 'JINA_API_KEY', surface); return r.ok ? r.value : ''; }
+      try { const r = serviceKeysMod.resolveForRequest(serviceKeys, 'JINA_API_KEY', accessSurface); return r.ok ? r.value : ''; }
       catch (_) { return ''; }
     })()
   }).register(registry);
@@ -10663,7 +10752,7 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire, editDiagnostics: lspManager }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6); baseline-before-edit LSP feedback
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -10681,6 +10770,7 @@ async function runOnce(o) {
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
+  makeCodeTools({}).register(registry);   // code.run — child Node/vm owns no authority; every nested read returns through this run's parent dispatcher
   makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
@@ -10963,19 +11053,15 @@ async function runOnce(o) {
      `floorless` states the second meaning on its own — a phone has no floor to place props on, whoever is
      answering the prompts — so opting into approvals can never again cost a channel run its office. */
   const officeSurface = o.floorless ? 'autonomous' : surface;
-  const defaultObjects = composeOffice({ surface: officeSurface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
+  const defaultObjects = composeOffice({ surface: officeSurface, lead: o.lead || ownerTrusted, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
   let station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
-  // UNATTENDED CAPABILITY GRANT (2026-07-25) — the OBJECT half. The authority gate below now lets a granted
-  // unattended run keep shell.exec/verify.run, but a capability still needs its object to exist or resolveTools
-  // projects nothing: fullOffice() carries no WORKBENCH, and a bay-docked agent's explicit `station` bypasses
-  // composeOffice entirely. Add it to whichever room this run actually resolves against — non-mutating, and a
-  // no-op when the room already has one, so an ungranted run stays byte-identical.
-  if (unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
-  // Same for CONNECTORS: composeOffice already rides every configured portal onto the default office, but a
-  // bay-docked agent's explicit station carries only its bay's objects — so a granted routine on a bay agent
-  // would otherwise resolve zero MCP tools. Adds only the portals the room is missing; a disabled connector
-  // contributes no tool defs downstream, so this never resurrects one the Commander switched off.
-  if (unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
+  // OWNER TELEGRAM PARITY + UNATTENDED GRANTS — the OBJECT half. A remote owner has the same workbench,
+  // connected tools and lead orchestration reach as the Commander at StarNet. The existing explicit routine
+  // grants retain their narrower behavior. Every addition is non-mutating and applies to a bay station too,
+  // whose explicit room otherwise bypasses composeOffice.
+  if (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
+  if (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
+  if (ownerTrusted) station = stationWithObject(station, agentId, 'orchestrator');
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
@@ -11024,7 +11110,9 @@ async function runOnce(o) {
   // lead's broker is autonomous (default-deny + exec-lockout), so its workers inherit "no self-approved shell"
   // — only a watched, interactive lead can let a worker write/run shell, and only with a human's click.
   const consent = o.consent || makeConsentBroker({
-    bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
+    // An owner DM with approvals OFF is the Commander acting directly, so it never waits on a second approval
+    // channel. If that chat explicitly enables approvals, preserve the chosen in-chat prompt behavior instead.
+    bypass: FULL_ACCESS || agentFullAccess || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist,
     /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
        is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
@@ -11046,7 +11134,7 @@ async function runOnce(o) {
         const refs = [];
         for (const k of Object.keys(hs)) String(hs[k]).replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, n) => { refs.push(n); return m; });
         if (!refs.length) return false;   // references no credential -> nothing was pre-approved; ask/deny as usual
-        return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, 'autonomous').ok);
+        return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, accessSurface).ok);
       } catch (_) { return false; }
     },
     // UNATTENDED TERMINAL GRANT: this routine's recorded "may use the terminal" approval. Read off the SAME
@@ -11055,17 +11143,17 @@ async function runOnce(o) {
     // The taint check is repeated here, not just at dispatch, so consent and the dispatch gate can never
     // disagree: a tool the gate will refuse must not be one consent says yes to (the incoherent state the
     // terminal lane hit). Same predicate source (`revokedByTaint`) on both sides.
-    terminalGrant: (call, tool) => unattendedGrants.indexOf('workbench') >= 0 && (!taintedBy || revokedByTaint.ok(tool)),
+    terminalGrant: (call, tool) => (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) && (!taintedBy || ownerTrusted || revokedByTaint.ok(tool)),
     // UNATTENDED CONNECTOR GRANT: same host-side source as the authority gate, so an offered MCP tool can
     // never be refused by consent (the incoherent state the terminal lane hit before this was wired).
-    connectorGrant: (call, tool) => unattendedGrants.indexOf('connectors') >= 0 && (!taintedBy || revokedByTaint.ok(tool)),
+    connectorGrant: (call, tool) => (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) && (!taintedBy || ownerTrusted || revokedByTaint.ok(tool)),
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
   let parkSeq = 0;   // distinguishes parked outputs within one run (see parkOutput below)
   const capCtx = makeCapCtx(resolved, Object.assign({
-    emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
+    emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal, ownerTrusted,
     origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
     authorize: userControlAuthority.authorize,
     userControl: userControlAuthority,
@@ -11090,7 +11178,7 @@ async function runOnce(o) {
     },
     // Explicitly false in all current runOnce flows. This makes the deny visible at the
     // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
-  }, runInputContext(surface, isTask)));
+  }, runInputContext(accessSurface, isTask)));
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -11335,6 +11423,7 @@ async function runOnce(o) {
   // run PRODUCED (files/images/channel sends) — recorded onto the runStore row at run end and served over
   // GET /api/runs. Pure + capped (sidecar/artifacts.js); a collector hiccup must never break a run.
   const artifactLedger = makeArtifactCollector();
+  let journalStarted = false;
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
     else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
@@ -11371,7 +11460,10 @@ async function runOnce(o) {
     // TAINT ENFORCEMENT — see `taintedBy`. Runs before consent/dispatch so a revoked power never executes, and
     // returns an honest refusal naming the source rather than a silent failure, so the agent can report what it
     // could not finish instead of pretending. The tool STAYS in the wire list on purpose: consent-not-absence.
-    if (taintedBy && surface !== 'interactive' && !revokedByTaint.ok(liveTool)) {
+    // The taint lockout protects unattended automation after outside content enters context. An authenticated
+    // owner DM is the Commander at the controls, with the same deliberate tradeoff as an interactive desktop
+    // session: do not silently take its tools away mid-task. Physical-input/visible-desktop floors still apply.
+    if (taintedBy && surface !== 'interactive' && !ownerTrusted && !revokedByTaint.ok(liveTool)) {
       return {
         ok: false, isError: true, summary: 'untrusted-content-lockout',
         content: 'BLOCKED: "' + c.name + '" is no longer available on this run. This run has already read '
@@ -11421,7 +11513,19 @@ async function runOnce(o) {
       } catch (_) { /* a checkpoint failure must never break a run */ }
     }
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
+    // Persist the exact call before it can have side effects. If the process dies after this barrier but before a
+    // durable result, restart classifies the outcome as unknown and never replays it automatically.
+    if (journalStarted) runJournal.toolIntent(runId, {
+      callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
+      mutating: !!(liveTool && liveTool.scope !== 'read')
+    });
     let r = await registry.dispatch(c, dctx);
+    // Persist the full model-visible result before the loop advances to another call/turn. A journal write failure
+    // throws here, leaving the intent unmatched and therefore review-required after restart.
+    if (journalStarted) runJournal.toolResult(runId, {
+      callId: c.id, ok: !!(r && r.ok), isError: !!(r && r.isError),
+      content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
+    });
     // TASTE EXTRACTION (announce-and-act): a successful brief.proceed IS the product moment — the model's
     // settled READ (objective + correctable assumptions, incl. its taste guesses) surfaces to COMMS as a
     // non-blocking card while the run continues. Internal brief controls stay hidden from tool telemetry;
@@ -11465,6 +11569,48 @@ async function runOnce(o) {
     if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
     else seen.delete(sig);
     return r;
+  };
+
+  // CODE MODE COMPOSITION. The child process gets no registry, credentials or ambient authority; every
+  // `tool(name,args)` crosses this function and re-enters the SAME dispatch closure used by ordinary model
+  // calls. That preserves live withholding, authority, hooks, taint latching, output budgets and the run
+  // journal. V1 is intentionally READ-ONLY: programmatic composition is a context-saving reasoning primitive,
+  // not a way to batch mutations or route around consent. Mutation/team/code recursion is refused BEFORE an
+  // intent can be journaled. Nested results go only to the child; the model sees code.run's final aggregation.
+  capCtx.composeDispatch = async (request, nestedMeta) => {
+    const requested = String((request && request.name) || '').trim();
+    const realName = fromWire.get(requested) || allWire.get(requested) || requested;
+    const nestedTool = registry.get(realName);
+    const seq = Math.max(1, Number(nestedMeta && nestedMeta.sequence) || 1);
+    const parentCallId = String((nestedMeta && nestedMeta.parentCallId) || capCtx.callId || 'code');
+    const callId = parentCallId + ':nested:' + seq;
+    let args = request && request.args;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+    let argsRaw = '{}';
+    try { argsRaw = JSON.stringify(args); } catch (_) { throw new Error('nested tool arguments must be JSON-serializable'); }
+    const call = { id: callId, name: realName, args, argsRaw };
+    emit('agent.tool_call', { agentId, runId, callId, name: realName || 'unknown', argsSummary: argsRaw.slice(0, 240) });
+
+    const refusal = CodeMode._internals.refusalForNested(realName || requested, nestedTool, grantedSet);
+    if (refusal) {
+      emit('agent.tool_result', { agentId, runId, callId, ok: false, ms: 0, summary: 'code-nested-denied', isError: true });
+      throw new Error(refusal);
+    }
+
+    const started = Date.now();
+    const result = await dispatch(call, capCtx);
+    emit('agent.tool_result', {
+      agentId, runId, callId, ok: !!(result && result.ok), ms: Math.max(0, Date.now() - started),
+      summary: (result && result.summary) || (result && result.isError ? 'error' : 'ok'), isError: !!(result && result.isError)
+    });
+    if (!result || result.isError) throw new Error(String((result && result.content) || 'nested tool failed'));
+    const content = result.content == null ? '' : result.content;
+    if (typeof content !== 'string') return content;
+    const trimmed = content.trim();
+    if (trimmed && /^[\[{]/.test(trimmed)) {
+      try { return JSON.parse(trimmed); } catch (_) {}
+    }
+    return content;
   };
 
   // tell the model, plainly + capability-driven, that it has real tools right now (so it never claims it can't act)
@@ -11737,7 +11883,7 @@ async function runOnce(o) {
   // reply, so e.g. session titles silently stayed on their first-words placeholder.
   const sys = internal
     ? String(system || '')
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -11797,6 +11943,21 @@ async function runOnce(o) {
   // rebuilds the same array in place and SHORTER, leaving the index past the end and dropping the entire run's
   // dialogue with no error. See the PERSISTED marker in transcriptstore.js.
   transcriptStore.markPersisted(msgs);
+  if (!internal) {
+    try {
+      runJournal.begin({
+        runId, agentId, streamId: o.streamId || 'global', trigger, model,
+        userTitle: latestUserText(msgs), startedAt: Date.now()
+      });
+      runJournal.checkpoint(runId, { phase: 'initial', turn: 0, messages: msgs });
+      journalStarted = true;
+    } catch (e) {
+      emit('agent.run.start', { agentId, runId, trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: false, message: 'Run could not start safely because its recovery journal could not be persisted: ' + String((e && e.message) || e) });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+  }
   let bufferedTaskEnd = null;
   // Hold a successful user-facing Task Brief end until the final text is known; a question maps to the
   // contract's additive `clarifying` terminal (neither product nor slag — every success path keys on 'done').
@@ -11858,6 +12019,16 @@ async function runOnce(o) {
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       steer: () => drainSteer(runId),   // LIVE STEERING: fold any mid-run /steer notes into the next model call
       signal: signal, clock: { now: () => Date.now() },
+      onCheckpoint: journalStarted ? ({ phase, messages: checkpointMessages, turn }) => {
+        // Initial prompt messages carry transcriptStore's non-enumerable PERSISTED marker. Everything without it
+        // was created by this run, so compaction cannot invalidate the boundary and recovery avoids duplicating
+        // the historical seed. System continuation/guard messages remain included because provider resumption
+        // must receive a valid context, even though the user-facing transcript later omits them.
+        const fresh = Array.isArray(checkpointMessages)
+          ? checkpointMessages.filter(m => m && typeof m === 'object' && (!TRANSCRIPT_PERSISTED || !m[TRANSCRIPT_PERSISTED]))
+          : [];
+        runJournal.checkpoint(runId, { phase, turn, messages: fresh });
+      } : null,
       agentId, runId, model, trigger: trigger,
       // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
@@ -11939,8 +12110,20 @@ async function runOnce(o) {
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
-      if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
-      if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
+      if (journalStarted) {
+        // Retirement is ordered strictly: each transcript row is fsync/read-back proven, then the journal records
+        // that acknowledgement, then (and only then) is the recovery copy removed. A throw leaves it discoverable.
+        if (title) transcriptStore.appendStrict({ streamId: o.streamId, agentId, role: 'user', content: title, sourceRunId: runId });
+        if (result && Array.isArray(result.messages)) transcriptStore.appendNewStrict(o.streamId, agentId, result.messages, { sourceRunId: runId });
+        runJournal.finish(runId, {
+          reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd,
+          transcriptAck: true
+        });
+        runJournal.remove(runId);
+      } else {
+        if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
+        if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
+      }
     } catch (_) {}
     // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest
     // whose run-contract is bound to this runId (bound at the injection seam / the quest.update progress tick);
@@ -12420,7 +12603,9 @@ async function handleAutonomyPosture(req, res) {
   commanderPosture.set(posture, body.beliefs);
   // deliberately re-writing the dial is the Commander's "autonomy back on" signal, so it LIFTS any durable E-STOP
   // halt on the night shift (engaged in handleHalt). Without this an E-STOP would wedge the shift stood-down forever.
-  try { if (nightshift.isHalted(nightshiftState)) { nightshiftState = nightshift.clearHalt(nightshiftState, Date.now()); saveNightshiftState(); } } catch (_) {}
+  let nightshiftStatePersisted = true;
+  try { if (nightshift.isHalted(nightshiftState)) saveNightshiftState(nightshift.clearHalt(nightshiftState, Date.now())); }
+  catch (e) { nightshiftStatePersisted = false; console.warn('[nightshift] halt-lift persist failed:', (e && e.message) || e); }
   // Lane 4D symmetry: the same "autonomy back on" signal lifts the durable cron E-STOP halt (engaged in
   // handleHalt) and re-arms the timer when the user's arm intent still stands — routines resume with no restart.
   try { liftCronHalt(); } catch (_) {}
@@ -12445,7 +12630,7 @@ async function handleAutonomyPosture(req, res) {
       workshopGranted = workshopOf(NIGHTSHIFT_AGENT);
     }
   } catch (_) { workshopGranted = null; }   // a grant hiccup must never fail the posture write; null = unknown (honest)
-  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, workshopGranted: workshopGranted });
+  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, nightshiftStatePersisted: nightshiftStatePersisted, workshopGranted: workshopGranted });
 }
 // GET /api/autonomy/posture — the server copy (posture summary + whether a beliefs snapshot is present). Never
 // echoes the raw beliefs texts back to the browser (it already has them); just reports presence + freshness.
@@ -12608,19 +12793,32 @@ async function handleNightshiftFocus(req, res) {
     const requestedKind = (body.kind == null || body.kind === '') ? 'project' : body.kind;
     const checked = await validateNightFocusSteer(requestedKind, ref);
     if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
-    nightFocusState = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
-    saveNightFocusState();
-    const foc = resolveNightFocus();   // re-resolve toward the steer NOW so status reflects it immediately
+    const candidate = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused steer whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'night focus could not be persisted; previous focus kept' });
+    }
     return json(200, { ok: true, focus: nightFocusView(), steered: true, resolved: !!(foc && foc.resolved) });
   }
   if (req.method === 'DELETE') {
-    nightFocusState = nightfocus.clearSteer(nightFocusState);
-    saveNightFocusState();
-    const foc = resolveNightFocus();
+    const candidate = nightfocus.clearSteer(nightFocusState);
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused clear whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'night focus could not be persisted; previous focus kept' });
+    }
     return json(200, { ok: true, cleared: true, focus: nightFocusView() || (foc && foc.focus) || null, resolved: !!(foc && foc.resolved) });
   }
   // GET — a read-only preview: resolve (persist iff changed) so a first-ever read still shows what the night WOULD chase.
-  const foc = resolveNightFocus();
+  let foc;
+  try { foc = resolveNightFocus(); }
+  catch (e) {
+    console.warn('[nightfocus] could not persist resolved focus:', e && e.message || e);
+    return json(507, { ok: false, error: 'night focus state is unavailable' });
+  }
   return json(200, { ok: true, focus: nightFocusView() || (foc && foc.focus) || null, steer: (nightFocusState.steer || null), avoid: nightFocusAvoidView() });
 }
 
@@ -12647,17 +12845,25 @@ async function handleNightshiftAvoid(req, res) {
     const checked = await validateNightFocusSteer(requestedKind, ref);
     if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
     const label = checked.kind === 'thread' ? String((liveNightThread(checked.ref) || {}).title || '') : '';
-    nightFocusState = nightfocus.applyAvoid(nightFocusState, { ref: checked.ref, kind: checked.kind, label }, Date.now());
-    saveNightFocusState();
-    const foc = resolveNightFocus();   // if the avoid dethroned tonight's focus, re-declare from what remains NOW
+    const candidate = nightfocus.applyAvoid(nightFocusState, { ref: checked.ref, kind: checked.kind, label }, Date.now());
+    const foc = resolvedNightFocusCandidate(candidate);
+    try { saveNightFocusState(foc.state); }
+    catch (e) {
+      console.warn('[nightfocus] refused off-limits change whose durable state could not be written:', e && e.message || e);
+      return json(507, { ok: false, error: 'off-limits directive could not be persisted; previous boundaries kept' });
+    }
     return json(200, { ok: true, avoid: nightFocusAvoidView(), focus: nightFocusView() || (foc && foc.focus) || null });
   }
   // DELETE — remove one entry by ref.
   const u = new URL(req.url, 'http://127.0.0.1');
   const ref = String(u.searchParams.get('ref') || '').trim();
   if (!ref) return json(400, { ok: false, error: 'which entry? DELETE /api/nightshift/avoid?ref=<ref>' });
-  nightFocusState = nightfocus.removeAvoid(nightFocusState, ref);
-  saveNightFocusState();
+  const candidate = nightfocus.removeAvoid(nightFocusState, ref);
+  try { saveNightFocusState(candidate); }
+  catch (e) {
+    console.warn('[nightfocus] refused off-limits removal whose durable state could not be written:', e && e.message || e);
+    return json(507, { ok: false, error: 'off-limits directive could not be persisted; previous boundaries kept' });
+  }
   return json(200, { ok: true, avoid: nightFocusAvoidView() });
 }
 
@@ -12699,8 +12905,9 @@ async function handleSummonAck(req, res) {
 }
 
 async function handleCancel(req, res) {
-  let runId;
-  try { runId = (JSON.parse(await readBody(req, 4096)) || {}).runId; } catch (e) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const runId = body.runId;
   const ac = runId && runs.get(runId);
   if (ac) ac.abort();
   res.writeHead(200); res.end('ok');
@@ -12871,7 +13078,15 @@ function handleHalt(req, res) {
   // were already spent at accept-time, so the ~45-min cooldown was the ONLY thing pausing autonomy — beats resumed
   // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
-  try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
+  let nightshiftHaltPersisted = true;
+  const haltedNightshiftState = nightshift.engageHalt(nightshiftState, Date.now());
+  try { saveNightshiftState(haltedNightshiftState); }
+  catch (e) {
+    // E-STOP still governs this process immediately, but a failed disk write is not a restart-durability claim.
+    nightshiftState = haltedNightshiftState;
+    nightshiftHaltPersisted = false;
+    console.warn('[nightshift] halt persist failed:', (e && e.message) || e);
+  }
   // Lane 4D symmetry: ROUTINES get the same durable stand-down the night shift got above. Without this the
   // cron timer kept re-firing due jobs unattended right after an E-STOP, and the lifecycle aggregate kept
   // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
@@ -12889,7 +13104,7 @@ function handleHalt(req, res) {
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted + loop iterations aborted (additive fields)
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, nightshiftHaltPersisted }));   // honest counts + restart-durability receipt
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
@@ -12948,8 +13163,9 @@ async function handleChannelSync(req, res) {
 // record + runtime + durable marker cleared and the .bak scrubbed. Explicit user destruction, so exempt from the
 // never-remove-a-secret-silently rule. Additive: a body-less POST keeps the old disable-only behaviour.
 async function handleChannelDisconnect(req, res) {
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopTelegram();
   let persisted = true;
   if (channelSecrets && channelSecrets.telegram) {
@@ -13036,8 +13252,9 @@ async function handleTelegramBotAction(req, res, botId, verb) {
     try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
     return json(200, { botId: botId, state: 'connecting', persisted: !!persisted });
   }
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return json(400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopTelegramBot(botId);
   const persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the record left the disk.
@@ -13253,8 +13470,9 @@ async function handleGenericChannelSync(req, res, id) {
 // reconnect). With { purge:true } (the FORGET action) also destroy the stored token (record + runtime + durable
 // marker) and scrub the .bak — mirrors handleChannelDisconnect. Additive: a body-less POST disables only.
 async function handleGenericChannelDisconnect(req, res, id) {
-  let purge = false;
-  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  const body = await readJsonBody(req, readBody, 4096, res);
+  if (body === null) return respondJson(res, 400, { error: 'bad json' });
+  const purge = !!body.purge;
   stopGenericChannel(id);
   let persisted = true;
   let removedConfiguration = false;
@@ -14496,6 +14714,38 @@ function serveRuns(req, res) {
     // on r.ok (chat.js, autosessions.js, returnstore.js, world.js) or a safe [] default (stationui.js).
     json(500, { error: 'could not read run history: ' + ((e && e.message) || e) });
   }
+}
+
+// GET /api/run-recoveries — authenticated by the shared /api gate, read-only, and intentionally conservative.
+// It exposes safe checkpoint dialogue plus tool names/call ids, never raw tool arguments or results. An uncertain
+// side effect is review-required; the harness does not replay it or claim that it did/didn't happen.
+function serveRunRecoveries(req, res) {
+  const safeMessage = m => {
+    const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
+    if (m && m.tool_call_id) out.tool_call_id = String(m.tool_call_id);
+    if (m && Array.isArray(m.tool_calls)) out.tool_calls = m.tool_calls.map(c => ({
+      id: String((c && c.id) || ''), type: 'function', function: { name: String((c && c.function && c.function.name) || '') }
+    }));
+    return out;
+  };
+  const rows = recoveredRunJournals.map(r => ({
+    runId: String(r.runId || ''),
+    agentId: String((r.meta && r.meta.agentId) || ''),
+    streamId: String((r.meta && r.meta.streamId) || 'global'),
+    startedAt: Number((r.meta && r.meta.startedAt) || 0),
+    userTitle: String((r.meta && r.meta.userTitle) || '').slice(0, 1000),
+    status: r.status,
+    corrupt: !!r.corrupt,
+    repaired: !!r.repairedFrom,
+    repairError: r.repairError ? String(r.repairError).slice(0, 500) : '',
+    uncertain: (r.uncertain || []).map(x => ({ callId: String(x.callId || ''), name: String(x.name || '') })),
+    checkpoint: {
+      phase: String((r.checkpoint && r.checkpoint.phase) || ''),
+      turn: Number((r.checkpoint && r.checkpoint.turn) || 0),
+      messages: Array.isArray(r.checkpoint && r.checkpoint.messages) ? r.checkpoint.messages.slice(-200).map(safeMessage) : []
+    }
+  }));
+  respondJson(res, 200, { recoveries: rows });
 }
 
 // GET /api/autonomy/ledger?limit=N&source=&kind= — NS-0: the recent AUTONOMY DECISION LEDGER (cron fire/skip/

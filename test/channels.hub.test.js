@@ -49,6 +49,24 @@ async function run() {
     A.ok(events.some(e => e.n === 'channel.delivery' && e.p.ok === true && e.p.chunks === 1 && e.p.reason === 'done'), 'channel.delivery ok=true');
   }
 
+  // ---- A2. ingress authority is passed only when the composition root identifies this exact message as owner DM ----
+  {
+    const store = fakeStore(); const seen = [];
+    const runOnce = async (o) => {
+      seen.push(o.ownerTrusted);
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done' });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false,
+      ownerTrusted: (msg) => msg.channel === 'telegram' && msg.chatType === 'dm' && msg.userId === 'owner', newId: idGen()
+    });
+    await hub.onInbound(Object.assign(dm('owner request', 'owner-chat'), { userId: 'owner' }));
+    await hub.onInbound(dm('ordinary request', 'guest-chat'));
+    A.eq(seen, [true, false], 'only the admitted owner DM carries trusted remote-control authority into runOnce');
+  }
+
   // ---- B. prior history is replayed; isTask=true adds the task suffix to the system prompt ----
   {
     const store = fakeStore(); store.hist.set('tg_9', [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'sure' }]);
