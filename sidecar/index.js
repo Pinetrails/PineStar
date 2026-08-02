@@ -12120,7 +12120,9 @@ async function runOnce(o) {
     try {
       runJournal.begin({
         runId, agentId, streamId: o.streamId || 'global', trigger, model,
-        userTitle: latestUserText(msgs), startedAt: Date.now()
+        userTitle: latestUserText(msgs), startedAt: Date.now(),
+        cronJobId: trigger === 'schedule' ? String(o.cronJobId || '') : '',
+        cronJobName: trigger === 'schedule' ? String(o.cronJobName || '').slice(0, 200) : ''
       });
       runJournal.checkpoint(runId, { phase: 'initial', turn: 0, messages: msgs });
       journalStarted = true;
@@ -14907,6 +14909,9 @@ function serveRunRecoveries(req, res) {
     streamId: String((r.meta && r.meta.streamId) || 'global'),
     startedAt: Number((r.meta && r.meta.startedAt) || 0),
     userTitle: String((r.meta && r.meta.userTitle) || '').slice(0, 1000),
+    trigger: String((r.meta && r.meta.trigger) || ''),
+    cronJobId: String((r.meta && r.meta.cronJobId) || ''),
+    cronJobName: String((r.meta && r.meta.cronJobName) || '').slice(0, 200),
     status: r.status,
     corrupt: !!r.corrupt,
     repaired: !!r.repairedFrom,

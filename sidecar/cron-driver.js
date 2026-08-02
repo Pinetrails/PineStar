@@ -302,6 +302,9 @@
           // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
           // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
           runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider,
+          // Host-minted recovery identity. The active-run journal can now tie an interrupted headless run back
+          // to the routine that launched it without trusting model text or guessing from the stream id.
+          cronJobId: job.id, cronJobName: job.name || '',
           // a scheduled run does real work; what it learns is durable memory, not scratch. Bounded downstream by
           // the aux budget + per-agent reflection cooldown, and stamped origin:'schedule' (see index.js /api/run).
           reflect: true,

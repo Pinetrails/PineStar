@@ -142,6 +142,8 @@ function intervalJob(id, everyStr) {
     A.eq(s.runs[0].opts.workdir, 'C:\\approved-project', 'scheduled project cwd reaches the run host');
     A.eq(s.runs[0].opts.enabledToolsets, ['web'], 'per-job toolset intersection reaches the run host');
     A.eq(s.runs[0].opts.initialTaint, true, 'upstream context structurally taints the unattended run');
+    A.eq(s.runs[0].opts.cronJobId, 'd1', 'scheduled run carries its host-minted routine id into recovery metadata');
+    A.eq(s.runs[0].opts.cronJobName, j.name, 'scheduled run carries its routine name into recovery metadata');
     s.runs[0].opts.emit('agent.token', { delta: 'final answer' });
     s.runs[0].resolve(); await flush(); await flush();
     A.eq(s.getJob('d1').lastOutput, 'final answer', 'final reply is persisted for downstream context');

@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { bootToken } = require('./_httpToken.js');
+const { makeRunJournal } = require('../sidecar/run-journal.js');
 
 const HOST = '127.0.0.1';
 const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
@@ -201,6 +202,9 @@ function boot(port, workspaces, attemptsLeft) {
 
     // ---- persistence: the routine survives a fresh boot on the same workspace ----
     A.ok(fs.existsSync(path.join(ws, 'cron.jobs.json')), 'cron.jobs.json written to the workspace');
+    const interrupted = makeRunJournal({ dir: path.join(ws, '.run-journal') });
+    interrupted.begin({ runId: 'interrupted-cron-run', agentId: 'cron_brief', streamId: 'cron-interrupted-cron-run', trigger: 'schedule', cronJobId: 'routine-recovery-proof', cronJobName: 'Recovery proof' });
+    interrupted.checkpoint('interrupted-cron-run', { phase: 'assistant', turn: 1, messages: [{ role: 'assistant', content: 'partial safe checkpoint' }] });
     try { child.kill(); } catch (_) {} await sleep(200);
     booted = await boot(port + 100, ws, 20); child = booted.child; port = booted.port;
     await refreshToken();
@@ -209,6 +213,13 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(after.body.jobs.some(job => job.name === 'Renamed brief'), 'the edited name persisted');
     A.ok(after.body.jobs.some(job => job.schedule && job.schedule.kind === 'cron'), 'the cron routine persisted');
     A.ok(after.body.jobs.some(job => job.provider === 'codex'), 'the routine provider persisted');
+    const recoveries = await j('GET', '/api/run-recoveries');
+    const interruptedCron = (recoveries.body.recoveries || []).find(row => row.runId === 'interrupted-cron-run');
+    A.ok(interruptedCron, 'an interrupted scheduled run is discoverable after host restart');
+    A.eq(interruptedCron.trigger, 'schedule', 'recovery truth preserves the scheduled trigger');
+    A.eq(interruptedCron.cronJobId, 'routine-recovery-proof', 'recovery truth identifies the originating routine');
+    A.eq(interruptedCron.cronJobName, 'Recovery proof', 'recovery truth carries the human routine name');
+    A.eq(interruptedCron.status, 'resumable', 'a checkpoint without an uncertain mutation is honestly resumable');
 
     // ---- protected-state recovery: a torn main file restores from the last-known-good .bak ----
     const cronPath = path.join(ws, 'cron.jobs.json');
