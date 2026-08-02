@@ -4,10 +4,10 @@ slug: the-projects-rail-s-add-doorway-records-a-non-ca
 title: The Projects rail's ADD doorway records a NON-canonical path grant, so blessing a folder reached through a junction/symlink reports success and grants nothing
 surface: safecell
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/safecell
-fix: 
+fix: 226cec3c
 ---
 
 # The Projects rail's ADD doorway records a NON-canonical path grant, so blessing a folder reached through a junction/symlink reports success and grants nothing

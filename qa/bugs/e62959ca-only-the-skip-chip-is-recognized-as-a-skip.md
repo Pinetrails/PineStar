@@ -4,10 +4,10 @@ slug: only-the-skip-chip-is-recognized-as-a-skip
 title: Only the skip CHIP is recognized as a skip — the typed word the interview invites ("skip") is stored as a weight:'stated' belief, raising FAMILIARITY, opening t
 surface: onboarding
 severity: P0
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/onboarding
-fix: 
+fix: 6afeb9ee
 ---
 
 # Only the skip CHIP is recognized as a skip — the typed word the interview invites ("skip") is stored as a weight:'stated' belief, raising FAMILIARITY, opening t

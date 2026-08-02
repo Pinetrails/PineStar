@@ -4,10 +4,10 @@ slug: an-errored-api-projects-is-rendered-as-a-confirm
 title: An errored /api/projects is rendered as a CONFIRMED EMPTY trust ledger ("NO TRUSTED PROJECTS") and silently wipes the persisted project scope
 surface: safecell
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/safecell
-fix: 
+fix: ed200caa
 ---
 
 # An errored /api/projects is rendered as a CONFIRMED EMPTY trust ledger ("NO TRUSTED PROJECTS") and silently wipes the persisted project scope

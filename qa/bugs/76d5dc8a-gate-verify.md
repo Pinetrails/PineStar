@@ -4,10 +4,10 @@ slug: gate-verify
 title: gate.verify()'s tamper branch re-enters decide(), which clears the tamper against the STALE stored contentDigest — one approval permanently blesses whatever is
 surface: skills
 severity: P1
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/skills
-fix: 
+fix: 598ab4a4
 ---
 
 # gate.verify()'s tamper branch re-enters decide(), which clears the tamper against the STALE stored contentDigest — one approval permanently blesses whatever is
