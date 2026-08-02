@@ -113,7 +113,21 @@
 
     // a bad/missing streamId collapses to 'global' — exactly index.js's rule (bad streamId -> the global stream).
     function normStream(v) { const s = str(v); return SID_RE.test(s) ? s : 'global'; }
-    function tokenize(s) { return (str(s).toLowerCase().match(/[a-z0-9]+/g)) || []; }
+    function tokenize(s) {
+      const normalized = str(s).normalize('NFKC').toLowerCase();
+      const cjk = /^(?:\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul})$/u;
+      const out = [];
+      for (const word of (normalized.match(/[\p{L}\p{N}]+/gu) || [])) {
+        let run = '';
+        for (const char of word) {
+          if (!cjk.test(char)) { run += char; continue; }
+          if (run) { out.push(run); run = ''; }
+          out.push(char);
+        }
+        if (run) out.push(run);
+      }
+      return out;
+    }
 
     // H1.3: keyword recall over the transcript — the substrate for the agent-callable recall_conversation tool,
     // so it can find weeks-old dialogue no longer in context. Lightweight BM25-ish: rank a row by how many

@@ -18,9 +18,25 @@ const TOKEN_MAX = 64;
 
 function str(v) { return v == null ? '' : String(v); }
 function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : Number(v) || 0; }
-function tokenize(v) {
-  return Array.from(new Set((str(v).toLowerCase().match(/[a-z0-9]+/g) || []).filter(t => t.length <= TOKEN_MAX)));
+function wordTokens(v) {
+  // NFKC makes compatibility spellings (for example full-width Latin/digits) search the
+  // same way while Unicode properties retain words written outside ASCII. Scripts that
+  // ordinarily omit spaces are indexed per character so a query can match part of a phrase.
+  const normalized = str(v).normalize('NFKC').toLowerCase();
+  const cjk = /^(?:\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul})$/u;
+  const out = [];
+  for (const word of (normalized.match(/[\p{L}\p{N}]+/gu) || [])) {
+    let run = '';
+    for (const char of word) {
+      if (!cjk.test(char)) { run += char; continue; }
+      if (run) { out.push(run); run = ''; }
+      out.push(char);
+    }
+    if (run) out.push(run);
+  }
+  return out.filter(t => t.length <= TOKEN_MAX);
 }
+function tokenize(v) { return Array.from(new Set(wordTokens(v))); }
 function segmentName(n) { return 'segment-' + String(n).padStart(6, '0') + '.jsonl'; }
 function indexName(n) { return 'segment-' + String(n).padStart(6, '0') + '.index.json'; }
 function clone(v) { return Object.assign({}, v); }
@@ -343,7 +359,7 @@ function makeSegmentedTranscriptIo(opts) {
       for (const row of readRows(meta.number)) {
         if (!candidates.has(num(row.rowId)) || (!all && row.streamId !== streamId)) continue;
         const tf = {};
-        for (const t of (str(row.content).toLowerCase().match(/[a-z0-9]+/g) || [])) tf[t] = (tf[t] || 0) + 1;
+        for (const t of wordTokens(row.content)) tf[t] = (tf[t] || 0) + 1;
         let distinct = 0, freq = 0;
         for (const term of terms) if (tf[term]) { distinct++; freq += tf[term]; }
         if (!distinct) continue;
