@@ -31,14 +31,15 @@ function makeRunExecutionState(options) {
     if (result && !result.isError && !internal) toolsOk++;
   }
 
-  function boundToolResult(result, maxBytes) {
+  function boundToolResult(result, maxBytes, messages) {
     if (!result || typeof result.content !== 'string') return result;
     const cap = Math.max(0, Number(maxBytes) || 0);
     let next = result;
+    const copy = messages || {};
     if (toolBytes >= cap) {
-      next = Object.assign({}, result, { content: '[tool output omitted — per-run tool-output budget reached]' });
+      next = Object.assign({}, result, { content: copy.omitted || '[tool output omitted — per-run tool-output budget reached]' });
     } else if (toolBytes + result.content.length > cap) {
-      next = Object.assign({}, result, { content: result.content.slice(0, cap - toolBytes) + '\n…[truncated — per-run tool-output budget reached]' });
+      next = Object.assign({}, result, { content: result.content.slice(0, cap - toolBytes) + (copy.truncatedSuffix || '\n…[truncated — per-run tool-output budget reached]') });
     }
     toolBytes += next.content.length;
     return next;
