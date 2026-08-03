@@ -5245,7 +5245,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (open.notifs) rerender('notifs');
     toast(String(text || ''), cls || '', pref.sound, opts);
   }
-  // transient on-screen toast — slides in, auto-dismisses with a fade-out, stacks cleanly.
+  // A caller that leads with an ALL-CAPS token + colon ("MODEL: gpt / high") is naming a READOUT,
+  // not writing a sentence — that prefix becomes the card's engraved label and the rest becomes the
+  // value, the same dim-label-over-bright-value grammar the bench widgets use. Deliberately strict:
+  // the whole prefix must be caps/digits/separators and short, so ordinary prose ("Keep Computer Awake
+  // failed: …", "could not reach the station") never gets chopped. No match = one plain message line.
+  const TOAST_LABEL_RE = /^([A-Z][A-Z0-9 ·/&+._-]{0,17}):[  ]+(\S.*)$/;
+  function splitToastLabel(text) {
+    const m = TOAST_LABEL_RE.exec(String(text || ''));
+    return m ? { label: m[1].trim(), body: m[2].trim() } : { label: '', body: String(text || '') };
+  }
+  // transient on-screen toast — a station readout card that seats in, holds for its dwell, then leaves.
   // The persistent record still lives in the NOTIFICATIONS panel (buildNotifs); this is the
   // ephemeral heads-up so a result isn't silent when that panel is closed.
   function toast(text, cls, playSound, opts) {
@@ -5258,11 +5268,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const sev = severityOf(cls);
     // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
     // sev-* class so 'error'/'info' also get an edge + the lead glyph.
-    const t = mkEl('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev);
-    // message text rides its own span so the ASCII decode below can target JUST the message —
-    // the severity glyph and timestamp stay stable (a scrambling clock would read as broken).
-    t.innerHTML = '<span class="toast-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
-      '<span class="toast-ts">' + clock(Date.now()) + '</span><span class="toast-txt">' + esc(text) + '</span>';
+    // errors linger a touch longer so a failure isn't gone before it's read; an ACTIONABLE toast
+    // (opts.onClick — e.g. a background consent that must be answered) lingers longer still.
+    const hasAction = !!(opts && typeof opts.onClick === 'function');
+    const dwell = hasAction ? 10000 : sev === 'bad' ? 6500 : 4200;
+    const cut = splitToastLabel(text);
+    const t = mkEl('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev + (cut.label ? ' labeled' : ''));
+    // The dwell rail drains over exactly `dwell` — the card SHOWS how long it has left rather than
+    // vanishing without warning; --dwell is read by the CSS animation so the two can never disagree.
+    t.style.setProperty('--dwell', dwell + 'ms');
+    // message text rides its own node so the ASCII decode below can target JUST the message —
+    // the severity lamp, label and stamp stay stable (a scrambling clock would read as broken).
+    t.innerHTML =
+      '<i class="toast-lamp" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</i>' +
+      '<div class="toast-body">' +
+        (cut.label ? '<span class="toast-kind">' + esc(cut.label) + '</span>' : '') +
+        '<div class="toast-txt">' + esc(cut.body) + '</div>' +
+      '</div>' +
+      '<span class="toast-ts">' + clock(Date.now()) + '</span>' +
+      '<span class="toast-dwell" aria-hidden="true"></span>';
     stack.appendChild(t);
     // ASCII-motion (asciifx.js): the toast message DECODES out of glyph-static as it slides in — the same
     // signal-resolving language as the window titles. Short (toasts are frequent); reduced-motion no-op.
@@ -5276,10 +5300,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       t.addEventListener('animationend', gone, { once: true });
       setTimeout(gone, 360);
     };
-    // errors linger a touch longer so a failure isn't gone before it's read; an ACTIONABLE toast
-    // (opts.onClick — e.g. a background consent that must be answered) lingers longer still.
-    const hasAction = !!(opts && typeof opts.onClick === 'function');
-    setTimeout(kill, hasAction ? 10000 : sev === 'bad' ? 6500 : 4200);
+    setTimeout(kill, dwell);
     if (hasAction) {
       t.classList.add('actionable');
       t.style.cursor = 'pointer';
