@@ -1259,7 +1259,7 @@ const Chat = (() => {
         }).catch(() => {});
       } else {
         const chip = document.createElement('a'); chip.className = 'filechip'; chip.title = name;
-        wireBlobOpen(chip, rel, aid);
+        wireFileOpen(chip, rel, aid);
         chip.appendChild(glyphSpan(SVG_FILE));   // themed file glyph, not 📄
         chip.appendChild(document.createTextNode(' ' + (name.split(/[\\/]/).pop() || name)));
         view.appendChild(chip);
@@ -1527,18 +1527,27 @@ const Chat = (() => {
       return r.blob();
     }).then(b => URL.createObjectURL(b));
   }
-  function wireBlobOpen(a, title, agentId) {
-    a.href = '#'; a.target = '_blank'; a.rel = 'noopener';
-    a.addEventListener('click', ev => {
-      ev.preventDefault();
-      fileBlobUrl(title, agentId).then(u => {
-        try { window.open(u, '_blank', 'noopener'); } catch (_) {}
-        // the new tab has taken the blob by now — revoke so a 24/7 station doesn't leak one object URL per
-        // deliverable opened (matches backup.js/clip.js delayed-revoke; every other createObjectURL site frees).
-        setTimeout(() => { try { URL.revokeObjectURL(u); } catch (_) {} }, 60000);
-      })
-        .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — the sidecar may be unreachable', 'warn'); });
-    });
+  // Wire an anchor to OPEN a workspace file. The href IS the real jailed /api/file URL (query-token
+  // auth — apiauth's documented native-load escape hatch, since a link navigation cannot attach the
+  // custom header), so in a browser this is a TRUE link: left-click opens the tab natively and
+  // right-click → open-in-new-tab / copy-link-address work. The old wiring (href='#' + fetch→blob→
+  // window.open AFTER an async fetch) was a silent no-op everywhere it mattered: popup blockers kill a
+  // post-async window.open, the desktop Tauri window policy kills it always, and right-click opened '#'.
+  // On desktop a _blank navigation is equally dead under that policy (the same law as the delegated
+  // prose-link handler in init), so hand the URL to the OS browser; stopPropagation so that delegated
+  // handler can't open it a second time.
+  function wireFileOpen(a, title, agentId) {
+    a.href = fileUrl(title, agentId);
+    a.target = '_blank'; a.rel = 'noopener';
+    const core = tauriCore();
+    if (core && core.invoke) {
+      a.addEventListener('click', ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (window.getSelection && String(window.getSelection())) return;   // a drag-selection release is not an open (the delegated handler's SELECTION GUARD law)
+        Promise.resolve(core.invoke('open_external_url', { url: a.href }))
+          .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file in your browser — the folder button copies its path on disk', 'warn'); });
+      });
+    }
   }
 
   /* ── IMAGE LIGHTBOX ─ clicking any COMMS image (sent attachment, staged composer attachment, agent image
@@ -1658,7 +1667,7 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
     const a = document.createElement('a');
-    wireBlobOpen(a, title, agentId);
+    wireFileOpen(a, title, agentId);
     a.textContent = String(title).split(/[\\/]/).pop() || title;   // show the filename, not the whole path
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
@@ -1705,19 +1714,31 @@ const Chat = (() => {
     const ext = String(title || '').split(/[?#]/, 1)[0].split('.').pop().toLowerCase();
     return MEDIA_KIND_BY_EXT[ext] || 'file';
   }
+  // The jailed /api/file URL for a workspace file — usable as a REAL href/src, not just inside fetch().
+  // Token: the SYNC injected global (the same value Harness.apiToken() RESOLVES to — apiToken() itself
+  // returns a Promise, and the old String(promise) baked `token=[object Promise]` into the query, a
+  // guaranteed 403 on any native load that can't ride the header shim). Base: on desktop the page runs
+  // on the tauri.localhost origin and the shell rewrites ONLY window.fetch to the sidecar — a relative
+  // href would navigate into the bundled-asset protocol and vanish (the same trap cloudsave's unload
+  // beacon hit), so native loads carry the ABSOLUTE loopback base (window.__STARNET_API__); in a
+  // browser the base is '' and the URL stays same-origin relative.
   function fileUrl(title, agentId) {
-    const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
-    return '/api/file?agent=' + encodeURIComponent(agentId || 'agent') +
+    let base = '', tok = '';
+    try { base = (typeof window !== 'undefined' && window.__STARNET_API__) ? String(window.__STARNET_API__) : ''; } catch (_) {}
+    try { tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : ''; } catch (_) {}
+    return base + '/api/file?agent=' + encodeURIComponent(agentId || 'agent') +
       '&path=' + encodeURIComponent(title) +
       (tok ? '&token=' + encodeURIComponent(tok) : '');
   }
   // append a small "open in a new tab" fallback link — shown when an inline player can't decode the file
   // (e.g. an .mkv/.avi the browser won't play), mirroring the reference harness's OpenMediaButton.
-  function openFallback(parent, label, url, title, agentId) {
+  // Always a real /api/file link (re-served with Range support), never the player's blob URL: a blob href
+  // is dead on desktop (the Tauri window policy) and dies with the page.
+  function openFallback(parent, label, title, agentId) {
     if (parent.querySelector('.media-fallback')) return;   // once
     const a = document.createElement('a');
-    a.href = url || '#'; a.target = '_blank'; a.rel = 'noopener'; a.className = 'deliverable-link media-fallback';
-    if (!url) wireBlobOpen(a, title, agentId);
+    a.className = 'deliverable-link media-fallback';
+    wireFileOpen(a, title, agentId);
     a.textContent = label; a.title = title;
     parent.appendChild(a);
   }
@@ -1733,7 +1754,7 @@ const Chat = (() => {
     const el = document.createElement(kind === 'audio' ? 'audio' : 'video');
     el.controls = true; el.preload = 'metadata'; el.className = 'deliverable-' + kind;
     let blobUrl = '';
-    el.addEventListener('error', () => openFallback(r.body, 'open ' + kind, blobUrl, title, agentId), { once: true });
+    el.addEventListener('error', () => openFallback(r.body, 'open ' + kind, title, agentId), { once: true });
     r.body.appendChild(el);
     // a <video>/<audio> keeps needing its object URL for the WHOLE row lifetime (seek/replay re-read it, and
     // the error fallback links to it), so we don't revoke on load here. But free any prior URL before we
@@ -1742,7 +1763,7 @@ const Chat = (() => {
     fileBlobUrl(title, agentId).then(u => {
       if (blobUrl && blobUrl !== u) { try { URL.revokeObjectURL(blobUrl); } catch (_) {} }
       blobUrl = u; el.src = u;
-    }).catch(() => openFallback(r.body, 'open ' + kind, '', title, agentId));
+    }).catch(() => openFallback(r.body, 'open ' + kind, title, agentId));
     autoscroll();
   }
 
@@ -1766,7 +1787,7 @@ const Chat = (() => {
     const path = String(a.path || '');
     d.appendChild(document.createTextNode(a.kind === 'image' ? '▤ made ' : '▤ wrote '));
     const link = document.createElement('a');
-    wireBlobOpen(link, path, agentId);                       // the same jailed /api/file open every deliverable row uses
+    wireFileOpen(link, path, agentId);                       // the same jailed /api/file open every deliverable row uses
     link.className = 'deliverable-link';
     link.textContent = path.split(/[\\/]/).pop() || path;    // filename shown, full path on hover
     link.title = path;
