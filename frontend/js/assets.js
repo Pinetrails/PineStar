@@ -5,6 +5,9 @@ const SPRITES = (() => {
   let ready = false;
   const frames = {};   // key "minion.walk.south" -> [Image]
   const tinted = {};   // key "FORGE|minion.walk.south" -> [canvas]
+  let tracksBySet = {};
+  const setJobs = {};
+  const loadedSets = new Set();
   let meta = { minion: { fw: 0, fh: 0 }, ultron: { fw: 0, fh: 0 } };
 
   /* the crew base is a white space-suit astronaut with glowing CYAN visor eyes
@@ -295,6 +298,7 @@ const SPRITES = (() => {
   function drawBody(ctx, b, nowMs) {
     const set = b.id === 'ULTRON' ? 'ultron'
       : ((DATA.SKINS[b.skin] && DATA.SKINS[b.skin].set) || DATA.SKINS[DATA.DEFAULT_SKIN].set);
+    if (!loadedSets.has(set)) { loadSet(set); return null; }
     const glancing = b.glance && b.glance.until > nowMs;   // brief look-up: overrides facing & typing
     const meeting = b.meet && b.meet.until > nowMs;        // hallway chat: stand still, face partner
     const dir = glancing ? b.glance.dir : (b.dir || 'south');
@@ -466,30 +470,52 @@ const SPRITES = (() => {
     });
   }
 
+  function loadSet(set) {
+    const key = String(set || '').trim();
+    if (!key) return Promise.resolve(false);
+    if (setJobs[key]) return setJobs[key];
+    const tracks = tracksBySet[key] || [];
+    setJobs[key] = Promise.all(tracks.map(([track, paths]) =>
+      Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
+        const ok = imgs.filter(Boolean);
+        if (ok.length) frames[track] = ok;
+        return ok.length;
+      })
+    )).then(counts => {
+      const loaded = counts.reduce((n, count) => n + count, 0);
+      if (loaded) loadedSets.add(key);
+      return loaded > 0;
+    });
+    return setJobs[key];
+  }
+
+  function setForSkin(skin) {
+    const catalog = (typeof DATA !== 'undefined' && DATA.SKINS) || {};
+    const picked = catalog[skin] || catalog[DATA.DEFAULT_SKIN];
+    return picked && picked.set ? picked.set : '';
+  }
+
+  function ensureSkin(skin) { return loadSet(setForSkin(skin)); }
+  function isSkinReady(skin) { return loadedSets.has(setForSkin(skin)); }
+
   async function init() {
     try {
       const resp = await fetch('assets/sprites/manifest.json', { cache: 'no-store' });
       if (!resp.ok) return;
       const man = await resp.json();
-      const jobs = [];
-      for (const [key, paths] of Object.entries(man.sprites)) {
-        jobs.push(Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
-          const ok = imgs.filter(Boolean);
-          if (ok.length) frames[key] = ok;
-        }));
-      }
-      await Promise.all(jobs);
+      tracksBySet = SpriteLoadPlan.groupTracks(man.sprites);
       // ready when the DEFAULT skin's base pose loaded (the old `minion` astronaut set
       // was retired in favour of DATA.SKINS — gating on it left ready=false forever, so
       // every body fell through to the procedural fallback regardless of picked skin).
       const defSet = (typeof DATA !== 'undefined' && DATA.SKINS && DATA.DEFAULT_SKIN
         && DATA.SKINS[DATA.DEFAULT_SKIN] && DATA.SKINS[DATA.DEFAULT_SKIN].set) || 'bear';
+      await Promise.all([loadSet(defSet), loadSet('ultron')]);
       if (frames[defSet + '.rot.south'] || frames['ultron.rot.south'] || Object.keys(frames).length) {
         ready = true;
-        console.log('[SPRITES] crew loaded:', Object.keys(frames).length, 'animation tracks (default skin:', defSet + ')');
+        console.log('[SPRITES] startup sets loaded:', Array.from(loadedSets).join(', '), '—', Object.keys(frames).length, 'animation tracks');
       }
     } catch (e) { console.warn('[SPRITES] manifest missing — procedural fallback', e); }
   }
 
-  return { init, drawBody, groundShadow, get ready() { return ready; } };
+  return { init, drawBody, groundShadow, ensureSkin, isSkinReady, get ready() { return ready; } };
 })();

@@ -2277,11 +2277,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!cv) return;
     const pctx = cv.getContext('2d');
     pctx.clearRect(0, 0, cv.width, cv.height);
-    if (!(typeof SPRITES === 'object' && SPRITES.ready)) {
+    if (!(typeof SPRITES === 'object' && SPRITES.ready) || !SPRITES.isSkinReady(a.skin)) {
       // procedural fallback (sprites not yet loaded) — a simple body+head sized to the larger frame.
       pctx.imageSmoothingEnabled = false;
       pctx.fillStyle = a.color; pctx.fillRect(cv.width / 2 - 9, cv.height - 64, 18, 44);
       pctx.fillStyle = '#f0e6c0'; pctx.fillRect(cv.width / 2 - 7, cv.height - 80, 14, 16);
+      if (typeof SPRITES === 'object' && SPRITES.ready) {
+        SPRITES.ensureSkin(a.skin).then(ok => { if (ok && cv.isConnected) drawPortrait(cv, a); });
+      }
       return;
     }
     // drawBody sizes sprites for the FLOOR: each skin at its own small footprint scale (ULTRON ~0.6, most
