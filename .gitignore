@@ -140,3 +140,6 @@ src-tauri/voice-deps/
 # python bytecode from the sprite assembly scripts
 __pycache__/
 *.pyc
+
+# the exact upload for starnetos.com, rebuilt by scripts/stage-website-deploy.mjs each deploy
+website-deploy/
