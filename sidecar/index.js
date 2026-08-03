@@ -10935,7 +10935,8 @@ async function runOnce(o) {
      run has a human and live consent prompts, and taking powers away mid-conversation there would be hostile. */
   const execution = makeRunExecutionState({
     initialTaint: o.initialTaint ? 'scheduled upstream context' : null,
-    artifacts: makeArtifactCollector()
+    artifacts: makeArtifactCollector(),
+    now: () => Date.now()
   });
   // The desktop shell is the native host boundary. Only an adapter-minted, locally paired owner DM gets its
   // remote desktop lease; no prompt text, task flag, stored approval, or generic API caller can manufacture it.

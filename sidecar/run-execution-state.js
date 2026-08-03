@@ -8,6 +8,7 @@
 function makeRunExecutionState(options) {
   const opts = options || {};
   const artifacts = opts.artifacts;
+  const injectedNow = typeof opts.now === 'function' ? opts.now : () => 0;
   const failures = new Map();
   let taintedBy = opts.initialTaint ? String(opts.initialTaint) : null;
   let toolBytes = 0;
@@ -63,8 +64,8 @@ function makeRunExecutionState(options) {
     return true;
   }
 
-  function observeToolEvent(name, payload, now) {
-    const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  function observeToolEvent(name, payload, atMs) {
+    const at = Number.isFinite(Number(atMs)) ? Number(atMs) : Number(injectedNow()) || 0;
     if (name === 'agent.tool_call' && payload && payload.callId && toolTrace.length < 200) {
       const rec = { callId: String(payload.callId), name: String(payload.name || 'unknown'), startedAt: at };
       toolTrace.push(rec);

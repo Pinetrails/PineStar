@@ -53,6 +53,9 @@ A.eq(trace[0].endedAt, 125, 'tool timing derives a stable end time from the meas
 A.ok(trace[0].summary.length <= 240, 'tool timing summaries are bounded');
 trace[0].name = 'mutated';
 A.eq(state.toolTraceList()[0].name, 'web_fetch', 'tool timing snapshots cannot mutate run state');
+const clocked = makeRunExecutionState({ now: () => 777 });
+clocked.observeToolEvent('agent.tool_call', { callId: 'clocked', name: 'verify.run' });
+A.eq(clocked.toolTraceList()[0].startedAt, 777, 'tool timing uses the injected run clock');
 
 const clean = makeRunExecutionState();
 A.eq(clean.latchTaint('browser.read'), 'browser.read', 'first runtime taint is retained');
