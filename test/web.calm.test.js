@@ -63,14 +63,26 @@ const tools = (routes) => makeWebTools({ fetchImpl: stubFetch(routes), lookup: n
     A.eq(r.summary, 'domain not found', 'ENOTFOUND answers as a dead/mistyped domain');
 
     let networkCalls = 0;
-    const dnsNx = new Error('getaddrinfo ENOTFOUND nope.invalid'); dnsNx.code = 'ENOTFOUND';
+    const dnsNx = new Error('getaddrinfo ENOTFOUND nope.example'); dnsNx.code = 'ENOTFOUND';
     const early = makeWebTools({
       fetchImpl: async () => { networkCalls++; throw new Error('fetch should not run after proven NXDOMAIN'); },
       lookup: async () => { throw dnsNx; }
     });
-    const r2 = await early.fetchTool.run({ url: 'https://nope.invalid/docs' }, {});
+    const r2 = await early.fetchTool.run({ url: 'https://nope.example/docs' }, {});
     A.eq(r2.summary, 'domain not found', 'resolver ENOTFOUND is preserved as terminal domain evidence');
     A.eq(networkCalls, 0, 'proven resolver ENOTFOUND avoids a doomed network timeout');
+
+    let reservedLookups = 0, reservedFetches = 0;
+    const reserved = makeWebTools({
+      fetchImpl: async () => { reservedFetches++; throw new Error('reserved host must never reach fetch'); },
+      lookup: async () => { reservedLookups++; return []; }
+    });
+    const started = Date.now();
+    const r3 = await reserved.fetchTool.run({ url: 'https://starnessos.invalid/docs' }, {});
+    A.eq(r3.summary, 'domain not found', 'reserved .invalid is immediate terminal domain evidence');
+    A.eq(reservedLookups, 0, 'reserved .invalid never burns an OS resolver timeout');
+    A.eq(reservedFetches, 0, 'reserved .invalid never reaches the network');
+    A.ok(Date.now() - started < 1000, 'reserved .invalid returns useful feedback in under one second');
   }
 
   // ---- E. a JS-only page (200, empty extract) answers "no readable text" instead of erroring ----

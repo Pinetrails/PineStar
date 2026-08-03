@@ -263,6 +263,15 @@
     if (!lookup) return;
     const h = hostOf(u);
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.indexOf(':') >= 0) return;   // already a literal
+    // RFC 2606 reserves .invalid specifically for names that can never resolve. Asking the host resolver anyway
+    // cost 11s on the release-audit machine before it returned ENOTFOUND, leaving a direct-domain run visibly
+    // "working" even though the answer is knowable locally. Preserve the same ENOTFOUND evidence shape without
+    // touching ordinary domains or their real DNS semantics.
+    if (h.endsWith('.invalid')) {
+      const e = new Error('getaddrinfo ENOTFOUND ' + h);
+      e.code = 'ENOTFOUND';
+      throw e;
+    }
     let addrs;
     try { addrs = await lookup(u.hostname); }
     catch (e) {
