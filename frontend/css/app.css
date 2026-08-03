@@ -84,6 +84,60 @@
   text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 10px var(--ph-glow2);
 }
 
+/* ---------- COMPACT CONSOLE KEYS — .bb.sm / .bb.xs ----------
+   The ~105 in-window action buttons (ADD KEY · SIGN IN · REVOKE · RUN NOW · REFRESH …). They
+   were the one control family that never got the material pass: flat hollow rectangles with hard
+   90° corners, sitting inside cards that are rounded and raised, and hanging off the surrounding
+   text's BASELINE. Reported 2026-08-03 (Andrew, SETTINGS ▸ PROVIDERS: "ugly and not even centered
+   correctly"). Both halves were measured live before this rule existed, not guessed:
+
+   1. GEOMETRY — every provider row read the button's centre 2.50px above its status text's centre.
+      The cause is baseline layout, and it cannot be nudged away with a margin: EVERY label in this
+      family mixes VT323 with a symbol glyph VT323 does not contain (＋ ⏼ ✕ ▸ ↻ ⌫ all fall back to
+      a system font — measured at 2.0–3.2× VT323's monospace advance), so the label carries two
+      different baselines before it even meets the text beside it. inline-flex + centre +
+      line-height:1 centres the label on the BOX instead, which is level by construction.
+   2. MATERIAL — the molded keycap the rest of the console already wears (.btn above, .bb-grp in
+      panelchrome.css): top light, phosphor body, shaded base, contact shadow, press sink. Matte,
+      never glossy. Only the surface and the radius change; the compact metrics stay compact so no
+      caller reflows.
+
+   Deliberately NOT the CONTROL FLOOR (see the block near line 100): that floor is element-level and
+   must never carry box metrics, radius or shadow. This is a real surface class, which is exactly
+   where material belongs. Per-surface skins still override (.mkt .bb.sm keeps the bay's tighter
+   metrics), and the canonical danger-armed rule still wins on !important. */
+.bb.sm, .bb.xs {
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 1; vertical-align: middle; border-radius: 4px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 6%, var(--panel2)) 0%,
+    var(--panel2) 58%,
+    color-mix(in srgb, #000 20%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .08),
+    inset 0 -2px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45);
+}
+/* 5px, not the 3px this rule replaced, and not the 7px a first pass guessed at. Measured: the label's
+   line box is 17.05px at this font size (line-height:1 sets a 13px STRUT, but VT323's own ascent+descent
+   still win the line box, so line-height alone shrinks nothing). 17.05 + 10 + 2px border = 29.05px —
+   within a fifth of a pixel of the 28.88px key this replaced, so all ~105 call sites keep their rhythm. */
+.bb.sm { padding: 5px 12px; }
+.bb.sm:hover, .bb.xs:hover {
+  color: var(--ph-bright); border-color: var(--ph);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 11%, var(--panel2)) 0%,
+    var(--panel2) 62%,
+    color-mix(in srgb, #000 16%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .12),
+    inset 0 -2px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45),
+    0 0 10px var(--ph-glow2);
+}
+/* pressed = the key is DOWN: the seat sinks and the base light goes out (same verb as .bb-grp) */
+.bb.sm:active, .bb.xs:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,.42); }
+
 input[type=text], input[type=password], input[type=url], input[type=search], input:not([type]), textarea.key-input {
   width: 100%; font-family: inherit; font-size: 19px; color: var(--ph-bright);
   background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, #000));
@@ -2262,7 +2316,15 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   padding: 0 5px; text-shadow: none;
 }
 .prov-ep { font-size: 11px; color: var(--ph-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prov-stat { font-size: 11px; color: var(--ph); text-align: right; letter-spacing: 1px; white-space: nowrap; }
+/* a flex ROW, not baseline-flowed inline content: the label and its action key centre against each
+   other by layout. As inline siblings the key sat a measured 2.50px off the label's centre on every
+   provider row, and no margin can fix that (the key's own label mixes two fonts — see COMPACT
+   CONSOLE KEYS). The text keeps its own span so the "N keys" <i> still stacks UNDER the label. */
+.prov-stat {
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  font-size: 11px; color: var(--ph); text-align: right; letter-spacing: 1px; white-space: nowrap;
+}
+.prov-stat-t { min-width: 0; }
 .prov-card.soon .prov-stat { color: var(--ph-dim); }                       /* locked: muted */
 .prov-card.avail .prov-stat { color: var(--gold); }                        /* "NO KEY" is an action prompt, not a disabled state */
 .prov-stat i { display: block; font-style: normal; color: var(--ph-dim); font-size: 10px; }
@@ -2318,7 +2380,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
    same Harness.setKey path as the key list, so a beginner never hunts for where keys live. The card wraps so the
    editor sits on its own full-width line below the name/status; gold accent = actionable, matching "NO KEY". */
 .prov-card { flex-wrap: wrap; }
-.prov-addkey { margin-top: 4px; margin-left: 12px; }  /* breathing room between the status text and the inline action */
+.prov-addkey { flex: none; }  /* .prov-stat's flex gap owns the spacing now — a margin here would re-break the centring */
 .prov-key-edit { flex-basis: 100%; margin-top: 6px; }
 .prov-key-edit[hidden] { display: none; }
 
@@ -3350,7 +3412,10 @@ body.crew-rail-off #screen-game.active {
 /* SKILLS capabilities perk dimmed when its toolset is switched off (honesty parity with the TOOLSETS console) */
 .perk.ts-disabled { opacity: .55; }
 .perk.ts-disabled .perk-stat { color: var(--ph-dim); }
-.bb.xs { font-size: 11px; padding: 2px 7px; }
+/* padding-block grew 2px→5px when .bb.xs went line-height:1 (see COMPACT CONSOLE KEYS): the old
+   value leaned on the inherited 1.6 line-height for its vertical breathing room, so keeping it
+   would have crushed the key to a 13px slab. Net box height is within a pixel of before. */
+.bb.xs { font-size: 11px; padding: 5px 9px; }
 /* connector add/edit form: one-line help, transport toggle, key:value textareas, transport tag on a row */
 .mc-hint { font-size: 11px; color: var(--ph-dim); margin: -2px 0 2px; line-height: 1.35; }
 .mc-hint code { color: var(--ph); }

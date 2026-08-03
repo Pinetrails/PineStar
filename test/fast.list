@@ -399,6 +399,7 @@ test/session-creation.test.js
 test/projects-view.test.js
 test/prepare-node.test.js
 test/summon.id.test.js
+test/summon-desk-prompt.test.js
 test/recruit-identity-ui.test.js
 test/subagents.test.js
 test/orchestration.test.js

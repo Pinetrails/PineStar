@@ -703,7 +703,13 @@
        matters — the failure mode of a multi-target driver is quietly reading the WRONG DOM, so
        switching is never implicit. */
     const pageSessions = new Map();    // CDP sessionId -> targetId, for every adopted extra tab
+    const tabWaiters = new Set();      // bounded observers waiting for popup adoption to become visible
     let activeSession = null;
+    function wakeTabWaiters() {
+      for (const wake of Array.from(tabWaiters)) {
+        try { wake(); } catch (_) {}
+      }
+    }
     /* POPUP ADOPTION. A popup is only safe to allow if EVERY new page target is paused before its
        first statement and shimmed. That needs auto-attach on the BROWSER connection: measured,
        Target.setAutoAttach sent on a PAGE session covers that page's own subordinate targets
@@ -873,8 +879,10 @@
                   cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: syntheticInputSource(popupsAdopted, inputMarker) }, sid).catch(() => {});
                   cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: settleBootstrap }, sid).catch(() => {});
                   pageSessions.set(sid, info.targetId);
+                  wakeTabWaiters();
                   cdp.send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {
                     pageSessions.delete(sid);
+                    wakeTabWaiters();
                     if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
                   });
                   return;
@@ -916,6 +924,7 @@
               if (!p || !p.sessionId) return;
               frameSessions.delete(p.sessionId);
               pageSessions.delete(p.sessionId);
+              wakeTabWaiters();
               // A closed tab must never leave the driver pointed at a dead session.
               if (activeSession === p.sessionId) activeSession = null;
             });
@@ -1455,6 +1464,32 @@
        appeared. Switching is explicit and never implicit — a multi-target driver's worst failure is
        silently reading the wrong DOM, so nothing moves the agent between tabs on its own. */
     function tabSessions() { return [openerSession].concat(Array.from(pageSessions.keys())); }
+    /* Popup adoption is delivered by Target.attachedToTarget, not by a page mutation. Callers that
+       must act on a newly opened tab need a bounded observation of that event; repeatedly sampling
+       tabs() guesses at scheduler speed and becomes flaky when the full QA suite is loading Chromium.
+       This resolves on the actual state transition and returns false on timeout, so a missing popup is
+       still an honest failure rather than an ever-widening sleep. */
+    async function waitForTabCount(count, budgetMs) {
+      const wanted = Math.max(1, Math.floor(Number(count) || 1));
+      const budget = Math.max(250, Math.min(WAIT_MAX_MS, Number(budgetMs || WAIT_DEFAULT_MS)));
+      if (tabSessions().length >= wanted) return true;
+      return await new Promise(resolve => {
+        let timer = null, done = false;
+        const finish = ok => {
+          if (done) return;
+          done = true;
+          tabWaiters.delete(wake);
+          if (timer) clearTimeout(timer);
+          resolve(ok);
+        };
+        const wake = () => {
+          if (tabSessions().length >= wanted) finish(true);
+        };
+        tabWaiters.add(wake);
+        timer = setTimeout(() => finish(tabSessions().length >= wanted), budget);
+        wake();
+      });
+    }
     async function tabs() {
       const c = await page();
       const out = [];
@@ -1758,7 +1793,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, waitFor, pdf, intercept, emulate, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, challengeStatus, handleDialog, screenshot, close, consoleLog: readConsoleLog, networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, waitForTabCount, selectTab, closeTab, inspect, evalPublic, waitFor, pdf, intercept, emulate, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, challengeStatus, handleDialog, screenshot, close, consoleLog: readConsoleLog, networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {

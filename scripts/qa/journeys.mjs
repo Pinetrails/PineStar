@@ -627,6 +627,7 @@ async function journeyDoubleSend(cdp, A, mock, diag) {
     await clickSel(cdp, sel); await sleep(120);
   }
   await waitSel(cdp, '.kb-cols', 20); await sleep(200);
+  await waitCrewBusyProjection(cdp);
   await parityCheck(cdp, A, 'J3.mid-toggle');
 
   // NO DUPLICATE board rows: each task id appears on the board at most once.
