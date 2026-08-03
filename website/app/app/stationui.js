@@ -5727,13 +5727,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // not just the raw token fraction. The projected wording says plainly that it is an estimate of the NEXT
     // request rather than a reading of one that happened — the app must never let a derived number read as
     // a measured one.
-    g.title = 'MEMORY OF THIS CHAT — ' + (s.known
+    const tip = 'MEMORY OF THIS CHAT — ' + (s.known
       ? (s.label + ' (' + s.pctLabel + ' full)' +
          (s.projected
            ? ', estimated for this chat’s next message from a real measurement of this model. It becomes exact the moment the agent replies.'
            : ', measured on this chat’s last request.') +
          ' How much of this conversation the model can still hold; when it fills, older turns are folded into a summary automatically.')
       : (s.limit ? 'measuring… send a message and this fills in' : 'measuring this model’s memory size…'));
+    // This runs every second. Writing `title` here would recreate the OS tooltip after Tooltip.adopt()
+    // removed it, while the pointer was already resting on the gauge (no second pointerover to re-adopt).
+    g.setAttribute('data-tip', tip);
+    g.removeAttribute('title');
   }
   let compactWired = false;
   function wireCompactBeat() {
