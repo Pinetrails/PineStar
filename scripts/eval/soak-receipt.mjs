@@ -26,6 +26,11 @@ const plannedEnd = Date.parse(soak.plannedEndAt), ended = Date.parse(soak.endedA
 const describe = String(soak.runtime && soak.runtime.describe || '');
 const subject = manifest.subject || {};
 const manifestDescribe = String(subject.provenance && subject.provenance.describe || '');
+const sampleTimes = samples.map(row => Date.parse(row && row.at));
+const sampleGaps = sampleTimes.slice(1).map((time, index) => (time - sampleTimes[index]) / 1000);
+const maxAllowedGapSeconds = Number(soak.intervalSeconds) * 1.5 + 5;
+const cpu = samples.map(row => finite(row && row.cpuSeconds));
+const resourceEvidenceRequired = subject.platform && subject.platform.platform === 'win32';
 const checks = [
   { id: 'provider-free-mode', pass: soak.mode === 'provider-free-control-plane' && soak.qualifiesRelease === false,
     actual: { mode: soak.mode, qualifiesRelease: soak.qualifiesRelease }, expected: { mode: 'provider-free-control-plane', qualifiesRelease: false } },
@@ -33,10 +38,21 @@ const checks = [
     actual: { completed: summary.completed, interrupted: soak.interrupted, endedAt: soak.endedAt }, expected: { completed: true, interrupted: false, endedAt: `>=${soak.plannedEndAt}` } },
   { id: 'sample-coverage', pass: samples.length === summary.healthChecks && samples.length >= minimumSamples,
     actual: { samples: samples.length, healthChecks: summary.healthChecks }, expected: { minimumSamples } },
+  { id: 'sampling-cadence', pass: sampleTimes.every(Number.isFinite) && sampleGaps.every(gap => gap > 0 && gap <= maxAllowedGapSeconds),
+    actual: { invalidTimestamps: sampleTimes.filter(time => !Number.isFinite(time)).length,
+      nonMonotonicGaps: sampleGaps.filter(gap => !(gap > 0)).length,
+      gapsOverLimit: sampleGaps.filter(gap => gap > maxAllowedGapSeconds).length,
+      maximumGapSeconds: sampleGaps.length ? Math.max(...sampleGaps) : null },
+    expected: { strictlyIncreasing: true, maximumGapSeconds: `<=${maxAllowedGapSeconds}` } },
   { id: 'health', pass: summary.healthFailures === 0 && samples.every(row => row && row.ok === true && row.status === 200),
     actual: { failures: summary.healthFailures, badSamples: samples.filter(row => !row || row.ok !== true || row.status !== 200).length }, expected: { failures: 0, badSamples: 0 } },
   { id: 'process-survival', pass: summary.unexpectedExits === 0 && samples.every(row => row.exited === false),
     actual: { unexpectedExits: summary.unexpectedExits, exitedSamples: samples.filter(row => row && row.exited !== false).length }, expected: { unexpectedExits: 0, exitedSamples: 0 } },
+  { id: 'resource-continuity', pass: !resourceEvidenceRequired || (samples.every(row => finite(row && row.rssBytes) > 0 && finite(row && row.cpuSeconds) >= 0) &&
+      cpu.slice(1).every((value, index) => value >= cpu[index])),
+    actual: { required: Boolean(resourceEvidenceRequired), missingRss: samples.filter(row => !(finite(row && row.rssBytes) > 0)).length,
+      missingCpu: cpu.filter(value => !(value >= 0)).length, cpuRegressions: cpu.slice(1).filter((value, index) => !(value >= cpu[index])).length },
+    expected: resourceEvidenceRequired ? { missingRss: 0, missingCpu: 0, cpuRegressions: 0 } : 'not required on this platform' },
   { id: 'version-continuity', pass: Boolean(describe) && samples.every(row => String(row.version || '') === describe),
     actual: { expectedDescribe: describe, mismatches: samples.filter(row => String(row && row.version || '') !== describe).length }, expected: { mismatches: 0 } },
   { id: 'candidate-binding', pass: subject.dirty === false && subject.provenance && subject.provenance.verified === true &&

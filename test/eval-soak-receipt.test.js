@@ -19,6 +19,7 @@ try {
   writeFileSync(manifestFile, JSON.stringify({ subject: {
     name: 'StarNet', version: '0.8.5', commit: 'a'.repeat(40), dirty: false,
     sourceTree: { value: 'b'.repeat(40) }, executable: { path: process.execPath, sha256: executableSha },
+    platform: { platform: 'win32', arch: 'x64' },
     provenance: { verified: true, describe }
   } }));
   const samples = Array.from({ length: 4 }, (_, index) => ({
@@ -52,6 +53,16 @@ try {
   A.ok(!redReceipt.result.pass && redReceipt.result.checks.some(row => row.id === 'health' && !row.pass), 'red receipt names the health failure');
   const verifyRed = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'verify-receipt', '--receipt', receiptFile], { cwd: root, encoding: 'utf8' });
   A.eq(verifyRed.status, 0, 'red evidence is still signed and tamper-evident');
+
+  soak.samples[2].ok = true; soak.summary.healthFailures = 0;
+  soak.samples[3].at = soak.samples[2].at;
+  soak.samples[3].cpuSeconds = 1;
+  writeFileSync(soakFile, JSON.stringify(soak));
+  const stalled = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8' });
+  A.eq(stalled.status, 1, 'a stalled clock and regressing process observation produce a red receipt');
+  const stalledReceipt = JSON.parse(readFileSync(receiptFile, 'utf8'));
+  A.ok(stalledReceipt.result.checks.some(row => row.id === 'sampling-cadence' && !row.pass), 'red receipt names non-monotonic sampling');
+  A.ok(stalledReceipt.result.checks.some(row => row.id === 'resource-continuity' && !row.pass), 'red receipt names regressing resource evidence');
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }
