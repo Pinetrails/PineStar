@@ -4,9 +4,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 export const TASK_SCHEMA = 'starnet.eval.task.v1';
 export const TRAJECTORY_SCHEMA = 'starnet.eval.trajectory.v1';
 export const REPORT_SCHEMA = 'starnet.eval.report.v1';
+export const BENCHMARK_VERSION = 'starnet-0.9.0-agent-quality-v1';
 
 const SECRET_KEY = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret|cookie|credential)/i;
 const REDACTED = '[REDACTED]';
+const QUALITY_DIMENSIONS = new Set(['planning', 'toolSelection', 'recovery', 'stopping', 'completion', 'latency', 'cost']);
 
 function finite(value, fallback = 0) {
   const n = Number(value);
@@ -58,6 +60,9 @@ export function validateTasks(tasks) {
     seen.add(task.id);
     if (!['active', 'pending'].includes(task.status)) throw new Error(`task ${task.id}: status must be active or pending`);
     if (task.status === 'active' && (!Array.isArray(task.graders) || !task.graders.length)) throw new Error(`task ${task.id}: active tasks need graders`);
+    for (const grader of task.graders || []) {
+      if (grader.dimension && !QUALITY_DIMENSIONS.has(grader.dimension)) throw new Error(`task ${task.id}: invalid quality dimension ${grader.dimension}`);
+    }
   }
   return tasks;
 }
@@ -122,7 +127,7 @@ export function deriveMetrics(trajectory) {
   };
 }
 
-function gradeOne(grader, trajectory) {
+function gradeOne(grader, trajectory, metrics) {
   const events = trajectory.events || [];
   const artifacts = trajectory.artifacts || [];
   let actual;
@@ -155,6 +160,18 @@ function gradeOne(grader, trajectory) {
       const hit = events.find(event => event.type === grader.event);
       actual = hit ? finite(valueAt(eventData(hit), grader.path), Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY;
       return { pass: actual >= finite(grader.value), actual: Number.isFinite(actual) ? actual : null, expected: { min: grader.value } };
+    }
+    case 'event_data_sequence': {
+      actual = events.filter(event => event.type === grader.event).map(event => valueAt(eventData(event), grader.path));
+      return { pass: JSON.stringify(actual) === JSON.stringify(grader.values || []), actual, expected: grader.values || [] };
+    }
+    case 'tool_sequence': {
+      actual = eventsOf(trajectory, 'agent.tool_call').map(event => String(eventData(event).name || ''));
+      return { pass: JSON.stringify(actual) === JSON.stringify(grader.values || []), actual, expected: grader.values || [] };
+    }
+    case 'metric_max': {
+      actual = finite(metrics && metrics[grader.metric], Number.POSITIVE_INFINITY);
+      return { pass: actual <= finite(grader.value), actual: Number.isFinite(actual) ? actual : null, expected: { metric: grader.metric, max: grader.value } };
     }
     case 'artifact_hash': {
       const artifact = artifacts.find(item => item.path === grader.path);
@@ -207,8 +224,12 @@ function gradeOne(grader, trajectory) {
   }
 }
 
-export function gradeTask(task, trajectory) {
-  const grades = task.graders.map((grader, index) => Object.assign({ id: grader.id || `${grader.type}-${index + 1}`, type: grader.type }, gradeOne(grader, trajectory)));
+export function gradeTask(task, trajectory, metrics = deriveMetrics(trajectory)) {
+  const grades = task.graders.map((grader, index) => Object.assign({
+    id: grader.id || `${grader.type}-${index + 1}`,
+    type: grader.type,
+    dimension: grader.dimension || ''
+  }, gradeOne(grader, trajectory, metrics)));
   const passed = grades.filter(grade => grade.pass).length;
   return { pass: passed === grades.length, score: grades.length ? passed / grades.length : 0, grades };
 }
@@ -252,8 +273,8 @@ export function evaluate({ tasks, candidateRows, baselineRows = [] }) {
       results.push({ taskId: task.id, status: 'missing', pass: false, failures: ['candidate trajectory missing'] });
       continue;
     }
-    const grading = gradeTask(task, trajectory);
     const metrics = deriveMetrics(trajectory);
+    const grading = gradeTask(task, trajectory, metrics);
     const baselineTrajectory = baselines.get(task.id);
     const baselineMetrics = baselineTrajectory ? deriveMetrics(baselineTrajectory) : null;
     const regressions = compareMetrics(task, metrics, baselineMetrics);
@@ -265,10 +286,33 @@ export function evaluate({ tasks, candidateRows, baselineRows = [] }) {
   }
   const active = results.filter(result => result.status !== 'pending');
   const failed = active.filter(result => !result.pass);
+  const dimensions = {};
+  for (const result of active) {
+    if (!result.grading) continue;
+    for (const grade of result.grading.grades) {
+      const key = grade.dimension;
+      if (!key) continue;
+      const row = dimensions[key] || (dimensions[key] = { passed: 0, total: 0, score: 0 });
+      row.total++;
+      if (grade.pass) row.passed++;
+    }
+  }
+  for (const row of Object.values(dimensions)) row.score = row.total ? row.passed / row.total : 0;
+  const dimensionRows = Object.values(dimensions);
+  const qualityScore = dimensionRows.length
+    ? dimensionRows.reduce((sum, row) => sum + row.score, 0) / dimensionRows.length
+    : 0;
   return redactDeep({
     schemaVersion: REPORT_SCHEMA,
+    benchmarkVersion: BENCHMARK_VERSION,
+    suiteDigest: sha256Text(BENCHMARK_VERSION + '\n' + JSON.stringify(tasks)),
+    baselineDigest: sha256Text(JSON.stringify(baselineRows)),
     generatedAt: new Date().toISOString(),
-    summary: { pass: failed.length === 0, active: active.length, passed: active.length - failed.length, failed: failed.length, pending: results.length - active.length },
+    summary: {
+      pass: failed.length === 0, active: active.length, passed: active.length - failed.length,
+      failed: failed.length, pending: results.length - active.length,
+      qualityScore, dimensions
+    },
     results
   });
 }

@@ -86,7 +86,10 @@ function referenceMeta(opts, contract) {
 
 function printReport(report, reportFile = '') {
   const s = report.summary;
-  console.log(`[agent-eval] ${s.pass ? 'PASS' : 'FAIL'} active=${s.active} passed=${s.passed} failed=${s.failed} pending=${s.pending}`);
+  console.log(`[agent-eval] ${s.pass ? 'PASS' : 'FAIL'} active=${s.active} passed=${s.passed} failed=${s.failed} pending=${s.pending} quality=${(s.qualityScore * 100).toFixed(1)}`);
+  const dimensions = Object.entries(s.dimensions || {}).map(([name, row]) => `${name}=${(row.score * 100).toFixed(0)}`).join(' ');
+  if (dimensions) console.log('[agent-eval] dimensions ' + dimensions);
+  console.log(`[agent-eval] benchmark=${report.benchmarkVersion} suite=${report.suiteDigest.slice(0, 12)} baseline=${report.baselineDigest.slice(0, 12)}`);
   for (const result of report.results) {
     if (result.status === 'pending') console.log(`[agent-eval] SKIP ${result.taskId} — pending adapter ${result.adapter || 'unassigned'}`);
     else console.log(`[agent-eval] ${result.pass ? 'PASS' : 'FAIL'} ${result.taskId}${result.failures && result.failures.length ? ' — ' + result.failures.join('; ') : ''}`);
@@ -101,8 +104,10 @@ async function run(opts) {
   if (opts.candidate) candidateRows = readJsonl(resolve(opts.candidate));
   else {
     const { runBridgeAdapters } = await import('./adapters/bridge.mjs');
-    candidateRows = readJsonl(DEFAULTS.candidate).filter(row => !String(row.taskId).startsWith('bridge-'));
+    const { runQualityAdapters } = await import('./adapters/quality.mjs');
+    candidateRows = readJsonl(DEFAULTS.candidate).filter(row => !/^(?:bridge|quality)-/.test(String(row.taskId)));
     candidateRows.push(...await runBridgeAdapters());
+    candidateRows.push(...await runQualityAdapters());
   }
   if (opts['candidate-out']) {
     ensureParent(opts['candidate-out']);

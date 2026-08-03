@@ -44,6 +44,7 @@
     "audit:longhaul:budget": "node scripts/longhaul-audit.mjs --scales=3000 --enforce-budgets",
     "eval:recommendations": "node scripts/recommendation-replay.mjs",
     "eval:model-system-intents": "node scripts/model-system-intent-eval.mjs",
+    "eval:agent-quality": "node scripts/eval/runner.mjs run",
     "golden": "node scripts/golden.mjs",
     "golden:bless": "node scripts/golden.mjs --bless",
     "phase2": "node scripts/phase2.mjs",

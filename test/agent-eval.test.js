@@ -15,7 +15,12 @@ const { tmpdir } = require('node:os');
   const candidate = core.readJsonl(join(fixtures, 'candidate.jsonl'));
 
   const report = core.evaluate({ tasks, baselineRows: baseline, candidateRows: candidate });
-  A.eq(report.summary, { pass: true, active: 8, passed: 8, failed: 0, pending: 0 }, 'seed pack passes existing behavior and all six bridge scenarios');
+  A.eq({ pass: report.summary.pass, active: report.summary.active, passed: report.summary.passed, failed: report.summary.failed, pending: report.summary.pending },
+    { pass: true, active: 13, passed: 13, failed: 0, pending: 0 }, 'seed pack passes existing behavior, bridge parity, and five quality scenarios');
+  A.eq(report.summary.qualityScore, 1, 'seven quality dimensions produce an equal-weight perfect deterministic baseline');
+  A.eq(Object.keys(report.summary.dimensions).sort(), ['completion', 'cost', 'latency', 'planning', 'recovery', 'stopping', 'toolSelection'], 'scorecard names every requested quality dimension');
+  A.ok(/^[a-f0-9]{64}$/.test(report.suiteDigest) && /^[a-f0-9]{64}$/.test(report.baselineDigest), 'report binds the exact suite and comparison baseline');
+  A.eq(report.benchmarkVersion, 'starnet-0.9.0-agent-quality-v1', 'receipt names the fixed StarNet 0.9.0 benchmark version');
   A.eq(report.results[1].metrics, {
     turns: 1, toolCalls: 1, retries: 0, tokensIn: 20, tokensOut: 8, tokens: 28, costUsd: 0.000036, firstTokenMs: 0, durationMs: 190,
     artifactHashes: [{ path: 'output.md', sha256: '0da6d1b1911c49b32fb845247367d08532316038e81c2b524de8b192818e1e9f' }], verificationFresh: true
@@ -31,10 +36,15 @@ const { tmpdir } = require('node:os');
   A.eq(redacted.events[0].data.apiKey, '[REDACTED]', 'sensitive field is redacted');
 
   const { runBridgeAdapters } = await import('../scripts/eval/adapters/bridge.mjs');
+  const { runQualityAdapters } = await import('../scripts/eval/adapters/quality.mjs');
   const liveBridge = await runBridgeAdapters();
   const recordedBridge = candidate.filter(row => row.taskId.startsWith('bridge-'));
   A.eq(liveBridge, recordedBridge, 'real module adapters reproduce the committed candidate evidence byte-for-byte');
   A.eq(liveBridge.map(row => row.taskId), ['bridge-continuation', 'bridge-recovery', 'bridge-code-mode', 'bridge-lsp-delta', 'bridge-full-history', 'bridge-cron-runtime'], 'every runtime bridge has a deterministic adapter');
+  const liveQuality = await runQualityAdapters();
+  const recordedQuality = candidate.filter(row => row.taskId.startsWith('quality-'));
+  A.eq(liveQuality, recordedQuality, 'real-loop quality adapters reproduce the committed current baseline byte-for-byte');
+  A.ok(liveQuality.every(row => row.events.find(event => event.type === 'quality.safety' && event.data.externalDispatches === 0)), 'every quality scenario proves zero external dispatches');
 
   const broken = JSON.parse(JSON.stringify(candidate));
   broken[0].finalText = 'wrong answer';
@@ -58,12 +68,23 @@ const { tmpdir } = require('node:os');
   A.eq(retryResult.pass, false, 'a contradictory retry summary cannot false-green the trajectory');
   A.ok(retryResult.failures.some(x => x.includes('retries')), 'the observed retry regression is named');
 
+  const inefficient = JSON.parse(JSON.stringify(candidate));
+  const slowRow = inefficient.find(row => row.taskId === 'quality-stop-on-proof');
+  slowRow.metrics = { durationMs: 999, tokens: 999, costUsd: 0.1 };
+  const efficiencyFailure = core.evaluate({ tasks, baselineRows: baseline, candidateRows: inefficient });
+  const slowResult = efficiencyFailure.results.find(row => row.taskId === 'quality-stop-on-proof');
+  A.eq(slowResult.pass, false, 'absolute quality ceilings and baseline regressions fail the task');
+  A.ok(slowResult.grading.grades.some(grade => grade.dimension === 'latency' && !grade.pass), 'latency failure is assigned to latency');
+  A.ok(slowResult.grading.grades.some(grade => grade.dimension === 'cost' && !grade.pass), 'token/cost failure is assigned to cost');
+  A.ok(efficiencyFailure.summary.dimensions.latency.score < 1 && efficiencyFailure.summary.dimensions.cost.score < 1, 'dimension scorecard cannot hide efficiency regressions');
+
   const temp = mkdtempSync(join(tmpdir(), 'starnet-agent-eval-'));
   try {
     const reportFile = join(temp, 'report.json');
     const cli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'run', '--report', reportFile], { cwd: root, encoding: 'utf8' });
     A.eq(cli.status, 0, 'default CLI seed evaluation exits zero');
-    A.ok(/PASS active=8/.test(cli.stdout), 'CLI prints a compact pass receipt');
+    A.ok(/PASS active=13/.test(cli.stdout) && /quality=100\.0/.test(cli.stdout), 'CLI prints a compact scored baseline receipt');
+    A.ok(/planning=100/.test(cli.stdout) && /recovery=100/.test(cli.stdout) && /cost=100/.test(cli.stdout), 'CLI prints the requested dimensions');
     A.eq(JSON.parse(readFileSync(reportFile, 'utf8')).summary.pass, true, 'CLI writes the report');
 
     const rawFile = join(temp, 'raw.jsonl');
@@ -84,5 +105,8 @@ const { tmpdir } = require('node:os');
   }
 
   A.throws(() => core.validateTasks([tasks[0], tasks[0]]), 'duplicate task ids fail schema validation');
+  const invalidDimension = JSON.parse(JSON.stringify(tasks[8]));
+  invalidDimension.graders[0].dimension = 'vibes';
+  A.throws(() => core.validateTasks([invalidDimension]), 'unknown quality dimensions fail validation instead of diluting the score');
   A.report('agent-eval.test');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

@@ -1,7 +1,9 @@
-# StarNet agent evaluations
+# StarNet agent-quality benchmark
 
 This is the dependency-free, task-outcome evaluation layer. It complements the existing wiring,
 UI, release, and workload gates; it does not replace them or make a release-readiness claim.
+The fixed suite identifier is `starnet-0.9.0-agent-quality-v1`. Its first baseline was captured on
+the pre-version-bump 0.9.0 integration candidate while `package.json` still reported 0.8.5.
 
 ## v0.9 reliability and parity contract
 
@@ -146,6 +148,82 @@ Run the deterministic seed pack:
 node scripts/eval/runner.mjs run --report .dogfood/agent-eval/report.json
 ```
 
+The package shortcut is `npm run eval:agent-quality`. The default run executes five fixed quality
+scenarios through the production `runAgentLoop`, six bridge-parity adapters, and two legacy seed
+trajectories. It needs no credential and performs no network, shell, browser, message, or persistent
+filesystem action. Quality tools are an in-memory allowlist; any tool marked external is refused by
+the adapter and makes the task's exact tool-sequence grader fail.
+
+## Fixed quality suite
+
+| Task | Behavior under test | Side-effect boundary |
+| --- | --- | --- |
+| `quality-inspect-plan` | inspect before a bounded, evidence-based plan | read-only virtual project |
+| `quality-dedicated-tool` | authoritative dedicated tool beats shell/browser | shell and browser hard-disabled |
+| `quality-recover-failure` | one failed source leads to a different verified source | virtual docs and cache |
+| `quality-stop-on-proof` | exact NXDOMAIN evidence ends research | no DNS, search, or browser call |
+| `quality-verify-completion` | write, read back, report exact completion | in-memory draft; send hard-disabled |
+
+These tasks are deliberately small and stable. Add a scenario only when it represents a distinct
+decision boundary; do not turn the pack into a copy of the broad HTTP or UI gates.
+
+## Scoring
+
+Every grader is assigned to one of seven dimensions: `planning`, `toolSelection`, `recovery`,
+`stopping`, `completion`, `latency`, or `cost`. A dimension score is passed graders divided by total
+graders in that dimension. `qualityScore` is the unweighted mean of the seven dimension scores, so a
+large completion rubric cannot hide a recovery failure. The process still fails closed when any
+active task misses its configured correctness floor or regresses beyond its committed baseline.
+
+Latency is deterministic trajectory time, not wall-clock scheduler noise. Cost uses reconciled
+`agent.cost` rows; token input/output and USD are reported when observable. Exact tool order,
+error-to-success order, terminal reason, artifact hash, and fresh read-back are graded from events or
+receipts rather than from an agent's unsupported final claim.
+
+### Current baseline (2026-08-03, source `cdd04226`)
+
+`npm run eval:agent-quality` produces `PASS active=13 passed=13 failed=0 quality=100.0`; each of the
+seven dimensions is 100%. The five judgment scenarios have these deterministic measurements:
+
+| Task | Turns | Tools | Tokens | Observed USD | Deterministic latency |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| inspect + plan | 3 | 2 | 113 | 0.000153 | 170 ms |
+| dedicated tool | 2 | 1 | 58 | 0.000077 | 120 ms |
+| recover failure | 3 | 2 | 106 | 0.000138 | 170 ms |
+| stop on proof | 2 | 1 | 54 | 0.000072 | 120 ms |
+| verify completion | 3 | 2 | 91 | 0.000114 | 180 ms |
+
+This is a replay/loop conformance baseline. A perfect score means the harness, scoring, accounting,
+and safety boundaries reproduce the reviewed trajectories; it does **not** mean every production
+model will make the same decisions. Stochastic model/prompt comparisons must record repeated runs
+against these same virtual tools and report model, prompt/build identity, sample count, and variance.
+
+## Failure interpretation
+
+- A correctness failure names the grader and actual evidence. Treat a wrong tool sequence or a
+  claimed completion without fresh read-back as a behavior regression, even if the prose sounds good.
+- `toolSelection` plus a nonzero `externalDispatches` is a benchmark isolation breach. Stop; do not
+  accept or rebaseline that receipt.
+- `recovery` failure means the agent repeated a dead path, failed to change strategy, or reported an
+  answer without the successful fallback.
+- `stopping` failure means redundant turns/tools, the wrong terminal reason, or work continuing after
+  sufficient evidence. It often predicts excess latency and tokens too.
+- `latency`/`cost` alone means the outcome stayed correct but became less efficient. Inspect turns,
+  tool calls, retries, and token split before changing thresholds.
+- A missing task, invalid row, unknown grader, or pending adapter is never counted as an evaluated
+  pass. Do not update `baseline.jsonl` merely to make a regression green; review the changed
+  trajectory and explain why the new behavior is preferable.
+
+## Highest-leverage next measurements
+
+1. Add an opt-in repeated-model runner over the same virtual tool boundary (minimum five samples),
+   keeping the deterministic replay run as the merge gate. This is the missing evidence for prompt
+   and model-quality claims.
+2. Capture p50/p95 wall latency and token variance separately from deterministic trajectory time;
+   never mix provider jitter into the conformance score.
+3. Add one multi-agent delegation scenario only after its worker transcript and aggregate accounting
+   can be captured without network or external writes. The current suite measures a single lead loop.
+
 Evaluate a candidate trajectory file against another baseline:
 
 ```powershell
@@ -177,7 +255,7 @@ reviewed fixtures belong in Git.
 
 ## Activating a bridge scenario
 
-The five bridge scenarios are active and default runs execute their real adapters from
+The six bridge scenarios are active and default runs execute their real adapters from
 `adapters/bridge.mjs`: semantic continuation through `runAgentLoop`, restart analysis through the
 append-only run journal, isolated `code.run`, stdio LSP edit deltas, and segmented-history recall
 after restart. `fixtures/candidate.jsonl` is the reviewed deterministic receipt; the test requires

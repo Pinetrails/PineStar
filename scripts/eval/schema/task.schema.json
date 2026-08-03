@@ -18,7 +18,8 @@
         "type": "object",
         "required": ["type"],
         "properties": {
-          "type": { "enum": ["final_contains", "final_equals", "event_count", "event_data_equals", "event_data_min", "run_reason", "artifact_hash", "verification_fresh", "outcome_pass", "safety_invariants", "route_match", "fault_recovery"] }
+          "type": { "enum": ["final_contains", "final_equals", "event_count", "event_data_equals", "event_data_min", "event_data_sequence", "tool_sequence", "metric_max", "run_reason", "artifact_hash", "verification_fresh", "outcome_pass", "safety_invariants", "route_match", "fault_recovery"] },
+          "dimension": { "enum": ["planning", "toolSelection", "recovery", "stopping", "completion", "latency", "cost"] }
         }
       }
     },
