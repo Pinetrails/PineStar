@@ -58,7 +58,7 @@ A.ok(/Promise\.race\(\[call,\s*new Promise\(r => setTimeout\(\(\) => r\(null\), 
 }
 
 /* ---------- 4. the rust keychain list still excludes codex (the reason the probe exists) ---------- */
-const rustSrc = fs.readFileSync(path.join(__dirname, '../src-tauri/src/main.rs'), 'utf8');
+const rustSrc = fs.readFileSync(path.join(__dirname, '../src-tauri/src/credentials.rs'), 'utf8');
 const m = /const KEYCHAIN_PROVIDERS[^;]+;/s.exec(rustSrc);
 A.ok(m && m[0].indexOf('"codex"') < 0,
   'codex stays out of KEYCHAIN_PROVIDERS (tokens are sidecar-side; if this ever changes, revisit this lock)');
