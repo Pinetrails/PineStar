@@ -124,31 +124,7 @@ jobs:
       - name: Hydrate Intel Sharp runtime for macOS cross-build
         if: runner.os == 'macOS' && matrix.target == 'darwin-x64'
         shell: bash
-        run: |
-          set -euo pipefail
-          hydrate_locked_package() {
-            key="$1"
-            dest="$2"
-            version=$(node -p "require('./package-lock.json').packages[process.argv[1]].version" "$key")
-            expected=$(node -p "require('./package-lock.json').packages[process.argv[1]].integrity" "$key")
-            spec="${key#node_modules/}"
-            tgz=$(npm pack "$spec@$version" --pack-destination "$RUNNER_TEMP" --silent)
-            actual="sha512-$(openssl dgst -sha512 -binary "$RUNNER_TEMP/$tgz" | openssl base64 -A)"
-            if [ "$actual" != "$expected" ]; then
-              echo "::error::lockfile integrity mismatch while hydrating $spec@$version"
-              exit 1
-            fi
-            mkdir -p "$dest"
-            tar -xzf "$RUNNER_TEMP/$tgz" -C "$dest" --strip-components=1
-          }
-          hydrate_locked_package \
-            node_modules/@img/sharp-darwin-x64 \
-            node_modules/@img/sharp-darwin-x64
-          hydrate_locked_package \
-            node_modules/@img/sharp-libvips-darwin-x64 \
-            node_modules/@img/sharp-libvips-darwin-x64
-          node -e "for (const n of ['sharp-darwin-x64','sharp-libvips-darwin-x64']) require('./node_modules/@img/'+n+'/package.json')"
-          git diff --exit-code -- package.json package-lock.json
+        run: bash scripts/hydrate-sharp-macos-x64.sh
 
       - name: Stage bundled Node sidecar runtime
         run: |
@@ -264,46 +240,7 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          cert="$RUNNER_TEMP/starnet-developer-id.p12"
-          keychain="$RUNNER_TEMP/starnet-native-signing.keychain-db"
-          keychain_password=$(openssl rand -hex 24)
-          printf '%s' "$APPLE_CERTIFICATE" | openssl base64 -d -A -out "$cert"
-          security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$cert" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
-          security list-keychains -d user -s "$keychain"
-          security find-identity -v -p codesigning "$keychain" | grep -F "$APPLE_SIGNING_IDENTITY" >/dev/null || {
-            echo "::error::[$TARGET] Developer ID identity was not imported into the native-dependency signing keychain."
-            exit 1
-          }
-
-          img="src-tauri/voice-deps/node_modules/@img"
-          case "$TARGET" in
-            darwin-arm64) sharp="sharp-darwin-arm64"; vips="sharp-libvips-darwin-arm64" ;;
-            darwin-x64)   sharp="sharp-darwin-x64";   vips="sharp-libvips-darwin-x64" ;;
-            *) echo "::error::unsupported macOS target $TARGET"; exit 1 ;;
-          esac
-          find "$img" -mindepth 1 -maxdepth 1 -type d -name 'sharp-*' \
-            ! -name "$sharp" ! -name "$vips" -print -exec rm -rf '{}' +
-          [ -d "$img/$sharp" ] || { echo "::error::[$TARGET] target Sharp native package $sharp is missing."; exit 1; }
-
-          signed=0
-          while IFS= read -r -d '' native; do
-            if file -b "$native" | grep -q 'Mach-O'; then
-              codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$native"
-              codesign --verify --strict --verbose=2 "$native"
-              signed=$((signed+1))
-            fi
-          done < <(find src-tauri/voice-deps/node_modules -type f -print0)
-          if [ "$signed" -eq 0 ]; then
-            echo "::error::[$TARGET] no staged Mach-O dependencies were found to sign."
-            exit 1
-          fi
-          echo "::notice::[$TARGET] Developer ID signed + timestamped $signed staged native dependencies."
+        run: bash scripts/sign-macos-native-deps.sh
 
       - name: Build desktop bundles (signed updater artifacts required)
         shell: bash
