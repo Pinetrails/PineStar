@@ -1,5 +1,32 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 - v0.9.0 WAVE A PROOF RAILS (`agent/release-090-parity-plan`)
+
+READY TO MERGE. `fc7f594c` freezes Hermes Agent v0.19.1/tag `v2026.7.30` at commit
+`d25e2dbdbc40b49808c0a0e9cfed21cc90cffab3`, classifies all 37 advertised StarNet claim
+families, and adds one redacted `starnet.eval.receipt.v1` format for source and installed-candidate
+evidence. The 10 run-boundary fault pack and 32 shared workload pack are active and fail closed on
+missing trajectories. Their gates enforce 100% critical success, at least 95% overall, a maximum
+five-point reference gap, and zero false-done, wrong-destination, duplicate-mutation, or authority
+escape events. `npm run eval:contract`, `eval:fault`, `eval:parity`, and `eval:baseline` are the
+operator commands.
+
+All seven previously open P2 bugs were stale against fixes already on trunk; the register now binds
+them to `fdbb12a2`, `b315063b`, `226cec3c`, and `f4d03511` with mechanism verdicts and reports
+0 P0 / 0 P1 / 0 P2 open. The Field Manual now exposes REPLAY QUICK TOUR, closes itself before the
+real Dialogue lesson starts, and preserves first-step progress. Glossary coverage adds everyday
+harness terms and a gate requiring every literal `data-hint` in the shipped UI to resolve.
+
+Verification: focused eval, onboarding, mirror, P2 regression, register, JSON, and syntax gates are
+green; `test:fast` is 497/497; full `test:http` is green. A seeded returning station proved the
+manual replay control, preserved visible checklist progress, manual-to-Dialogue handoff, live UPLINK,
+and zero browser console errors. The clean 15-sample v0.8.5 source receipt is bound to `fc7f594c`
+with `dirty:false`: bridge pack median 5439.7 ms, evaluator median 0.37 ms, and Node startup median
+60.822 ms. It is deliberately `candidateBound:false`: installed cold boot, first token/tool/useful
+artifact, 48-hour resource behavior, 100x fault trajectories, three-run shared workloads, and the
+real Hermes comparison remain the next proof wave. No provider run, external message, push, PR,
+merge, deploy, publish, credential, or production-data change was performed.
+
 ## 2026-08-02 - v0.9.0 RELIABILITY PROOF PLAN (`agent/release-090-parity-plan`)
 
 PLAN READY FOR REVIEW. v0.9.0 is reframed around the actual field signal: model output has
