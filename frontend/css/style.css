@@ -176,6 +176,13 @@ html, body { height: 100%; overflow: hidden; }
    frame — paint it tube-black so resizes never flash a white sliver */
 html { background: #030201; }
 body {
+  /* THE CABINET MULTIPLIER. TEXT SIZE is a `zoom` on this element (stationui.js applySettings), so
+     every length below it is multiplied by that zoom. --cz turns a DESIGNED px back into a local px
+     for anything that is hardware rather than content — write `calc(<designed>px * var(--cz))` and
+     it renders at the size it was drawn at, at any text size. Inside a block that has already been
+     counter-zoomed whole (app.css's topbar/dock/nameplate rule) the multiplier is 1, so the SAME
+     calc is correct on both sides of that line. Unset = 1 = the shipped numbers untouched. */
+  --cz: var(--sn-unzoom, 1);
   background: var(--bg);
   color: var(--text);
   font-family: 'VT323', 'Courier New', monospace;
@@ -193,12 +200,12 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
      TEXT SIZE zooms <body> (stationui.js applySettings) and that zoom multiplies into this overlay,
      so every hard-px length below used to scale with the text: the 3px beam pitch rendered at
      4.35px on HUGE, which stops reading as a beam and reads as venetian blinds. --cz is the exact
-     reciprocal stationui publishes beside the zoom (--crt-unzoom), applied to EVERY stop so the
+     reciprocal stationui publishes beside the zoom (--sn-unzoom), applied to EVERY stop so the
      pitch lands back at its authored device size at any text size. Kept as calc'd stops on the
      repeating gradient rather than a tiled background-size: one continuous rasterisation across the
      box has no tile seams, which is what keeps fractional-DPI displays free of moiré. Unset (the
      100% default) resolves to 1, i.e. these are the shipped numbers, untouched. */
-  --cz: var(--crt-unzoom, 1);
+  --cz: var(--sn-unzoom, 1);
   /* BEAM scanlines: a soft dark trough between bright line-cores (graded stops,
      not a hard 1px bar) so it reads as an electron beam, not venetian blinds —
      and the soft edges alias far less on fractional-DPI displays. 3px pitch. */
@@ -262,7 +269,9 @@ body:not(.no-flicker) #app { animation: flick 7s infinite; }
 #topbar, #left, #right, #bottombar, #center {
   position: relative;
   border: 1px solid rgba(0, 0, 0, 0.85);
-  border-radius: 9px;
+  /* the bezel is hardware: its corner keeps the radius it was drawn with at every TEXT SIZE
+     (see the --cz note on `body`) — a zoomed 9px reads as 13px and the casing goes blobby. */
+  border-radius: calc(9px * var(--cz));
   background:
     radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
     var(--panel);
@@ -406,7 +415,7 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 
 /* ================= CENTER / CRT ================= */
 #center { padding: 4px; background: #000; min-width: 0; min-height: 0; overflow: hidden; }
-#station-frame { position: relative; width: 100%; height: 100%; overflow: hidden; background: #030201; border-radius: 7px; }
+#station-frame { position: relative; width: 100%; height: 100%; overflow: hidden; background: #030201; border-radius: calc(7px * var(--cz)); }
 #station {
   width: 100%; height: 100%; object-fit: contain;
   filter: var(--cam-grade);

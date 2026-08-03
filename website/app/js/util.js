@@ -18,6 +18,23 @@ const U = {
      disagree by this factor. Any code writing style coordinates from visual reads divides by it. */
   uiZoom() { const z = parseFloat(document.body && document.body.style ? document.body.style.zoom : ''); return z > 0 ? z : 1; },
 
+  /* ...but uiZoom() is only the right divisor for a <body> CHILD. TEXT SIZE scales the type and
+     leaves the CABINET at its designed size (app.css counter-zooms the topbar, dock, nameplates
+     and the brand mark back to 1:1), so an element inside one of those blocks writes its style
+     coordinates in VISUAL px while a body child still writes them in body-zoomed px. Divide by
+     THIS instead of uiZoom() whenever the element you are positioning might live in the cabinet —
+     it composes every zoom from the element up to the root, so it is simply the factor the engine
+     actually applied, and it collapses to uiZoom()'s answer for an ordinary body child. */
+  elZoom(el) {
+    if (!el || typeof getComputedStyle !== 'function') return U.uiZoom();
+    let z = 1;
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const v = parseFloat(getComputedStyle(n).zoom);
+      if (v > 0) z *= v;
+    }
+    return z > 0 ? z : U.uiZoom();
+  },
+
   /* shared window stacking order — every floating window (UI terms + prop
      terminals) pulls from one counter so click-to-front works across both */
   _z: 500,
