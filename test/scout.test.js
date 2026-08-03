@@ -301,7 +301,11 @@ A.eq(S.matchArchetype(ARCH, { topics: [{ label: 'gpu price tracking', weight: 0.
 A.eq(S.matchArchetype(ARCH, { topics: [] }), null, 'no learned topics -> no archetype match');
 A.eq(S.matchArchetype(ARCH, { topics: [{ label: 'daily general work', weight: 2, count: 9 }] }), null, 'generic-word topics are stopworded, never a match');
 // dedup: an archetype the Commander already HAS (roster/custom/staged name) is never re-pitched…
-A.eq(S.matchArchetype(ARCH, { topics: priceTopics, existingNames: ['Broker'] }), null, 'an already-held archetype is never re-pitched (name dedup, case-insensitive)');
+// derived from the LIVE catalog, never a hardcoded display name: the dedup is name-based, so a class rename
+// (2026-08-03 renamed broker -> "Deal Finder") would otherwise silently turn this assertion into a no-op.
+// Lower-cased on purpose — the dedup must be case-insensitive.
+const brokerName = ARCH.find(a => a.id === 'broker').name;
+A.eq(S.matchArchetype(ARCH, { topics: priceTopics, existingNames: [brokerName.toLowerCase()] }), null, 'an already-held archetype is never re-pitched (name dedup, case-insensitive)');
 // …and a dismissed shape stays dead (fingerprint denylist, same 0.6 overlap rule as the LLM path).
 const deadFp = S.fingerprint('Broker Compare deals & call the buy');
 A.eq(S.matchArchetype(ARCH, { topics: priceTopics, denylist: [deadFp] }), null, 'a dismissed archetype shape never re-mints');

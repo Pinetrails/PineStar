@@ -83,8 +83,11 @@ for (const [q, id] of HITS) {
   }
 }
 
-// naming a class outright is the strongest possible signal — one term is enough when it IS the class's name.
-for (const [q, id] of [['i need a paralegal for this', 'paralegal'], ['get me a ghostwriter', 'ghostwriter'], ['can I have a nightwatch', 'nightwatch']]) {
+// Naming a class outright is the strongest possible signal — one term is enough when it IS the class's name.
+// NOTE these use the DISPLAY names, which are deliberately plain-English (2026-08-03: the station-flavour names
+// — paralegal, nightwatch, harvester — were renamed after Andrew reported they read as abstract). The catalog
+// ids stayed put, so a rename only ever moves what a user can SAY to reach a class, never a saved agent.
+for (const [q, id] of [['i need a contract reader for this', 'paralegal'], ['get me a ghostwriter', 'ghostwriter'], ['can I get a meal planner', 'provisioner']]) {
   const m = IO.match(q, C);
   A.ok(!!m && m.id === id, 'naming the class outright offers it: "' + q + '"');
 }

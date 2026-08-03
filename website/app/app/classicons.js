@@ -119,19 +119,19 @@
      system again: clean, accent-themed, unique per class. Custom classes fall back to their emoji.) */
 
   const CODE = {
-    chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
+    chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'AUT',
     analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN',
-    broker: 'BRK', tutor: 'TUT', auditor: 'AUD', translator: 'XLT', herald: 'HLD',
-    navigator: 'NAV', curator: 'CUR', muse: 'MUS',
-    strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'PRD', writer: 'WRT',
-    prospector: 'PRS', envoy: 'ENV', treasurer: 'TRE',
-    closer: 'CLO', steward: 'STW', optimizer: 'OPT', opportunist: 'OPP',
+    broker: 'DLF', tutor: 'TCH', auditor: 'SEC', translator: 'XLT', herald: 'DGS',
+    navigator: 'TRP', curator: 'FIL', muse: 'BRN',
+    strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'VID', writer: 'SCR',
+    prospector: 'LED', envoy: 'INB', treasurer: 'TRE',
+    closer: 'CLO', steward: 'COM', optimizer: 'SEO', opportunist: 'OPF',
     // 2026-08-03 catalog expansion
-    pilot: 'PLT', foreman: 'FRM', nightwatch: 'NGT', ghostwriter: 'GHW', paralegal: 'PAR',
-    negotiator: 'NEG', jobhunter: 'JOB', quartermaster: 'QRM', anchor: 'ANC',
+    pilot: 'WEB', foreman: 'TML', nightwatch: 'NGT', ghostwriter: 'GHW', paralegal: 'CON',
+    negotiator: 'NEG', jobhunter: 'JOB', quartermaster: 'REC', anchor: 'NWS',
     // 2026-08-03 second wave
-    drafter: 'DRF', harvester: 'HRV', sentinel: 'SNL', registrar: 'REG', provisioner: 'PRV',
-    taskmaster: 'TSK', medic: 'MED', diplomat: 'DPL'
+    drafter: 'SPC', harvester: 'DAT', sentinel: 'PRG', registrar: 'CNT', provisioner: 'MEA',
+    taskmaster: 'ACC', medic: 'HLT', diplomat: 'MED'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
