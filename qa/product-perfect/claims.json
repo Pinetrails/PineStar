@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "050ac2aa03d804f380aea93ab8f557399fffc433",
-    "pathSetSha256": "3f629ff41d2931ac63cbeed26f63efd5b622257441a627270b396f67e030d26f",
+    "sourceCommit": "30007cf4e25068b383bb73b5f0fc76f2c2d8ea57",
+    "pathSetSha256": "500b8ad7d523d6d288b2c89fc00da5e8734a4216e9fdbc668bfcfb1f17bf6618",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 307778,
-        "sha256": "17e39ecb7a53defc1046be84f3d6569e1f4cc5f4157db5c7364386d2ff8e2df3"
+        "bytes": 308033,
+        "sha256": "3024b7588fcbaff10d1434ab80538f1c60f3755b6044996b52a0fb7e38d76782"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -83,8 +83,8 @@
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 18147,
-        "sha256": "2f5d39d135ff6c1290dffb4f64d673c1b22925be6389c4cbe8f5271dba8b23ca"
+        "bytes": 18081,
+        "sha256": "c5cb98fd10e702931a130b1bac1794ca90fbe848bcc074ee975d6649582c5fde"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -472,6 +472,11 @@
         "sha256": "56a0a193d52a246f912f0e1626ee2bccc3aa66a78f0a81fa6a7f47d6c0b4fa28"
       },
       {
+        "path": "frontend/app/queryspine.js",
+        "bytes": 6238,
+        "sha256": "9baaad93538243679a13c623e3208b40944bcd831a43d8e4dc9cb86e85b59052"
+      },
+      {
         "path": "frontend/app/questledgerstore.js",
         "bytes": 12163,
         "sha256": "5046b42dd7d019410a8bb599191f0e025515bdce2484d00378d4d4ef2a4967bb"
@@ -563,13 +568,13 @@
       },
       {
         "path": "frontend/app/returnstore.js",
-        "bytes": 10740,
-        "sha256": "82a2ffbab63d7307388b51033d2b9bf2353e9c86819fc30c57d1a25c153b6121"
+        "bytes": 10784,
+        "sha256": "6a9f0e922d3a735c9f16636e0a7be6269b7eebaa229f75036ed2d5fee7df5ef3"
       },
       {
         "path": "frontend/app/routinenudgestore.js",
-        "bytes": 7123,
-        "sha256": "3f123fb0121ce7cda15d6c204c350c49948672b5ec261b4c9bd389b0aa2b665b"
+        "bytes": 7252,
+        "sha256": "35d59a6f0315bb070a747bc1509a32c25cd990c804c05b14270823cfb5f83add"
       },
       {
         "path": "frontend/app/safety.js",
@@ -653,8 +658,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 449268,
-        "sha256": "cb7d20d5ca02faa3ef072aba877b4ee6798f310a2c17733ca5a706cd8357ddba"
+        "bytes": 449327,
+        "sha256": "0fda3858095a339e8dcdaa04d170d630d2059760e43ac711041817a415f17363"
       },
       {
         "path": "frontend/app/study.js",
@@ -778,8 +783,8 @@
       },
       {
         "path": "frontend/app/widgets.js",
-        "bytes": 29694,
-        "sha256": "062af23cfcc47d682a314131b0e6bc4f311aea3f86c32363c864b647a7561642"
+        "bytes": 29771,
+        "sha256": "25cf6fdc9e78f090b661ce92c902e131bf3a678eb4ca85753461901eefa9d6a8"
       },
       {
         "path": "frontend/app/windows/connectors.js",
@@ -948,8 +953,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67111,
-        "sha256": "deb7c8ecfb75ddef6cab2606a2a3bccaae59065e73c4d7e3ae85387326d6cdcb"
+        "bytes": 67289,
+        "sha256": "77d2d190e6495052247d19fc338094b79c3485a071fd277550ff9dcb695a07eb"
       },
       {
         "path": "frontend/js/arcade.js",
