@@ -1,5 +1,479 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 — CLEANUP PHASES 0–8 (`agent/cleanup-phases-0-8`)
+
+COMPLETE CANDIDATE. Phase 0 closed all seven remaining P2 bug-register records with production-path
+proofs, including release-receipt candidate binding, provider recovery/accounting, channel SSE, tooltip,
+and watched-only Full Access behavior. Phase 1 replaced repeated sidecar process setup with one lifecycle
+fixture and moved the fast/HTTP gates from hand-maintained command chains to ordered manifests. Phase 2
+extracted bounded body reads, file/range response policy, and the full TTS/STT/media subsystem from the
+sidecar composition root; the media move removed 706 lines from `sidecar/index.js` and kept the 200-always
+voice contract. Phase 3 introduced one explicit per-run execution state for taint, loop detection, output
+budgets, checkpoints, journaling, artifacts, and proof-of-work counts. Phase 4 added normalized, versioned,
+read-back-proven domain stores and migrated budget, fallback-chain, and memory settings.
+
+Phase 5 added `QuerySpine` for keyed GET dedupe, TTL/last-good state, invalidation, and subscriber-owned
+polling, then migrated the cron-family frontend consumers. Phase 6 added `BeatCard` and moved memory, study,
+arc, trust, thread, nudge, and rating cards onto one arbitration/expiry/generation lifecycle. Phase 7 moved
+provider abort classification and retry delays into the shared provider runtime, fixing stale abort-listener
+accumulation. Phase 8 extracted native credential/keychain and legacy token migration from Tauri `main.rs`,
+removed 14 unreachable sprite frames, added a 3,656-frame manifest integrity gate, refreshed `BRAIN.md`, and
+re-locked both the release surface and moved credential authority locators.
+
+Verification on the combined candidate: `npm run test:fast` **509/509 GREEN**; `npm run test:http` **56/56
+GREEN**; claims planning authority **PASS** (37 claims / 192 files); website mirror **GREEN**; sprite manifest
+**15,577 assertions GREEN**. A final seeded live sidecar returned `/api/health` = `ok`, served the app and both
+new frontend modules with HTTP 200, and proved `queryspine.js` and `beatcard.js` load before `chat.js`; the
+test port was released. Keyless live TTS and STT each returned their required HTTP-200 fallback envelope.
+`credentials.rs` passes rustfmt and 258 focused native/static assertions. Full Cargo compilation could not be
+completed on this Windows host: both parallel and `-j1` attempts exhausted compiler memory while building the
+upstream `windows` crate (`0xc000012d` / `STATUS_STACK_BUFFER_OVERRUN`), before any StarNet source diagnostic.
+No provider spend, external message/write, credential mutation, push, PR, deploy, tag, or publication occurred.
+
+## 2026-08-03 — PROVIDER P2 REGISTER CLOSURE (`agent/cleanup-p0-providers`)
+
+READY FOR CLEAN-BASE CHERRY-PICK. The three provider P2 records `8d7b0b52`, `cb8dc6c3`, and
+`4007eb1f` were already fixed in production by `fdbb12a2` but remained falsely open in the durable bug
+register. `e5e4e620` adds the missing production-composed proof: one actual sidecar `/api/run` rotates
+off a 429 primary credential, compacts only through the live backup, and completes; a second run inside
+the cooldown starts on that warm backup and never touches the primary. The same boot preloads a $0.42
+unmetered subscription row above a $0.30 day cap plus $0.10 metered spend, proves `/api/budget` exposes
+only $0.10 while counting both runs, and proves the subscription row does not block either live run.
+`775e7893` closes the three records through the official QA register flow and regenerates `qa/BUGS.md`.
+
+Verification: touched JavaScript passes `node --check`; focused provider/ledger/compaction suites are
+green (`provider-recovery.e2e` 15, `credrotate` 29, `ledger` 48, `compaction` 8); the QA bug register is
+valid with the provider backlog cleared; full `test:http` is green, including sidecar 463, browser
+gauntlet 86, route coverage 75, and OpenAI compatibility 36. The first HTTP attempt stopped at the
+browser gauntlet; that suite immediately passed 86/86 alone and the complete rerun passed. `test:fast`
+is NOT green on this worktree's supplied `90df36dd` base: its first 197 steps, including every provider
+and QA-register test, passed, then `qa-product-perfect-claims.test.js` failed nine pre-existing planning-
+authority assertions. The coordinator reset trunk to `9aa72820` while this isolated lane was running,
+so only these lane commits should be cherry-picked and the fast gate re-run there. No external network,
+provider spend, credential, production-data, integration-tree, push, PR, deploy, or publish action occurred.
+
+## 2026-08-03 — PHASE 0 WORLD + SAFECELL P2 RECONCILIATION (`agent/cleanup-p0-world-safe`)
+
+READY FOR CLEAN-TRUNK CHERRY-PICK. Three P2 ledger records were stale: their implementations had
+already landed in `f4d03511` (single-flight channel SSE + pending-tooltip cancellation) and
+`226cec3c` (watched-only Full Access, permissions readout, and revoke), but the records remained open.
+`0b9270fb` re-proves those fixes at the behavioral seams: it executes world.js's production `open()`
+closure through error → pending retry → re-entry → stale callback and ends with exactly one live
+EventSource; extends the real MCP/sidecar flow to prove a watched wildcard is listed, cannot authorize
+the same agent's ungranted routine, revokes real authority, and prompts again; and makes the Full Access
+row explicitly name its watched-session boundary and surviving host hardlines. The existing real-module
+tooltip rig proves pointerout during the 320ms delay cannot create a ghost while a rested anchor still
+shows normally. Focused receipts: channel SSE 75 assertions, tooltip 353, permissions 69, permissions UI
+34, MCP HTTP 87, website mirror 8. A seeded station on `:18761` reached ONLINE; SETTINGS › PERMISSIONS
+rendered its authoritative ledger, the station tooltip self-started/adopted its CINEMA title and hid on
+exit, and the browser warning/error log was empty. The canonical fast gate reached step 198/499, then
+hit the known `qa-product-perfect-claims` authority failure introduced by this lane's obsolete base
+`90df36dd`; integration has already reset to clean `9aa72820`, so the coordinator must re-run `test:fast`
+after cherry-picking the isolated commits there. No sidecar/route code changed in this reconciliation.
+
+## 2026-08-02 — RECOMMENDATION FABRIC 1–5 (MERGED)
+
+MERGED to `feat/harness-backend` at `68cc7af7`; the release surface was re-locked at `c8397e1f`.
+The second recommendation audit is implemented as one cross-surface fabric.
+(1) Personalization pause is now durable sidecar authority as well as a browser control; it suppresses
+new interest, workflow-context, ranking-ledger, scout, and night-shift learning. Forget clears every
+derived browser/server model and returns a verified inventory while preserving explicit dossier, goals,
+projects, threads, and task history. Seed-only fields no longer contribute readiness breadth, and quests
+generated under an inferred north star remain staged until the Commander confirms that direction.
+
+(2) Recipes, recruit picks, study updates, routines, recurring ideas, scout drafts, quests, and night-shift
+work now write the same bounded shown/opened/accepted/started/deferred/declined/completed lifecycle. Quest
+completion is recorded only from the contract proof seam; recipe and suggested-work completion comes from
+the resulting run/rating; terminal outcomes cannot be rewritten. (3) One recency-decayed preference model
+over kinds, traits, and projects is served with the scout read and consumed by recipe, recruit, quest, and
+night-shift ranking while retaining each surface's policy/readiness gates. (4) The shared utility ranker
+balances relevance, impact, success, timeliness, novelty, preference, cost, risk, interruption, and duplicate
+penalties; typed wrong-time/already-done verdicts do not poison relevance. (5) The replay CLI now emits an
+offline evaluation scorecard: adoption/completion, precision@3, counterfactual regret, Brier calibration,
+repeat/contradiction, intervention/cost, temporal improvement, and per-surface rates. Its fixed eight-week
+simulation proves that a later automation preference overtakes an earlier research preference.
+
+Verification on merged trunk: focused recommendation/readiness/quest/routine/study/suggestion/
+personalization tests green; every touched JavaScript file passes `node --check`; `test:fast` is 495/495
+green; full `test:http` is green (sidecar 460, quest refresh 47, cron API 79, lifecycle 59, route coverage
+75, browser gauntlet 86). A seeded station on `:8879` at `v0.8.0-135-g14b4fac9` proved the complete
+five-state lifecycle and quality outcome, durable pause across restart, model suppression while paused,
+and rejection of a paused write. Replay reported completion/acceptance/evidence/readiness coverage 1,
+precision@3 1, regret 0, Brier 0.0225, and bounded automation weight 0.5. The final Forget returned all
+five derived inventories at zero while explicitly preserving dossier, goals, threads, projects, and task
+history; the seed was stopped. The live single-sample receipt exposed and fixed a false temporal-decline
+metric, which now reports insufficient data. No provider run, external message/write, push, PR, deploy,
+publish, credential, or production-data change was performed.
+
+## 2026-08-01 — ROUTINES P0-P2 CLOSURE (`agent/routines-closure`)
+
+FOLLOW-UP READY TO MERGE after the first closure merge. The six routine/cron findings `4962c3ad`, `f47a1e3a`, `fd0f7223`,
+`300b34ab`, `600f4982`, and `aa9cd1cd` are now closed in the canonical QA ledger. This
+closure completes truthful E-STOP state across the ROUTINES panel/countdowns, widgets, `/cron`,
+AutoJobStore, and model-facing routine output; preserves the durable stop across background
+beliefs-only page-load sync; retains explicit resume paths; keeps first cron fire aligned with the
+host timezone; gives halted channel runs one explicit stop notice; and prevents revoke/delete/toggle
+success claims on non-2xx responses.
+
+Verification on the current trunk-based candidate: focused routine/cron/halt/channel/connector tests
+green (including 585 assertions before the page-load escape was discovered); restart-level E-STOP
+HTTP regressions green; `qa-product-perfect-claims.test.js` 64/64; `test:fast` 493/493; full
+`test:http` green (sidecar 459, cron API 79, lifecycle 59, route coverage 75). Seeded Chromium proved
+the stopped banner, `next —`, widget `stopped · E-STOP`, `/cron` resume guidance, and the
+model-facing E-STOP note. A reload initially exposed the beliefs-only resume escape; the final code
+and the follow-up `b7e18ce8` plus two real-host suites prove both boot posture and beliefs mirrors stay halted across sync and restart; only an explicit dial write carries resume consent. No external message,
+provider spend, push, PR, deploy, publish, credential, or production-data change was performed.
+
+## 2026-08-01 — UNIFIED COMMANDER RECOMMENDATIONS (`agent/recommendation-unify`)
+
+READY TO MERGE. Three scoped commits implement the recommendation-system audit actions: `475aa6d3`
+adds the durable cross-surface lifecycle/evidence ledger, bounded Commander evidence composer, richer
+completed-task context, and replay CLI; `b882665b` gates recruitment and marketplace personalization on
+shared understanding readiness, labels cold shelves as starting points, preserves validated study evidence,
+and adds typed suggestion verdicts; `70afe07c` normalizes capability learning per completed run instead of
+raw tool-call frequency. Seed beliefs no longer inflate visible familiarity. The candidate was merged with
+current trunk in `b97b1201`; `7e7ae8e7` re-locked the resulting release surface.
+
+The lifecycle retains bounded transitions and typed reasons (`shown -> deferred -> accepted -> completed`),
+survives restart, and feeds bounded preference weights without treating wrong-time deferrals as rejection.
+Study proposals may carry a verbatim run quote; invented quotes are rejected, legacy proposals retain an
+explicit directive receipt, and pending/declined study state is durable. Ordinary task runs and autonomous
+lanes now read the same provenance-labelled topics, threads, workflow, recent activity, active goal, dossier,
+and verdict summary; weak observed evidence is explicitly forbidden from overriding the current request.
+
+Verification on the synced final tree: `test:fast` 486/486 green; full `test:http` green (including sidecar 459 and
+route coverage 75). Focused recommendation/readiness/workflow/context/study tests are green. A seeded station
+on `:18799` recorded `live:sync-7e7ae8e7`, applied deferred/accepted/completed verdicts, restarted with `--keep`,
+and reloaded the exact four-state transition plus its evidence. `recommendation-replay.mjs` then reported
+acceptance/completion/evidence/readiness coverage of 1 across the two completed samples and a bounded research
+weight of 0.5. No provider run, external write, trunk merge, push, PR, deploy, publish, credential, or
+production-data change was performed. The seeded proof process was stopped. A byte-identical voice test exposed a 20ms-vs-30ms
+timer race in this longer worktree; the test-only compressed ceiling is now 50ms and passed twice plus the gate.
+
+## 2026-08-01 — DEEP-DIVE BUG FIX WAVE — MERGED (`8ef6c2c4`)
+
+Three isolated audit/fix lanes found and fixed 15 previously unregistered defects: four mobile
+control-reachability failures, six API/CORS/Task-Brief boundary failures, and five
+persistence/recovery failures. The combined integration preserves desktop layout and built-in read
+behavior while keeping E-STOP, REFIT actions, dock menus, and Genesis phosphor controls reachable at
+320/360/390px; makes DELETE CORS, malformed-body rejection, segment-safe routing, and untrusted MCP
+gating consistent; and fails closed when Night Shift accounting, focus/avoid authority, skill
+approvals, durable writes, or process ownership probes cannot be proven durable.
+
+Lane commits: UI `f1e5cc75`; backend `e169ab9c` + `9726ce60`; state `517c4398` +
+`e17d0294` + `0773b22c` + `654c7e1f`. Combined candidate merge `0ffc9a9f`, canonical claims
+re-lock `eb7c2fc4`, trunk merge `8ef6c2c4`. Final clean detached proof at the exact trunk commit:
+claims planning PASS (37 claims / 190 locked files), `test:fast` 476/476 green, full `test:http`
+green. Live seeded Chromium proved the four mobile controls on the UI lane; the exact merged HTTP
+gate re-proved malformed requests, route boundaries, MCP gating, restart persistence, and failure
+paths. No publish, push, PR, deployment, release, credential, or production-data action occurred.
+
+## 2026-08-01 — HARNESS SELF-AWARENESS (`agent/harness-self-awareness-reconcile`)
+
+RECONCILED against bridge trunk `25f8b053`. StarNet now gives every compute-capable agent a local, read-only,
+consent-free `station.inspect` tool backed by the same build, scheduler, connector, and diagnostic
+collectors as the UI APIs. Its output is bounded and allowlisted; secrets and filesystem paths do
+not cross the tool boundary, and any failed collector is labelled unavailable rather than rendered
+as a confident empty/healthy state. The run identity block now includes the exact app and harness
+build, and the operator manual directs mutable harness questions to `station.inspect` instead of
+invented CLI commands or requests for WORKBENCH/INTEL CAB.
+
+Verification: focused snapshot/tool/policy/runtime/manual tests are green; the real MCP-sidecar e2e
+passes 76 assertions and proves the provider sees and calls the legal `station_inspect` wire name
+against a planted routine, connected MCP server, and diagnostic failure. The reconciled `test:fast`
+gate is 491/491 green after synchronization with trunk `6819a1af`, and the full `test:http` gate is
+green. In a seeded live station on `:8977`,
+NOVA used both granted tools in one run: it reported exact clean build
+`v0.8.0-73-g30c9a53b`, the disarmed/unhealthy scheduler, zero routines, zero connectors, and zero
+recorded errors, then used bounded code composition to calculate `17 * 23 = 391`. The seed was
+stopped. No push, PR, deploy, publish, credential, or production-data change was performed.
+
+## 2026-07-31 — BROWSER REACH 0.8.5 (`agent/browser-reach-085`)
+
+READY TO MERGE at `dd01c8d3` (five commits from `7b2550e0`). The station-owned Chromium launch now
+derives its UA generation from the installed binary, carries the host locale, removes the
+`HeadlessChrome` product token, and disables Chromium's AutomationControlled signal. Attached
+Commander-owned Chrome is never launched or modified by this posture. Challenge telemetry is one
+conservative classifier across the honest reader and interactive browser; verification walls are a
+distinct outcome rather than successful page content. No CAPTCHA solving or wall-bypass claim exists.
+
+CDP's Runtime domain now stays disabled during ordinary browsing and is enabled lazily only when the
+agent asks for console diagnostics; the real browser proves buffered console messages still arrive.
+Click, type, press, hover, drag, and wheel input now use deterministic seeded cadence with hard step
+and delay bounds, exact text preservation, and exact aggregate scroll distance. This is bounded input
+fidelity, not an attempt to synthesize an individual person's behavior.
+
+All reader traffic shares one process-wide per-host scheduler. Same-host work serializes with a 350ms
+minimum gap; 403/429/503 responses add capped exponential delay (up to 30s), numeric `Retry-After` is
+honored, success clears the penalty, and responses are never auto-retried or rewritten. Different
+hosts remain independent. The scheduler covers search, Jina, direct reader fetch, and `web_request`.
+
+`scripts/browser-reach-measure.js` produces aggregate authorized-reach receipts without clicking or
+submitting: status, challenge signal, text length, identity exposure, elapsed time, and redirect
+authorization. Entry origins require an exact explicit allowlist; subdomains are not inherited,
+off-authorization redirect content is not read, and escaped redirects cannot count as reach. The
+owned real-Chromium fixture records ordinary content as reached and a verification page as blocked.
+
+Verification: focused browser contract 281 assertions; reach-measure contract 15; web-politeness 10;
+real-Chromium gauntlet 77; `test:fast` 475/475 green; full `test:http` green (including sidecar 445).
+A seeded station booted on `:8897`; `/health` returned 200 with `v0.8.0-18-gdd01c8d3`, the app shell
+returned 200/67,131 bytes, and unauthenticated `/api/toolsets` correctly returned 403. The proof seed
+was stopped. No external-site benchmark was run because no authorized origin was supplied, so no
+claim about third-party wall reach is made. No merge, push, PR, deploy, publish, credential, or
+production-data change was performed.
+
+POST-MERGE SWEEP (`agent/browser-reach-sweep`, implementation head `94a034dd`): the first gauntlet
+covered only legacy UA + `navigator.webdriver` and missed real contradictions. On the production
+resolver, Playwright headless-shell still exposed `HeadlessChrome` through Client Hints, zero plugins,
+no `window.chrome`, SwiftShader, mismatched 800x600 screen geometry, and fixed product-named page
+globals. The corrective lane now prefers full Chrome/Chromium/Edge, derives one UA + Client-Hints
+identity from the connected browser's own loopback high-entropy values, retains the hardware renderer,
+sets coherent 1440x900 screen/window metrics, and uses opaque per-profile safety/settle slots. The
+authorized reach receipt measures both legacy and Client-Hints headless exposure, full-browser surface,
+and geometry. The same sweep made host cooldowns elapsed-time-aware, queued cancellation immediate,
+and idle host state LRU-bounded.
+
+Corrective verification: browser contract 293; reach receipt 18; browser parity 111; wait recovery 39;
+attach 33; browser PIE 53; web politeness 13; real-Chromium gauntlet 86; `test:fast` 475/475 green;
+full `test:http` green. Seeded branch `v0.8.0-32-g94a034dd` returned 200 from `/health` and the app
+shell, then the proof process was stopped. `qa:ready` is separately `NOT READY` because this isolated
+worktree has no Guardian, journeys, Beginner Run, or installed-exe receipts; no station-wide release
+readiness claim is made. External-site reach remains unmeasured without an authorized target.
+
+
+## 2026-07-31 — NEXT UPDATE PLAN: v0.9.0 LEGIBLE · SOLID · UNBLOCKED
+
+Andrew's mandate for the update after v0.8.0: (1) make StarNet dramatically easier for a
+beginner to understand — users are asking a lot of questions; (2) fix as many bugs as we can;
+(3) build a stealth engine so station browsing stops being misidentified as a bot. Full plan,
+with evidence re-grepped against trunk `129801b1`: **[docs/PLAN_v0.9.0.md](PLAN_v0.9.0.md)**.
+
+Headlines a lane should know before claiming work from it:
+- The six routine/cron P0-P2 records from the July sweep are reconciled as fixed by the closure lane
+  above. Treat `qa/BUGS.md` (generated from the per-bug files) as the current backlog authority.
+- 10 `agent/*` lanes are ahead of trunk carrying built, gated fixes. Merge order in the plan;
+  `agent/quality-loop-0730f` (E-STOP does not survive a page reload) is the worst live defect.
+- `test:fast` ran 473/473 green at `129801b1` on 2026-07-31 while the Guardian recorded
+  `test-fast exitCode 1` at the same commit. Reproduce before planning on top of either.
+- The explanation layer mostly EXISTS and is undeployed: 32 glossary terms, a correct hint
+  layer, and only 29 `data-hint` attributes repo-wide (4 pointing at undefined terms). The tour
+  can only ever run once (`app.js:2977` → `tutorial.js:134`) and a refresh loses it forever.
+- The stealth work must be dependency-free CDP-level: `package.json` has two runtime deps and
+  the desktop bundle ships no `node_modules`, so Camoufox/playwright-stealth are not options.
+  It also REVERSES a written position in `browser.js:1792-1799`/`:2354-2356` — rewrite those
+  comments in the same lane or the next session re-litigates it.
+
+## 2026-07-31 — RESUMABLE APPLE NOTARIZATION (`agent/mac-notarization`)
+
+IMPLEMENTED, LIVE RE-PROOF REQUIRED. Developer ID signing succeeded on both Intel and
+Apple Silicon in non-publishing run `30606849654`, but Apple's notarization queue remained
+in progress long enough to expose a workflow design flaw: three macOS runners eventually
+lost their network route while polling, and the fourth was cancelled at GitHub's six-hour
+job ceiling. Apple never returned an invalid/rejected verdict. The workflows now build and
+sign without giving Tauri the Apple account credentials, submit each completed DMG once,
+persist the exact DMG plus Apple's submission ID, and poll/staple/Gatekeeper-verify in an
+independently retryable job. A slow queue can no longer discard the signed build or force a
+new submission. YAML parsing and focused signing/notarization trust tests are green; the
+updated workflow must be merged, pushed, and exercised before macOS support is claimed.
+
+## 2026-07-31 — LIVE HANDS-FREE VOICE RELEASE SWEEP (`agent/voice-release-sweep`)
+
+READY TO MERGE. The current Local Live stack passed a release-focused code, regression, and browser
+sweep. Two additional lifecycle defects were closed: a tab holding the pre-restart sidecar token
+could open a convincing but silent microphone session, and a microphone-start failure could leave
+the Commander's previous speaker mute force-enabled. Local Live now refuses a failed availability
+probe before touching the microphone, gives a stale tab an explicit reload instruction, and restores
+the speaker preference on every startup failure.
+
+Release accounting was reconciled at the same time: five previously fixed voice findings were still
+marked open despite their existing `50a8b07b` implementation and regression coverage; those records
+now match the code, and the two findings from this sweep are recorded against `8bc9ff9a`. Focused
+voice tests are green (`voice.button` 67 assertions, `voice.draftguard` 21, Local Live UI, realtime,
+native STT, local voice, and provider timeouts). Claims planning is PASS (37 claims / 189 locked
+files), `test:fast` is 464/464 green, and the full 55-suite `test:http` chain is green. A post-merge
+seeded restart and stale-tab browser round trip remain the final live proof. The wider station still
+has unrelated open QA-register findings, so this entry is a feature merge verdict, not a whole-product
+release verdict. No push, deploy, publish, production-data, credential, or secret change.
+
+## 2026-07-30 — DELEGATED RESEARCH WEB RELIABILITY (`agent/worker-research-reliability`)
+
+READY TO MERGE at `8258e028`. A live researcher run reached its 10-turn ceiling after eight
+nearly identical web-search failures. The keyless search providers were throttled, and the
+OpenRouter rescue path was then aborted by a 37-second registry wrapper even though the sequential
+provider chain legitimately needed up to 56 seconds. The wrapper now covers the full fallback sum
+plus scheduling slack, provider-local aborts report an actionable timeout instead of “operation
+aborted,” and an exhausted chain tells the worker to change strategy. Delegated workers receive 16
+bounded turns (still below the lead’s 40) so transient failures do not consume the whole job.
+
+Regression: focused web/orchestration/harness tests passed; `node --check` passed all touched JS;
+`test:fast` is 464/464 green; full `test:http` is green. Live real-provider re-run remains required
+after merge/restart. No push, PR, deploy, publish, production-data, credential, or secret change.
+
+## 2026-07-28 — BROWSER.FIND VIEWPORT HONESTY (`agent/quality-loop-0728c`)
+
+READY TO MERGE. The newly added `browser.find` scanned only visible interactive elements but told
+the agent an uncapped zero-hit result covered “the whole page” and the target was “genuinely not
+there.” Real-Chromium reproduction: a `Checkout now` button below a 1,600px spacer produced exactly
+that false absence claim, steering the agent away from the one required scroll. The finder now
+states its real boundary—visible controls in the current viewport—and every zero-hit result keeps
+off-screen, closed-menu, and not-yet-loaded possibilities open with the correct scroll/open/wait
+next moves. It still returns only visible refs whose coordinates the driver can safely act on.
+
+Regression: the real browser gauntlet now includes the below-fold fixture (65 assertions) and the
+focused find/recovery contract is 39 assertions. `node --check` passed all three touched JS files;
+`test:fast` is 429/429 green; full `test:http:raw` is green through all 51 suites. The standard
+420-second `test:http` wrapper timed out after its browser/skill suites had passed; the same raw
+chain completed cleanly in 429 seconds. A seeded station reached NOVA/COMMS online with no visible
+alerts or browser warnings/errors. No push, merge, PR, deploy, publish, production-data, or source
+credential changes.
+## 2026-07-28 — SESSION RAIL KEYBOARD ACCESS (`agent/quality-loop-0728d`)
+
+READY TO MERGE — the session rail exposed open/export/archive only through pointer clicks:
+live reproduction found the General row was an unfocusable `<li>` (`tabIndex:-1`, no role), and
+its hidden actions button was explicitly removed from the tab order. Session rows are now named
+keyboard targets: Enter/Space opens the session and Shift+F10 opens the existing phosphor actions
+menu. Menu focus starts on Rename; Escape closes it and restores the row focus. The pointer-only
+kebab remains out of the tab order, so each session adds one keyboard stop. Live seeded proof:
+General reported `tabIndex:0`, `role:button`, and `aria-keyshortcuts:Shift+F10`; Shift+F10 produced
+one menu with Rename focused; Escape removed it and restored General. Regression:
+`session-power-tools.test` 118→124 assertions; website mirror 8 assertions; claims planning PASS
+(37 claims / 184 files); `test:fast` 429/429 green. No merge, push, deploy, publish, or PR.
+## 2026-07-29 — CODEX OAUTH MIGRATION ROOT BOUNDARY (`agent/quality-loop-0729c`)
+
+READY TO MERGE. The 07-29 token-leak fix rejected ordinary temporary workspaces, but its fallback
+still trusted any path whose tail was `StarNet/workspaces`; an isolated boot could therefore pull
+the Commander's ChatGPT OAuth token from a real legacy app-data home by choosing that directory
+shape. Reproduction returned `recognized:true`, four migration candidates, and the legacy token
+path for `C:\tmp\attacker\StarNet\workspaces`. Migration authority now requires an exact match
+against enumerated Local/Roaming/XDG app-data roots (plus the existing injected legacy/install
+roots), while both Windows app-data locations remain valid migration sources.
+
+Regression: `provider.codex-auth.test` 65→68 assertions; the escape test failed 3 ways before the
+fix and now proves a branded isolated root sees only its own token file. Real sidecar proof with
+fake credentials: full-app HTTP 200, provider stayed `openrouter`, legacy fixture remained, and no
+token file appeared in the isolated root. Final verification: `test:fast` 432/432 and full
+`test:http` green. No merge, push, deploy, publish, PR, production-data, credential, or secret change.
+## 2026-07-29 — TOKEN PURGE PROTECTS EVERY REAL WORKSPACE (`agent/quality-loop-0729d`)
+
+READY TO MERGE. The new leaked-Codex-token purge protected only the first available app-data
+base. On normal Windows, `LOCALAPPDATA` therefore masked the desktop shell's Roaming `APPDATA`
+workspace: a dry run against distinct fake bases listed
+`Roaming\ai.skynet.harness\workspaces\codex\tokens.json` as a deletion candidate, despite the
+script's guarantee that the signed-in copy must survive. The protected set now includes every
+Local/Roaming/XDG app-data base and any explicitly configured current workspace. The identical
+post-fix dry run found zero candidates. Verification: both touched JS files pass `node --check`,
+the focused destructive-safety regression passes 14 assertions, `git diff --check` is clean, and
+`test:fast` is 432/432 green. Only fake temporary data was used and removed. No push, merge, PR,
+deploy, publish, production-data, secret, or real-credential changes.
+## 2026-07-29 — WINDOWS BACKGROUND PROCESS TREE REAP (`agent/quality-loop-0729e`)
+
+READY TO MERGE. A real-process reproduction confirmed `shell.bg.kill` could orphan the command
+and its descendants on Windows: `killTree` terminated the shell leader before launching
+`taskkill /T`, so tree discovery raced a disappearing root. After 1.2 seconds, both the command
+parent and a planted grandchild were still alive. Windows now lets `taskkill /T /F` own the first
+termination attempt and falls back to direct `child.kill()` only when the reaper cannot start or
+exits unsuccessfully. The identical post-fix reproduction reported both descendants dead.
+
+Regression: `shell-bg.test` 37 assertions (including tree-reaper ordering and launch-failure
+fallback) plus `shell-bg-io` 29 assertions. Final verification: touched-file syntax checks,
+`test:fast` 436/436 green, and full `test:http` green. No push, merge, deploy, publish, or PR.
+## 2026-07-29 — CHANNEL SETUP GUIDE REOPENS AFTER FORGET (`agent/quality-loop-0729f`)
+
+READY TO MERGE. The newly added CHANNELS auto-fold listener treated its own programmatic
+`guide.open = false` as a Commander toggle, deleted the one-shot flag, and left a later cold card
+collapsed after its configuration was forgotten. Live seeded Signal reproduction used an isolated
+localhost bridge config: saved/offline folded to 13.4 px, then confirmed removal returned the
+backend/UI to `not connected` but the guide stayed 13.4 px tall. The listener now treats only
+summary activation as the human override; untouched guides track configured state in both
+directions. Post-fix live proof: saved/offline remained folded with the auto flag intact, confirmed
+removal reopened the guide to 91.2 px, and a hand summary click still removed the flag. Regression
+contract expanded to 11 assertions; website mirror synced. No merge, push, deploy, publish, or PR.
+
+## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
+
+A Settings/permissions audit confirmed a fail-closed enforcement but fail-open-looking UI defect:
+when `/api/permissions` was unavailable, the frontend synthesized an empty successful snapshot.
+Settings then claimed “No standing approvals” even though the sidecar could still hold and enforce
+durable grants; grant and revoke failures were also silent. The permissions store now distinguishes
+unconfirmed/failed snapshots from confirmed empty state, preserves the last confirmed authority,
+and surfaces an `aria-live` warning. Failed mutations keep the confirmed row and say the change was
+not applied; a first-load failure hides grant controls until authority can be confirmed.
+
+Regression: `permissionsstore.test` 25→36 assertions and `permissions-ui.test` 28→31 assertions.
+Live seeded proof covered grant, sidecar restart persistence, offline refresh preserving the grant
+with an explicit warning, stale-session revoke failure preserving it, reconnect, successful
+two-step revoke, and clean empty state. The Settings catalog exposes one durable permission,
+`cabinet:write`; WAIT/SUGGEST/BUILD grant none, FREE grants it, enforcement remains in the consent
+broker/jail, and the UI honestly notes that a Filing Cabinet is additionally required. Interactive
+once/session/always approvals, per-agent full access, Workshop access, routine terminal/connectors,
+credentialed web access, taint revocation, and project path trust were traced and covered by focused
+tests (including four HTTP/E2E suites). Voice microphone authority is browser/OS-owned and was not
+requested. At 390×844, Settings had no viewport or horizontal overflow; arrow-key tab navigation
+worked. New-user/onboarding, sessions/workstreams, fullscreen/terminal resize, voice draft guards,
+and settings backend/UI paths passed their existing regression suites. Manual gaps: real microphone
+permission allow/deny/reset, OS notification permission, native desktop screen-reader behavior,
+and physical-device/mobile WebView compatibility. Website mirror synced. No push, deploy, or PR.
+The fast gate passed through step 160/400, then stopped at the unchanged
+`qa-product-perfect-claims` release-authority stamp (step 161), the same unrelated stale authority
+surface already recorded for this lane.
+
+## 2026-07-27 — REVOKED PROJECT “FORGET” IS REAL (`agent/community-bughunt-0727`)
+
+A second live PROJECTS-rail pass confirmed a destructive-action truth defect: the armed
+`Forget (already revoked)` control posted the permissions revoke endpoint a second time, announced
+`removed “…”`, and left the remembered project row visible. The existing projects store already
+had the intended persist-before-commit hard-forget primitive, so the scoped fix exposes it through
+`POST /api/projects/forget` and uses that route only after trust is revoked. The server refuses
+still-blessed roots with 409, keeping metadata deletion separate from permission withdrawal; UI
+success copy now distinguishes `trust revoked for` from `forgot`. Regression:
+`projects-view.test` 51→54 assertions and `e2e.pathtrust.test` 33→39 assertions, including
+active-root refusal, actual row removal, and no resurrection after sidecar reboot. Live seeded
+proof: the revoked row disappeared, the UI reported `forgot “community-bughunt-0727”`, and after
+a real `--keep` restart the PROJECTS rail still had no revoked row. Syntax checks, focused tests,
+full `test:http`, and 399/400 fast-gate steps are green; the sole blocked step is the pre-existing
+`qa-product-perfect-claims` release-surface authority stamp at the synced trunk HEAD (step 161),
+which is outside this bug-fix lane. Website app mirror synced. No merge, push, deploy, or PR.
+
+## 2026-07-27 — REVOKED PROJECTS ARE READ-ONLY (`agent/community-bughunt-0727`)
+
+Proactive live flow audit confirmed a truthful-telemetry break in the PROJECTS rail: after a
+project's path grant was revoked, its remembered row correctly said REVOKED but entering it still
+promised `+ NEW` would start work in that folder and actually minted a new session anchored to the
+untrusted root. The rail now derives scoped creation authority from the freshly fetched
+`blessed` field, disables `+ NEW` for revoked rows, keeps existing sessions browseable, and guards
+the creation function itself. Regression: `projects-view.test` 48→51 assertions. Live seeded proof:
+revoked row remained visible, existing session count stayed 1, scoped `+ NEW` reported
+`enabled:false`. `node --check` + focused project/session/path-trust tests + `test:fast` 400/400
+green. Website app mirror synced. No merge, push, deploy, or PR performed.
+## 2026-07-27 — DOSSIER SKIN SELECTION ACCESSIBILITY (`agent/quality-loop-0727`)
+
+READY TO MERGE. The new CONFIG › SKIN live preview visually marked the worn skin with
+`.sel`, but all 36 buttons exposed no selected state to assistive technology. Live repro:
+Teddy Bear was the selected tile and preview caption while every button had neither
+`aria-pressed` nor `aria-current`. The renderer now derives `aria-pressed="true|false"` from
+the same `id === cur` predicate as `.sel`; a source-executed regression renders both possible
+selections and locks exactly one true state. Live post-fix round-trip after selecting Pepe:
+36 total · 1 visual (`Pepe`) · 1 pressed (`Pepe`) · 35 false · matching preview caption.
+Verification: focused test 11 assertions, website mirror 8 assertions, claims planning PASS
+(37 claims / 182 files), `test:fast` 403/403 green. Not pushed or merged.
+## 2026-07-27 — OUTBOUND MESSAGE INTEGRITY (`agent/quality-loop-0727b`)
+
+READY TO MERGE — the new `channel.send` tool silently clipped any payload above its 8,000-character
+call ceiling, delivered the prefix in up to five chunks, and reported success. A real-sidecar DEV-channel
+reproduction sent five partial messages (reply count 2→7) while dropping the tail. The tool now exposes
+the ceiling in its schema and refuses the whole call before target resolution or transport activity.
+Regression proof: 56 focused unit assertions, 35 real-sidecar assertions, and full `test:http` green.
+
+## 2026-07-29 — MODEL CHIP ACCESSIBLE STATE (`agent/quality-loop-0729`)
+
+READY TO MERGE — the freshly promoted COMMS model readout visually showed its selected model and
+reasoning tier, but its fixed accessible name was only `Model selector`. `ModelDock.reflect()` now
+derives the button name from the same live model/effort state as the visible chip. Live seeded proof:
+switching MED→HIGH produced visual `CLAUDE HAIKU 4.5 · HIGH`, selected effort `HIGH`, and accessible
+name `Model selector: claude haiku 4.5, High reasoning`. Regression: the focused model suite is
+58 assertions, website mirror is synced, syntax checks are green, and `test:fast` is 430/430 green.
+No push, merge, deploy, publish, PR, production-data, secret, or source-credential changes.
+
 ## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
 
 Getting the source repo release-shaped for the public flip (Andrew: "essentially ready for
@@ -1242,8 +1716,14 @@ promise?" (sibling of "where's its UI?").
   send/rapid-toggle · J4 summon→deliverable→OPEN serve contract · J5 parityCheck sweep;
   Guardian 5th gate (8943/9343). Known limits: mock-provider boundary (proves seams not
   model output); J4 asserts the serve contract over HTTP, not a real tab-nav.
-- **EL-2 · Saboteur mutators** — adversarial twist layer over journeys (garbage input, rapid
-  panel toggles mid-run, provider-error injection). After EL-1.
+- **EL-2 · Saboteur mutators — FIRST SLICE BUILT 2026-07-21 on `agent/bug-discovery-system`.**
+  `npm run qa:saboteur` inventories the live declarative route table and runs a seeded,
+  replayable hostile-input sweep against an isolated real sidecar: launch-token bypass, hostile
+  Origin, and five malformed JSON shapes on stateful seams. Failures persist a full evidence report,
+  dedup into the QA ledger, and the sweep is composed into every Guardian cycle. Calibration at
+  v0.6.4: 317/317 attacks green (seed 644). Pure planner/triage locks are in `qa-saboteur.test.js`.
+  OPEN: the journey-mutator half (rapid panel toggles mid-run, provider disconnect/slow-stream,
+  restart-at-write boundaries) and installed-exe weekly mutation pass.
 - **EL-4 · Installed-app weekly smoke** — CDP-attach to the installed exe and run the parity
   sweep there; the dev sidecar can never see the WebView2-cache class. Session task, weekly.
 - **EL-5 · ESCAPE 2026-07-07: Telegram bot token silently destroyed** — ✅ FIX MERGED
@@ -1808,3 +2288,90 @@ with exact evidence in the lane ledger. Final lane receipts: ledger 0 P0 / 0 P1 
 `test:fast` 364/364 green; full `test:http` green. `qa:ready` remains correctly NOT READY until this
 branch is merged and Guardian/journeys/beginner/installed receipts are regenerated on that exact
 integration commit. No merge or publish performed.
+
+# READY TO MERGE 2026-07-28 — SESSION RAIL SEARCH TRUTH (`agent/quality-loop-0728b`)
+
+The live SESSIONS rail rendered “No title or transcript matches” for an impossible query while
+leaving the unrelated General row visible and selectable underneath. Search results now replace
+the ordinary session list for the lifetime of a non-empty query; Escape and opening a hit restore
+the list, and a PROJECTS round-trip preserves active search isolation. The generated website mirror
+is synced and the existing session-power-tools gate now locks all three transitions.
+
+Live seeded proof at `:8892`: the no-match row measured 230×51.9 px while General measured 0×0 and
+`#workstreams.hidden === true`; Escape restored General at 230×27.1 px, cleared the query, and removed
+the no-match row. Browser warnings/errors: none. Focused gate: 121 assertions; website sync: 8;
+`test:fast`: 423/423 green. No backend seam changed, so `test:http` was not required. No merge, push,
+PR, deployment, publish, production-data, credential, or secret change was performed.
+
+# IN PROGRESS 2026-07-31 — MACOS DEVELOPER ID + NOTARIZATION (`agent/mac-notarization`)
+
+Apple Developer Program enrollment is active. Trunk already carries hardened-runtime
+entitlements and a release-train proof for Developer ID authority, Node JIT entitlement,
+DMG notarization/stapling, and Gatekeeper acceptance (`11392c7d`). This lane makes the
+public train fail closed when any of the six Apple signing/notarization secrets is absent
+and turns an ambiguous non-notarized Gatekeeper source into a hard failure. A fast
+structural gate locks that boundary; `docs/CODE_SIGNING.md` now contains the exact
+certificate, app-specific-password, secret, backup, and first-live-proof procedure.
+
+LIVE SETUP: Apple issued Developer ID Application certificate `5XX554XKQT` for team
+`699UALS857` (expires 2031-08-01). The matching private key, certificate, PKCS#12 bundle,
+and recovery material are stored outside Git with user-only ACLs. A dedicated app-specific
+password and all six `APPLE_*` Actions secrets are installed in `androoAGI/starnet`.
+
+FIRST CI PROOF: non-publishing `desktop-build` run `30606849654` exposed an OpenSSL 3
+PBES2/AES PKCS#12 compatibility failure in macOS `security import`. The certificate was
+re-exported as Apple-compatible SHA-1/3DES PKCS#12 and the secret replaced. Retry attempt
+2 imported one identity, found Andrew Sims's certificate, signed the bundled Node runtime,
+desktop executable, and `StarNet.app`, then submitted both Intel and Apple Silicon apps to
+Apple notarization. Final Apple verdict and DMG artifacts are pending. Do not retire the
+unsigned-download warnings until both architectures pass this staged live proof and the
+DMGs receive a clean-Mac launch check.
+
+WINDOWS TRUST PROOF: the same non-publishing run used Azure Artifact Signing account
+`starnet-signing` / public-trust profile `starnet-public` and signed the app, NSIS
+components, and final installer with zero errors. The downloaded setup executable passed
+native Windows Authenticode validation as publisher Andrew Sims with a Microsoft verified
+code-signing chain and timestamp. The checksum-verified bundled Node runtime independently
+passes as publisher OpenJS Foundation with a DigiCert timestamp. The tagged release train
+now fails closed on missing Azure credentials and checks all three timestamped signatures
+before staging. A clean Windows SmartScreen/Defender launch remains the final reputation
+proof; a valid new publisher can still show a reputation prompt during early downloads.
+
+# DONE 2026-08-02 — CONNECTOR RELIABILITY TO 9 (`agent/connector-reliability-9`)
+
+Commit `ac201720` lands Lanes 1–5: desktop restart now injects custom-provider credentials and
+provider-specific backup pools; connector config/OAuth/client state is one versioned,
+read-back-verified envelope; removal commits that envelope before touching runtime state; every
+MCP OAuth discovery/DCR/token leg has a bounded deadline and composed cancellation; candidate key
+and backup-pool replacement probes first and commits once; backup pools are explicitly provider
+scoped in browser storage, keychain storage, runtime state, and restart environment injection.
+
+Evidence on the synchronized candidate: `test:fast` 497/497 GREEN; full `test:http` GREEN
+(sidecar 464 assertions, MCP E2E 79); the production Rust/NSIS build completed; real OpenRouter wire
+certificate PASS for models, chat, tools, cancellation, and cost. The exact Windows installer
+(`sha256 a3d4fb87e095dc7e4647429907e2fc6a27bb17b091a9692aa1ca0bd43de08183`)
+installed cleanly, and the resulting executable
+(`sha256 0313968d4d4ec43af0520adb95b5885fcd207e3f52b05adc30e13322bb74d62e`)
+passed the provenance-bound installed smoke 9/9. A controlled provider driven through that running
+installed app passed: correct key; wrong replacement with the old key still live; 429 replacement
+with the old key still live; provider switch + restoration; custom-only backup pool with OpenRouter
+still empty; real desktop restart with the custom key/base/pool re-injected; post-restart revocation
+failed closed. The temporary custom key, base URL, pool, and mock server were then removed, and a
+second desktop restart proved the empty state persisted; the final installed smoke remained GREEN.
+
+**9/10 CONNECTOR RELIABILITY CONDITION MET.** The real installed candidate completed Notion's OAuth
+authorization callback and enumerated 20 tools plus 2 resources. With the desktop stopped, the persisted
+access-token expiry was moved into the past and read back; restart exercised the real refresh endpoint,
+rotated both access and refresh token fingerprints, durably advanced expiry, and returned the connector
+to `up` with all 20 tools. A second untouched restart preserved the refreshed fingerprints and the same
+healthy tool/resource inventory without another prompt. Reinstalling the synchronized candidate then
+preserved that authorization and repeated the installed smoke plus connector read-back. Deterministic
+coverage remains green for callback exchange, skew-aware expiry, refresh-token retention, response-body
+deadlines, cancellation, atomic credential replacement, provider-scoped pools, transactional persistence,
+and connector removal. Rated outcome: MCP/API connector reliability **9/10**, multiple same-provider keys
+**9/10**, overall connector release confidence **9/10**.
+
+The local bundle is a certification candidate, not a public signed release artifact: NSIS finished, but
+the updater-signing step correctly failed closed because `TAURI_SIGNING_PRIVATE_KEY` is unavailable in this
+worktree. Public distribution still goes through the signed release train; this does not weaken the local
+installed-app reliability verdict or the merge gate.

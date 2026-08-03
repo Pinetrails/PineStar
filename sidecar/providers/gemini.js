@@ -10,20 +10,12 @@
 
   const classifyApiError = errorClass.classifyApiError;
   const timeouts = provider.timeouts;
+  const isAbort = provider.runtime.isAbort;
+  const delay = provider.runtime.abortableDelay;
   const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
   const RETRY_DELAYS = [400, 1200];
   const REWARM_MIN_MS = 5 * 60 * 1000;
 
-  function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
-  function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
-  function delay(ms, signal) {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(resolve, ms);
-      if (signal && typeof signal.addEventListener === 'function') {
-        signal.addEventListener('abort', () => { clearTimeout(t); reject(abortError()); }, { once: true });
-      }
-    });
-  }
   function cleanBaseUrl(value) {
     return String(value || DEFAULT_BASE).trim().replace(/\/+$/, '');
   }
@@ -186,6 +178,29 @@
     if (/SAFETY|RECITATION|BLOCKLIST|PROHIBITED|SPII/.test(r)) return 'content_filter';
     return 'error';
   }
+  /* The 2.5 family is the one that speaks `thinkingBudget`; everything newer speaks `thinkingLevel`. Matched
+     on the version rather than a model allowlist so a new 2.5-series name still routes correctly. */
+  const LEGACY_GEMINI_RE = /gemini[-_ ]?2\.?5/;
+  // Every value sits under the smallest documented cap in the 2.5 family (flash / flash-lite cap at 24576),
+  // so one table is safe across all of them rather than needing a per-model ceiling.
+  const LEGACY_BUDGET = { none: 0, minimal: 512, low: 2048, medium: 8192, high: 16384, xhigh: 24576, max: 24576 };
+  const MODERN_LEVEL = { none: 'MINIMAL', minimal: 'MINIMAL', low: 'LOW', medium: 'MEDIUM', high: 'HIGH', xhigh: 'HIGH', max: 'HIGH' };
+  function normalizeGeminiEffort(v) {
+    const k = String(v == null ? '' : v).trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const map = { off: 'none', none: 'none', no: 'none', disabled: 'none', min: 'minimal', minimal: 'minimal',
+      low: 'low', med: 'medium', mid: 'medium', medium: 'medium', high: 'high',
+      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh', max: 'max' };
+    return map[k] || 'medium';
+  }
+  // What a given model actually accepts. The 2.5 contract can genuinely switch thinking OFF; the modern one
+  // cannot, so 'none' is not offered there — a control that silently does nothing is worse than no control.
+  function geminiEffortsFor(id) {
+    const model = String(id || '').toLowerCase();
+    if (model.indexOf('gemini') < 0) return ['none'];
+    if (LEGACY_GEMINI_RE.test(model)) return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+    return ['minimal', 'low', 'medium', 'high'];
+  }
+
   function normalizeModel(m) {
     const raw = (m && (m.name || m.id || m.model)) ? String(m.name || m.id || m.model) : '';
     const id = stripModelPrefix(raw);
@@ -201,10 +216,12 @@
       // than the wire. Same {prompt, completion} per-token shape every other adapter publishes, so
       // listModels() and priceOf() can never disagree. Unknown model -> null -> honestly 'unpriced'.
       pricing: prices.pricingBlock('gemini', id),
-      supported_parameters: canGenerate ? ['tools'] : [],
+      // Reasoning is real on this adapter now, so the catalog must say so — the model dock renders its effort
+      // control off exactly these fields, and an empty list is what kept the control hidden.
+      supported_parameters: canGenerate ? ['tools', 'reasoning'] : [],
       supportsTools: canGenerate ? true : null,
-      supportsReasoning: null,
-      reasoningEfforts: []
+      supportsReasoning: String(id || '').toLowerCase().indexOf('gemini') >= 0,
+      reasoningEfforts: geminiEffortsFor(id)
     };
   }
 
@@ -215,6 +232,8 @@
     const key = opts.key || '';
     const baseUrl = cleanBaseUrl(opts.baseUrl);
     const defaultContext = Number(opts.defaultContext || 0) || 0;
+    // The composition root has resolved this and handed it here since the seam existed; the adapter ignored it.
+    const defaultEffort = normalizeGeminiEffort(opts.reasoningEffort || 'medium');
     const clock = (opts.clock && typeof opts.clock.now === 'function') ? opts.clock : null;
     let catalog = null;
     let catalogPromise = null;
@@ -235,12 +254,42 @@
       Promise.resolve().then(() => loadCatalog()).catch(() => {});
     }
 
+    /* THINKING (2026-07-27). Like the Anthropic adapter, this one published `['none']` and sent no thinking
+       parameter at all, so a Commander on their own Gemini key ran a NON-THINKING Gemini. Two contracts, and
+       the model decides which — sending BOTH to a Gemini 3 model is a documented error:
+
+         MODERN (Gemini 3 and later)  ->  thinkingConfig.thinkingLevel: MINIMAL|LOW|MEDIUM|HIGH
+         LEGACY (Gemini 2.5 family)   ->  thinkingConfig.thinkingBudget: <tokens>   (0 = off, -1 = automatic)
+
+       Same "default to newest" shape used for Anthropic, and for the same reason: an allowlist of modern
+       versions goes stale the moment a name ships without a recognized number, and the failure is silent.
+
+       `includeThoughts` is deliberately NEVER set. We do not want the scratchpad on the wire — and its `false`
+       default is documented as silently ignored on some models, which is why the reader filters thought parts
+       regardless (see the stream loop). */
+    function applyThinking(body, req) {
+      const model = String(req.model || '').toLowerCase();
+      if (model.indexOf('gemini') < 0) return;            // a non-Gemini model on a Gemini-shaped endpoint
+      const want = normalizeGeminiEffort(req.reasoningEffort || defaultEffort);
+      const cfg = {};
+      if (LEGACY_GEMINI_RE.test(model)) {
+        const budget = LEGACY_BUDGET[want];
+        if (budget == null) return;
+        cfg.thinkingBudget = budget;                       // 0 disables on the 2.5 family
+      } else {
+        // No level means "off" on this contract — MINIMAL is the floor, and some Gemini 3 models refuse to
+        // stop thinking at all, so asking for none honestly means asking for as little as the model allows.
+        cfg.thinkingLevel = MODERN_LEVEL[want] || 'MEDIUM';
+      }
+      body.generationConfig = Object.assign({}, body.generationConfig, { thinkingConfig: cfg });
+    }
     function buildBody(req) {
       const converted = messagesToGemini(req.messages || []);
       const body = { contents: converted.contents };
       if (converted.systemInstruction) body.systemInstruction = converted.systemInstruction;
       const tools = toGeminiTools(req.tools);
       if (tools) body.tools = tools;
+      applyThinking(body, req);
       return body;
     }
 
@@ -278,6 +327,16 @@
           const parts = (((c.content || {}).parts) || []);
           for (let pi = 0; pi < parts.length; pi++) {
             const part = parts[pi] || {};
+            /* A THOUGHT PART IS NOT THE ANSWER. Gemini marks reasoning with `thought: true` on a part that
+               ALSO carries `text`, so the old unconditional branch below shipped the model's scratchpad to the
+               Commander as its reply. This was reachable before any thinking parameter existed here: the
+               `includeThoughts: false` default is documented as silently ignored on some models, so the only
+               safe posture is to filter at the READER rather than trust the request. Emitted as `reasoning`
+               (the loop parks it, never concatenating it into the answer) so nothing is lost either. */
+            if (part.thought === true) {
+              if (typeof part.text === 'string' && part.text) yield { type: 'reasoning', block: { type: 'gemini_thought', text: part.text } };
+              continue;
+            }
             if (typeof part.text === 'string' && part.text) yield { type: 'text', delta: part.text };
             if (part.functionCall) {
               // Gemini normally delivers each functionCall WHOLE (complete args) in a single part, so ci:pi:name
@@ -415,7 +474,9 @@
     // the cap works from the first turn; an unrecognized model still returns null and stays 'unpriced'.
     function priceOf(id) { return prices.priceOf('gemini', id); }
     function supportsTools(id) { const m = findModel(id); return m ? m.supportsTools : true; }
-    function reasoningEfforts() { return ['none']; }
+    // Resolved from the model NAME: /v1beta/models publishes no capability data, and the dock asks before a
+    // catalog fetch has necessarily landed.
+    function reasoningEfforts(id) { return geminiEffortsFor(id); }
 
     return { stream, listModels, contextLimit, priceOf, supportsTools, reasoningEfforts };
   }

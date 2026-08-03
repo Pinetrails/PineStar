@@ -43,6 +43,9 @@ const S = require('../frontend/app/study.js');
   A.eq(p[0].dim, 'goals', 'dimension parsed'); A.eq(p[0].kind, 'add', 'ADD -> add');
   A.eq(p[2].kind, 'retire', 'RETIRE -> retire');
   A.eq(p[3].dim, 'ambition', 'a "new" tag word maps to add on a real dim'); A.eq(p[3].kind, 'add', '"new" -> add');
+  const pe = S.parse('style ADD: prefers terse answers | EVIDENCE: "I prefer terse answers"');
+  A.eq(pe[0].text, 'prefers terse answers', 'evidence metadata is separated from the belief text');
+  A.eq(pe[0].evidence, 'I prefer terse answers', 'the verbatim evidence quote is parsed explicitly');
   A.eq(S.canonDim('goal'), 'goals', 'singular "goal" canonicalises to goals');
   A.eq(S.canonDim('Standing Orders'), 'standing_orders', 'loose "Standing Orders" canonicalises');
   A.eq(S.canonDim('nonsense'), null, 'an unknown dimension is rejected');
@@ -58,6 +61,10 @@ const S = require('../frontend/app/study.js');
   A.eq(out.proposals[0].createdAt, 100, 'createdAt from the injected clock');
   A.ok(out.proposals[0].evidence.indexOf('ship the dossier feature') >= 0, 'evidence carries the directive');
   A.eq(out.proposals[2].kind, 'retire', 'the RETIRE that matched an existing belief survives');
+  const grounded = await S.study(run, { propose: async () => 'style ADD: prefers terse verified answers | EVIDENCE: "I prefer terse answers"', clock: makeClock(101), redact, beliefs: {}, declined: [] });
+  A.eq(grounded.proposals[0].evidenceRef.kind, 'verbatim', 'a verified quote is stamped as verbatim run evidence');
+  const invented = await S.study(run, { propose: async () => 'style ADD: prefers colorful long answers | EVIDENCE: "make everything purple and verbose"', clock: makeClock(102), redact, beliefs: {}, declined: [] });
+  A.eq(invented.proposals.length, 0, 'an invented evidence quote cannot become a learned belief');
 
   // ---- retire MUST match an existing belief (no hallucinated retractions) ----
   const noMatch = await S.study(run, { propose: async () => 'goals RETIRE: a goal we never held', clock: makeClock(0), redact, beliefs, declined: [] });
@@ -170,10 +177,13 @@ const S = require('../frontend/app/study.js');
   StudyStore.init({ now: () => 1000 });
   A.eq(StudyStore.nextLive([addProp]), null, 'the resolved set survives a re-init (persisted) — no post-reload re-offer');
   // every verdict CONSUMES the proposal server-side too, carrying the current denylist
-  A.ok(resolveCalls.length >= 2 && resolveCalls.every(c => c.url === '/api/study/resolve'), 'each verdict POSTs /api/study/resolve (server batch consumption)');
-  A.eq(resolveCalls[0].body.id, 'study_1', 'the resolve call names the decided proposal id');
-  A.eq(resolveCalls[0].body.runId, 'run_9', 'the resolve call names the batch runId (sourceRunId)');
-  A.ok(Array.isArray(resolveCalls[0].body.declined), 'the resolve call mirrors the studyDeclined denylist to the sidecar');
+  const studyResolveCalls = resolveCalls.filter(c => c.url === '/api/study/resolve');
+  const recommendationCalls = resolveCalls.filter(c => c.url === '/api/recommendations');
+  A.ok(studyResolveCalls.length >= 2, 'each verdict POSTs /api/study/resolve (server batch consumption)');
+  A.ok(recommendationCalls.length >= 2, 'study impressions and verdicts join the shared recommendation lifecycle');
+  A.eq(studyResolveCalls[0].body.id, 'study_1', 'the resolve call names the decided proposal id');
+  A.eq(studyResolveCalls[0].body.runId, 'run_9', 'the resolve call names the batch runId (sourceRunId)');
+  A.ok(Array.isArray(studyResolveCalls[0].body.declined), 'the resolve call mirrors the studyDeclined denylist to the sidecar');
 
   // ---- RETIRE SAFETY (finding 5): a pinned belief is untouchable; the card shows the REAL target ----
   dossierBeliefs.goals = [{ id: 'cd_7', text: 'keep improving the harness pipeline', pinned: true }];
@@ -288,6 +298,7 @@ const S = require('../frontend/app/study.js');
 
   /* ---- source-locks: chat.js actually drives the arbiter at the right seams (idiom of beat-coordination.test) ---- */
   const chatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
+  const beatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/beatcard.js'), 'utf8');
   A.ok(chatSrc.indexOf('function wireStudy') > 0, 'chat.js defines wireStudy (the study turn-in beat)');
   A.ok(/wireProposals\(\);[\s\S]{0,220}wireStudy\(\);/.test(chatSrc), 'wireStudy is wired in init next to wireProposals');
   // memory reserves its claim the moment memory.proposed arrives (BEFORE the 350ms fetch), and releases on empty/notify-only
@@ -304,7 +315,7 @@ const S = require('../frontend/app/study.js');
   A.ok(/slotMemoryDeck\(\) === 'queue'\)\s*\{[\s\S]{0,120}turninQueue\.push\(batch\)/.test(chatSrc.slice(iCard, iCard + 1200)),
     'proposalCard queues the deck when the arbiter says the moment is taken (a study card can never be stacked on)');
   A.ok(/beatSlot\.memoryShown\(\)/.test(chatSrc), 'renderTurninBatch hard-claims the slot on every deck-render path');
-  A.ok(/slotMemoryDone\(batch\.runId, turninQueue\.length > 0\)/.test(chatSrc), 'finishBatch releases (or hands on) the slot');
+  A.ok(/beatHandle\.finish\(\{ onGone:/.test(chatSrc), 'finishBatch retires through the shared lifecycle controller');
   // the study side: guards + queue-not-drop + session cap + the generous arm delay (memory wins the moment)
   const iOffer = chatSrc.indexOf('async function offerStudy');
   A.ok(iOffer > 0, 'chat.js defines offerStudy');
@@ -319,23 +330,22 @@ const S = require('../frontend/app/study.js');
     'the study beat honors the SAME stand-down guards as curiosity (busy/interview/onboarding/intake/Dialogue)');
   const iWireStudy = chatSrc.indexOf('function wireStudy');
   A.ok(/STUDY_ARM_MS\);/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)), 'the study offer arms at STUDY_ARM_MS — well after run end, so reflection claims the moment first');
-  A.ok(/expireActiveStudy\(\); flushStudyPending\(\);/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)),
+  A.ok(/scheduleExpire\('study', 900\);[\s\S]{0,100}setTimeout\(flushStudyPending, 900\)/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)),
     'each run end expires an undecided study card (the ignore verdict) THEN drains one deferred beat (anti-starve)');
   // finding-4 lifecycle: the expiry tallies StudyStore.ignore for the shown proposal and frees the slot
-  const iExpire = chatSrc.indexOf('function expireActiveStudy');
-  A.ok(iExpire > 0 && /StudyStore\.ignore\(a\.prop\)/.test(chatSrc.slice(iExpire, iExpire + 800)),
+  A.ok(/onExpire:\s*\(\) => \{ if \(typeof StudyStore\.ignore/.test(chatSrc.slice(chatSrc.indexOf('function studyCard'), chatSrc.indexOf('function studyCard') + 4200)),
     'an undecided card expiring at the next run end tallies an IGNORE (2x = stop proposing that belief)');
-  A.ok(/slotStudyDone\(turninQueue\.length > 0\)/.test(chatSrc.slice(iExpire, iExpire + 800)), 'the expiry releases the beat slot (queued memory decks cannot starve)');
+  A.ok(/slot\.done\(record\.kind, handoffOf\(record\)\)/.test(beatSrc), 'the shared expiry path releases or hands off the beat slot');
   // FIFO drains, single queue path
   const iFlush = chatSrc.indexOf('function flushStudyPending');
-  A.ok(iFlush > 0 && /studyPending\.shift\(\)/.test(chatSrc.slice(iFlush, iFlush + 700)) && /tastePending\.shift\(\)/.test(chatSrc.slice(iFlush, iFlush + 700)),
+  A.ok(iFlush > 0 && /beatCards\.shift\('study'\)/.test(chatSrc.slice(iFlush, iFlush + 700)) && /beatCards\.shift\('taste'\)/.test(chatSrc.slice(iFlush, iFlush + 700)),
     'deferred beats drain FIFO (shift, not pop — the oldest never starves)');
-  A.ok(!/studyPending\.pop\(\)/.test(chatSrc), 'no LIFO pop path remains on the study queue');
+  A.ok(/const item = q\.shift\(\)/.test(beatSrc), 'the shared controller drains deferred beats FIFO');
   const iQueue = chatSrc.indexOf('function queueStudy');
-  A.ok(iQueue > 0 && /q\.runId === runId\)\s*return/.test(chatSrc.slice(iQueue, iQueue + 400)), 'queueStudy dedupes by runId (a run can never double-queue)');
+  A.ok(iQueue > 0 && /beatCards\.enqueue\('study', runId/.test(chatSrc.slice(iQueue, iQueue + 400)), 'queueStudy delegates run-id dedupe to the shared controller');
   // per-session hygiene: a new session/hero clears the study queues + card + arbiter (no cross-hero flush)
-  A.ok(/studyPending\.length = 0; tastePending\.length = 0; activeStudy = null;/.test(chatSrc), 'Chat.init clears the deferred study/taste queues + the live card');
-  A.ok(/beatSlot = \(typeof Study !== 'undefined' && Study\.makeBeatSlot\) \? Study\.makeBeatSlot\(\) : null;/.test(chatSrc), 'Chat.init rebuilds a fresh beat-slot arbiter per session');
+  A.ok(/if \(beatCards\) beatCards\.reset\(\);/.test(chatSrc), 'Chat.init invalidates the prior card generation');
+  A.ok(/BeatCard\.create\(\{ vanish: vanish \}\)/.test(chatSrc), 'Chat.init rebuilds a fresh shared lifecycle controller per session');
   // the retire card shows the REAL matched belief (never just the model paraphrase) and Keep reflects accept()'s truth
   const iStudyCard = chatSrc.indexOf('function studyCard');
   A.ok(iStudyCard > 0 && /StudyStore\.retireTarget\(prop\)/.test(chatSrc.slice(iStudyCard, iStudyCard + 900)), 'the retire card resolves its ACTUAL target at render time');

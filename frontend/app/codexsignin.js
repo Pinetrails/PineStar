@@ -12,7 +12,14 @@
 
    Callbacks (all optional):
      onRequesting()                                — the start call is in flight
-     onCode({ user_code, verification_uri })       — show the code; the caller opens the URL its own way
+     onCode({ user_code, verification_uri, open_uri })
+                                                   — show the code + verification_uri; OPEN open_uri.
+       Two URLs, deliberately: `verification_uri` is the bare, human-typeable address to DISPLAY, while
+       `open_uri` is RFC 8628's verification_uri_complete (the same page with ?user_code=… pre-filled),
+       falling back to the bare one when the issuer doesn't publish a complete form (codex). Never open the
+       bare URL blind: kimi's page is a pure code CONSUMER — landing on
+       https://www.kimi.com/code/authorize_device with no user_code renders "Missing user_code parameter"
+       and the sign-in is unfinishable, even though the device + poll legs are perfectly healthy.
      onConnected()                                 — the sidecar exchanged + persisted tokens
      onError(message)                              — start failed or the poll reported a hard error
      onTimeout()                                   — the device code expired before the user finished
@@ -52,7 +59,8 @@ function makeOAuthSignIn(paths) {
       user_code: d.user_code,
       deadline: Date.now() + ((d.expires_in || 900) * 1000)
     };
-    if (cb.onCode) cb.onCode({ user_code: d.user_code, verification_uri: d.verification_uri });
+    // ONE place computes "which URL do we actually open" so no call site can get it wrong.
+    if (cb.onCode) cb.onCode({ user_code: d.user_code, verification_uri: d.verification_uri, open_uri: d.verification_uri_complete || d.verification_uri });
     poll(my, d.interval || 5, cb);
   }
 

@@ -5,6 +5,9 @@
 'use strict';
 const A = require('./_assert.js');
 const P = require('../frontend/app/projects.js');
+const fs = require('fs');
+const path = require('path');
+const appSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
 
 /* ---------- basename: win32 + posix, trailing separators ignored ---------- */
 A.eq(P.basename('C:\\Users\\me\\project'), 'project', 'win32 basename');
@@ -89,5 +92,69 @@ A.eq(pr.projectsList, true, 'projects view shows the projects list');
 A.eq(pr.newBtn, false, 'projects view hides + NEW');
 A.eq('archivedBtn' in pr, false, 'no ARCHIVED head action exists — the archived reveal is a footer row inside #workstreams');
 A.eq(pr.addBtn, true, 'projects view shows + ADD');
+
+/* ---------- revoked scope: browse history, but never mint work against an untrusted root ---------- */
+const headAction = appSrc.slice(
+  appSrc.indexOf('function updateProjHeadAction()'),
+  appSrc.indexOf('function setRailView(', appSrc.indexOf('function updateProjHeadAction()'))
+);
+const newInProject = appSrc.slice(
+  appSrc.indexOf('function newSessionInProject('),
+  appSrc.indexOf('// the project row actions menu', appSrc.indexOf('function newSessionInProject('))
+);
+A.ok(/b\.disabled\s*=\s*!projScopeBlessed/.test(headAction),
+  'entered revoked project disables + NEW from the fetched path-grant truth');
+A.ok(/!projScopeBlessed/.test(newInProject),
+  'newSessionInProject refuses to anchor a new session after trust is revoked');
+A.ok(/Access revoked[\s\S]{0,180}existing sessions/i.test(appSrc),
+  'revoked project empty-state copy says existing sessions remain browseable instead of promising new work');
+
+/* ---------- project removal: revoke trust first, then hard-forget metadata truthfully ---------- */
+const removeProject = appSrc.slice(
+  appSrc.indexOf('function removeProject('),
+  appSrc.indexOf('// ADD A PROJECT:', appSrc.indexOf('function removeProject('))
+);
+A.ok(/r\.blessed[\s\S]{0,220}\/api\/permissions\/revoke/.test(removeProject),
+  'removing a blessed project uses the standing-grant revoke endpoint');
+A.ok(/!r\.blessed[\s\S]{0,260}\/api\/projects\/forget/.test(removeProject),
+  'forgetting a revoked project uses the project metadata forget endpoint');
+A.ok(/trust revoked for/.test(removeProject) && /forgot/.test(removeProject),
+  'success telemetry distinguishes trust revocation from an actually forgotten project');
+
+/* ---------- project rail accessibility: every clickable row is keyboard + AT reachable ---------- */
+A.ok(/class="ws-row proj-row[\s\S]{0,300}tabindex="0" role="button" aria-label=/.test(appSrc),
+  'project overview rows are named keyboard buttons');
+A.ok(/class="proj-sess[\s\S]{0,300}tabindex="0" role="button" aria-label=/.test(appSrc),
+  'project preview sessions and overflow rows are named keyboard buttons');
+A.ok(/proj-sess-full[\s\S]{0,260}tabindex="0" role="button" aria-label=/.test(appSrc),
+  'entered-project session rows are named keyboard buttons');
+A.ok(/li\.onkeydown[\s\S]{0,240}e\.key === 'Enter'[\s\S]{0,160}li\.click\(\)/.test(appSrc),
+  'project preview/session rows activate with Enter or Space');
+A.ok(/openProjectMenu\(row, b\.left, b\.bottom \+ 2, li\)/.test(appSrc)
+  && /menu\.querySelector\('\.ws-menu-item'\)[\s\S]{0,100}first\.focus\(\)/.test(appSrc)
+  && /closeProjectMenu\(true\)/.test(appSrc),
+  'Shift+F10 enters the project action menu and Escape restores its row focus');
+
+/* ---------- failed refresh: unknown stays unknown; never mint an empty trust ledger ---------- */
+const renderProjects = appSrc.slice(
+  appSrc.indexOf('function renderProjects()'),
+  appSrc.indexOf('// sessions attached to one project', appSrc.indexOf('function renderProjects()'))
+);
+const unavailableProjects = appSrc.slice(
+  appSrc.indexOf('function renderProjectsUnavailable('),
+  appSrc.indexOf('function renderProjects()', appSrc.indexOf('function renderProjectsUnavailable('))
+);
+A.ok(/if \(!r\.ok\) throw new Error\('projects unavailable'\)/.test(renderProjects),
+  'a non-2xx /api/projects response enters the unavailable path instead of synthesizing an empty list');
+A.ok(/!Array\.isArray\(j\.projects\)/.test(renderProjects),
+  'a malformed success payload is unavailable, not a confirmed empty trust ledger');
+A.ok(!/projects:\s*\[\]/.test(renderProjects),
+  'the fetch path cannot manufacture a confirmed-empty projects response');
+A.ok(/lastConfirmedProjects[\s\S]*renderProjectRows\(ul, lastConfirmedProjects\)/.test(unavailableProjects),
+  'failed refreshes repaint the last confirmed ledger before adding the stale warning');
+A.ok(/showing the last confirmed list/.test(unavailableProjects) && /Reload to reconnect/.test(unavailableProjects),
+  'the stale ledger is labeled honestly with the recovery action');
+A.ok(!/setProjScope\(/.test(unavailableProjects),
+  'an unavailable refresh cannot erase the persisted project scope');
 
 A.report('projects-view.test');

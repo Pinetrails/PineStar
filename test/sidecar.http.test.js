@@ -197,6 +197,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const preflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: B, 'Access-Control-Request-Method': 'POST' } });
     A.eq(preflight.status, 204, 'trusted API preflight -> 204');
     A.eq(preflight.headers.get('access-control-allow-origin'), B, 'trusted preflight mirrors loopback origin');
+    const preflightMethods = preflight.headers.get('access-control-allow-methods') || '';
+    A.ok(preflightMethods.split(',').map(s => s.trim()).indexOf('DELETE') >= 0, 'trusted preflight advertises the DELETE routes the API actually serves');
     const badPreflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' } });
     A.eq(badPreflight.status, 403, 'foreign API preflight -> 403');
 
@@ -257,6 +259,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(offlineProbe.body.reachable, false, 'offline custom endpoint is not reachable');
     A.eq(offlineProbe.body.catalogAvailable, false, 'offline custom endpoint has no proven catalog');
     const probeServer = http.createServer((rq, rs) => {
+      if (rq.url.indexOf('/chat/completions') >= 0) {
+        if (rq.headers.authorization !== 'Bearer probe-good-key') { rs.writeHead(401); return rs.end('rejected'); }
+        rs.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        rs.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'OK' } }] }) + '\n\n');
+        rs.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\n');
+        rs.write('data: [DONE]\n\n'); return rs.end();
+      }
       rs.writeHead(200, { 'Content-Type': 'application/json' });
       rs.end(JSON.stringify({ data: [{ id: 'local/proven-model' }] }));
     });
@@ -267,6 +276,10 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
       A.eq(liveProbe.body.reachable, true, 'reachable custom endpoint is proven by a real model-catalog round-trip');
       A.eq(liveProbe.body.catalogAvailable, true, 'reachable custom endpoint reports its real non-empty catalog');
       A.eq(liveProbe.body.credentialVerified, true, 'keyless custom endpoint needs no fabricated credential proof');
+      const wrongCandidate = await j('POST', '/api/providers/validate', { provider: 'custom', baseUrl: liveBase, key: 'probe-wrong-key', model: 'local/proven-model' });
+      A.eq(wrongCandidate.body.credentialVerified, false, 'candidate-key validation rejects a key that fails the inference wire');
+      const goodCandidate = await j('POST', '/api/providers/validate', { provider: 'custom', baseUrl: liveBase, key: 'probe-good-key', model: 'local/proven-model' });
+      A.eq(goodCandidate.body.credentialVerified, true, 'candidate-key validation proves the exact key on the inference wire');
     } finally { await new Promise(resolve => probeServer.close(resolve)); }
 
     const pushOpenAi = await fetch(B + '/api/key', {
@@ -279,6 +292,14 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(openAiAck.provider, 'openai', 'provider key ack names the configured provider');
     A.eq(openAiAck.configured, true, 'provider key ack reports configured');
     A.ok(JSON.stringify(openAiAck).indexOf('sk-provider-http-test-secret') < 0, 'provider key ack never echoes the secret');
+
+    const pushOpenAiPool = await fetch(B + '/api/key', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'openai', keyPool: ['openai-backup-a', 'openai-backup-b'] })
+    });
+    const openAiPoolAck = await pushOpenAiPool.json();
+    A.eq(openAiPoolAck.alternateCount, 2, 'OpenAI alternate pool is accepted only under the OpenAI provider id');
+    A.ok(JSON.stringify(openAiPoolAck).indexOf('openai-backup') < 0, 'alternate-pool acknowledgement never echoes a secret');
 
     const pushAnthropic = await fetch(B + '/api/key', {
       method: 'POST',
@@ -324,6 +345,15 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(signalConnect.status, 200, 'Signal accepts endpoint/account configuration against an offline bridge');
     const signalSaved = await j('GET', '/api/channels/signal/status');
     A.eq(signalSaved.body.configured, true, 'Signal status is configured from saved endpoint/account');
+    const channelsFile = path.join(ws, 'channels', 'secrets.json');
+    const signalBeforeMalformed = fs.readFileSync(channelsFile, 'utf8');
+    const signalBadJson = await fetch(B + '/api/channels/signal/disconnect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': apiToken }, body: '{bad'
+    });
+    A.eq(signalBadJson.status, 400, 'Signal disconnect with malformed JSON -> 400');
+    A.eq(fs.readFileSync(channelsFile, 'utf8'), signalBeforeMalformed, 'malformed Signal disconnect leaves durable configuration byte-identical');
+    const signalStillSaved = await j('GET', '/api/channels/signal/status');
+    A.eq(signalStillSaved.body.configured, true, 'malformed Signal disconnect does not stop or deconfigure the channel');
     const signalRemove = await j('POST', '/api/channels/signal/disconnect', { purge: true });
     A.eq(signalRemove.body.removedConfiguration, true, 'Signal removal is read-back-proven');
     A.eq(signalRemove.body.purged, false, 'Signal removal never claims token purging');
@@ -350,6 +380,12 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
       A.eq(noTok.status, 403, 'GET ' + label + ' WITHOUT a token -> 403');
       const withTok = await fetch(B + p, { headers: Object.assign({ Origin: B }, tok) });
       A.eq(withTok.status, 200, 'GET ' + label + ' WITH trusted browser token -> 200');
+    }
+    // Prefix families stop only at a URL segment boundary. Sibling aliases must not inherit a real handler,
+    // while the exact/query forms above and the real /api/models/<provider> child route remain live.
+    for (const p of ['/api/toolsets-typo', '/api/saveXYZ', '/api/runsXYZ', '/api/subagentsXYZ', '/api/skillsXYZ', '/api/connectors/oauth/callbackevil']) {
+      const alias = await fetch(B + p, { headers: tok });
+      A.eq(alias.status, 404, 'segment-unsafe route alias ' + p + ' -> 404');
     }
 
     // ---- GROUND_UP_AUDIT P2: /api/version env-first fallback is HONEST (never a silent blank) ----
@@ -560,6 +596,18 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(noModel.status, 400, 'POST /api/run without a model -> 400');
     const badJson = await fetch(B + '/api/run', { method: 'POST', headers: { 'X-StarNet-Token': apiToken }, body: '{not json' });
     A.eq(badJson.status, 400, 'POST /api/run with malformed JSON -> 400');
+    const cancelBadJson = await fetch(B + '/api/cancel', { method: 'POST', headers: { 'X-StarNet-Token': apiToken }, body: '{not json' });
+    A.eq(cancelBadJson.status, 400, 'POST /api/cancel with malformed JSON -> 400');
+
+    const spotifyStart = await j('POST', '/api/spotify/auth/start', { clientId: 'spotify-http-test-client' });
+    A.eq(spotifyStart.status, 200, 'Spotify auth start accepts a valid client id without network I/O');
+    const spotifyFile = path.join(ws, '.secrets', 'spotify.json');
+    const spotifyBeforeMalformed = fs.readFileSync(spotifyFile, 'utf8');
+    const spotifyBadJson = await fetch(B + '/api/spotify/auth/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': apiToken }, body: '{not json'
+    });
+    A.eq(spotifyBadJson.status, 400, 'Spotify auth start with malformed JSON -> 400 even when a client id is already saved');
+    A.eq(fs.readFileSync(spotifyFile, 'utf8'), spotifyBeforeMalformed, 'malformed Spotify auth start leaves durable OAuth configuration byte-identical');
 
     // ---- /api/file media serving: typed content-type + HTTP Range (so COMMS <video>/<audio> can seek) ----
     // write a known-size clip into the agent's jailed workspace (<ws>/agent/clips/clip.webm)
@@ -683,9 +731,22 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const idxSrc = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
     const iTurnin = idxSrc.indexOf('async function handleMemoryTurnin');
     const iWrite = idxSrc.indexOf('writeMemoryRecord(agentId, prop', iTurnin);
-    const guard = idxSrc.indexOf('if (prop.saved) return json(409', iTurnin);
+    // needle pins the GUARANTEE (a .saved item 409s before the write), not the local variable name that holds it —
+    // the durable pending queue renamed the batch lookup to `live`, and a lock that breaks on a rename teaches
+    // nothing about whether the guarantee survived.
+    const guard = idxSrc.indexOf('.saved) return json(409', iTurnin);
     A.ok(iTurnin > 0 && iWrite > iTurnin, 'handleMemoryTurnin routes keep/edit through writeMemoryRecord');
     A.ok(guard > iTurnin && guard < iWrite, 'a saved:true stash item is 409-rejected BEFORE the keep/edit write path (no duplicate mint)');
+
+    // PENDING QUEUE (durable, cross-run): unattended runs reflect now, so a high-stakes deck can be raised with
+    // nobody watching. The route is the surface that keeps it answerable — it must exist, be agent-gated, and
+    // report an EMPTY deck honestly rather than 404-ing or inventing rows.
+    const pend = await j('GET', '/api/memory/pending?agent=agent');
+    A.eq(pend.status, 200, 'GET /api/memory/pending -> 200');
+    A.eq(pend.body.agentId, 'agent', 'the pending deck is reported per agent');
+    A.eq(pend.body.pending, [], 'a station with nothing awaiting a verdict reports an empty deck');
+    const pendBad = await j('GET', '/api/memory/pending?agent=..%2Fetc');
+    A.eq(pendBad.status, 403, 'a bad agent id is refused, not path-joined');
 
     // ---- FORGET = NEVER AGAIN (2026-07-16 resurrect audit): Memory Core's Forget must be as durable as a
     //      veto/discard — the removed belief's text joins the SAME permanent declined denylist, or reflection
@@ -811,7 +872,20 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const sttNoKey = await j('POST', '/api/stt', { audio: Buffer.from('not real audio').toString('base64'), format: 'wav' });
     A.eq(sttNoKey.status, 200, 'POST /api/stt with audio but no key -> 200');
     A.eq(sttNoKey.body.text, '', 'no-key STT returns an empty transcript');
-    A.ok(/no key/i.test(sttNoKey.body.reason || ''), 'the STT degrade names the no-key reason');
+    /* ⛔ "no key" IS ONLY THE TRUTH WHEN THERE IS ALSO NO KEYLESS ENGINE. The STT ladder gained a LOCAL floor
+       (tier 4) so a station whose brain is a ChatGPT/Codex or Anthropic subscription is not simply deaf — none
+       of those credentials is a transcription key. Where that floor is installed, answering "no key" would name
+       the wrong cause: the station HAS ears, this clip was just undecodable. So ask the station what it can
+       actually do and hold it to the matching truth — asserting one fixed string would force a lie in whichever
+       world it was not written for, and dropping to "some reason exists" would guard nothing. */
+    const localVoice = await j('GET', '/api/local-voice/status');
+    const canHearKeyless = !!(localVoice.body && localVoice.body.available);
+    if (canHearKeyless) {
+      A.ok(/local/i.test(sttNoKey.body.reason || ''), 'with a keyless local engine the degrade names THAT tier failing, not a missing key');
+      A.ok(!/no key/i.test(sttNoKey.body.reason || ''), 'and never blames a key on a station that can transcribe without one');
+    } else {
+      A.ok(/no key/i.test(sttNoKey.body.reason || ''), 'with no engine and no key the STT degrade names the no-key reason');
+    }
     // raw-bytes shape (the recorder-provider default): a webm content-type body, still no key -> clean degrade.
     const sttRaw = await fetch(B + '/api/stt', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/webm' }, apiToken ? { 'X-StarNet-Token': apiToken } : {}), body: Buffer.from('fake opus bytes') });
     A.eq(sttRaw.status, 200, 'POST /api/stt raw audio bytes -> 200');
@@ -996,6 +1070,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     //      speaks the same hand-rolled protocol (exported codec), proving handleTts serves neural audio no-key ----
     {
       const audioPayload = Buffer.from([0xff, 0xf3, 0x64, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);   // fake mp3 bytes we choose
+      const ssmlSeen = [];   // every SSML request the loopback served — carries the <voice name='…'> actually asked for
       const wsServer = http.createServer((rq, rs) => { rs.writeHead(426); rs.end(); });
       wsServer.on('upgrade', (rq, socket) => {
         const wskey = rq.headers['sec-websocket-key'] || '';
@@ -1010,7 +1085,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
           socket.write(edge.wsEncode(0x2, Buffer.concat([hl, hdr, audioPayload]), { mask: false }));
           socket.write(edge.wsEncode(0x1, Buffer.from('X-RequestId:mock\r\nPath:turn.end\r\n\r\n{}', 'utf8'), { mask: false }));
         };
-        const parse = edge.makeWsParser((op, payload) => { if (op === 0x1 && payload.toString('utf8').includes('Path:ssml')) respond(); }, () => {});
+        const parse = edge.makeWsParser((op, payload) => { const t = payload.toString('utf8'); if (op === 0x1 && t.includes('Path:ssml')) { ssmlSeen.push(t); respond(); } }, () => {});
         socket.on('data', parse);
         socket.on('error', () => {});
       });
@@ -1037,6 +1112,45 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         A.eq(r2.headers.get('x-voice-cache'), 'hit', 'an identical second edge request is served from the disk cache');
         const b2 = Buffer.from(await r2.arrayBuffer());
         A.eq(b2.equals(audioPayload), true, 'the cached edge clip is byte-identical');
+        A.ok(/^edge:/.test(r2.headers.get('x-voice-provider') || ''), 'the serving tier names itself (X-Voice-Provider: edge:…)');
+
+        /* ---- THE SHIPPED SHAPE: local:true where the offline engine cannot load (every installed build —
+           the bundle ships no node_modules; reproduced here with the STARNET_LOCAL_VOICE=0 kill-switch).
+           ⛔ THE BUG THIS LOCKS OUT (2026-07-30, found by ear): this request used to fall through into the
+           KEYED provider chain, so live voice silently spoke with a different provider's identity and the
+           voice picker adjusted an engine that was not there. Now the picked voice maps onto the nearest
+           Edge neural — the SSML the loopback captures is the proof of which voice was actually requested,
+           and the mapped name differing from Edge's own default (Christopher) is what discriminates the fix
+           from the old fallthrough, with no key and no network. */
+        {
+          const shipWs = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ship-'));
+          const sb = await boot(port + 350, shipWs, 20, {
+            STARNET_LOCAL_VOICE: '0', SKYNET_LOCAL_VOICE: '0',
+            SKYNET_EDGE_TTS: '1', STARNET_EDGE_TTS: '1',
+            SKYNET_EDGE_TTS_HOST: '127.0.0.1', SKYNET_EDGE_TTS_PORT: String(wsPort), SKYNET_EDGE_TTS_INSECURE: '1'
+          });
+          const SB = 'http://' + HOST + ':' + sb.port;
+          try {
+            const stok = await bootToken(SB, SB);
+            const H = { 'Content-Type': 'application/json', 'X-StarNet-Token': stok, Origin: SB };
+            const lvs = await (await fetch(SB + '/api/local-voice/status', { headers: H })).json();
+            A.eq(lvs.available, false, 'the kill-switch presents the installed-build truth through the route');
+            const postLocal = (t, v) => fetch(SB + '/api/tts', { method: 'POST', headers: H, body: JSON.stringify({ text: t, local: true, localVoice: v }) });
+            const g = await postLocal('shipped george check', 'bm_george');
+            A.eq(g.status, 200, 'local:true with the engine absent still serves (200)');
+            A.eq(g.headers.get('x-voice-provider'), 'edge:en-GB-RyanNeural', 'the PICKED voice maps to its Edge neural — never the keyed chain, never Edge\'s own default');
+            A.eq(Buffer.from(await g.arrayBuffer()).equals(audioPayload), true, 'and the audio really came from the Edge floor');
+            A.ok(ssmlSeen.some(s => s.indexOf("name='en-GB-RyanNeural'") >= 0), 'the wire asked Edge for the mapped voice by name');
+            const b = await postLocal('shipped bella check', 'af_bella');
+            A.eq(b.headers.get('x-voice-provider'), 'edge:en-US-AriaNeural', 'a different pick maps differently — the picker is LIVE on an installed build, not decorative');
+            const u = await postLocal('shipped unknown check', 'not-a-voice');
+            A.eq(u.headers.get('x-voice-provider'), 'edge:en-US-ChristopherNeural', 'an unknown pick maps through the default voice, never to another provider');
+          } finally {
+            try { sb.child.kill(); } catch (_) {}
+            await sleep(150);
+            try { fs.rmSync(shipWs, { recursive: true, force: true }); } catch (_) {}
+          }
+        }
       } finally {
         try { eb.child.kill(); } catch (_) {}
         // bounded teardown: force any lingering (keep-alive/upgrade) sockets shut so close() can't stall the test.

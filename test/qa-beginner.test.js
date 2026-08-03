@@ -7,6 +7,7 @@
      - stall-finding construction (ledger-shaped, fingerprintable on the step, P0, evidence carried).
    No Date.now() anywhere — every timestamp comes from the controllable clock, so it is deterministic. */
 'use strict';
+const fs = require('fs');
 const A = require('./_assert.js');
 const {
   makeRunAccountant, stepsForMode, firstBootAdvanceKey, makeFirstBootAdvanceController,
@@ -50,6 +51,11 @@ const clock = { now: () => clk };
     'http://127.0.0.1:1234/api/v1', 'both environment prefixes route to the same local provider');
   A.eq(Object.keys(uiOnlyProviderBaseEnv('live', 'http://127.0.0.1:1234/api/v1')).length, 0,
     'live mode never redirects the real provider wire');
+  const runnerSource = fs.readFileSync(require.resolve('../scripts/qa/beginner-run.mjs'), 'utf8');
+  A.ok(/\/auth\/key/.test(runnerSource),
+    'UI-only provider models the authenticated no-spend credential probe used before key persistence');
+  A.ok(/Bearer sk-or-beginner-ui-only-placeholder/.test(runnerSource),
+    'the credential probe accepts only the isolated Beginner sentinel');
 }
 
 // ---- A4. boot veil -> splash is retried statefully instead of sampling the title screen once ----

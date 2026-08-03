@@ -11,11 +11,20 @@ const fs = require('fs'); const path = require('path');
 const app = (f) => fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', f), 'utf8');
 const appjs = app('app.js'), ui = app('stationui.js'), mkt = app('marketplace.js'), dock = app('modeldock.js'), world = app('world.js'), chat = app('chat.js');
 const html = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
+const ModelDock = require('../frontend/app/modeldock.js');
 
 // ---- ModelDock: a PURE catalog + helper surface for other pickers (no Harness/DOM side effects) ----
 A.ok(/catalog:\s*\(o\)\s*=>\s*computeCatalog/.test(dock), 'ModelDock exposes a pure catalog() accessor');
 A.ok(/async function computeCatalog\(/.test(dock), 'computeCatalog fans out across providers without touching the dock');
 A.ok(/labels:\s*\{/.test(dock) && /efforts:\s*\{/.test(dock), 'ModelDock exposes label + effort helpers for reuse');
+A.eq(ModelDock._internals.selectorLabel('anthropic/claude-haiku-4.5', 'medium'),
+  'Model selector: claude haiku 4.5, Medium reasoning',
+  'the model-chip accessible name includes the selected model and reasoning effort');
+A.eq(ModelDock._internals.selectorLabel('', 'none'),
+  'Model selector: no model selected, Reasoning off',
+  'the model-chip accessible name stays honest when no model is selected');
+A.ok(/toggle\.setAttribute\('aria-label',\s*selectorLabel\(current,\s*effort\)\)/.test(dock),
+  'every ModelDock reflect refreshes the toggle accessible name from live model state');
 
 // ---- the shared picker component loads before its consumers ----
 A.ok(/app\/modelpicker\.js/.test(html), 'index.html loads the shared ModelPicker');

@@ -22,15 +22,15 @@ const css = fs.readFileSync(path.join(__dirname, '../frontend/css/app.css'), 'ut
 
 // ---- 1. the sidecar wiring: collector per run, observed on dispatch, recorded at run end ----
 A.ok(/require\('\.\/artifacts\.js'\)/.test(idx), 'index.js requires the artifacts collector');
-A.ok(/const\s+artifactLedger\s*=\s*makeArtifactCollector\(\)/.test(idx), 'runOnce builds a fresh per-run collector');
-A.ok(/artifactLedger\.observe\(\{\s*toolName:\s*c\.name,\s*args:\s*c\.args,\s*result:\s*r\s*\}\)/.test(idx),
+A.ok(/const\s+execution\s*=\s*makeRunExecutionState\(\{[\s\S]*?artifacts:\s*makeArtifactCollector\(\)/.test(idx), 'runOnce builds a fresh per-run collector inside its execution state');
+A.ok(/execution\.observeArtifact\(\{\s*toolName:\s*c\.name,\s*args:\s*c\.args,\s*result:\s*r\s*\}\)/.test(idx),
   'every dispatched tool result is observed (toolName/args/result)');
 // the observe sits BEFORE the tool-output budget clip, so parses see the real result text
-const obsAt = idx.indexOf('artifactLedger.observe');
+const obsAt = idx.indexOf('execution.observeArtifact');
 const clipAt = idx.indexOf('maxToolBytes', obsAt >= 0 ? obsAt : 0);
 A.ok(obsAt >= 0 && clipAt > obsAt, 'observe happens before the tool-output budget clip');
-A.ok(/runStore\.record\(\{[^}]*artifacts:\s*artifactLedger\.list\(\)/.test(idx),
-  'the recorded run entry carries artifacts: artifactLedger.list()');
+A.ok(/runStore\.record\(\{[^\n]*artifacts:\s*execution\.artifactList\(\)/.test(idx),
+  'the recorded run entry carries artifacts from the execution state');
 // no new event types: the collector never emits onto the bus
 A.ok(!/emit\(\s*['"]artifact/.test(idx), 'no new artifact.* bus/SSE event is emitted (REST-only, by design)');
 
@@ -70,7 +70,7 @@ A.ok(/classList\.add\('tool'\)/.test(recap) && /classList\.add\('recap'\)/.test(
 A.ok(!/activeNudge/.test(recap), 'the recap never touches the activeNudge beat-slot state');
 
 // file artifacts: open via the SAME jailed /api/file path every deliverable row uses + click-to-copy the path
-A.ok(/wireBlobOpen\(link, path, agentId\)/.test(recap), 'file artifacts open through the existing jailed blob-open helper');
+A.ok(/wireFileOpen\(link, path, agentId\)/.test(recap), 'file artifacts open through the existing jailed file-open helper');
 A.ok(/copyText\(path\)/.test(recap), 'the reveal action is click-to-copy of the path (no invented Tauri permissions)');
 A.ok(!/__TAURI__/.test(recap), 'no new Tauri capability is reached for the recap');
 

@@ -71,8 +71,44 @@ function stubFetch(routes) {
     ['lite.duckduckgo.com', DDG_ANOMALY]
   ]), lookup: null });
   let threw = false;
-  try { await wAllDown.webSearch('anthropic', {}); } catch (e) { threw = !!e.__allFailed; }
+  let allDownMessage = '';
+  try { await wAllDown.webSearch('anthropic', {}); } catch (e) {
+    threw = !!e.__allFailed;
+    allDownMessage = String(e && e.message || '');
+  }
   A.ok(threw, 'web_search throws __allFailed when every keyless source is down and there is no OpenRouter key');
+  A.ok(/do not immediately repeat/.test(allDownMessage), 'an exhausted provider chain tells the worker to change strategy');
+
+  // ---- E. The keyed rescue path receives its FULL 20s allowance after all three keyless fallbacks ----
+  const calls = [];
+  const wOpenRouter = makeWebTools({
+    openrouter: { apiKey: 'test-key', model: 'test-model' },
+    lookup: null,
+    fetchImpl: async (url) => {
+      const u = String(url);
+      calls.push(u);
+      if (u.indexOf('mojeek.com') >= 0) return { status: 200, text: async () => '<html>no results</html>' };
+      if (u.indexOf('duckduckgo.com') >= 0) return { status: 202, text: async () => DDG_ANOMALY.body };
+      if (u.indexOf('openrouter.ai') >= 0) return {
+        json: async () => ({ choices: [{ message: { content: '1. Rescue Result — https://example.com/rescue — usable evidence' } }] })
+      };
+      throw new Error('unexpected URL ' + u);
+    }
+  });
+  const rescued = await wOpenRouter.webSearch('anthropic', {});
+  A.eq(rescued.source, 'openrouter', 'OpenRouter rescues a fully blocked keyless chain');
+  A.ok(calls[calls.length - 1].indexOf('openrouter.ai') >= 0, 'the keyed fallback runs last');
+  A.ok(wOpenRouter.searchTool.timeoutMs >= 61000,
+    'the registry wrapper covers 3x12s keyless + 20s OpenRouter + scheduling slack (was 37s)');
+
+  // ---- F. A provider-local abort is surfaced as a timeout, not an opaque undici AbortError ----
+  let timeoutMessage = '';
+  try {
+    await wOpenRouter._internals.withTimeout(signal => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('This operation was aborted')), { once: true });
+    }), 5);
+  } catch (e) { timeoutMessage = String(e && e.message || ''); }
+  A.ok(/request timed out after 5ms/.test(timeoutMessage), 'provider timeout explains the abort so the worker can change source');
 
   /* ---- a hostile search-engine body must not stall the single-process host ----
      `([\s\S]*?)</a>` scans to end-of-input from every start position when the closer is absent, so a body

@@ -1,20 +1,8 @@
-/* node test/readbody.test.js — the sidecar's readBody() must decode a UTF-8 body ONCE at the end, so a
-   multi-byte char split across two TCP chunks round-trips intact (the old `b += c` per-chunk toString
-   mangled it into replacement chars). readBody is not exported from the server entry (index.js has no
-   module.exports), so we EXTRACT its real source text and evaluate that exact function — testing the
-   shipped code, not a copy. */
+/* node test/readbody.test.js — bounded text/binary request body readers. */
 'use strict';
 const A = require('./_assert.js');
-const fs = require('fs');
-const path = require('path');
 const { EventEmitter } = require('events');
-
-// pull the real readBody() out of sidecar/index.js by its source signature.
-const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
-const m = src.match(/function readBody\(req, max(?:, res)?\) \{[\s\S]*?\n\}/);
-A.ok(m, 'located the real readBody() source in sidecar/index.js');
-// eslint-disable-next-line no-new-func
-const readBody = new Function('Buffer', m[0] + '\nreturn readBody;')(Buffer);
+const { readBody, readBodyBuffer } = require('../sidecar/http-body.js');
 
 // a mock req that emits the given Buffer chunks then 'end' (an EventEmitter is enough for readBody).
 function mockReq(chunks) {
@@ -56,6 +44,30 @@ function mockReq(chunks) {
   {
     const out = await readBody(mockReq([Buffer.from('{"a":1}')]), 1 << 20);
     A.eq(out, '{"a":1}', 'ASCII JSON body unchanged');
+  }
+
+  // ---- 5. binary bodies never take a lossy text round-trip ----
+  {
+    const binary = Buffer.from([0, 255, 1, 254, 2]);
+    const out = await readBodyBuffer(mockReq([binary.subarray(0, 2), binary.subarray(2)]), binary.length);
+    A.eq(Array.from(out), Array.from(binary), 'binary reader preserves non-UTF8 bytes exactly');
+  }
+
+  // ---- 6. overflow answers cleanly before destroying the request ----
+  {
+    const writes = [];
+    const res = {
+      headersSent: false,
+      writeHead(code, headers) { this.headersSent = true; writes.push({ code, headers }); },
+      end(body) { writes.push({ body }); }
+    };
+    const req = mockReq([Buffer.from('1234'), Buffer.from('5')]);
+    let error = null;
+    try { await readBodyBuffer(req, 4, res); } catch (caught) { error = caught; }
+    A.ok(error && error.statusCode === 413 && error.tooLarge === true, 'overflow keeps the established 413 error shape');
+    A.eq(writes[0].code, 413, 'overflow writes a clean 413 before closing the request');
+    A.eq(JSON.parse(writes[1].body), { error: 'request body too large' }, 'overflow response is machine-readable JSON');
+    A.ok(req.destroyed, 'overflow stops consuming the hostile request');
   }
 
   A.report('readbody');

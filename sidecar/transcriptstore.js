@@ -13,9 +13,9 @@
    crashed by an unreadable transcript). Content is run through the injected `redact` on write so a
    secret-shaped token can't be laundered into a durable file (consistent with the SSE/NDJSON redaction).
 
-   It lives at <root>/transcript.jsonl — a SIBLING of the fs jail (<root>/<agentId>/), so the agent's own
-   fs.* tools can neither read nor corrupt the record of its own conversations. It holds no key (those are
-   stored separately and never appear in message content after redaction).
+   It lives under <root>/transcript-history-v2/ — a SIBLING of the fs jail (<root>/<agentId>/), so the
+   agent's own fs.* tools can neither read nor corrupt the record of its own conversations. Legacy
+   transcript.jsonl(.1) inputs remain in place after import. It holds no key (those are stored separately).
 
      makeTranscriptStore({ io, clock, redact?, limit? }) -> {
        append({ streamId, agentId, role, content }) -> entry,   // stamps ts, redacts content, appends, returns it
@@ -82,12 +82,16 @@
     // PER-STREAM RAM ceiling: history()/reconstruct() read at most `cap` (≤400) turns of ONE stream. Keep ~3x
     // headroom per stream so one chatty workstream can't evict another stream's turns below its own query
     // horizon (the fairness the plan calls for). Bound is PER streamId, not global, so N idle streams keep their
-    // recent history while a firehose stream self-trims. Disk keeps the full append-only log (bounded at boot).
+    // recent history while a firehose stream self-trims. Disk keeps the full append-only segmented history;
+    // the host adapter loads only recent rows here and answers lifetime recall lazily from per-segment indexes.
     const ramPerStream = num(opts.ramPerStream) > 0 ? num(opts.ramPerStream) : Math.max(cap * 3, 1200);
 
     // in-memory mirror loaded once; append keeps RAM + disk in lockstep so history() is O(n) over RAM.
     let rows = [];
-    try { const raw = io.readAll(); if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object'); }
+    try {
+      const raw = typeof io.readRecent === 'function' ? io.readRecent({ perStream: ramPerStream }) : io.readAll();
+      if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object');
+    }
     catch (e) { rows = []; }
     // trim the boot load per-stream too, so a huge bounded-boot load of one stream can't start us over the cap.
     trimStreamRam();   // no arg => sweep every over-cap stream once
@@ -109,31 +113,107 @@
 
     // a bad/missing streamId collapses to 'global' — exactly index.js's rule (bad streamId -> the global stream).
     function normStream(v) { const s = str(v); return SID_RE.test(s) ? s : 'global'; }
-    function tokenize(s) { return (str(s).toLowerCase().match(/[a-z0-9]+/g)) || []; }
+    function tokenize(s) {
+      const normalized = str(s).normalize('NFKC').toLowerCase();
+      const cjk = /^(?:\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul})$/u;
+      const out = [];
+      for (const word of (normalized.match(/[\p{L}\p{N}]+/gu) || [])) {
+        let run = '';
+        for (const char of word) {
+          if (!cjk.test(char)) { run += char; continue; }
+          if (run) { out.push(run); run = ''; }
+          out.push(char);
+        }
+        if (run) out.push(run);
+      }
+      return out;
+    }
 
-    // H1.3: keyword recall over ONE stream's transcript — the substrate for the agent-callable recall_conversation
-    // tool, so it can find weeks-old dialogue no longer in context. Lightweight BM25-ish: rank a row by how many
+    // H1.3: keyword recall over the transcript — the substrate for the agent-callable recall_conversation tool,
+    // so it can find weeks-old dialogue no longer in context. Lightweight BM25-ish: rank a row by how many
     // DISTINCT query terms it contains (primary), then total term frequency, then recency. Dependency-free + pure.
+    //
+    // SCOPE (parity with the reference harness, whose session search spans every session, not just the open one):
+    // o.scope === 'all' searches EVERY workstream; anything else keeps the historical single-stream behaviour, so
+    // the existing call shape search(streamId, q, {limit}) is byte-for-byte unchanged. Every hit now carries its
+    // OWN streamId — without it a cross-stream result is unattributable, and the agent would quote another
+    // workstream's decision as if it belonged to this one.
     function search(streamId, query, o) {
       o = o || {};
       const limit = num(o.limit) > 0 ? Math.min(num(o.limit), 50) : 10;
       const terms = Array.from(new Set(tokenize(query)));
       if (!terms.length) return [];
+      const all = o.scope === 'all';
       const want = normStream(streamId);
+      if (typeof io.search === 'function') {
+        try { return io.search(want, query, { limit: limit, scope: all ? 'all' : 'stream' }) || []; } catch (_) {}
+      }
       const scored = [];
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
-        if (r.streamId !== want) continue;
+        if (!all && r.streamId !== want) continue;
         const tf = {}; for (const t of tokenize(r.content)) tf[t] = (tf[t] || 0) + 1;
         let distinct = 0, freq = 0;
         for (const t of terms) { if (tf[t]) { distinct++; freq += tf[t]; } }
-        if (distinct) scored.push({ idx: i, role: r.role, content: r.content, ts: r.ts, score: distinct * 1000 + freq });
+        if (distinct) scored.push({ idx: i, streamId: r.streamId, role: r.role, content: r.content, ts: r.ts, score: distinct * 1000 + freq });
       }
       scored.sort((a, b) => (b.score - a.score) || (b.ts - a.ts) || (b.idx - a.idx));
-      return scored.slice(0, limit).map(x => ({ role: x.role, content: x.content, ts: x.ts, score: x.score }));
+      return scored.slice(0, limit).map(x => ({ streamId: x.streamId, role: x.role, content: x.content, ts: x.ts, score: x.score }));
     }
 
-    function append(e) {
+    // BROWSE (reference-harness parity: "list recent sessions"): every workstream present in the transcript, with its
+    // turn count, last-activity stamp, and the most recent USER line as a preview — so an agent that does not know
+    // WHICH workstream holds an answer can look before it searches. Newest-active first; deterministic tiebreak by
+    // id so two streams stamped in the same millisecond never reorder between calls.
+    function streams(o) {
+      o = o || {};
+      const limit = num(o.limit) > 0 ? Math.min(num(o.limit), 100) : 20;
+      const previewMax = num(o.previewChars) > 0 ? num(o.previewChars) : 160;
+      if (typeof io.streams === 'function') {
+        try { return io.streams({ limit: limit, previewChars: previewMax }) || []; } catch (_) {}
+      }
+      const by = new Map();
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        let e = by.get(r.streamId);
+        if (!e) { e = { streamId: r.streamId, turns: 0, lastAt: 0, preview: '' }; by.set(r.streamId, e); }
+        e.turns++;
+        if (r.ts >= e.lastAt) e.lastAt = r.ts;
+        // last USER line wins the preview — the assistant's reply is the answer, the user's line is the topic.
+        if (r.role === 'user' && r.content) e.preview = str(r.content).replace(/\s+/g, ' ').trim().slice(0, previewMax);
+      }
+      const out = Array.from(by.values());
+      out.sort((a, b) => (b.lastAt - a.lastAt) || (a.streamId < b.streamId ? -1 : a.streamId > b.streamId ? 1 : 0));
+      return out.slice(0, limit);
+    }
+
+    // SCROLL (reference-harness parity: anchored drill-down): the window of turns around a point in ONE stream, so a
+    // search hit can be READ IN CONTEXT instead of as an isolated line. Anchored on a TIMESTAMP rather than a row
+    // index or a synthetic id — ts is the only anchor that stays valid after trimStreamRam() splices older rows out
+    // from under us, which is exactly when a drill-down is most likely to be attempted.
+    function around(streamId, ts, o) {
+      o = o || {};
+      const win = num(o.window) > 0 ? Math.min(num(o.window), 50) : 6;
+      const want = normStream(streamId);
+      const at = num(ts);
+      if (typeof io.around === 'function') {
+        try { return io.around(want, ts, { window: win, rowId: o.rowId }) || []; } catch (_) {}
+      }
+      const mine = [];
+      for (let i = 0; i < rows.length; i++) { if (rows[i].streamId === want) mine.push(rows[i]); }
+      if (!mine.length) return [];
+      // the row closest to the anchor (mine is append-ordered, so ties resolve to the earliest match — stable).
+      let anchor = 0, best = Infinity;
+      for (let i = 0; i < mine.length; i++) {
+        const d = Math.abs(num(mine[i].ts) - at);
+        if (d < best) { best = d; anchor = i; }
+      }
+      const from = Math.max(0, anchor - win);
+      const to = Math.min(mine.length, anchor + win + 1);
+      return mine.slice(from, to).map(r => Object.assign({}, r));
+    }
+
+    function buildEntry(e) {
       e = e || {};
       let content = str(e.content).slice(0, CONTENT_MAX);
       try { content = str(redact(content)).slice(0, CONTENT_MAX); } catch (_) { /* redact must never crash a run */ }
@@ -152,11 +232,29 @@
         if (tc) entry.toolCalls = tc;
       }
       if (e.toolCallId != null) { const id = str(e.toolCallId).slice(0, 200); if (id) entry.toolCallId = id; }
-      rows.push(entry);
-      trimStreamRam(entry.streamId);   // bound THIS stream's RAM only (per-stream fairness; disk keeps full log)
-      try { io.append(entry); } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
+      // Recovery provenance is deliberately an opaque run id, never tool arguments. It lets boot reconciliation
+      // prove that a journal's final rows already reached durable transcript storage before retiring the journal.
+      if (e.sourceRunId != null) { const id = str(e.sourceRunId).slice(0, 200); if (id) entry.sourceRunId = id; }
       return entry;
     }
+
+    function persistEntry(entry, strict) {
+      let stored = entry;
+      try {
+        const writer = strict && typeof io.appendDurable === 'function' ? io.appendDurable : io.append;
+        const persisted = writer.call(io, entry);
+        if (persisted && typeof persisted === 'object') stored = persisted;
+      } catch (e) {
+        if (strict) throw e;
+        /* ordinary transcript writes remain fail-open; recovery-owned finalization uses appendStrict below */
+      }
+      rows.push(stored);
+      trimStreamRam(stored.streamId);   // bound THIS stream's RAM only (per-stream fairness; disk keeps full log)
+      return stored;
+    }
+
+    function append(e) { return persistEntry(buildEntry(e), false); }
+    function appendStrict(e) { return persistEntry(buildEntry(e), true); }
 
     // H1.1: append a SLICE of an OpenAI-format messages array (a run's new turns) as full transcript rows —
     // user / assistant (with tool_calls) / tool (with tool_call_id). Skips injected 'system' fences (recall,
@@ -187,6 +285,23 @@
         markPersisted([m]);                                    // mark BEFORE the role filter so fences aren't re-checked
         if (!ROLES.has(m.role) || m.role === 'system') continue;
         append({ streamId: streamId, agentId: agentId, role: m.role, content: flattenContent(m.content), toolCalls: m.tool_calls, toolCallId: m.tool_call_id });
+        n++;
+      }
+      return n;
+    }
+
+    // Recovery-owned drain: every visible row must be fsync'd/read-back proven before its message receives the
+    // PERSISTED marker. A failure throws and leaves the remaining messages eligible; the run journal stays the
+    // source of truth instead of being marked committed optimistically.
+    function appendNewStrict(streamId, agentId, messages, opts) {
+      if (!Array.isArray(messages)) return 0;
+      opts = opts || {};
+      let n = 0;
+      for (const m of messages) {
+        if (!m || typeof m !== 'object' || m[PERSISTED]) continue;
+        if (!ROLES.has(m.role) || m.role === 'system') { markPersisted([m]); continue; }
+        appendStrict({ streamId: streamId, agentId: agentId, role: m.role, content: flattenContent(m.content), toolCalls: m.tool_calls, toolCallId: m.tool_call_id, sourceRunId: opts.sourceRunId });
+        markPersisted([m]);
         n++;
       }
       return n;
@@ -230,7 +345,7 @@
     }
 
     return {
-      append, appendTurns, appendNew, markPersisted, history, reconstruct, search,
+      append, appendStrict, appendTurns, appendNew, appendNewStrict, markPersisted, history, reconstruct, search, streams, around,
       all() { return rows.map(r => Object.assign({}, r)); },
       count() { return rows.length; },
       _internals: { normStream, SID_RE }

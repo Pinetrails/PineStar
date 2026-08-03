@@ -48,7 +48,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   // proven against a real AbortController in the "one worker's wall clock" section below.
   A.ok(ro.calls[0].signal && ro.calls[0].signal !== signal, "the child runs on its OWN abort signal (a straggler is stopped alone)");
   A.eq(ro.calls[0].maxCostUsd, 1, 'per-worker cost cap is passed to the child');
-  A.eq(ro.calls[0].maxIters, 10, 'default per-worker iteration cap is passed to the child');
+  A.eq(ro.calls[0].maxIters, 16, 'default per-worker iteration cap leaves bounded recovery room');
   A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless on the autonomous office baseline');
   // SAME ACCESS AS THE ORCHESTRATOR: a worker shares the lead's consent broker (its APPROVAL posture + grants)
   // and is handed the WORKBENCH, so shell/writes are available and gated by the lead's approvals — not auto-denied.
@@ -211,7 +211,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     const handle = JSON.parse(out.content)[0];
     A.ok(handle.id && handle.status === 'running', 'background dispatch returns a running durable handle immediately');
     await tick();
-    A.eq(ro.calls[0].maxIters, 10, 'background worker receives the same default iteration cap');
+    A.eq(ro.calls[0].maxIters, 16, 'background worker receives the same default iteration cap');
     await tick(); await tick();
     const rec = subagents.get(handle.id);
     A.eq(rec.status, 'done', 'background worker completes into the durable record');
@@ -343,7 +343,29 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(gotSpec.purpose, 'find things', 'a custom purpose is forwarded');
   const parsed = JSON.parse(out.content);
   A.eq(parsed.agentId, 'researcher-2', 'the new agentId comes back for the lead to delegate to');
+  A.ok(!('workstation' in parsed), 'a bare-id ack claims NO desk (the station never said it placed one)');
+  A.ok(!/desk/i.test(out.summary), 'and the summary stays silent about furniture it cannot source');
   A.ok(/team\.dispatch/.test(out.summary), 'the summary nudges the lead to delegate to the new worker');
+}
+
+// ---- THE DESK RIDES ALONG: the station acks { agentId, desk } and the tool reports WHERE it landed ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const ctx = { agentId: 'agent', summon: async () => ({ agentId: 'scout-2', desk: 'BRIDGE' }) };
+  const out = await summonTool.run({ name: 'Scout', specId: 'scout' }, ctx);
+  const parsed = JSON.parse(out.content);
+  A.eq(parsed.agentId, 'scout-2', 'the object ack still yields the new agentId');
+  A.eq(parsed.workstation, 'BRIDGE', 'the seeded workstation room reaches the lead');
+  A.ok(/workstation in BRIDGE/.test(out.summary), 'the summary states where the workstation is (true whether it was built or adopted)');
+  A.ok(summonTool.description.indexOf('workstation with it') > 0, 'the tool tells the lead never to ask the Commander to build the desk');
+}
+
+// ---- an object ack with NO desk (placement failed / no room) must not claim one ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const out = await summonTool.run({ name: 'Scout' }, { agentId: 'agent', summon: async () => ({ agentId: 'scout-3', desk: '' }) });
+  A.eq(JSON.parse(out.content).agentId, 'scout-3', 'the agent is still reported as created');
+  A.ok(!/desk/i.test(out.summary), 'a failed desk seed is never dressed up as a placed one');
 }
 
 // ---- declined / no browser: ctx.summon resolves null -> a clean "not completed", no crash ----
@@ -415,7 +437,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     A.ok(ro.calls[0].agentId !== ro.calls[1].agentId && ro.calls[0].agentId !== 'lead', 'each clone is a distinct, non-lead id');
     A.eq(ro.calls[0].isTask, true, 'the clone run is a task (tool-capable)');
     A.eq(ro.calls[0].maxCostUsd, 2, 'per-worker cost cap is passed to the clone');
-    A.eq(ro.calls[0].maxIters, 10, 'default per-worker iteration cap is passed to the clone');
+    A.eq(ro.calls[0].maxIters, 16, 'default per-worker iteration cap is passed to the clone');
     A.ok(ro.calls[0].consent === leadBroker, 'the clone shares the lead consent broker (same approval posture)');
     A.ok(Array.isArray(ro.calls[0].extraObjects) && ro.calls[0].extraObjects.some(o => o.objectType === 'workbench'), 'the clone gets the workbench (terminal)');
     A.ok(!ro.calls[0].lead, 'FLAT DEPTH: the clone is NOT a lead (no orchestrator object) so it cannot re-spawn');
@@ -707,6 +729,177 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     'the run host wires concurrencyGate free capacity into makeOrchestrationTools');
   A.ok(/now: \(\) => Date\.now\(\)/.test(src.slice(src.indexOf('makeOrchestrationTools({'), src.indexOf('makeOrchestrationTools({') + 3000)),
     'the run host injects the real clock for the dispatch wall clock');
+}
+
+/* ---- SESSION TARGETING: delegation can say WHERE, and refuses rather than guessing ----------------------
+   The bug: `session` did not exist, so a delegated run was filed under whatever session the LEAD was in. The
+   Commander named "research", the work landed elsewhere, and the lead reported success. These cover both the
+   happy path and — the part that matters more — every way a name can fail to resolve. */
+function fakeStation(sessions, opts) {
+  opts = opts || {};
+  const seen = [];
+  return {
+    seen,
+    request: async (verb, args) => {
+      seen.push({ verb, args });
+      if (opts.down) return { ok: false, error: 'no station page answered', unattended: true };
+      if (verb === 'station.sessions') return { ok: true, result: { sessions: sessions } };
+      if (verb === 'station.dispatch_start') return { ok: true, result: { started: true } };
+      if (verb === 'station.dispatch_end') return { ok: true, result: { settled: true } };
+      if (verb === 'station.deliver') return opts.deliverFails ? { ok: false, error: 'session vanished' } : { ok: true, result: { folded: true } };
+      return { ok: false, error: 'unknown verb' };
+    }
+  };
+}
+const SESSIONS = [
+  { id: 'ws_general', title: 'General', agentId: 'agent' },
+  { id: 'ws_r1', title: 'research', agentId: 'researcher' },
+  { id: 'ws_b1', title: 'Billing rewrite', agentId: 'agent' }
+];
+function sessionTools(station, ro) {
+  const roster = new Map([['researcher', { system: 'R-SYS', name: 'RESEARCHER', model: 'm1' }]]);
+  return makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'lead-model', newId: counter(), station: station });
+}
+const leadCtx = () => ({ agentId: 'agent', emit: () => {} });
+
+// a named session resolves to its id, rides into the child run as streamId, and is delivered back to the page
+{
+  const ro = fakeRunOnce();
+  const station = fakeStation(SESSIONS);
+  const { dispatchTool } = sessionTools(station, ro);
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'summarise X', session: 'research' }] }, leadCtx());
+  A.eq(ro.calls.length, 1, 'the worker ran');
+  A.eq(ro.calls[0].streamId, 'ws_r1', 'the named session resolves to its real id and rides into the run as streamId');
+  A.eq(ro.calls[0].sessionTitle, 'research', 'the stable session name rides into the durable run row for missed-page replay');
+  A.eq(ro.calls[0].sessionPrompt, 'summarise X', 'the delegated instruction rides into the durable delivery envelope');
+  const row = JSON.parse(out.content)[0];
+  A.eq(row.reason, 'done', 'the worker completed');
+  A.eq(row.session, 'research', 'the row reports WHICH session the work landed in');
+  const deliver = station.seen.find(s => s.verb === 'station.deliver');
+  A.ok(deliver, 'the finished answer was delivered to the page');
+  A.eq(deliver.args.streamId, 'ws_r1', 'delivered to the resolved session, not the active one');
+  A.eq(deliver.args.text, 'out:researcher', "the delivered text is the worker's real answer");
+  A.eq(deliver.args.runId, ro.calls[0].runId, 'the delivery carries the SAME runId the run was filed under (idempotency + appendRun)');
+  A.eq(deliver.args.sessionTitle, 'research', 'delivery carries the title so a second page with a divergent local id can resolve the same session');
+  const started = station.seen.find(s => s.verb === 'station.dispatch_start');
+  A.ok(started, 'the target session is told when its worker genuinely starts');
+  A.eq(started.args.streamId, 'ws_r1', 'the live activity marker targets the resolved session');
+  const settled = station.seen.find(s => s.verb === 'station.dispatch_end');
+  A.ok(settled, 'the target session is told when its worker settles');
+  A.eq(settled.args.runId, ro.calls[0].runId, 'the settled marker belongs to the same real worker run');
+  A.eq(station.seen.filter(s => s.verb === 'station.sessions').length, 1, 'one session-list round trip for the whole dispatch');
+}
+
+// case and partial names still resolve while they are UNIQUE
+{
+  const ro = fakeRunOnce();
+  const { dispatchTool } = sessionTools(fakeStation(SESSIONS), ro);
+  await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'RESEARCH' }] }, leadCtx());
+  A.eq(ro.calls[0].streamId, 'ws_r1', 'a case-different name matches its session');
+  const ro2 = fakeRunOnce();
+  const t2 = sessionTools(fakeStation(SESSIONS), ro2);
+  await t2.dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'billing' }] }, leadCtx());
+  A.eq(ro2.calls[0].streamId, 'ws_b1', 'a unique partial name matches its session');
+  const ro3 = fakeRunOnce();
+  const t3 = sessionTools(fakeStation(SESSIONS), ro3);
+  await t3.dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'ws_r1' }] }, leadCtx());
+  A.eq(ro3.calls[0].streamId, 'ws_r1', 'an exact session id is accepted verbatim');
+}
+
+/* ⛔ THE ONE THAT MATTERS. An unknown session must REFUSE — never fall back to the current one. Running the
+   work "somewhere sensible" is what produced the original bug: the lead then truthfully reports a success the
+   Commander cannot find. A refusal is legible; a wrong-but-plausible destination is not. */
+{
+  const ro = fakeRunOnce();
+  const { dispatchTool } = sessionTools(fakeStation(SESSIONS), ro);
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'marketing' }] }, leadCtx());
+  A.eq(ro.calls.length, 0, 'the worker did NOT run in some other session');
+  const row = JSON.parse(out.content)[0];
+  A.eq(row.reason, 'error', 'an unresolvable session is an error row, not a silent redirect');
+  A.ok(/no session called "marketing"/.test(row.result), 'the refusal names what could not be found');
+  A.ok(/General, research, Billing rewrite/.test(row.result), 'and lists the sessions that DO exist so the model can correct itself');
+  A.ok(/did NOT run/.test(row.result), 'and states plainly that no work happened');
+}
+
+// an AMBIGUOUS name refuses too — picking between two matches is the same guess by another name
+{
+  const ro = fakeRunOnce();
+  const dupes = [{ id: 'ws_a', title: 'research plan', agentId: 'agent' }, { id: 'ws_b', title: 'research notes', agentId: 'agent' }];
+  const { dispatchTool } = sessionTools(fakeStation(dupes), ro);
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'research' }] }, leadCtx());
+  A.eq(ro.calls.length, 0, 'an ambiguous target starts no work');
+  A.ok(/more than one session matches/.test(JSON.parse(out.content)[0].result), 'the refusal explains the ambiguity');
+}
+
+// no page attached (cron / Night Shift): the target is refused, not silently dropped
+{
+  const ro = fakeRunOnce();
+  const { dispatchTool } = sessionTools(fakeStation(SESSIONS, { down: true }), ro);
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'research' }] }, leadCtx());
+  A.eq(ro.calls.length, 0, 'an unreachable station starts no work');
+  A.ok(/could not read this station's session list/.test(JSON.parse(out.content)[0].result), 'the failure says the list was unreadable, never "no such session"');
+}
+
+// no bridge wired at all (bare host): honest refusal, and NO session param means byte-identical old behaviour
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['researcher', { system: 'R', name: 'R', model: 'm' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'lead', newId: counter() });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'research' }] }, leadCtx());
+  A.eq(ro.calls.length, 0, 'without a bridge a session target is refused, not ignored');
+  A.ok(/no live station page is attached/.test(JSON.parse(out.content)[0].result), 'the refusal is honest about why');
+  const ro2 = fakeRunOnce();
+  const t2 = makeOrchestrationTools({ runOnce: ro2, roster: () => roster, key: 'k', model: 'lead', newId: counter() });
+  const out2 = await t2.dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p' }] }, leadCtx());
+  A.eq(ro2.calls.length, 1, 'a dispatch with no session runs exactly as before');
+  A.eq(ro2.calls[0].streamId, undefined, 'and passes no streamId at all (unchanged run shape)');
+  A.eq(JSON.parse(out2.content)[0].session, undefined, 'and claims no session');
+}
+
+/* A FAILED FOLD IS REPORTED, NOT SWALLOWED. The run really is filed under that stream (runOnce got the
+   streamId), so the work is not lost — but the lead must not tell the Commander to go look somewhere the
+   answer was never shown. */
+{
+  const ro = fakeRunOnce();
+  const { dispatchTool } = sessionTools(fakeStation(SESSIONS, { deliverFails: true }), ro);
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'p', session: 'research' }] }, leadCtx());
+  const row = JSON.parse(out.content)[0];
+  A.eq(row.reason, 'done', 'the work itself still completed');
+  A.eq(row.session, undefined, 'the row does NOT claim the session when the fold failed');
+  A.ok(/could not show it there/.test(row.sessionNote), 'it carries an honest note about what the Commander will actually see');
+}
+
+// one dispatch, two workers, two different sessions — each lands in its own
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['researcher', { system: 'R', name: 'R', model: 'm' }], ['analyst', { system: 'A', name: 'A', model: 'm' }]]);
+  const station = fakeStation(SESSIONS);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'lead', newId: counter(), station: station });
+  await dispatchTool.run({ workers: [
+    { agentId: 'researcher', prompt: 'a', session: 'research' },
+    { agentId: 'analyst', prompt: 'b', session: 'Billing rewrite' }
+  ] }, leadCtx());
+  A.eq(ro.calls[0].streamId, 'ws_r1', 'worker one landed in research');
+  A.eq(ro.calls[1].streamId, 'ws_b1', 'worker two landed in billing');
+  A.eq(station.seen.filter(s => s.verb === 'station.sessions').length, 1, 'still one list round trip, not one per worker');
+}
+
+// the run host wires the bridge in (the tool cannot reach the page by itself)
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  const block = src.slice(src.indexOf('makeOrchestrationTools({'), src.indexOf('makeOrchestrationTools({') + 3000);
+  A.ok(/station: stationBridge/.test(block), 'the run host injects the station bridge into makeOrchestrationTools');
+}
+
+// the PAGE half exists and holds the line on both verbs
+{
+  const page = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationcommands.js'), 'utf8');
+  A.ok(/'station\.sessions'/.test(page), 'the page can list its sessions');
+  A.ok(/'station\.deliver'/.test(page), 'the page can fold a delegated answer into a session');
+  A.ok(/indexOf\(runId\) >= 0/.test(page), 'delivery is idempotent by runId (no double-posting)');
+  A.ok(/history\.push/.test(page) && !/ws\.history = next/.test(page), 'delivery APPENDS — it never replaces a session\'s existing thread');
+  const mirror = fs.readFileSync(path.join(__dirname, '..', 'website', 'app', 'app', 'stationcommands.js'), 'utf8');
+  A.eq(mirror, page, 'the website mirror of stationcommands.js is in sync');
 }
 
 A.report('orchestration.test');

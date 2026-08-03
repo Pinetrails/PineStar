@@ -121,6 +121,18 @@ export function uiOnlyProviderBaseEnv(mode, base) {
 export function startUiOnlyOpenRouter(model) {
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
+      // OpenRouter's public model catalog does not prove that a supplied key is usable. The product now
+      // validates candidate keys against the authenticated /auth/key endpoint before persisting them, so the
+      // deterministic Beginner provider must model that no-spend wire as well as /models and inference.
+      if (req.url && req.url.includes('/auth/key')) {
+        const auth = String(req.headers.authorization || '');
+        const valid = auth === 'Bearer sk-or-beginner-ui-only-placeholder';
+        res.writeHead(valid ? 200 : 401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(valid
+          ? { data: { label: 'Beginner Run Local Wire' } }
+          : { error: { message: 'invalid local credential' } }));
+        return;
+      }
       if (req.url && req.url.includes('/models')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ data: [{

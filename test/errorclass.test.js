@@ -125,7 +125,7 @@ const R = (err, ctx) => classifyApiError(err, ctx || {});
 // ---- I. friendlyError (frontend) — the BEGINNER-FACING layer over the classifier (B5). It turns the raw
 //        thrown Error / in-band error string the COMMS panel sees into { userMessage, kind, retryable, action,
 //        raw }, leading with plain language and pointing non-retryable faults at the right destination. ----
-const F = (err, status) => friendlyError(err, status);
+const F = (err, status, opts) => friendlyError(err, status, opts);
 {
   // 5xx / "sidecar HTTP 5xx" -> retryable server_error
   let v = F(new Error('sidecar HTTP 500'));
@@ -134,14 +134,37 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(v.action, null, 'server_error has no deep-link action');
   A.ok(/local StarNet service hit an error/i.test(v.userMessage), 'server_error leads with the friendly headline');
   A.ok(/sidecar HTTP 500/.test(v.raw), 'raw technical text preserved for the dim sub-line');
-  A.eq(F({ status: 503 }).kind, 'server_error', 'a bare 503 status -> server_error');
+  // 2026-07-30: this line used to assert the DEFECT (a bare 503 -> the "local StarNet service" copy). A 503
+  // with no sidecar evidence in the raw is a provider-shaped failure — the local claim owes proof it never has.
+  A.eq(F({ status: 503 }).kind, 'provider_server_error', 'a bare 503 status -> the PROVIDER server bucket');
 
-  // network / sidecar-unreachable -> retryable network
+  // network / transport loss -> retryable network. The KIND is unchanged by proof; only the COPY moves, because
+  // the kind drives behavior (retry, no door) while the copy is the part that names a culprit.
   v = F(new Error('cannot reach the STARNET sidecar — start it with `npm start`'));
-  A.eq(v.kind, 'network', 'sidecar-unreachable -> network');
+  A.eq(v.kind, 'network', 'transport loss -> network');
   A.eq(v.retryable, true, 'network retryable');
-  A.ok(/Can't reach StarNet's local service/i.test(v.userMessage), 'network friendly headline');
   A.eq(F(new Error('Failed to fetch')).kind, 'network', 'browser "Failed to fetch" -> network');
+
+  /* THE COPY OWES PROOF (2026-07-29 regression guard). This block previously asserted that ANY transport loss
+     leads with "Can't reach StarNet's local service" — i.e. the test was pinning the defect in place. That
+     sentence tells the user to restart the app, and it was being shown for an upstream model-stream drop against
+     a perfectly healthy sidecar (a real 0.7.0 user report: days lost restarting and reinstalling). The wording
+     is now a function of a MEASURED /api/health probe, and the three states must stay distinguishable. */
+  v = F(new Error('terminated'), null, { engineAlive: false });
+  A.eq(v.kind, 'network', 'proven-dead engine is still the network kind');
+  A.eq(v.engineAlive, false, 'measured verdict rides on the verdict object');
+  A.ok(/Can't reach StarNet's local service/i.test(v.userMessage), 'engine proven DOWN earns the restart copy');
+
+  v = F(new Error('terminated'), null, { engineAlive: true });
+  A.eq(v.kind, 'network', 'proven-alive engine is still the network kind (retryable, no door)');
+  A.eq(v.engineAlive, true, 'measured alive verdict preserved');
+  A.ok(!/Can't reach StarNet's local service/i.test(v.userMessage), 'engine proven UP must NOT claim it is unreachable');
+  A.ok(/reply stream/i.test(v.userMessage), 'engine proven UP names the stream instead');
+
+  v = F(new Error('terminated'));
+  A.eq(v.engineAlive, null, 'no probe -> engineAlive null (unproven, never coerced to false)');
+  A.ok(!/Can't reach StarNet's local service/i.test(v.userMessage), 'unprobed transport loss must not assert the service is unreachable');
+  A.ok(/connection dropped/i.test(v.userMessage), 'unprobed transport loss states only what was witnessed');
 
   // 429 / rate / quota -> retryable rate_limit
   v = F(new Error('sidecar HTTP 429'));
@@ -267,6 +290,7 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(B(new Error('Failed to fetch')).kind, 'network', 'browser: Failed to fetch -> network');
   A.eq(B(new Error('sidecar HTTP 429')).kind, 'rate_limit', 'browser: 429 -> rate_limit');
   A.eq(B(new Error('sidecar HTTP 401')).kind, 'auth', 'browser: 401 -> auth');
+  A.eq(B(new Error('sidecar HTTP 400 — missing key/model')).kind, 'auth', 'browser: /api/run missing credentials -> auth, not unknown retry');
   A.eq(B(new Error('sidecar HTTP 403')).kind, 'stale_session', 'browser: sidecar 403 -> stale_session (reload, not the key door)');
   A.eq(B(new Error('forbidden token'), 403).kind, 'stale_session', 'browser: 403 + "forbidden token" body -> stale_session');
   A.eq(B(new Error('invalid api key')).kind, 'auth', 'browser: invalid api key -> auth');
@@ -300,6 +324,36 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(R(httpErr(400, 'your request was blocked by our content policy')).reason, 'content_policy_blocked', 'a 400 policy refusal still classifies as policy');
   A.eq(R(httpErr(403, 'flagged by moderation')).reason, 'content_policy_blocked', 'so does a 403');
   A.eq(R(new Error('the model refused: content_filter triggered')).reason, 'content_policy_blocked', 'and so does a status-less refusal');
+}
+
+/* ---- QUOTA EXHAUSTION is not a rate limit -------------------------------------------------------
+   A 429 fires in step 2 (HTTP status), strictly before the step-4 message patterns, so a body saying
+   "you've hit your usage limit, resets in 3 days" could never reach a terminal class: it came back
+   rate_limit (retryable, shouldRotateCredential) and codex.js burned RETRY_DELAYS while loop.js burned
+   MAX_STREAM_RETRIES against an allowance that resets in DAYS. Status-before-message precedence is
+   deliberate, so the fix is a distinct class WITHIN the 429. */
+{
+  const quota = R(httpErr(429, "codex http 429 — You've hit your usage limit. Resets in 3 days"));
+  A.eq(quota.reason, 'quota_exhausted', 'a spent weekly allowance is quota_exhausted, not rate_limit');
+  A.eq(quota.retryable, false, 'and it is NOT retryable — every retry inside the window is doomed');
+  A.eq(quota.shouldRotateCredential, true, 'another credential may have its own allowance');
+  A.eq(quota.shouldFallback, true, 'and another provider can pick the work up now');
+  A.eq(R(httpErr(429, 'usage_limit_reached')).reason, 'quota_exhausted', 'the structured type is recognized too');
+  A.eq(R(httpErr(429, 'weekly quota exceeded for this plan')).reason, 'quota_exhausted', 'so is a weekly quota');
+  A.eq(R({ status: 429, code: 'plan_limit', message: 'nope' }).reason, 'quota_exhausted', 'and an error CODE saying plan_limit');
+
+  // ...but a SHORT-window limit stays exactly what it was. Gemini answers a per-minute limit with
+  // "Quota exceeded for quota metric", which a bare /quota/ test would have swallowed.
+  A.eq(R(httpErr(429, 'Quota exceeded for quota metric: generate_requests per minute')).reason, 'rate_limit',
+    'a PER-MINUTE quota is still a plain rate limit');
+  A.eq(R(httpErr(429, 'slow down')).reason, 'rate_limit', 'a bare 429 is unchanged');
+  A.eq(R(httpErr(429, 'Rate limit exceeded, retry in 1.5s')).reason, 'rate_limit', 'so is a seconds-scale one');
+
+  // an out-of-money account also arrives as 429 from OpenAI (insufficient_quota), and no wait fixes that
+  const spent = R(httpErr(429, 'openai http 429 — insufficient_quota: You exceeded your current quota'));
+  A.eq(spent.reason, 'billing', 'a 429 carrying insufficient_quota is BILLING, not a busy provider');
+  A.eq(spent.retryable, false, 'and it is not retryable either');
+  A.eq(R({ status: 429, code: 'insufficient_quota', message: 'x' }).reason, 'billing', 'the code form too');
 }
 
 A.report('errorclass.test');

@@ -583,7 +583,7 @@
     opts = opts || {};
     const P = opts.pathMod, fs = opts.fs, requested = opts.requested;
     const current = opts.current, jailRoot = opts.jailRoot, root = opts.root;
-    const isWin = !!opts.isWin, allowExternal = !!opts.allowExternal;
+    const isWin = !!opts.isWin, allowExternal = !!opts.allowExternal, allowProtected = !!opts.allowProtected;
     let raw = String(requested == null ? '' : requested).trim();
     if (!raw) return current;
     if (/[\0\r\n]/.test(raw)) throw new Error('cwd contains a control character');
@@ -591,7 +591,7 @@
     raw = normalizeWinCwd(P, raw, isWin);
     const abs = P.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw) ? P.resolve(raw) : P.resolve(current, raw);
     if (!withinJail(P, abs, jailRoot) && !allowExternal) throw new Error('cwd must stay inside your workspace');
-    if (!withinJail(P, abs, jailRoot) && root && pathInside(P, abs, root))
+    if (!allowProtected && !withinJail(P, abs, jailRoot) && root && pathInside(P, abs, root))
       throw new Error('cwd cannot point at another agent or protected StarNet workspace sibling');
     if (fs && fs.existsSync && !fs.existsSync(abs)) throw new Error('cwd does not exist: ' + raw);
     if (fs && fs.statSync) {
@@ -610,8 +610,8 @@
     } catch (_) {}
   }
 
-  /* ANSI/VT control sequences, stripped before any shell output reaches the model (Hermes parity: it has an
-     ansi_strip; StarNet had nothing, so escapes arrived raw). npm, git, cargo, pytest and friends emit colour
+  /* ANSI/VT control sequences, stripped before any shell output reaches the model (ref-parity: the reference
+     harness has an ansi_strip; StarNet had nothing, so escapes arrived raw). npm, git, cargo, pytest and friends emit colour
      whenever they believe a TTY is attached, and the model reads the control bytes as TOKENS — '[32m'
      is billed content that means "green" to nobody, and on a long build log it is a large fraction of the
      output. Three shapes are handled: OSC strings (window titles, hyperlinks — ESC ] … BEL or ST), CSI
@@ -712,34 +712,41 @@
         + 'refused in cmd — pass cwd to run from a specific existing folder. Commands that would change the '
         + 'user\'s machine or screen are refused with a reason; if a visible app is genuinely needed, ask the '
         + 'Commander to open it. Optional timeoutMs (default 30s, max 120s). background:true returns a handle '
-        + 'immediately for long-running processes (dev servers) — check shell.bg.status, stop shell.bg.kill.',
+        + 'immediately for long-running processes (dev servers) — check shell.bg.status, read its log with '
+        + 'shell.bg.read, answer its prompts with shell.bg.write, stop it with shell.bg.kill.',
       schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, cwd: { type: 'string' }, timeoutMs: { type: 'number' }, background: { type: 'boolean' } } },
       run: function (args, ctx) {
         ctx = ctx || {};
+        // Host-minted at Telegram ingress: this is the paired Commander at the physical desktop, not a prompt
+        // claim or a cached capability. It is the one path allowed to leave the agent workspace and use host tools.
+        const remoteOwner = ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner';
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const cmd = String((args && args.cmd) || '').trim();
         if (!cmd) throw new Error('empty command');
-        const deny = escapesWorkspace(cmd);
+        const deny = remoteOwner ? null : escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
         // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
         // that is still in-jail and still exists; otherwise fall back to the jail root.
         const sess = sessions.get(aid);
         let cwd = environment ? environment.getCwd(aid) : jailRoot;
+        // Scheduled project work is run-scoped. Prefer the host-validated project cwd without writing it to
+        // the agent-wide persistent cwd session (concurrent routines of one agent must not cross-contaminate).
+        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' });
         if (sess && sess.cwd) {
-          try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' }); }
+          try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || (environment && environment.backendId === 'local'), allowProtected: remoteOwner }); }
           catch (_) {}
         }
-        if (!environment && sess && sess.cwd && withinJail(P, sess.cwd, jailRoot) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
+        if (!environment && sess && sess.cwd && (remoteOwner || withinJail(P, sess.cwd, jailRoot)) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
         if (args && args.cwd != null) {
-          if (environment && environment.backendId !== 'local') throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
-          cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment ? environment.backendId === 'local' : false });
+          if (environment && environment.backendId !== 'local' && !remoteOwner) throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
+          cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || (environment ? environment.backendId === 'local' : false), allowProtected: remoteOwner });
           sessions.set(aid, { cwd: cwd });
         }
         const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environment.backendId !== 'local'
           ? environment.workspaceRoot(aid) : cwd;
         const shellDialect = environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
-        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P, dialect: shellDialect, isWin });
+        const safetyDeny = remoteOwner ? null : commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P, dialect: shellDialect, isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this command ' + safetyDeny.reason + '. StarNet task processes preserve the user\'s control of their computer; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
@@ -747,17 +754,19 @@
         if (args && args.background) {
           if (!environment && !bg) return Promise.resolve({ content: 'Background processes are not available in this build.', summary: 'unavailable' });
           const r = environment && typeof environment.startBackground === 'function'
-            ? environment.startBackground({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin })
+            // ctx.surface (host authority, from runInputContext) rides along so the backend hands this child only
+            // the service keys the Commander granted for unattended use — see servicekeys.runEnv.
+            ? environment.startBackground({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin, surface: ctx.surface })
             : bg.start({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin });
           const content = r.ok
-            ? 'Started background process ' + r.bgId + ' in your workspace. It keeps running while you work — check it with shell.bg.status (id "' + r.bgId + '"), stop it with shell.bg.kill.'
+            ? 'Started background process ' + r.bgId + ' in your workspace. It keeps running while you work — check it with shell.bg.status (id "' + r.bgId + '"), read its full log with shell.bg.read, send it input with shell.bg.write, stop it with shell.bg.kill.'
             : 'Could not start a background process: ' + r.error;
           return Promise.resolve({ content: content, summary: r.ok ? ('bg started ' + r.bgId) : 'bg refused' });
         }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         const markerIsWin = environment && environment.backendId !== 'local' ? false : isWin;
         const run = environment && typeof environment.execute === 'function'
-          ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now } })
+          ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, surface: ctx.surface })
           : runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
         return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
@@ -765,9 +774,9 @@
           if (environment && pm.cwd && environment.backendId !== 'local') environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && withinJail(P, pm.cwd, jailRoot)) environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && environment.backendId === 'local') {
-            try { sessions.set(aid, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true }) }); } catch (_) {}
+            try { sessions.set(aid, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true, allowProtected: remoteOwner }) }); } catch (_) {}
           }
-          else if (pm.cwd && withinJail(P, pm.cwd, jailRoot)) sessions.set(aid, { cwd: pm.cwd });
+          else if (pm.cwd && (remoteOwner || withinJail(P, pm.cwd, jailRoot))) sessions.set(aid, { cwd: pm.cwd });
           const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
           const body = redact(pm.cleanOut || '(no output)');
@@ -804,6 +813,83 @@
         return { content: list.map(function (v) { return '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode) + ' · ' + v.cmd; }).join('\n'), summary: list.length + ' process(es)' };
       }
     };
+    /* H2.3 — READ PAST THE TAIL. shell.bg.status returns the last ~2000 characters, which is fine for "is it
+       up?" and useless for "why did it fail": the stack trace that matters is usually hundreds of lines back,
+       and the only way to reach it used to be re-running the whole command in the foreground. */
+    const bgReadTool = {
+      name: 'shell.bg.read', capability: 'workbench', scope: 'read', requiresConsent: false,
+      description: 'Read the output log of one of your background processes by line, instead of the short tail that '
+        + 'shell.bg.status shows. Defaults to the LAST 200 lines. Pass offset (0-based; negative counts back from the '
+        + 'end) and limit to page, or grep to return only lines containing a string — use grep to find an error, then '
+        + 'offset to read around it.',
+      schema: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' }, grep: { type: 'string' } }
+      },
+      run: function (args, ctx) {
+        const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
+        const source = environment && typeof environment.readBackground === 'function' ? environment : null;
+        if (!source && (!bg || typeof bg.read !== 'function')) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
+        const id = args && args.id ? String(args.id) : '';
+        const opts = { offset: args && args.offset, limit: args && args.limit, grep: args && args.grep };
+        const r = source ? source.readBackground(aid, id, opts) : bg.read(aid, id, opts);
+        if (!r || !r.ok) return { content: 'Could not read: ' + ((r && r.error) || 'unknown error'), summary: 'not read' };
+        const head = '[' + r.bgId + '] ' + (r.running ? 'RUNNING' : 'exited ' + r.exitCode + (r.killed ? ' (killed)' : '')) + ' · ' + r.cmd;
+        const scope = r.grep
+          ? (r.matchedLines + ' line(s) match "' + r.grep + '" of ' + r.totalLines + ' held; showing ' + r.returned + ' from match ' + (r.offset + 1))
+          : ('lines ' + (r.returned ? r.firstLineNo : 0) + '–' + (r.returned ? r.firstLineNo + r.returned - 1 : 0) + ' of ' + r.totalLines + ' held');
+        /* Say it when the ring has lapped. Line 1 is then NOT the first line the process printed, and an agent
+           that assumes it is will conclude a failure started somewhere it did not. */
+        const note = r.truncatedStart ? '\n(earlier output was dropped — this buffer holds only the most recent ' + Math.round(r.droppedBytes / 1024) + ' KB onward)' : '';
+        const body = r.returned
+          ? r.lines.map(function (ln, i) { return String(r.lineNos[i]).padStart(6, ' ') + '  ' + ln; }).join('\n')
+          : (r.grep ? '(no lines match)' : '(no output yet)');
+        return { content: head + '\n' + scope + note + '\n--- output ---\n' + redact(body), summary: r.returned + ' line(s)' };
+      }
+    };
+
+    /* H2.3 — STDIN. A background process was write-only: an installer that asks one question, or a REPL, sat
+       wedged until it was killed. The payload is screened with the SAME command-safety guard shell.exec runs,
+       because a line typed into a `bash`/`python` REPL executes exactly like a command typed into shell.exec —
+       leaving it unscreened would have made background:true a way around the screen. */
+    const bgWriteTool = {
+      name: 'shell.bg.write', capability: 'workbench', impact: 'workspace-process', scope: 'execute', requiresConsent: true,
+      description: 'Send input to a running background process\'s stdin — answer an interactive prompt, drive a REPL, '
+        + 'or feed a pipe. A newline is appended (set submit:false to send a partial line). Pass eof:true instead of '
+        + 'input to CLOSE stdin, which is what many commands wait for before doing their work — that is different '
+        + 'from shell.bg.kill, which destroys the result. Its stdin is a PIPE, not a terminal: programs that '
+        + 'demand a real TTY (password prompts, full-screen menus) will not see your input — re-run those '
+        + 'non-interactively (e.g. a --yes flag or an env var) instead.',
+      schema: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string' }, input: { type: 'string' }, submit: { type: 'boolean' }, eof: { type: 'boolean' } }
+      },
+      run: function (args, ctx) {
+        const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
+        const id = args && args.id ? String(args.id) : '';
+        const wantEof = !!(args && args.eof);
+        const source = environment && typeof environment.writeBackground === 'function' ? environment : null;
+        if (!source && (!bg || typeof bg.write !== 'function')) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
+
+        if (wantEof) {
+          const c = source && typeof source.closeBackgroundStdin === 'function' ? source.closeBackgroundStdin(aid, id) : bg.closeStdin(aid, id);
+          return { content: c.ok ? (c.alreadyClosed ? 'stdin for ' + id + ' was already closed.' : 'Closed stdin for ' + id + ' (EOF sent).') : ('Could not close stdin: ' + c.error), summary: c.ok ? 'eof' : 'not closed' };
+        }
+        const input = String((args && args.input) || '');
+        if (!input) throw new Error('input is required (or pass eof:true to close stdin)');
+        const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
+        const dialect = environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
+        const remoteOwner = !!(ctx && ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner');
+        const risk = remoteOwner ? null : commandSafetyRisk(input, { cwd: jailRoot, fs: fs, pathMod: P, dialect: dialect, isWin: isWin });
+        if (risk) throw new Error('refused [' + risk.kind + ']: this input ' + risk.reason + '. A line sent to a shell or REPL runs like a command, so it is screened the same way.');
+        const r = source ? source.writeBackground(aid, id, { input: input, submit: args && args.submit }) : bg.write(aid, id, { input: input, submit: args && args.submit });
+        return {
+          content: r.ok ? ('Sent ' + r.bytes + ' byte(s) to ' + id + '. Read what it printed with shell.bg.read.') : ('Could not write: ' + r.error),
+          summary: r.ok ? 'wrote ' + r.bytes + 'b' : 'not written'
+        };
+      }
+    };
+
     const bgKillTool = {
       name: 'shell.bg.kill', capability: 'workbench', scope: 'write', requiresConsent: false,
       description: 'Stop one of your background processes by id (from shell.bg.status). Kills the whole process tree.',
@@ -819,9 +905,9 @@
     };
 
     return {
-      execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
+      execTool: execTool, bgStatusTool: bgStatusTool, bgReadTool: bgReadTool, bgWriteTool: bgWriteTool, bgKillTool: bgKillTool,
       _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
-      register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
+      register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgReadTool); reg.register(bgWriteTool); reg.register(bgKillTool); return reg; }
     };
   }
 

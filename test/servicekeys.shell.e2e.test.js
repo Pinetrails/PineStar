@@ -8,7 +8,8 @@
    servicekeys.deriveEnvVar always ends in _API_KEY. Every pasted key expanded to '' and agents got 401s.
 
    This file spawns a REAL child through the REAL wiring (shell.exec × environment manager × servicekeys)
-   and asserts the value actually arrives. Spawns processes → rides test:http, not the fast gate. */
+   and asserts watched keys arrive only on watched runs while unattended children receive only explicitly
+   granted keys. Spawns processes → rides test:http, not the fast gate. */
 'use strict';
 const A = require('./_assert.js');
 const fs = require('fs');
@@ -22,6 +23,7 @@ const K = require('../sidecar/servicekeys.js');
 
 // platform-agnostic: read the var from inside the child rather than relying on %VAR% vs $VAR shell syntax.
 const ECHO = 'node -e "console.log(process.env.PRINTIFY_API_KEY || \'MISSING\')"';
+const ECHO_UNATTENDED = 'node -e "console.log((process.env.PRINTIFY_API_KEY || \'MISSING\') + \'|\' + (process.env.NIGHTLY_API_KEY || \'MISSING\'))"';
 const ECHO_PROVIDER = 'node -e "console.log(process.env.OPENROUTER_API_KEY || \'MISSING\')"';
 const RESERVED = new Set(['OPENROUTER_API_KEY']);
 
@@ -37,12 +39,12 @@ const RESERVED = new Set(['OPENROUTER_API_KEY']);
   // EXACTLY the index.js wiring: environment manager gets the lazy serviceEnv hook, shell tool gets the manager.
   const environment = makeEnvironmentManager({
     spawn, fs, pathMod: path, root, clock: makeClock(0), env: hostEnv,
-    serviceEnv: () => K.runEnv(keys, hostEnv, { reservedEnv: RESERVED })
+    serviceEnv: (surface) => K.runEnv(keys, hostEnv, { reservedEnv: RESERVED, surface: surface })
   });
   const tool = makeShellTool({
     spawn, fs, pathMod: path, root, environment, clock: makeClock(0), redact: (s) => s
   }).execTool;
-  const ctx = () => ({ agentId: 'a1', runId: 'r1', callId: 'c1', emit: () => {} });
+  const ctx = (surface) => ({ agentId: 'a1', runId: 'r1', callId: 'c1', surface: surface || 'interactive', emit: () => {} });
 
   try {
     // ---- 1. before any paste: absent ----
@@ -60,13 +62,22 @@ const RESERVED = new Set(['OPENROUTER_API_KEY']);
     // no restart happened between 1 and 2 — proves the child env is not a boot-time snapshot
     A.ok(true, 'a key pasted after the environment manager was constructed is live immediately');
 
-    // ---- 3. a provider/billing key must STILL never reach a child ----
+    // ---- 3. an unattended child gets only keys explicitly granted for unattended use ----
+    keys = K.upsert(keys, { name: 'Nightly', key: 'test-nightly-token-a81c' }, 2, { reservedEnv: RESERVED }).list;
+    keys = K.setAutonomous(keys, 'nightly', true, 3).list;
+    apply();
+    const unattended = await tool.run({ cmd: ECHO_UNATTENDED }, ctx('autonomous'));
+    A.ok(/MISSING\|test-nightly-token-a81c/.test(unattended.content),
+      'an unattended real child receives the granted key but NEVER the watched-only key — got: ' + JSON.stringify(unattended.content.slice(0, 160)));
+    A.ok(/\[exit 0/.test(unattended.content), 'the unattended child probe exited 0');
+
+    // ---- 4. a provider/billing key must STILL never reach a child ----
     const billing = await tool.run({ cmd: ECHO_PROVIDER }, ctx());
     A.ok(/MISSING/.test(billing.content),
       'a model-provider key is still scrubbed from the child — got: ' + JSON.stringify(billing.content.slice(0, 120)));
 
-    // ---- 4. disabling takes effect on the very next call ----
-    keys = K.setEnabled(keys, 'printify', false, 2).list;
+    // ---- 5. disabling takes effect on the very next call ----
+    keys = K.setEnabled(keys, 'printify', false, 4).list;
     apply();
     const off = await tool.run({ cmd: ECHO }, ctx());
     A.ok(/MISSING/.test(off.content), 'disabling the key removes it from the very next shell call');

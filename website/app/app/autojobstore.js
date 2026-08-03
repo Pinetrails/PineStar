@@ -24,6 +24,12 @@ const AutoJobStore = (() => {
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   const ready = () => typeof AutoJobs !== 'undefined' && state;
+  function ledgerPost(body) {
+    try {
+      const f = (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch : (typeof fetch === 'function' ? fetch : null);
+      if (f) f('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+    } catch (_) {}
+  }
 
   // W6 DEDUP (frontend UX layer — the SERVER gate is the real authority, this just avoids a doomed POST + a
   // ghost proposal). A normalized-name fingerprint (mirrors suggeststore.fingerprint): lowercase, alnum tokens
@@ -38,16 +44,17 @@ const AutoJobStore = (() => {
   }
   // is the SIDECAR SCHEDULER armed right now? (GET /api/cron `.enabled` = the live cronArmed). This is the REAL gate
   // on whether a just-scheduled routine will actually fire — the done-line must not promise a run the scheduler
-  // won't make. Injected accessor wins (app.js already reads /api/cron); else a direct best-effort fetch. Undefined
+  // won't make. Injected accessor wins; else force the shared cron resource fresh. Undefined
   // on any failure so the caller can degrade to the neutral copy rather than assert a scheduler state it can't read.
+  function cronRunnable(j) {
+    return j && typeof j.enabled === 'boolean' ? !!(j.enabled && !j.halted) : undefined;
+  }
   async function schedulerArmed() {
     try { if (deps.schedulerArmed) return !!(await deps.schedulerArmed()); } catch (_) {}
     try {
-      if (typeof fetch === 'undefined') return undefined;
-      const r = await fetch('/api/cron', { cache: 'no-store' });
-      if (!r.ok) return undefined;
-      const j = await r.json().catch(() => null);
-      return j && typeof j.enabled === 'boolean' ? j.enabled : undefined;
+      if (typeof QuerySpine === 'undefined' || !QuerySpine.refresh) return undefined;
+      const q = await QuerySpine.refresh('cron');
+      return cronRunnable(q && q.hasData ? q.data : null);
     } catch (_) { return undefined; }
   }
 
@@ -101,7 +108,11 @@ const AutoJobStore = (() => {
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return { go: false, reason: 'dialogue-open' };
     const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
     const known = sum ? sum.known : [];
-    return AutoJobs.shouldPropose({ enabled: autonomyOn(), alreadyProposed: state.proposed, firstPitchDone: pitchDone(), knownDims: known });
+    const base = AutoJobs.shouldPropose({ enabled: autonomyOn(), alreadyProposed: state.proposed, firstPitchDone: pitchDone(), knownDims: known });
+    if (!base.go) return base;
+    let rd = null;
+    try { rd = deps.readiness ? deps.readiness() : ((typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null); } catch (_) {}
+    return (rd && rd.ready) ? base : { go: false, reason: 'shared-readiness' };
   }
 
   function onRunEnd(p) { if (decide(p).go) propose({ proactive: true }); }
@@ -154,11 +165,13 @@ const AutoJobStore = (() => {
       for (const pr of proposals) {
         if (!Dialogue.isOpen()) break;
         if (existsAmong(pr.title, live)) continue;   // already a live routine with this name — don't offer a dup
+        const rid = 'routine:' + nameFp(pr.title) + ':' + Date.now();
+        ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'dossier', quote: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
         const choice = await Dialogue.node({ lines: AutoJobs.proposalLines(pr), options: AutoJobs.approveChoices(), dismissable: true, dismissLabel: 'leave it — not now' });
-        if (choice && choice.dismissed) break;   // Esc / "leave it": the Commander walked away — stop asking the rest of the proposals (Andrew: let the user exit a multi-question popup)
+        if (choice && choice.dismissed) { ledgerPost({ id: rid, state: 'deferred', reason: 'wrong_time' }); break; }
         if (choice && choice.value === 'yes' && deps.scheduleJob) {
-          try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); if (r && r.ok !== false && !(r && r.duplicate)) { scheduled++; live.push(pr.title); } } catch (_) {}
-        }
+          try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); if (r && r.ok !== false && !(r && r.duplicate)) { scheduled++; live.push(pr.title); ledgerPost({ id: rid, state: 'completed', reason: 'completed' }); } } catch (_) {}
+        } else if (choice) ledgerPost({ id: rid, state: 'declined', reason: 'wrong_thing' });
       }
       if (Dialogue.isOpen()) {
         // HONEST done-line: if we actually scheduled something, name whether the scheduler that fires it is armed
@@ -186,10 +199,12 @@ const AutoJobStore = (() => {
     for (const pr of (proposals || [])) {
       if (!pr || !pr.title) continue;
       if (state.pending.some(x => x && x.title === pr.title)) continue;   // already pinned — don't re-pin (once per proposal)
+      const rid = 'routine:' + nameFp(pr.title) + ':' + Date.now() + ':' + (++pinSeq);
       state.pending.push({
         id: 'ajp_' + (Date.now().toString(36)) + '_' + (++pinSeq),
-        title: pr.title, why: pr.why || '', grounds: pr.grounds || '', cadenceId: pr.cadenceId, prompt: pr.prompt || '', at: Date.now()
+        recommendationId: rid, title: pr.title, why: pr.why || '', grounds: pr.grounds || '', cadenceId: pr.cadenceId, prompt: pr.prompt || '', at: Date.now()
       });
+      ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'dossier', quote: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
       added++;
     }
     return added;
@@ -207,11 +222,11 @@ const AutoJobStore = (() => {
     // amber card vanishes (COMMS rule: a decided card is removed, never left ghosting). The server gate would
     // reject the POST anyway; this keeps the board honest without a doomed round-trip.
     const live = await liveJobNames();
-    if (existsAmong(pr.title, live)) { state.pending = state.pending.filter(p => p && p.id !== id); save(); return { ok: true, duplicate: true }; }
+    if (existsAmong(pr.title, live)) { state.pending = state.pending.filter(p => p && p.id !== id); save(); ledgerPost({ id: pr.recommendationId, state: 'completed', reason: 'already_done' }); return { ok: true, duplicate: true }; }
     let ok = false, duplicate = false;
     if (deps.scheduleJob) { try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); duplicate = !!(r && r.duplicate); ok = !!(r && r.ok !== false); } catch (_) { ok = false; } }
     // a real success OR a server-reported duplicate both retire the card (a dup is "already handled", not a failure).
-    if (ok || duplicate) { state.pending = state.pending.filter(p => p && p.id !== id); save(); }
+    if (ok || duplicate) { state.pending = state.pending.filter(p => p && p.id !== id); save(); ledgerPost({ id: pr.recommendationId, state: 'completed', reason: duplicate ? 'already_done' : 'completed' }); }
     // ARM-STATE (item #1): on a genuine schedule, tell the render site whether the scheduler that fires it is armed,
     // so the board/quest-log can surface AutoJobs.armStateLine() honestly ("saved, but the scheduler is off …").
     // Only probed on a real success (a dup/failure needs no arm hint). undefined → the render site shows no line.
@@ -222,9 +237,10 @@ const AutoJobStore = (() => {
   // DECLINE: drop the card (dismissed → gone; the walk-and-pin already played once, it never re-nags for this one).
   function declinePending(id) {
     if (!state || !Array.isArray(state.pending)) return false;
+    const pr = findPending(id);
     const before = state.pending.length;
     state.pending = state.pending.filter(p => p && p.id !== id);
-    if (state.pending.length !== before) { save(); return true; }
+    if (state.pending.length !== before) { save(); if (pr) ledgerPost({ id: pr.recommendationId, state: 'declined', reason: 'wrong_thing' }); return true; }
     return false;
   }
 
@@ -235,7 +251,7 @@ const AutoJobStore = (() => {
   function proposed() { return !!(state && state.proposed); }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, propose, proposed, pinProposals, pendingList, pendingCount, acceptPending, declinePending, _decide: decide, _state: () => state };
+  return { init, reset, onRunEnd, propose, proposed, pinProposals, pendingList, pendingCount, acceptPending, declinePending, _decide: decide, _state: () => state, _cronRunnable: cronRunnable };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { AutoJobStore };

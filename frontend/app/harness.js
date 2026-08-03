@@ -8,11 +8,27 @@
 'use strict';
 
 const Harness = (() => {
-  const LS = { key: 'starnet.byok.key', model: 'starnet.byok.model', prov: 'starnet.byok.prov', baseUrl: 'starnet.byok.baseUrl', effort: 'starnet.byok.reasoningEffort' };
+  const LS = { key: 'starnet.byok.key', keyPool: 'starnet.byok.keyPool', model: 'starnet.byok.model', prov: 'starnet.byok.prov', baseUrl: 'starnet.byok.baseUrl', effort: 'starnet.byok.reasoningEffort' };
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
-  let modelMap = {};   // id -> { id, name, pricing, context_length, supportsTools }
+  // Model catalogs are keyed BY PROVIDER. A single shared map was a real defect: ModelDock warms all
+  // ~17 providers in parallel (modeldock.js fetchModels) and every listModels(p) miss reset the one
+  // map, so whichever provider resolved LAST — usually an unconfigured one with an empty list — wiped
+  // the ACTIVE provider's catalog. contextLimitOf()/priceOf() then returned 0 for the live model, and
+  // the bottom-bar context gauge sat at unknown/"—" forever even after a real measured turn.
+  let modelsByProv = Object.create(null);   // provider -> { id -> { id, name, pricing, context_length, supportsTools } }
+
+  // Resolve a model id against the warmed catalogs, preferring the ACTIVE provider's (the same id can
+  // exist under two providers with different windows/prices, e.g. a direct slug vs an OpenRouter one).
+  function catalogModel(id) {
+    if (!id) return null;
+    const p = normalizeProviderId(getProv());
+    const own = modelsByProv[p];
+    if (own && own[id]) return own[id];
+    for (const k in modelsByProv) { const m = modelsByProv[k] && modelsByProv[k][id]; if (m) return m; }
+    return null;
+  }
   // Per-agent context-window occupancy = the latest real prompt_tokens for that same agent/model.
   // Distinct from totals.tokens (lifetime in+out), and not persisted across resumes.
   let contextByAgent = {};   // agentId -> { used, model, runId }
@@ -54,6 +70,7 @@ const Harness = (() => {
   }
   let _configured = false;   // desktop back-compat alias for "is the OpenRouter key stored?"
   let _configuredByProvider = Object.create(null);
+  let _alternateCountByProvider = Object.create(null);
   let apiToken = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
 
@@ -115,6 +132,7 @@ const Harness = (() => {
         status.forEach(s => {
           const p = normalizeProviderId(s && s.provider);
           _configuredByProvider[p] = !!(s && s.configured);
+          _alternateCountByProvider[p] = Math.max(0, Number(s && s.alternateCount) || 0);
         });
         _configured = !!_configuredByProvider.openrouter;
         loaded = true;
@@ -243,7 +261,11 @@ const Harness = (() => {
     if (p === 'custom' && !getKey(p)) return false;        // a keyless custom endpoint must not manufacture a key row
     if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
     if (!!readScoped(LS.key, p)) return true;              // a real key is stored in this browser
-    if (DEVMODE && DEV && normalizeProviderId(DEV.prov) === p) return true;  // server-held runtime key for the seeded provider
+    // DEV seed: the host may hold a server-side runtime key for the seeded provider. It is not a given —
+    // a seeded station with no key at all still boots in DEV mode, and ASSUMING the key existed made the
+    // settings row render "● KEY SAVED" over nothing (an agent live-verifying a change reads that badge as
+    // proof it can run). `hasKey` is the sidecar's own answer; an older boot payload without it reads false.
+    if (DEVMODE && DEV && DEV.hasKey === true && normalizeProviderId(DEV.prov) === p) return true;
     return false;
   }
 
@@ -268,6 +290,34 @@ const Harness = (() => {
     }
     writeScoped(LS.key, p, k || '');
   };
+  function keyPoolSize(provider) {
+    const p = normalizeProviderId(provider || getProv());
+    if (DESKTOP) return Math.max(0, Number(_alternateCountByProvider[p]) || 0);
+    try { return JSON.parse(readScoped(LS.keyPool, p) || '[]').length || 0; } catch (_) { return 0; }
+  }
+  function setKeyPool(keys, provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const cleaned = Array.from(new Set((Array.isArray(keys) ? keys : []).map(k => String(k || '').trim()).filter(Boolean))).slice(0, 8);
+    if (DESKTOP) {
+      return invoke('harness_store_provider_key_pool', { provider: p, keys: cleaned })
+        .then(count => { _alternateCountByProvider[p] = Math.max(0, Number(count) || 0); return count; });
+    }
+    writeScoped(LS.keyPool, p, JSON.stringify(cleaned));
+    return Promise.resolve(cleaned.length);
+  }
+  async function validateAndSetKeyPool(keys, provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const cleaned = Array.from(new Set((Array.isArray(keys) ? keys : []).map(k => String(k || '').trim()).filter(Boolean))).slice(0, 8);
+    for (const candidate of cleaned) {
+      const r = await fetch('/api/providers/validate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: p, key: candidate, baseUrl: getBaseUrl(p) || '', model: p === getProv() ? getModel() : '' })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.credentialVerified) throw new Error(String(j.error || 'a backup key was rejected') + ' — your previous backup pool is unchanged');
+    }
+    return setKeyPool(cleaned, p);
+  }
   // Channel bot tokens (Telegram/Discord). Desktop: store in the OS keychain via Tauri (never over HTTP, never
   // plaintext) — mirrors setKey for provider keys. Returns a promise that resolves to true when the token was
   // routed to the keychain, false in the browser build (where the caller lets the token ride the connect POST as
@@ -322,7 +372,7 @@ const Harness = (() => {
 
   /* per-million pricing for a model id, if known from the catalog */
   function priceOf(id) {
-    const m = modelMap[id];
+    const m = catalogModel(id);
     if (!m || !m.pricing) return null;
     const inP = parseFloat(m.pricing.prompt) * 1e6;
     const outP = parseFloat(m.pricing.completion) * 1e6;
@@ -334,7 +384,7 @@ const Harness = (() => {
      The sidecar's model endpoint carries OpenRouter context_length through to the browser; if
      that endpoint is unavailable we fall back to the public OpenRouter catalog. */
   function contextLimitOf(id) {
-    const m = modelMap[id];
+    const m = catalogModel(id);
     return (m && m.context_length) || 0;
   }
 
@@ -394,8 +444,11 @@ const Harness = (() => {
         else list = [];
       }
       list.sort((a, b) => a.id.localeCompare(b.id));
-      modelMap = {};
-      for (const m of list) modelMap[m.id] = m;
+      // scope the catalog to the provider it was fetched FOR — never to a shared map another
+      // provider's warm can overwrite (see modelsByProv above).
+      const map = Object.create(null);
+      for (const m of list) map[m.id] = m;
+      modelsByProv[p] = map;
       return list;
     } catch (e) {
       console.warn('[harness] model list unavailable:', e.message);
@@ -428,6 +481,24 @@ const Harness = (() => {
         error: String((j && j.error) || '')
       };
     } catch (_) { return fallback; }
+  }
+
+  // Replace a credential as one user-visible operation: prove the candidate first, then commit it. Validation
+  // never mutates provider state, so a rejection/timeout leaves the previous working key untouched.
+  async function validateAndSetKey(key, provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const candidate = String(key || '').trim();
+    if (!candidate) return setKey('', p);
+    const r = await fetch('/api/providers/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: p, key: candidate, baseUrl: getBaseUrl(p) || '', model: p === getProv() ? getModel() : '' })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.credentialVerified) {
+      throw new Error(String(j.error || 'the provider did not verify this key') + ' — your previous key is unchanged');
+    }
+    await Promise.resolve(setKey(candidate, p));
+    return Object.assign({}, j, { stored: true });
   }
 
   // PURE (test-locked in harness-internal.test.js): fold a sidecar error-response body into the human tail of
@@ -484,6 +555,9 @@ const Harness = (() => {
       // class skills). Sent separately so the tool projection is untouched; the sidecar uses it for skills only.
       if (Array.isArray(stationPlaced) && stationPlaced.length) reqBody.stationPlaced = stationPlaced;
       if (!DESKTOP && !DEVMODE && provider !== 'codex' && provider !== 'grok' && provider !== 'kimi') reqBody.key = key;   // dev/desktop + the OAuth providers keep secrets server-side (custom/ollama may still ride an optional key)
+      if (!DESKTOP && !DEVMODE) {
+        try { const pool = JSON.parse(readScoped(LS.keyPool, provider) || '[]'); if (Array.isArray(pool) && pool.length) reqBody.keyPool = pool; } catch (_) {}
+      }
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
@@ -594,7 +668,8 @@ const Harness = (() => {
   }
 
   // E-STOP: stop EVERY in-flight run on the sidecar in one call — browser runs AND any messaging-hub/Telegram
-  // runs. Returns how many were halted (0 if the sidecar is unreachable). Safe to call when nothing is running.
+  // runs. Returns the honest abort total plus the sidecar's durability receipt: current-process stopping and
+  // restart persistence are distinct facts, so callers must not collapse a false *HaltPersisted field into success.
   async function haltAll() {
     try {
       const r = await fetch('/api/halt', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
@@ -602,8 +677,13 @@ const Harness = (() => {
       // honest total: run controllers (browser/hub/force-fired beats) + cron leases + the driver-path beat —
       // everything the server ACTUALLY aborted, so the HALT toast never under-reports what the E-STOP stopped.
       const n = k => (j && typeof j[k] === 'number') ? j[k] : 0;
-      return n('halted') + n('cronAborted') + n('beatAborted');
-    } catch (_) { return 0; }
+      return {
+        halted: n('halted') + n('cronAborted') + n('beatAborted'),
+        nightshiftHaltPersisted: j.nightshiftHaltPersisted,
+        cronHaltPersisted: j.cronHaltPersisted,
+        loopsHaltPersisted: j.loopsHaltPersisted
+      };
+    } catch (_) { return { halted: 0 }; }
   }
 
   // answer a live permission.prompt: decision ∈ once|always|full|deny. Resolves the run's paused dispatch so it
@@ -622,12 +702,25 @@ const Harness = (() => {
     try { await fetch('/api/consent/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId }) }); } catch (_) {}
   }
 
+  // answer a live in-turn clarify card (a brief.ask riding the permission.prompt channel): the answer TEXT
+  // resumes the SAME paused turn — deliberately a separate route from consent, whose decisions are a closed
+  // enum with grant semantics. Fire-and-forget; a stale id is a harmless no-op (the run fell back to the
+  // durable end-run question).
+  async function consentAnswer(runId, promptId, answer) {
+    if (!runId || !promptId || !answer) return;
+    try { await fetch('/api/consent/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, answer }) }); } catch (_) {}
+  }
+
   // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
   // the run's awaiting team.summon tool. Separate request from the open /api/run stream — no deadlock. The summon
   // tool has its own browser-ack timeout, so a dropped ack settles cleanly to "not completed" rather than hanging.
-  async function summonAck(runId, requestId, agentId) {
+  // `desk` (optional) is the room the new agent's seeded workstation actually landed in — the ONLY reason the
+  // tool result may mention a desk at all, so the lead can never announce furniture the floor doesn't have.
+  async function summonAck(runId, requestId, agentId, desk) {
     if (!runId || !requestId) return;
-    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, requestId, agentId: agentId || null }) }); } catch (_) {}
+    const body = { runId, requestId, agentId: agentId || null };
+    if (desk) body.desk = String(desk).slice(0, 60);
+    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (_) {}
   }
 
   // Cortex (M-mem.5b): after a run, reflection may PROPOSE durable memories (announced via the memory.proposed
@@ -702,23 +795,43 @@ const Harness = (() => {
 
   // Cortex (M-mem.6) — the Memory Core: the FULL provenance-bearing §5.2 records (kind/sourceRunId/useCount/
   // trust/pinned/timestamps), which the slim /api/notebook view drops. [] on any failure.
-  async function agentSkills(agentId, opts) {
+  /* The same read, with the OUTCOME kept: { ok, skills }. agentSkills() below collapses every failure to []
+     for its existing callers, which is fine for a list that renders "no skills yet" — but a COUNTER must never
+     turn an errored read into a confident zero ("you have none" is a different claim from "I could not ask").
+     Any surface that states a number reads through this one. */
+  async function agentSkillsRead(agentId, opts) {
     opts = opts || {};
     try {
       const q = '?agent=' + encodeURIComponent(agentId || 'agent')
         + (opts.archived ? '&archived=1' : '')
         + (opts.body ? '&body=1' : '');
       const r = await fetch('/api/agent-skills' + q, { cache: 'no-store' });
-      if (!r.ok) return [];
+      if (!r.ok) return { ok: false, skills: [] };
       const j = await r.json();
-      return Array.isArray(j.skills) ? j.skills : [];
-    } catch (e) { return []; }
+      if (!j || !Array.isArray(j.skills)) return { ok: false, skills: [] };
+      return { ok: true, skills: j.skills };
+    } catch (e) { return { ok: false, skills: [] }; }
+  }
+  async function agentSkills(agentId, opts) {
+    return (await agentSkillsRead(agentId, opts)).skills;
   }
   async function agentSkillManage(o) {
     try {
       const r = await fetch('/api/agent-skills/manage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
       return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
     } catch (e) { return { ok: false }; }
+  }
+  /* The Commander's review decision on a skill the guard WITHHELD from the model. The approval is
+     recorded against the content digest the sidecar just read, so any later edit re-asks. Carries
+     the sidecar's refusal text through on failure — a 'block' verdict can never be approved and the
+     panel must say why rather than silently fail. */
+  async function agentSkillAllow(o) {
+    try {
+      const r = await fetch('/api/agent-skills/allow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
+      const j = await r.json().catch(() => null);
+      if (r.ok) return j || { ok: true };
+      return { ok: false, error: (j && j.error) || 'could not record that decision' };
+    } catch (e) { return { ok: false, error: 'the station did not answer' }; }
   }
 
   async function memoryRecords(agentId) {
@@ -747,6 +860,17 @@ const Harness = (() => {
     } catch (e) { return []; }
   }
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
+  // High-stakes proposals still awaiting a verdict, across ALL runs (the durable queue). Unattended runs reflect
+  // now, so a credential/PII/standing-instruction belief can be raised by a routine at 3am with nobody watching —
+  // this is how it stays answerable instead of quietly evaporating. [] on any failure (never a fabricated deck).
+  async function memoryPending(agentId) {
+    try {
+      const r = await fetch('/api/memory/pending?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.pending) ? j.pending : [];
+    } catch (e) { return []; }
+  }
 
   /* Minimal JSON client for the sidecar's /api surface (the launch-token rides via the hardened
      window.fetch above). Two shapes, matching the two call-site idioms this codebase already uses:
@@ -769,14 +893,56 @@ const Harness = (() => {
   // (U.bus) loads before this file; the chat reader keeps a direct-fold fallback for busless embeds.
   if (typeof U !== 'undefined' && U.bus) { try { U.bus.on('agent.cost', foldContextCost); } catch (_) {} }
 
+  /* IS THE LOCAL ENGINE ACTUALLY UP? (2026-07-29 — the "Can't reach StarNet's local service" misdiagnosis.)
+     A dead response stream and a dead sidecar are INDISTINGUISHABLE from the thrown fetch error alone (see the
+     long note on isTransportLoss in friendlyerror.js), and the app used to assert the sidecar was gone and tell
+     people to restart — sending users chasing a phantom for days when the real drop was the model's stream.
+     This is the measurement that turns that guess into proof.
+
+     GET /api/health is the right probe and the only one that works here: it is in apiauth's TOKEN_EXEMPT set, so
+     it needs no X-StarNet-Token (a stale-token 403 would otherwise read as "dead" — a second lie), and its
+     handler is a bare writeHead(200)/end('ok') that touches no store, so it cannot itself fail for load reasons.
+     Bounded by an AbortController, because a socket the sidecar accepted and never answered (the exact
+     hung-request bug this fix exists for) would otherwise hang the error row forever. On timeout we return
+     `null`, NOT false — an unanswered probe has not proven the engine dead, and under truthful telemetry an
+     inconclusive measurement must never be reported as a conclusive one.
+
+     THE 4s BUDGET IS MEASURED, NOT GUESSED (2026-07-29, Chromium/WebView2, dead loopback port, n=13). A REFUSED
+     connection does NOT fail in microseconds as you would expect — it is BIMODAL: ~250ms or ~1750-2015ms
+     (Chromium appears to retry a dead keep-alive socket with a ~2s backoff before surfacing "Failed to fetch").
+     Samples: 249,250,251,251,268,1754,1771,1773,1794,2015 + 251,1778,2030. A 2000ms budget therefore lands
+     exactly ON the slow mode and half of all genuinely-dead engines time out into `null` — which is the ONE case
+     where "restart StarNet" is the correct advice, so it must not be lost to an impatient probe. 4000ms clears
+     the observed tail ~2x. Cost is bounded and rare: the common in-band failure path proves liveness by receipt
+     and never calls this at all, and a healthy engine answers /api/health in ~1ms.
+     Resolves true | false | null. Never throws, never rejects. */
+  function pingEngine(timeoutMs) {
+    const budget = (typeof timeoutMs === 'number' && timeoutMs > 0) ? timeoutMs : 4000;
+    let ac = null, timer = null;
+    try { ac = new AbortController(); } catch (_) { ac = null; }
+    let timedOut = false;
+    if (ac) timer = setTimeout(() => { timedOut = true; try { ac.abort(); } catch (_) {} }, budget);
+    const done = (v) => { if (timer) clearTimeout(timer); return v; };
+    let p;
+    try {
+      p = fetch('/api/health', Object.assign({ cache: 'no-store' }, ac ? { signal: ac.signal } : {}));
+    } catch (_) { return Promise.resolve(done(false)); }   // synchronous throw = no request left the page
+    return Promise.resolve(p)
+      // Any ANSWER at all proves something is listening and serving on the port — even a non-2xx. The claim
+      // under test is "can't REACH the local service", so reachability, not the status code, is the verdict.
+      .then(() => done(true))
+      .catch(() => done(timedOut ? null : false));
+  }
+
   return {
+    pingEngine,
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
-    getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, refreshCreditsConfigured, hasStoredCredential, setDesktopConfigured,
-    listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
-    memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
+    getKey, setKey, setKeyPool, validateAndSetKeyPool, keyPoolSize, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, refreshCreditsConfigured, hasStoredCredential, setDesktopConfigured,
+    listModels, probeProvider, validateAndSetKey, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, consentAnswer, summonAck, notebook,
+    memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,
-    agentSkills, agentSkillManage,
+    agentSkills, agentSkillsRead, agentSkillManage, agentSkillAllow,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

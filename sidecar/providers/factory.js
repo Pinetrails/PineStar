@@ -23,11 +23,26 @@
 
   const PROVIDER_IDS = registry.providerIds();
 
+  /* PROACTIVE RATE-LIMIT ACCOUNTING (providers/ratelimits.js). Every adapter takes its fetch by INJECTION and
+     every adapter's success path is `if (res.ok && res.body) return res` — so the quota headers were dropped
+     five times over, and quota was only ever learned by hitting a 429.
+
+     Wrapping the injected fetch here instruments all five adapters at one seam. Deliberately NOT a per-adapter
+     edit: a sixth adapter added later would have to remember, and the sixth adapter never remembers. Attached
+     once at boot rather than threaded through selectProvider's ~10 call sites, all of which pass the same
+     globalThis.fetch. Absent = every adapter behaves byte-identically to before. */
+  let rateLimits = null;
+  function attachRateLimits(tracker) {
+    rateLimits = (tracker && typeof tracker.wrapFetch === 'function') ? tracker : null;
+    return rateLimits;
+  }
+
   function selectProvider(opts) {
     opts = opts || {};
     const id = registry.normalizeProviderId(opts.provider, registry.DEFAULT_PROVIDER_ID);
     const profile = registry.getProviderProfile(id);
     if (!profile) throw new Error('unknown provider: ' + (opts.provider || ''));
+    if (rateLimits && typeof opts.fetch === 'function') opts = Object.assign({}, opts, { fetch: rateLimits.wrapFetch(id, opts.fetch) });
 
     if (profile.adapter === 'codex') {
       return codex.makeCodexProvider({
@@ -109,6 +124,7 @@
     providerUsesDeviceOAuth: registry.providerUsesDeviceOAuth,
     defaultReasoningEffortForProvider: registry.defaultReasoningEffortForProvider,
     providerRequiresKey: registry.providerRequiresKey,
-    providerRequiresBaseUrl: registry.providerRequiresBaseUrl
+    providerRequiresBaseUrl: registry.providerRequiresBaseUrl,
+    attachRateLimits: attachRateLimits
   };
 });

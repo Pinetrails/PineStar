@@ -52,8 +52,40 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
     const provider = scriptedProvider(async function* () { attempt++; throw timeoutErr(); yield; });   // always throws
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
     A.eq(res.reason, 'error', 'a persistent timeout eventually ends the run in error');
-    A.eq(attempt, 3, 'bounded: 1 initial + 2 retries then give up');
+    A.eq(attempt, 5, 'bounded: 1 initial + 4 retries (one per backoff rung) then give up');
     A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'a timeout error is transient');
+  }
+
+  // (2a-exhausted-chain) an OVERLOADED provider with NO failover chain (every single-provider station,
+  //     e.g. ChatGPT-login codex) gets the same-provider retries the A2 comment always promised. This was
+  //     the field failure behind "servers overloaded" runs dying at ~2s: retryable+shouldFallback with an
+  //     empty chain hit neither the failover branch nor the retry branch and went straight to fatal.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      if (attempt <= 2) { throw new Error('Our servers are currently overloaded. Please try again later.'); }
+      yield { type: 'text', delta: 'rode it out' };
+      yield { type: 'usage', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(attempt, 3, 'two overload blips were retried on the SAME provider (no chain to fall back to)');
+    A.eq(res.reason, 'done', 'the run survived a transient overload instead of dying red');
+    A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'a ridden-out overload emits no run.error');
+    A.eq(seq.filter(e => e.name === 'provider.fallback').length, 0, 'no failover was claimed — same-provider retries are silent and truthful');
+  }
+
+  // (2a-exhausted-chain-bound) a PERSISTENT overload with no chain still terminates in error — patience is bounded.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () { attempt++; throw new Error('overloaded'); yield; });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(attempt, 5, 'bounded: 1 initial + 4 same-provider retries, then give up');
+    A.eq(res.reason, 'error', 'a genuinely down backend still ends the run honestly');
+    A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'the terminal overload error is marked transient');
   }
 
   // (2b) FATAL-PATH USAGE RECONCILE: usage arrives, THEN the stream throws a non-retryable error. The billed
@@ -86,8 +118,8 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
     A.eq(res.tokens, 0, 'no usage -> zero tokens');
   }
 
-  // (3) finishReason SURFACED: a turn that finishes with 'length' (truncated) puts finishReason on the return
-  //     value, WITHOUT changing reason (still 'done', so the reflection/study gate in index.js is unaffected).
+  // (3) finishReason SURFACED when semantic continuation is explicitly disabled: the legacy/cut-short result
+  //     remains available for callers that opt out of automatic continuation.
   {
     const { emit } = setup();
     const provider = scriptedProvider(async function* () {
@@ -95,7 +127,7 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
       yield { type: 'usage', usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } };
       yield { type: 'done', finishReason: 'length' };
     });
-    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r', limits: { outputContinuation: false } });
     A.eq(res.reason, 'done', 'a length-truncated turn still ends reason=done (gate unbroken)');
     A.eq(res.finishReason, 'length', 'finishReason=length is surfaced additively on the return value');
   }

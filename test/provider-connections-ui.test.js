@@ -10,7 +10,9 @@ const app = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.j
 const harness = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'harness.js'), 'utf8');
 const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
 const index = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
-const tauri = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'main.rs'), 'utf8');
+const tauri = ['main.rs', 'credentials.rs']
+  .map(file => fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', file), 'utf8'))
+  .join('\n');
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
@@ -38,7 +40,11 @@ ok(/PROVIDERS\.forEach\(p\s*=>\s*addProvider\(p\.id\)\)/.test(station), 'Setting
 // reports true in DEVMODE for auto-resume) must NOT be the credential-list gate.
 ok(/function\s+hasStoredCredential\s*\(/.test(harness), 'harness exposes an honest hasStoredCredential getter');
 ok(/return\s*\{[\s\S]*hasStoredCredential[\s\S]*\}/.test(harness), 'hasStoredCredential is on the harness public API');
-ok(/DEVMODE\s*&&\s*DEV\s*&&\s*normalizeProviderId\(DEV\.prov\)\s*===\s*p/.test(harness), 'DEV seed only backs the seeded provider (DEV.prov), not all providers');
+ok(/DEVMODE\s*&&\s*DEV\s*&&\s*DEV\.hasKey\s*===\s*true\s*&&\s*normalizeProviderId\(DEV\.prov\)\s*===\s*p/.test(harness), 'DEV seed only backs the seeded provider (DEV.prov), not all providers');
+// …and only when the host SAYS it holds one. A seeded station with no key still boots in DEV mode, and
+// assuming the key existed rendered "● KEY SAVED" over nothing — the badge an agent reads as proof it can run.
+ok(/hasKey:\s*!!runtimeKey/.test(fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8')),
+  'the DEV boot payload carries the honest hasKey (no secret, just the boolean)');
 ok(/const\s+set\s*=\s*h\.hasStoredCredential\s*\?\s*h\.hasStoredCredential\(provider\)/.test(station), 'Settings credential list gates rows on hasStoredCredential, not the DEVMODE-fabricated configured()');
 // armed REMOVE must be unmistakable: filled --bad button + row hairline + inline confirm hint.
 ok(/b\.classList\.add\('armed'\)/.test(station) && /rowEl\.classList\.add\('rm-armed'\)/.test(station), 'REMOVE arm marks both the button and its row');

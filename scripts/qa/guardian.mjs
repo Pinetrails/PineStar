@@ -3,8 +3,8 @@
  *
  * WHY THIS EXISTS: five-plus sessions merge into trunk in parallel and breakage is
  * currently discovered by Andrew using the app. The Guardian answers ONE question on a
- * schedule: "Is trunk green AND does the app still boot + look right?" It runs the four
- * existing detectors — `test:fast` → `shoot` → `golden` → `audit` — against a pinned
+ * schedule: "Is trunk green AND does the app still boot + look right?" It composes the
+ * unit, HTTP, adversarial, visual, truth-audit, and multi-step journey detectors against a pinned
  * copy of trunk, files ONE deduped ledger finding per regression (fingerprinted per
  * failing suite/frame/assertion so the same defect never re-nags), refreshes the Green
  * Guardian row in qa/STATUS.md, and exits nonzero if anything is red. Scripts DETECT +
@@ -45,7 +45,7 @@
  *   node scripts/qa/guardian.mjs --once          # explicit single cycle (default)
  *   node scripts/qa/guardian.mjs --watch         # poll trunk HEAD; run a cycle when it moves
  *   node scripts/qa/guardian.mjs --watch --interval 120   # poll every N seconds (default 60)
- *   node scripts/qa/guardian.mjs --skip-visual   # test:fast + audit only (no Chrome; CI-lite)
+ *   node scripts/qa/guardian.mjs --skip-visual   # fast + HTTP + Saboteur (no Chrome; CI-lite)
  *
  * Exit code: 0 green · 1 red (a gate failed / a step was BLOCKED).
  */
@@ -63,7 +63,7 @@ import { runSweep as runEvidenceSweep } from './evidence-sweep.mjs';
 
 const CREW = 'Green Guardian';
 
-// The four gates, in dependency order (test first — cheapest, catches the most; visual
+// The gates, in dependency order (test first — cheapest, catches the most; visual
 // gates last — they boot a sidecar). `visual: true` steps need Chrome + a sidecar and are
 // skipped under --skip-visual. `severity` is the DEFAULT for a whole-step failure; a
 // finding derived from a parsed sub-result may override it (visual/audit sub-fails are P1).
@@ -75,6 +75,9 @@ export const GUARDIAN_STEPS = [
   // READY could not vouch for the newest features. Non-visual (boots its own sidecars on self-retrying ports;
   // no Chrome). P0: an integration break is a product break, same class as test-fast.
   { id: 'http-e2e',  title: 'HTTP/E2E integration gate',    npm: 'test:http', visual: false, severity: 'P0' },
+  // SABOTEUR (EL-2): deterministic hostile-input/auth/origin mutations against an isolated real sidecar.
+  // Non-visual and cheap enough for every cycle; the seed + attack id in its log make every red replayable.
+  { id: 'saboteur', title: 'Adversarial API mutation sweep', npm: 'qa:saboteur', visual: false, severity: 'P1' },
   { id: 'shoot',     title: 'In-game UI screenshot sweep',   npm: 'shoot',     visual: true,  severity: 'P1' },
   { id: 'golden',    title: 'Visual golden-frame diff',       npm: 'golden',    visual: true,  severity: 'P1' },
   { id: 'audit',     title: 'Behavioral truthfulness audit',  npm: 'audit',     visual: true,  severity: 'P1' },
@@ -415,6 +418,7 @@ if (INVOKED_DIRECTLY) {
 
   // Guardian port range (Part 3/5 port law): 8940-8949 sidecar, 9340-9349 CDP.
   const PORTS = {
+    saboteur: { SKYNET_SABOTEUR_PORT: '8944', SKYNET_SABOTEUR_NO_LEDGER: '1' },
     shoot:    { SKYNET_SHOT_PORT:    '8940', SKYNET_CDP_PORT:     '9340' },
     golden:   { SKYNET_GOLDEN_PORT:  '8941', SKYNET_GOLDEN_CDP:   '9341' },
     audit:    { SKYNET_AUDIT_PORT:   '8942', SKYNET_AUDIT_CDP:    '9342' },

@@ -79,6 +79,7 @@ const Voice = (() => {
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'professional';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
   let listening = false, speaking = false, savedStatus = '';
+  let coordinator = null;           // OAuth/local live surface hooks; null preserves the classic voice path
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open
   let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
@@ -93,13 +94,70 @@ const Voice = (() => {
     else if (statusEl) statusEl.textContent = s;
   }
   function currentStatusText() { return statusEl ? statusEl.textContent : ''; }
+  function coordinatorEvent(name, payload) {
+    try { if (coordinator && typeof coordinator[name] === 'function') coordinator[name](payload); } catch (_) {}
+  }
+  /* A DIAGNOSTIC status must outlive the same-tick restore. The recorder's finish() writes the /api/stt
+     degrade reason and then calls cb.onEnd() -> endListening() inside the SAME synchronous .then body, and
+     Chat.status is a plain `textContent =` with no queue, so the browser only ever painted the LAST write:
+     the reason had a zero-frame lifetime and the only surviving trace was a console.warn nobody has open.
+     Park it here instead — endListening's restore and the hands-free give-up line both prefer it, and it is
+     cleared as soon as it has been honored or a listen actually produces a transcript. */
+  let pendingDiag = '';
+  function setDiagStatus(msg) { pendingDiag = String(msg == null ? '' : msg); setStatus(pendingDiag); }
+  function takeDiag() { const d = pendingDiag; pendingDiag = ''; return d; }
 
   /* ======================================================================
      OUTPUT — the agent's voice (TTS)
      ====================================================================== */
 
-  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); }
-  function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); }
+  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); coordinatorEvent('onState', 'speaking'); startOutputMeter(); }
+  function onSpeakEnd() {
+    // Meter teardown is deliberately unconditional. A failed media element can fire after another
+    // path already cleared `speaking`; leaving the rAF alive in that race would pin the live panel
+    // to the agent side forever.
+    stopOutputMeter();
+    outAnalyser = null;
+    if (!speaking) return;
+    speaking = false;
+    setSpeaking(false);
+    coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready');
+  }
+
+  /* ---- THE AGENT'S SIDE OF THE METER ------------------------------------------------------------
+     A phone call shows you both voices: your own level, and the other party's in its own colour. The
+     agent's half is read off `outAnalyser` — a tap on whichever chain (transmission / machine shell)
+     the CURRENT playback is routed through, i.e. the exact signal leaving for the speakers.
+     It is NOT a timer and NOT an envelope guessed from the text: when playback is dry (WebAudio routing
+     failed) there is no tap, so this reports 0 and the agent's half of the meter stays flat rather than
+     inventing motion the speakers aren't making. Only runs while a live panel is attached. */
+  let outAnalyser = null, outRaf = 0, outBuf = null;
+  function outputLevelTick() {
+    outRaf = 0;
+    if (!speaking || !coordinator) return;
+    let rms = 0;
+    const an = outAnalyser;
+    if (an) {
+      try {
+        if (!outBuf || outBuf.length !== an.fftSize) outBuf = new Float32Array(an.fftSize);
+        an.getFloatTimeDomainData(outBuf);
+        let e = 0;
+        for (let i = 0; i < outBuf.length; i++) e += outBuf[i] * outBuf[i];
+        rms = Math.sqrt(e / outBuf.length);
+      } catch (_) { rms = 0; }
+    }
+    coordinatorEvent('onOutputLevel', rms);
+    if (typeof requestAnimationFrame === 'function') outRaf = requestAnimationFrame(outputLevelTick);
+  }
+  function startOutputMeter() {
+    if (!coordinator || outRaf || typeof requestAnimationFrame !== 'function') return;
+    outRaf = requestAnimationFrame(outputLevelTick);
+  }
+  function stopOutputMeter() {
+    if (outRaf && typeof cancelAnimationFrame === 'function') { try { cancelAnimationFrame(outRaf); } catch (_) {} }
+    outRaf = 0;
+    coordinatorEvent('onOutputLevel', 0);   // the agent stopped talking: say so, don't leave the last frame lit
+  }
 
   /* ---- neural TTS — the agent's ONLY voice -----------------------------------------------------
      Hits the sidecar /api/tts and plays the returned audio. The sidecar owns the whole tier ladder
@@ -118,12 +176,43 @@ const Voice = (() => {
   // itself was fine, the silence ABOUT it wasn't). NB: NO permanent latch — this is a 60s cold-off that ANY
   // speaker-toggle clears, so a spurious startup 'no key' never disables voice for the whole session.
   const BILLING_COLD_MS = 60000;
+  // consecutive neural failures inside the reply that is CURRENTLY speaking. A cold-off may never guillotine
+  // a reply already in flight (see startSynth) — this counter is what eventually lets it, so a genuinely dead
+  // provider costs a couple of round-trips per reply instead of one per sentence.
+  let replyFails = 0;
+  let replyTried = false;  // has the reply currently speaking already ATTEMPTED a synth? Only then may it
+                           // outrank the cold-off — a BRAND-NEW reply still honors it in full (no hammering).
+  const MID_REPLY_GIVEUP = 2;
   let fbStreak = 0;        // consecutive neural failures (reset by the next neural success)
   let fbNotified = '';     // reason class already surfaced this outage — notify once, not once per sentence
+  /* A reason is a semicolon-joined LADDER of everything the sidecar tried, not one verdict:
+       'no key; edge: edge timeout'                              (keyless station, the free floor blipped)
+       'openrouter 402 — insufficient credits; edge: empty audio' (wallet empty AND the floor blipped)
+     Two different questions get asked of it, and answering both with one terminal-class-first substring
+     test was the bug: on a keyless station 'no key' is a STRUCTURAL constant the sidecar always prefixes,
+     so the transient half was invisible — the one-shot retry never fired, the 60s billing cold-off armed
+     instead of the 4s one, and the tooltip demanded a credential for a network hiccup on a voice path that
+     is keyless by design. Split the two questions:
+       classifyFallback  -> WHAT TO SAY   (the worst thing that is actually actionable)
+       retryableFallback -> HOW LONG TO BACK OFF (is any leg worth trying again in seconds?) */
+  // An empty wallet will not fix itself. NB 'insufficient_quota' is OpenAI's TERMINAL billing error and
+  // must stay here, while Gemini answers a PER-MINUTE 429 with "Quota exceeded for quota metric" — a bare
+  // /quota/ test conflated the two and bought 60s of silence for something that clears in seconds.
+  const TERMINAL_BILLING = /\b402\b|insufficient[ _-]?credit|insufficient[ _-]?quota|payment required|billing|out of credit/i;
+  const TRANSIENT_LEG = /\b429\b|\b5\d\d\b|rate[ _-]?limit|quota exceeded|too many requests|timeout|timed out|temporarily|unavailable|unreachable|network|socket|ECONN|ETIMEDOUT|EAI_AGAIN|empty audio|aborted/i;
   function classifyFallback(reason) {
-    if (/no key/i.test(reason)) return 'nokey';
-    if (/\b402\b|insufficient credit|payment|billing|quota/i.test(reason)) return 'credits';
+    const r = String(reason == null ? '' : reason);
+    if (TERMINAL_BILLING.test(r)) return 'credits';
+    // 'no key' is structural. With a transient leg in the ladder the station does NOT need a credential —
+    // the free floor does have voice and simply blipped, so sending the user to buy a key would be a lie.
+    if (/no key/i.test(r)) return TRANSIENT_LEG.test(r) ? 'error' : 'nokey';
     return 'error';
+  }
+  function retryableFallback(reason) {
+    const r = String(reason == null ? '' : reason);
+    if (TRANSIENT_LEG.test(r)) return true;                        // something in the ladder may well work now
+    if (TERMINAL_BILLING.test(r) || /no key/i.test(r)) return false;
+    return true;                                                   // an unclassified error is treated as transient
   }
   // TRUTHFUL TELEMETRY, off the header. The voice swap must never be silent, but the COMMS status bar
   // (#chat-status) is for RUN-STATE only — never voice-outage banners (Andrew 2026-07-13: "there should
@@ -135,8 +224,9 @@ const Voice = (() => {
   function noteFallback(reason) {
     fbStreak++;
     const cls = classifyFallback(reason);
-    // 'no key' and 'credits' are non-transient → a longer 60s cold-off (any speaker-toggle clears it).
-    if (cls === 'credits' || cls === 'nokey') neuralColdUntil = Date.now() + BILLING_COLD_MS;
+    // The long cold-off is bought by IRRECOVERABILITY, not by the message class: a ladder whose last leg
+    // was a timeout or a rate limit is worth retrying in seconds even when an earlier leg said 402.
+    if (!retryableFallback(reason)) neuralColdUntil = Date.now() + BILLING_COLD_MS;
     if (fbNotified === cls || (cls === 'error' && fbStreak < 3)) return;
     fbNotified = cls;
     // Truthful: there is no "backup voice" anymore — a failed chunk plays nothing and the reply stays
@@ -146,7 +236,10 @@ const Voice = (() => {
       : '🔇 real voice unreachable · reply shown as text';
     if (toggleBtn) toggleBtn.title = fbMsg;
   }
-  function noteNeuralOk() { fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
+  // a chunk actually spoke → the neural path is PROVEN alive, so LIFT the cold-off too. Without this, a
+  // single blip's 4s cold-off kept suppressing the rest of the reply (and the next reply's opening words)
+  // even though the very next call would have succeeded.
+  function noteNeuralOk() { fbStreak = 0; replyFails = 0; neuralColdUntil = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
   // ANY toggle of the speaker button clears all cold-offs and re-probes the neural path fresh (no latch).
   function clearNeuralCold() { neuralColdUntil = 0; fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; } }
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
@@ -199,6 +292,7 @@ const Voice = (() => {
   async function prewarmVoice() {
     if (!speakReplies) return;
     if (Date.now() < neuralColdUntil) return;        // neural path cooling off after a failure → don't hammer
+    if (draining) return;                            // a LIVE reply owns the voice path — never warm in front of it
     if (prewarmedFor === activePersonaId) return;   // already warmed this persona's shelf
     prewarmedFor = activePersonaId;
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
@@ -210,6 +304,10 @@ const Voice = (() => {
     for (const raw of lines) {
       const text = speakable(raw);
       if (!text) continue;
+      // a reply started mid-warm → YIELD the provider to it at once. Background warm calls racing the live
+      // reply's chunks is exactly how a rate-limited provider 429s the reply's second sentence — and a single
+      // failed chunk is what used to take the whole rest of the reply down with it. Re-armed for a later warm.
+      if (draining) { prewarmedFor = null; break; }
       try {
         // warm the SAME cache key the live path will request (model|voice|style|text) — we only need the
         // sidecar to synthesize + cache it; we discard the audio. A failure is silent (best-effort).
@@ -274,8 +372,18 @@ const Voice = (() => {
     return out;
   }
 
-  let currentAudio = null;
-  function stopAudio() { if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; } }
+  let currentAudio = null, currentAudioCleanup = null;
+  function stopAudio() {
+    if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
+    // pause() does not fire `ended`, so revoke the blob URL here as well as on a natural finish.
+    // This path is used by barge-in and replacement playback and must not leak one URL per turn.
+    if (currentAudioCleanup) {
+      const cleanup = currentAudioCleanup;
+      currentAudioCleanup = null;
+      try { cleanup(); } catch (_) {}
+    }
+    onSpeakEnd();
+  }
 
   /* ---- "transmission" color on neural playback -------------------------------------------------
      A subtle atmosphere pass so the crew sounds like a voice coming over the station's comms, not a
@@ -286,6 +394,9 @@ const Voice = (() => {
      WebAudio, a browser that won't route a blob through MediaElementSource) falls back to plain <audio>. */
   const TRANSMISSION_FX = true;   // module toggle — set false to ship the neural voice dry
   let fxCtx = null, fxIn = null, fxReady = false, fxBroken = false;
+  // A TAP on the chain's output, so the live panel can meter the agent's voice from the SAME signal the
+  // speakers get. Its own try/catch: an engine without createAnalyser must lose the meter, never the voice.
+  let fxAnalyser = null;
   // a mild tanh-ish curve → gentle harmonic warmth, NOT distortion. `k` small = barely-there.
   function makeSaturationCurve(k) {
     const n = 1024, curve = new Float32Array(n);
@@ -312,6 +423,8 @@ const Voice = (() => {
       drive.connect(out);                 // dry (processed) path
       drive.connect(delay); delay.connect(echo); echo.connect(out);   // slapback path
       out.connect(fxCtx.destination);
+      // parallel tap — an AnalyserNode reads whatever reaches it and needs no output of its own
+      try { fxAnalyser = fxCtx.createAnalyser(); fxAnalyser.fftSize = 1024; out.connect(fxAnalyser); } catch (_) { fxAnalyser = null; }
       fxReady = true;
       return true;
     } catch (_) { fxBroken = true; try { if (fxCtx) fxCtx.close(); } catch (__) {} fxCtx = null; fxIn = null; return false; }
@@ -339,6 +452,7 @@ const Voice = (() => {
      and digitize rise but never below 0.15 (the human stays underneath). Its own AudioContext; a shell persona
      BYPASSES routeThroughFx. Fully guarded: any failure → the caller's transmission/dry fallback. */
   let shCtx = null, shIn = null, shN = null, shBroken = false;
+  let shAnalyser = null;    // the shell chain's own output tap (see fxAnalyser)
   function makeQuantCurve(bits) {
     const n = 4096, c = new Float32Array(n), L = Math.pow(2, bits);
     for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.round(x * L) / L; }
@@ -386,6 +500,7 @@ const Voice = (() => {
       peak.connect(quant); quant.connect(qMix); qMix.connect(out);
       peak.connect(conv); conv.connect(revMix); revMix.connect(out);
       out.connect(shCtx.destination);
+      try { shAnalyser = shCtx.createAnalyser(); shAnalyser.fftSize = 1024; out.connect(shAnalyser); } catch (_) { shAnalyser = null; }
       shN = { comb: { fb, mix }, comb2: { fb: fb2, mix: mix2 }, rmMix, quant, qMix, revMix, peak, dry };
       return true;
     } catch (_) { shBroken = true; try { if (shCtx) shCtx.close(); } catch (__) {} shCtx = null; shIn = null; return false; }
@@ -418,12 +533,26 @@ const Voice = (() => {
   // voice register (persona ttsDeep). Vendor-prefixed setters for older engines; all guarded.
   function playBlob(blob, onEnd, volume, onFail, rate, deep, shell) {
     let url = null, a = null, done = false;
-    const cleanup = () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } if (currentAudio === a) currentAudio = null; };
+    const cleanup = () => {
+      if (url) { try { URL.revokeObjectURL(url); } catch (_) {} url = null; }
+      if (currentAudio === a) currentAudio = null;
+      if (currentAudioCleanup === cleanup) currentAudioCleanup = null;
+    };
     const endOk = () => { if (done) return; done = true; cleanup(); onSpeakEnd(); onEnd && onEnd(); };
+    const endFailed = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      // A decode error may arrive after `onplay`; always leave speaking + metering before advancing.
+      onSpeakEnd();
+      if (onFail) onFail();
+      else if (onEnd) onEnd();
+    };
     try {
       stopAudio();
       url = URL.createObjectURL(blob);
       a = new Audio(url); currentAudio = a;
+      currentAudioCleanup = cleanup;
       a.volume = (volume == null ? 1 : volume);
       if (rate && rate > 0) a.playbackRate = Math.max(0.5, Math.min(2, rate));
       if (deep) { try { a.preservesPitch = false; } catch (_) {} try { a.webkitPreservesPitch = false; } catch (_) {} try { a.mozPreservesPitch = false; } catch (_) {} }
@@ -433,20 +562,23 @@ const Voice = (() => {
       // own output goes silent, so ONLY route when the graph actually wires up.
       // A persona with a machine shell (Ultron) routes through the shell and SKIPS the transmission color; if
       // the shell graph can't wire, fall back to transmission (best-effort) rather than nothing.
-      if (!(shell && routeThroughShell(a, shell))) routeThroughFx(a);
+      // remember WHICH chain took this element — that chain's tap is what the live meter reads.
+      if (shell && routeThroughShell(a, shell)) outAnalyser = shAnalyser;
+      else if (routeThroughFx(a)) outAnalyser = fxAnalyser;
+      else outAnalyser = null;              // dry playback: no tap, so the meter reports nothing rather than lying
       a.onplay = () => onSpeakStart();
       a.onended = endOk;
       // a decode/format error on the neural blob is exactly the "try the browser voice" case — route
       // it to onFail (fallback) rather than treating it as a clean finish (which would go SILENT).
-      a.onerror = () => { if (done) return; done = true; cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); };
+      a.onerror = endFailed;
       const p = a.play();
       if (p && p.catch) p.catch(err => {
-        if (done) return; done = true; cleanup();
+        if (done) return;
         // browser still blocking audio (no gesture yet) → tell the user instead of going silently quiet
         if (err && err.name === 'NotAllowedError') setStatus('🔇 tap anywhere to turn on the agent\'s voice');
-        onFail ? onFail() : endOk();
+        endFailed();
       });
-    } catch (_) { cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); }
+    } catch (_) { endFailed(); }
   }
 
   /* Browsers block programmatic <audio> playback until the page has had a user gesture — so right after a
@@ -476,6 +608,13 @@ const Voice = (() => {
      every fetch gap, so the hands-free mic can't re-open into the agent's own voice (echo). Bumping
      `speakSeq` (barge-in / teardown) invalidates every in-flight fetch + queued playback at once. */
   let jobs = [];          // queued chunks: { text, opts, seq, result(Promise), ac(AbortController) }
+  let preferLocalTts = false;
+  /* Which built-in voice speaks. Saved per station; empty falls back to the engine's default (male).
+     Read at SPEAK time, not cached, so changing it in Settings takes effect on the very next line. */
+  const LOCAL_VOICE_KEY = 'starnet.liveVoice.localVoice.v1';
+  function localVoiceId() {
+    try { return String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) { return ''; }
+  }
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -487,39 +626,64 @@ const Voice = (() => {
   const MAX_INFLIGHT = 2;        // synth at most this many chunks ahead of playback
   const TTS_CHUNK_MAX = 1000;    // keep each synth call under the sidecar's 1200-char cap
 
-  function resetQueue() { jobs = []; playIdx = 0; synthIdx = 0; draining = false; playing = false; replyClosed = true; }
+  function resetQueue() { jobs = []; playIdx = 0; synthIdx = 0; draining = false; playing = false; replyClosed = true; replyFails = 0; replyTried = false; }
 
   // begin synthesizing one job → resolves to {kind:'neural',blob} | {kind:'silent'} | {kind:'skip'}.
   // 'neural' plays; 'silent' means "no neural audio for this chunk — advance the queue, stay quiet" (there
   // is NO robotic fallback); 'skip' is an intentional barge-in/teardown cancel. The page holds no key on
   // desktop — the sidecar /api/tts resolves its own credential (keychain/env) or the free keyless floor.
-  function startSynth(job) {
-    if (job.result) return;
+  // ONE round-trip for one chunk → {kind:'neural',blob} | {kind:'fail',reason} | {kind:'skip'}. Deliberately
+  // records NO failure state: startSynth owns the retry/cold-off policy so a retried blip isn't counted twice.
+  function synthOnce(job) {
     const cred = ttsCred(), cfg = ttsConfig();
-    // always ask the sidecar — it owns the tier ladder and decides what it can serve. Only skip the
-    // round-trip while the neural path is cooling off after a recent failure (no permanent latch).
-    if (Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'silent' }); return; }
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
-    job.result = fetch('/api/tts', {
+    return fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-      body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(), text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+      body: JSON.stringify({
+        key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
+        text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
+        local: preferLocalTts, localVoice: localVoiceId(), speed: cfg.speed
+      })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
-      if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) { noteNeuralOk(); return { kind: 'neural', blob }; } }
+      if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
       let reason = 'http ' + r.status;
       try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
-      // cool the neural path off briefly (noteFallback lengthens this for 'no key'/'credits'); never latch.
-      neuralColdUntil = Date.now() + NEURAL_COLD_MS;
-      console.warn('[voice] neural TTS unavailable → chunk silent:', reason);
-      noteFallback(reason);
-      return { kind: 'silent' };
+      return { kind: 'fail', reason };
     }).catch(e => {
       if (e && e.name === 'AbortError') return { kind: 'skip' };   // intentionally cancelled — stay silent
-      console.warn('[voice] neural TTS error:', (e && e.message) || e);
-      neuralColdUntil = Date.now() + NEURAL_COLD_MS;
-      noteFallback('network: ' + ((e && e.message) || e));
-      return { kind: 'silent' };
+      return { kind: 'fail', reason: 'network: ' + ((e && e.message) || e) };
     });
+  }
+  function startSynth(job) {
+    if (job.result) return;
+    // always ask the sidecar — it owns the tier ladder and decides what it can serve. The cold-off exists so
+    // a DEAD provider isn't hammered once per sentence, but it must NEVER guillotine a reply that is ALREADY
+    // SPEAKING: one transient blip on the second chunk used to skip every remaining chunk's round-trip, so the
+    // agent stopped dead after its opening words ("it only says the first word", reported 2026-07-28). While a
+    // reply is mid-flight we keep asking until THIS reply has failed MID_REPLY_GIVEUP times in a row; only then
+    // does the cold-off apply to it. A reply that has not yet attempted anything (replyTried false — i.e. its
+    // OPENING chunk) still honors the cold-off in full, so a dead provider is not hammered once per sentence.
+    if (Date.now() < neuralColdUntil && (!replyTried || replyFails >= MID_REPLY_GIVEUP)) { job.result = Promise.resolve({ kind: 'silent' }); return; }
+    replyTried = true;
+    const seq = job.seq;
+    job.result = synthOnce(job)
+      // ONE immediate retry for a TRANSIENT failure (429 / network / 5xx) — a single provider blip must cost a
+      // beat of latency, not a whole sentence of the reply. A missing credential and an empty wallet are NOT
+      // transient: don't burn a second call on them. Ask retryableFallback, not the message class: a keyless
+      // station's reason ALWAYS carried the structural 'no key', which made this branch dead code there.
+      // A torn-down job (barge-in bumped speakSeq) is never retried.
+      .then(res => (res.kind === 'fail' && retryableFallback(res.reason) && seq === speakSeq) ? synthOnce(job) : res)
+      .then(res => {
+        if (res.kind === 'neural') { noteNeuralOk(); return res; }
+        if (res.kind === 'skip') return res;   // intentional barge-in/teardown cancel — not a failure
+        replyFails++;
+        // cool the neural path off briefly (noteFallback lengthens this for 'no key'/'credits'); never latch.
+        neuralColdUntil = Date.now() + NEURAL_COLD_MS;
+        console.warn('[voice] neural TTS unavailable → chunk silent:', res.reason);
+        noteFallback(res.reason);
+        return { kind: 'silent' };
+      });
   }
   function pumpSynth() { while (synthIdx < jobs.length && (synthIdx - playIdx) < MAX_INFLIGHT) startSynth(jobs[synthIdx++]); }
 
@@ -582,6 +746,7 @@ const Voice = (() => {
     let body = opts.mutter ? clean.slice(0, 80) : clean;
     if (!body.trim()) return;
     const opening = (jobs.length === 0);   // FIRST chunk of this reply → eligible for the fast-path lead split
+    if (!opts.mutter) coordinatorEvent('onAssistant', { text: body, opening });
     replyClosed = false; draining = true;
     // on the opening chunk, peel a short lead so the first synth call (and thus first audio) is fast.
     let pieces;
@@ -661,6 +826,17 @@ const Voice = (() => {
   // through all of it, or the re-opened mic would capture the agent's own voice (echo). (No synth queue
   // to consider — neural is the only voice path now.)
   function talking() { return draining || playing || !!currentAudio; }
+  /* MUTING MID-REPLY MUST NOT WEDGE HANDS-FREE. The rearm heartbeat has exactly two triggers: chat.js's
+     onTurnEnd(), which lands FIRST while audio is still draining and then correctly bails (the mic must
+     never open into the agent's own voice), and the queue's onReplyDone. stopSpeaking() nulls onReplyDone,
+     so muting the speaker while the agent was still speaking discarded the ONE surviving trigger — the mic
+     never re-opened and the mode button went on reading 'hands-free ON' over a dead conversation. Every
+     other stopSpeaking() caller covers itself (onMicClick re-arms after 150ms, stopConvo/init leave the
+     mode entirely); the two mute paths were the leak, so they share this one. */
+  function muteStopSpeaking() {
+    stopSpeaking();
+    if (convoMode) maybeRearm();
+  }
   function maybeRearm() {
     if (!convoMode || !canListen() || rearmTimer) return;
     if (busyNow() || listening || talking()) return;   // not ready — a finishing event re-calls this
@@ -677,13 +853,14 @@ const Voice = (() => {
     if (!canListen()) return;
     clearResumeCue();
     convoMode = !convoMode;
+    coordinatorEvent('onState', 'listening');
     if (typeof SFX !== 'undefined') SFX.open();
     if (convoMode) {
       savePref(LS_CONVO, true);   // remember the hands-free intent so a refresh can offer one-tap resume
       if (!speakReplies) { speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle(); }  // you have to hear it (restored on exit)
       emptyStreak = 0;
       reflectMode();
-      if (!busyNow() && !listening && !speaking) startListening();
+      if ((!busyNow() || coordinator) && !listening && !speaking) startListening();
       else setStatus('voice mode on');
     } else {
       savePref(LS_CONVO, false);   // deliberate exit — don't nag to resume next session
@@ -706,12 +883,15 @@ const Voice = (() => {
     if (forcedSpeak) { forcedSpeak = false; speakReplies = false; savePref(LS_SPEAK, false); reflectToggle(); }
     reflectMode();
     if (was && !busyNow()) setStatus('online');
+    if (was) coordinatorEvent('onState', 'ended');
   }
 
   // a silent listen in voice mode: try again a few times, then go passive so the mic isn't hot forever.
   function handleEmptyListen() {
     emptyStreak++;
-    if (emptyStreak >= MAX_EMPTY) { emptyStreak = 0; setStatus('voice mode — tap 🎤 when ready'); return; }
+    // Hands-free gave up after three "empty" listens without ever naming why. If those listens failed for a
+    // REASON (a 403 after a respawn, a provider 500), say that instead of implying nobody spoke.
+    if (emptyStreak >= MAX_EMPTY) { emptyStreak = 0; setStatus(takeDiag() || 'voice mode — tap 🎤 when ready'); return; }
     maybeRearm();
   }
 
@@ -858,6 +1038,20 @@ const Voice = (() => {
       if (key) headers['X-OpenRouter-Key'] = key;
       const r = await fetch('/api/stt', { method: 'POST', headers, body: blob });
       const j = await r.json().catch(() => ({}));
+      /* CHECK r.ok. `fetch` RESOLVES on 4xx/5xx, and the route's honest 200-degrade envelope is not the only
+         thing that can come back: rejectBadApiToken answers 403 with the plain text 'forbidden token' BEFORE
+         the route table is reached — the documented state after a sidecar respawn, where the page still holds
+         the old X-StarNet-Token — and any 5xx/HTML/empty error body behaves the same. r.json() then rejects,
+         the catch yields {}, and an UNREACHABLE endpoint was laundered into a CONFIRMED-EMPTY transcript:
+         the user's spoken sentence disappeared with no error and no diagnostic, byte-identical to having said
+         nothing into a dead room. An unknown is not an empty. */
+      if (!r.ok && !(j && (j.text || j.reason))) {
+        const reason = r.status === 403
+          ? 'the station restarted — reload the page to reconnect'
+          : 'transcription unreachable (HTTP ' + r.status + ')';
+        console.warn('[voice] STT HTTP', r.status);
+        return { text: '', reason, failed: true };
+      }
       if (j && j.reason) console.warn('[voice] STT:', j.reason);
       return { text: (j && j.text) || '', reason: j && j.reason };
     }
@@ -868,7 +1062,9 @@ const Voice = (() => {
       if (aborted || !blob || !blob.size) { cb && cb.onEnd && cb.onEnd(); return; }
       transcribe(blob).then(({ text, reason }) => {
         if (aborted) { cb && cb.onEnd && cb.onEnd(); return; }
-        if (!text && reason) { setStatus('voice: ' + String(reason).slice(0, 60)); maybeFallbackToWebSpeech(reason); }
+        // setDiagStatus, not setStatus: cb.onEnd() below runs endListening() in this same synchronous block
+        // and its restore would otherwise repaint 'online' over this before a single frame is drawn.
+        if (!text && reason) { setDiagStatus('voice: ' + String(reason).slice(0, 60)); maybeFallbackToWebSpeech(reason); }
         cb && cb.onFinal && cb.onFinal(String(text || '').trim());
         cb && cb.onEnd && cb.onEnd();
       }).catch(e => {
@@ -937,6 +1133,35 @@ const Voice = (() => {
     return { name: 'recorder', start, stop, abort };
   })();
 
+  // OAuth Live fallback for embedded Windows WebView2, which has MediaRecorder but no SpeechRecognition.
+  // The local sidecar invokes the OS dictation engine against the default mic; no cloud speech key is used.
+  const nativeSpeechProvider = (() => {
+    let ac = null, hooks = null;
+    async function start(h) {
+      hooks = h; ac = new AbortController();
+      try {
+        const r = await fetch('/api/stt/native', { method: 'POST', signal: ac.signal });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error && !j.text) {
+          if (j.error === 'no-speech') hooks && hooks.onError && hooks.onError('no-speech');
+          else hooks && hooks.onError && hooks.onError('native-unavailable');
+        } else if (j.text) hooks && hooks.onFinal && hooks.onFinal(j.text);
+      } catch (e) {
+        if (!(e && e.name === 'AbortError')) hooks && hooks.onError && hooks.onError('native-unavailable');
+      } finally {
+        const done = hooks; hooks = null; ac = null;
+        if (done && done.onEnd) done.onEnd();
+      }
+    }
+    function stop() {
+      const done = hooks; hooks = null;
+      if (ac) { try { ac.abort(); } catch (_) {} ac = null; }
+      if (done && done.onEnd) done.onEnd();
+    }
+    function abort() { stop(); }
+    return { name: 'native', start, stop, abort };
+  })();
+
   /* provider selection: prefer the RECORDER (server Whisper via /api/stt) wherever the mic can be recorded.
      Browser-native SpeechRecognition (Chrome) is Google-served and CENSORS profanity to asterisks with no
      opt-out — the station must transcribe what you actually said, so web-speech is only the fallback:
@@ -963,7 +1188,7 @@ const Voice = (() => {
 
   function startListening() {
     if (!canListen() || listening) return;
-    if (busyNow()) { setStatus('busy — wait for the reply'); return; }  // don't talk over a live run
+    if (busyNow() && !coordinator) { setStatus('busy — wait for the reply'); return; }  // classic mode stays half-duplex
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
     listening = true; sentThisListen = false; discarding = false; setMicState(true);
@@ -973,6 +1198,7 @@ const Voice = (() => {
     if (typeof SFX !== 'undefined') SFX.open();
     sttProvider.start({
       onInterim: t => {
+        coordinatorEvent('onInterim', String(t || ''));
         // DRAFT PROTECTION: an interim may only replace what dictation itself wrote — never a typed draft.
         // A non-empty composer that isn't our own last interim means the Commander is typing; leave it alone
         // (the status line still shows 'listening…', so dictation isn't silently lost — it lands via onFinal).
@@ -982,6 +1208,7 @@ const Voice = (() => {
       },
       onFinal: text => { submitTranscript(text); },
       onError: msg => {
+        coordinatorEvent('onError', String(msg || 'speech recognition failed'));
         // a DENIED mic is a hard stop, not a recoverable hiccup: don't silently retry/re-arm into a mic
         // that can never open — drop hands-free and tell the user the real problem + how to fix it.
         if (msg === 'not-allowed' || msg === 'service-not-allowed') {
@@ -1011,7 +1238,10 @@ const Voice = (() => {
     if (convoMode && !sentThisListen && !busyNow() && !speaking) { handleEmptyListen(); return; }
     // otherwise restore whatever status was showing before we grabbed the mic (a send already set
     // 'thinking…'/'working…' via Chat, so this only fires for a plain idle stop).
-    if (!busyNow() && !speaking) setStatus(savedStatus || (convoMode ? 'voice mode on' : 'online'));
+    // A diagnostic written by this listen OUTRANKS the restore — savedStatus was captured at startListening,
+    // before the failure existed, so it can never carry it.
+    if (!busyNow() && !speaking) setStatus(takeDiag() || savedStatus || (convoMode ? 'voice mode on' : 'online'));
+    coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready');
   }
 
   // a final transcript from the mic — sent exactly like a typed message (busy/purpose/task/cost logic
@@ -1038,7 +1268,9 @@ const Voice = (() => {
     // a dedicated "got it" cue (not the generic send click) so the user knows their words landed —
     // closes the perceived gap until the agent's first spoken word.
     if (typeof SFX !== 'undefined') (SFX.think || SFX.click)();
-    if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
+    let handled = false;
+    try { handled = !!(coordinator && typeof coordinator.onTranscript === 'function' && coordinator.onTranscript(t)); } catch (_) {}
+    if (!handled && typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
   }
 
   // mic button: interrupt the agent if it's talking (barge-in), else start/stop a listen. In voice
@@ -1056,6 +1288,29 @@ const Voice = (() => {
   function toggleListen() {
     if (!canListen()) return;
     if (listening) stopListening(); else startListening();
+  }
+
+  // OAuth/local live mode keeps authentication on the existing Chat/Codex path and deliberately selects
+  // browser speech recognition for input, so the voice layer itself needs no transcription API credential.
+  function startCoordinator(hooks) {
+    if (!SR && typeof fetch === 'undefined') return false;
+    coordinator = hooks || {};
+    sttProvider = SR ? webSpeechProvider : nativeSpeechProvider;
+    if (!convoMode) toggleVoiceMode();
+    else if (!listening && !talking()) startListening();
+    return true;
+  }
+  function stopCoordinator() {
+    if (convoMode) stopConvo();
+    coordinator = null;
+  }
+  // The downloaded local speech surface owns its persistent microphone/VAD loop, but still needs the mature
+  // reply-stream hooks (captions, speaking state, barge-in) from this module.
+  function attachCoordinator(hooks) { coordinator = hooks || {}; return true; }
+  function detachCoordinator() {
+    // End the meter while its listener still exists so the panel receives the final zero sample.
+    stopOutputMeter();
+    coordinator = null;
   }
 
   /* ======================================================================
@@ -1080,7 +1335,14 @@ const Voice = (() => {
     if (!toggleBtn) return;
     toggleBtn.classList.toggle('off', !speakReplies);
     toggleBtn.innerHTML = speakReplies ? ICON.spkOn : ICON.spkOff;
-    toggleBtn.title = speakReplies ? 'agent voice: ON — click to mute' : 'agent voice: OFF — click to unmute';
+    /* The pinned degrade reason OUTRANKS the plain on/off copy. This tooltip is the only sanctioned channel
+       for voice-outage telemetry (#chat-status is run-state only), so overwriting it unconditionally left the
+       station silent while asserting 'agent voice: ON' with no way to find out why — the exact 2026-07-07
+       escape the fbMsg machinery exists to prevent. Every path that legitimately clears the reason calls
+       clearNeuralCold()/noteNeuralOk() first, which empty fbMsg; init() did not, and it runs on agent focus,
+       persona change and dossier apply. Guarding here covers every caller instead of one. */
+    toggleBtn.title = (speakReplies && fbMsg) ? fbMsg
+      : (speakReplies ? 'agent voice: ON — click to mute' : 'agent voice: OFF — click to unmute');
     toggleBtn.setAttribute('aria-pressed', speakReplies ? 'true' : 'false');
     toggleBtn.setAttribute('aria-label', speakReplies ? 'Agent voice: on, click to mute' : 'Agent voice: off, click to unmute');
   }
@@ -1115,7 +1377,7 @@ const Voice = (() => {
     speakReplies = !speakReplies; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;   // a manual speaker change is the user's own choice — keep it (don't restore on voice-mode exit)
     clearNeuralCold();     // ANY toggle re-probes the neural path fresh — no cold-off survives a deliberate flip
-    if (!speakReplies) stopSpeaking();
+    if (!speakReplies) muteStopSpeaking();
     else prewarmVoice();   // turning ON → quietly warm the stock lines so mutters/samples play instantly
     reflectToggle();
     if (typeof SFX !== 'undefined') SFX.click();
@@ -1126,7 +1388,7 @@ const Voice = (() => {
     if (speakReplies === want) { reflectToggle(); return speakReplies; }
     speakReplies = want; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;
-    if (!speakReplies) stopSpeaking();
+    if (!speakReplies) muteStopSpeaking();
     else prewarmVoice();
     reflectToggle();
     return speakReplies;
@@ -1185,7 +1447,28 @@ const Voice = (() => {
     init, speak, speakChunk, endReply, mutter, ambientLine, setAgent, isOn, setSpeakReplies,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
-    canListen, canSpeak, personaId: () => activePersonaId,
+    canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
+    canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
+    setLocalTts: value => { preferLocalTts = !!value; },
+    /* LIVE VOICE MUST ARRIVE AUDIBLE. Opening a hands-free session with the speaker muted is a room where you
+       talk and nothing answers — the Commander then has to find a toggle to make the feature work at all.
+       Classic voice mode already force-enables the speaker in toggleVoiceMode(); the Local Live panel does not
+       route through that, so it needs the same lever. Reuses the SAME `forcedSpeak` bookkeeping, so a speaker
+       WE switched on is restored on exit while one the Commander chose themselves is left alone. */
+    forceSpeakOn: () => {
+      if (speakReplies) return false;          // already audible — nothing to restore later
+      speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle();
+      return true;
+    },
+    restoreSpeak: () => {
+      if (!forcedSpeak) return false;          // the Commander's own choice — never undo it
+      forcedSpeak = false; speakReplies = false; savePref(LS_SPEAK, false); reflectToggle();
+      return true;
+    },
+    // Which transcription engine is ACTUALLY selected right now ('recorder' | 'web' | 'native'). A UI that
+    // names the engine has to read it rather than re-derive the selection rule, or the label drifts from
+    // the truth the moment the ladder changes.
+    sttEngine: () => (sttProvider && sttProvider.name) || '',
     isListening: () => listening, isSpeaking: () => speaking, inVoiceMode: () => convoMode
   };
 })();

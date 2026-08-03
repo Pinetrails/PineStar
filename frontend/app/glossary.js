@@ -34,6 +34,7 @@
     // the WORK vocabulary, each on ONE axis (UX confusion audit 2026-07-15: recipe=WHAT to run,
     // routine=WHEN it runs, task=WHERE live work sits, quest=progress/suggestions — never a place work lives).
     routine:      'a recipe or job put on a schedule (every morning, hourly) — WHEN work runs; manage them in ⏱ ROUTINES.',
+    loop:         'one objective an agent keeps working at, stopping each time for your yes or no — UNTIL it is done, not on a clock. Your verdict is what starts the next pass; it costs nothing while it waits. Manage them in ∞ LOOPS.',
     recipe:       'a ready-made job an agent can run right now — WHAT to run; launching one lands it on the ☑ TASK BOARD.',
     task:         'one piece of work in flight — every run you or a recipe starts lives on the ☑ TASK BOARD.',
     quest:        'a suggestion or progress marker from the station — accepting one starts real work; it is never a second to-do list.',

@@ -16,7 +16,15 @@
     builtin: { safe: 'allow', caution: 'allow', dangerous: 'allow' },
     trusted: { safe: 'allow', caution: 'allow', dangerous: 'block' },
     community: { safe: 'allow', caution: 'block', dangerous: 'block' },
-    'agent-created': { safe: 'allow', caution: 'allow', dangerous: 'ask' }
+    'agent-created': { safe: 'allow', caution: 'allow', dangerous: 'ask' },
+    /* THE COMMANDER IS THE APPROVER, SO THEY GET ASK — NOT BLOCK. A skill the human typed into
+       the SKILLS panel used to be scanned as 'trusted', whose answer for dangerous content is
+       block; with the gate now enforcing verdicts that made a dead end — you write `rm -rf` into
+       your own local procedure on purpose, and the only surface that could bless it is the one
+       refusing you, with no key anywhere ("sandbox, no gating" cuts against that). 'trusted'
+       still means what it says for content that arrives claiming to be vetted by someone else
+       (a future hub install), where a dangerous pattern is evidence the claim is false. */
+    user: { safe: 'allow', caution: 'allow', dangerous: 'ask' }
   };
   const ORDER = { safe: 0, caution: 1, dangerous: 2 };
   const PATTERNS = [

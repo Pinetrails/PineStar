@@ -590,12 +590,6 @@ function cdpDeadline(deadline, capMs) {
   return Math.min(Number(deadline) || (Date.now() + capMs), Date.now() + capMs);
 }
 
-function safeScheme(url) {
-  try {
-    const protocol = new URL(str(url), 'http://invalid.local/').protocol;
-    return ['blob:', 'http:', 'https:', 'file:'].includes(protocol) ? protocol : '';
-  } catch (_) { return ''; }
-}
 
 export function makeCdpInstalledDriver(options = {}) {
   const port = Number(options.port) || 9333;
@@ -606,13 +600,6 @@ export function makeCdpInstalledDriver(options = {}) {
       const cdp = await connectCDP(port);
       try { await cdp.send('Runtime.enable'); } catch (_) {}
       try { await cdp.send('Page.enable'); } catch (_) {}
-      try { await cdp.send('Target.setDiscoverTargets', { discover: true }); } catch (_) {}
-      const targetEvents = [];
-      cdp.on('Target.targetCreated', event => {
-        const info = event && event.targetInfo || {};
-        targetEvents.push({ at: Date.now(), type: str(info.type), scheme: safeScheme(info.url), urlSha256: sha256Text(str(info.url)) });
-        if (targetEvents.length > 20) targetEvents.shift();
-      });
 
       async function waitValue(read, deadline, interval = 250) {
         while (Date.now() < deadline) {
@@ -903,50 +890,44 @@ export function makeCdpInstalledDriver(options = {}) {
         },
 
         async openDeliverable({ deadline, deliverable }) {
+          // The deliverable link is a REAL /api/file href (query-token authed — the sidecar's documented
+          // native-load escape hatch). In the installed desktop build a _blank navigation is dead under the
+          // Tauri window policy, so the click hands that URL to the OS browser via the open_external_url
+          // command — instrument the invoke bridge to capture the handed URL, then bind that URL to the
+          // exact task bytes by fetching it IN-PAGE (which also proves the ?token= auth the link relies on).
           await evalJS(cdp, `(() => {
             if (window.__STARNET_W1_OPEN_INSTRUMENTED__) return true;
-            const original = window.open;
-            const originalCreate = URL.createObjectURL;
-            window.__STARNET_W1_OPEN_ORIGINAL__ = original;
-            window.__STARNET_W1_CREATE_ORIGINAL__ = originalCreate;
+            const core = window.__TAURI__ && window.__TAURI__.core;
+            if (!core || typeof core.invoke !== 'function') return false;
+            const original = core.invoke.bind(core);
+            window.__STARNET_W1_INVOKE_ORIGINAL__ = core.invoke;
             window.__STARNET_W1_OPEN_CALLS__ = [];
-            window.__STARNET_W1_BLOBS__ = [];
-            URL.createObjectURL = function(blob) {
-              const url = originalCreate.apply(this, arguments);
-              window.__STARNET_W1_BLOBS__.push({ url: String(url || ''), blob });
-              return url;
-            };
-            window.open = function(url) {
-              let accepted = false, ret = null;
-              try { ret = original.apply(this, arguments); accepted = !!ret; return ret; }
-              finally {
-                let scheme = ''; try { scheme = new URL(String(url || ''), location.href).protocol; } catch (_) {}
-                window.__STARNET_W1_OPEN_CALLS__.push({ accepted, scheme, url: String(url || '') });
-              }
+            core.invoke = function(cmd, args) {
+              if (String(cmd) !== 'open_external_url') return original(cmd, args);
+              const url = String((args && args.url) || '');
+              let scheme = ''; try { scheme = new URL(url, location.href).protocol; } catch (_) {}
+              const rec = { accepted: false, scheme, url };
+              window.__STARNET_W1_OPEN_CALLS__.push(rec);
+              return original(cmd, args).then(v => { rec.accepted = true; return v; });
             };
             window.__STARNET_W1_OPEN_INSTRUMENTED__ = true;
             return true;
           })()`);
-          const eventStart = targetEvents.length;
           const expectedSha256 = lower(deliverable && deliverable.sha256);
           const expectedSize = Number(deliverable && deliverable.size) || 0;
           const clicked = await clickSelector('.cmsg.deliverable .deliverable-link, .cmsg.recap .deliverable-link', 'hello.txt');
           if (!clicked) return { pointerClick: false, opened: false, deliverableSha256: '', deliverableSize: 0, targetBoundToBytes: false };
           const observed = await waitValue(async () => {
-            const call = await evalJS(cdp, `(async () => {
-              const a = window.__STARNET_W1_OPEN_CALLS__ || []; return a.length ? a[a.length - 1] : null;
-            })()`);
-            if (!call || call.scheme !== 'blob:' || !call.url) return null;
             const proof = await evalJS(cdp, `(async () => {
               const calls = window.__STARNET_W1_OPEN_CALLS__ || [];
               const call = calls.length ? calls[calls.length - 1] : null;
-              if (!call || !call.url) return null;
-              const rec = (window.__STARNET_W1_BLOBS__ || []).find(x => x && x.url === call.url);
-              if (!rec || !rec.blob) return null;
-              const bytes = new Uint8Array(await rec.blob.arrayBuffer());
+              if (!call || !call.url || call.accepted !== true) return null;
+              const res = await fetch(call.url, { cache: 'no-store' });   // auth rides the URL itself — no header
+              if (!res.ok) return null;
+              const bytes = new Uint8Array(await res.arrayBuffer());
               const digest = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', value))).map(b => b.toString(16).padStart(2, '0')).join('');
               return {
-                accepted: call.accepted === true, scheme: call.scheme,
+                scheme: call.scheme,
                 targetUrlSha256: await digest(new TextEncoder().encode(call.url)),
                 deliverableSha256: await digest(bytes), deliverableSize: bytes.byteLength,
                 contentVerified: new TextDecoder().decode(bytes).trim() === ${JSON.stringify(FIRST_TASK_CONTENT)}
@@ -954,10 +935,7 @@ export function makeCdpInstalledDriver(options = {}) {
             })()`);
             if (!proof || proof.deliverableSha256 !== expectedSha256 ||
                 Number(proof.deliverableSize) !== expectedSize || proof.contentVerified !== true) return null;
-            const target = targetEvents.slice(eventStart).find(x => x && x.urlSha256 === proof.targetUrlSha256 && x.scheme === proof.scheme);
-            if (target) return Object.assign({ mechanism: 'target-created', targetScheme: target.scheme }, proof);
-            if (proof.accepted) return Object.assign({ mechanism: 'window-open-accepted', targetScheme: proof.scheme }, proof);
-            return null;
+            return Object.assign({ mechanism: 'native-open-accepted', targetScheme: proof.scheme }, proof);
           }, cdpDeadline(deadline, 12000), 250);
           return {
             pointerClick: true, opened: !!observed,
@@ -971,10 +949,9 @@ export function makeCdpInstalledDriver(options = {}) {
         async close() {
           try {
             await evalJS(cdp, `(() => {
-              if (window.__STARNET_W1_OPEN_INSTRUMENTED__ && window.__STARNET_W1_OPEN_ORIGINAL__) window.open = window.__STARNET_W1_OPEN_ORIGINAL__;
-              if (window.__STARNET_W1_OPEN_INSTRUMENTED__ && window.__STARNET_W1_CREATE_ORIGINAL__) URL.createObjectURL = window.__STARNET_W1_CREATE_ORIGINAL__;
-              delete window.__STARNET_W1_OPEN_ORIGINAL__; delete window.__STARNET_W1_CREATE_ORIGINAL__;
-              delete window.__STARNET_W1_OPEN_CALLS__; delete window.__STARNET_W1_BLOBS__; delete window.__STARNET_W1_OPEN_INSTRUMENTED__;
+              if (window.__STARNET_W1_OPEN_INSTRUMENTED__ && window.__STARNET_W1_INVOKE_ORIGINAL__ && window.__TAURI__ && window.__TAURI__.core) window.__TAURI__.core.invoke = window.__STARNET_W1_INVOKE_ORIGINAL__;
+              delete window.__STARNET_W1_INVOKE_ORIGINAL__;
+              delete window.__STARNET_W1_OPEN_CALLS__; delete window.__STARNET_W1_OPEN_INSTRUMENTED__;
               return true;
             })()`);
           } catch (_) {}

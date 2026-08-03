@@ -5,7 +5,7 @@
    payload, a capdenied string — and the ↻ retry chip fired blindly regardless of WHY it failed. This
    maps any error (the thrown Error from Harness.chat + an optional HTTP status) to:
 
-     friendlyError(err, status) -> { userMessage, kind, retryable, action, raw }
+     friendlyError(err, status, opts) -> { userMessage, kind, retryable, action, raw, engineAlive }
 
    • userMessage — one plain-language sentence to LEAD the error row with.
    • kind        — a stable class (mirrors the sidecar classifier's reasons, plus the UI-level
@@ -48,7 +48,7 @@
   const CAP_INFO = {
     compute:      { power: 'a WORKSTATION', gear: 'a DESK',       does: 'run at all' },
     web:          { power: 'WEB ACCESS',    gear: 'a DISH',       does: 'search or fetch the web' },
-    cabinet:      { power: 'FILE ACCESS',   gear: 'a CABINET',    does: 'read or write files' },
+    cabinet:      { power: 'FILE ACCESS',   gear: 'an INTEL CAB', does: 'read or write files' },
     workbench:    { power: 'a TERMINAL',    gear: 'a WORKBENCH',  does: 'run commands or control the computer' },
     memory:       { power: 'MEMORY',        gear: 'a NOTEBOOK',   does: 'keep long-term memory' },
     studio:       { power: 'IMAGE TOOLS',   gear: 'a STUDIO',     does: 'generate or analyze images' },
@@ -70,9 +70,27 @@
   // action: 'settings' (fix the model key) · 'refit' (place the missing gear) · 'skills' (toggle a skill
   //   family) · 'store' (top up managed credit) · null (just retry / nothing).
   const KINDS = {
+    // ONLY for a fault PROVEN local: the raw carries "sidecar http 5xx" (our own service answered 500). A
+    // provider's 5xx/overloaded must never land here — a message naming a component owes proof it is at fault,
+    // and blaming the local service for an Anthropic/OpenRouter overload had users reporting "StarNet's servers
+    // are down" during every industry load spike (2026-07-30, the report wave behind this split).
     server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
+    // The PROVIDER's servers answered with an error/overload (5xx, "overloaded", "temporarily unavailable").
+    // StarNet is healthy and says so; retry is the primary door because provider load spikes pass.
+    provider_server_error: { retryable: true, action: null, msg: "The AI provider's servers are having trouble right now (overloaded or erroring) — StarNet itself is fine. Wait a moment and try again; if it keeps failing, switch model or provider in COMMS." },
     network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — if the app closed, restart it; if it restarted, reload this window, then try again." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is busy (too many requests) — wait a few seconds and try again.' },
+    // The sidecar is fine; its call OUT to the model provider failed (see isUpstreamFetchFailure). Say that, and
+    // say StarNet is healthy — the failure mode this replaces had users restarting and reinstalling for days over
+    // a message that named the wrong component. `action: null` on purpose: a provider blip is usually transient,
+    // so RETRY must stay the primary chip rather than a SETTINGS door that fixes nothing.
+    provider_unreachable: { retryable: true, action: null, msg: "StarNet is running fine, but it couldn't reach the AI provider — that's usually your internet connection, a VPN or proxy, or the provider having a moment. Try again; if it keeps failing, switch provider or model in SETTINGS." },
+    /* A SPENT ALLOWANCE is not a busy moment. A ChatGPT-subscription weekly quota resets in DAYS, so offering
+       "wait a few seconds and try again" made every retry doomed and told the user nothing they could act on.
+       The copy names the meter that was actually spent — the ChatGPT subscription, NOT API billing — and the
+       door is PROVIDERS, where a different key or provider can pick the work up now. retryable:false, so the
+       row offers no ↻ Try again. */
+    quota_exhausted: { retryable: false, action: 'settings', msg: "This provider's plan allowance is used up — it resets on the provider's own schedule (a ChatGPT subscription resets weekly, not in seconds). To keep working now, switch to another provider or key under SETTINGS → PROVIDERS." },
     // auth: the pure message is context-blind (classify time can't know if ChatGPT is already connected). It names the
     // one honest next step; the action BUTTON (actionButton) tailors the door — "add a key" vs "sign in with ChatGPT".
     auth:          { retryable: false, action: 'settings', msg: 'No model is connected yet — add a provider key (or sign in with ChatGPT) to let it run.' },
@@ -109,11 +127,12 @@
     unknown:       { retryable: true,  action: null,       msg: 'Something went wrong on that turn — try again.' }
   };
 
-  // the sidecar classifier speaks in `reason`s; map each onto our UI kind. (Most are 1:1; `overloaded` and
-  // `format_error` fold into the closest beginner-facing bucket.)
+  // the sidecar classifier speaks in `reason`s; map each onto our UI kind. Its whole domain is the PROVIDER
+  // API call (sidecar/providers/errorClass.js) — so its `server_error`/`overloaded` are the provider's fault
+  // by construction and map to provider_server_error, never to the local-service copy.
   const REASON_TO_KIND = {
-    auth: 'auth', billing: 'billing', rate_limit: 'rate_limit', overloaded: 'server_error',
-    server_error: 'server_error', timeout: 'timeout', context_overflow: 'context_overflow',
+    auth: 'auth', billing: 'billing', rate_limit: 'rate_limit', quota_exhausted: 'quota_exhausted', overloaded: 'provider_server_error',
+    server_error: 'provider_server_error', timeout: 'timeout', context_overflow: 'context_overflow',
     model_not_found: 'model_not_found', content_policy_blocked: 'content_policy_blocked',
     format_error: 'unknown', unknown: 'unknown'
   };
@@ -125,9 +144,56 @@
   }
   // Browser fetch implementations do not agree on the message used when an established response stream dies.
   // Chromium commonly reports "Failed to fetch"; undici/Tauri can surface only "terminated", a socket close,
-  // or ECONNRESET. They all mean the same user-visible fact here: COMMS lost its local sidecar transport.
+  // or ECONNRESET. They all mean ONE thing: the response stream died before it finished.
+  //
+  // ⚠ WHAT THEY DO **NOT** TELL YOU IS *WHERE* IT DIED (2026-07-29). This predicate used to be documented as
+  // "COMMS lost its local sidecar transport" and the copy asserted "Can't reach StarNet's local service —
+  // restart the app". That is an UNPROVEN claim, and it is wrong in at least two common cases:
+  //   • the MODEL PROVIDER's stream drops mid-answer (undici surfaces exactly `terminated` /
+  //     `other side closed` / `premature close` / ECONNRESET) — the sidecar is perfectly healthy;
+  //   • a request the sidecar never answered (a throw above index.js's central route guard is only LOGGED by
+  //     surfaceProcessError, so the socket hangs — see the same note in sidecar/openai-compat.js) — again, alive.
+  // In both, the app told the user to restart/reinstall and they burned days on a phantom. Truthful telemetry:
+  // the transport wording is now chosen by PROOF (opts.engineAlive, from a real /api/health probe), never by
+  // assumption. Keep this predicate about the SHAPE of the failure; let the caller establish the LOCATION.
   function isTransportLoss(raw) {
     return /cannot reach|can'?t reach|unreachable|failed to fetch|fetch failed|networkerror|load failed|connection (?:refused|reset)|disconnected|\bterminated\b|socket (?:hang up|closed)|other side closed|premature close|econnreset|epipe/i.test(String(raw || ''));
+  }
+  /* IS THIS THE SIDECAR'S *OUTBOUND* CALL FAILING? (2026-07-29 — from a real user's diagnostics report.)
+     The word order is the tell, and it is decisive. A BROWSER fetch rejection says "Failed to fetch" (Chromium),
+     "NetworkError" or "Load failed". NODE/undici says "fetch failed" — the other order. So a raw text carrying
+     `fetch failed` cannot have come from this page's fetch to the sidecar; it can only have been produced INSIDE
+     the sidecar and forwarded to us, which means the hop that broke is sidecar -> MODEL PROVIDER. Same for the
+     Node-only DNS/undici strings (getaddrinfo, ENOTFOUND, EAI_AGAIN, UND_ERR_*), which no browser ever emits.
+
+     This existed as a real user report: diagnostics showed a healthy local engine (uptime, workspace present, the
+     report itself was served by it) with five `fetch failed` entries — the sidecar could not reach chatgpt.com /
+     api.openai.com — and the app told them "Can't reach StarNet's local service, restart it". They lost a day.
+
+     WHY THE BUG SURVIVED: sidecar/providers/errorClass.js:168 ALREADY classifies undici transport codes
+     correctly, but friendlyerror only `require`s it in node/tests — in the browser classifyApiError is null, so
+     the real user path fell through to isTransportLoss and blamed the local service. Getting this right in the
+     BROWSER fallback ladder is the whole point; a node-only test proves the half users never run. */
+  function isUpstreamFetchFailure(raw) {
+    const s = String(raw || '');
+    // `fetch failed` in THAT order only — "Failed to fetch" (browser) must never match here.
+    return /\bfetch failed\b/i.test(s) || /getaddrinfo|ENOTFOUND|EAI_AGAIN|UND_ERR_/i.test(s);
+  }
+
+  // The three HONEST readings of a transport loss, keyed on whether the local engine was actually PROVEN to be
+  // up. `engineAlive` comes from a token-free GET /api/health probe (Harness.pingEngine) — true/false are
+  // measured; null/undefined means nobody probed, so we must not name a culprit at all.
+  //   false → the engine really is unreachable: today's copy, now EARNED.
+  //   true  → the engine answered, so "restart StarNet" is actively bad advice; name the stream instead.
+  //   null  → unproven. Say only what happened, prescribe the cheap step, and do NOT blame a component.
+  function transportMessage(engineAlive) {
+    if (engineAlive === false) return KINDS.network.msg;
+    if (engineAlive === true) {
+      return "The reply stream stopped before it finished — StarNet's local service answered a health check, so "
+        + 'the app itself is running; this was the connection carrying the reply. Try again.';
+    }
+    return 'The connection dropped before the reply finished — try again. If it keeps happening, use "copy '
+      + 'diagnostics for a bug report" below so the cause can be identified.';
   }
   // a user-initiated stop (Esc / Stop button → AbortController) reads as an AbortError or an "abort" message.
   // A user abort is NOT a fault — it must not produce a scary error row.
@@ -157,7 +223,7 @@
   }
 
   // Build the beginner capdenied sentence naming the exact power + its gear, e.g.
-  //   "This task needs FILE ACCESS — the CABINET isn't on station. Open REFIT to place it."
+  //   "This task needs FILE ACCESS — an INTEL CAB isn't on station. Open REFIT to place it."
   // Falls back to the generic KINDS.capdenied copy when the capability can't be parsed.
   function capdeniedMessage(cap) {
     const info = cap && CAP_INFO[cap];
@@ -167,14 +233,25 @@
 
   // browser fallback: classify the UI-level error string + optional HTTP status into a kind, using the SAME
   // vocabulary the sidecar reasons map onto. Order: most-specific intent first.
+  /* Kept in step with the same three patterns in sidecar/providers/errorClass.js. A spent SUBSCRIPTION
+     allowance ("you've hit your usage limit", "resets in 3 days", a weekly/monthly quota) is terminal; a
+     PER-MINUTE limit is not, and Gemini phrases one as "Quota exceeded for quota metric", which a bare
+     /quota/ test swallowed. OpenAI's `insufficient_quota` is an empty wallet and stays billing. */
+  const QUOTA_EXHAUSTED_RE = /usage[_ ]?limit[_ ]?reached|hit (?:your|the) (?:usage|weekly|monthly|plan|daily) limit|(?:weekly|monthly|daily) (?:quota|limit)|resets? in \s*\d+\s*(?:day|hour|week)|resets? (?:on|at) \d|quota (?:will )?reset(?:s)? (?:in|on|at)/;
+  const SHORT_WINDOW_RE = /per[- ]?(?:minute|second)|quota metric|rpm|tpm|requests per/;
+  const TERMINAL_BILLING_RE = /insufficient[_ ]?quota|exceeded your current quota|out of credit|add credits|payment required/;
+
   function kindFromRaw(raw, status) {
     const low = String(raw || '').toLowerCase();
     // Harness pre-flight guards ("no API key set" / "no model selected"): a misconfig, not a fault — point at
     // Settings instead of offering a doomed retry. (Match before capdenied, which the em-dash-less strings miss.)
     if (/chatgpt.*sign-?in|sign-?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|chatgpt subscription.*connect/.test(low)) return 'oauth';
-    if (/no api key set|no model selected/.test(low)) return 'auth';
+    if (/no api key set|no model selected|missing key\/model/.test(low)) return 'auth';
     // a forwarded capability denial ("no web — …" / "capdenied")
     if (/\bcapdenied\b/.test(low) || /^no\s+\w+\s+—/.test(low) || /needs a capability|capability.*(off|denied)/.test(low)) return 'capdenied';
+    // MUST precede isTransportLoss: that predicate also matches `fetch failed`, and whichever runs first owns the
+    // verdict. Upstream is the more specific (and provable) reading, so it wins.
+    if (isUpstreamFetchFailure(low)) return 'provider_unreachable';
     // the sidecar is unreachable (fetch threw — Harness throws "cannot reach the STARNET sidecar…")
     if (isTransportLoss(low)) return 'network';
     // content / policy beats a status
@@ -189,11 +266,33 @@
       if (s === 402) return /(resets? at|retry[- ]?after|rate limit)/.test(low) ? 'rate_limit' : 'billing';
       if (s === 404) return 'model_not_found';
       if (s === 408 || s === 504) return 'timeout';
-      if (s === 429) return 'rate_limit';
-      if (s >= 500) return 'server_error';
+      /* A 429 IS NOT ALWAYS "wait a few seconds". This fallback is the path REAL USERS take: classifyApiError
+         above is require()-only (node/test), so in the browser every verdict comes from here. A
+         ChatGPT-subscription weekly quota resets in DAYS, and an OpenAI account with no money answers
+         `insufficient_quota` with 429 — neither clears by waiting, and offering ↻ Try again on either is a
+         doomed instruction. Mirrors the same split in sidecar/providers/errorClass.js; keep the two in step. */
+      if (s === 429) {
+        if (QUOTA_EXHAUSTED_RE.test(low) && !SHORT_WINDOW_RE.test(low)) return 'quota_exhausted';
+        if (TERMINAL_BILLING_RE.test(low)) return 'billing';
+        return 'rate_limit';
+      }
+      /* 5xx: WHO answered it decides the copy, and the BODY outranks the prefix. In-band adapter labels name
+         the provider ("Anthropic http 529 - Overloaded"); a pre-stream route failure says "sidecar HTTP 5xx —
+         <detail>" but that detail can be a PROXIED provider body, so the prefix alone proves nothing. Evidence
+         order: provider phrasing/name in the body → provider; a "sidecar http" prefix with neither → local
+         (the one case where our own route demonstrably answered the 5xx); anything else → provider, because
+         this ladder runs on the model-call path and "the local service broke" is the claim that owes proof. */
+      if (s >= 500) {
+        if (/overloaded|over capacity|temporarily unavailable|try again later/.test(low)) return 'provider_server_error';
+        if (/\b(anthropic|openai|openrouter|google|gemini|grok|xai|kimi|codex|deepseek|mistral|groq|ollama)\b/.test(low)) return 'provider_server_error';
+        return /sidecar http/.test(low) ? 'server_error' : 'provider_server_error';
+      }
       if (s === 400 || s === 413 || s === 422) return /context length|maximum context|context window|too many tokens|reduce the length/.test(low) ? 'context_overflow' : 'unknown';
     }
     // message patterns (no status / in-band error text)
+    // in-band provider overload phrasing, mirrored from sidecar/providers/errorClass.js — keep the two in step
+    if (/overloaded|over capacity|temporarily unavailable|try again later/.test(low)) return 'provider_server_error';
+    if (QUOTA_EXHAUSTED_RE.test(low) && !SHORT_WINDOW_RE.test(low)) return 'quota_exhausted';
     if (/rate limit|too many requests|rate-limit/.test(low)) return 'rate_limit';
     if (/insufficient|out of credit|not enough credit|quota|payment required|add credits|billing/.test(low)) return 'billing';
     if (/unauthorized|invalid api key|invalid key|no auth credentials|authentication|key was rejected|rejected/.test(low)) return 'auth';
@@ -204,8 +303,11 @@
   }
 
   /* err: the thrown Error / in-band error string from Harness.chat. status: an optional HTTP status if the
-     caller has it separately. Returns a complete, well-typed verdict — never throws. */
-  function friendlyError(err, status) {
+     caller has it separately. opts.engineAlive: MEASURED local-engine liveness (true/false), or omitted when
+     the caller did not probe — it only ever changes the `network` (transport-loss) wording, never the kind, so
+     every existing consumer keeps its behavior. Returns a complete, well-typed verdict — never throws. */
+  function friendlyError(err, status, opts) {
+    const engineAlive = (opts && typeof opts.engineAlive === 'boolean') ? opts.engineAlive : null;
     const raw = rawText(err);
     if (isUserAbort(err)) {
       const k = KINDS.user_abort;
@@ -240,7 +342,7 @@
     // — the old `sign-?in` missed the space and the consumed-token escape fell through to a generic door.
     if (/chatgpt.*sign[- ]?in|sign[- ]?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|codex (token )?refresh|refresh_token_reused|chatgpt subscription.*connect/.test(raw.toLowerCase())) {
       kind = 'oauth';
-    } else if (/no api key set|no model selected/.test(raw.toLowerCase())) {
+    } else if (/no api key set|no model selected|missing key\/model/.test(raw.toLowerCase())) {
       kind = 'auth';
     } else if (/spotify is not connected|spotify.*not connected|connect (it in settings|it in toolsets|spotify)|spotify session expired|spotify auth failed/.test(raw.toLowerCase())) {
       // the JUKEBOX is placed but Spotify's OAuth isn't linked (or its session died) — every flavor gets the
@@ -267,6 +369,19 @@
         // a bare network failure ("cannot reach the sidecar") classifies as `unknown` upstream (it never reached
         // the API) — promote it to the friendlier `network` bucket so the message points at the sidecar.
         if (kind === 'unknown' && isTransportLoss(raw)) kind = 'network';
+        // Same precedence as the browser ladder above. The node classifier calls an undici transport code
+        // `timeout`, which is honest about the SHAPE but silent about the HOP — "the provider timed out" and "your
+        // machine can't reach the provider" need different words, and only the latter should mention VPN/proxy.
+        if ((kind === 'unknown' || kind === 'network' || kind === 'timeout') && isUpstreamFetchFailure(raw)) kind = 'provider_unreachable';
+        // The node classifier's domain is the provider API, so its server_error/overloaded map to
+        // provider_server_error — but a GENUINE local fault ("sidecar HTTP 500 — internal error", no provider
+        // evidence in the body) also reaches it via the probe. Apply the same evidence rule as the browser
+        // ladder: a sidecar-prefixed 5xx with no provider name/phrasing in the body is the local service's own.
+        if (kind === 'provider_server_error' && /sidecar http/.test(raw.toLowerCase())
+            && !/overloaded|over capacity|temporarily unavailable|try again later/.test(raw.toLowerCase())
+            && !/\b(anthropic|openai|openrouter|google|gemini|grok|xai|kimi|codex|deepseek|mistral|groq|ollama)\b/.test(raw.toLowerCase())) {
+          kind = 'server_error';
+        }
       } catch (_) { kind = kindFromRaw(raw, status); }
     } else {
       kind = kindFromRaw(raw, status);
@@ -292,6 +407,11 @@
       const nm = provider === 'grok' ? 'Grok' : provider === 'kimi' ? 'Kimi' : null;
       const userMessage = nm ? ('Your ' + nm + ' sign-in expired — reconnect it (or add a provider key instead).') : k.msg;
       return { userMessage: userMessage, kind: kind, retryable: k.retryable, action: k.action, provider: provider, raw: raw };
+    }
+    // transport loss: the ONE kind whose copy names a component, so it is the one kind that owes proof. The
+    // measured verdict rides along on `engineAlive` so a diagnostic report can state what was actually probed.
+    if (kind === 'network') {
+      return { userMessage: transportMessage(engineAlive), kind: kind, retryable: k.retryable, action: k.action, raw: raw, engineAlive: engineAlive };
     }
     return { userMessage: k.msg, kind: kind, retryable: k.retryable, action: k.action, raw: raw };
   }
@@ -378,5 +498,5 @@
   }
 
   return { friendlyError, actionButton, KINDS, CAP_INFO,
-    _internals: { kindFromRaw, isTransportLoss, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected } };
+    _internals: { kindFromRaw, isTransportLoss, isUpstreamFetchFailure, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected, transportMessage } };
 });

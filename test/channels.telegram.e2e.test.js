@@ -18,6 +18,16 @@ const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+/* The Telegram transport sends parse_mode:'HTML' (channels/telegram.format.js), so the WIRE text carries tags
+   and entities while the phone renders plain prose. Every assertion about what the member READS must therefore
+   run on the rendered form — otherwise "WEB & BROWSER" fails against the perfectly correct "WEB &amp; BROWSER".
+   Decoding &amp; LAST is deliberate: doing it first would turn "&amp;lt;" into "<". */
+function rendered(wireText) {
+  return String(wireText == null ? '' : wireText)
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
 function readJsonBody(req) {
   return new Promise(resolve => {
     let body = '';
@@ -46,8 +56,38 @@ function startMockOpenRouter() {
         let body = '';
         req.on('data', d => { body += d; });
         req.on('end', async () => {
-          try { requests.push(JSON.parse(body)); } catch (_) {}
+          let parsed = null;
+          try { parsed = JSON.parse(body); requests.push(parsed); } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          /* ONE scripted tool call, so a run can ask the harness what it can actually reach (channel.targets has
+             no HTTP surface of its own). Only on the FIRST turn of such a run — once a tool result is in the
+             messages the model answers plainly, or the run would loop forever. */
+          const msgs = (parsed && parsed.messages) || [];
+          const lastUser = [...msgs].reverse().find(m => m && m.role === 'user');
+          if (/run telegram shell proof/i.test(String((lastUser && lastUser.content) || '')) && !msgs.some(m => m && m.role === 'tool')) {
+            // A task-shaped request first settles the same Task Brief that a desktop run settles. This proves
+            // owner parity through the genuine task pipeline rather than bypassing unrelated task semantics.
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_brief', type: 'function', function: { name: 'brief_proceed', arguments: '{"objective":"Run the requested Telegram shell proof"}' } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          if (/run telegram shell proof/i.test(String((lastUser && lastUser.content) || '')) && msgs.some(m => m && m.role === 'tool')
+              && !msgs.some(m => m && m.role === 'tool' && /TELEGRAM_SHELL_OK/.test(JSON.stringify(m)))) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_shell', type: 'function', function: { name: 'shell_exec', arguments: '{"cmd":"echo TELEGRAM_SHELL_OK"}' } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          if (/who can you reach/i.test(String((lastUser && lastUser.content) || '')) && !msgs.some(m => m && m.role === 'tool')) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_t', type: 'function', function: { name: 'channel.targets', arguments: '{}' } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Telegram answer' } }] }) + '\n\n');
           if (gate.armed) {
             gate.armed = false;   // hold only the FIRST completion after arming
@@ -72,6 +112,7 @@ function startMockTelegram() {
   const waiters = [];
   let updateId = 1000;
   let messageId = 2000;
+  let fatal = false;
 
   function respond(res, obj) {
     try {
@@ -99,6 +140,10 @@ function startMockTelegram() {
         return;
       }
       if (method === 'getUpdates') {
+        // REVOKED TOKEN. 401 is fatal in channels/adapter.js: it reports { state:'error' } and BREAKS the poll
+        // loop, leaving the module-level handle alive — which is exactly the state that used to be reported to
+        // an agent as "reachable now".
+        if (fatal) { respond(res, { ok: false, error_code: 401, description: 'Unauthorized' }); return; }
         if (body.offset === -1) {
           respond(res, { ok: true, result: [] });
           return;
@@ -140,6 +185,7 @@ function startMockTelegram() {
           });
           flush();
         },
+        revokeToken() { fatal = true; while (waiters.length) respond(waiters.shift().res, { ok: false, error_code: 401, description: 'Unauthorized' }); },
         close(done) {
           while (waiters.length) respond(waiters.shift().res, { ok: true, result: [] });
           server.close(done || (() => {}));
@@ -234,6 +280,9 @@ async function waitUntil(fn, ms, label) {
   const llm = await startMockOpenRouter();
   const tg = await startMockTelegram();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-telegram-e2e-'));
+  fs.writeFileSync(path.join(ws, 'usercommands.json'), JSON.stringify({ commands: [
+    { name: 'telegramproof', type: 'exec', command: 'echo TELEGRAM_COMMAND_OK' }
+  ] }));
   const env = {
     SKYNET_WORKSPACES: ws,
     STARNET_WORKSPACES: ws,
@@ -257,11 +306,35 @@ async function waitUntil(fn, ms, label) {
     sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
 
     await waitUntil(() => tg.calls.some(c => c.method === 'getUpdates' && c.body && c.body.offset === -1), 5000, 'telegram drop-pending poll');
+    // Telegram is deliberately no longer trust-on-first-DM. Enrol this test account through the same local,
+    // authenticated pairing route a desktop owner uses, then prove the one-time code is consumed by Telegram
+    // before asking it to run anything.
+    const pair = await (await fetch(B + '/api/channels/telegram/owner/pair', {
+      method: 'POST',
+      headers: { 'X-StarNet-Token': token, Origin: B, 'Content-Type': 'application/json' },
+      body: '{}'
+    })).json();
+    A.ok(pair && /^[-A-Z0-9]{11}$/.test(String(pair.code || '')), 'local owner pairing issued a one-time code');
+    tg.pushText(4242, 99, '/pair ' + pair.code);
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '4242' && /Owner paired/i.test(String(s.text || ''))), 8000, 'Telegram owner-pair acknowledgement');
+
+    const channelFile = path.join(ws, 'channels', 'secrets.json');
+    const stationBeforeMalformed = fs.existsSync(channelFile) ? fs.readFileSync(channelFile, 'utf8') : null;
+    const stationStatusBefore = await (await fetch(B + '/api/channels/telegram/status', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    const stationBadDisconnect = await fetch(B + '/api/channels/telegram/disconnect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: '{bad'
+    });
+    A.eq(stationBadDisconnect.status, 400, 'malformed station Telegram disconnect -> 400');
+    if (stationBeforeMalformed !== null) A.eq(fs.readFileSync(channelFile, 'utf8'), stationBeforeMalformed, 'malformed station disconnect leaves durable configuration byte-identical');
+    const stationStatus = await (await fetch(B + '/api/channels/telegram/status', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.eq(stationStatus.connected, stationStatusBefore.connected, 'malformed station disconnect does not change the connected flag');
+    A.eq(stationStatus.state, stationStatusBefore.state, 'malformed station disconnect does not change the poll state');
     tg.pushText(4242, 99, 'research AI trend now');
 
-    await waitUntil(() => tg.sends.length >= 1, 8000, 'telegram sendMessage reply');
-    A.eq(tg.sends[0].chat_id, '4242', 'reply sent to the inbound chat');
-    A.ok(String(tg.sends[0].text || '').indexOf('Telegram answer') >= 0, 'reply text came from the mocked provider');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '4242' && String(s.text || '').indexOf('Telegram answer') >= 0), 8000, 'telegram sendMessage reply');
+    const initialReply = tg.sends.find(s => String(s.chat_id) === '4242' && String(s.text || '').indexOf('Telegram answer') >= 0);
+    A.eq(initialReply.chat_id, '4242', 'reply sent to the inbound chat');
+    A.ok(String(initialReply.text || '').indexOf('Telegram answer') >= 0, 'reply text came from the mocked provider');
     A.ok(llm.requests.length >= 1, 'mock provider was called from Telegram ingress');
 
     await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.kind === 'telegram' && e.payload.agentId === 'tg_4242'), 5000, 'telegram workitem');
@@ -274,6 +347,110 @@ async function waitUntil(fn, ms, label) {
     const turns = (tr && tr.turns) || [];
     A.ok(turns.some(t => t.role === 'user' && String(t.content || '').indexOf('research AI trend now') >= 0), 'transcript captured Telegram user turn');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content || '').indexOf('Telegram answer') >= 0), 'transcript captured Telegram assistant reply');
+
+    // ---- authenticated owner DM: real agent shell execution + defined command execution ------------------
+    const shellChat = 4244;
+    const beforeShell = llm.requests.length;
+    tg.pushText(shellChat, 99, 'run telegram shell proof');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === String(shellChat) && String(s.text || '').indexOf('Telegram answer') >= 0), 8000, 'owner Telegram shell reply');
+    const shellReqs = llm.requests.slice(beforeShell);
+    const shellWire = ((shellReqs[0] && shellReqs[0].tools) || []).map(t => String((t && t.function && t.function.name) || (t && t.name) || ''));
+    A.ok(shellWire.indexOf('shell_exec') >= 0, 'owner Telegram run advertises shell_exec to the provider');
+    A.ok(shellWire.indexOf('verify_run') >= 0, 'owner Telegram run advertises verify_run to the provider');
+    A.ok(shellWire.indexOf('spotify_play') >= 0, 'owner Telegram run advertises media control to the provider');
+    A.ok(shellWire.indexOf('team_dispatch') >= 0, 'owner Telegram run advertises task delegation to the provider');
+    const shellToolMessages = shellReqs.flatMap(r => (r.messages || []).filter(m => m && m.role === 'tool'));
+    A.ok(shellToolMessages.some(m => /TELEGRAM_SHELL_OK/.test(JSON.stringify(m))),
+      'the shell output returns through the real tool loop before the agent replies: ' + JSON.stringify(shellToolMessages));
+
+    const proofChat = 4245;
+    tg.pushText(proofChat, 99, '/telegramproof');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === String(proofChat) && /TELEGRAM_COMMAND_OK/.test(String(s.text || ''))), 8000,
+      'owner Commander-defined exec command');
+    A.ok(tg.sends.some(s => String(s.chat_id) === String(proofChat) && /TELEGRAM_COMMAND_OK/.test(String(s.text || ''))),
+      'a Commander-defined shell command runs over the admitted owner DM');
+
+    // ---- /tools must describe the office this channel's runs ACTUALLY get -------------------------------
+    // THE BUG (2026-07-28, reported off a v0.6.8 install): runSlashForChannel read `placed` ONLY from
+    // router.stationFor(agentId), which is null for every agent NOT docked in a conveyor bay — i.e. essentially
+    // every main agent. So /tools computed placed=[] and answered "This agent has no tools yet", while the very
+    // same agent's Telegram RUNS were handed the full autonomous office all along. The readout lied about a
+    // grant that was working. No routing plan is posted in this test, so stationFor is null here exactly as it
+    // is on a real station — which is what makes this a true reproduction rather than a mocked one.
+    const llmCallsBeforeTools = llm.requests.length;
+    tg.pushText(7777, 99, '/tools');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '7777'), 8000, '/tools reply to chat 7777');
+    const toolsReply = rendered((tg.sends.find(s => String(s.chat_id) === '7777') || {}).text);
+    A.ok(!/no tools yet/.test(toolsReply), '/tools over Telegram does NOT claim the agent has no tools');
+    A.ok(/Tools for this agent/.test(toolsReply), '/tools returns the card, not the empty-state sentence');
+    // the autonomous office (capability/office.js fullOffice) — the objects hub.js's runs resolve against.
+    A.ok(/WEB & BROWSER/.test(toolsReply), '/tools lists WEB & BROWSER (dish is in the autonomous office)');
+    A.ok(/FILE CABINET/.test(toolsReply), '/tools lists FILE CABINET (cabinet is in the autonomous office)');
+    A.ok(/MEMORY NOTEBOOK/.test(toolsReply), '/tools lists MEMORY NOTEBOOK (notebook is in the autonomous office)');
+    // An admitted owner DM extends the headless office with the same non-physical workbench and orchestration
+    // objects the desktop Commander receives, so this card must agree with the provider wire above.
+    const activeLines = toolsReply.split('\n').filter(l => l.indexOf('✓') === 0);
+    A.ok(activeLines.some(l => /WORKBENCH/.test(l)), '/tools lists terminal authority for the admitted owner DM');
+    A.ok(activeLines.some(l => /TASK DELEGATION/.test(l)), '/tools lists delegation authority for the admitted owner DM');
+    // a slash command must not spend a model turn — it is answered by the registry, not the provider.
+    A.eq(llm.requests.length, llmCallsBeforeTools, '/tools was answered by the registry without calling the provider');
+
+    /* ---- "/start" is answered for FREE, not by the model ---------------------------------------------------
+       Telegram shows a START button on every fresh chat and sends this literal text when it is pressed — the
+       first thing a new member ever transmits. It was in no command table, so it fell through parseCommand as
+       an ordinary message and SPENT A PAID MODEL RUN on an agent puzzling over the word "/start". Asserted
+       through the real ingress, and the provider-call count is what proves it never reached the model. */
+    const llmBeforeStart = llm.requests.length;
+    tg.pushText(7778, 99, '/start');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '7778'), 8000, '/start reply');
+    const startReply = rendered((tg.sends.find(s => String(s.chat_id) === '7778') || {}).text);
+    A.eq(llm.requests.length, llmBeforeStart, '/start is answered by the hub without spending a model turn');
+    A.ok(/STARNET online/.test(startReply), '/start greets the newcomer instead of answering "/start" as a question');
+    A.ok(/\/help/.test(startReply), '/start tells a first-time member what they can actually say');
+
+    /* ---- /approvals ON must not COST the agent its office --------------------------------------------------
+       THE BUG (2026-07-28, reported by a user off the v0.7.0 install that shipped the /tools fix above): the hub
+       runs `surface: wantApprovals ? 'interactive' : 'autonomous'`, and runOnce fed that same word to
+       composeOffice. `interactive` means THE MOAT — the floor is real, so the office starts COMPUTE-ONLY and the
+       browser appends the agent's actually-placed props via extraObjects. A phone never sends extraObjects and
+       has no floor at all, so turning on approve/deny buttons silently cut the chat from the 59-tool autonomous
+       office to THREE tools (quest.update, station.inspect, tool.search) — while /tools, fixed just above to quote the autonomous
+       office, went on describing the 59 the run no longer had. That is exactly the "/tools work and they don't"
+       the user saw: the agent truthfully reported no web capability (its tool.search even answered "every tool
+       you have been granted is already listed", which is only reachable with an EMPTY deferred set), and the
+       readout truthfully described the grant the chat was supposed to have. Both halves honest, one of them fed
+       by the wrong surface.
+       ASSERTED AT THE WIRE. The tool list that reaches the PROVIDER is the only thing that proves what the model
+       could actually call; a readout is what lied here in the first place. */
+    const approvalsChat = 6161;
+    tg.pushText(approvalsChat, 99, '/approvals on');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === String(approvalsChat)), 8000, '/approvals on reply');
+    const approvalsReply = String((tg.sends.find(s => String(s.chat_id) === String(approvalsChat)) || {}).text || '');
+    A.ok(/buttons are ON/.test(approvalsReply), '/approvals on took effect for this chat (' + approvalsReply.slice(0, 80) + ')');
+
+    const llmCallsBeforeApproved = llm.requests.length;
+    tg.pushText(approvalsChat, 99, 'find me something on the web');
+    await waitUntil(() => llm.requests.length > llmCallsBeforeApproved, 8000, 'approvals-ON run reached the provider');
+    const approvedReq = llm.requests[llmCallsBeforeApproved];
+    const advertised = ((approvedReq && approvedReq.tools) || [])
+      .map(t => String((t && t.function && t.function.name) || (t && t.name) || ''));
+    // NOTE: the wire spells a dotted tool with an underscore (fs.read -> fs_read), so these are the PROVIDER's
+    // names, not the registry's. Asserting the registry spelling here would pass vacuously forever.
+    const wire = advertised.join(' ');
+    A.ok(advertised.indexOf('web_search') >= 0, 'an approvals-ON channel run still gets web_search (dish is in the headless office) — wire was: ' + wire);
+    A.ok(advertised.indexOf('browser_navigate') >= 0, 'an approvals-ON channel run still gets the browser — the exact capability the user was told it lacked');
+    A.ok(advertised.indexOf('fs_read') >= 0, 'an approvals-ON channel run still gets fs_read (cabinet is in the headless office)');
+    A.ok(advertised.indexOf('notebook_write') >= 0, 'an approvals-ON channel run still gets notebook_write (notebook is in the headless office)');
+    // The owner authority survives an approvals-on choice; buttons alter consent UX, not the control surface.
+    A.ok(advertised.indexOf('shell_exec') >= 0, 'approvals ON retains the owner DM terminal');
+    A.ok(advertised.indexOf('team_dispatch') >= 0, 'approvals ON retains the owner DM delegation tools');
+
+    // and the readout AGREES with that wire, which is the whole point of the pair of fixes.
+    tg.pushText(approvalsChat, 99, '/tools');
+    await waitUntil(() => tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).length >= 3, 8000, '/tools reply in the approvals-ON chat');
+    const approvedTools = rendered((tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).pop() || {}).text);
+    A.ok(/WEB & BROWSER/.test(approvedTools), '/tools in an approvals-ON chat lists the same WEB & BROWSER the run was handed');
+    A.ok(!/no tools yet/.test(approvedTools), '/tools in an approvals-ON chat does not claim the agent has no tools');
 
     // ---- P1 1.2: a live channel run must appear in GET /api/state/snapshot so an SSE reconnect keeps its agent's
     // floor/HUD state (reconcileFromSnapshot clears any agent NOT listed). Drive a SECOND message on a fresh chat,
@@ -349,6 +526,77 @@ async function waitUntil(fn, ms, label) {
       // The race is timing-sensitive; if the slot happened to free before #2's admission, the message still got its
       // real answer above (the invariant that matters). Note it so the run log is honest about what was exercised.
       console.log('  · supersede race did not fire this run; #2 still delivered its real answer (invariant holds)');
+    }
+    /* ---- REACHABILITY IS A HEARTBEAT, NOT A HANDLE -------------------------------------------------
+       listTargets derived `connected` from the mere existence of the composition-root handle, and that handle
+       is nulled ONLY by an explicit teardown (start / shutdown / the disconnect route). A revoked token is
+       fatal in adapter.js: it reports { state:'error' } and BREAKS the poll loop, leaving the object alive. So
+       the CHANNELS panel showed the channel errored while an agent asking "can you reach me on Telegram?" was
+       told "1 of 1 known chat(s) reachable now" — and channel.send's own honest refusal was unreachable.
+       Driven over /api/run because channel.targets has no HTTP surface of its own. */
+    {
+      const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+      const runTargets = async () => {
+        const res = await fetch(B + '/api/run', {
+          method: 'POST', headers,
+          body: JSON.stringify({
+            model: 'test/model', provider: 'openrouter', agentId: 'agent',
+            messages: [{ role: 'user', content: 'who can you reach' }],
+            placed: [{ objectType: 'dish' }, { objectType: 'computer' }]
+          })
+        });
+        A.eq(res.status, 200, 'the targets run stream opens');
+        const reader = res.body.getReader(); const dec = new TextDecoder();
+        let buf = '', last = null, runId = null;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+            if (!line) continue;
+            let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
+            if (ev.name === 'agent.run.start') runId = ev.payload && ev.payload.runId;
+            if (ev.name === 'agent.tool_result') last = ev.payload;
+            // Fire-and-forget: the run is BLOCKED on this answer, so awaiting here deadlocks.
+            if (ev.name === 'permission.prompt') {
+              fetch(B + '/api/consent', {
+                method: 'POST', headers,
+                body: JSON.stringify({ runId: runId, promptId: ev.payload.promptId, decision: 'once' })
+              }).catch(() => {});
+            }
+          }
+        }
+        return last;
+      };
+
+      // Control: the token still works and a human really has messaged this station, so the chat IS reachable.
+      const up = await runTargets();
+      A.ok(up && /reachable now/.test(String(up.summary || '')), 'while the token works the chat is reported reachable: ' + (up && up.summary));
+      A.ok(!/0 of/.test(String(up.summary || '')), 'and not as zero-of-N');
+
+      // Now revoke the token, exactly as @BotFather would.
+      tg.revokeToken();
+      await waitUntil(async () => {
+        const st = await (await fetch(B + '/api/channels/status', { headers })).json();
+        const t = (st && (st.telegram || (st.channels || []).find(c => c && c.id === 'telegram'))) || {};
+        return t.state === 'error' || t.connected === false;
+      }, 12000, 'the sidecar noticed the revoked token (status error)');
+
+      const st = await (await fetch(B + '/api/channels/status', { headers })).json();
+      const tstat = (st && (st.telegram || (st.channels || []).find(c => c && c.id === 'telegram'))) || {};
+      A.eq(!!tstat.connected, false, 'GET /api/channels/status honestly reports the channel as not connected');
+
+      const down = await runTargets();
+      A.ok(down, 'channel.targets still answers after the token was revoked');
+      // "N of N reachable" for any nonzero N is the lie — assert on the SHAPE, not on one chat count, or the
+      // assertion goes vacuous the moment the fixture holds a different number of chats.
+      const claimsAllReachable = /(\d+) of (\d+) known chat/.exec(String(down.summary || ''));
+      A.ok(!(claimsAllReachable && claimsAllReachable[1] !== '0'),
+        'an ERRORED channel is NOT counted as reachable to the agent: ' + (down && down.summary));
+      A.ok(/0 of|not connected|none reachable/i.test(String(down.summary || '')),
+        'and the readout says so plainly: ' + (down && down.summary));
     }
   } finally {
     if (sse) sse.close();

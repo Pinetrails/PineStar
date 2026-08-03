@@ -27,6 +27,17 @@ for (const store of ['PitchStore', 'SuggestStore', 'SeedStore', 'CuriosityStore'
     'new-hero onWake resets ' + store + ' — no prior-Commander state bleeds into a fresh agent');
 }
 
+// Permission lockdown is an authority gate, not one more best-effort cache reset. It must finish before the
+// new hero assignment (the commit point); otherwise a failed durable revoke leaves a half-reset station and
+// lets the fresh Commander inherit the previous station's cabinet:write grant.
+const permissionsReset = seg.indexOf('await PermissionsStore.reset()');
+const heroCommit = seg.indexOf("agent = { id: 'agent'");
+A.ok(permissionsReset >= 0 && heroCommit >= 0 && permissionsReset < heroCommit,
+  'new-hero permission lockdown completes before the hero/state commit point');
+const savedResume = seg.indexOf('if (resumingSaved)');
+A.ok(savedResume >= 0 && savedResume < permissionsReset,
+  'saved-station resume returns before new-hero lockdown and keeps its existing grants');
+
 // SERVER-SIDE bleed: the frontend stores above are localStorage; the notebook + the NEW declined denylist live on
 // the sidecar. onWake must ALSO wipe them, or a fresh hero inherits a stranger's kept/declined memories (app-lie).
 A.ok(/Harness\.memoryReset\(/.test(seg),

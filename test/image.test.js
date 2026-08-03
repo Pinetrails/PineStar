@@ -11,7 +11,12 @@ const path = require('node:path');
 const os = require('node:os');
 const { makeImageTools } = require('../sidecar/tools/builtin/image.js');
 
-const ROOT = path.join(os.tmpdir(), 'starnet-image-test');
+// Per-process root. The name used to be fixed, and the first thing this file does is rm -rf it —
+// so two gates running at once (two worktrees, or a lane gating beside the integration tree) raced
+// on the same directory. Worse, the saved file is CONTENT-ADDRESSED, so both runs wrote the same
+// path: one process read the file while the other was truncating it and the PNG-magic assertion
+// failed with nothing wrong in the product. A phantom RED on merge night. Keep this unique.
+const ROOT = path.join(os.tmpdir(), 'starnet-image-test-' + process.pid);
 
 // a 1x1 transparent PNG (real bytes), as base64 — used as the model's "generated" image
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -142,7 +147,7 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
     A.eq(kFetch.calls[1].body.model, 'google/gemini-3-pro-image', 'an explicit per-call model still wins over the knob');
   }
 
-  // ---- I. AUX VISION: session-provider fallback (the Hermes-style route; kills the "give me a key" bug) ----
+  // ---- I. AUX VISION: session-provider fallback (the ref-style route; kills the "give me a key" bug) ----
   {
     // I1. NO key + auxVision -> analyze works through the session provider; no OpenRouter fetch fired
     const auxCalls = [];

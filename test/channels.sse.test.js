@@ -182,4 +182,81 @@ A.eq(runTeeView('agent.reasoning', { agentId: 'a1', runId: 'r1', on: true }), nu
   A.ok(!src.includes("res.write(': ka\\n\\n')"), 'the browser-invisible SSE comment keepalive is retired');
 }
 
+/* ---- the CLIENT side of the same stream: exactly one EventSource. world.js is not node-loadable
+   (canvas/rAF/DOM at module scope), so these are source locks — the same pattern the other world.js
+   guards in test/ use.
+
+   The defect that lived here: `open()` guarded only on bridgePaused: onerror nulls chanES and arms a
+   retry, and resumeBridge re-opens on !chanES, so a re-entry INSIDE the backoff window (DATA › IMPORT →
+   reentry → enterGame → resumeBridge) opened stream #1 and the pending timer then overwrote chanES with
+   #2 — #1 never closed, its onmessage closure re-emitting every server event onto the bus forever (two
+   crates per inbound message, doubled HUD notes).
+
+   (The sub-agent helper-sprite ledger this block also used to lock was REMOVED 2026-07-30 on Andrew's
+   order — the world draws no floating helper marker; the LIVE HELPERS panel is the readout.) */
+{
+  const fs = require('fs');
+  const path = require('path');
+  const world = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'world.js'), 'utf8');
+
+  const openAt = world.indexOf('const open = () => {');
+  A.ok(openAt > 0, 'world.js owns the channel-bridge open()');
+  const openSeg = world.slice(openAt, openAt + 2600);
+  A.ok(/if \(chanES\) return;/.test(openSeg), 'open() refuses to create a SECOND EventSource while one is live');
+  A.ok(/clearTimeout\(retryTimer\)/.test(openSeg), 'and it cancels any pending retry, so the timer cannot replace a healthy stream');
+  A.ok(/retryTimer = setTimeout\(/.test(openSeg), 'the reconnect retry is a TRACKED timer, not an anonymous one');
+
+  /* Execute the production open() closure against fake EventSources/timers. This is the exact original race:
+     socket error -> retry pending -> DATA/IMPORT re-entry calls resumeBridge -> stale retry callback fires.
+     Source needles alone can prove the guards exist, but only this state-machine drive proves their composition
+     leaves one live stream and never orphans a second emitter. */
+  const openEnd = world.indexOf('\n    };\n    connOpenFn = open;', openAt);
+  A.ok(openEnd > openAt, 'the production channel-bridge open() closure is extractable for behavioral execution');
+  const openSource = world.slice(openAt, openEnd + '\n    };'.length);
+  let timerId = 0;
+  const timers = new Map();
+  const fakeSetTimeout = fn => { const id = ++timerId; timers.set(id, fn); return id; };
+  const fakeClearTimeout = id => { timers.delete(id); };
+  const sources = [];
+  class FakeEventSource {
+    constructor(url) { this.url = url; this.readyState = 0; this.closed = false; sources.push(this); }
+    close() { this.closed = true; }
+  }
+  FakeEventSource.OPEN = 1;
+  const makeBridge = new Function('EventSource', 'setTimeout', 'clearTimeout', `
+    let bridgePaused = false, chanES = null, retryTimer = null, backoff = 1000;
+    let lastSseEventAt = 0, fnow = 0;
+    const apiUrl = x => x, fetchSnapshot = () => {};
+    const window = { __STARNET_API_TOKEN__: '' };
+    const performance = { now: () => 0 };
+    const U = { bus: { emit() {} } };
+    ${openSource}
+    return {
+      open,
+      resume() { if (!chanES) open(); },
+      source() { return chanES; }
+    };
+  `);
+  const bridge = makeBridge(FakeEventSource, fakeSetTimeout, fakeClearTimeout);
+  bridge.open();
+  const first = bridge.source();
+  A.eq(sources.length, 1, 'initial bridge open creates one EventSource');
+  first.onerror();
+  A.ok(first.closed && bridge.source() === null, 'an errored source closes and leaves one tracked retry');
+  A.eq(timers.size, 1, 'the error arms exactly one retry timer');
+  const staleRetry = Array.from(timers.values())[0];
+  bridge.resume();
+  const resumed = bridge.source();
+  A.eq(sources.length, 2, 're-entry during backoff creates one replacement source');
+  A.eq(timers.size, 0, 're-entry cancels the pending retry');
+  A.ok(resumed && resumed !== first && !resumed.closed, 'the replacement is the sole live tracked source');
+  staleRetry(); // adversarially invoke the already-cleared callback; open()'s live-source guard is the second belt
+  A.eq(sources.length, 2, 'even a stale retry callback cannot create a second live EventSource');
+  A.eq(sources.filter(s => !s.closed).length, 1, 're-entry/backoff ends with exactly ONE live EventSource');
+
+  const spawnAt = world.indexOf('chanQueues.clear(); serverLit.clear();');
+  A.ok(spawnAt > 0, 'spawn() owns the new-agent reset block');
+  A.ok(!/subLedger/.test(world), 'the retired helper-sprite ledger stays gone — no floating sub-agent marker in the world');
+}
+
 A.report('channels.sse');

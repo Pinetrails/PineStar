@@ -18,10 +18,11 @@
    Fail-open everywhere: a failed / empty / malformed study yields ZERO proposals and never touches the run. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  const beatCard = (typeof module !== 'undefined' && module.exports) ? require('./beatcard.js') : root.BeatCard;
+  const api = factory(beatCard);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.Study = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (BeatCard) {
   'use strict';
 
   // the dossier dimensions the study may tag a proposal with — MUST match dossier.js DIM_KEYS (kept inline so
@@ -129,10 +130,11 @@
     if (body.length > cap) body = body.slice(body.length - cap);   // keep the most recent exchange
     return 'You just finished a task for your Commander. From the WORK below, update what the station believes ' +
       'about them. Propose ONLY durable, evidenced belief changes — one per line, tagged with a dimension and ' +
-      'ADD (a new belief) or RETIRE (a belief that now looks stale/shipped). Dimensions: goals, pain, ambition, ' +
+      'ADD (a new belief) or RETIRE (a belief that now looks stale/shipped), plus a short VERBATIM evidence quote. Dimensions: goals, pain, ambition, ' +
       'stack, style, identity, standing_orders, people, schedule. Examples:\n' +
-      'goals ADD: shipping a local-first agent harness\nstyle ADD: prefers terse, verified answers\n' +
-      'goals RETIRE: ship the dossier (this work shows it landed)\n' +
+      'goals ADD: shipping a local-first agent harness | EVIDENCE: "ship the local-first harness"\n' +
+      'style ADD: prefers terse, verified answers | EVIDENCE: "keep the answer terse and verify it"\n' +
+      'goals RETIRE: ship the dossier | EVIDENCE: "the dossier is shipped"\n' +
       'Skip anything transient, guessed, or already known. If nothing changed, reply NONE.\n\n' +
       (block ? 'WHAT THE STATION ALREADY BELIEVES:\n' + block + '\n\n' : '') +
       (directive ? 'THE DIRECTIVE:\n' + directive + '\n\n' : '') +
@@ -148,8 +150,10 @@
       const dim = canonDim(m[1]);
       if (!dim) continue;
       const kind = RETIRE_WORDS.has(String(m[2]).toLowerCase()) ? 'retire' : 'add';
-      const text = m[3].trim();
-      if (text) out.push({ dim: dim, kind: kind, text: text });
+      let text = m[3].trim(), evidence = '';
+      const em = /\s*\|\s*EVIDENCE\s*[:\-—]\s*["“]?(.+?)["”]?\s*$/i.exec(text);
+      if (em) { evidence = em[1].trim().replace(/^["“]|["”]$/g, ''); text = text.slice(0, em.index).trim(); }
+      if (text) out.push({ dim: dim, kind: kind, text: text, evidence: evidence });
     }
     return out;
   }
@@ -185,6 +189,9 @@
     try { raw = await propose(prompt); } catch (_) { return { proposals: [], prompt: prompt }; }   // a failed study never hurts the run
 
     const beliefTexts = existingTexts(opts.beliefs);
+    const evidenceHay = String(run.directive || '') + '\n' + (Array.isArray(run.messages) ? run.messages.map(m => (m && typeof m.content === 'string') ? m.content : '').join('\n') : '');
+    const normEvidence = s => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+    const evidenceBlob = normEvidence(evidenceHay);
     const declined = (Array.isArray(opts.declined) ? opts.declined : []).map(t => String(t).trim()).filter(Boolean);
     const now = clock.now();
     const seen = {};                 // exact-text dedup within the batch (keyed dim+text)
@@ -194,6 +201,11 @@
       let text = redact(String(cand.text)).trim();
       if (text.length > MAX_CONTENT) text = text.slice(0, MAX_CONTENT - 1) + '…';
       if (!text) continue;
+      let evidence = redact(String(cand.evidence || '')).trim();
+      // New-format proposals must ground their quote in the real run. Old-format replies remain compatible and
+      // fall back to the directive receipt while providers roll onto the stricter prompt.
+      if (evidence && (evidence.length < 6 || evidenceBlob.indexOf(normEvidence(evidence)) < 0)) continue;
+      if (!evidence) evidence = (typeof run.directive === 'string' && run.directive) ? String(run.directive).slice(0, 140) : '';
       if (lowValue(text)) continue;                       // trivia / run-narration floor
       const key = cand.dim + '::' + text.toLowerCase();
       if (seen[key]) continue;
@@ -220,7 +232,7 @@
       seen[key] = 1; acceptedTexts.push(text);
       proposals.push({
         id: 'study_' + (proposals.length + 1), dim: cand.dim, kind: cand.kind, text: text,
-        evidence: (typeof run.directive === 'string' && run.directive) ? String(run.directive).slice(0, 140) : '',
+        evidence: evidence.slice(0, 280), evidenceRef: { runId: run.runId || null, kind: cand.evidence ? 'verbatim' : 'directive' },
         source: 'study', sourceRunId: run.runId || null, createdAt: now
       });
       if (proposals.length >= max) break;
@@ -322,59 +334,9 @@
      value they read as 'busy' — so the 128 study.test + the goalstore §8 arc assertions hold unchanged.
      canTrust()/trustShown()/trustDone() are the only additions. */
   function makeBeatSlot() {
-    const pendingMemory = new Set();
-    let visible = null;
-    return {
-      memoryProposed(runId) { if (runId) pendingMemory.add(runId); },
-      memoryDeck() { if (visible !== null) return 'queue'; visible = 'memory'; return 'render'; },
-      memoryShown() { visible = 'memory'; },   // idempotent hard-claim for the actual deck render (already arbitrated)
-      memoryDone(runId, more) { if (runId) pendingMemory.delete(runId); visible = more ? 'memory' : null; },
-      memoryEmpty(runId) { if (runId) pendingMemory.delete(runId); },
-      canStudy() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';   // reflection in flight ANYWHERE — memory wins the moment
-        return 'free';
-      },
-      studyShown() { visible = 'study'; },
-      studyDone(more) { visible = more ? 'memory' : null; },
-      // GROWTH Tier 2 — the arc confirm beat cedes to BOTH memory and study: it may only take a wholly free slot.
-      // 'busy' = a beat (memory/study/arc/trust) is visible; 'memory' = reflection in flight (memory wins the moment).
-      canArc() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';
-        return 'free';
-      },
-      arcShown() { visible = 'arc'; },
-      // more=true hands the slot straight to a memory deck that QUEUED behind the visible arc panel (a late
-      // memory.proposed during a minutes-long confirm) — mirrors studyDone(more): the deck renders with no gap
-      // where another beat could steal the moment, and pendingMemory can't strand canStudy/canArc on 'memory'.
-      arcDone(more) { visible = more ? 'memory' : null; },
-      // GROWTH Tier 3 — the earned-autonomy offer beat: the LOWEST priority. It cedes to memory, study AND the arc;
-      // like canArc it may only take a wholly free slot. 'busy' = ANY beat (memory/study/arc/trust) is visible.
-      canTrust() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';
-        return 'free';
-      },
-      trustShown() { visible = 'trust'; },
-      // more=true hands the slot to a memory deck that QUEUED behind the visible trust card (mirrors arcDone/studyDone):
-      // the deck renders with no gap where another beat could steal the moment, and pendingMemory can't strand the lanes.
-      trustDone(more) { visible = more ? 'memory' : null; },
-      // NS-6 (ADDITIVE) — the THREAD turn-in beat: a FIFTH participant, the LOWEST priority (memory > study >
-      // arc > trust > thread — study always wins the moment first, per the turn-in conventions). Like canArc /
-      // canTrust it may only take a WHOLLY FREE slot; 'thread' is just another visible value the other lanes
-      // read as 'busy', so every prior assertion holds unchanged.
-      canThread() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';
-        return 'free';
-      },
-      threadShown() { visible = 'thread'; },
-      // more=true hands the slot to a memory deck that QUEUED behind the visible thread card (mirrors trustDone).
-      threadDone(more) { visible = more ? 'memory' : null; },
-      visibleBeat() { return visible; },
-      _pending() { return pendingMemory.size; }
-    };
+    const shared = BeatCard || (typeof globalThis !== 'undefined' && globalThis.BeatCard);
+    if (!shared || typeof shared.makeSlot !== 'function') throw new Error('BeatCard must load before Study.makeBeatSlot');
+    return shared.makeSlot();
   }
 
   return {

@@ -211,6 +211,10 @@
       title: KIND_LABEL[kind] || 'Note', body: content, content: content,
       scope: prop.scope || 'global', streamId: prop.streamId || null,
       sourceRunId: opts.runId || prop.sourceRunId || null,
+      // WHICH SURFACE formed this belief (memcore.originOf). Unattended runs reflect now, so a record can come
+      // from a routine, a night shift, or a messaging channel — the Commander must be able to tell those apart
+      // from their own conversation. Absent => 'commander', the historical meaning of an untagged record.
+      origin: String(opts.origin || prop.origin || 'commander'),
       createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
     };
   }

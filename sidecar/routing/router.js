@@ -91,7 +91,18 @@ function makeRouter(o) {
     };
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, stationFor };
+  /* THE CHAIN EDGE (agentic graphs): which agent does THIS dock's output hand off to? null = a terminal stage
+     (its reply is the pipeline's answer) or no routing floor at all. Reads the same compiled plan and the same
+     round-robin counters as resolveTarget, so a SPLIT downstream of a dock spreads exactly like one upstream —
+     the crate the world draws and the run the sidecar buys are one decision. */
+  function chainNext(agentId, ctx) {
+    const p = activePlan();
+    if (!p || !agentId) return null;
+    const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
+    return Pipeline.chainNext(p, agentId, ctx || {}, pick);
+  }
+
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, chainNext, stationFor };
 }
 
 module.exports = { makeRouter };

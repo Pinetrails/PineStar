@@ -9,7 +9,7 @@
      · POST /api/halt stamps a DURABLE halt → GET /api/nightshift/status reports halted:true and (once away)
        binding:'halt' — the pure gate the old wiring could never reach.
      · the halt SURVIVES a sidecar restart (a reboot must never silently re-enable overnight spend).
-     · a deliberate dial re-write (POST /api/autonomy/posture) LIFTS the halt — the shift is not wedged forever. */
+     · a deliberate dial re-write (`resumeHalt:true`) LIFTS the halt — the shift is not wedged forever. */
 'use strict';
 
 const A = require('./_assert.js');
@@ -74,8 +74,14 @@ function kill(child) { return new Promise(r => { try { child.on('exit', () => r(
     s = await status();
     A.eq(s.halted, true, 'the halt survived the sidecar restart (durable, not in-memory)');
 
-    // ===== 3. a deliberate dial re-write LIFTS the halt (not wedged forever) =====
-    await (await fetch(B + '/api/autonomy/posture', { method: 'POST', headers, body: JSON.stringify({ posture: { initiative: 'leash', reach: 'sandbox', leashPerDay: 3 } }) })).json();
+    // ===== 3. a background beliefs mirror must NOT impersonate an explicit resume =====
+    const beliefsOnly = await (await fetch(B + '/api/autonomy/posture', { method: 'POST', headers, body: JSON.stringify({ beliefs: { known: [], beliefs: {} } }) })).json();
+    A.eq(beliefsOnly.postureWritten, false, 'beliefs-only posture sync identifies that no dial was written');
+    s = await status();
+    A.eq(s.halted, true, 'beliefs-only page-load sync does not lift the durable E-STOP');
+
+    // ===== 4. a deliberate dial re-write LIFTS the halt (not wedged forever) =====
+    await (await fetch(B + '/api/autonomy/posture', { method: 'POST', headers, body: JSON.stringify({ posture: { initiative: 'leash', reach: 'sandbox', leashPerDay: 3 }, resumeHalt: true }) })).json();
     s = await status();
     A.eq(s.halted, false, 're-writing the autonomy dial lifts the halt');
     A.ok(s.binding !== 'halt', 'the binding is no longer halt (got ' + s.binding + ')');

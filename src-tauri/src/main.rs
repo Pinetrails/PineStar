@@ -11,6 +11,8 @@
 // restarts the sidecar (which would kill the page the user is on).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod credentials;
+
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -28,44 +30,13 @@ use tauri::{
 };
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
-const KEYCHAIN_ACCOUNT: &str = "openrouter";
-const KEYCHAIN_PROVIDERS: [&str; 13] = [
-    "openrouter",
-    "openai",
-    "anthropic",
-    "gemini",
-    "xai",
-    "groq",
-    "mistral",
-    "deepseek",
-    "together",
-    "fireworks",
-    "perplexity",
-    "cerebras",
-    "custom",
-];
-// Channel bot tokens live in the keychain under account "channel:<id>" and inject into the sidecar env at spawn
-// as SKYNET_<ID>_TOKEN — the SAME posture as provider API keys above. (id, env_name) drives both spawn injection
-// and the store/has commands. Adding a channel is one row here.
-const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2] = [
-    ("telegram", "SKYNET_TELEGRAM_TOKEN"),
-    ("discord", "SKYNET_DISCORD_TOKEN"),
-];
-const SIDECAR_PROVIDER_KEY_ENVS: [(&str, &str); 12] = [
-    ("openai", "SKYNET_OPENAI_API_KEY"),
-    ("anthropic", "SKYNET_ANTHROPIC_API_KEY"),
-    ("gemini", "SKYNET_GEMINI_API_KEY"),
-    ("xai", "SKYNET_XAI_API_KEY"),
-    ("groq", "SKYNET_GROQ_API_KEY"),
-    ("mistral", "SKYNET_MISTRAL_API_KEY"),
-    ("deepseek", "SKYNET_DEEPSEEK_API_KEY"),
-    ("together", "SKYNET_TOGETHER_API_KEY"),
-    ("fireworks", "SKYNET_FIREWORKS_API_KEY"),
-    ("perplexity", "SKYNET_PERPLEXITY_API_KEY"),
-    ("cerebras", "SKYNET_CEREBRAS_API_KEY"),
-    ("custom", "SKYNET_CUSTOM_OPENAI_KEY"),
-];
+use credentials::{
+    channel_keychain_entry, credits_keychain_entry, delete_credential_honest, is_known_channel,
+    keychain_entry, keychain_entry_for, keychain_pool_entry_for,
+    migrate_channel_tokens_from_plaintext, migrate_credits_token_from_plaintext,
+    normalize_provider, read_channel_token, read_credits_token, read_key, read_key_for,
+    read_key_pool_for, KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
+};
 
 /// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
 /// only with the sidecar), the project root, and the live child.
@@ -137,6 +108,7 @@ struct KeepAwakeStatus {
 struct ProviderKeyStatus {
     provider: String,
     configured: bool,
+    alternate_count: usize,
 }
 
 #[cfg(windows)]
@@ -418,6 +390,7 @@ fn copy_missing_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// Name of the one-shot done-marker dropped in the live workspace root after the FIRST
 /// successful legacy migration. Its presence is the sole signal to never migrate again.
 const MIGRATION_MARKER: &str = ".migrated";
+const MIGRATION_PENDING_MARKER: &str = ".migration-pending";
 
 /// True when the live workspace root already holds real data (anything other than our own
 /// marker file). A pre-existing populated root means an earlier install/migration already ran,
@@ -440,36 +413,142 @@ fn workspace_has_content(current: &Path) -> bool {
 ///   1. If the `.migrated` marker exists in the live root, skip entirely (the definitive signal).
 ///   2. Belt-and-suspenders: if the live root already has real content, skip and drop the marker
 ///      so a first-run-with-marker-missing but already-populated install never migrates either.
-/// The marker is written only AFTER the copy pass completes, so a crash mid-copy simply retries
-/// the (idempotent, copy-missing-only) migration next boot rather than stranding a half state.
-fn migrate_workspace_data(current: &Path, legacy_roots: &[PathBuf]) -> Vec<PathBuf> {
+/// A pending marker is written BEFORE copying. A crash or returned I/O error therefore retries
+/// the idempotent, copy-missing-only pass instead of mistaking its partial tree for live data.
+fn migrate_workspace_data(
+    current: &Path,
+    legacy_roots: &[PathBuf],
+    startup_log: &Option<PathBuf>,
+) -> Vec<PathBuf> {
     let mut migrated = Vec::new();
     let _ = std::fs::create_dir_all(current);
     let marker = current.join(MIGRATION_MARKER);
+    let pending = current.join(MIGRATION_PENDING_MARKER);
 
     // (1) Already migrated once — never touch legacy roots again.
     if marker.exists() {
+        let _ = std::fs::remove_file(&pending);
         return migrated;
     }
     // (2) Live root already populated (upgrade from a pre-marker build, or a manual copy): treat
     //     as already-migrated. Stamp the marker so future boots take the fast path at (1).
-    if workspace_has_content(current) {
+    if !pending.exists() && workspace_has_content(current) {
         let _ = std::fs::write(&marker, b"1");
         return migrated;
     }
 
+    // Stamp BEFORE copying so both a process crash and a returned I/O error remain retryable
+    // even when the partial pass created directories or copied some files.
+    if let Err(error) = std::fs::write(&pending, b"1") {
+        log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: RETRY required; could not create pending marker {}: {error}",
+                pending.display()
+            ),
+        );
+        return migrated;
+    }
+
+    let mut copy_failed = false;
     for legacy in legacy_roots {
         if !legacy.is_dir() {
             continue;
         }
-        if copy_missing_dir(legacy, current).is_ok() {
-            migrated.push(legacy.clone());
+        match copy_missing_dir(legacy, current) {
+            Ok(()) => migrated.push(legacy.clone()),
+            Err(error) => {
+                copy_failed = true;
+                log_startup(
+                    startup_log,
+                    format!(
+                        "workspace-migration: RETRY required; copy from {} failed: {error}",
+                        legacy.display()
+                    ),
+                );
+            }
         }
+    }
+    if copy_failed {
+        return migrated;
     }
     // Marker written LAST, after all copies land: crash-safe (a mid-copy crash leaves no marker,
     // so the idempotent copy-missing pass simply re-runs next boot).
-    let _ = std::fs::write(&marker, b"1");
+    match std::fs::write(&marker, b"1") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&pending);
+        }
+        Err(error) => log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: RETRY required; could not write completion marker {}: {error}",
+                marker.display()
+            ),
+        ),
+    }
     migrated
+}
+
+#[cfg(test)]
+mod workspace_migration_tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "starnet-workspace-migration-{}-{}-{name}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_copy_leaves_migration_retryable() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let base = temp_dir("locked-source");
+        let legacy = base.join("legacy");
+        let current = base.join("current");
+        let startup_log = base.join("startup.log");
+        std::fs::create_dir_all(legacy.join("sessions")).unwrap();
+        let source = legacy.join("sessions").join("history.jsonl");
+        std::fs::write(&source, b"important session").unwrap();
+
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&source)
+            .unwrap();
+        let migrated = migrate_workspace_data(
+            &current,
+            std::slice::from_ref(&legacy),
+            &Some(startup_log.clone()),
+        );
+        assert!(migrated.is_empty(), "a failed legacy root is not reported as migrated");
+        assert!(
+            !current.join(MIGRATION_MARKER).exists(),
+            "a failed copy must not stamp the one-shot marker"
+        );
+        assert!(current.join(MIGRATION_PENDING_MARKER).exists());
+        let failure_log = std::fs::read_to_string(&startup_log).unwrap();
+        assert!(failure_log.contains("RETRY required"));
+        assert!(failure_log.contains(&legacy.display().to_string()));
+
+        drop(lock);
+        let retried = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
+        assert_eq!(retried, vec![legacy.clone()], "the next boot retries the legacy root");
+        assert_eq!(
+            std::fs::read(current.join("sessions").join("history.jsonl")).unwrap(),
+            b"important session"
+        );
+        assert!(current.join(MIGRATION_MARKER).exists());
+        assert!(!current.join(MIGRATION_PENDING_MARKER).exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
 }
 
 fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
@@ -486,27 +565,47 @@ fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
     }
 }
 
-// ---- WebView2 stale-cache purge on version change ----------------------------------------
+// ---- WebView2 stale-cache purge on packaged-build change ---------------------------------
 //
 // The desktop webview loads the frontend COMPILED INTO the exe (tauri.localhost). WebView2
 // caches those assets (Cache / `Code Cache/js`) and never revalidates. After an exe swap, V8
 // can run OLD bytecode against NEW data — the 2026-07-06 incident (agents vanished from the
-// world sim, COMMS fell back to the overseer). Fix: on every version change, delete the
-// compiled/GPU caches while PRESERVING user state (Local Storage holds the world save under
-// `starnet.save`). See docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1.
+// world sim, COMMS fell back to the overseer). A version-only marker is insufficient: release
+// candidates are routinely rebuilt and reinstalled under the same semver, which left the old
+// voice controller running after the fixed 0.8.0 installer was installed. Key the marker to the
+// exact executable bytes and purge on every packaged-build change while PRESERVING user state
+// (Local Storage holds the world save under `starnet.save`).
 
-/// Pure decision: given the previously-recorded marker (if any) and the running version,
+/// Pure decision: given the previously-recorded marker (if any) and the running build identity,
 /// should we purge the stale webview caches? Purge on first run (no marker) or on any change.
 /// Kept side-effect-free so it can be unit-tested without touching the filesystem.
-fn should_purge_webview_cache(last_marker: Option<&str>, current_version: &str) -> bool {
+fn should_purge_webview_cache(last_marker: Option<&str>, current_build: &str) -> bool {
     match last_marker {
-        Some(prev) => prev.trim() != current_version.trim(),
+        Some(prev) => prev.trim() != current_build.trim(),
         None => true,
     }
 }
 
-/// Marker file recording the version that last ran, next to the workspaces root
-/// (`%APPDATA%\ai.skynet.harness\last-run-version`). Reused for the purge decision.
+/// Stable marker payload for the exact packaged executable. The runtime SHA is the authority:
+/// unlike semver or the Git tree it changes for a same-version rebuild and covers generated bundle
+/// inputs. If hashing the executable fails, fall back to the strongest compile-time source identity.
+fn webview_build_identity(current_version: &str) -> String {
+    let (executable_sha, executable_size) = runtime_executable_identity();
+    let artifact = if !executable_sha.is_empty() && executable_size > 0 {
+        format!("exe:{executable_sha}:{executable_size}")
+    } else {
+        format!(
+            "source:{}:{}:{}",
+            env!("STARNET_BUILD_SHA"),
+            env!("STARNET_BUILD_TREE"),
+            env!("STARNET_BUILD_DESCRIBE")
+        )
+    };
+    format!("{}|{}", current_version.trim(), artifact)
+}
+
+/// Marker file recording the exact build that last ran. The legacy filename is retained so
+/// existing version-only markers differ and force the required one-time migration purge.
 fn last_run_version_marker(app: &tauri::AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|dir| {
         let _ = std::fs::create_dir_all(&dir);
@@ -577,31 +676,32 @@ fn purge_webview2_caches(user_data_dir: &Path, startup_log: &Option<PathBuf>) ->
     removed
 }
 
-/// Top-level orchestration: compare the running version to the stored marker; on first run
-/// or any change, purge the stale webview caches (Windows/WebView2 today; other platforms
+/// Top-level orchestration: compare the exact running build to the stored marker; on first run
+/// or any build change, purge the stale webview caches (Windows/WebView2 today; other platforms
 /// hook in later), then record the new marker. Platform-neutral marker logic so a future
 /// mac/linux (WebKit) purge can reuse the same decision path.
-fn purge_stale_webview_cache_on_version_change(
+fn purge_stale_webview_cache_on_build_change(
     app: &tauri::AppHandle,
     identifier: &str,
     current_version: &str,
     startup_log: &Option<PathBuf>,
 ) {
+    let current_build = webview_build_identity(current_version);
     let marker_path = last_run_version_marker(app);
     let last = marker_path
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok());
     let last_trimmed = last.as_ref().map(|s| s.trim());
 
-    if !should_purge_webview_cache(last_trimmed, current_version) {
+    if !should_purge_webview_cache(last_trimmed, &current_build) {
         return;
     }
 
     log_startup(
         startup_log,
         format!(
-            "webview-cache-purge: version change {:?} -> {} — purging stale caches (preserving Local Storage/IndexedDB/cookies)",
-            last_trimmed, current_version
+            "webview-cache-purge: packaged-build change {:?} -> {} — purging stale caches (preserving Local Storage/IndexedDB/cookies)",
+            last_trimmed, current_build
         ),
     );
 
@@ -640,7 +740,7 @@ fn purge_stale_webview_cache_on_version_change(
     // Record the new marker LAST, so a crash mid-purge re-triggers a purge next boot rather
     // than leaving stale caches behind a satisfied marker.
     if let Some(path) = marker_path {
-        if let Err(e) = std::fs::write(&path, current_version) {
+        if let Err(e) = std::fs::write(&path, &current_build) {
             log_startup(
                 startup_log,
                 format!(
@@ -648,263 +748,6 @@ fn purge_stale_webview_cache_on_version_change(
                     path.display()
                 ),
             );
-        }
-    }
-}
-
-// ---- keychain (OS Credential Manager / Keychain / Secret Service via `keyring`) ----
-
-fn normalize_provider(provider: &str) -> &'static str {
-    match provider.trim().to_ascii_lowercase().as_str() {
-        "codex" | "openai-codex" => "codex",
-        "openai" | "openai-api" => "openai",
-        "anthropic" | "claude" => "anthropic",
-        "gemini" | "google" | "google-ai" | "google-gemini" => "gemini",
-        // 'grok' is now the OAuth (subscription) Grok id; 'xai'/'x-ai' stay the API-key Grok. (Mirrors the JS registry.)
-        "grok" | "grok-oauth" | "xai-oauth" => "grok",
-        "kimi" | "moonshot" | "kimi-code" | "kimi-oauth" => "kimi",
-        "xai" | "x-ai" => "xai",
-        "groq" => "groq",
-        "mistral" | "mistralai" => "mistral",
-        "deepseek" => "deepseek",
-        "together" | "together-ai" => "together",
-        "fireworks" | "fireworks-ai" => "fireworks",
-        "perplexity" | "pplx" | "sonar" => "perplexity",
-        "cerebras" => "cerebras",
-        "ollama" | "ollama-local" => "ollama",
-        "custom" | "openai-compatible" | "local" | "vllm" | "lmstudio" => "custom",
-        _ => "openrouter",
-    }
-}
-
-fn keychain_account_for(provider: &str) -> String {
-    match normalize_provider(provider) {
-        // Preserve the original account name so existing OpenRouter keys keep working.
-        "openrouter" => KEYCHAIN_ACCOUNT.to_string(),
-        id => format!("provider:{id}"),
-    }
-}
-
-fn keychain_entry() -> keyring::Result<keyring::Entry> {
-    keychain_entry_for("openrouter")
-}
-
-fn keychain_entry_for(provider: &str) -> keyring::Result<keyring::Entry> {
-    let account = keychain_account_for(provider);
-    keyring::Entry::new(KEYCHAIN_SERVICE, account.as_str())
-}
-
-/// The stored BYOK key, or None if unset/empty.
-fn read_key() -> Option<String> {
-    read_key_for("openrouter")
-}
-
-fn read_key_for(provider: &str) -> Option<String> {
-    keychain_entry_for(provider)
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .filter(|k| !k.trim().is_empty())
-}
-
-// ---- channel bot tokens (keychain account "channel:<id>") ----
-
-/// Only the channels we actually inject (defends the keychain account namespace).
-fn is_known_channel(channel: &str) -> bool {
-    SIDECAR_CHANNEL_TOKEN_ENVS
-        .iter()
-        .any(|(id, _)| *id == channel)
-}
-
-fn channel_keychain_entry(channel: &str) -> keyring::Result<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, format!("channel:{channel}").as_str())
-}
-
-/// Delete a keychain credential, treating "nothing stored" as success. A REAL deletion
-/// failure (locked keychain, OS error) surfaces as Err so callers can stop claiming
-/// "purged" while the secret lives on — truthful telemetry applies to destruction too.
-fn delete_credential_honest(entry: &keyring::Entry) -> Result<(), String> {
-    match entry.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-/// The stored bot token for a channel, or None if unset/empty.
-fn read_channel_token(channel: &str) -> Option<String> {
-    channel_keychain_entry(channel)
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .filter(|t| !t.trim().is_empty())
-}
-
-// ---- StarNet Cloud device token (keychain account "credits:device") ----
-//
-// The device token is a BEARER CREDENTIAL THAT SPENDS MONEY: anyone holding it can bill the
-// linked account until the balance runs out. It is minted by the sidecar (which polls the cloud),
-// so unlike a BYOK key it never passes through the UI — and it must not stay in plaintext either.
-//
-// Same posture as channel bot tokens: keychain -> env -> sidecar runtime layer. The sidecar writes
-// the link record to .secrets/credits.json; we adopt the secret half into the keychain and strip it
-// from the file, leaving the non-secret fields (url, accountId, linkedAt) exactly where they were.
-
-fn credits_keychain_entry() -> keyring::Result<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, "credits:device")
-}
-
-/// The stored StarNet Cloud device token, or None if unset/empty.
-fn read_credits_token() -> Option<String> {
-    credits_keychain_entry()
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .filter(|t| !t.trim().is_empty())
-}
-
-/// Adopt the device token out of `.secrets/credits.json` into the OS keychain, then rewrite the
-/// file without it. Returns true when a token now lives in the keychain (whether adopted just now
-/// or already there), so callers can report honestly rather than assuming.
-///
-/// Runs at every launch (migrating existing linked stations) AND on demand right after a link, so
-/// a freshly minted token spends only seconds on disk instead of until the next restart.
-/// Idempotent: re-running with nothing to do is a no-op.
-fn migrate_credits_token_from_plaintext(workspaces: &Path) -> bool {
-    let file = workspaces.join(".secrets").join("credits.json");
-    let raw = match std::fs::read_to_string(&file) {
-        Ok(s) => s,
-        Err(_) => return read_credits_token().is_some(), // no file -> keychain may still hold it
-    };
-    let mut json: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return read_credits_token().is_some(), // corrupt -> leave it for the sidecar's loader
-    };
-    let token = json
-        .get("deviceToken")
-        .and_then(|t| t.as_str())
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(str::to_string);
-
-    let Some(token) = token else {
-        return read_credits_token().is_some(); // already stripped on a previous run
-    };
-
-    if read_credits_token().as_deref() != Some(token.as_str()) {
-        if let Ok(entry) = credits_keychain_entry() {
-            let _ = entry.set_password(&token);
-        }
-    }
-
-    // INVARIANT (Andrew): never remove the last copy of a secret without PROOF a durable home holds
-    // it. Only strip the plaintext token once a READ-BACK confirms the keychain really has this
-    // exact value. If the store failed (locked keychain, no backend, permissions), leave the token
-    // on disk — a token in a file beats a token nobody has. The next launch retries (self-healing).
-    let keychain_has_it = read_credits_token()
-        .map(|t| t == token)
-        .unwrap_or(false);
-    if keychain_has_it {
-        if let Some(obj) = json.as_object_mut() {
-            obj.remove("deviceToken");
-        }
-        if let Ok(serialized) = serde_json::to_string(&json) {
-            let _ = atomic_write(&file, serialized.as_bytes());
-        }
-    }
-    keychain_has_it
-}
-
-/// Import any plaintext channel bot tokens from a legacy secrets.json into the keychain, then rewrite the file
-/// WITHOUT the tokens (keeping every non-secret field). One-time migration for a desktop build that upgraded from
-/// a plaintext-token world; a no-op when there are no plaintext tokens. Best-effort — a failure here never blocks
-/// startup (the sidecar's own runtime layer keeps the session honest either way).
-fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {
-    let file = workspaces.join("channels").join("secrets.json");
-    let raw = match std::fs::read_to_string(&file) {
-        Ok(s) => s,
-        Err(_) => return, // no file -> nothing to migrate
-    };
-    let mut json: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return, // corrupt -> leave it for the sidecar's resilient loader/.bak
-    };
-    let mut changed = false;
-    for (channel, _) in SIDECAR_CHANNEL_TOKEN_ENVS {
-        let token = json
-            .get(channel)
-            .and_then(|rec| rec.get("token"))
-            .and_then(|t| t.as_str())
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(str::to_string);
-        if let Some(token) = token {
-            // Store into the keychain if it doesn't already hold this channel's token (idempotent re-runs).
-            if read_channel_token(channel).is_none() {
-                if let Ok(entry) = channel_keychain_entry(channel) {
-                    let _ = entry.set_password(&token);
-                }
-            }
-            // INVARIANT (Andrew): never remove the last copy of a secret without PROOF a durable home holds it.
-            // Only strip the plaintext token once read_channel_token() confirms the keychain actually has it. If the
-            // set_password above failed (locked keychain, permissions, no backend), leave the plaintext token in
-            // place — a token on disk is strictly better than a lost token. Best-effort; never blocks startup. The
-            // sidecar's own boot migration will re-attempt the keychain adoption on a later launch (self-healing).
-            let keychain_has_it = read_channel_token(channel)
-                .map(|t| t == token)
-                .unwrap_or(false);
-            if keychain_has_it {
-                if let Some(rec) = json.get_mut(channel).and_then(|r| r.as_object_mut()) {
-                    rec.remove("token");
-                    changed = true;
-                }
-            }
-        }
-    }
-    if changed {
-        if let Ok(serialized) = serde_json::to_string(&json) {
-            // Atomic rewrite: a crash mid-write of secrets.json must never leave a truncated
-            // file (would corrupt the channel config). Write a sibling temp, then rename over
-            // the target — rename is atomic on the same volume, so readers see all-or-nothing.
-            let _ = atomic_write(&file, serialized.as_bytes());
-        }
-    }
-}
-
-/// Write `bytes` to `path` crash-safely: land them in a sibling temp file, flush, then
-/// atomically rename over `path`. The temp lives in the SAME directory so the rename stays on
-/// one volume (cross-volume renames are not atomic and can fall back to copy+delete). A crash
-/// before the rename leaves the temp (harmless orphan) and the original untouched; a crash
-/// after leaves the fully-written new file. Best-effort — errors bubble to the caller to log/ignore.
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(dir)?;
-    // Unique-ish temp name in the same dir; the pid keeps concurrent writers from colliding.
-    let tmp = dir.join(format!(
-        ".{}.{}.tmp",
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("secrets.json"),
-        std::process::id()
-    ));
-    {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.flush()?;
-        let _ = f.sync_all();
-    }
-    // On Windows, rename fails if the destination exists; remove-then-rename is the pragmatic
-    // path (there is a tiny window with no file, but a crash there still leaves the temp intact
-    // for a manual recover, and the sidecar's own resilient loader tolerates a missing file).
-    #[cfg(windows)]
-    {
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
-            Err(e)
         }
     }
 }
@@ -1137,11 +980,11 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         .env("SKYNET_API_TOKEN", &state.api_token)
         .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
         .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
-        // Desktop identity is informational only. Physical input is explicitly OFF in
-        // the installed sidecar, and controlled browsing is pinned headless; ordinary
-        // agent runs use browser.test_* CDP events with in-page lock emulation.
+        // The sidecar can load the native Windows desktop driver, but that alone grants nothing:
+        // only a locally paired Telegram owner receives the per-run remote-owner lease. Ordinary
+        // agent runs remain synthetic/headless by policy in the sidecar.
         .env("STARNET_DESKTOP_SHELL", "1")
-        .env("STARNET_COMPUTER_DRIVER", "0")
+        .env("STARNET_COMPUTER_DRIVER", "1")
         .env("STARNET_BROWSER_HEADLESS", "1")
         .env("STARNET_USER_CONTROL_MODE", "preserve")
         .env("STARNET_MCP_STDIO", "0")
@@ -1170,6 +1013,13 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     for (provider, env_name) in SIDECAR_PROVIDER_KEY_ENVS {
         if let Some(key) = read_key_for(provider) {
             cmd.env(env_name, key);
+        }
+    }
+    for provider in KEYCHAIN_PROVIDERS {
+        let pool = read_key_pool_for(provider);
+        if !pool.is_empty() {
+            let env_name = format!("SKYNET_KEY_POOL_{}", provider.to_ascii_uppercase().replace('-', "_"));
+            cmd.env(env_name, pool.join(","));
         }
     }
     // Channel bot tokens (Telegram/Discord) inject the same way — keychain -> env -> sidecar runtime layer.
@@ -1413,7 +1263,7 @@ fn push_provider_config(
     provider: &str,
     key: Option<&str>,
     base_url: Option<&str>,
-) {
+) -> Result<(), String> {
     use std::io::{Read, Write};
     let mut payload = serde_json::Map::new();
     payload.insert(
@@ -1438,18 +1288,51 @@ fn push_provider_config(
         state.ipc_token,
         body.as_bytes().len()
     );
-    if let Ok(mut s) = TcpStream::connect(("127.0.0.1", state.port)) {
-        let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
-        let _ = s.write_all(head.as_bytes());
-        let _ = s.write_all(body.as_bytes());
-        let _ = s.flush();
-        let mut buf = [0u8; 64];
-        let _ = s.read(&mut buf); // wait for the 200 ack before returning
+    let mut s = TcpStream::connect(("127.0.0.1", state.port))
+        .map_err(|e| format!("sidecar key push connect failed: {e}"))?;
+    s.set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("sidecar key push timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key push header failed: {e}"))?;
+    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key push body failed: {e}"))?;
+    s.flush().map_err(|e| format!("sidecar key push flush failed: {e}"))?;
+    let mut buf = [0u8; 96];
+    let n = s.read(&mut buf).map_err(|e| format!("sidecar key push acknowledgement failed: {e}"))?;
+    let head = String::from_utf8_lossy(&buf[..n]);
+    if !head.starts_with("HTTP/1.1 200") && !head.starts_with("HTTP/1.0 200") {
+        return Err(format!("sidecar rejected provider configuration: {}", head.lines().next().unwrap_or("no response")));
     }
+    Ok(())
 }
 
-fn push_key(state: &AppState, key: &str) {
-    push_provider_config(state, "openrouter", Some(key), None);
+fn push_key(state: &AppState, key: &str) -> Result<(), String> {
+    push_provider_config(state, "openrouter", Some(key), None)
+}
+
+fn push_provider_key_pool(state: &AppState, provider: &str, keys: &[String]) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let body = serde_json::json!({
+        "provider": normalize_provider(provider),
+        "keyPool": keys,
+    }).to_string();
+    let head = format!(
+        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        state.ipc_token,
+        body.as_bytes().len()
+    );
+    let mut s = TcpStream::connect(("127.0.0.1", state.port))
+        .map_err(|e| format!("sidecar key-pool push connect failed: {e}"))?;
+    s.set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("sidecar key-pool timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key-pool header failed: {e}"))?;
+    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key-pool body failed: {e}"))?;
+    s.flush().map_err(|e| format!("sidecar key-pool flush failed: {e}"))?;
+    let mut buf = [0u8; 96];
+    let n = s.read(&mut buf).map_err(|e| format!("sidecar key-pool acknowledgement failed: {e}"))?;
+    let response = String::from_utf8_lossy(&buf[..n]);
+    if !response.starts_with("HTTP/1.1 200") && !response.starts_with("HTTP/1.0 200") {
+        return Err(format!("sidecar rejected provider key pool: {}", response.lines().next().unwrap_or("no response")));
+    }
+    Ok(())
 }
 
 /// Push a channel bot token to the already-running sidecar (no restart), authenticated by the per-launch IPC
@@ -1686,13 +1569,20 @@ fn spawn_tray_updater(app: AppHandle) {
 #[tauri::command]
 fn harness_store_key(key: String, state: State<AppState>) -> Result<(), String> {
     let entry = keychain_entry().map_err(|e| e.to_string())?;
+    let previous = entry.get_password().ok().filter(|v| !v.trim().is_empty());
     let trimmed = key.trim();
     if trimmed.is_empty() {
-        let _ = entry.delete_credential();
+        delete_credential_honest(&entry)?;
     } else {
         entry.set_password(trimmed).map_err(|e| e.to_string())?;
     }
-    push_key(&state, trimmed);
+    if let Err(e) = push_key(&state, trimmed) {
+        match previous.as_deref() {
+            Some(old) => { let _ = entry.set_password(old); let _ = push_key(&state, old); }
+            None => { let _ = delete_credential_honest(&entry); let _ = push_key(&state, ""); }
+        }
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -1707,26 +1597,75 @@ fn harness_store_provider_key(
 ) -> Result<(), String> {
     let provider_id = normalize_provider(&provider);
     let key_trimmed = key.as_ref().map(|k| k.trim().to_string());
+    let mut rollback: Option<(keyring::Entry, Option<String>)> = None;
     if let Some(ref key_value) = key_trimmed {
         // codex + the device-OAuth providers (grok/kimi) authenticate by OAuth token (sidecar-owned), not a
         // keychain API key; ollama is keyless. None of them get a keychain entry.
         if provider_id != "codex" && provider_id != "ollama" && provider_id != "grok" && provider_id != "kimi" {
             let entry = keychain_entry_for(provider_id).map_err(|e| e.to_string())?;
+            let previous = entry.get_password().ok().filter(|v| !v.trim().is_empty());
             if key_value.is_empty() {
-                let _ = entry.delete_credential();
+                delete_credential_honest(&entry)?;
             } else {
                 entry.set_password(key_value).map_err(|e| e.to_string())?;
             }
+            rollback = Some((entry, previous));
         }
     }
     let base_trimmed = base_url.as_ref().map(|u| u.trim().to_string());
-    push_provider_config(
+    if let Err(e) = push_provider_config(
         &state,
         provider_id,
         key_trimmed.as_deref(),
         base_trimmed.as_deref(),
-    );
+    ) {
+        if let Some((entry, previous)) = rollback {
+            match previous.as_deref() {
+                Some(old) => { let _ = entry.set_password(old); let _ = push_provider_config(&state, provider_id, Some(old), None); }
+                None => { let _ = delete_credential_honest(&entry); let _ = push_provider_config(&state, provider_id, Some(""), None); }
+            }
+        }
+        return Err(e);
+    }
     Ok(())
+}
+
+/// Replace the complete alternate-key pool for exactly one provider. The old keychain value and live sidecar
+/// pool are restored if either half cannot be acknowledged, so the UI observes one atomic result.
+#[tauri::command]
+fn harness_store_provider_key_pool(
+    provider: String,
+    keys: Vec<String>,
+    state: State<AppState>,
+) -> Result<usize, String> {
+    let provider_id = normalize_provider(&provider);
+    if !KEYCHAIN_PROVIDERS.contains(&provider_id) {
+        return Err("this provider does not support alternate API keys".to_string());
+    }
+    let mut cleaned: Vec<String> = Vec::new();
+    for key in keys {
+        let trimmed = key.trim().to_string();
+        if !trimmed.is_empty() && !cleaned.contains(&trimmed) { cleaned.push(trimmed); }
+        if cleaned.len() == 8 { break; }
+    }
+    let entry = keychain_pool_entry_for(provider_id).map_err(|e| e.to_string())?;
+    let previous_raw = entry.get_password().ok();
+    let previous = read_key_pool_for(provider_id);
+    if cleaned.is_empty() {
+        delete_credential_honest(&entry)?;
+    } else {
+        let encoded = serde_json::to_string(&cleaned).map_err(|e| e.to_string())?;
+        entry.set_password(&encoded).map_err(|e| e.to_string())?;
+    }
+    if let Err(e) = push_provider_key_pool(&state, provider_id, &cleaned) {
+        match previous_raw.as_deref() {
+            Some(raw) => { let _ = entry.set_password(raw); }
+            None => { let _ = delete_credential_honest(&entry); }
+        }
+        let _ = push_provider_key_pool(&state, provider_id, &previous);
+        return Err(e);
+    }
+    Ok(cleaned.len())
 }
 
 /// Whether a BYOK key is configured — never returns the value itself.
@@ -1747,6 +1686,7 @@ fn harness_provider_key_status() -> Vec<ProviderKeyStatus> {
         .map(|provider| ProviderKeyStatus {
             provider: provider.to_string(),
             configured: read_key_for(provider).is_some(),
+            alternate_count: read_key_pool_for(provider).len(),
         })
         .collect()
 }
@@ -1757,7 +1697,7 @@ fn harness_clear_key(state: State<AppState>) -> Result<(), String> {
     if let Ok(entry) = keychain_entry() {
         let _ = entry.delete_credential();
     }
-    push_key(&state, "");
+    push_key(&state, "")?;
     Ok(())
 }
 
@@ -2220,6 +2160,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             harness_store_key,
             harness_store_provider_key,
+            harness_store_provider_key_pool,
             harness_has_key,
             harness_has_provider_key,
             harness_provider_key_status,
@@ -2253,6 +2194,7 @@ fn main() {
             let migrated_workspaces = migrate_workspace_data(
                 &workspaces,
                 &legacy_workspace_paths(&root, &workspaces),
+                &startup_log,
             );
             log_startup(
                 &startup_log,
@@ -2356,7 +2298,7 @@ fn main() {
             #[cfg(windows)]
             let init = format!("{init}window.__STARNET_CUSTOM_CHROME__=1;");
 
-            // Purge stale WebView2 compiled/GPU caches when the app version changed, BEFORE the
+            // Purge stale WebView2 compiled/GPU caches when the packaged build changed, BEFORE the
             // webview window is created — otherwise V8 can run old bytecode against new data
             // (see docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1). Fails soft; never blocks boot.
             {
@@ -2364,7 +2306,7 @@ fn main() {
                 let identifier = handle.config().identifier.clone();
                 let current_version = handle.package_info().version.to_string();
                 let log = startup_log_path(handle);
-                purge_stale_webview_cache_on_version_change(
+                purge_stale_webview_cache_on_build_change(
                     handle,
                     &identifier,
                     &current_version,
@@ -2683,22 +2625,42 @@ mod webview_cache_purge_tests {
     }
 
     #[test]
-    fn purges_when_version_changed() {
-        assert!(should_purge_webview_cache(Some("0.2.3"), "0.2.4"));
+    fn purges_when_packaged_build_changed() {
+        assert!(should_purge_webview_cache(
+            Some("0.8.0|exe:old:12"),
+            "0.8.0|exe:new:12"
+        ));
     }
 
     #[test]
-    fn no_purge_when_version_unchanged() {
-        assert!(!should_purge_webview_cache(Some("0.2.4"), "0.2.4"));
+    fn same_version_legacy_marker_forces_migration_purge() {
+        assert!(should_purge_webview_cache(
+            Some("0.8.0"),
+            "0.8.0|exe:new:12"
+        ));
+    }
+
+    #[test]
+    fn no_purge_when_exact_packaged_build_is_unchanged() {
+        assert!(!should_purge_webview_cache(
+            Some("0.8.0|exe:same:12"),
+            "0.8.0|exe:same:12"
+        ));
     }
 
     #[test]
     fn tolerates_whitespace_in_marker() {
         // Markers are written via fs::write and read back with read_to_string; a trailing
-        // newline or stray whitespace must NOT be read as a version change (would purge every
+        // newline or stray whitespace must NOT be read as a build change (would purge every
         // boot). trim() on both sides guards that.
-        assert!(!should_purge_webview_cache(Some("0.2.4\n"), "0.2.4"));
-        assert!(!should_purge_webview_cache(Some("  0.2.4  "), "0.2.4"));
+        assert!(!should_purge_webview_cache(
+            Some("0.8.0|exe:same:12\n"),
+            "0.8.0|exe:same:12"
+        ));
+        assert!(!should_purge_webview_cache(
+            Some("  0.8.0|exe:same:12  "),
+            "0.8.0|exe:same:12"
+        ));
     }
 
     #[cfg(windows)]

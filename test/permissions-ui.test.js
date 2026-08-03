@@ -5,6 +5,7 @@
 const assert = require('assert');
 const fs = require('fs'); const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+const appSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.js'), 'utf8');
 
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 
@@ -24,6 +25,7 @@ ok(/same WAIT \/ SUGGEST \/ BUILD \/ FREE ladder/.test(src), 'the row says it is
 
 // the standing-grant list + grant/revoke wiring
 ok(/id="perm-grants"/.test(src), '#perm-grants standing-grant list present');
+ok(/id="perm-status"/.test(src), 'permission authority has a live status/error readout');
 ok(/data-perm-grant=|data-perm-revoke=/.test(src), 'per-capability grant/revoke buttons rendered');
 
 // STANDING APPROVALS ledger (P0-5): the section is titled as a ledger, every grant is revocable, provenance +
@@ -37,11 +39,17 @@ ok(/emptyApprovals|No standing approvals yet/.test(src), 'teaching empty state (
 ok(/\[data-perm-revoke\]'\)\.forEach\(b => ArmConfirm\.wire\(b/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
 ok(/held\.filter\(k => curated\.indexOf\(k\) < 0\)/.test(src), 'NON-curated standing grants are listed too (nothing hidden/irrevocable)');
 ok(/pre-approve a capability|pre-bless/i.test(src), 'the curated GRANT offer is kept separate from the active-approvals ledger');
+ok(/FULL ACCESS<\/b>/.test(src), 'the process-lifetime Full Access wildcard has its own visible row');
+ok(/watched sessions may reuse allowed danger-class approvals without asking again/.test(src),
+  'the wildcard row names its watched-session boundary instead of implying unattended authority');
+ok(/host hardlines still apply/.test(src), 'the wildcard row does not overstate authority beyond host hardlines');
 
 // the store hooks
 ok(/PermissionsStore\.setLevel\(/.test(src), 'level click drives PermissionsStore.setLevel');
 ok(/PermissionsStore\.grant\(/.test(src) && /PermissionsStore\.revoke\(/.test(src), 'grant + revoke wired to the store');
 ok(/PermissionsStore\.refresh\(/.test(src), 'panel refreshes grants from the sidecar on open');
+ok(/snap\.error/.test(src), 'panel surfaces permission load/mutation failures instead of painting fake empty authority');
+ok(!/load:\s*\(\)\s*=>[\s\S]{0,300}\{\s*grants:\s*\[\],\s*grantable:\s*\[\]\s*\}/.test(appSrc), 'permission load failures are not synthesized as an authoritative empty ledger');
 
 // bidirectional sync: the granular dial repaints the permissions level (syncPerm) and vice versa (repaintDial)
 ok(/syncPerm\s*=\s*repaintPerm/.test(src), 'the dial→permissions sync hook is wired');

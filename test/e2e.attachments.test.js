@@ -6,13 +6,8 @@
 'use strict';
 const A = require('./_assert.js');
 const http = require('http');
-const path = require('path');
-const os = require('os');
-const { bootToken } = require('./_httpToken.js');
-const fs = require('fs');
-const { spawn } = require('child_process');
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 
 // a 1x1 png — real bytes, so we can assert the exact base64 round-trips upload -> disk -> expansion -> provider.
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -44,34 +39,15 @@ function startMockOpenRouter() {
   });
 }
 
-function boot(port, env, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, env, { SKYNET_PORT: String(port) }), stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
-      else if (!settled && /already in use/i.test(out)) { settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1)); else reject(new Error('no free port')); }
-    };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout:\n' + out)); } }, 9000);
-  });
-}
-
 async function drain(res) { const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '', events = []; while (true) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let nl; while ((nl = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1); if (line) { try { events.push(JSON.parse(line)); } catch (_) {} } } } return events; }
 
 (async () => {
   const mock = await startMockOpenRouter();
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-attach-e2e-'));
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base };
-  const { child, port } = await boot(8890 + (process.pid % 40), env, 20);
-  const B = 'http://' + HOST + ':' + port;
+  const fixture = SidecarFixture.create({ prefix: 'sk-attach-e2e-', env: { SKYNET_OPENROUTER_BASE: mock.base } });
+  await fixture.start();
+  const B = fixture.baseUrl;
   try {
-    const token = await bootToken(B, B);
+    const token = fixture.token;
     const H = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
 
     // 1. UPLOAD a photo -> a lightweight reference; the bytes land in the agent's workspace.
@@ -87,10 +63,27 @@ async function drain(res) { const rd = res.body.getReader(); const dec = new Tex
     const gotBytes = Buffer.from(await fileRes.arrayBuffer());
     A.eq(gotBytes.toString('base64'), PNG_B64, 'the served bytes are exactly the uploaded image');
 
-    // 3. RUN with the attachment on the user turn — the sidecar must expand the reference into an image block.
+    // 3. Establish prior dialogue on the same stream, then RUN with the attachment on the latest user turn.
+    // The prior turn is deliberate: attachment expansion changes the latest content from a string to provider
+    // blocks, and the durable title/transcript seam must not skip it and fall back to this older string turn.
+    const streamId = 'attachment-e2e';
+    const priorText = 'FIRST TURN about kittens';
+    const priorRes = await fetch(B + '/api/run', { method: 'POST', headers: H, body: JSON.stringify({
+      key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e', streamId,
+      messages: [{ role: 'user', content: priorText }]
+    }) });
+    A.eq(priorRes.status, 200, 'the prior dialogue run streams 200');
+    const priorEvents = await drain(priorRes);
+    A.ok(priorEvents.some(e => e.name === 'agent.run.end' && e.payload.reason === 'done'), 'the prior dialogue run completes cleanly');
+
+    const attachmentText = 'what colour is this pixel?';
     const runRes = await fetch(B + '/api/run', { method: 'POST', headers: H, body: JSON.stringify({
-      key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e',
-      messages: [{ role: 'user', content: 'what colour is this pixel?', attachments: [{ id: ref.id, name: 'pixel.png', path: ref.path, mediaType: 'image/png', kind: 'image' }] }]
+      key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e', streamId,
+      messages: [
+        { role: 'user', content: priorText },
+        { role: 'assistant', content: 'a red pixel' },
+        { role: 'user', content: attachmentText, attachments: [{ id: ref.id, name: 'pixel.png', path: ref.path, mediaType: 'image/png', kind: 'image' }] }
+      ]
     }) });
     A.eq(runRes.status, 200, 'POST /api/run (with an attachment) streams 200');
     const events = await drain(runRes);
@@ -99,23 +92,39 @@ async function drain(res) { const rd = res.body.getReader(); const dec = new Tex
     A.eq(ends[0].payload.reason, 'done', 'the run with an attachment completes cleanly');
 
     // 4. ASSERT the exact uploaded image reached the provider as a base64 image_url content block.
-    const req0 = mock.requests[0] || {};
+    const req0 = mock.requests.find(r => (r.messages || []).some(m => m && m.role === 'user' && Array.isArray(m.content))) || {};
     const userMsg = (req0.messages || []).filter(m => m && m.role === 'user' && Array.isArray(m.content)).pop();
     A.ok(userMsg, 'the provider received a user turn with multi-part (array) content');
     const parts = (userMsg && userMsg.content) || [];
-    A.ok(parts.some(p => p && p.type === 'text' && String(p.text).indexOf('what colour is this pixel?') >= 0), 'the typed text reached the provider');
+    A.ok(parts.some(p => p && p.type === 'text' && String(p.text).indexOf(attachmentText) >= 0), 'the typed text reached the provider');
     const imgPart = parts.find(p => p && p.type === 'image_url');
     A.ok(imgPart, 'an image_url part reached the provider');
     const url = imgPart && imgPart.image_url && imgPart.image_url.url;
     A.eq(url, 'data:image/png;base64,' + PNG_B64, 'the EXACT uploaded image bytes reached the provider as a base64 data URL');
 
-    // 5. DELETE the attachment (composer remove-before-send) prunes the workspace file.
+    // 5. The durable transcript and run history must describe the attachment turn, not duplicate the prior turn.
+    const trRes = await fetch(B + '/api/transcript?stream=' + encodeURIComponent(streamId) + '&agent=e2e&limit=20', {
+      headers: { 'X-StarNet-Token': token, Origin: B }
+    });
+    A.eq(trRes.status, 200, 'GET /api/transcript reads the attachment stream');
+    const transcript = await trRes.json();
+    const userTurns = ((transcript && transcript.turns) || []).filter(t => t && t.role === 'user').map(t => t.content);
+    A.eq(JSON.stringify(userTurns), JSON.stringify([priorText, attachmentText]), 'durable transcript preserves the attachment turn exactly once');
+
+    const runsRes = await fetch(B + '/api/runs?agent=e2e&limit=20', { headers: { 'X-StarNet-Token': token, Origin: B } });
+    A.eq(runsRes.status, 200, 'GET /api/runs reads attachment run history');
+    const runs = ((await runsRes.json()).runs || []).filter(r => r.streamId === streamId);
+    A.eq(runs.length, 2, 'both runs are recorded for the attachment stream');
+    A.eq(runs[0].title, attachmentText, 'the attachment run title uses its own typed text');
+    A.eq(runs[1].title, priorText, 'the prior run keeps its original title');
+
+    // 6. DELETE the attachment (composer remove-before-send) prunes the workspace file.
     const del = await fetch(B + '/api/attachments', { method: 'POST', headers: H, body: JSON.stringify({ op: 'delete', agent: 'e2e', path: ref.path }) });
     A.eq(del.status, 200, 'POST /api/attachments {op:delete} -> 200');
     const after = await fetch(B + '/api/file?agent=e2e&path=' + encodeURIComponent(ref.path) + '&token=' + encodeURIComponent(token), { headers: { Origin: B } });
     A.eq(after.status, 404, 'the deleted attachment is gone (404)');
   } finally {
-    try { child.kill(); } catch (_) {}
+    await fixture.dispose();
     try { mock.server.close(); } catch (_) {}
   }
   A.report('e2e.attachments.test');

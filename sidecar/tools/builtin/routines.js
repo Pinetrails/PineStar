@@ -144,12 +144,67 @@
     };
   }
 
+  /* ---- routine.manage: resolve a job REFERENCE -----------------------------------------------------------
+     A model that just called routine.list has the NAME in front of it far more often than the uuid, and a
+     re-listed uuid is the single most likely thing for it to mistype. So a reference resolves by id first
+     (exact), then by name: exact case-insensitive, then unique case-insensitive substring. AMBIGUITY IS AN
+     ERROR, never a guess — silently picking one of two routines called "morning brief" would edit or delete
+     the wrong standing job, and the agent has no way to notice. Mirrors the reference harness's
+     resolve_job_ref (cron/jobs.py), which learned the same lesson. */
+  function resolveJobRef(jobs, ref) {
+    const want = clean(ref, 200);
+    if (!want) throw new Error('id or name is required');
+    const all = (jobs || []).filter(j => j && j.id);
+    const byId = all.find(j => String(j.id) === want);
+    if (byId) return byId;
+    const w = lower(want);
+    const exactName = all.filter(j => lower(j.name) === w);
+    if (exactName.length === 1) return exactName[0];
+    if (exactName.length > 1) throw new Error(ambiguous(want, exactName));
+    const partial = all.filter(j => lower(j.name).indexOf(w) >= 0);
+    if (partial.length === 1) return partial[0];
+    if (partial.length > 1) throw new Error(ambiguous(want, partial));
+    throw new Error('no routine matches "' + want + '" — call routine.list to see the current routines');
+  }
+  function ambiguous(want, matches) {
+    return '"' + want + '" matches ' + matches.length + ' routines — pass an exact id: '
+      + matches.slice(0, 6).map(j => j.id + ' (' + j.name + ')').join(', ');
+  }
+
+  /* THE PATCH WHITELIST — a hard privilege boundary, not a convenience.
+     cron-store's updateJob patches more fields than an agent may ever touch: the standing unattended
+     capability grant the COMMANDER ticks in the ROUTINES panel (the one that hands a routine a terminal with
+     nobody watching), plus `script` / `workdir` / `skills` / `contextFrom`. An agent that could patch those
+     could give its OWN scheduled routine powers it was never granted — a straight escalation off one hostile
+     web page. So this path ENUMERATES what it may touch and silently drops everything else; widening a
+     routine's power stays a human action in the panel. Deliberately an allowlist and not a denylist: a field
+     added to the store later is then withheld by default instead of quietly becoming agent-writable.
+     (test/tool-withheld-message.test.js additionally source-greps this file to prove no code path here even
+     NAMES that grant field — which is why the sentence above describes it instead of spelling it.) */
+  const AGENT_PATCHABLE = ['name', 'prompt', 'schedule', 'model', 'provider', 'repeatTimes', 'timezone'];
+
   function makeRoutineTools(deps) {
     deps = deps || {};
     const listJobs = typeof deps.listJobs === 'function' ? deps.listJobs : function () { return []; };
     const createRoutine = deps.createRoutine;
+    // routine.manage's four store verbs. Kept as DISCRETE injected verbs (not one host-side `manage`) so the
+    // policy — reference resolution, the patch whitelist, the queued-not-run wording — lives here where it is
+    // node-testable, and the host keeps only the locked read-modify-write it already owns for the HTTP routes.
+    // Each is async and returns the updated job (or undefined); absent => the tool answers "unavailable".
+    const updateRoutine = deps.updateRoutine;
+    const removeRoutine = deps.removeRoutine;
+    const setRoutineEnabled = deps.setRoutineEnabled;
+    const triggerRoutine = deps.triggerRoutine;
     const armScheduler = deps.armScheduler;
     const schedulerState = typeof deps.schedulerState === 'function' ? deps.schedulerState : function () { return false; };
+    /* THE E-STOP IS A SECOND, INDEPENDENT FACT. `schedulerArmed` reports the arm INTENT, which E-STOP deliberately
+       leaves true — so every readout here said "armed" about a scheduler the Commander had durably stood down, and
+       run_now told the model the routine "fires on its next tick (within ~1 minute)" when no tick was coming. */
+    const schedulerHalted = typeof deps.schedulerHalted === 'function' ? deps.schedulerHalted : function () { return false; };
+    const armedNote = function () {
+      if (schedulerHalted()) return "the scheduler is STOPPED by the Commander's E-STOP — nothing fires until they resume it";
+      return schedulerState() ? null : 'the scheduler is DISARMED — nothing fires until it is armed';
+    };
     const roster = typeof deps.roster === 'function' ? deps.roster : function () { return new Map(); };
     // W6: the plain anti-retry line + the per-agent "you already maintain: …" summary. Injected so this tool
     // stays node-testable; defaults keep it a no-op when the host doesn't wire the mint ledger.
@@ -160,6 +215,19 @@
       if (!p) return null;
       return p === 'codex' || p === 'openai-codex' ? 'codex' : (p === 'openrouter' ? 'openrouter' : '');
     };
+    /* ⛔ AN ALLOWLIST IS A DENYLIST FOR EVERY CLASS ADDED LATER. `provider` was hardcoded
+       enum:['openrouter','codex'] in BOTH tool schemas while the station shipped 17 providers. A Commander
+       running on Kimi, Grok, Ollama or a custom endpoint had an agent that could not pin a routine to the very
+       provider the station runs on: shared/schema.js enforces `enum`, so the call died with
+       '"kimi" not in enum' before run() was ever reached. Read the live registry instead (injected, so this
+       module stays node-testable), and fall back to the historical pair only when the host wires nothing. */
+    const providerIds = typeof deps.providerIds === 'function' ? deps.providerIds : function () { return ['openrouter', 'codex']; };
+    const providerEnum = (function () {
+      let ids = [];
+      try { ids = providerIds() || []; } catch (_) { ids = []; }
+      ids = ids.map(x => lower(x).trim()).filter(Boolean);
+      return ids.length ? Array.from(new Set(ids)) : ['openrouter', 'codex'];
+    })();
 
     const listTool = {
       name: 'routine.list', capability: 'orchestrator', scope: 'read', requiresConsent: false,
@@ -170,7 +238,7 @@
         if (agentId && !validId(agentId)) throw new Error('agentId must be one of your station agents');
         let jobs = (listJobs() || []).map(packJob).filter(Boolean);
         if (agentId) jobs = jobs.filter(j => j.agentId === agentId);
-        return { content: JSON.stringify({ schedulerArmed: !!schedulerState(), jobs: jobs }), summary: jobs.length + ' routine(s)' };
+        return { content: JSON.stringify({ schedulerArmed: !!schedulerState(), schedulerHalted: !!schedulerHalted(), schedulerNote: armedNote() || undefined, jobs: jobs }), summary: jobs.length + ' routine(s)' };
       }
     };
 
@@ -192,11 +260,16 @@
           agentId: { type: 'string', description: 'Optional exact station agent id. Omit to auto-route by specialty.' },
           agentHint: { type: 'string', description: 'Optional specialty hint such as research, engineer, scribe, operator, designer.' },
           timezone: { type: 'string', description: 'Optional IANA timezone for cron expressions, e.g. America/New_York.' },
-          provider: { type: 'string', enum: ['openrouter', 'codex'] },
+          provider: { type: 'string', enum: providerEnum },
           model: { type: 'string' },
           enabled: { type: 'boolean' },
           arm: { type: 'boolean', description: 'Default true. When true, also enables the scheduler so routines will fire.' },
           repeatTimes: { type: ['integer', 'null'], description: 'Omit/null for recurring forever; one-shot schedules still run once.' }
+          ,deliver: { type: 'string', enum: ['local', 'origin'], description: 'Where to send each result. origin returns it to this chat/session.' }
+          ,attachToSession: { type: 'boolean', description: 'Keep delivered results in the origin conversation so replies can continue from them.' }
+          ,skills: { type: 'array', items: { type: 'string' }, maxItems: 8, description: 'Saved runtime skills to preload on every run.' }
+          ,contextFrom: { type: 'array', items: { type: 'string' }, maxItems: 8, description: 'Routine ids whose latest successful outputs feed this routine.' }
+          ,enabledToolsets: { type: 'array', items: { type: 'string' }, maxItems: 16, description: 'Optional restriction-only list of capability families for this routine.' }
         }
       },
       run: async (args, ctx) => {
@@ -223,6 +296,12 @@
           provider: provider,
           model: args && args.model != null ? clean(args.model, 120) : null,
           enabled: !(args && args.enabled === false),
+          deliver: clean((args && args.deliver) || (ctx && ctx.deliveryOrigin ? 'origin' : 'local'), 40),
+          origin: ctx && ctx.deliveryOrigin ? ctx.deliveryOrigin : null,
+          attachToSession: !!(args && args.attachToSession),
+          skills: Array.isArray(args && args.skills) ? args.skills.slice(0, 8) : [],
+          contextFrom: Array.isArray(args && args.contextFrom) ? args.contextFrom.slice(0, 8) : null,
+          enabledToolsets: Array.isArray(args && args.enabledToolsets) ? args.enabledToolsets.slice(0, 16) : null,
           repeat: { times: repeatTimes == null ? null : Math.max(1, parseInt(repeatTimes, 10) || 1) }
         };
         const job = await createRoutine(spec);
@@ -254,6 +333,9 @@
         const body = {
           ok: true,
           schedulerArmed: !!schedulerState(),
+          schedulerHalted: !!schedulerHalted(),
+          // so the model cannot report "this will run daily" over a stopped scheduler
+          schedulerNote: armedNote() || undefined,
           armError: armError,
           routedTo: route.agentId,
           routingReason: route.reason,
@@ -268,11 +350,130 @@
       }
     };
 
+    /* ---- routine.manage — edit / pause / resume / delete / fire-now ------------------------------------
+       ONE action-oriented tool, not five. Every tool schema is re-sent on EVERY turn of every run (the
+       tool-schema cost pass measured the whole surface at 37.7KB/req), so five near-identical
+       {id,name} schemas would buy the same five verbs at five times the standing cost. The reference
+       harness collapsed its cron tools for exactly this reason ("a single compressed action-oriented tool
+       to avoid schema/context bloat", tools/cronjob_tools.py) — same call here.
+
+       Consent-gated as a whole, like routine.create: an EDIT is the same attack surface as a create (a
+       routine authored clean can be patched into a payload), and pausing or deleting standing autonomous
+       work is a Commander-visible change to what the station does while nobody watches.
+
+       `run_now` QUEUES rather than runs. The panel's POST /api/cron/run streams a real run to a watching
+       human; doing that from inside a tool call would nest a run inside a run (re-entrant runOnce, a second
+       spend path with no separate cap, and a stream nobody is reading). Re-anchoring nextRunAt to now makes
+       the SCHEDULER fire it on its next tick through the ordinary unattended path — which is also what the
+       reference harness's trigger_job does. It reports the armed time, never "it ran". */
+    const manageTool = {
+      name: 'routine.manage', capability: 'orchestrator', scope: 'write', requiresConsent: true, timeoutMs: 15000,
+      description: 'Edit, pause, resume, delete, or queue an immediate fire of an existing StarNet ROUTINES job. Call routine.list first to see what exists; reference a routine by its exact id, or by name when that name is unambiguous.',
+      schema: {
+        type: 'object',
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['update', 'pause', 'resume', 'remove', 'run_now'] },
+          id: { type: 'string', description: 'The routine id, or its name when unambiguous.' },
+          name: { type: 'string', description: 'For action=update, the NEW name. To reference a routine by name, pass it as `id`.' },
+          prompt: { type: 'string', description: 'update: replace the instruction the routine runs.' },
+          schedule: { type: 'string', description: 'update: a new schedule, e.g. every 30m, 0 9 * * *, in 2h.' },
+          timezone: { type: 'string', description: 'update: IANA timezone for a cron schedule.' },
+          provider: { type: 'string', enum: providerEnum },
+          model: { type: 'string' },
+          repeatTimes: { type: ['integer', 'null'], description: 'update: null for recurring forever.' }
+        }
+      },
+      run: async (args) => {
+        const action = lower(clean(args && args.action, 20));
+        if (['update', 'pause', 'resume', 'remove', 'run_now'].indexOf(action) < 0) {
+          throw new Error('action must be update, pause, resume, remove, or run_now');
+        }
+        const job = resolveJobRef(listJobs() || [], args && args.id);
+
+        if (action === 'remove') {
+          if (typeof removeRoutine !== 'function') throw new Error('routine removal unavailable');
+          await removeRoutine(job.id);
+          return {
+            content: JSON.stringify({ ok: true, action: action, removed: { id: job.id, name: job.name } }),
+            summary: 'deleted routine "' + job.name + '"'
+          };
+        }
+
+        if (action === 'pause' || action === 'resume') {
+          if (typeof setRoutineEnabled !== 'function') throw new Error('routine pause/resume unavailable');
+          const updated = await setRoutineEnabled(job.id, action === 'resume');
+          return {
+            content: JSON.stringify({ ok: true, action: action, schedulerArmed: !!schedulerState(), schedulerHalted: !!schedulerHalted(), schedulerNote: armedNote() || undefined, job: packJob(updated || job) }),
+            summary: (action === 'resume' ? 'resumed' : 'paused') + ' routine "' + job.name + '"'
+          };
+        }
+
+        if (action === 'run_now') {
+          if (typeof triggerRoutine !== 'function') throw new Error('routine trigger unavailable');
+          const updated = await triggerRoutine(job.id);
+          const halted = !!schedulerHalted();
+          const armed = !!schedulerState() && !halted;
+          return {
+            content: JSON.stringify({
+              ok: true, action: action, queued: true, schedulerArmed: !!schedulerState(), schedulerHalted: halted,
+              // TRUTHFUL TELEMETRY: this did NOT run the routine, it moved its next fire to now. Say so, or the
+              // model reports "I ran it" to the Commander and then reads no result. And an E-STOP means no tick
+              // is coming at all — promising one "within ~1 minute" is the same lie with a deadline on it.
+              note: halted
+                ? "queued, but the scheduler is STOPPED by the Commander's E-STOP so nothing will fire until they resume it"
+                : armed
+                  ? 'queued — the scheduler fires this routine on its next tick (within ~1 minute); it has not run yet'
+                  : 'queued, but the scheduler is DISARMED so nothing will fire until it is armed',
+              job: packJob(updated || job)
+            }),
+            summary: 'queued routine "' + job.name + '" to fire on the next tick' + (armed ? '' : ' (scheduler disarmed)')
+          };
+        }
+
+        // ---- update ----
+        if (typeof updateRoutine !== 'function') throw new Error('routine editing unavailable');
+        const patch = {};
+        // Test the CLEANED value, not the raw one: `name: '   '` is not-null and not-'' but cleans to empty, and
+        // the first cut happily persisted a routine with a blank name and reported "updated (name)".
+        const set = (key, raw, max) => { const v = clean(raw, max); if (v) patch[key] = v; };
+        if (args) {
+          set('name', args.name, NAME_CHARS);
+          set('prompt', args.prompt, PROMPT_CHARS);
+          set('schedule', args.schedule, 200);
+          set('timezone', args.timezone, 80);
+          set('model', args.model, 120);
+        }
+        /* A TIMEZONE ONLY MEANS SOMETHING WITH A SCHEDULE. The host resolves tz inside the schedule parse
+           (parseCronScheduleOr400(schedule, now, tz)), so a patch carrying tz and no schedule reaches the store
+           as an empty patch: nothing changes, while the tool answers "updated routine (timezone)". Refuse it and
+           say what to pass instead — a false "done" is worse than a rejected call. */
+        if (patch.timezone && !patch.schedule) {
+          throw new Error('a timezone only applies to a schedule — pass `schedule` as well (e.g. schedule "0 9 * * *" + timezone "America/New_York")');
+        }
+        if (args && args.provider != null && args.provider !== '') {
+          const p = normalizeProvider(args.provider);
+          if (!p) throw new Error('provider must be openrouter or codex');
+          patch.provider = p;
+        }
+        if (args && Object.prototype.hasOwnProperty.call(args, 'repeatTimes')) patch.repeatTimes = args.repeatTimes;
+        const touched = Object.keys(patch).filter(k => AGENT_PATCHABLE.indexOf(k) >= 0);
+        if (!touched.length) throw new Error('nothing to update — pass at least one of ' + AGENT_PATCHABLE.join(', '));
+        const updated = await updateRoutine(job.id, patch);
+        return {
+          content: JSON.stringify({ ok: true, action: action, changed: touched, job: packJob(updated || job) }),
+          summary: 'updated routine "' + job.name + '" (' + touched.join(', ') + ')'
+        };
+      }
+    };
+
     return {
       listTool: listTool,
       createTool: createTool,
+      manageTool: manageTool,
       _chooseAgent: chooseAgent,
-      register(reg) { reg.register(listTool); reg.register(createTool); return reg; }
+      _resolveJobRef: resolveJobRef,
+      register(reg) { reg.register(listTool); reg.register(createTool); reg.register(manageTool); return reg; }
     };
   }
 

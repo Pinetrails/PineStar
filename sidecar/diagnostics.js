@@ -37,6 +37,7 @@
   'use strict';
 
   const MAX_ERRORS = 5;        // tail length — enough to see a pattern, bounded so the block stays pasteable
+  const MAX_RATE_PROVIDERS = 4; // quota rows — the fallback chain can touch several providers in one session
   const MSG_MAX = 300;         // per-error message cap after redaction
   const IDENT = /* the fields that are shape-only by construction can still be length-clamped for readability */ 200;
 
@@ -89,6 +90,21 @@
         provider: clean(s.provider, 60) || 'unknown',
         model: clean(s.model, 120) || 'unknown',          // SLUG only — the caller never passes a key here; redacted anyway
         keyPresent: bool(s.keyPresent),
+        /* PROXY VISIBILITY (2026-07-29). A user's report showed a healthy engine and five bare `fetch failed`
+           entries; the sidecar could not reach the provider and we had no way to see why from the report alone.
+           A configured proxy is the highest-value invisible cause, because it fails ASYMMETRICALLY and that
+           asymmetry looks like a broken app: WebView2 honors the system proxy, so signing into ChatGPT works
+           and the whole UI works, while the sidecar's outbound fetch does NOT route through it and dies.
+           MEASURED on node v22.23: `require('undici')` is MODULE_NOT_FOUND, `node:undici` is not a builtin (so
+           ProxyAgent is unreachable in a bundled build that ships no node_modules), and setting HTTPS_PROXY to a
+           dead address still let fetch reach the network — i.e. the proxy env vars are IGNORED outright.
+           Shape-only + host-only by construction; see proxySnapshot() in index.js, which strips credentials
+           BEFORE this ever sees the value. `configured` false means no proxy env var was set. */
+        proxy: s.proxy && typeof s.proxy === 'object' ? {
+          configured: bool(s.proxy.configured),
+          vars: Array.isArray(s.proxy.vars) ? s.proxy.vars.slice(0, 4).map(v => clean(v, 80)) : [],
+          routed: false   // never true today: the engine cannot route through a proxy (see above). Honest constant.
+        } : { configured: false, vars: [], routed: false },
         agentCount: num(s.agentCount),
         uptime: fmtUptime(s.uptimeMs),
         workspacePresent: bool(s.workspacePresent),
@@ -97,6 +113,23 @@
           status: clean(lastRun.status, 40) || 'unknown',
           ts: num(lastRun.ts) || null
         } : null,
+        /* OBSERVED PROVIDER QUOTA (providers/ratelimits.js). Numbers and slugs only — no header text is
+           carried through, so this can never smuggle a value from a response into a pasted bug report.
+           An EMPTY array means no call has been observed yet, which is not the same as "quota is fine";
+           render() says so in words rather than printing an empty section that reads as an all-clear. */
+        rateLimits: (Array.isArray(s.rateLimits) ? s.rateLimits : []).slice(0, MAX_RATE_PROVIDERS).map(p => ({
+          provider: clean(p && p.provider, 60) || 'unknown',
+          ageMs: num(p && p.ageMs),
+          buckets: Object.keys((p && p.buckets) || {}).slice(0, 8).map(k => {
+            const b = p.buckets[k];
+            return {
+              resource: clean(k, 24),
+              limit: (b && b.limit != null) ? num(b.limit) : null,
+              remaining: (b && b.remaining != null) ? num(b.remaining) : null,
+              resetInMs: (b && b.resetInMs != null) ? num(b.resetInMs) : null
+            };
+          })
+        })),
         errors: (Array.isArray(s.errors) ? s.errors : []).slice(-MAX_ERRORS).map(e => ({
           ts: num(e && e.ts) || null,
           message: redactStr(e && e.message)   // SECOND redaction backstop over the caller's already-redacted tail
@@ -119,6 +152,11 @@
         'Provider:      ' + r.provider,
         'Model:         ' + r.model,
         'Credential:    ' + (r.keyPresent ? 'configured' : 'none'),
+        // Spelled out rather than left as a flag: whoever reads this report needs to know that a configured proxy
+        // is NOT in the engine's path, because that single fact explains "the app works but chat can't connect".
+        'Proxy:         ' + (r.proxy.configured
+          ? (r.proxy.vars.join(', ') + ' — NOT used by the engine (its outbound calls bypass the proxy; likely cause of provider connection failures)')
+          : 'none configured'),
         'Agents:        ' + r.agentCount,
         'Uptime:        ' + r.uptime,
         'Workspace dir: ' + (r.workspacePresent ? 'present' : 'missing')
@@ -127,6 +165,23 @@
         lines.push('Last run:      ' + r.lastRun.runId + ' — ' + r.lastRun.status + (r.lastRun.ts ? ' @ ' + iso(r.lastRun.ts) : ''));
       } else {
         lines.push('Last run:      none yet');
+      }
+      /* Quota, as last OBSERVED — the counters ride on ordinary successful responses, so this is real state
+         and not a guess. "not observed yet" is printed in full rather than left blank: a blank quota section
+         in a bug report reads as "quota was fine", which is a claim the harness cannot make. */
+      lines.push('Provider quota (last seen):');
+      if (r.rateLimits && r.rateLimits.length) {
+        for (const p of r.rateLimits) {
+          const age = p.ageMs ? ' (' + Math.round(p.ageMs / 1000) + 's ago)' : '';
+          const cells = p.buckets.map(b => {
+            const amt = (b.remaining == null) ? '?' : (b.limit ? b.remaining + '/' + b.limit : String(b.remaining));
+            const rs = (b.resetInMs == null) ? '' : ', resets in ' + Math.round(b.resetInMs / 1000) + 's';
+            return b.resource + ' ' + amt + rs;
+          });
+          lines.push('  · ' + p.provider + age + ': ' + (cells.length ? cells.join(' · ') : 'no counters'));
+        }
+      } else {
+        lines.push('  (not observed yet — no provider call has reported quota headers this session)');
       }
       lines.push('Recent errors:');
       if (r.errors.length) {
@@ -141,5 +196,19 @@
     return { assemble, _internals: { render, fmtUptime, oneLine } };
   }
 
-  return { makeDiagnostics };
+  /* Reduce a proxy URL to HOST[:PORT] — nothing else ever reaches a bug report. PURE, and it lives here rather
+     than beside the env read in index.js precisely so it can be unit-tested: a corporate proxy URL routinely
+     carries `user:password@`, and this is the ONLY thing standing between those credentials and a report the user
+     pastes into an email. Strips the scheme, then everything up to and including the LAST '@' (a password may
+     itself contain '@'), then any path/query. Returns '' for empty input. */
+  function proxyHostOnly(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    let rest = s.replace(/^[a-z0-9+.-]+:\/\//i, '');   // scheme
+    const at = rest.lastIndexOf('@');                  // LAST, not first — passwords can contain '@'
+    if (at >= 0) rest = rest.slice(at + 1);
+    return rest.replace(/[/?#].*$/, '').slice(0, 80);
+  }
+
+  return { makeDiagnostics, proxyHostOnly };
 });

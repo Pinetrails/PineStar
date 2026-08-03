@@ -32,6 +32,12 @@
     auth:                   { retryable: false, shouldRotateCredential: true,  shouldFallback: false, shouldCompress: false },
     billing:                { retryable: false, shouldRotateCredential: true,  shouldFallback: false, shouldCompress: false },
     rate_limit:             { retryable: true,  shouldRotateCredential: true,  shouldFallback: false, shouldCompress: false },
+    /* A SPENT ALLOWANCE, not a busy moment. A ChatGPT-subscription (Codex) weekly quota resets in DAYS, so a
+       retry is doomed by construction: retryable:false stops codex.js burning RETRY_DELAYS and loop.js burning
+       MAX_STREAM_RETRIES against an exhausted meter. Rotating may help (another credential has its own
+       allowance) and so may falling back (a different provider entirely) — unlike `billing`, which is one
+       account being out of money and which a fallback would not fix either way. */
+    quota_exhausted:        { retryable: false, shouldRotateCredential: true,  shouldFallback: true,  shouldCompress: false },
     overloaded:             { retryable: true,  shouldRotateCredential: false, shouldFallback: true,  shouldCompress: false },
     server_error:           { retryable: true,  shouldRotateCredential: false, shouldFallback: true,  shouldCompress: false },
     timeout:                { retryable: true,  shouldRotateCredential: false, shouldFallback: false, shouldCompress: false },
@@ -69,6 +75,42 @@
   }
   function transportCode(err) {
     return (err && (err.code || err.errno || (err.cause && err.cause.code))) || '';
+  }
+
+  /* WHY THIS EXISTS (2026-07-29). A real user's diagnostics report carried five entries reading exactly
+     `fetch failed` — and nothing else. That is undici's ENTIRE message for any failed outbound fetch: the useful
+     part (ENOTFOUND / ECONNREFUSED / EAI_AGAIN / UND_ERR_CONNECT_TIMEOUT, plus the hostname) lives on `err.cause`
+     and was being dropped on the floor by extractMessage's `err.message` fallback. We could not tell DNS failure
+     from a refused connection from a TLS/proxy interception, so we could not tell the user what to fix.
+
+     PURE by contract: reads only the error object (no env, no clock, no I/O) so it stays safe to unit-test and
+     safe to call from the loop. Returns '' when there is nothing to add, so callers can append unconditionally. */
+  function transportDetail(err) {
+    const code = String(transportCode(err) || '').trim();
+    const cause = (err && err.cause) || null;
+    // undici's DNS failures carry the hostname directly; other causes often name it only in their message.
+    let host = (cause && (cause.hostname || cause.host)) || '';
+    if (!host && cause && cause.message) {
+      const m = String(cause.message).match(/(?:^|\s)([a-z0-9-]+(?:\.[a-z0-9-]+){1,})(?::\d+)?(?:\s|$)/i);
+      if (m) host = m[1];
+    }
+    host = String(host || '').trim();
+    if (!code && !host) return '';
+    return code && host ? code + ' ' + host : (code || host);
+  }
+  /* Append the transport detail to a message ONLY when the message is too bare to be actionable. Deliberately
+     conservative: a provider that already sent a real error sentence keeps its own words verbatim (we must never
+     bury an upstream explanation under plumbing), and we never double-append a code the message already names.
+     NOTE the ORDER of the caller in classifyApiError: `reason` is picked from the RAW message BEFORE this runs,
+     so enriching the text can never move a verdict. Keep it that way. */
+  function annotateTransport(message, err) {
+    const msg = String(message == null ? '' : message);
+    const detail = transportDetail(err);
+    if (!detail) return msg;
+    if (msg.toLowerCase().indexOf(detail.toLowerCase()) >= 0) return msg;
+    // only bare transport-shaped messages get annotated — undici's "fetch failed" is the case that mattered.
+    if (!/^\s*(?:typeerror:\s*)?(?:fetch failed|failed to fetch|terminated|socket hang up|other side closed|premature close|network(?:error| error)?)\s*$/i.test(msg)) return msg;
+    return msg + ' (' + detail + ')';
   }
 
   // H6.1: surface how long the server says to wait, so a rate-limited credential cools for exactly that long
@@ -124,6 +166,16 @@
     return 'format_error';
   }
 
+  /* A 429 is not always "wait a few seconds". A ChatGPT-subscription user who has burned their WEEKLY quota
+     gets a 429 whose body says exactly that and whose reset is days away — so the honest class is a spent
+     allowance, not a rate limit. Status-before-message precedence is deliberate (see the note in pickReason),
+     so this is a distinct class WITHIN the 429 rather than a reordering: only a long or absolute reset window,
+     or an explicit usage-limit type, qualifies. Gemini answers a PER-MINUTE limit with "Quota exceeded for
+     quota metric", and that must stay rate_limit — hence the short-window veto. */
+  const QUOTA_EXHAUSTED_RE = /usage[_ ]?limit[_ ]?reached|hit (?:your|the) (?:usage|weekly|monthly|plan|daily) limit|(?:weekly|monthly|daily) (?:quota|limit)|resets? in \s*\d+\s*(?:day|hour|week)|resets? (?:on|at) \d|quota (?:will )?reset(?:s)? (?:in|on|at)/;
+  const SHORT_WINDOW_RE = /per[- ]?(?:minute|second)|quota metric|rpm|tpm|requests per/;
+  function isQuotaExhausted(low) { return QUOTA_EXHAUSTED_RE.test(low) && !SHORT_WINDOW_RE.test(low); }
+
   function pickReason(status, code, low, err, ctx) {
     /* 1. content / policy (most specific intent) — but a TRANSPORT status wins over a text match.
        This ran against the whole message before the status was consulted, so any retryable failure whose
@@ -140,7 +192,16 @@
       if (status === 402) return /(resets? at|retry[- ]?after|rate limit)/.test(low) ? 'rate_limit' : 'billing';
       if (status === 404) return 'model_not_found';
       if (status === 408) return 'timeout';
-      if (status === 429) return 'rate_limit';
+      if (status === 429) {
+        /* A 429 can carry a TERMINAL body, and neither of these clears by waiting: a spent subscription
+           allowance, or an account with no money left — OpenAI answers `insufficient_quota` with 429, not 402,
+           so the plain status read burned every retry slot against a wallet that needs topping up. */
+        const c429 = String(code || '').toLowerCase();
+        if (isQuotaExhausted(low) || /usage_limit_reached|quota_exhausted|plan_limit/.test(c429)) return 'quota_exhausted';
+        if (/insufficient[_ ]?quota|exceeded your current quota|out of credit|add credits|payment required/.test(low)
+          || /insufficient[_ ]?quota/.test(c429)) return 'billing';
+        return 'rate_limit';
+      }
       if (status === 500) return 'server_error';
       if (status === 502 || status === 503) return 'overloaded';
       if (status === 504) return 'timeout';
@@ -150,6 +211,7 @@
     if (code) {
       const c = String(code).toLowerCase();
       if (/context_length|context_window|max.*token/.test(c)) return 'context_overflow';
+      if (/usage_limit_reached|quota_exhausted|plan_limit/.test(c)) return 'quota_exhausted';
       if (/insufficient_quota|insufficient_credit|billing|payment/.test(c)) return 'billing';
       if (/rate_limit/.test(c)) return 'rate_limit';
       if (/model_not_found|unknown_model|no_endpoints/.test(c)) return 'model_not_found';
@@ -158,6 +220,7 @@
     }
     // 4. message patterns
     if (/context length|maximum context|context window|too many tokens|reduce the length|maximum.*tokens/.test(low)) return 'context_overflow';
+    if (isQuotaExhausted(low)) return 'quota_exhausted';
     if (/insufficient|not enough credit|out of credit|quota|payment required|add credits/.test(low)) return 'billing';
     if (/rate limit|too many requests/.test(low)) return 'rate_limit';
     if (/overloaded|over capacity|temporarily unavailable|try again later/.test(low)) return 'overloaded';
@@ -190,9 +253,13 @@
       statusCode: status || null,
       retryAfterMs: wait.retryAfterMs,   // H6.1: server-stated delay (relative ms), or null
       resetAtMs: wait.resetAtMs,         // H6.1: server-stated absolute reset (epoch ms), or null
-      message: message
+      // `reason` above was already picked from the RAW message, so annotating here cannot move the verdict — it
+      // only makes the text a human can act on ("fetch failed" -> "fetch failed (ENOTFOUND api.openai.com)").
+      // This is the message the loop emits as agent.run.error, which is what lands in the diagnostics ring.
+      message: annotateTransport(message, err)
     };
   }
 
-  return { classifyApiError, REASONS, _internals: { extractStatus, extractCode, extractMessage, classify400, pickReason, extractRetryAfter } };
+  return { classifyApiError, REASONS, transportDetail, annotateTransport,
+    _internals: { extractStatus, extractCode, extractMessage, classify400, pickReason, extractRetryAfter, transportCode } };
 });

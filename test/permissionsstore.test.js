@@ -83,15 +83,33 @@ const wire = (h) => PermissionsStore.init({ api: h.api, getPosture: h.getPosture
     ok(!PermissionsStore._grants().includes('cabinet:write'), 'revoke updates the cache');
   }
 
-  // --- new-hero reset locks down: clears the cache + best-effort revokes the autonomous write grant ---
+  // --- new-hero reset locks down authoritatively and preserves unrelated standing grants ---
   {
-    const h = harness(['cabinet:write'], { initiative: 'free', actsUnattended: true }); wire(h);
+    const h = harness(['cabinet:write', 'net:send'], { initiative: 'free', actsUnattended: true }); wire(h);
     await PermissionsStore.refresh();
     const p = PermissionsStore.reset();
-    eq(PermissionsStore._grants(), [], 'reset cleared the cache synchronously');
     ok(h.calls.revoke.includes('cabinet:write'), 'reset revoked the write grant (a fresh hero starts locked)');
     ok(p && typeof p.then === 'function', 'reset returns an awaitable promise so onWake can await the lockdown (no inherit-window)');
-    await p;
+    const snap = await p;
+    ok(!snap.grants.includes('cabinet:write'), 'successful reset removes the confirmed curated grant');
+    ok(snap.grants.includes('net:send'), 'successful reset preserves a non-curated standing grant');
+  }
+
+  // --- failed new-hero lockdown never fabricates an empty ledger or resolves as safe ---
+  {
+    const server = new Set(['cabinet:write']);
+    const api = {
+      load: async () => ({ ok: true, grants: Array.from(server), grantable: ['cabinet:write'] }),
+      revoke: async () => ({ ok: false, reason: 'could not persist revoke — kept', grants: Array.from(server) })
+    };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'free' }), applyPreset: () => {}, load: false });
+    await PermissionsStore.refresh();
+    let rejected = null;
+    try { await PermissionsStore.reset(); } catch (e) { rejected = e; }
+    ok(rejected && /could not lock down standing permissions/i.test(rejected.message), 'failed reset rejects so commissioning cannot proceed');
+    const snap = PermissionsStore.snapshot();
+    ok(snap.grants.includes('cabinet:write'), 'failed reset preserves the last confirmed dangerous grant');
+    ok(/persist revoke/i.test(snap.error), 'failed reset exposes the durable revoke failure');
   }
 
   // --- provenance (P0-5): the store caches the sidecar's meta map and exposes it in the snapshot ---
@@ -120,11 +138,80 @@ const wire = (h) => PermissionsStore.init({ api: h.api, getPosture: h.getPosture
     ok(snap.meta && typeof snap.meta === 'object', 'a meta-less payload still yields an object meta (empty)');
   }
 
+  // --- transport/persist failures never turn unknown authority into an empty, trusted ledger ---
+  {
+    let mode = 'ok';
+    const api = {
+      load: async () => mode === 'ok'
+        ? { grants: ['cabinet:write'], grantable: ['cabinet:write'] }
+        : { ok: false, reason: 'permissions service unavailable' },
+      grant: async () => ({ ok: false, reason: 'could not persist grant — denied' }),
+      revoke: async () => ({ ok: false, reason: 'could not persist revoke — kept' })
+    };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'free' }), applyPreset: () => {}, load: false });
+    await PermissionsStore.refresh();
+    ok(PermissionsStore.snapshot().grants.includes('cabinet:write'), 'successful load establishes the authoritative grant cache');
+    mode = 'fail';
+    let snap = await PermissionsStore.refresh();
+    ok(snap.grants.includes('cabinet:write'), 'failed refresh preserves the last confirmed grants (never fabricates empty authority)');
+    ok(/unavailable/i.test(snap.error), 'failed refresh exposes an explicit permissions-service error');
+    snap = await PermissionsStore.revoke('cabinet:write');
+    ok(snap.grants.includes('cabinet:write'), 'failed revoke keeps the active grant visible');
+    ok(/persist revoke/i.test(snap.error), 'failed revoke exposes the backend reason instead of silently doing nothing');
+    snap = await PermissionsStore.grant('cabinet:write');
+    ok(/persist grant/i.test(snap.error), 'failed grant exposes the backend reason instead of silently doing nothing');
+    mode = 'ok';
+    snap = await PermissionsStore.refresh();
+    ok(!snap.error, 'a later authoritative refresh clears the stale error');
+  }
+
+  // --- a first-load outage is UNKNOWN, not an authoritative empty approval ledger ---
+  {
+    const api = { load: async () => ({ ok: false, reason: 'offline' }) };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'wait' }), applyPreset: () => {}, load: false });
+    const snap = await PermissionsStore.refresh();
+    ok(snap.loaded === false, 'failed first load never marks permission authority loaded');
+    ok(/offline/i.test(snap.error), 'failed first load carries an explicit offline error');
+  }
+
   // --- read-only citizen: never emits, no bus dependency ---
   {
     const src = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'permissionsstore.js'), 'utf8');
     ok(!/\.emit\s*\(/.test(src), 'permissionsstore never emits on the bus (read-only citizen)');
     ok(!/U\.bus\.(on|once|emit)\s*\(|require\(['"][^'"]*events/.test(src), 'permissionsstore makes no real U.bus calls / events require (read-only citizen)');
+  }
+
+  /* --- the FULL ACCESS wildcard travels route -> store -> snapshot ---------------------------------
+     Found by driving the LIVE app, not by a test: the route reported `blanket` and the panel rendered it, but
+     THIS store sat between them building its own snapshot shape and dropped the field — so the ledger still
+     printed "No standing approvals yet" over the broadest grant in the product. A source lock on the renderer
+     could never see that; only the real path could. It is kept out of `grants` on purpose (a blanket is not a
+     danger key, so normalizeGrants would strip it — the same shape as the path:/mcp: bug). */
+  {
+    const h = harness([]);
+    h.api.load = async () => ({
+      grants: [], grantable: ['cabinet:write'],
+      blanket: [{ key: 'blanket:agent', agentId: 'agent', scope: 'watched sessions, until the app restarts' }]
+    });
+    wire(h);
+    const snap = await PermissionsStore.refresh();
+    ok(Array.isArray(snap.blanket), 'the snapshot carries a blanket array');
+    ok(snap.blanket.length === 1 && snap.blanket[0].key === 'blanket:agent', 'the wildcard reaches the panel');
+    ok(snap.blanket[0].scope === 'watched sessions, until the app restarts', 'with the scope the ledger prints');
+    eq(snap.grants, [], 'and it is NOT folded into the durable danger-key grants');
+
+    // a malformed / absent payload degrades to [] rather than poisoning the ledger
+    h.api.load = async () => ({ grants: [], grantable: [], blanket: [{ nokey: 1 }, null] });
+    ok((await PermissionsStore.refresh()).blanket.length === 0, 'malformed blanket rows are dropped');
+    h.api.load = async () => ({ grants: [], grantable: [] });
+    ok((await PermissionsStore.refresh()).blanket.length === 0, 'a server with no blanket field yields []');
+
+    // ...and RESET revokes it, or a "reset everything" would leave the broadest grant standing
+    h.api.load = async () => ({ grants: [], grantable: ['cabinet:write'], blanket: [{ key: 'blanket:agent', agentId: 'agent' }] });
+    await PermissionsStore.refresh();
+    h.calls.revoke.length = 0;
+    await PermissionsStore.reset();
+    ok(h.calls.revoke.indexOf('blanket:agent') >= 0, 'reset() revokes the FULL ACCESS wildcard too');
   }
 
   console.log('permissionsstore.test.js OK —', n, 'assertions');

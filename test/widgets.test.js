@@ -33,6 +33,13 @@ A.eq(Widgets._fmtCount(12400), '12.4K', 'thousands → K with one decimal');
 A.eq(Widgets._fmtCount(3200000), '3.2M', 'millions → M with one decimal');
 A.eq(Widgets._fmtCount('junk'), '0', 'garbage → 0, never NaN');
 
+/* ============================ 3b. routines state (arm intent != runnable) ============================ */
+
+A.eq(Widgets._cronStateLabel({ enabled: true, halted: true }), 'stopped · E-STOP',
+  'the routines widget never reports armed while the durable E-STOP is engaged');
+A.eq(Widgets._cronStateLabel({ enabled: true, halted: false }), 'armed', 'a genuinely runnable scheduler reports armed');
+A.eq(Widgets._cronStateLabel({ enabled: false, halted: false }), 'disarmed', 'a disabled scheduler reports disarmed');
+
 /* ============================ 4. sanitizeLayout (a corrupt store never renders) ============================ */
 
 const KNOWN = ['runs24', 'queue', 'cron', 'tokens'];

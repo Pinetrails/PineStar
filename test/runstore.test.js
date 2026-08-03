@@ -156,6 +156,24 @@ const clock = { now: () => clk };
   A.eq(s.list('a').map(r => r.runId), ['new1', 'old2', 'old1'], 'mixed old/new history lists together');
 }
 
+// ---- K. delegated-session delivery is durable enough for a page that was closed or stale to heal later ----
+{
+  const s = makeRunStore({ io: memIo(), clock });
+  const e = s.record({
+    runId: 'delegated-1', agentId: 'researcher', reason: 'done', streamId: 'ws_server_copy',
+    sessionTitle: 'business research session',
+    deliveryPrompt: 'research three AI businesses',
+    deliveryText: 'three sourced ideas'
+  });
+  A.eq(e.sessionTitle, 'business research session', 'the Commander-visible session name is durable');
+  A.eq(e.deliveryPrompt, 'research three AI businesses', 'the delegated instruction is durable for the framing marker');
+  A.eq(e.deliveryText, 'three sourced ideas', 'the final answer is durable for missed-page replay');
+  A.eq(s.record({ runId: 'plain' }).sessionTitle, '', 'ordinary runs carry no fake delivery target');
+  A.eq(s.record({ runId: 'capped', sessionTitle: 's'.repeat(300), deliveryPrompt: 'p'.repeat(5000), deliveryText: 't'.repeat(100000) }).sessionTitle.length, 80, 'session title is bounded');
+  A.ok(s.list(null)[0].deliveryPrompt.length <= 4000, 'delivery prompt is bounded');
+  A.ok(s.list(null)[0].deliveryText.length <= 24000, 'delivery result is bounded');
+}
+
 // ---- RAM mirror trim: the in-process rows array is bounded; disk keeps the full log; recent list unaffected ----
 {
   const io = memIo();

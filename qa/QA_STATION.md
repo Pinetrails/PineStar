@@ -25,6 +25,7 @@
 7. [Janitor](#7--janitor)
 7b. [Cartographer](#7b--cartographer)
 7c. [Perfectionist](#7c--perfectionist)
+7d. [Red→Green Closer](#7d--redgreen-closer)
 8. [Port registry](#8--port-registry)
 9. [The notification rule](#9--the-notification-rule)
 10. [KNOWN_ISSUES triage flow](#10--known_issues-triage-flow)
@@ -41,11 +42,13 @@
 | **Green Guardian** | Is trunk green + does the app boot/look right? | script | `npm run qa:guardian` | per-merge (`--watch`) **and/or** hourly | ledger + `qa/STATUS.md` + `.bugloops/guardian-<stamp>/` |
 | **Beginner Run** | Can a fresh user reach first value, unassisted? | script | `npm run qa:beginner` | daily `--ui-only`; weekly `--live` | ledger + `qa/STATUS.md` + `.bugloops/beginner-<stamp>/` |
 | **Truth Auditor** | Does the UI show what actually happened? | script | `npm run audit` (also runs inside every Guardian cycle) | every Guardian cycle | `.uiaudit/audit-report.json` |
+| **Saboteur** | Do hostile inputs or authority mutations break a real sidecar? | script | `npm run qa:saboteur` (also runs inside every Guardian cycle) | every Guardian cycle | ledger + `.bugloops/saboteur-<stamp>/report.json` |
 | **Visual Auditor** | Is the rendered game coherent? *(needs eyes)* | **session** | `/loop` per `scripts/VISUAL_AUDITOR.md` | self-paced, local | `SESSIONS.md` + re-shot PNGs |
 | **Overseer** | What broke today, what needs Andrew? | **session** | `/loop` reading the ledger | daily | `qa/digests/<date>.md` + P0 pings |
 | **Janitor** | What's rotting in the workshop? | script | `npm run qa:janitor` | weekly | ledger (P2) + `qa/digests/janitor-<date>.md` |
 | **Cartographer** | Is every surface element mapped (nothing un-enumerated)? | script | `npm run qa:atlas` | weekly + after big merge waves | registry `qa/atlas/areas/*.json` + `ATLAS.md` + `qa/STATUS.md` + ledger (P2 dead-entry) |
 | **Perfectionist** | Is every surface element correct, purposeful, polished? | **session** | `/loop` per `loops/perfectionist.md` | self-paced, local | registry judgment fields + ledger + routed fixes |
+| **Red→Green Closer** | Can a detected defect be turned into a PROVEN patch? | script + **session** | `npm run qa:closer -- --open <fp>` then `--referee <runId>` | per open finding | `qa/closer/<runId>/` (winner.patch + VERDICT.md) |
 
 Two runner kinds, cleanly separated (Charter Part 2):
 - **Scripts** — node, headless, no vision. Detect, write findings, exit nonzero. Never notify.
@@ -61,8 +64,11 @@ Two runner kinds, cleanly separated (Charter Part 2):
 
 One cycle pins trunk HEAD into a **dedicated** detached worktree (`../_qa-guardian-pin`,
 override `SKYNET_GUARDIAN_PIN`; created + `npm install`'d on first run, `git reset --hard`'d
-to trunk each cycle) and composes the four detectors in dependency order:
-`test:fast` → `shoot` → `golden` → `audit`. It files ONE deduped finding per regression
+to trunk each cycle) and composes the detectors in dependency order:
+`test:fast` → `test:http` → `qa:saboteur` → `shoot` → `golden` → `audit` → `qa:journeys`.
+The Saboteur uses a replayable seed to attack every literal API route's token/origin boundary
+plus malformed payloads on stateful seams; it always uses a disposable seeded workspace. It
+files ONE deduped finding per regression
 (fingerprinted per failing suite / frame / assertion), refreshes the Guardian row in
 `qa/STATUS.md`, and exits nonzero on any red. **STATUS.md + findings are written into the
 Guardian script's OWN repo** (resolved from `import.meta.url`), so the dashboard survives the
@@ -403,6 +409,68 @@ gauge is `npm run qa:atlas:status`; the loop never ends because **staleness re-q
 
 ---
 
+## 7d · Red→Green Closer
+
+**Answers:** "Can a detected defect be turned into a PROVEN patch — without a human in the middle?"
+Every other crew member above ends at *route it to a lane*. The Closer is the edge that was
+missing: a red finding goes in, a patch that a **script** proved goes out.
+**Script:** `scripts/qa/closer.mjs` (the referee) · **Session:** `loops/red-green-closer.md` (the
+repair agents) · **Ports:** 8970–8979 (CDP 9370–9379) · **Runs:** `qa/closer/<runId>/`.
+
+Because it is the only crew member that *writes code*, it is the one held to the hardest standard.
+Three locks, each aimed at a specific way a self-repair loop rots:
+
+1. **Write-set lint — mute-the-alarm.** The cheapest fake fix is editing the detector: weaken the
+   assertion, re-bless the golden, drop the suite from `test/fast.list`, add the fingerprint to
+   `KNOWN_ISSUES.md`, neuter the npm script. A candidate whose patch touches any of those is
+   **DISQUALIFIED before the gate is run** — it never gets the chance to go green by lying. The
+   rule is directional: **ADDING** a test is encouraged, **modifying/deleting/renaming** one is a
+   violation. `test/` is protected on *every* gate, not just `test-fast`, because `test:fast` is
+   the collateral gate on every run — otherwise a golden fix could quietly silence a unit test it
+   broke.
+2. **Oracle separation — grading your own homework.** The candidate's tree never gates. The referee
+   exports the diff, resets **its own** checkout to the base sha, applies the patch there, and runs
+   the gate itself. Candidate worktrees are provisioned **without `node_modules`** by default, so a
+   repair agent physically cannot run the gate that judges it (`--install-candidates` opts out for
+   agents that want to iterate; the verdict is unaffected either way).
+3. **Baseline-RED proof — the detector that never detects.** Before *any* patch is credited the
+   referee runs the gate at the base sha and requires **RED**. A green baseline BLOCKS the whole
+   run (`baseline-not-red`): the finding is stale, the repro is wrong, or the detector is flaky —
+   and in all three cases a "passing" patch proves nothing. Without this lock a flaky gate hands
+   out wins for empty diffs.
+
+### Launch lines
+```bash
+npm run qa:closer -- --open <fingerprint> --candidates 3   # provision candidate worktrees + briefs
+npm run qa:closer -- --referee <runId>                     # judge every candidate; crown a winner
+npm run qa:closer:list                                     # every run and its verdict
+npm run qa:closer -- --status <runId>                      # one run's VERDICT.md
+npm run qa:closer -- --close <runId>                       # remove candidate worktrees (evidence kept)
+```
+
+Each candidate worktree gets `CLOSER_BRIEF.md` at its root — the whole contract handed to one
+repair agent, including the **refusal path**: an agent that concludes the detector itself is wrong
+writes `CLOSER_VERDICT.md` and changes nothing, because retiring a detector is a human's call.
+
+### What each verdict means
+- **winner** (exit 0) — the failing gate went green on a clean tree and `test:fast` stayed green.
+  The patch lands at `qa/closer/<runId>/winner.patch`. **The Closer never merges** — that goes to
+  the merge ritual. Ties break on smallest patch (lines, then files), so a two-line fix beats a
+  scattershot rewrite that passes the same gate.
+- **no-winner** (exit 1) — every candidate was disqualified, failed to apply, or left the gate red.
+  The finding stays open. Nothing is filed: the defect already has a finding, and a second
+  "we couldn't fix it" row is exactly the nagging the anti-nag law forbids.
+- **BLOCKED** (exit 2) — the Closer could not judge. This is the only case that files, as its own
+  **P0** (no-fake-green law): a Closer that cannot judge never crowns a winner.
+
+### Cadence
+Per open finding, self-paced — it is pointless on an empty ledger and worth running the moment the
+Guardian has a standing red. One run at a time: a machine-global lock (`starnet-qa-closer.lock`,
+same law as the Guardian's) serializes the shared referee checkout and the 8970s ports; a second
+run exits 0 as redundant.
+
+---
+
 ## 8 · Port registry
 
 Loops must not collide — multiple sidecars may run at once (Charter Part 3 / Part 5 port law).
@@ -414,7 +482,8 @@ Each crew boots sidecars **only** in its assigned range. Mirrored in `qa/STATUS.
 | 8930–8939 | Visual Auditor (`scripts/VISUAL_AUDITOR.md`) | 9330–9339 |
 | 8940–8949 | Green Guardian (shoot 8940/9340 · golden 8941/9341 · audit 8942/9342 · journeys 8943/9343) | 9340–9349 |
 | 8950–8959 | Beginner Run (default 8950/9350) | 9350–9359 |
-| 8960+ | Ad-hoc / manual (Perfectionist sessions boot here) | 9360+ |
+| 8960–8969 | Ad-hoc / manual (Perfectionist sessions boot here) | 9360–9369 |
+| 8970–8979 | Red→Green Closer (referee re-runs a gate: shoot 8970 · golden 8971 · audit 8972 · journeys 8973) | 9370–9379 |
 
 Truth Auditor has no range of its own: inside a Guardian cycle it uses the Guardian's audit
 ports (8942/9342); run standalone it defaults to the 8930s.

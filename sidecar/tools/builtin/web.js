@@ -55,6 +55,7 @@
   const SNIPPET_MAX_CHARS = 320;
   const SEARCH_TIMEOUT_MS = 12000;
   const FETCH_TIMEOUT_MS  = 15000;
+  const OPENROUTER_SEARCH_TIMEOUT_MS = SEARCH_TIMEOUT_MS + 8000;
 
   // ---------- untrusted-content fence ----------
   // Page text and search snippets are attacker-authored input that lands directly in the agent's
@@ -74,12 +75,28 @@
   // drops its in-flight HTTP request instead of running to completion in the background.
   function withTimeout(promiseFactory, ms, parent) {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), ms);
+    let timedOut = false;
+    const t = setTimeout(() => {
+      timedOut = true;
+      const reason = new Error('request timed out after ' + ms + 'ms');
+      reason.__timeout = true;
+      try { ctrl.abort(reason); } catch (_) { ctrl.abort(); }
+    }, ms);
     if (parent) {
       if (parent.aborted) { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }
       else { try { parent.addEventListener('abort', () => { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }, { once: true }); } catch (_) {} }
     }
-    return Promise.resolve(promiseFactory(ctrl.signal)).finally(() => clearTimeout(t));
+    return Promise.resolve(promiseFactory(ctrl.signal)).catch(e => {
+      // Node/undici often discards AbortController.reason and reports only "This operation was aborted".
+      // Preserve the distinction between our per-provider expiry and a parent run/tool cancellation so the
+      // model can change source instead of blindly retrying an opaque abort.
+      if (timedOut) {
+        const reason = new Error('request timed out after ' + ms + 'ms');
+        reason.__timeout = true;
+        throw reason;
+      }
+      throw e;
+    }).finally(() => clearTimeout(t));
   }
   function decodeEntities(s) {
     return String(s)
@@ -89,6 +106,107 @@
   }
   function stripTags(s) { return decodeEntities(String(s).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim(); }
   function clamp(s, n) { s = String(s); return s.length > n ? s.slice(0, n).trimEnd() + ' …' : s; }
+
+  function waitAbortable(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) { reject(signal.reason || new Error('request aborted')); return; }
+      const timer = setTimeout(resolve, Math.max(0, Number(ms) || 0));
+      if (signal) signal.addEventListener('abort', () => {
+        clearTimeout(timer); reject(signal.reason || new Error('request aborted'));
+      }, { once: true });
+    });
+  }
+
+  /* Process-owned per-host politeness. `run` serializes only matching hosts, spaces requests after
+     the first, and remembers bounded server backoff across agent runs. It never retries a request:
+     the caller still sees the original 403/429/503 and chooses another source. */
+  function makePoliteScheduler(deps) {
+    deps = deps || {};
+    const minGapMs = Math.max(0, Number(deps.minGapMs == null ? 350 : deps.minGapMs));
+    const initialBackoffMs = Math.max(minGapMs, Number(deps.initialBackoffMs == null ? 1200 : deps.initialBackoffMs));
+    const maxBackoffMs = Math.max(initialBackoffMs, Number(deps.maxBackoffMs == null ? 30000 : deps.maxBackoffMs));
+    const maxHosts = Math.max(1, Number(deps.maxHosts == null ? 512 : deps.maxHosts));
+    const wait = typeof deps.wait === 'function' ? deps.wait : waitAbortable;
+    // Production injects the wall clock at the composition root. A no-clock unit construction stays
+    // conservative (it may wait the full remembered delay) without smuggling ambient time into logic.
+    const now = typeof deps.now === 'function' ? deps.now : () => 0;
+    const hosts = new Map();
+    let touchSeq = 0;
+
+    function stateFor(host) {
+      let state = hosts.get(host);
+      if (!state) {
+        if (hosts.size >= maxHosts) {
+          let victim = null;
+          for (const [key, candidate] of hosts) {
+            if (candidate.queued === 0 && (!victim || candidate.touched < victim[1].touched)) victim = [key, candidate];
+          }
+          if (victim) hosts.delete(victim[0]);
+        }
+        state = { tail: Promise.resolve(), seen: false, backoffMs: 0, nextAllowedAt: 0, requests: 0, lastDelayMs: 0, lastStatus: 0, queued: 0, touched: ++touchSeq };
+        hosts.set(host, state);
+      }
+      state.touched = ++touchSeq;
+      return state;
+    }
+    function retryAfterMs(response) {
+      try {
+        const raw = response && response.headers && response.headers.get('retry-after');
+        if (!/^\s*\d+(?:\.\d+)?\s*$/.test(String(raw || ''))) return 0;
+        return Math.min(maxBackoffMs, Math.max(0, Math.round(Number(raw) * 1000)));
+      } catch (_) { return 0; }
+    }
+    function note(state, response) {
+      const status = Number(response && response.status) || 0;
+      state.lastStatus = status;
+      if (status === 403 || status === 429 || status === 503) {
+        const directed = retryAfterMs(response);
+        state.backoffMs = directed || Math.min(maxBackoffMs, state.backoffMs ? state.backoffMs * 2 : initialBackoffMs);
+        state.nextAllowedAt = Math.max(state.nextAllowedAt, now() + state.backoffMs);
+      } else if (status >= 200 && status < 400) {
+        state.backoffMs = 0;
+      }
+    }
+    function awaitTurn(previous, signal) {
+      if (!signal) return previous;
+      if (signal.aborted) return Promise.reject(signal.reason || new Error('request aborted'));
+      return new Promise((resolve, reject) => {
+        const aborted = () => reject(signal.reason || new Error('request aborted'));
+        signal.addEventListener('abort', aborted, { once: true });
+        previous.then(
+          value => { signal.removeEventListener('abort', aborted); resolve(value); },
+          error => { signal.removeEventListener('abort', aborted); reject(error); }
+        );
+      });
+    }
+    async function run(url, signal, request) {
+      let host = '';
+      try { host = hostOf(new URL(String(url))); } catch (_) { return request(); }
+      const state = stateFor(host);
+      const previous = state.tail;
+      let release;
+      state.tail = new Promise(resolve => { release = resolve; });
+      state.queued++;
+      try {
+        await awaitTurn(previous, signal);
+        const delayMs = state.seen ? Math.max(0, state.nextAllowedAt - now()) : 0;
+        state.lastDelayMs = delayMs;
+        if (delayMs) await wait(delayMs, signal);
+        state.seen = true; state.requests++;
+        state.nextAllowedAt = Math.max(state.nextAllowedAt, now() + minGapMs);
+        const response = await request();
+        note(state, response);
+        return response;
+      } finally { state.queued--; state.touched = ++touchSeq; release(); }
+    }
+    function snapshot() {
+      return Array.from(hosts.entries()).map(([host, state]) => ({
+        host, requests: state.requests, backoffMs: state.backoffMs, nextAllowedAt: state.nextAllowedAt,
+        lastDelayMs: state.lastDelayMs, lastStatus: state.lastStatus
+      }));
+    }
+    return { run, snapshot };
+  }
 
   // ---------- SSRF / URL guard for web_fetch ----------
   // The model picks the URL, so this guard is a real trust boundary: refuse loopback, RFC-1918,
@@ -288,8 +406,14 @@
 
   function makeWebTools(deps) {
     deps = deps || {};
-    const doFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!doFetch) throw new Error('web.js requires global fetch (Node 18+) or deps.fetchImpl');
+    const rawFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!rawFetch) throw new Error('web.js requires global fetch (Node 18+) or deps.fetchImpl');
+    const politeness = deps.politeness || makePoliteScheduler({
+      wait: deps.politeWait, minGapMs: deps.politeMinGapMs,
+      initialBackoffMs: deps.politeInitialBackoffMs, maxBackoffMs: deps.politeMaxBackoffMs,
+      now: deps.politeNow, maxHosts: deps.politeMaxHosts
+    });
+    const doFetch = (url, opts) => politeness.run(url, opts && opts.signal, () => rawFetch(url, opts));
     const UA = deps.userAgent || DEFAULT_UA;
     const or = deps.openrouter || null;
     // DNS-rebinding guard resolver: default to real Node DNS; pass deps.lookup:null to disable (tests).
@@ -298,6 +422,11 @@
     // the Commander's stored keys. Default: no keys and the strict surface, so an unwired caller can only
     // make UNAUTHENTICATED requests rather than silently gaining credentials it was never handed.
     const surface = deps.surface === 'interactive' ? 'interactive' : 'autonomous';
+    // The station READER (webreader.js): a shared headless cookie-less real Chrome that fetch/search
+    // borrow when plain HTTP hits a bot wall or every engine throttles. Optional — absent, everything
+    // behaves exactly as before. Availability is probed lazily per use (Chrome may not exist).
+    const reader = deps.reader || null;
+    const readerReady = () => { try { return !!(reader && reader.available().ok); } catch (_) { return false; } };
     const serviceKeys = {
       resolve: (name, sfc) => (typeof deps.resolveServiceKey === 'function'
         ? deps.resolveServiceKey(name, sfc)
@@ -316,7 +445,7 @@
       const html = await withTimeout(signal => doFetch(endpoint, {
         method: 'POST',
         headers: searchHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-        body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
+        body: 'q=' + formEncode(query) + '&kl=us-en',   // form-urlencoded: spaces are `+` (see the Mojeek law below)
         signal
       }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (isDDGBlocked(html.status, html.body)) { const e = new Error('duckduckgo rate-limited (anomaly/202)'); e.__blocked = true; throw e; }
@@ -325,8 +454,14 @@
 
     // PRIMARY: Mojeek — keyless GET, independent index, no aggressive bot-shell. Treat a non-200 (e.g. a
     // 403/429 throttle) as a soft failure so the chain falls through to DDG/OpenRouter.
+    /* ⛔ SPACES MUST BE `+`, NOT `%20` (live A/B, 2026-07-31): for a `%20`-encoded multi-word query
+       Mojeek answers 200 with a ~5.7KB "Please…" interstitial and ZERO result anchors; the identical
+       query `+`-encoded answers the real 20KB result page. encodeURIComponent produces %20, so every
+       multi-word search silently got the shell — the field's endless "mojeek: 0 results". Form-style
+       encoding is what a real browser submits for a query string, and it is what Mojeek expects. */
+    const formEncode = (q) => encodeURIComponent(q).replace(/%20/g, '+');
     async function mojeekSearch(query, parent) {
-      const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + encodeURIComponent(query), {
+      const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + formEncode(query), {
         method: 'GET', headers: searchHeaders(), signal
       }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (res.status !== 200) throw new Error('mojeek http ' + res.status);
@@ -348,7 +483,7 @@
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + or.apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify(body), signal
-      }).then(r => r.json()), SEARCH_TIMEOUT_MS + 8000, parent);
+      }).then(r => r.json()), OPENROUTER_SEARCH_TIMEOUT_MS, parent);
       const msg = data && data.choices && data.choices[0] && data.choices[0].message;
       // Prefer structured url_citation annotations when present.
       const ann = (msg && msg.annotations) || [];
@@ -375,6 +510,12 @@
         ['duckduckgo-html', () => ddgSearch('https://html.duckduckgo.com/html/', parseDDGHtml, query, parent)],
         ['duckduckgo-lite', () => ddgSearch('https://lite.duckduckgo.com/lite/', parseDDGLite, query, parent)]
       ];
+      // The READER outranks the paid fallback: a real local Chrome sails past the fingerprint checks
+      // that throttle the scrape endpoints, costs nothing, and keeps search working with zero keys.
+      if (readerReady()) chain.push(['browser', async () => {
+        const r = await reader.search(query, { signal: parent });
+        return (r && r.results) || [];
+      }]);
       if (or && or.apiKey) chain.push(['openrouter', () => openrouterSearch(query, parent)]);
       for (const [source, fn] of chain) {
         try {
@@ -383,8 +524,10 @@
           errors.push(source + ': 0 results');
         } catch (e) { errors.push(source + ': ' + (e && e.message ? e.message : String(e))); }
       }
-      const e = new Error('web_search failed (' + errors.join(' | ') + ')');
-      e.__allFailed = true; throw e;
+      const e = new Error('web_search failed (' + errors.join(' | ')
+        + '). Search providers are temporarily unavailable; do not immediately repeat the same search. '
+        + 'Use sources already returned, try a known direct URL with web_fetch, or finish with an explicit evidence limitation.');
+      e.__allFailed = true; e.__errors = errors.slice(); throw e;
     }
 
     // ====================================================================
@@ -459,13 +602,100 @@
     // ====================================================================
     //  Tool definitions (match sidecar/tools/tool.js shape)
     // ====================================================================
+    /* ---------- web weather is an ANSWER, not an error ----------
+       Field data (2026-07-31, the Commander's own live workspace): the single biggest source of
+       mid-run "errors" users see is this file throwing on ordinary web reality — bot-blocked sites
+       (http 403), dead links (http 404), throttled keyless engines. Each throw became
+       "ERROR: tool web_fetch failed: http 403" in the transcript and a red ✗ chip in COMMS, and a
+       research task would rack up dozens — reading as a malfunctioning agent when nothing was wrong.
+       Reference harnesses (Hermes) return these to the MODEL as plain data and show the user nothing.
+
+       So: when the web ANSWERED — with a refusal, a 404, a throttle — the tool SUCCEEDED at finding
+       that out. Return an ok result whose content states the fact and steers the model to a different
+       source (never a blind retry). Genuine faults (timeouts, aborts, SSRF refusals, invalid URLs,
+       unreachable network) still throw and still become isError results — those keep the loop-guard
+       and repeat protection. Truthful telemetry cuts both ways: asserting a FAILURE the harness
+       didn't have is as untruthful as hiding one. */
+    function softFetchAnswer(e, rawUrl) {
+      const msg = String((e && e.message) || '');
+      const url = String(rawUrl || '');
+      let host = url; try { host = new URL(url).hostname; } catch (_) {}
+      const m = msg.match(/^http (\d{3})$/);
+      if (m) {
+        const s = +m[1];
+        if (s === 404 || s === 410) return {
+          content: 'No page exists at ' + url + ' (HTTP ' + s + ') — the link is dead or the content moved. ' +
+                   'Do not refetch this exact URL; search for where it lives now, or use another source.',
+          summary: 'dead link (' + s + ')'
+        };
+        if (s === 429) return {
+          content: host + ' is rate-limiting automated readers right now (HTTP 429). ' +
+                   'Use a different source for this information; the URL may work again later.',
+          summary: 'rate-limited (429)'
+        };
+        if (s >= 500) return {
+          content: host + '\'s own server is failing right now (HTTP ' + s + ') — an outage on their side. ' +
+                   'Use a different source, or retry this URL later.',
+          summary: 'site outage (' + s + ')'
+        };
+        return {
+          content: host + ' declined automated access to ' + url + ' (HTTP ' + s + ') — bot protection or a ' +
+                   'login wall. This page cannot be read directly; get the same information from a different ' +
+                   'source instead of retrying.',
+          summary: 'site declined (' + s + ')'
+        };
+      }
+      if (msg === 'too many redirects') return {
+        content: 'The URL ' + url + ' redirect-loops (6+ hops) and never lands on a page. Treat it as ' +
+                 'unreachable and use a different source.',
+        summary: 'redirect loop'
+      };
+      if (/^web_fetch got empty content/.test(msg)) return {
+        content: 'The page at ' + url + ' loaded but yielded no readable text — it likely renders entirely ' +
+                 'with JavaScript. Use the browser tool if one is available, or a different source.',
+        summary: 'no readable text'
+      };
+      // getaddrinfo ENOTFOUND — the DOMAIN does not resolve: a dead site or a mistyped host, i.e. an answer.
+      // (EAI_AGAIN / ECONNREFUSED / resets stay hard errors: they can also mean the USER'S network is down,
+      // and calling that "web weather" would be the harness lying about its own connectivity.)
+      const cause = e && e.cause;
+      const causeCodes = cause ? [cause.code].concat((cause.errors || []).map(x => x && x.code)) : [];
+      if (causeCodes.indexOf('ENOTFOUND') >= 0) return {
+        content: 'The domain ' + host + ' does not resolve — the site no longer exists or the hostname is ' +
+                 'mistyped. Do not retry this URL; search for the right address or use another source.',
+        summary: 'domain not found'
+      };
+      return null;
+    }
+    /* The providers above are sequential fallbacks. The registry timeout must cover their SUM, not one
+       provider plus a guess. The old 37s wrapper could abort OpenRouter before its own 20s allowance after
+       Mojeek + both DDG paths had consumed time — exactly when the fallback was most needed. */
+    const searchChainTimeoutMs = (SEARCH_TIMEOUT_MS * 3)
+      + (reader ? 45000 : 0)   // the reader rung: Chrome boot + up to two engine navigations
+      + ((or && or.apiKey) ? OPENROUTER_SEARCH_TIMEOUT_MS : 0)
+      + 5000;
     const searchTool = {
-      name: 'web_search', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: SEARCH_TIMEOUT_MS + 25000,
-      description: 'Search the web and get a list of results (title, url, snippet). Use this to find current information and pages to read.',
+      name: 'web_search', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: searchChainTimeoutMs,
+      description: 'Search the web and get a list of results (title, url, snippet). Use this to find current information and pages to read. ' +
+        'If every engine is throttled the result says so — that is temporary web weather, not a malfunction; change strategy instead of repeating the search.',
       schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } },
       run: async (args, ctx) => {
         // visible tool activity is the loop's frozen agent.tool_call / agent.tool_result events
-        const { results, source } = await webSearch(args.query, { signal: ctx && ctx.signal });
+        let results, source;
+        try { ({ results, source } = await webSearch(args.query, { signal: ctx && ctx.signal })); }
+        catch (e) {
+          // An exhausted keyless chain is the engines' weather, not a harness fault — answer it as
+          // information (see softFetchAnswer's rationale above). webSearch itself still throws, so
+          // programmatic callers and tests keep the strict contract.
+          if (e && e.__allFailed) return {
+            content: 'No results this time — every search engine declined (' + (e.__errors || []).join('; ') + '). ' +
+                     'This is temporary throttling of the keyless engines, not a malfunction. Do not immediately ' +
+                     'repeat the same search: use sources already gathered, web_fetch a known URL directly, or ' +
+                     'finish and state the evidence limitation.',
+            summary: 'engines throttled — no results'
+          };
+          throw e;
+        }
         const content = results.length
           ? fenceExternal(
               results.map((r, i) => (i + 1) + '. ' + r.title + '\n   ' + r.url + (r.snippet ? '\n   ' + r.snippet : '')).join('\n'),
@@ -476,12 +706,46 @@
     };
 
     const fetchTool = {
-      name: 'web_fetch', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: FETCH_TIMEOUT_MS + 20000,
-      description: 'Fetch a web page by URL and return its main text content (cleaned). Use after web_search to read a result.',
+      name: 'web_fetch', capability: 'web', scope: 'read', requiresConsent: false,
+      timeoutMs: FETCH_TIMEOUT_MS + 20000 + (reader ? 45000 : 0),   // the reader rung needs Chrome boot + nav + settle
+      description: 'Fetch a web page by URL and return its main text content (cleaned). Use after web_search to read a result. ' +
+        'Bot-blocked and JavaScript-only pages are automatically retried through the station\'s own browser, so one call is enough. ' +
+        'If a page still cannot be read (dead link, site outage, verification wall) the result says so — that is information about the site, not a tool failure; use a different source rather than retrying the same URL.',
       schema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
       run: async (args, ctx) => {
-        const { text, url, source } = await webFetch(args.url, { signal: ctx && ctx.signal });
-        return { content: fenceExternal(text, 'page text from ' + url), summary: text.length + ' chars via ' + source };
+        let out;
+        try { out = await webFetch(args.url, { signal: ctx && ctx.signal }); }
+        catch (e) {
+          /* THE READER RUNG — a wall a REAL browser can climb: bot-block statuses, challenge-prone
+             503s, and JS-only pages. Dead links (404/410), genuine outages (500/502/504) and network
+             faults skip it — Chrome cannot resurrect a page that does not exist, and a cold boot is
+             not free. On success the label SAYS the browser read it (truthful provenance). */
+          const msg = String((e && e.message) || '');
+          const m = msg.match(/^http (\d{3})$/);
+          const s = m ? +m[1] : 0;
+          const walled = s === 401 || s === 403 || s === 407 || s === 429 || s === 451 || s === 503
+            || /^web_fetch got empty content/.test(msg);
+          if (walled && readerReady()) {
+            const r = await reader.fetchText(args.url, { signal: ctx && ctx.signal });
+            if (r && r.ok) {
+              const text = clamp(r.text, FETCH_MAX_CHARS);
+              return {
+                content: fenceExternal(text, 'page text from ' + (r.url || args.url) + ' (read via the station browser' + (s ? ' after http ' + s : '') + ')'),
+                summary: text.length + ' chars via browser'
+              };
+            }
+            const soft2 = softFetchAnswer(e, args.url);
+            if (soft2) return {
+              content: soft2.content + ' (The station\'s own browser also tried and was refused'
+                + (r && r.reason === 'challenge' ? ' — the site is holding a verification wall' : '') + '.)',
+              summary: soft2.summary
+            };
+          }
+          const soft = softFetchAnswer(e, args.url);   // the web ANSWERED (403/404/throttle/…) → ok result
+          if (soft) return soft;
+          throw e;                                     // genuine fault (timeout/abort/SSRF/bad URL) → isError
+        }
+        return { content: fenceExternal(out.text, 'page text from ' + out.url), summary: out.text.length + ' chars via ' + out.source };
       }
     };
 
@@ -643,10 +907,10 @@
     return {
       searchTool, fetchTool, requestTool, webSearch, webFetch,
       // exported for unit tests
-      _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, fenceExternal },
+      _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, fenceExternal, withTimeout, politeness },
       register(reg) { reg.register(searchTool); reg.register(fetchTool); reg.register(requestTool); return reg; }
     };
   }
 
-  return { makeWebTools };
+  return { makeWebTools, makePoliteScheduler };
 });

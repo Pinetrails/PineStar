@@ -112,12 +112,80 @@
     return Promise.resolve(core.invoke('starnet_build_info')).then(formatBuild).catch(() => '');   // old shell w/o the command → ''
   }
 
+  /* THE DEAD-ENGINE FALLBACK (2026-07-29). The whole report used to come from GET /api/diagnostics — i.e. from
+     the sidecar. So the app's ONLY self-service diagnostic door was dead in precisely the situation it is
+     offered under: the error row that says the local service can't be reached. A non-technical user tapped
+     "copy diagnostics for a bug report", got "could not read diagnostics", and had nothing to send. Every such
+     report reached support as a screenshot of a sentence — which cannot distinguish a sidecar that never
+     started from a model stream that dropped, the two causes with opposite fixes.
+
+     This assembles the small honest report the PAGE can prove by itself, with no sidecar involved:
+       • the build line — Tauri's starnet_build_info command, which is in the shell, not the sidecar, so it
+         still answers when the engine is gone (exact commit + dirty/provenance = we know what they're running);
+       • the measured /api/health verdict, including "unproven" when the probe timed out (never guessed);
+       • the loopback base the page was told to use, so a wrong/absent port is visible at a glance;
+       • the failure text that triggered it.
+     SECRETS: the sidecar report is redacted server-side; this one never reads a secret in the first place — note
+     it takes only the ORIGIN of __STARNET_API__ and deliberately never touches __STARNET_API_TOKEN__ — and it
+     still runs the caller-supplied error text through localRedact as defence in depth. */
+  function localRedact(s) {
+    return String(s == null ? '' : s)
+      .replace(/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, '[redacted-key]')
+      .replace(/\b[A-Fa-f0-9]{32,}\b/g, '[redacted-hex]')
+      .replace(/\b(?:bearer|token|key|secret|password)\b\s*[:=]\s*\S+/gi, '[redacted]')
+      .slice(0, 600);
+  }
+  // The page-side loopback base, ORIGIN ONLY — never the token that rides alongside it.
+  function apiOrigin() {
+    try {
+      const raw = (typeof window !== 'undefined' && window.__STARNET_API__) ? String(window.__STARNET_API__) : '';
+      if (!raw) return 'same-origin (browser build)';
+      return raw.replace(/[?#].*$/, '').replace(/\/+$/, '');
+    } catch (_) { return 'unknown'; }
+  }
+  // true | false | null(unproven) — delegates to the one real measurement if it is loaded, else says unproven.
+  function engineVerdict(context) {
+    if (context && typeof context.engineAlive === 'boolean') return Promise.resolve(context.engineAlive);
+    try {
+      if (typeof Harness !== 'undefined' && Harness.pingEngine) return Promise.resolve(Harness.pingEngine()).catch(() => null);
+    } catch (_) {}
+    return Promise.resolve(null);
+  }
+  function localReport(context) {
+    context = context || {};
+    return Promise.all([buildLine(), engineVerdict(context)]).then(([build, alive]) => {
+      const lines = [];
+      lines.push('STARNET DIAGNOSTICS (page-side fallback — the local engine did not answer, so this report was');
+      lines.push('assembled by the app window itself and is SHORTER than a normal report.)');
+      lines.push('');
+      lines.push('when:          ' + new Date().toISOString());
+      lines.push('build:         ' + (build || 'unknown (browser session — no binary provenance)'));
+      lines.push('local engine:  ' + (alive === true ? 'REACHABLE (GET /api/health answered)'
+        : alive === false ? 'NOT REACHABLE (GET /api/health failed to connect)'
+        : 'UNPROVEN (health probe did not answer in time — do NOT read this as "down")'));
+      lines.push('engine addr:   ' + apiOrigin());
+      lines.push('diagnostics:   GET /api/diagnostics returned nothing — the sidecar report is missing');
+      if (context.kind) lines.push('classified as: ' + localRedact(context.kind));
+      if (context.error) lines.push('failure text:  ' + localRedact(context.error));
+      try { if (typeof navigator !== 'undefined' && navigator.userAgent) lines.push('webview:       ' + String(navigator.userAgent).slice(0, 300)); } catch (_) {}
+      lines.push('');
+      lines.push('NOTE FOR SUPPORT: "local engine: REACHABLE" means the sidecar is fine and the fault is upstream');
+      lines.push('(the model provider stream, or a request the sidecar accepted and never answered) — a restart or');
+      lines.push('reinstall will NOT help. "NOT REACHABLE" is the case where restarting the app is the right step.');
+      return lines.join('\n');
+    }).catch(() => '');
+  }
+
   /* Fetch → copy → tell the user. opts.notify (default true) shows a toast; opts.onDone(ok, text) fires after.
+     opts.context ({ error, kind, engineAlive }) enriches the page-side fallback when the sidecar can't be read.
      Always resolves (never throws) with the boolean success so a caller can flip button state. */
   function copy(opts) {
     opts = opts || {};
     const wantNotify = opts.notify !== false;
-    return fetchText().then(text => {
+    // Prefer the sidecar's full report; fall back to the page-side one rather than stranding the user.
+    return fetchText()
+      .then(text => text ? text : localReport(opts.context))
+      .then(text => {
       if (!text) { if (wantNotify) notify('could not read diagnostics — is the app still running?', 'warn'); if (opts.onDone) opts.onDone(false, ''); return false; }
       return copyToClipboard(text).then(ok => {
         // Honest copy: name the support address only when one is actually configured; otherwise just confirm the
@@ -186,5 +254,5 @@
     return fetchText().then(paint).catch(() => paint(''));
   }
 
-  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, copy, showBlock, buildLine, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER, formatBuild, tauriCore } };
+  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, copy, showBlock, buildLine, localReport, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER, formatBuild, tauriCore, localRedact, apiOrigin } };
 });

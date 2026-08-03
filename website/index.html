@@ -55,7 +55,7 @@
   <nav class="topnav">
     <a href="#station">WHAT IT IS</a>
     <a href="#difference">FEATURES</a>
-    <a href="pricing.html">PRICING</a>
+    <a href="pricing.html" data-pricing-link>PRICING</a>
     <a href="#download">DOWNLOAD</a>
     <a href="docs/index.html">DOCS</a>
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
@@ -81,7 +81,7 @@
         <a id="cta-download" class="btn btn-primary" href="#download">[ DOWNLOAD ]</a>
         <a class="btn" href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">[ VIEW SOURCE ]</a>
       </div>
-      <div class="hero-meta"><span id="ver-badge">v0.6.6</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; bring your own keys</div>
+      <div class="hero-meta"><span id="ver-badge">v0.8.5</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; bring your own keys</div>
     </div>
   </section>
 
@@ -119,6 +119,9 @@
       <li><b>It studies you.</b> Your crew keeps a dossier on its commander &mdash; goals, taste, strengths. Agents propose what they learn; you approve or strike it.</li>
       <li><b>Work sharpens itself.</b> Rate a delivery and the next pass is built from what you valued. Routines compound instead of decaying.</li>
       <li><b>Night Shift.</b> The station keeps working while you're away &mdash; inside your leash, sandboxed, honest morning report.</li>
+      <li><b>It drives a real browser.</b> Agents don't guess from a search snippet &mdash; they navigate, read, click, and type on the live page, and report what the page actually said.</li>
+      <li><b>Talk to it.</b> Hands-free Live Voice runs on a speech engine built into the app &mdash; no key, no account, and your voice never leaves the machine. Identical on every provider, because it doesn't use one.</li>
+      <li><b>Agents summon agents.</b> Give one agent a big job and it can dispatch subtasks to crew it summons, then fold the results back &mdash; you watch the whole tree run on the floor.</li>
       <li><b>Nothing fake, ever.</b> The app never shows state the harness can't prove. No fake progress, no invented counters, real costs.</li>
       <li><b>Local-first, your keys.</b> Everything stays on your machine. OpenRouter key or OAuth sign-in. Zero telemetry &mdash; <a href="legal/privacy.html">we collect nothing</a>.</li>
       <li><b>Plays well with other harnesses.</b> An MCP bridge and OpenAI-style endpoint let Claude Code, Hermes, or OpenClaw drive your station. <a href="docs/migrating.html">Coming from one of those?</a></li>
@@ -131,7 +134,7 @@
       <span class="section-no">03</span>
       <h2>DOWNLOAD STARNET</h2>
     </div>
-    <p class="dl-sub"><b>Windows and macOS installers, fully supported from day one.</b> Builds publish on the <a id="rel-page" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and update through the same verified feed. Current version: <span class="ver">v0.6.6</span>.</p>
+    <p class="dl-sub"><b>Windows and macOS installers, fully supported from day one.</b> Builds publish on the <a id="rel-page" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and update through the same verified feed. Current version: <span class="ver">v0.8.5</span>.</p>
     <div class="dl-grid">
       <article class="dl-card" data-os="windows">
         <div class="dl-os">WINDOWS</div>
@@ -144,6 +147,12 @@
         <div class="dl-req">M1 / M2 / M3 / M4</div>
         <a class="btn btn-primary dl-btn" data-asset="aarch64.dmg" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
         <div class="dl-note">Gatekeeper warning expected: right-click &rarr; Open.</div>
+      </article>
+      <article class="dl-card" data-os="mac-intel">
+        <div class="dl-os">MACOS &middot; INTEL</div>
+        <div class="dl-req">Intel-based Macs</div>
+        <a class="btn btn-primary dl-btn" data-asset="x64.dmg" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
+        <div class="dl-note">Not sure which Mac you have? Apple menu &rarr; About This Mac &mdash; "Intel" means this one. Gatekeeper warning expected: right-click &rarr; Open.</div>
       </article>
     </div>
     <div class="source-run">
@@ -164,6 +173,7 @@
       <a href="docs/agents.html">AGENTS &amp; TEAMS</a>
       <a href="docs/autonomy.html">NIGHT SHIFT</a>
       <a href="docs/skills.html">SKILLS &amp; ROUTINES</a>
+      <a href="docs/connect-a-platform.html">CONNECT A PLATFORM</a>
       <a href="docs/connectors.html">CONNECTORS</a>
       <a href="docs/migrating.html">FROM OPENCLAW / HERMES</a>
       <a href="docs/troubleshooting.html">TROUBLESHOOTING</a>
@@ -179,7 +189,7 @@
     <div class="faq">
       <details>
         <summary>Is StarNet free?</summary>
-        <p>The software is MIT-licensed open source and free to run. Model usage costs whatever your provider charges &mdash; you bring your own API key (or OAuth account), and StarNet shows you real cost per run. No markup, no subscription required to use your own keys. If you'd rather not manage keys at all, <a href="pricing.html">StarNet Credits</a> are an optional managed plan &mdash; never required.</p>
+        <p>The software is MIT-licensed open source and free to run. Model usage costs whatever your provider charges &mdash; you bring your own API key (or OAuth account), and StarNet shows you real cost per run. No markup, no subscription required to use your own keys.<span data-pricing-link> If you'd rather not manage keys at all, <a href="pricing.html">StarNet Credits</a> are an optional managed plan &mdash; never required.</span></p>
       </details>
       <details>
         <summary>Is the work actually real?</summary>
@@ -207,7 +217,7 @@
   <div class="footer-links">
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
     <a href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
-    <a href="pricing.html">PRICING</a>
+    <a href="pricing.html" data-pricing-link>PRICING</a>
     <a href="docs/index.html">DOCS</a>
     <a href="docs/getting-started.html">INSTALL GUIDE</a>
     <a class="social-link" data-social="discord" href="" hidden>DISCORD</a>
@@ -216,7 +226,7 @@
     <a href="legal/terms.html">TERMS</a>
     <a href="mailto:androo.agi@gmail.com">CONTACT</a>
   </div>
-  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.6.6</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
+  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.8.5</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
 </footer>
 
 <script src="site.js?v=20260725"></script>

@@ -189,18 +189,31 @@ body {
 /* ====== CRT GLASS: scanlines + bezel vignette + slow roll band ====== */
 body::after { /* scanlines + aperture-grille over EVERYTHING */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 950;
+  /* THE GLASS IS SCREEN-SPACE — it is the tube in front of the picture, not part of the picture.
+     TEXT SIZE zooms <body> (stationui.js applySettings) and that zoom multiplies into this overlay,
+     so every hard-px length below used to scale with the text: the 3px beam pitch rendered at
+     4.35px on HUGE, which stops reading as a beam and reads as venetian blinds. --cz is the exact
+     reciprocal stationui publishes beside the zoom (--crt-unzoom), applied to EVERY stop so the
+     pitch lands back at its authored device size at any text size. Kept as calc'd stops on the
+     repeating gradient rather than a tiled background-size: one continuous rasterisation across the
+     box has no tile seams, which is what keeps fractional-DPI displays free of moiré. Unset (the
+     100% default) resolves to 1, i.e. these are the shipped numbers, untouched. */
+  --cz: var(--crt-unzoom, 1);
   /* BEAM scanlines: a soft dark trough between bright line-cores (graded stops,
      not a hard 1px bar) so it reads as an electron beam, not venetian blinds —
      and the soft edges alias far less on fractional-DPI displays. 3px pitch. */
   background:
     repeating-linear-gradient(0deg,
       rgba(0,0,0,0) 0px,
-      rgba(0,0,0,0) 1px,
-      rgba(0,0,0,0.13) 1.5px,
-      rgba(0,0,0,0.30) 2px,
-      rgba(0,0,0,0.13) 2.5px,
-      rgba(0,0,0,0) 3px),
-    repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1px, rgba(40,180,120,0.02) 1px 2px, rgba(60,120,255,0.03) 2px 3px);
+      rgba(0,0,0,0) calc(1px * var(--cz)),
+      rgba(0,0,0,0.13) calc(1.5px * var(--cz)),
+      rgba(0,0,0,0.30) calc(2px * var(--cz)),
+      rgba(0,0,0,0.13) calc(2.5px * var(--cz)),
+      rgba(0,0,0,0) calc(3px * var(--cz))),
+    repeating-linear-gradient(90deg,
+      rgba(255,80,40,0.03) 0 calc(1px * var(--cz)),
+      rgba(40,180,120,0.02) calc(1px * var(--cz)) calc(2px * var(--cz)),
+      rgba(60,120,255,0.03) calc(2px * var(--cz)) calc(3px * var(--cz)));
 }
 /* hi-DPI: widen the pitch so the line + trough each land on whole device pixels
    instead of merging into a flat gray haze on dense / scaled displays. */
@@ -209,12 +222,15 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
     background:
       repeating-linear-gradient(0deg,
         rgba(0,0,0,0) 0px,
-        rgba(0,0,0,0) 1.5px,
-        rgba(0,0,0,0.13) 2.2px,
-        rgba(0,0,0,0.28) 3px,
-        rgba(0,0,0,0.13) 3.8px,
-        rgba(0,0,0,0) 4.5px),
-      repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1.5px, rgba(40,180,120,0.02) 1.5px 3px, rgba(60,120,255,0.03) 3px 4.5px);
+        rgba(0,0,0,0) calc(1.5px * var(--cz)),
+        rgba(0,0,0,0.13) calc(2.2px * var(--cz)),
+        rgba(0,0,0,0.28) calc(3px * var(--cz)),
+        rgba(0,0,0,0.13) calc(3.8px * var(--cz)),
+        rgba(0,0,0,0) calc(4.5px * var(--cz))),
+      repeating-linear-gradient(90deg,
+        rgba(255,80,40,0.03) 0 calc(1.5px * var(--cz)),
+        rgba(40,180,120,0.02) calc(1.5px * var(--cz)) calc(3px * var(--cz)),
+        rgba(60,120,255,0.03) calc(3px * var(--cz)) calc(4.5px * var(--cz)));
   }
 }
 body.no-scan::after { display: none; }
@@ -350,7 +366,11 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 
 /* ================= CREW ================= */
 #left { display: flex; flex-direction: column; overflow: hidden; }
-#crew { list-style: none; overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: var(--ph) transparent; }
+/* RAIL SPACE SPLIT (2026-07-27): #crew used to take flex:1 and hold ALL the column's slack, so a
+   2-agent station left ~350px of dead black under the roster while #workstreams — the list that
+   actually grows without bound — sat capped and scrolling beneath it. The roster is content-sized
+   now (it scrolls itself only past the cap), and #ws-wrap takes the slack instead. */
+#crew { list-style: none; overflow-y: auto; flex: 0 1 auto; max-height: 40%; scrollbar-width: thin; scrollbar-color: var(--ph) transparent; }
 .crew-row {
   display: flex; gap: 6px; padding: 4px 7px; border-bottom: 1px solid var(--ph-faint);
   cursor: pointer; align-items: flex-start;

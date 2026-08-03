@@ -123,10 +123,13 @@ const SFX = {
   // per-sound gate: repeats inside the window are dropped; the FIRST one always sounds.
   // _lastAny lets the delegated UI layer (audio.js) yield to explicit cues that just played.
   _lastAny: 0,
-  _gate(name, ms) {
+  // `quiet` cues (the typewriter tick) still rate-limit themselves but must NOT stamp _lastAny: a tick
+  // is ambience, not an interaction cue, and at ~20/sec it would hold the delegate's 80ms yield window
+  // permanently open — silencing every button pressed while a COMMS line types itself out.
+  _gate(name, ms, quiet) {
     const now = Date.now();
     if (SFX._lastAt[name] && now - SFX._lastAt[name] < ms) return false;
-    SFX._lastAt[name] = now; SFX._lastAny = now; return true;
+    SFX._lastAt[name] = now; if (!quiet) SFX._lastAny = now; return true;
   },
 
   // destination picker: an optional stereo nudge (pan −1..1) gives UI cues a touch of width;
@@ -164,7 +167,8 @@ const SFX = {
   _loadSamples() {
     if (typeof fetch === 'undefined' || SFX._samplesLoading) return;
     SFX._samplesLoading = true;
-    ['click', 'open', 'alarm', 'chime', 'notify', 'msg', 'ship', 'think', 'idea', 'seed'].forEach(name => {
+    ['click', 'open', 'alarm', 'chime', 'notify', 'msg', 'ship', 'think', 'idea', 'seed',
+     'type', 'tick', 'sale', 'quest', 'milestone', 'level'].forEach(name => {
       fetch('assets/sfx/ui-' + name + '.wav').then(r => r.ok ? r.arrayBuffer() : Promise.reject())
         .then(ab => SFX.ctx.decodeAudioData(ab))
         .then(buf => { SFX._samples[name] = buf; })
@@ -273,6 +277,16 @@ const SFX = {
     SFX.noise({ dur: 0.01, cut: 3000, type: 'highpass', vol: 0.05 });
     SFX.voice({ freq: 1060, glide: 780, dur: 0.04, type: 'sine', vol: 0.16, atk: 0.001, cut: 6000 });
   },
+  // tick: a state COMMITTED — a connector enabled, a transport switched, a key removed. Data_Point_05,
+  // a 166ms readout blip: a settings change CONFIRMS without pretending to be a notification.
+  // connectors.js has called sfx('tick') at eight sites since it was written; until this cue existed the
+  // helper's `SFX[n] &&` guard swallowed every one of them and the whole window changed state in silence.
+  tick() {
+    if (!SFX._gate('tick', 60)) return;
+    if (SFX._sample('tick', { rate: 1, vol: 0.45 })) return;
+    SFX.noise({ dur: 0.01, cut: 3200, type: 'highpass', vol: 0.05 });
+    SFX.voice({ freq: 1120, glide: 840, dur: 0.042, type: 'sine', vol: 0.17, atk: 0.001, cut: 6000 });
+  },
   // slidertick: the ratchet detent for range inputs — tiny, high, heavily gated so a drag
   // reads as a rotary dial, not a machine gun.
   slidertick() {
@@ -314,7 +328,11 @@ const SFX = {
     SFX.voice({ freq: 880, dur: 0.34, type: 'sine', vol: 0.2, detune: 5, atk: 0.012, verb: 0.45 });
     SFX.voice({ freq: 1318, dur: 0.46, type: 'sine', vol: 0.12, when: 0.09, atk: 0.015, detune: 5, verb: 0.55 });
   },
-  sale() { [523, 659, 784, 1046].forEach((f, i) => SFX.voice({ freq: f, dur: 0.22, type: 'triangle', vol: 0.19, when: i * 0.05, atk: 0.008, detune: 3, verb: 0.3 })); },
+  // sale: the settings export landing — Confirm_01, a settled two-part confirm.
+  sale() {
+    if (SFX._sample('sale', { rate: 1, vol: 0.5 })) return;
+    [523, 659, 784, 1046].forEach((f, i) => SFX.voice({ freq: f, dur: 0.22, type: 'triangle', vol: 0.19, when: i * 0.05, atk: 0.008, detune: 3, verb: 0.3 }));
+  },
   // bad: a dark exhale — low saw slide with a falling noise wash underneath; heavy, not buzzy.
   bad() {
     if (!SFX._gate('bad', 250)) return;
@@ -324,10 +342,24 @@ const SFX = {
     SFX.voice({ freq: 196, glide: 110, dur: 0.22, type: 'sawtooth', vol: 0.16, cut: 800, atk: 0.01 });
     SFX.voice({ freq: 147, glide: 92, dur: 0.3, type: 'sawtooth', vol: 0.12, when: 0.08, cut: 620, atk: 0.01 });
   },
-  level() { [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.2, type: 'triangle', vol: 0.21, when: i * 0.065, atk: 0.008, detune: 3, verb: 0.3 })); SFX.voice({ freq: 2093, dur: 0.5, type: 'sine', vol: 0.07, when: 0.33, atk: 0.03, verb: 0.6 }); },
+  // level: the biggest sting the station owns — Sequence_06, the longest of the three (1572ms).
+  // The three celebration cues are graded by the pack's own lengths: quest 235ms < milestone 843ms < level.
+  // vol > 1 is DELIBERATE, do not "correct" it: Sequence_06 is recorded ~12dB quieter than Confirm_02
+  // and Sequence_07 (raw peaks -17.1 vs -4.4 / -5.3 dBFS), so at a normal 0.5 the longest sting came out
+  // the QUIETEST of the three and a level-up landed smaller than a milestone. 2.0 renders it at -19.8
+  // peak against milestone's -19.3 — matched by measurement, not by ear. The limiter takes the transient.
+  level() {
+    if (SFX._sample('level', { rate: 1, vol: 2 })) return;
+    [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.2, type: 'triangle', vol: 0.21, when: i * 0.065, atk: 0.008, detune: 3, verb: 0.3 }));
+    SFX.voice({ freq: 2093, dur: 0.5, type: 'sine', vol: 0.07, when: 0.33, atk: 0.03, verb: 0.6 });
+  },
   // quest-complete sting (G1a): a shorter, brighter cousin of level() — three quick gold steps + one high
   // shimmer. A MOMENT, deliberately smaller than a level-up: quests pay out in real work, not fanfare.
-  quest() { [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.16, type: 'triangle', vol: 0.19, when: i * 0.055, atk: 0.008, detune: 3, verb: 0.32 })); SFX.voice({ freq: 1976, dur: 0.36, type: 'sine', vol: 0.08, when: 0.19, atk: 0.02, verb: 0.55 }); },
+  quest() {
+    if (SFX._sample('quest', { rate: 1, vol: 0.5 })) return;
+    [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.16, type: 'triangle', vol: 0.19, when: i * 0.055, atk: 0.008, detune: 3, verb: 0.32 }));
+    SFX.voice({ freq: 1976, dur: 0.36, type: 'sine', vol: 0.08, when: 0.19, atk: 0.02, verb: 0.55 });
+  },
   // idea sting (G3a): a pitch / fresh suggestion / spoken notice slots into the feed — SOFT, two warm sine
   // steps up, quieter and rounder than notify() so a proactive aside lands gently, never startles.
   idea() { if (SFX._sample('idea', { rate: 1, vol: 0.4 })) return; SFX.voice({ freq: 587, dur: 0.13, type: 'sine', vol: 0.11, atk: 0.012, verb: 0.28 }); SFX.voice({ freq: 880, dur: 0.18, type: 'sine', vol: 0.09, when: 0.07, atk: 0.012, verb: 0.35 }); },
@@ -336,8 +368,21 @@ const SFX = {
   seed() { if (SFX._sample('seed', { rate: 1, vol: 0.45 })) return; SFX.voice({ freq: 262, dur: 0.17, type: 'triangle', vol: 0.17, atk: 0.01, verb: 0.22 }); SFX.voice({ freq: 1568, dur: 0.1, type: 'sine', vol: 0.09, when: 0.10, verb: 0.45 }); SFX.voice({ freq: 2093, dur: 0.24, type: 'sine', vol: 0.07, when: 0.16, verb: 0.55 }); },
   // milestone sting (G3a): grander than quest() (3 steps), smaller than level() (5 steps) — four rising gold
   // steps under a long high shimmer. A milestone is PERMANENT, so its sting carries a little more weight.
-  milestone() { [523, 659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.18, type: 'triangle', vol: 0.2, when: i * 0.06, atk: 0.008, detune: 3, verb: 0.3 })); SFX.voice({ freq: 2637, dur: 0.44, type: 'sine', vol: 0.07, when: 0.26, atk: 0.03, verb: 0.6 }); },
-  type() { if (!SFX._gate('type', 24)) return; SFX.noise({ dur: 0.016, cut: 3400, vol: 0.045, type: 'highpass', pan: (Math.random() - 0.5) * 0.2 }); },
+  milestone() {
+    if (SFX._sample('milestone', { rate: 1, vol: 0.52 })) return;
+    [523, 659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.18, type: 'triangle', vol: 0.2, when: i * 0.06, atk: 0.008, detune: 3, verb: 0.3 }));
+    SFX.voice({ freq: 2637, dur: 0.44, type: 'sine', vol: 0.07, when: 0.26, atk: 0.03, verb: 0.6 });
+  },
+  // type: the typewriter tick under every revealed COMMS line — Click_03, the shortest thing in the pack
+  // at 74ms, which is the only reason it survives firing ~20×/sec. Quiet, with the same ±pan/±rate drift
+  // as click() so a run of them stays organic. Gated quiet (see _gate) so a typing line never mutes the
+  // buttons around it.
+  type() {
+    if (!SFX._gate('type', 24, true)) return;
+    const pan = (Math.random() - 0.5) * 0.2, drift = 1 + (Math.random() - 0.5) * 0.08;
+    if (SFX._sample('type', { rate: drift, vol: 0.3, pan })) return;
+    SFX.noise({ dur: 0.016, cut: 3400, vol: 0.045, type: 'highpass', pan });
+  },
 
   /* ---- event stings the sound Director (audio.js) plays on real colony events ---- */
   // chime: one held glass bell — memory writes, permission asks. Slow attack so it blooms.

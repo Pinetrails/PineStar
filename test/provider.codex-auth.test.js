@@ -158,12 +158,18 @@ function jwt(claims) {
   // F. token-store migration: a desktop workspace-root move must not strand an existing ChatGPT OAuth login.
   {
     const pathMod = require('node:path');
+    const roamingBase = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Roaming');
     const currentRoot = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Roaming', 'ai.skynet.harness', 'workspaces');
     const legacyRoot = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local', 'StarNet', 'workspaces');
     const sidecarDir = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local', 'StarNet', 'sidecar');
+    const localBase = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local');
+    const migrationOpts = {
+      pathMod, currentWorkspaces: currentRoot, defaultWorkspaces: () => legacyRoot, sidecarDir,
+      env: { LOCALAPPDATA: localBase, APPDATA: roamingBase }
+    };
     const files = tokenStore.candidateCodexTokenFiles({
       pathMod, currentWorkspaces: currentRoot, defaultWorkspaces: () => legacyRoot, sidecarDir,
-      env: { LOCALAPPDATA: pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local') }
+      env: { LOCALAPPDATA: localBase, APPDATA: roamingBase }
     });
     A.eq(files[0], pathMod.join(currentRoot, 'codex', 'tokens.json'), 'current workspace is checked first');
     A.ok(files.indexOf(pathMod.join(legacyRoot, 'codex', 'tokens.json')) >= 0, 'legacy StarNet workspace token is a candidate');
@@ -183,6 +189,34 @@ function jwt(claims) {
     A.eq(loaded.access_token, 'acc', 'loads a valid token from the legacy workspace');
     A.eq(saved.file, currentFile, 'persists migrated tokens into the active workspace');
     A.eq(migrated, legacyFile, 'reports the legacy source used for migration');
+
+    /* ⛔ A CREDENTIAL MUST NOT CROSS AN ISOLATION BOUNDARY. Every test boot, dev seed and QA journey points
+       SKYNET_WORKSPACES at a fresh temp dir. The candidate scan used to run there too, so booting the sidecar
+       with a temp workspace COPIED the Commander's live ChatGPT refresh token into os.tmpdir() — and a
+       "clean-room" boot silently inherited their real sign-in, so a fresh-install test was never fresh. */
+    const tempRoot = pathMod.join(pathMod.sep === '\\' ? 'C:\\' : '/', 'tmp', 'sk-probe-abc123');
+    const tempFiles = tokenStore.candidateCodexTokenFiles({
+      pathMod, currentWorkspaces: tempRoot, defaultWorkspaces: () => legacyRoot, sidecarDir,
+      env: { LOCALAPPDATA: localBase, APPDATA: roamingBase }
+    });
+    A.eq(tempFiles.length, 1, 'an unrecognized workspace root scans ONLY its own token file');
+    A.eq(tempFiles[0], pathMod.join(tempRoot, 'codex', 'tokens.json'), 'and that one file is its own');
+    A.ok(!tokenStore.isRecognizedWorkspaceRoot(tempRoot, { pathMod }), 'a temp dir is not an app home');
+    A.ok(tokenStore.isRecognizedWorkspaceRoot(currentRoot, migrationOpts),
+      'the real Roaming app-data home is recognized, so version-rename migration still runs');
+
+    const brandedTempRoot = pathMod.join(pathMod.sep === '\\' ? 'C:\\' : '/', 'tmp', 'attacker', 'StarNet', 'workspaces');
+    const brandedTempFiles = tokenStore.candidateCodexTokenFiles({
+      pathMod, currentWorkspaces: brandedTempRoot, defaultWorkspaces: () => legacyRoot, sidecarDir,
+      env: { LOCALAPPDATA: localBase, APPDATA: roamingBase }
+    });
+    A.eq(brandedTempFiles.length, 1, 'a branded directory outside known app-data homes remains isolated');
+    A.eq(brandedTempFiles[0], pathMod.join(brandedTempRoot, 'codex', 'tokens.json'),
+      'a branded isolated root scans only its own token file');
+    A.ok(!tokenStore.isRecognizedWorkspaceRoot(brandedTempRoot, migrationOpts),
+      'a path is not trusted merely because its tail is StarNet/workspaces');
+    A.ok(brandedTempFiles.indexOf(pathMod.join(legacyRoot, 'codex', 'tokens.json')) < 0,
+      'a branded isolated root cannot pull a legacy OAuth token across the boundary');
   }
 
   // ---- persistCodexTokensVerified (EL-5b F4): rotated tokens must reach disk with READ-BACK PROOF ----

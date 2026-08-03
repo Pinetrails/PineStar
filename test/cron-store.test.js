@@ -285,4 +285,104 @@ const iso = cron._internals.iso;
   A.eq(store.markDelivery(jobs, 'nope', { ok: true }, { now: T }), jobs.map(x => x), 'markDelivery on an absent job is a no-op');
 }
 
+/* ---- triggerJob: make a job due on the NEXT tick, and never lie about when that is -------------------
+   The bug this locks was live: routine.manage's run_now originally used resumeJob, which re-anchors the
+   SCHEDULE rather than stamping a due time. For `0 9 * * *` that recomputes 09:00 tomorrow — the same value
+   it already held — so the tool reported "queued to fire within a tick" about a fire a day away. */
+{
+  const T = Date.parse('2026-07-27T10:00:00.000Z');
+  let jobs = [];
+  jobs = store.createJob(jobs, { name: 'Morning', prompt: 'p', schedule: cron.parseSchedule('0 9 * * *', T), agentId: 'a' }, { id: 'tg1', now: T });
+  const armed = store.getJob(jobs, 'tg1').nextRunAt;
+  A.eq(armed, '2026-07-28T09:00:00.000Z', 'a 09:00 cron job created at 10:00 is armed for TOMORROW 09:00');
+
+  // resumeJob is NOT a trigger — it recomputes the same wall-clock occurrence.
+  A.eq(store.getJob(store.resumeJob(jobs, 'tg1', { now: T }), 'tg1').nextRunAt, armed,
+    'resumeJob re-anchors the schedule and yields the SAME next occurrence (this is why it cannot be a trigger)');
+
+  // triggerJob stamps NOW, which planTick reads back as already-due.
+  const fired = store.triggerJob(jobs, 'tg1', { now: T });
+  A.eq(store.getJob(fired, 'tg1').nextRunAt, '2026-07-27T10:00:00.000Z', 'triggerJob stamps the next fire at NOW');
+  A.eq(store.getJob(fired, 'tg1').state, 'scheduled', 'a triggered job is scheduled');
+  A.eq(store.getJob(fired, 'tg1').enabled, true, 'a triggered job is enabled');
+  A.eq(cron.planTick(fired, T, {}).fire.map(f => f.jobId), ['tg1'], 'the triggered job is DUE on the very next tick');
+  A.eq(cron.planTick(jobs, T, {}).fire.length, 0, 'the untriggered job is not due at the same instant');
+
+  // a PAUSED job asked to fire is un-paused rather than silently doing nothing
+  {
+    const paused = store.pauseJob(jobs, 'tg1');
+    A.eq(store.getJob(paused, 'tg1').enabled, false, 'precondition: paused');
+    const t = store.triggerJob(paused, 'tg1', { now: T });
+    A.eq(store.getJob(t, 'tg1').enabled, true, 'triggering a paused routine un-pauses it (never a silent no-op)');
+    A.eq(cron.planTick(t, T, {}).fire.map(f => f.jobId), ['tg1'], 'and it then actually fires');
+  }
+
+  // a SETTLED one-shot can never fire again — do not promise it will
+  {
+    let once = store.createJob([], { name: 'One', prompt: 'p', schedule: cron.parseSchedule('in 1h', T), agentId: 'a' }, { id: 'tg2', now: T });
+    once = store.markRun(once, 'tg2', { ok: true, runId: 'r1' }, { now: T + 1000 });
+    A.ok(store.getJob(once, 'tg2').lastRunAt, 'precondition: the one-shot has settled');
+    const t = store.triggerJob(once, 'tg2', { now: T + 2000 });
+    A.eq(store.getJob(t, 'tg2').nextRunAt, store.getJob(once, 'tg2').nextRunAt,
+      'a settled one-shot is left untouched — planTick would never fire it, so stamping it due would be a false promise');
+    A.eq(cron.planTick(t, T + 2000, {}).fire.length, 0, 'and it stays not-due');
+  }
+
+  A.eq(store.triggerJob(jobs, 'nope', { now: T }), jobs.map(x => x), 'triggerJob on an absent job is a no-op');
+}
+
+/* ---- the HOST TIMEZONE reaches the persisted first fire -------------------------------------------
+   armAt dropped the tz, so cron.js resolved a tz-less schedule against 'UTC'. The DRIVER plans with the real
+   host zone and planTick's dueAtOf PREFERS the persisted nextRunAt, so the UTC-anchored stamp became the real
+   FIRST fire instant: on America/New_York, "every morning" (0 9 * * *) was previewed for today 09:00 and
+   persisted as tomorrow 05:00 local — it fired ~20 hours late at 5am and only settled onto the correct local
+   09:00 from the SECOND fire onward. Every tz-less creation path hit it (marketplace MAKE ROUTINE,
+   routine.create without `timezone`, the /routine action), plus every un-pause and error re-arm. */
+{
+  const TZ = 'America/New_York';
+  const now = Date.parse('2026-07-28T12:00:00Z');
+  const sched = cron.parseSchedule('0 9 * * *', now);        // exactly what POST /api/cron produces with no body.tz
+  const preview = cron.nextFireAt(sched, null, now, { defaultTz: TZ });   // what the picker shows the user
+
+  const jobs = store.createJob([], { id: 'tz1', name: 'brief', prompt: 'x', schedule: sched }, { id: 'tz1', now, defaultTz: TZ });
+  A.eq(Date.parse(jobs[0].nextRunAt), preview, 'the PERSISTED first fire equals the preview the user was shown');
+  A.eq(new Date(jobs[0].nextRunAt).toISOString(), '2026-07-28T13:00:00.000Z', 'which is 09:00 EDT TODAY, not 05:00 tomorrow');
+
+  // un-pause re-anchors with the zone too
+  const paused = store.pauseJob(jobs, 'tz1');
+  const resumed = store.resumeJob(paused, 'tz1', { now, defaultTz: TZ });
+  A.eq(Date.parse(store.getJob(resumed, 'tz1').nextRunAt), preview, 'resumeJob re-anchors on the HOST zone');
+
+  // and a schedule re-anchor through updateJob
+  const updated = store.updateJob(jobs, 'tz1', { schedule: cron.parseSchedule('0 9 * * *', now) }, { now, defaultTz: TZ });
+  A.eq(Date.parse(store.getJob(updated, 'tz1').nextRunAt), preview, 'updateJob re-anchors on the HOST zone');
+
+  // an EXPLICIT schedule tz still wins over the host default (it always did — prove it did not regress)
+  const explicit = cron.parseSchedule('0 9 * * *', now, 'Europe/Berlin');
+  const ej = store.createJob([], { id: 'tz2', name: 'b', prompt: 'x', schedule: explicit }, { id: 'tz2', now, defaultTz: TZ });
+  A.eq(Date.parse(ej[0].nextRunAt), cron.nextFireAt(explicit, null, now, { defaultTz: TZ }), 'an explicit schedule.tz is unaffected by the host default');
+
+  // a caller that injects nothing is byte-identical to before (UTC) — no silent behavior change for them
+  const utc = store.createJob([], { id: 'tz3', name: 'b', prompt: 'x', schedule: sched }, { id: 'tz3', now });
+  A.eq(new Date(utc[0].nextRunAt).toISOString(), '2026-07-29T09:00:00.000Z', 'with no injected zone the old UTC anchor is unchanged');
+}
+
+// ---- Runtime parity fields are normalized, durable, and output is data rather than editable config. ----
+{
+  let jobs = store.createJob([], {
+    id: 'runtime1', schedule: cron.parseSchedule('every 1h', T0), noAgent: true, script: 'check.js',
+    skills: ['Research', 'Research', '', '../bad'], contextFrom: ['upstream', 'upstream', 'bad id'],
+    enabledToolsets: ['web', 'web', 'cabinet'], attachToSession: true,
+    origin: { channel: 'dev', chatId: 'chat-1', threadId: 'topic-2' }
+  }, { now: T0 });
+  const j = jobs[0];
+  A.eq(j.noAgent, true, 'script-only mode persists');
+  A.eq(j.skills, ['Research'], 'skills are bounded/deduplicated and unsafe refs dropped');
+  A.eq(j.contextFrom, ['upstream'], 'context refs are valid ids and deduplicated');
+  A.eq(j.enabledToolsets, ['web', 'cabinet'], 'per-job toolsets preserve explicit restriction');
+  A.eq(j.origin.threadId, 'topic-2', 'delivery origin preserves topic routing');
+  jobs = store.markRun(jobs, 'runtime1', { runId: 'r1', status: 'ok', reason: 'done', output: 'upstream result' }, { now: T0 + HOUR });
+  A.eq(store.getJob(jobs, 'runtime1').lastOutput, 'upstream result', 'successful final output persists for context pipelines');
+}
+
 A.report('cron-store');

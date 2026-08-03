@@ -2964,39 +2964,36 @@
       "notes": "Seam = warroom.js:106-123 (.cam-cine button, toggles cinema on the wr grid — NOT body). Button live-present 2026-07-07T22:16:20.560Z with title \"fill the frame with the station (C)\"; full toggle in the war-room feed state not driven here. Mapped (honest: not audited)."
     },
     {
-      "id": "ui/world/voice-mode",
+      "id": "ui/world/voice-live",
       "kind": "ui",
       "area": "world",
-      "name": "Voice mode: off (push-to-talk), click for hands-free",
-      "purpose": "Voice-mode toggle — switch between push-to-talk (default each session) and a hands-free conversation loop.",
-      "promise": "aria-pressed + title truthfully reflect convoMode (OFF/push-to-talk at rest: pressed=false, \"voice mode: OFF (push-to-talk) — click for hands-free conversation\"); a click flips it and reflectMode updates the button; hidden entirely when STT is unavailable.",
+      "name": "Local Live hands-free voice",
+      "purpose": "Canonical hands-free voice toggle — opens or closes the persistent local-speech controller for the active Starnet agent.",
+      "promise": "aria-pressed, aria-label, and title truthfully reflect whether Local Live is off or active; one click opens the draggable controller and a second click or its close button ends the microphone session.",
       "wiring": {
         "files": [
           "frontend/index.html",
-          "frontend/app/voice.js"
+          "frontend/app/voice-live.js",
+          "frontend/app/voice.js",
+          "sidecar/local-voice.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "voice.button.test.js"
+          "ref": "voice-live-ui.test.js"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3f1f5ca299f06e2ac55066db515dca9cd3fb67d9",
-        "date": "2026-07-18T02:40:12.858Z"
-      },
-      "findings": [
-        "c3fa1f39"
-      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "lastSeen": "2026-07-29T00:00:00.000Z",
       "missing": false,
-      "selector": "#voice-mode",
+      "selector": "#voice-live",
       "state": "ingame",
-      "notes": "Live @ HEAD: click flipped #voice-mode push-to-talk->hands-free (title 'voice mode: OFF (push-to-talk)' -> 'ON (hands-free)'; class 'on' added). Seam voice.js; exercised by voice.button.test.js."
+      "notes": "The former #voice-mode button was removed. Local Live is the single hands-free entry point; push-to-talk and agent-voice mute remain separate controls."
     },
     {
       "id": "ui/world/voice-toggle",

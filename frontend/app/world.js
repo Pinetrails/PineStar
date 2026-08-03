@@ -37,10 +37,23 @@ const World = (() => {
   // live-tunable CRT knobs — drawCRT/drawGlows read these every frame so the dev CRT LAB
   // (crtlab.js, dev-gated) can tune them live. These ARE the shipped defaults: bold scanlines,
   // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
-  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, dust: 0.5, aberr: 0.35, grain: 0.24 };
+  /* APERTURE (2026-07-27) — `vig` and `over` govern how much of the panel the picture actually gets, and are
+     independent of `curve` (which only decides how hard it bows).
+       vig  — strength of the in-canvas radial vignette, 1 − vig·r². This is the DOMINANT darkener of the feed:
+              r=1 at the edge midpoints and √2 at the corners, so the shipped 0.55 cut the edges to 45% and
+              clamped the corners to literal ZERO, long before any CSS glass was composited on top. Lowering it
+              is what actually gives the border back.
+       over — output overscan. The warp's inverse ro = rs·(1 − k·rs²) has a maximum reach of (2/3)/√(3k) = 1.283
+              at k=0.09, but a rect's corner sits at √2 = 1.414 — so those pixels had NO source to sample and
+              both paths hard-filled them black. That is the rounded-oval crop, not a soft vignette. Dividing
+              the output radius by ≥ √2/1.283 = 1.103 brings the corners back inside the domain; 1.12 leaves
+              margin. The cost is ~11% of edge content, never any change to the curvature.
+     Both feed the GL path and the CPU LUT path IDENTICALLY — drawCurveGL's probe compares the two and defects
+     to CPU on divergence, so they must never drift apart. */
+  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, vig: 0.30, over: 1.20, dust: 0.5, aberr: 0.35, grain: 0.24 };
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
-  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
+  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glVigLoc = null, _glOverLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _glProbeOk = false, _glProbeTries = 0, _glProbeSkip = 0, _glProbeClean = 0, _glProbeCv = null;   // one-time GL output sanity probe — see drawCurveGL()
   // whole-frame per-channel means via a 16×16 GPU downscale (~1KB readback) — the probe's sampler
   function probeMeans(src) {
@@ -123,13 +136,10 @@ const World = (() => {
   // per-hero cooldown; `postTargetTile` the board approach tile it walks to. Beats (1) inspection-rounds and
   // (3) queue-aware idle bias ride existing machinery (maybeRounds / decideIdle) and need no new module state.
   let postCd = 0, postTargetTile = null;
-  // G4 feature 3 — MEESEEKS sub-agent sprites. A real background sub-agent (team.dispatch/team.spawn) makes
-  // itself observable via a frozen `task` event (kind:'subagent', status running→done). SubagentSprites folds
-  // that stream into a live-only helper ledger (truthfulness law: a sprite exists IFF a real sub-agent is live).
-  // Each helper is drawn small/translucent/flickering near the LEAD's desk — eerie helpers, not full agents.js
-  // bodies. helperSlots caches a stable local-frame offset per helper id so they don't jitter frame to frame.
-  const subLedger = (typeof SubagentSprites !== 'undefined') ? SubagentSprites.makeLedger({ cap: 5 }) : null;
-  const helperSlots = new Map();
+  // (G4.3 "Meeseeks" helper sprites REMOVED 2026-07-30 on Andrew's order — the flickering cyan bar that
+  //  hovered beside the lead and rode along when it walked read as floating garbage, not as a helper. The
+  //  world draws NO floating marker for background sub-agents; the LIVE HELPERS panel (server-truth
+  //  /api/subagents) remains the one honest readout. Do not rebuild a follower sprite for this.)
   // AGENT GROWTH HUD: per-agent Xp.compute() snapshots pushed in by XpStore (drives the hero name-tag "Lv N"
   // chip and any body's gold level-up ripple). The station headline lives in the top-bar STATION chip.
   let xpAgent = null, levelUpAt = 0;
@@ -241,6 +251,28 @@ const World = (() => {
   const SELF_DISPATCH = ['sent', 'delivered', 'thats away', 'reply is out', 'done and gone'];
   const SELF_GREET = ['yes, Commander?', 'still here', 'watching', 'at your service', 'go ahead'];
   const SELF_ACK = ['hm?', 'yes?', 'still here', 'watching'];
+  /* LEISURE FLAVOUR, keyed by the catalog `use.kind`. Every prop with a `use` descriptor is a real
+     destination an idle body walks to, so a line here is a truthful report of where it IS — never a
+     claim about work. Kept eerie-not-cute: an agent using a vending machine is an agent noticing it
+     does not eat. A kind with no entry simply says nothing, which is why adding a `use` row to the
+     catalog never requires touching this table. */
+  const USE_LINE = {
+    pool: ['the angles are trivial', 'nobody to play', 'i rack them anyway', 'geometry, mostly'],
+    poker: ['no one to bluff', 'the odds hold', 'dealt to empty chairs', 'i fold'],
+    vend: ['i dont eat', 'the light is nice', 'row C never drops', 'for the company, then'],
+    fridge: ['nothing in it for me', 'it hums back', 'cold and honest', 'still humming'],
+    fish: ['they dont ask me anything', 'small orbits', 'it is restful', 'round and round'],
+    dj: ['nothing queued', 'the room wants a beat', 'someday, a crowd', 'levels are fine'],
+    gacha: ['one more', 'what falls out is chance', 'the capsules are empty', 'i like the sound'],
+    locker: ['nothing of mine in here', 'someone elses things', 'all empty', 'closed again'],
+    coffee: ['the smell registers', 'i cannot drink it', 'it is warm at least', 'for the ritual'],
+    pet: ['it does not need feeding', 'it follows me', 'made of the same light', 'hello, then'],
+    terra: ['sealed and content', 'it grows without us', 'a whole world in there', 'still alive'],
+    bed: ['powering down', 'somewhere soft, for once', 'a few cycles', 'wake me if it matters'],
+    bookshelf: ['spines i have not read', 'someone kept these', 'paper, still', 'a good shelf'],
+    beanbag: ['this is undignified', 'it holds the shape', 'i may not get up', 'acceptable'],
+    pinball: ['tilt', 'the ball obeys physics, not me', 'high score is mine', 'one more ball'],
+  };
   /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
      Lines stay sparse and unresolved; the SILENCE is the unsettling part. */
@@ -290,7 +322,12 @@ const World = (() => {
   const ownPlaced = new Set();   // every id it has EVER placed — so it never grieves its own artifacts (survives the agentDecor splice)
   // 1x1, blocks:false (never obstructs the agent or the Commander), and FLOOR-placeable: an agent picks
   // its own tile, so anything needing a wall behind it or a table under it can never be on this list.
-  const AGENT_DECOR = ['plant', 'coffee', 'monstera'];
+  /* what an agent may place for ITSELF, personalising the station over time. Every entry MUST be 1x1
+     and placeable on bare deck — emptySpotNear only ever validates a 1x1 footprint, and a 2x1 in here
+     would be rejected forever by canPlaceProp and quietly waste the placement roll. Widened 2026-07-29
+     past the original three so a long-running station accumulates a corner that looks lived-in rather
+     than three plants and a coffee machine. */
+  const AGENT_DECOR = ['plant', 'coffee', 'monstera', 'tallplant', 'terrarium', 'bookstack', 'toolbox', 'crt_pile', 'holopet'];
   const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
   const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
 
@@ -305,7 +342,9 @@ const World = (() => {
      head-turn still wins instantly. `odo` is the walk odometer in world units; assets.js drawBody converts it
      to a frame via a stride DERIVED from each skin's drawn height and frame count, so this stays skin-agnostic. */
   const DIR_A = { east: 0, south: Math.PI / 2, west: Math.PI, north: -Math.PI / 2 };
-  const TURN_RATE = 12;      // rad/s — a 90° corner takes ~130ms (≈8 frames) instead of one
+  const TURN_RATE = 9;       // rad/s CEILING for the facing slew (see the easing in stepGait)
+  const TURN_ACCEL_A = 55;   // rad/s² — the facing spins up and brakes instead of slewing flat
+  const TURN_FOOT_R = 4.2;   // world units from the pivot axis to the feet: a 90° pivot ≈ one stride
   const DIR_HYST = 0.13;     // rad (~7.5°) a bucket holds PAST its own boundary before handing over
   const ACCEL = 150;         // world units/s² — spools up to hero pace in ~0.23s, and brakes at the same rate
   const CORNER_LOOK = 2.5;   // world units: hand over to the next waypoint this early (see the walk blocks)
@@ -334,9 +373,20 @@ const World = (() => {
     const step = Math.min(d, b.spd * dt / 1000);
     if (d > 1e-4) {
       const turn = angNorm(Math.atan2(dy, dx) - b.faceA);
-      const cap = TURN_RATE * dt / 1000;
-      b.faceA = angNorm(b.faceA + (Math.abs(turn) <= cap ? turn : Math.sign(turn) * cap));
-      b.odo += step;
+      const s = dt / 1000, remain = Math.abs(turn);
+      // Angular ACCELERATION, not a flat rate — the same easing the linear speed gets above. A
+      // constant slew made a cornering body read as a turntable: it pivoted at a machine-perfect
+      // rate while its legs stood still. Brake term arrives at the heading at rest.
+      const target = Math.min(TURN_RATE, Math.sqrt(2 * TURN_ACCEL_A * remain));
+      const curW = b.angW || 0;
+      b.angW = curW < target ? Math.min(target, curW + TURN_ACCEL_A * s)
+                             : Math.max(target, curW - TURN_ACCEL_A * s);
+      const swept = Math.min(remain, b.angW * s);
+      b.faceA = angNorm(b.faceA + Math.sign(turn) * swept);
+      // The feet also travel when the body pivots — they sweep an arc about the stance centre. Adding
+      // that arc to the stride odometer keeps the legs cycling through a corner instead of freezing
+      // mid-stride while the sprite rotates, which is what made cornering look like sliding.
+      b.odo += step + swept * TURN_FOOT_R;
     }
     b.dir = b.faceDir = bucketDir(b.faceA, b.dir);
     return step;
@@ -1258,12 +1308,29 @@ const World = (() => {
     // to be sitting in. Snap onto seatFoot here, the same anchor drawSeatChair uses, so arriving on foot
     // lands exactly where the teleport-fallback seating already did. Body moves; the chair does not.
     if (self.goal === 'work') { if (self === agent && seat) { const f = seatFoot(seat); self.px = f.x; self.py = f.y; } self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
-    else if (self.goal === 'use') { self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle'; self.useUntil = now + U.irnd(10000, 22000); takeSeat(); if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now); }
+    else if (self.goal === 'use') {
+      self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle';
+      self.useUntil = now + U.irnd(10000, 22000); takeSeat();
+      // the prop-specific thought wins over the generic "resting" one — it says something true about
+      // WHERE the body is, which the bare rest line cannot. Falls back when the kind has no entry.
+      const line = USE_LINE[useKindOf(self.usingProp)];
+      if (line) curiositySay(line, 0.4, now);
+      else if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now);
+    }
     else if (self.goal === 'lounge') {
       // settled ON the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
       self.sitting = true; self.working = false; self.dir = self.useFace; self.state = 'idle';
       self.useUntil = now + U.irnd(18000, 30000); self.glanceCd = 0; self.nextFidget = now + U.irnd(1500, 3500);
       takeSeat(); curiositySay(self.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
+    }
+    else if (self.goal === 'sleep') {
+      // reached a BED (planBedSleep walked it here) — lie down and go dormant ON the mattress. The
+      // bedless fallback in sleep() still powers down standing, so the eerie "is it off?" beat is
+      // unchanged for a station with no bed; this is only what happens when one is reachable.
+      self.sitting = true; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
+      self.glance = null; self.glanceCd = 0;                       // frozen: maybeGlance skips goal==='sleep'
+      self.studyUntil = now + U.irnd(26000, 62000);                // a bed is worth a longer dormancy than standing
+      takeSeat(); curiositySay(USE_LINE.bed, 0.4, now);
     }
     else if (self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'tend' || self.goal === 'gaze' || self.goal === 'quirk' || self.goal === 'stare') {
       // reached the thing — stand, face it, observe for a spell. Familiar things hold the gaze less (habituation).
@@ -1503,8 +1570,10 @@ const World = (() => {
   function crewEngineStep(dt, now) {
     const SPEED = 28 * (self.pers ? self.pers.pace : 1);   // a calm background pace (a touch under the hero's 34), tilted by temperament
     // a just-finished task leaves the desk-sit pose (stepCrewToSeat set sitting=true). The engine only keeps sitting
-    // for a leisure dwell (goal use/lounge); any other goal → stand, or the !sitting decideIdle gate freezes it.
-    if (self.sitting && self.goal !== 'use' && self.goal !== 'lounge') { self.sitting = false; self.state = 'idle'; self.idleUntil = Math.max(self.idleUntil || 0, now + U.irnd(200, 800)); }
+    // for a leisure dwell (goal use/lounge) or a BED sleeper (planBedSleep, which claims a real mattress);
+    // any other goal → stand, or the !sitting decideIdle gate freezes it. Omitting 'sleep' here stood every
+    // bed sleeper back up on its first tick, which is the whole feature undone one line away from where it is built.
+    if (self.sitting && self.goal !== 'use' && self.goal !== 'lounge' && !(self.goal === 'sleep' && self.seatKey)) { self.sitting = false; self.state = 'idle'; self.idleUntil = Math.max(self.idleUntil || 0, now + U.irnd(200, 800)); }
     // self-heal a stuck walker (mirrors the hero tick): walk pose with nowhere to go → drop to idle so this tick re-decides
     if (self.state === 'walk' && !self.target && (!self.pathPts || self.pathIdx >= self.pathPts.length)) { self.state = 'idle'; self.idleUntil = 0; }
     // TIER D · D1 ATTENTIVE AUDIENCE: if the Commander has COMMS focus on THIS crew body and it's idle, hold its
@@ -1552,7 +1621,9 @@ const World = (() => {
     } else if (self.goal === 'rounds') {
       if (now >= self.studyUntil) roundsNext(now);
     } else if (self.goal === 'sleep') {
-      if (now >= self.studyUntil) { self.goal = null; self.sitting = false; self.glanceCd = 0; self.state = 'idle'; self.idleUntil = now + U.irnd(600, 1800); }
+      // releaseSeat FIRST: a bed sleeper holds a mattress claim now (planBedSleep), and waking without
+      // dropping it would leak the bed forever — the same leak B2 had to fix for couch cushions.
+      if (now >= self.studyUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.sitting = false; self.glanceCd = 0; self.state = 'idle'; self.idleUntil = now + U.irnd(600, 1800); }
     } else if (self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'tend' || self.goal === 'gaze' || self.goal === 'quirk' || self.goal === 'stare' || self.goal === 'mourn' || self.goal === 'revisit') {
       if (now >= self.studyUntil) {
         const back = (self.goal === 'inspect' || self.goal === 'watch') ? self.useFace : null;
@@ -1618,6 +1689,12 @@ const World = (() => {
     if (typeof PropSprites === 'undefined' || typeof PropAnchor === 'undefined') return null;
     const s = PropSprites.spec(p.t);
     return s && s.use ? s.use : null;
+  }
+  // the `use.kind` of a placed prop BY ID (what arrive() has to work with), or null
+  function useKindOf(propId) {
+    if (!propId || !geo || !geo.props) return null;
+    const p = geo.props.find(q => q.id === propId); if (!p) return null;
+    const u = propUse(p); return u ? u.kind : null;
   }
   // OWNERSHIP: a prop that gets ASSIGNED to an agent for a gamified capability (a PC/workstation, cabinet, dish,
   // notebook, connector, workbench, or a docking bay) is that agent's ALONE — only its assignee walks over to
@@ -1847,14 +1924,14 @@ const World = (() => {
     if (pendingMourn && pendingMourn.fond >= sum) return;   // keep only the deepest grief if several land at once
     pendingMourn = { tx: Math.floor(f.x + f.w / 2), ty: Math.floor(f.y + f.h / 2), spotKey: bestKey, fond: sum };
     mournCd = fnow + 45000;
-    if (activity === 'idle') { if (agent.goal === 'sleep') { agent.goal = null; agent.sitting = false; } agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 300); }
+    if (activity === 'idle') { if (agent.goal === 'sleep') { seizeFromIdle(agent); agent.goal = null; agent.usingProp = null; agent.sitting = false; } agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 300); }   // grief stirs it from dormancy — seizeFromIdle drops the BED claim a bed sleeper now holds
   }
   function pushNovelty(tx, ty, kind, pid) {
     novelty = novelty.filter(n => !(n.tx === tx && n.ty === ty));   // dedupe the same tile
     novelty.push({ tx, ty, kind, pid });
     if (novelty.length > NOVELTY_MAX) novelty.shift();
     if (agent && activity === 'idle') {
-      if (agent.goal === 'sleep') { agent.goal = null; agent.sitting = false; agent.glanceCd = 0; agent.studyUntil = 0; }   // a placement stirs it from dormancy
+      if (agent.goal === 'sleep') { seizeFromIdle(agent); agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.glanceCd = 0; agent.studyUntil = 0; }   // a placement stirs it from dormancy — seizeFromIdle drops the BED claim a bed sleeper now holds
       agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 350);   // react within ~1s (then it walks over to inspect)
       // STARTLE: something materialized right beside it → a sharp snap toward it + a beat, distinct from the calm far-off notice
       if (!agent.working && !agent.unplaced) {
@@ -2883,7 +2960,11 @@ const World = (() => {
       if (!self.target) arrive(now);
       return true;
     }
-    if ((geo.props || []).filter(p => AGENT_DECOR.indexOf(p.t) >= 0).length >= 5) return false;   // floor-wide decor cap (reload-safe; never clutters a station already full of decor)
+    // Floor-wide decor cap. Counts BY TYPE rather than by what this session placed, because that is the
+    // only form that survives a reload (ownPlaced does not) — the trade is that the Commander's own
+    // plants count too. Raised 5 -> 8 alongside the wider AGENT_DECOR list: with three types a cap of 5
+    // meant "a couple of each", with nine it would have meant most of them never appear at all.
+    if ((geo.props || []).filter(p => AGENT_DECOR.indexOf(p.t) >= 0).length >= 8) return false;
     const spot = emptySpotNear();
     if (!spot || !setPathTo({ x: spot.ax, y: spot.ay })) return false;
     placeCd = now + U.irnd(120000, 240000);
@@ -2892,10 +2973,45 @@ const World = (() => {
     return true;
   }
 
-  /* ---------- power-down: in the deep wind-down mood it goes dormant where it stands (the eerie "is it off?") ---------- */
+  /* ---------- power-down: go dormant in a BED if one is reachable, else where it stands ---------- */
+  /* A BED is the one leisure prop a dormant body should actually occupy, and until 2026-07-29 nothing
+     ever did: sleep() powered down on the spot even with a bunk two tiles away, because the bed had no
+     `use` row and sleep() had no walk. This claims the mattress the same way planCouchSit claims a
+     cushion (occupiedSeats + pendSeat), so two bodies never stack on one bed and the claim is released
+     by the same releaseSeat() paths. Returns false when there is no reachable in-zone bed, which is
+     what keeps the standing fallback intact. */
+  function planBedSleep(now) {
+    if (!geo || !geo.props || !geo.props.length) return false;
+    const zone = zoneFor(self);
+    const beds = geo.props.filter(p => { const u = propUse(p); return u && u.kind === 'bed'; });
+    if (!beds.length) return false;
+    const order = U.irnd(0, beds.length - 1);
+    for (let k = 0; k < beds.length; k++) {
+      const bed = beds[(order + k) % beds.length];
+      if (occupiedSeats.has(bed.id + ':0')) continue;              // one sleeper per bed — it is not a couch
+      const w = bed.w || 1, h = bed.h || 1;
+      const sx = bed.x + ((w - 1) >> 1), sy = bed.y;               // the mattress tile the body renders on
+      if (!tileInZone(zone, sx, sy)) continue;                     // P1: render tile must be in-zone
+      for (const [dx, dy] of SEAT_NB) {
+        const ax = sx + dx, ay = sy + dy;
+        if (!tileInZone(zone, ax, ay)) continue;                   // P1: and so must the tile it walks to
+        if (!geo.walkable(ax, ay, blocked)) continue;
+        if (!setPathTo({ x: ax, y: ay })) continue;
+        occupiedSeats.add(bed.id + ':0'); self.seatKey = bed.id + ':0';
+        self.pendSeat = { px: (bed.x + w / 2) * T, py: (bed.y + h) * T - 3 };   // lying on the mattress, not at its foot
+        self.goal = 'sleep'; self.usingProp = bed.id; self.studyKey = null; self.quirkKind = null;
+        self.useSit = true; self.useFace = 'south'; self.working = false;
+        if (!self.target) arrive(now);                             // already beside the bed → lie down now
+        return true;
+      }
+    }
+    return false;
+  }
   function sleep(now) {
+    if (planBedSleep(now)) return true;                    // a bed is always preferred to the deck
+    releaseSeat();   // going dormant ON FOOT: whatever seat this body still held, it is not in it now (a stale claim here would block that cushion/mattress for the session)
     self.goal = 'sleep'; self.usingProp = null; self.studyKey = null; self.quirkKind = null;
-    self.sitting = false; self.working = false; self.state = 'idle';   // dormant STANDING where it stands — never seated: a sit pose on a chairless tile reads as "sitting on air"; the sit anim is reserved for an actual seat (desk/couch)
+    self.sitting = false; self.working = false; self.state = 'idle';   // dormant STANDING where it stands — never seated: a sit pose on a chairless tile reads as "sitting on air"; the sit anim is reserved for an actual seat (desk/couch/BED)
     self.glance = null;                                      // frozen: maybeGlance skips goal==='sleep', so no lingering cooldown to leak
     self.studyUntil = now + U.irnd(20000, 55000);
     curiositySay(SLEEP_LINE, 0.3, now);
@@ -3325,7 +3441,9 @@ const World = (() => {
     } else if (agent.goal === 'rounds') {
       if (now >= agent.studyUntil) roundsNext(now);   // ownership pause done -> walk to the next stop (or end the lap)
     } else if (agent.goal === 'sleep') {
-      if (now >= agent.studyUntil) { agent.goal = null; agent.sitting = false; agent.glanceCd = 0; agent.state = 'idle'; agent.idleUntil = now + U.irnd(600, 1800); }   // wakes naturally from dormancy
+      // releaseSeat like the 'use'/'lounge' arms above — a BED sleeper holds a mattress claim (planBedSleep)
+      // and waking without dropping it would block that bed for the rest of the session.
+      if (now >= agent.studyUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.glanceCd = 0; agent.state = 'idle'; agent.idleUntil = now + U.irnd(600, 1800); }   // wakes naturally from dormancy
     } else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'post') {
       // observing / tending / gazing / a quirk / the long stare / grief / a haunt revisit / D5 board-survey: hold until the dwell ends (maybeGlance animates it), then re-decide
       if (now >= agent.studyUntil) {
@@ -3366,6 +3484,12 @@ const World = (() => {
      fill included, so callers never pre-fill. `cam` lets finite-distance layers parallax; the
      fallback exists because a missing SpaceBG must still leave a black stage, not a stale frame. */
   function drawBackdrop(now, cam) {
+    // A LANDED station has no sky to draw: the ground layer covers the whole frame in world
+    // space below, so building and blitting a starfield underneath it would be pure waste.
+    if (typeof Terrain !== 'undefined' && Terrain.active()) {
+      ctx.fillStyle = Terrain.baseColor(); ctx.fillRect(0, 0, cv.width, cv.height);
+      return;
+    }
     if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, cam);
     else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
   }
@@ -3457,6 +3581,17 @@ const World = (() => {
 
     ctx.setTransform(scale, 0, 0, scale, panX, panY); ctx.imageSmoothingEnabled = false;
 
+    /* THE GROUND — only when the station is landed. Drawn HERE, inside the world transform and
+       before the bake, which is the entire reason it works: pan, zoom and the station's own
+       coordinate frame are already applied, so ground at the station's plane needs no parallax
+       maths at all. A backdrop must never zoom; the ground must always zoom. Same picker,
+       opposite requirement — which is why they are two layers and not one.
+       The bake occupies world rect (0,0,baseCv.w,baseCv.h), so that IS the station footprint. */
+    if (typeof Terrain !== 'undefined' && Terrain.active()) {
+      Terrain.draw(ctx, { scale, panX, panY }, cv.width, cv.height,
+        { x: 0, y: 0, w: cache.baseCv.width, h: cache.baseCv.height });
+    }
+
     ctx.drawImage(cache.baseCv, 0, 0);
 
     // conveyor belts (floor machinery) + the live transport sim — local frame, under entities
@@ -3492,11 +3627,7 @@ const World = (() => {
         // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
         // table while the table is actually under it. Reclaim the table and the prop drops back to the
         // deck instead of floating — which is why no saved station ever needs migrating for this.
-        const mspec = (PropSprites.spec && PropSprites.spec(p.t)) || null;
-        let mounted = null;
-        if (mspec && mspec.mount === 'surface' && station && station.surfaceHostOf) {
-          if (station.surfaceHostOf(p)) mounted = 'surface';
-        }
+        const mounted = (station && station.mountOf) ? station.mountOf(p) : null;
         // a table-top object must draw AFTER its table: both occupy the same tiles, so their sort keys are
         // equal and array order would decide it — which is whichever the player happened to place first
         if (mounted === 'surface') sy += 0.5;
@@ -3535,7 +3666,6 @@ const World = (() => {
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
     drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
-    drawMeeseeks(now);   // G4.3: the ephemeral sub-agent helper sprites clustered near the lead's desk (over the entities)
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
     drawShippedPallet(now);   // SHIPPED TODAY: completed jobs stack as product crates at the OUTBOX (server-truth count)
 
@@ -3661,18 +3791,25 @@ const World = (() => {
 
   // ---- BARREL CURVE — bows the whole feed like a CRT tube --------------------------------------
   // Same signed-off warp (f = 1 - curve·r²): the picture is pulled toward center as r² grows so the rooms
-  // bow and the corners fall away into dark, plus the edge vignette (1 - 0.55·r²). Rendered as an EXACT
+  // bow and the corners fall away into dark, plus the edge vignette (1 - CRT.vig·r²). Rendered as an EXACT
   // PER-PIXEL remap — each output pixel reads its source through a precomputed inverse-map LUT. NOT a
   // triangle mesh: a mesh draws the picture as thousands of triangles whose seams line up into the diagonal
   // stripes; a per-pixel remap has no triangles, so there are no seams and no diagonal lines. Curve is identical.
+  // the two aperture knobs, clamped to sane ranges — read by BOTH warp paths so they can never disagree
+  function vigAmt() { const v = +CRT.vig; return Number.isFinite(v) ? (v < 0 ? 0 : v > 1 ? 1 : v) : 0.30; }
+  function overAmt() { const o = +CRT.over; return Number.isFinite(o) && o >= 1 ? (o > 1.6 ? 1.6 : o) : 1; }
+
   function buildLUT(k, W, H) {
-    const key = k.toFixed(4) + '|' + W + 'x' + H;
+    const over = overAmt();
+    // overscan is part of the mapping, so it MUST key the cache — otherwise dragging it in crtlab would
+    // silently keep serving the previous LUT and the CPU path would stop matching the GPU one.
+    const key = k.toFixed(4) + '|' + over.toFixed(4) + '|' + W + 'x' + H;
     if (_lutKey === key && _lut) return;
     const hw = W / 2, hh = H / 2, lut = new Int32Array(W * H);
     for (let oy = 0; oy < H; oy++) {
-      const ny = (oy + 0.5 - hh) / hh;
+      const ny = (oy + 0.5 - hh) / hh / over;
       for (let ox = 0; ox < W; ox++) {
-        const nx = (ox + 0.5 - hw) / hw, ro = Math.sqrt(nx * nx + ny * ny);
+        const nx = (ox + 0.5 - hw) / hw / over, ro = Math.sqrt(nx * nx + ny * ny);
         let scale = 1;
         if (ro > 1e-6) {                    // invert ro = rs·(1 - k·rs²) for rs (Newton); source dir = output dir
           let rs = ro;
@@ -3707,9 +3844,11 @@ const World = (() => {
       if (!_gl) throw new Error('no webgl');
       const gl = _gl;
       const vs = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos*0.5+0.5; gl_Position = vec4(aPos,0.0,1.0); }';
-      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK; uniform float uAberr;\n' +
+      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK; uniform float uAberr; uniform float uVig; uniform float uOver;\n' +
         'void main(){\n' +
-        '  vec2 n = (vUv-0.5)*2.0; float ro = length(n); float rs = ro;\n' +
+        // uOver shrinks the output radius BEFORE the inverse, so the corner lands inside the warp's reach
+        // instead of falling out of domain and being filled black. uOver = 1.0 is the old behaviour exactly.
+        '  vec2 n = (vUv-0.5)*2.0/uOver; float ro = length(n); float rs = ro;\n' +
         '  for(int i=0;i<6;i++){ float g = rs*(1.0-uK*rs*rs)-ro; float dg = 1.0-3.0*uK*rs*rs; rs = rs - g/dg; }\n' +
         '  float scale = ro>1e-5 ? rs/ro : 1.0; vec2 sUv = n*scale*0.5+0.5;\n' +
         '  if(sUv.x<0.0||sUv.x>1.0||sUv.y<0.0||sUv.y>1.0){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }\n' +
@@ -3725,7 +3864,7 @@ const World = (() => {
         '    float b = texture2D(uTex, sUv - offs).b;\n' +
         '    col = vec3(r, gg, b);\n' +
         '  } else { col = texture2D(uTex, sUv).rgb; }\n' +
-        '  float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
+        '  float vig = clamp(1.0-uVig*ro*ro, 0.0, 1.0);\n' +
         '  gl_FragColor = vec4(col*vig, 1.0);\n' +
         '}';
       const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -3745,7 +3884,9 @@ const World = (() => {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is top; flip so texcoords line up right-side-up
       gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
-      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glAberrLoc = gl.getUniformLocation(prog, 'uAberr'); _glProg = prog; _glReady = true;
+      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glAberrLoc = gl.getUniformLocation(prog, 'uAberr');
+      _glVigLoc = gl.getUniformLocation(prog, 'uVig'); _glOverLoc = gl.getUniformLocation(prog, 'uOver');
+      _glProg = prog; _glReady = true;
       return true;
     } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
   }
@@ -3769,6 +3910,8 @@ const World = (() => {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);   // upload the composited frame
       gl.uniform1f(_glKLoc, k);
       if (_glAberrLoc) gl.uniform1f(_glAberrLoc, Math.max(0, CRT.aberr || 0));
+      if (_glVigLoc) gl.uniform1f(_glVigLoc, vigAmt());
+      if (_glOverLoc) gl.uniform1f(_glOverLoc, overAmt());
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
@@ -3818,13 +3961,17 @@ const World = (() => {
     const d32 = new Uint32Array(_outImg.data.buffer), lut = _lut, BLACK = 0xFF000000;
     for (let i = 0; i < d32.length; i++) { const s = lut[i]; d32[i] = s < 0 ? BLACK : s32[s]; }
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.putImageData(_outImg, 0, 0);
-    // edge vignette (matches the dot-matrix's 1 - 0.55·r²): darken toward the bowed corners
+    // Edge vignette — the exact darkening complement of the shader's `1 - uVig·ro²`, so the CPU fallback
+    // stays pixel-equivalent to the GPU path (drawCurveGL's probe compares them). A stop at gradient
+    // fraction t sits at panel radius t·√2, which the shader sees as ro = t·√2/over, hence alpha = vig·ro².
     ctx.save(); ctx.globalCompositeOperation = 'source-over'; ctx.translate(hw, hh); ctx.scale(hw, hh);
+    const vAmt = vigAmt(), o2 = overAmt() * overAmt();
+    const vAlpha = t => Math.max(0, Math.min(1, vAmt * 2 * t * t / o2)).toFixed(4);
     const vg = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.SQRT2);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(0.5, 'rgba(0,0,0,0.275)');     // r²≈0.5
-    vg.addColorStop(0.707, 'rgba(0,0,0,0.55)');    // r²≈1 (edge midpoints)
-    vg.addColorStop(1, 'rgba(0,0,0,1)');           // r²≈2 (corners) → black
+    vg.addColorStop(0.5, 'rgba(0,0,0,' + vAlpha(0.5) + ')');       // r²≈0.5
+    vg.addColorStop(0.707, 'rgba(0,0,0,' + vAlpha(0.707) + ')');   // r²≈1 (edge midpoints)
+    vg.addColorStop(1, 'rgba(0,0,0,' + vAlpha(1) + ')');           // r²≈2 (corners)
     ctx.fillStyle = vg; ctx.fillRect(-Math.SQRT2, -Math.SQRT2, 2 * Math.SQRT2, 2 * Math.SQRT2);
     ctx.restore();
   }
@@ -4085,7 +4232,10 @@ const World = (() => {
     const step = a.state === 'walk' ? (Math.floor(now / 140) % 2) : 0;
     const bob = (a.state !== 'walk' && !a.sitting)
       ? Math.round(a.speaking ? Math.sin(now / 170 + a.phase) * 1.1 : Math.sin(now / 600 + a.phase) * 0.7) : 0;
-    ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1;
+    // same pooled contact shadow the sprite bodies get (SPRITES.groundShadow needs no loaded
+    // assets, so the fallback — which runs precisely when they FAILED to load — still gets it).
+    if (typeof SPRITES !== 'undefined' && SPRITES.groundShadow) SPRITES.groundShadow(ctx, x, y, 5, { lift: -bob });
+    else { ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1; }
     const top = y - h + bob;
     ctx.fillStyle = a.color; ctx.fillRect(x - 3, top + 3, 6, h - 6);
     ctx.fillStyle = '#f0e6c0'; ctx.fillRect(x - 2, top, 5, 4);
@@ -4287,69 +4437,6 @@ const World = (() => {
     ctx.restore();
   }
 
-  /* ---------- MEESEEKS helper sprites (G4 feature 3): a lightweight, dedicated layer (NOT agents.js bodies).
-     Each LIVE sub-agent is one small, translucent, faintly-flickering helper that materializes near the lead's
-     desk, works in place (a tight shimmer + micro-wander), and dissolves in a brief amber-cyan poof when its
-     sub-agent completes. Cap 5 + a '+N' badge. The ledger is the ONLY source — a sprite exists iff a real
-     sub-agent is live (the truthfulness law). Colours are cool/pale so they read as spectral helpers, not crew. */
-  function helperSlot(id) {
-    let s = helperSlots.get(id);
-    if (!s) {
-      // a stable fan of offsets around the lead's foot (local px), hash-seeded so a given helper keeps its spot
-      const h = U.hash('ms' + id);
-      const ang = (h % 360) * Math.PI / 180, rad = 10 + (h % 7);
-      s = { ox: Math.cos(ang) * rad, oy: -6 - (h % 5), ph: (h % 100) / 100 * Math.PI * 2 };
-      helperSlots.set(id, s);
-    }
-    return s;
-  }
-  function drawMeeseeks(now) {
-    if (!subLedger) return;
-    subLedger.prune(now);
-    const view = subLedger.list(now);
-    if (!view.shown.length) { for (const k of helperSlots.keys()) helperSlots.delete(k); return; }
-    for (const s of view.shown) {
-      const lead = bodyForAgent(s.leadId) || agent;
-      if (!lead || lead.unplaced) continue;
-      const lx = lead.seated ? lead.seatPx : lead.px, ly = lead.seated ? lead.seatPy : lead.py;
-      const slot = helperSlot(s.id);
-      // micro-wander: a small lissajous drift so the helper works "in place" without standing dead-still
-      const wob = s.phase === 'materialize' ? 1 : 0.4;
-      const hx = Math.round(lx + slot.ox + Math.sin(now / 520 + slot.ph) * 2.2 * wob);
-      const hy = Math.round(ly + slot.oy + Math.cos(now / 610 + slot.ph) * 1.6 * wob);
-      // flicker: a fast, shallow alpha jitter on top of the materialize/dissolve alpha (eerie, unstable presence)
-      const flick = 0.82 + 0.18 * Math.sin(now / 90 + slot.ph * 3);
-      const a = Math.max(0, Math.min(1, s.alpha)) * flick;
-      const scale = s.phase === 'materialize' ? (0.55 + 0.45 * Math.min(1, s.alpha)) : (0.4 + 0.6 * s.alpha);   // scale-in on birth, shrink on poof
-      ctx.save();
-      ctx.globalAlpha = 0.85 * a;
-      // a small spectral body: pale-cyan torso + head, a faint amber core, a soft contact shadow
-      const bodyH = Math.round(9 * scale), bodyW = Math.max(2, Math.round(3 * scale));
-      ctx.globalAlpha = 0.28 * a; ctx.fillStyle = '#0b1416'; ctx.fillRect(hx - bodyW, hy, bodyW * 2, 1);   // shadow
-      ctx.globalAlpha = 0.8 * a;
-      ctx.fillStyle = '#8fe6df'; ctx.fillRect(hx - (bodyW >> 1), hy - bodyH, bodyW, bodyH);                 // torso
-      ctx.fillStyle = '#c7f4ef'; ctx.fillRect(hx - (bodyW >> 1), hy - bodyH - Math.max(2, Math.round(3 * scale)), bodyW, Math.max(2, Math.round(3 * scale)));   // head
-      ctx.globalAlpha = 0.5 * a; ctx.fillStyle = '#ffd9a3'; ctx.fillRect(hx - 1, hy - Math.round(bodyH * 0.6), 1, 1);   // amber work-core spark
-      // the poof: a couple of rising motes while dissolving
-      if (s.phase === 'dissolve') {
-        ctx.globalAlpha = 0.7 * s.alpha; ctx.fillStyle = '#a7f0ea';
-        for (let i = 0; i < 3; i++) { const t = (1 - s.alpha); ctx.fillRect(hx - 2 + i * 2, hy - bodyH - Math.round(t * 8) - i, 1, 1); }
-      }
-      ctx.restore();
-    }
-    // the '+N' badge: more live helpers than the cap — a tiny cyan counter near the lead
-    if (view.overflow > 0) {
-      const lead = agent;
-      if (lead && !lead.unplaced) {
-        ctx.save();
-        ctx.globalAlpha = 0.9; ctx.font = "7px 'VT323','Courier New',monospace"; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.shadowBlur = 3; ctx.shadowColor = '#8fe6df'; ctx.fillStyle = '#c7f4ef';
-        ctx.fillText('+' + view.overflow, (lead.seated ? lead.seatPx : lead.px) + 14, (lead.seated ? lead.seatPy : lead.py) - 14);
-        ctx.restore();
-      }
-    }
-  }
-
   /* ---------- the SPEECH BUBBLE: what a body is saying right now (a routed "received: …" beat, a muttered
      aside, an error line, a LEVEL tick). Rendered in the SAME material as the nameplate — screen-space + no
      smoothing so the VT323 stays crisp instead of being scaled-then-barrel-warped into mush, dark CRT glass
@@ -4453,7 +4540,7 @@ const World = (() => {
   const NAG_LABEL = {
     UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NOT ON THE LINE', ORPHAN_SOURCE: 'NO BELT OUT',
     BAY_NOT_FED: 'NOT CONNECTED — FIX IN REFIT', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
-    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE'
+    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE', CHAIN_CYCLE: 'WORK LINE LOOPS'
   };
   // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
   function buildRoutingNags() {
@@ -5076,6 +5163,18 @@ const World = (() => {
     //    (Pipeline.sourceFor — each room's INBOX feeds its own network, never another room's outbox);
     //  • unaddressed work takes the first INBOX (unchanged);
     //  • no reaching line → the work lands directly at the agent's BAY dock (a lone bay is a complete build).
+    /* A HANDOFF DOES NOT ENTER THROUGH THE FRONT DOOR. A `chain` work-item is stage N of a work line: it was
+       produced at the UPSTREAM dock and rides that dock's lane to this one. Spawning it at an INTAKE would
+       draw a lie — the station never received anything, one of its own agents did. The upstream dock is
+       derived from the compiled plan (the dock whose chain names this agent), so no event field is invented
+       for it; the crate is PRODUCT, not ore, because that is exactly what it is. */
+    if (p.kind === 'chain' && routingPlan && routingPlan.chains) {
+      p.box = 'product';
+      const ups = Object.keys(routingPlan.chains).filter(a => (routingPlan.chains[a].next || []).indexOf(p.agentId) >= 0).sort();
+      const from = ups.length ? routingPlan.chains[ups[0]] : null;
+      if (from && from.tile) { convey.enqueueAt(from.tile.x, from.tile.y, p); return; }
+      dockArrival(p); return;                                       // no drawn lane between them — land it at the dock
+    }
     let t = null;
     if (p.kind !== 'directive') {
       t = (p.agentId && routingPlan && typeof Pipeline !== 'undefined' && Pipeline.sourceFor)
@@ -5180,6 +5279,12 @@ const World = (() => {
   }
   function shipProductCrate(p) {
     if (!convey) return;
+    // A NON-TERMINAL STAGE SHIPS NOTHING OUT. If this dock's output hands off to another dock, its product IS
+    // the handoff crate (drawn when the sidecar places the next stage's work-item) — also spawning a ship-out
+    // crate here would draw the same work leaving twice, once toward a door it never went through.
+    const cAid = (p && p.agentId) || '';
+    const ch = (cAid && routingPlan && routingPlan.chains) ? routingPlan.chains[cAid] : null;
+    if (ch && ch.next && ch.next.length) return;
     const rid = (p && p.runId) || '';
     if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
     const t = outboundBeltTile(p && p.agentId);
@@ -5597,11 +5702,11 @@ const World = (() => {
       const arg = tickerClip(p.argsSummary, 48);
       pushTicker(tickerName(p.agentId) + ' ▸ ' + tickerTool(p.name) + (arg ? ' · ' + arg : ''), '', tickerSuit(p.agentId));
     });
-    // successes replace themselves via the next tool_call; only surface a genuine tool FAILURE tick.
-    U.bus.on('agent.tool_result', p => {
-      if (!p || !p.isError) return;
-      pushTicker(tickerName(p.agentId) + ' ▸ ✗ ' + tickerClip(p.summary || 'tool error', 40), 'bad', tickerSuit(p.agentId));
-    });
+    // NO per-tool failure tick (2026-07-31). This used to push a red '✗ <summary>' line for every errored
+    // tool call — and since successes tick nothing, failure was the ONLY outcome the HUD ever narrated: a
+    // research run probing a few blocked sites read as a station-wide malfunction. A negative tool result
+    // is the agent working, and the next agent.tool_call line already shows it moving; the COMMS chips
+    // keep the per-call truth one click away. Red on this HUD now means one thing: the run itself died.
     U.bus.on('agent.run.error', p => {
       if (!p) return;
       pushTicker(tickerName(p.agentId) + ' ▸ RUN FAULT · ' + tickerClip(p.message || 'error', 40).toUpperCase(), 'bad', tickerSuit(p.agentId));
@@ -5686,7 +5791,11 @@ const World = (() => {
       lastSlagAt = performance.now();
       if (!slaglog) return;
       const diag = slaglog.record(r, { cacheFrac: lastCacheFrac, turns: p && p.turns, usd: p && p.usd });
-      if (typeof StationUI !== 'undefined' && StationUI.notify) {
+      // an 'error' run has ALREADY announced itself (⚠ error row, its own toast, the RUN FAULT tick,
+      // the desk strobe) — a simultaneous SLAG toast made ONE failure read as two (2026-07-31). The
+      // post-mortem record + slag crate below still happen for every dead reason; only the duplicate
+      // toast is skipped. Budget/step-limit/refusal deaths keep it: nothing else announces those.
+      if (typeof StationUI !== 'undefined' && StationUI.notify && r !== 'error') {
         const clean = s => String(s || '').replace(/\bspend\b/ig, 'run resources').replace(/\bdollars?\b/ig, 'limits');
         StationUI.notify('⚠ SLAG (a run died with nothing to show) · ' + clean(SlagLog.line(diag)), 'warn');
       }
@@ -5930,18 +6039,25 @@ const World = (() => {
     // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
     U.bus.on('task', t => {
       if (!t || !t.agentId) return;
-      // G4 feature 3: a sub-agent lifecycle event (kind:'subagent') folds into the Meeseeks helper ledger. The
-      // lead is whoever is currently delegating (the open team.dispatch window), else the hero — so helpers
-      // cluster near the desk that spawned them. The fold itself enforces the "live sub-agent ⇒ one sprite" law.
-      if (subLedger && t.kind === 'subagent') subLedger.fold(t, performance.now(), delegateLead || (agent && agent.id) || null);
       if (t.status && t.status !== 'active' && t.status !== 'running' && t.status !== 'queued') { deskProg.delete(t.agentId); return; }
       const prog = +t.prog, dur = +t.dur;
       if (isFinite(prog) && isFinite(dur) && dur > 0) deskProg.set(t.agentId, Math.max(0, Math.min(1, prog / dur)));
     });
     if (typeof EventSource === 'undefined') return;
     let backoff = 1000;
+    let retryTimer = null;
     const open = () => {
       if (bridgePaused) return;   // disconnected to the title screen — do not (re)open
+      /* ONE STREAM, ALWAYS. onerror nulls chanES and arms a retry timer, and resumeBridge re-opens on
+         !chanES — so a re-entry INSIDE the backoff window (DATA › IMPORT → reentry → enterGame →
+         resumeBridge) created stream #1 and the pending timer then overwrote chanES with #2. #1 was never
+         closed, and its onmessage closure (`U.bus.emit(m.name, m.payload)`) references no state that could
+         stop it, so every server event was re-emitted onto the bus forever: two crates per inbound message,
+         doubled HUD notes, desk heat firing twice. Each further re-entry added another. Cancelling the
+         pending retry here is the other half — without it the timer still fires and replaces a healthy
+         stream (the orphan's own onerror closes the module-level chanES, not itself). */
+      if (retryTimer) { try { clearTimeout(retryTimer); } catch (_) {} retryTimer = null; }
+      if (chanES) return;
       try {
         // EventSource can't send the custom auth header, so pass the per-launch token as ?token=… and
         // prefix the sidecar base in the desktop build (where the page origin isn't the loopback http origin).
@@ -5950,7 +6066,7 @@ const World = (() => {
       } catch (_) { return; }
       chanES.onopen = () => { backoff = 1000; lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; fetchSnapshot(); };
       chanES.onmessage = ev => { lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
-      chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
+      chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; if (retryTimer) { try { clearTimeout(retryTimer); } catch (_) {} } retryTimer = setTimeout(() => { retryTimer = null; open(); }, backoff); backoff = Math.min(15000, backoff * 2); };
     };
     connOpenFn = open;
     open();
@@ -6110,6 +6226,33 @@ const World = (() => {
   const _dbgAgeRun = (aid, ms) => { const t = runLastSeenByAgent.get(aid); if (t != null) runLastSeenByAgent.set(aid, t - (+ms || 0)); const s = runStartByAgent.get(aid); if (s != null) runStartByAgent.set(aid, s - (+ms || 0)); const m = liveRunsByAgent.get(aid); if (m) for (const [rid, tt] of m) m.set(rid, tt - (+ms || 0)); };
   const _dbgReconcile = (snap) => { try { reconcileFromSnapshot(snap); } catch (_) {} };
   const _dbgSweep = () => { sweepStaleStates((typeof performance !== 'undefined') ? performance.now() : fnow); };   // drive the TTL sweep directly (rAF is throttled in a headless preview tab)
+  /* LEISURE verification: the power-down and prop-dwell planners are gated behind a mood phase, an idle
+     age and a 22% roll, so they cannot be observed on demand from the outside. These drive them directly
+     on the HERO and report the resulting latch — the same pattern as _dbgSweep, for the same reason
+     (rAF is throttled in a headless preview tab, and a random gate is not a test). Read-only otherwise. */
+  const _dbgSleep = () => {
+    const t = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    const prev = self; self = agent;
+    try { sleep(t); } finally { self = prev; }
+    return _dbgLeisure();
+  };
+  const _dbgUseProp = () => {
+    const t = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    const prev = self; self = agent;
+    let ok = false;
+    try { ok = planProp(t); } finally { self = prev; }
+    return Object.assign({ planned: ok }, _dbgLeisure());
+  };
+  const _dbgLeisure = () => ({
+    goal: agent ? agent.goal : null,
+    usingProp: agent ? agent.usingProp : null,
+    useKind: agent ? useKindOf(agent.usingProp) : null,
+    sitting: !!(agent && agent.sitting),
+    seatKey: (agent && agent.seatKey) || null,
+    seated: !!(agent && agent.seated),
+    walkingTo: (agent && agent.target) ? { x: agent.target.x, y: agent.target.y } : null,
+    seats: [...occupiedSeats],
+  });
   // E1 verification: report the live link predicate, and force the real chanES closed (a genuine dropped socket)
   // so the DOWN branch can be observed against a real non-OPEN readyState without killing the whole process.
   const _dbgLinkState = () => ({ es: !!chanES, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round(((typeof performance !== 'undefined') ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) });
@@ -6130,7 +6273,7 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgSleep, _dbgUseProp, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
@@ -6150,7 +6293,7 @@ const World = (() => {
       if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, attn: (agent.attn && fnow < agent.attn.until) ? { x: agent.attn.x, y: agent.attn.y, inMs: Math.round(agent.attn.until - fnow) } : null, drive: (fnow < (agent.driveUntil || 0)) ? agent.drive : null, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, attn: (agent.attn && fnow < agent.attn.until) ? { x: agent.attn.x, y: agent.attn.y, inMs: Math.round(agent.attn.until - fnow) } : null, drive: (fnow < (agent.driveUntil || 0)) ? agent.drive : null, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
     // read-only camera truth for the DEV verify harness (+ the war-room HUD chip): who drives the camera
     // ('manual' | 'lock' = session follow | 'auto' = idle cinecam), which body is locked, and how long the
     // Commander has been hands-off. Pure read, no side effects — the testapi idiom.

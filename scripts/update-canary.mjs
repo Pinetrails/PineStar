@@ -112,6 +112,7 @@ function buildCanary(version, destDir) {
 
   log('staging bundled Node sidecar (idempotent)…');
   execFileSync(process.execPath, [join(ROOT, 'scripts', 'prepare-node.mjs'), 'win-x64'], { cwd: ROOT, stdio: 'inherit' });
+  execFileSync(process.execPath, [join(ROOT, 'scripts', 'stage-voice-deps.mjs'), '--target', 'win-x64'], { cwd: ROOT, stdio: 'inherit' });
 
   log('building StarNet Canary v' + version + ' (full Rust release build — 10-30 min; a rustc ctor-race crash = just re-run)…');
   const r = spawnSync('npm', ['run', 'tauri', '--', 'build', '--bundles', 'nsis', '--config', overlayPath],

@@ -365,4 +365,126 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.eq(P.resolveTarget(plan, { tag: 'x' }), 'solo', "source A sinks -> the walk continues to source B's network (was null)");
 }
 
+/* ======================= THE CHAIN LAYER (agentic graphs) =======================
+   A dock's OUTPUT is the next dock's INPUT. Until this shipped the floor was a dispatcher: everything drawn
+   downstream of the bay that consumed the crate was scenery. These pin the bay->bay edges. */
+
+/* ---- INTAKE -> researcher -> writer -> OUTBOX: a two-stage pipeline compiles as one chain ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'bA', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' },
+     { id: 'bB', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer' },
+     { id: 'o', t: 'outbox', x: 10, y: 0, w: 1, h: 1 }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'),
+     belt(5, 0, 'E'), belt(6, 0, 'E'),
+     belt(8, 0, 'E'), belt(9, 0, 'E')]
+  ));
+  A.ok(P.ok(plan), 'a two-stage pipeline is deployable');
+  A.eq(plan.errors, [], 'and CLEAN — a stage-two dock is fed by an AGENT, not by a door, and must not be nagged for it');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'researcher', 'inbound work still enters at the FIRST dock');
+  A.eq(plan.chains.researcher.next, ['writer'], "the researcher's output hands off to the writer");
+  A.eq(plan.chains.researcher.tile, { x: 5, y: 0 }, 'it ships from the hookup whose flow reaches the next dock');
+  A.eq(plan.chains.writer.next, [], 'the writer is the terminal stage');
+  A.eq(plan.chains.writer.outbox, true, "the writer's output ships out");
+  A.eq(P.chainNext(plan, 'researcher', {}), 'writer', 'chainNext walks the belt to the next stage');
+  A.eq(P.chainNext(plan, 'writer', {}), null, 'a terminal stage hands off to nobody (its reply IS the answer)');
+}
+
+/* ---- a dock NEVER eats its own output: a lane running along the dock's edge is ridden through ---- */
+{
+  // the lane runs ALONG alpha's dock: (3,0)/(4,0)/(5,0) are all in its 1-tile ring, so the handoff crate
+  // ships from the first and must ride through its own two other hookups to reach beta's at (6,0).
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'bA', t: 'bay', x: 4, y: 1, w: 1, h: 1, agentId: 'alpha' },
+     { id: 'bB', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'beta' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E')]
+  ));
+  A.eq(plan.bayTileToAgent['5,0'], 'alpha', 'the lane touches alpha\'s ring three times');
+  A.eq(plan.chains.alpha.next, ['beta'], "alpha's handoff rides past its own ring tiles to beta");
+  A.eq(P.chainNext(plan, 'alpha', {}), 'beta', 'a dock never consumes the crate it just shipped');
+}
+
+/* ---- CHAIN_CYCLE: A ships into B's dock, B ships into A's dock — no BELT cycle anywhere ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'bA', t: 'bay', x: 2, y: 0, w: 1, h: 1, agentId: 'ping' },
+     { id: 'bB', t: 'bay', x: 6, y: 0, w: 1, h: 1, agentId: 'pong' }],
+    [belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 0, 'E'),        // ping -> pong (top lane)
+     belt(5, 2, 'W'), belt(4, 2, 'W'), belt(3, 2, 'W'),        // pong -> ping (return lane, y=2)
+     belt(6, 1, 'S'), belt(6, 2, 'W'), belt(2, 2, 'N'), belt(2, 1, 'N')]
+  ));
+  A.eq(P.compileRoutingPlan(geo([], [belt(3, 0, 'E')])).errors.length, 0, 'sanity: a lone belt compiles clean');
+  A.ok(!plan.errors.some(e => e.code === 'CYCLE'), 'there is NO physical belt cycle — detectCycle is blind to this');
+  A.ok(plan.errors.some(e => e.code === 'CHAIN_CYCLE'), 'a bay->bay loop is caught by CHAIN_CYCLE');
+  A.ok(!P.ok(plan), 'a chain loop is a BLOCKING error — it is an infinite chain of PAID runs');
+}
+
+/* ---- a FILTER downstream of a dock branches on the OUTPUT's tag ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'bA', t: 'bay', x: 0, y: 2, w: 1, h: 1, agentId: 'triage' },
+     { id: 'f', t: 'filter', x: 3, y: 2, w: 1, h: 1, routes: { code: 'N' }, def: 'S' },
+     { id: 'bC', t: 'bay', x: 5, y: 0, w: 1, h: 1, agentId: 'coder' },
+     { id: 'bD', t: 'bay', x: 5, y: 4, w: 1, h: 1, agentId: 'writer' }],
+    [belt(1, 2, 'E'), belt(2, 2, 'E'), belt(3, 2, 'E'),
+     belt(3, 1, 'E'), belt(4, 1, 'E'),          // N lane -> coder
+     belt(3, 3, 'E'), belt(4, 3, 'E')]          // S lane -> writer
+  ));
+  A.eq(plan.chains.triage.next, ['coder', 'writer'], 'both branches are reachable from the triage dock');
+  A.eq(P.chainNext(plan, 'triage', { tag: 'code' }), 'coder', "a 'code' result takes the routed lane");
+  A.eq(P.chainNext(plan, 'triage', { tag: 'prose' }), 'writer', 'anything else takes the default lane');
+}
+
+/* ---- a SPLIT downstream of a dock round-robins: ONE output crate is ONE downstream run, never a fan-out ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'bA', t: 'bay', x: 0, y: 2, w: 1, h: 1, agentId: 'lead' },
+     { id: 's', t: 'splitter', x: 3, y: 2, w: 1, h: 1 },
+     { id: 'bC', t: 'bay', x: 5, y: 1, w: 1, h: 1, agentId: 'w1' },
+     { id: 'bD', t: 'bay', x: 5, y: 3, w: 1, h: 1, agentId: 'w2' }],
+    [belt(1, 2, 'E'), belt(2, 2, 'E'), belt(3, 2, 'E'),
+     belt(3, 1, 'E'), belt(4, 1, 'E'),
+     belt(3, 3, 'E'), belt(4, 3, 'E')]
+  ));
+  A.eq(plan.chains.lead.next, ['w1', 'w2'], 'both lanes are reachable');
+  let n = 0; const pick = (k, len) => (n++ % len);
+  // lane 0 is 'S' (LANE_ORDER = E,S,W,N — the same fixed order resolveTarget and the engine use)
+  A.eq(P.chainNext(plan, 'lead', {}, pick), 'w2', 'first handoff takes lane 0');
+  A.eq(P.chainNext(plan, 'lead', {}, pick), 'w1', 'the next handoff spreads to lane 1');
+  A.eq(P.chainNext(plan, 'lead', {}, pick), 'w2', 'and it round-robins back — one crate, one downstream run');
+}
+
+/* ---- a HANDOFF lane renders ENERGIZED: it carries real crates and buys real runs ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'bA', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' },
+     { id: 'bB', t: 'bay', x: 8, y: 0, w: 1, h: 1, agentId: 'writer' },
+     { id: 'stub', t: 'bay', x: 4, y: 5, w: 1, h: 1, agentId: 'idler' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'),
+     belt(5, 0, 'E'), belt(6, 0, 'E'), belt(7, 0, 'E'),        // the researcher -> writer HANDOFF lane
+     belt(4, 6, 'E'), belt(5, 6, 'E')]                          // a stub off the idler's dock, reaching nothing
+  ));
+  const live = P.liveTiles(plan);
+  A.ok(live['2,0'], 'the intake feed lane is live');
+  A.ok(live['6,0'], 'the dock->dock handoff lane is LIVE (it was cold before the chain layer)');
+  A.ok(!live['5,6'], 'a stub that reaches no other dock stays COLD');
+}
+
+/* ---- a beltless dock and a lone dock have no chain (they are complete builds, not broken ones) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'bA', t: 'bay', x: 3, y: 0, w: 1, h: 1, agentId: 'solo' },
+     { id: 'bB', t: 'bay', x: 9, y: 9, w: 1, h: 1, agentId: 'hermit' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E')]
+  ));
+  A.eq(P.chainNext(plan, 'solo', {}), null, 'a dock at the end of the line hands off to nobody');
+  A.eq(plan.chains.hermit, undefined, 'a beltless dock has no chain record at all');
+  A.eq(P.chainNext(plan, 'hermit', {}), null, 'and chainNext answers null for it');
+  A.ok(P.ok(plan), 'neither is a deploy blocker');
+}
+
 A.report('pipeline');

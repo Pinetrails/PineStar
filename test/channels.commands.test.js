@@ -53,6 +53,11 @@ async function run() {
     A.eq(parseCommand('hello there'), null, 'a normal message is NOT a command');
     A.eq(parseCommand('/unknown x'), null, 'an unknown slash token is NOT intercepted (falls through to a run)');
     A.eq(parseCommand('/'), null, 'a bare slash is not a command');
+    /* /start is what Telegram's own START button sends on a fresh chat — the first thing a new member ever
+       transmits. It was in no table, so it fell through as an ordinary message and SPENT A PAID MODEL RUN on
+       an agent puzzling over the word "/start". It must parse as a command so the hub can answer it free. */
+    A.eq(parseCommand('/start'), { cmd: 'start', arg: '' }, "/start parses as a command (Telegram's START button)");
+    A.eq(parseCommand('/start@mybot'), { cmd: 'start', arg: '' }, '/start tolerates the @botname suffix');
   }
 
   // ---- Q. pure matchAgent: exact id, case-insensitive name, prefix, ambiguity ----

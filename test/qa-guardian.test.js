@@ -43,7 +43,7 @@ const step = (id) => GUARDIAN_STEPS.find(s => s.id === id);
 // ---- B. a clean exit files NOTHING (green cycle is silent) ----
 {
   const core = makeGuardianCore({ io: io(), clock });
-  for (const id of ['test-fast', 'shoot', 'golden', 'audit', 'journeys']) {
+  for (const id of ['test-fast', 'http-e2e', 'saboteur', 'shoot', 'golden', 'audit', 'journeys']) {
     A.eq(core.findingsFor(step(id), { exitCode: 0, sha: 'abc1234def' }).length, 0, id + ' clean exit -> zero findings');
   }
 }

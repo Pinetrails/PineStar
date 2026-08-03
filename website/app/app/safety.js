@@ -20,10 +20,20 @@
     // server's `runs` map BEFORE /api/halt counted it — so the toast said "stopped 0 runs" while runs were in
     // fact being stopped. Counting on the server before local teardown keeps the number real; the local abort
     // still lands milliseconds later (and the server-side abort has already ended the loops' spend either way).
-    let n = 0;
-    try { if (typeof Harness !== 'undefined' && Harness.haltAll) n = await Harness.haltAll(); } catch (_) {}
+    let receipt = { halted: 0 };
+    try { if (typeof Harness !== 'undefined' && Harness.haltAll) receipt = await Harness.haltAll() || receipt; } catch (_) {}
     try { if (typeof Chat !== 'undefined' && Chat.abort) Chat.abort(); } catch (_) {}
-    try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('HALT — stopped ' + n + ' run' + (n === 1 ? '' : 's'), 'warn'); } catch (_) {}
+    const n = receipt && typeof receipt.halted === 'number' ? receipt.halted : 0;
+    const persistence = [
+      ['nightshiftHaltPersisted', 'night shift'],
+      ['cronHaltPersisted', 'routines'],
+      ['loopsHaltPersisted', 'loops']
+    ];
+    const failed = persistence.filter(([field]) => receipt && receipt[field] === false).map(([, label]) => label);
+    const msg = 'HALT — stopped ' + n + ' run' + (n === 1 ? '' : 's') + (failed.length
+      ? ' now · restart protection failed for ' + failed.join(', ') + '; retry E-STOP before restarting'
+      : '');
+    try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(msg, failed.length ? 'bad' : 'warn'); } catch (_) {}
     try { if (typeof SFX !== 'undefined' && SFX.alarm) SFX.alarm(); } catch (_) {}
   }
   // Alt+H is a global E-STOP — it fires even while typing (an emergency stop must never be swallowed by focus).

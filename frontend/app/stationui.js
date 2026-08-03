@@ -191,9 +191,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         document.body.style.setProperty('--ph-glow2', 'rgba(' + rgb + ', ' + (base[1] * gm).toFixed(3) + ')');
       }
     }
-    // THE BACKDROP — what the station floats in. SpaceBG owns the registry and falls back to
-    // its own default for an unknown id, so a hand-edited or future-version save can never
-    // blank the sky. Applied here (not only in the picker) so it survives a reload.
+    // WHERE THE STATION IS. One saved value spans two layers that work opposite ways: a SKY is
+    // screen-space and must not zoom, a GROUND is world-space and must. Both modules resolve the
+    // id themselves — Terrain turns OFF for anything that is not a known ground, SpaceBG falls
+    // back to its default — so an unknown or future-version id can never blank the frame.
+    // Applied here rather than only in the picker so it survives a reload.
+    if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
     // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
     // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
@@ -204,6 +207,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const priorZoom = document.body.style.zoom || '';
     if (tz === 100) document.body.style.removeProperty('zoom');
     else document.body.style.zoom = String(tz / 100);
+    // ...but the CRT GLASS is screen-space HARDWARE, not content. body's zoom multiplies into every
+    // descendant, and the glass overlay's beam pitch is authored in hard px — so TEXT SIZE was also
+    // stretching the scanlines (3px pitch → 4.35px at HUGE: the tube looked blown up, lines reading
+    // as venetian blinds instead of a beam). Publish the EXACT reciprocal so those layers can cancel
+    // the zoom back to 1:1 (style.css `body::after`, marketplace.css `.mkt-scrim::after`). Removed at
+    // 100% for the same reason `zoom` is: the plain-desktop default leaves no inline style behind.
+    if (tz === 100) document.body.style.removeProperty('--crt-unzoom');
+    else document.body.style.setProperty('--crt-unzoom', String(100 / tz));
     // a zoom change rescales every open window's visual footprint without firing a window resize —
     // re-clamp them into the new local viewport (same pass the resize listener runs) or a window
     // sized/parked at one scale can hang past the frame at another.
@@ -630,7 +641,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const clearRestore = () => { w.classList.remove('term-restoring'); w.style.animation = 'none'; fitTermInViewport(w, key, true); };
     w.addEventListener('animationend', clearRestore, { once: true });
     setTimeout(clearRestore, 460);
-    // focus back onto the restored dialog itself (not its first control — the minimize button)
+    // focus back onto the restored dialog itself (not its first control)
     try { w.focus(); } catch (_) {}
     syncScrim();
     syncBB();
@@ -742,12 +753,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const head = mkEl('div', 'term-head',
       '<span class="term-led" aria-hidden="true"></span>' +
       '<span class="term-title" id="' + titleId + '">' + title + '</span>');
-    // minimize control — sits left of ✕. Collapses the window to a strip chip (keeps it logically open).
-    const mn = mkEl('button', 'term-min', '–');
-    mn.setAttribute('aria-label', 'Minimize ' + title);
-    mn.setAttribute('type', 'button');
-    mn.addEventListener('click', ev => { ev.stopPropagation(); minimizeTerm(key); });
-    head.appendChild(mn);
+    // no dedicated minimize button — it read as a duplicate ✕. Minimize-to-strip stays reachable
+    // via header double-click and the dock button (restoreTerm handles the chip lifecycle).
     const x = mkEl('button', 'term-x', '✕');
     x.setAttribute('aria-label', 'Close ' + title);
     x.addEventListener('click', () => requestCloseTerm(key));   // unsaved-draft guard sits on this path
@@ -799,7 +806,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // textarea element, which a save/cancel rerender destroys — so it can never go stale.
     w.addEventListener('input', ev => { const t = ev.target; if (t && t.tagName === 'TEXTAREA') t.dataset.dirty = '1'; });
     head.addEventListener('mousedown', ev => {
-      if (ev.target === x || ev.target === mn) return;   // header controls handle their own clicks
+      if (ev.target === x) return;   // header controls handle their own clicks
       // Bake the window's CURRENT VISUAL position into explicit left/top before dragging. A freshly
       // opened single window is centered purely in CSS (left/top:50% + translate(-50%,-50%)), so its
       // offsetLeft/offsetTop report the PRE-transform corner (viewport centre) — anchoring the drag off
@@ -822,7 +829,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // double-click the header (not its buttons) minimizes — cheap muscle-memory. Skip if the last grab was
     // an actual drag (a drag-release-quick-click can otherwise register as a dblclick).
     head.addEventListener('dblclick', ev => {
-      if (ev.target === x || ev.target === mn) return;
+      if (ev.target === x) return;
       if (w._lastDragMoved) return;
       ev.preventDefault();
       minimizeTerm(key);
@@ -859,8 +866,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       requestAnimationFrame(() => fitTermInViewport(w, key, true));
     };
     w._render();
-    // a11y: land focus on the dialog itself (role=dialog, tabIndex -1) — NOT the first control, which was the
-    // minimize (–) button and read as a jarring first stop. Esc/Tab work from here; Tab advances into the body.
+    // a11y: land focus on the dialog itself (role=dialog, tabIndex -1) — NOT the first control, which
+    // read as a jarring first stop. Esc/Tab work from here; Tab advances into the body.
     // A builder that opened an inline editor (rename / CONFIG file) focuses its own field after this and wins.
     try { w.focus(); } catch (_) {}
     syncBB(); syncScrim();
@@ -1029,10 +1036,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           pane.classList.remove('con-sec-hidden');
           pane.classList.add('con-sec-searchshow');
           // a "row" = a labelled control block. We match on visible text of these granular blocks.
-          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row, .con-sec-body .ts-row');
+          // `.cc-card` is the CATALOG / KEYS platform card (windows/connectors.js) — it was missing from this
+          // allowlist, so typing the NAME OF A PLATFORM into the box above the catalog matched nothing at all:
+          // 48 connectable platforms were rendered on screen and indexed by zero of them ("google" → 0 hits
+          // while a Google Workspace card was visible). A search box a user types a platform name into must
+          // index the platforms. Locked by test/connectors-ui.test.js.
+          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row, .con-sec-body .ts-row, .con-sec-body .cc-card');
           let hits = 0;
           rows.forEach(r => {
-            const hit = (r.textContent || '').toLowerCase().indexOf(q) >= 0;
+            // `data-search` carries ALIASES that are deliberately not on screen (a Google Workspace card says
+            // "Gmail, Calendar, Drive…" in its blurb but never "gdrive"/"g suite"). Searching a name the user
+            // actually types must not depend on that name happening to appear in marketing copy.
+            const hay = ((r.textContent || '') + ' ' + (r.dataset ? (r.dataset.search || '') : '')).toLowerCase();
+            const hit = hay.indexOf(q) >= 0;
             r.classList.toggle('con-hit', hit);
             r.classList.toggle('con-miss', !hit);
             if (hit) hits++;
@@ -1078,7 +1094,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const ul = $('#crew'); if (!ul) return;
     if (!present.length) {
       ul.innerHTML = '<li class="crew-empty"><div class="empty-state"><span class="es-glyph">▯</span><b>NO AGENTS ON STATION</b><span>Commission one from RECRUITMENT to begin.</span></div></li>';
-      $('#crew-n').textContent = '';
       $('#crew-sum').innerHTML = '';
       return;
     }
@@ -1094,7 +1109,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // The shimmer (.bar-active) reads as live activity; it's an indeterminate sweep, not a % readout.
       '<div class="crew-prog bar-active" id="cp-' + esc(a.id) + '" aria-hidden="true"><div></div></div>' +
       '</div></li>').join('');
-    $('#crew-n').textContent = present.length + (present.length === 1 ? ' AGENT' : ' AGENTS');
+    // (the head's roster count moved out — #crew-sum below the list already totals the same crew)
     ul.querySelectorAll('.crew-row').forEach(li =>
       li.addEventListener('click', () => { sfx('click'); openAgent(+li.dataset.i); }));
     crewTick();
@@ -1270,7 +1285,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const cur = (a && a.skin && skins[a.skin]) ? a.skin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
     const thumbs = Object.keys(skins).map(id => {
       const sk = skins[id];
-      return '<button type="button" class="skin-thumb ag-skin-thumb' + (id === cur ? ' sel' : '') + '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '" aria-label="' + esc(sk.name || id) + '">' +
+      return '<button type="button" class="skin-thumb ag-skin-thumb' + (id === cur ? ' sel' : '') + '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '" aria-label="' + esc(sk.name || id) + '" aria-pressed="' + (id === cur ? 'true' : 'false') + '">' +
         '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
     }).join('');
     // DELETE gating: the hero (orchestrator / id 'agent') is undeletable; so is the last agent on station.
@@ -1284,10 +1299,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="ag-del-why">' + esc(disabledReason) + '</span>'
       : '<button class="bb sm ag-del" id="ag-del-btn" title="archive this agent and remove it from the station">✕ DELETE AGENT</button>' +
         '<span class="ag-del-why">work is archived, not erased</span>';
+    // a 44px still of a chunky sprite is unidentifiable, so the picker sits beside a LIVE stage (shared
+    // SkinStage) that plays the picked — or merely hovered — skin's real walk cycle big enough to judge.
+    // Same vocabulary as the Recruitment Bay's SUMMON stage; wired (mount + hover scrub) in wireCommand.
+    const stage =
+      '<figure class="ag-skin-stage">' +
+        '<div class="ag-skin-stage-frame"><img id="ag-skin-stage-img" alt="" draggable="false"></div>' +
+        '<figcaption class="ag-skin-stage-name"><span class="ag-stage-lbl">LIVE PREVIEW —</span> <span id="ag-skin-stage-name"></span></figcaption>' +
+      '</figure>';
     return '<div class="ag-command">' +
       '<div class="ag-cmd-sec"><div class="ag-cmd-lbl">SKIN</div>' +
-        // role=group, not listbox: the thumbs are <button>s (a picker), not selectable listbox options.
-        '<div class="ag-skin-row skin-picker" role="group" aria-label="Agent skin">' + thumbs + '</div></div>' +
+        '<div class="ag-skin-section">' +
+          // role=group, not listbox: the thumbs are <button>s (a picker), not selectable listbox options.
+          '<div class="ag-skin-row skin-picker" role="group" aria-label="Agent skin">' + thumbs + '</div>' +
+          stage +
+        '</div></div>' +
       '<div class="ag-cmd-sec ag-cmd-danger"><div class="ag-cmd-lbl">DANGER</div>' +
         '<div class="ag-del-row">' + delBtn + '</div></div>' +
       '</div>';
@@ -1333,6 +1359,44 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="gx-well' + (g.bonus ? ' gold' : '') + '"><span class="gx-lbl">Feedback bonus</span><span class="v">' + (g.bonus ? '+' + g.bonus + '%' : '—') + '</span></div>' +
       '</div>';
 
+    /* S2 RELIABILITY — the harness's OWN read, sitting under Satisfaction so the pair reads as what it is:
+       B is what the Commander SAID, B2 is what the station OBSERVED. Deliberately not merged into one score
+       (a well-liked agent that keeps hitting its ceiling must be able to show both truths at once), and
+       deliberately dossier-only — it is a number that can look bad, and the always-visible chrome is not where
+       an honest bad number belongs. Excluded runs are NAMED, not silently dropped from the denominator. */
+    const rl = Xp.reliability ? Xp.reliability(a.stats) : null;
+    const excludedNote = rl && rl.excluded
+      ? '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">' + rl.excluded + ' run' + (rl.excluded === 1 ? '' : 's') + ' set aside — ' +
+        (rl.faulted ? rl.faulted + ' the provider failed' : '') + (rl.faulted && rl.neutral ? ', ' : '') +
+        (rl.neutral ? rl.neutral + ' you stopped or it asked a question' : '') + ' — never charged to this agent</div>'
+      : '';
+    const reliabilityBlk = !rl ? '' :
+      // spans both columns of the existing .gx-2 grid (no CSS change; still correct under the 1-col media query)
+      '<div style="grid-column:1/-1;">' +
+      '<div class="gx-sec"><span class="gx-ref">B2</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
+        (rl.known ? 'runs it finished, of the runs it owned (' + Xp.MIN_RUNS + '+ runs)' : 'calibrating &middot; ' + rl.attempted + ' of ' + Xp.MIN_RUNS + ' attributable runs so far') + '</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+        '<span class="gx-confnum' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.pct + '<span style="font-size:18px;color:var(--ph-dim);">%</span>' : '—') + '</span>' +
+        '<span class="gx-band' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
+      '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + (rl.known ? rl.pct : 0) + '%;"></div></div>' +
+      '<div class="gx-well"><span class="gx-lbl">Finished / owned</span><span class="v">' + rl.completed + ' <span class="gx-dim">/</span> ' + rl.attempted + '</span></div>' +
+      // the honest distinction from Satisfaction — these two meters measure different things and may disagree.
+      '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">what the station observed — Satisfaction above is what you said</div>' +
+      excludedNote +
+      '</div>';
+
+    /* S5 PRACTICE — the fourth meter, and the only one that is not folded from the event bus: what this agent
+       has actually LEARNED (procedures it distilled from real work and has used since). The skillbase is a
+       per-agent sidecar read, so the block mounts as a host and loadPractice() fills it — the same
+       render-placeholder-then-fetch shape the SKILLS pane already uses. Until it resolves it says "reading",
+       never a zero: an unread skillbase is not an empty one. */
+    const practiceBlk =
+      '<div id="gx-practice" style="grid-column:1/-1;">' +
+      '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+      '<span class="gx-tag">reading the skillbase&hellip;</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
+      '<span class="gx-band cal">READING</span></div></div>';
+
     const tros = cat.map(m =>
       '<div class="gx-tro ' + (m.earned ? 'on' : 'off') + '">' +
       '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (m.earned ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + m.label + '</span></div>' +
@@ -1362,9 +1426,49 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return '<div class="gx">' +
       '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // GROWTH READOUT</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
       '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">CLEARANCE</div><span class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></span></div></div>' +
-      '<div class="gx-2">' + progression + confidence + '</div>' +
+      '<div class="gx-2">' + progression + confidence + reliabilityBlk + practiceBlk + '</div>' +
       trophies + station +
       '</div>';
+  }
+
+  /* Fill the B3 PRACTICE block for `agentId`. Reads through Harness.agentSkillsRead so a FAILED read renders
+     as an unknown, never as a confident zero — "you have none" and "I could not ask" are different claims, and
+     the plain agentSkills() wrapper collapses both to []. The resolve is re-checked against the agent still
+     selected, so a slow read for one agent can never paint another agent's dossier. */
+  function loadPractice(agentId) {
+    const host = $('#gx-practice');
+    if (!host || typeof Xp === 'undefined' || !Xp.practice) return;
+    const fail = (why) => {
+      const h = $('#gx-practice'); if (!h) return;
+      h.innerHTML = '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+        '<span class="gx-tag">' + why + '</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
+        '<span class="gx-band cal">UNREAD</span></div>';
+    };
+    if (!(typeof Harness === 'object' && Harness.agentSkillsRead)) return fail('skillbase unavailable');
+    Harness.agentSkillsRead(agentId, { archived: true }).then(r => {
+      const h = $('#gx-practice'); if (!h) return;
+      const now = present[sel]; if (!now || now.id !== agentId) return;   // the Commander moved on — never paint the wrong agent
+      if (!r || !r.ok) return fail('could not read the skillbase');
+      const p = Xp.practice(r.skills);
+      // every exclusion is NAMED rather than silently shrinking the count (the same rule B2 follows for the
+      // runs it sets aside) — a withheld or never-used procedure is a real thing the Commander can act on.
+      const aside = [];
+      if (p.withheld) aside.push(p.withheld + ' withheld pending your approval');
+      if (p.idle) aside.push(p.idle + ' written but never used yet');
+      if (p.given) aside.push(p.given + ' you wrote yourself');
+      h.innerHTML =
+        '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span><span class="gx-tag">' +
+          (p.count ? 'procedures it worked out and has actually used' : 'nothing distilled from real work yet') + '</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+          '<span class="gx-confnum' + (p.count ? '' : ' cal') + '">' + p.count + '</span>' +
+          '<span class="gx-band' + (p.count ? '' : ' cal') + '">' + p.band.toUpperCase() + '</span></div>' +
+        '<div class="gx-well"><span class="gx-lbl">Learned / held</span><span class="v">' + p.count + ' <span class="gx-dim">/</span> ' + p.authored + '</span></div>' +
+        // the anti-farm line, said out loud: writing a skill is not learning one.
+        '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">what it taught itself from your work — writing one counts for nothing until it is used</div>' +
+        // (every aside is a count plus a fixed literal — no agent- or user-supplied text reaches this markup)
+        (aside.length ? '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">' + aside.join(' &middot; ') + '</div>' : '');
+    }).catch(() => fail('could not read the skillbase'));
   }
 
   function agSkills(agentId) {
@@ -1421,6 +1525,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<label class="set-row"><input type="checkbox" id="mc-reflect-on"> REFLECTION ON <span class="dim">— propose memories after a completed task</span></label>' +
       '<div class="set-row"><label for="mc-cooldown">COOLDOWN (MINUTES)</label><input id="mc-cooldown" class="key-input" type="number" min="0" max="60" step="1" style="max-width:90px" title="minimum gap between turn-in beats per agent"></div>' +
       '<div class="mc-acts"><button class="bb sm" id="mc-reflect-save">SAVE</button><span class="msg" id="mc-reflect-msg"></span></div>' +
+      // AWAITING A VERDICT — the durable high-stakes deck. Runs that finish while nobody is watching (a routine, a
+      // night shift, a channel message) can raise a credential/PII/standing-instruction belief; it is neither kept
+      // nor dropped until the Commander rules on it, and it waits HERE across restarts. Hidden until non-empty.
+      '<div class="gx-sec" id="mc-pending-sec" style="display:none;"><span class="gx-ref gold">?</span><span class="gx-title">Awaiting your decision</span><span class="gx-tag" id="mc-pending-count"></span></div>' +
+      '<div class="mc-note" id="mc-pending-note" style="display:none;">Sensitive beliefs raised while you were away — <b>nothing here is remembered yet</b>. <b>Keep</b> to save one &middot; <b>Discard</b> to reject it for good.</div>' +
+      '<div id="mc-pending-list" class="mc-list"></div>' +
       '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
       '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">reading memory core&hellip;</span></div>' +
@@ -1440,7 +1550,68 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const cnt = $('#mc-count'); if (cnt) cnt.textContent = records.length + (records.length === 1 ? ' belief' : ' beliefs');
     }).catch(() => { const cur = $('#mc-list'); if (cur) cur.textContent = 'Could not read the Memory Core.'; });
     loadDeclined(a);   // the reject-list renders alongside (its own fetch; absent/empty → the section stays hidden)
+    loadPending(a);    // …as does the un-answered high-stakes deck (same pattern, same hidden-when-empty rule)
     loadReflectionConfig();   // P1-10 reflection on/off + cooldown (station-wide)
+  }
+
+  // The durable high-stakes deck: proposals raised by runs that finished while nobody was watching. Each row is
+  // resolved through the SAME POST /api/memory/turnin the live COMMS deck uses, so there is exactly one verdict
+  // path — Keep commits a real record, Discard denylists it forever (and shows up in Declined below, restorable).
+  function loadPending(a) {
+    const host = $('#mc-pending-list'); if (!host || !(typeof Harness === 'object' && Harness.memoryPending)) return;
+    Harness.memoryPending(a.id).then(list => {
+      const h = $('#mc-pending-list'); if (!h) return;   // dossier may have closed/retabbed mid-fetch
+      const sec = $('#mc-pending-sec'), note = $('#mc-pending-note'), cnt = $('#mc-pending-count');
+      h.innerHTML = '';
+      const show = list.length > 0;
+      if (sec) sec.style.display = show ? '' : 'none';
+      if (note) note.style.display = show ? '' : 'none';
+      if (cnt) cnt.textContent = String(list.length);
+      list.forEach((p, i) => { const c = pendingCard(p, a); c.style.setProperty('--ci', String(i)); h.appendChild(c); });
+    }).catch(() => {});
+  }
+
+  function pendingCard(p, a) {
+    const card = mkEl('div', 'mc-rec');
+    const head = mkEl('div', 'mc-head');
+    const tag = mkEl('span', 'turnin-kind'); tag.textContent = MEM_KIND[p.kind] || 'NOTE'; head.appendChild(tag);
+    const org = originChip(p.origin); if (org) head.appendChild(org);
+    card.appendChild(head);
+    const bodyEl = mkEl('div', 'mc-body'); bodyEl.textContent = p.content || '(empty)'; card.appendChild(bodyEl);   // textContent — never interpreted
+    const meta = mkEl('div', 'mc-meta');
+    const prov = mkEl('span', 'mc-prov');
+    const when = p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—';
+    prov.textContent = '◉ raised ' + when + (p.runId ? ' · run ' + String(p.runId).slice(0, 8) : '');
+    prov.title = p.runId ? ('proposed in run ' + p.runId) : 'origin run unknown';
+    meta.appendChild(prov);
+    card.appendChild(meta);
+    const btns = mkEl('div', 'consent-btns mc-acts'); card.appendChild(btns);
+    let busy = false;
+    const decide = async (verdict) => {
+      if (busy) return; busy = true;
+      const r = await Harness.memoryTurnin({ agentId: a.id, runId: p.runId, id: p.id, verdict: verdict });
+      if (r && r.ok) { sfx('click'); loadMemoryCore(a); } else busy = false;   // a failed verdict must stay clickable
+    };
+    const keep = mkEl('button', 'consent-btn'); keep.textContent = 'Keep'; keep.title = 'remember this'; keep.onclick = () => decide('keep');
+    btns.appendChild(keep);
+    const drop = mkEl('button', 'consent-btn deny'); drop.textContent = 'Discard'; drop.title = 'reject it — never propose this again'; drop.onclick = () => decide('discard');
+    btns.appendChild(drop);
+    return card;
+  }
+
+  /* WHERE a belief came from. Memory used to form only on the watched browser run, so every record was
+     self-evidently the Commander's own conversation and needed no label. Unattended runs reflect now, so a belief
+     can arrive from a routine, a night shift, or a messaging channel — and "the agent believes this about me" and
+     "someone said this in a group chat" are different claims. 'commander' renders NO chip: the ordinary case must
+     stay quiet, or the label becomes noise nobody reads. */
+  const ORIGIN_LABEL = { schedule: '⏱ routine', nightshift: '☾ night shift', api: '⇄ external app' };
+  function originChip(origin) {
+    const o = String(origin || 'commander');
+    if (o === 'commander') return null;
+    const label = ORIGIN_LABEL[o] || (o.indexOf('channel:') === 0 ? '✆ ' + o.slice(8) : o);
+    const el = mkEl('span', 'mc-scope'); el.textContent = label;
+    el.title = 'learned on a run you were not watching (' + o + ')';
+    return el;
   }
 
   // P1-10: hydrate the reflection controls from /api/memory/config + wire SAVE (persist + live-apply server-side).
@@ -1527,6 +1698,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const wsT = (typeof Workstreams !== 'undefined' && Workstreams.get) ? ((Workstreams.get(rec.streamId) || {}).title || null) : null;
       const sc = mkEl('span', 'mc-scope'); sc.textContent = '⊂ ' + (wsT || 'workstream'); sc.title = 'working memory — scoped to this workstream (still cross-stream searchable)'; head.appendChild(sc);
     }
+    const org = originChip(rec.origin); if (org) head.appendChild(org);   // only when it was NOT the Commander's own run
     if (rec.pinned) { const p = mkEl('span', 'mc-pinflag'); p.textContent = '★ pinned'; head.appendChild(p); }
     card.appendChild(head);
 
@@ -1900,7 +2072,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         : (j.granted ? 'shift not scheduled yet' : 'shifts are off (grant above)');
       h += '<div class="ws-bl-foot">' +
         '<span class="dim" style="font-size:11px;">' + esc(next) + (j.shiftEvery ? ' · repeats ' + esc(String(j.shiftEvery).replace(/^every /, 'every ')) : '') + '</span>' +
-        (j.granted && items.some(it => it.state === 'queued') ? '<button id="ag-ws-now">⚒ build now</button>' : '') +
+        (j.granted && items.some(it => it.state === 'queued') ? '<button class="bb sm" id="ag-ws-now">⚒ build now</button>' : '') +
         '</div>';
       const ls = lastShiftLine(j.lastShift);
       if (ls) h += '<div class="ws-bl-last' + (/^⚠/.test(ls) ? ' warn' : '') + '">' + ls + '</div>';
@@ -1988,16 +2160,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // last agent) is left inert. Guarded so a section without the block (or a missing access hook) is a safe no-op.
   function wireCommand(body, a) {
     if (!a) return;
+    // the LIVE preview stage: hold mount()'s own handle rather than the module-level SkinStage.show — the
+    // Recruitment Bay's stage can be on screen at the same time (its modal opens over an open dossier) and
+    // whichever mounted last owns the shared shortcut.
+    const stageImg = body.querySelector('#ag-skin-stage-img');
+    const cur = (a.skin && typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[a.skin])
+      ? a.skin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
+    const stage = (stageImg && typeof SkinStage !== 'undefined')
+      ? SkinStage.mount(stageImg, body.querySelector('#ag-skin-stage-name'), cur) : null;
+    const skinRow = body.querySelector('.ag-skin-row');
+    // hover scrubs the stage so skins can be compared without committing; leaving snaps back to the worn one
+    if (skinRow && stage) skinRow.addEventListener('mouseleave', () => stage.show(cur));
     body.querySelectorAll('.ag-skin-thumb').forEach(btn => {
+      if (stage) btn.addEventListener('mouseenter', () => stage.show(btn.dataset.skin));
       btn.addEventListener('click', () => {
         const skin = btn.dataset.skin;
         if (!skin || skin === a.skin) return;
         if (!(access.config && access.config.setSkin)) { notify('skin change unavailable', 'bad'); return; }
+        // Every rebuild of the dossier body hands back a FRESH scroll container parked at 0 — so picking a
+        // skin threw the Commander to the top of CONFIG and they never saw the one they just chose. Carry
+        // the offset across. Capture it FIRST: setSkin repaints the portrait via StationUI.setRoster, which
+        // detaches this pane before we ever reach the rerender below. `body` IS the console host (.con-pane),
+        // so closest() — not querySelector(); the enclosing .term-body is what a rebuild writes INTO, so it
+        // is the one node that survives and can hand back the new pane.
+        const host = body.closest('.con-pane');
+        const shell = body.closest('.term-body');
+        const keep = host ? host.scrollTop : 0;
         const ok = access.config.setSkin(a.id, skin);
         if (ok === false) { notify('could not change skin', 'bad'); sfx('bad'); return; }
         const nm = ((typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[skin] && DATA.SKINS[skin].name) || skin);
         notify('skin → ' + String(nm).toUpperCase(), 'good');
         sfx('click'); rerender('agents');
+        const next = shell && shell.querySelector('.con-pane');
+        if (next && keep) next.scrollTop = keep;   // clamped by the browser if the pane got shorter
       });
     });
     const del = body.querySelector('#ag-del-btn');
@@ -2075,6 +2270,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireConfig(host);
     wireMemoryLive();
     loadMemoryCore(a);
+    loadPractice(a && a.id ? a.id : 'agent');   // S5: fill the GROWTH tab's B3 meter from the agent's real skillbase
     drawPortrait(host.querySelector('#ag-portrait'), a);
   }
   function drawPortrait(cv, a) {
@@ -2194,7 +2390,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       skills.map((s, i) => {
         const lockable = !s.on && s.cap;
         return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
-          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place a ' + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
+          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place ' + skArt(SK_OBJ_NAME[s.cap] || s.cap) + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
           ' style="--ci:' + i + '">' +
           '<div class="perk-icon">' + s.icon + '</div>' +
           '<div class="perk-name">' + s.name + '</div>' +
@@ -2222,6 +2418,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const secAgent =
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">loading agent skills…</div></div>';
+    /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
+       Truthful by construction: if the provider has no native voice endpoint we say so rather than
+       offering choices that would do nothing, and the note about WHEN a change takes effect is shown
+       because a live session cannot switch voice mid-call. */
+
     const frag = html => (el => { el.innerHTML = html; });
     mountConsole(body, 'skills', [
       { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
@@ -2280,11 +2481,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       });
   }
 
-  const SK_OBJ_NAME = { cabinet: 'CABINET', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
+  // The gear names here are the REFIT palette's own labels (the cabinet cap's representative prop is the INTEL CAB),
+  // so a "place a …" nudge names something the Commander can actually find in the palette. skArt keeps the article
+  // right for a vowel-initial label ("place an INTEL CAB", not "a INTEL CAB").
+  const SK_OBJ_NAME = { cabinet: 'INTEL CAB', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
   // Each capability objectType → the representative placeable prop (CAP_PROP_MAP) and the REFIT palette category tab
   // that holds it. Lets a locked skill's "PLACE" button land the user on the exact gear in the real build surface.
+  const skArt = (label) => (/^[AEIOU]/.test(String(label || '')) ? 'an ' : 'a ');
   const SK_PLACE = {
-    cabinet:  { prop: 'safe',      cat: 'capability' },
+    cabinet:  { prop: 'war_intelcab', cat: 'capability' },
     dish:     { prop: 'comms_dish', cat: 'capability' },
     workbench:{ prop: 'workbench', cat: 'workstation' },
     studio:   { prop: 'studio',    cat: 'capability' },
@@ -2298,15 +2503,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const spot = SK_PLACE[objType];
     const label = SK_OBJ_NAME[objType] || String(objType).toUpperCase();
     if (typeof Build === 'undefined' || !(Build.open || Build.toggle)) {
-      notify('Open ⚒ BUILD and place a ' + label + ' to unlock this skill', 'warn'); return;
+      notify('Open ⚒ BUILD and place ' + skArt(label) + label + ' to unlock this skill', 'warn'); return;
     }
     try { if (open.skills) minimizeTerm('skills'); } catch (_) {}
     try {
       if (Build.isOpen && Build.isOpen()) { /* already in REFIT */ }
       else if (Build.open) Build.open();
       else Build.toggle();
-    } catch (_) { notify('Could not open REFIT — open ⚒ BUILD and place a ' + label, 'warn'); return; }
-    notify('Place a ' + label + ' at ' + (agentName || 'the agent') + '’s desk to unlock this skill', 'good');
+    } catch (_) { notify('Could not open REFIT — open ⚒ BUILD and place ' + skArt(label) + label, 'warn'); return; }
+    notify('Place ' + skArt(label) + label + ' at ' + (agentName || 'the agent') + '’s desk to unlock this skill', 'good');
     if (!spot) return;   // no known prop mapping — REFIT is open, the toast named the gear; that's the floor of acceptable
     // Drive the palette to the PROP tool → FUNCTIONAL tier → the missing cap's category tab → its prop tile so the
     // very next floor-click drops it. REFIT builds its DOM synchronously in open(), so the FIRST pass runs inline
@@ -2369,7 +2574,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       : '<span class="sk-badge free">no gear needed</span>';
     // one PLACE button per missing object → the real REFIT placement surface (placeGearForSkill).
     const placeBtns = (missing) => missing.map(r =>
-      '<button class="sk-place" data-place="' + esc(r) + '" title="Open REFIT to place a ' + esc(objLabel(r)) + '">→ PLACE ' + esc(objLabel(r)) + '</button>').join('');
+      '<button class="sk-place" data-place="' + esc(r) + '" title="Open REFIT to place ' + skArt(objLabel(r)) + esc(objLabel(r)) + '">→ PLACE ' + esc(objLabel(r)) + '</button>').join('');
     let ci = 0;
     const card = (s) => {
       const missing = (s.requires || []).filter(r => !placedSet[r]);
@@ -2440,21 +2645,41 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const state = s.state === 'archived' ? 'off' : (s.state === 'stale' ? 'want' : 'on');
       const when = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : 'unknown';
       const files = (s.files || []).length ? '<div class="sk-attr">Support files: ' + esc((s.files || []).map(f => f.path).join(', ')) + '</div>' : '';
+      /* WITHHELD IS THE ONE THING THIS CARD MUST NOT HIDE. The skill guard can keep a saved skill
+         out of the agent's prompt entirely; a card that looks identical either way would have the
+         Commander believe their agent is using a procedure it was never given. So: a badge, the
+         reason, the finding categories, and — when the verdict is 'ask' — the button that clears
+         it. A 'block' verdict shows no button, because no click can bless it (the sidecar refuses
+         it too); the honest instruction is to edit out the flagged content. */
+      const held = !!s.withheld;
+      const cats = (s.guardCategories || []).length ? ' (' + esc((s.guardCategories || []).join(', ')) + ')' : '';
+      const heldBlock = held
+        ? '<div class="sk-attr sk-held">WITHHELD FROM THE AGENT: ' + esc(s.withheldReason || 'held by the skill guard') + cats +
+            '. This skill is saved, but its steps are not given to ' + esc(agentId) + '.</div>'
+        : (s.guardDecision === 'ask' ? '<div class="sk-attr">Approved by you for this exact content — an edit will ask again.</div>' : '');
+      const heldBtn = held && s.guardApprovable
+        ? '<button class="consent-btn" data-ag-act="allow" title="Give this skill to the agent — the approval covers this exact content">Approve</button>'
+        : (!held && s.guardDecision === 'ask'
+          ? '<button class="consent-btn" data-ag-act="revoke" title="Withhold this skill from the agent again">Revoke</button>'
+          : '');
+      const absorbed = s.absorbedInto ? '<div class="sk-attr">Merged into: ' + esc(s.absorbedInto) + '</div>' : '';
       html +=
-        '<div class="sk-card ' + state + '" data-agent-skill="' + esc(s.id) + '">' +
+        '<div class="sk-card ' + state + (held ? ' held' : '') + '" data-agent-skill="' + esc(s.id) + '">' +
           '<div class="sk-card-head">' +
             '<button class="sk-toggle" data-ag-act="pin" title="' + (s.pinned ? 'Unpin' : 'Pin') + ' this skill">' + (s.pinned ? '*' : '+') + '</button>' +
             '<div class="sk-card-main">' +
               '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span>' +
                 (s.category ? '<span class="sk-badge cat">' + esc(String(s.category).toUpperCase()) + '</span>' : '') +
+                (held ? '<span class="sk-badge want">WITHHELD</span>' : '') +
                 '<span class="sk-badge free">' + esc((s.state || 'active').toUpperCase()) + '</span></div>' +
               '<div class="sk-desc">' + esc(s.summary || '') + '</div>' +
               '<div class="sk-stat ' + state + '">used ' + (s.useCount || 0) + 'x - viewed ' + (s.viewCount || 0) + 'x - patched ' + (s.patchCount || 0) + 'x - updated ' + esc(when) + '</div>' +
             '</div>' +
             '<button class="sk-expand" data-ag-act="expand" title="Read the skill">&gt;</button>' +
           '</div>' +
-          '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' + files +
+          '<div class="sk-body">' + heldBlock + '<pre>' + esc(s.body || '') + '</pre>' + files + absorbed +
             '<div class="consent-btns mc-acts">' +
+              heldBtn +
               '<button class="consent-btn" data-ag-act="edit">Edit</button>' +
               '<button class="consent-btn" data-ag-act="archive">' + (s.state === 'archived' ? 'Restore' : 'Archive') + '</button>' +
             '</div>' +
@@ -2470,9 +2695,26 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const opened = card.classList.toggle('open'); btn.textContent = opened ? 'v' : '>'; sfx('click'); return;
       }
       if (act === 'edit') { editAgentSkill(card, skill, agentId); return; }
+      if (act === 'allow' || act === 'revoke') {
+        btn.classList.add('busy');
+        const r = await Harness.agentSkillAllow({ agentId, id: skill.id, allow: act === 'allow' });
+        if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
+        else {
+          // Say what the station said. A silently dead button on a security decision is worse
+          // than no button, and the usual reason is a 'block' verdict that cannot be approved.
+          btn.classList.remove('busy');
+          const note = card.querySelector('.sk-held') || card.querySelector('.sk-body');
+          if (note) { const w = mkEl('div', 'sk-attr sk-held'); w.textContent = (r && r.error) || 'that decision was refused'; note.appendChild(w); }
+        }
+        return;
+      }
       btn.classList.add('busy');
       const action = act === 'pin' ? (skill.pinned ? 'unpin' : 'pin') : (skill.state === 'archived' ? 'restore' : 'archive');
-      const r = await Harness.agentSkillManage({ agentId, action, target: skill.id });
+      /* force: the pin exists to stop MODELS (a review pass, a curator pass) from rewriting or
+         filing away the Commander's own procedure. A Commander clicking their own card is the
+         author, so the panel passes the override the sidecar requires — without it the button
+         would simply fail on a pinned skill, which is a worse lie than no button. */
+      const r = await Harness.agentSkillManage({ agentId, action, target: skill.id, force: true });
       if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); } else btn.classList.remove('busy');
     }));
   }
@@ -2490,7 +2732,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const save = mkEl('button', 'consent-btn'); save.textContent = 'Save'; actions.appendChild(save);
     const cancel = mkEl('button', 'consent-btn'); cancel.textContent = 'Cancel'; actions.appendChild(cancel);
     save.onclick = async () => {
-      const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General' });
+      const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General', force: true });   // the human author may edit their own pinned skill (see force note above)
       if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
     };
     cancel.onclick = () => loadAgentSkills(agentId);
@@ -2747,6 +2989,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const tail = k.length > head.length + 4 ? k.slice(-4) : '';
     return head + '••••••••' + tail;
   }
+  /* ⛔ A FULL PANE REBUILD IS NOT A CHEAP REPAINT. Every SETTINGS rebuild re-fires the pane's whole
+     fan-out — credits, budget, fallback chain, knobs, scout, night shift, subagents, permissions AND two
+     model-catalog fetches, which the sidecar may proxy to a LIVE upstream. The async status/probe callbacks
+     below each land separately (3 OAuth statuses + one probe per configured provider) and each forced its own
+     rebuild, so the rebuilds re-fired the very fetches whose callbacks caused them. MEASURED on a seeded
+     station: ONE open of SETTINGS = 86 requests, with `/api/models/openrouter` fetched 12 TIMES.
+     Coalesce instead: any number of triggers in the same turn collapse into ONE repaint. Deliberately NOT
+     applied to the click handlers — those repaint synchronously so the DOM they then read is current. */
+  // 120ms, not 0: the triggers are independent network round-trips that land MILLISECONDS apart, not in one
+  // turn, so a microtask-sized window merges almost nothing. It is far below the threshold at which an
+  // asynchronously-arriving status feels laggy, and each merged trigger saves a whole pane fan-out.
+  const SETTINGS_REPAINT_COALESCE_MS = 120;
+  let settingsRepaintQueued = false;
+  function scheduleSettingsRepaint() {
+    if (settingsRepaintQueued || !open.settings) return;
+    settingsRepaintQueued = true;
+    setTimeout(() => { settingsRepaintQueued = false; if (open.settings) rerender('settings'); }, SETTINGS_REPAINT_COALESCE_MS);
+  }
+
   // the REAL connected providers: OpenRouter from the BYOK store, Codex from sidecar OAuth status.
   // They are additive, so signing into ChatGPT must not occupy the OpenRouter key slot.
   function refreshCodexConnectionStatus() {
@@ -2758,9 +3019,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // carry the WHOLE truth shape: `connected` alone can't distinguish "never signed in" from the
         // consumed-refresh-token death (`expired` + `reason`) — the row must render those differently.
         const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
-        const prev = codexStatusKnown;
+        // Compare the RENDERED truth, not the raw cache: before the first answer these read through a fallback
+        // (getProv()==='codex'), so `prev === null` is not by itself a change — it used to force a rebuild on
+        // every cold open even when the row ended up drawing exactly the same thing.
+        const wasConnected = codexConnected(), wasExpired = codexExpired();
         codexStatusKnown = next;
-        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+        if (codexConnected() !== wasConnected || codexExpired() !== wasExpired) scheduleSettingsRepaint();
       })
       .catch(() => {})
       .finally(() => { codexConnectionChecking = false; });
@@ -2793,9 +3057,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // carry the WHOLE truth shape (connected + expired + reason), exactly like codex — a lone bool can't
         // distinguish "never signed in" from the dead-refresh-token death the row must render differently.
         const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
-        const prev = oauthStatus[pid];
+        // Same rule as codex above: compare what the row will actually DRAW, so a cold "not connected" answer
+        // that matches the fallback does not force a full pane rebuild (and its fan-out) for nothing.
+        const wasConnected = oauthProvConnected(pid), wasExpired = oauthProvExpired(pid);
         oauthStatus[pid] = next;
-        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+        if (oauthProvConnected(pid) !== wasConnected || oauthProvExpired(pid) !== wasExpired) scheduleSettingsRepaint();
       })
       .catch(() => {})
       .finally(() => { oauthChecking[pid] = false; });
@@ -2847,8 +3113,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .catch(() => { providerHealth[provider] = null; })
       .finally(() => {
         delete providerProbePending[provider];
-        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop.
-        if (open.settings) rerender('settings');
+        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop,
+        // and the coalescer folds several providers' probes finishing together into a single rebuild.
+        scheduleSettingsRepaint();
       });
   }
   function queueProviderHealthRefresh() {
@@ -3115,6 +3382,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // editable base URL. Onboarding is the only other place Harness.setBaseUrl is called; without this control the
       // endpoint was frozen at whatever onboarding stored. Only the 'custom' provider uses a base URL, so gate on it.
       const isCustomEp = k.provider === 'custom';
+      const poolCount = H() && H().keyPoolSize ? H().keyPoolSize(k.provider) : 0;
       const baseBtn = isCustomEp
         ? '<button class="bb sm" data-act="baseurl-edit" data-i="' + i + '" title="change this station link / endpoint URL without re-onboarding">✎ STATION LINK</button>'
         : '';
@@ -3135,12 +3403,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div>' +
         '<div class="key-acts">' +
         '<button class="bb sm" data-act="edit" data-i="' + i + '">✎ UPDATE</button>' +
+        '<button class="bb sm" data-act="pool-edit" data-i="' + i + '">↻ BACKUPS' + (poolCount ? ' (' + poolCount + ')' : '') + '</button>' +
         baseBtn +
         '<button class="bb sm danger" data-act="rm" data-i="' + i + '">✕ REMOVE</button>' +
         '</div></div>' +
         '<div class="key-edit" id="key-edit-' + i + '" hidden>' +
         '<input type="password" class="key-input" id="key-in-' + i + '" placeholder="paste new ' + esc(provName(k.provider)) + ' key…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="save" data-i="' + i + '">SAVE</button>' +
+        '</div>' +
+        '<div class="key-edit" id="pool-edit-' + i + '" hidden>' +
+        '<input type="password" class="key-input" id="pool-in-' + i + '" placeholder="paste backup keys, separated by commas…" autocomplete="off" spellcheck="false">' +
+        '<button class="bb sm" data-act="pool-save" data-i="' + i + '">REPLACE POOL</button>' +
+        '<button class="bb sm danger" data-act="pool-clear" data-i="' + i + '">CLEAR POOL</button>' +
+        '<span class="dim">up to 8 · scoped only to ' + esc(provName(k.provider)) + ' · existing backups stay active until this save succeeds</span>' +
         '</div>' +
         baseBlock;
     });
@@ -3169,9 +3444,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
             onCode: c => {
               if (code) { code.textContent = c.user_code; code.hidden = false; }
+              // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — see codexsignin.js.
               if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-              if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
-              openExternal(c.verification_uri);
+              if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+              openExternal(c.open_uri || c.verification_uri);
             },
             onConnected: () => {
               // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -3219,9 +3495,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
               onCode: c => {
                 if (code) { code.textContent = c.user_code; code.hidden = false; }
+                // DISPLAY the bare address, OPEN the code-carrying one — kimi's page REQUIRES ?user_code=.
                 if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
-                openExternal(c.verification_uri);
+                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+                openExternal(c.open_uri || c.verification_uri);
               },
               onConnected: () => {
                 // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -3259,14 +3536,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           // success UI waits for the PROVEN store: on desktop setKey resolves only after the keychain write lands
           // (browser localStorage resolves immediately). The old fire-and-forget toasted "✓ stored in your OS
           // keychain" over a rejected write — a keyless station that claimed connected with no re-entry hint.
-          Promise.resolve(h.setKey ? h.setKey(v, provider) : null).then(() => {
+          Promise.resolve(h.validateAndSetKey ? h.validateAndSetKey(v, provider) : h.setKey(v, provider)).then(() => {
             invalidateProviderHealth(provider);
             notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
             if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
             rerender('settings');
-          }).catch(() => {
-            notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+          }).catch(err => {
+            notify('✕ ' + ((err && err.message) || ('could not verify and store the ' + provName(provider) + ' key')), 'bad');
             sfx('bad');
             rerender('settings');
           });
@@ -3277,6 +3554,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (act === 'edit') {
           const ed = body.querySelector('#key-edit-' + i);
           if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#key-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'pool-edit') {
+          const ed = body.querySelector('#pool-edit-' + i);
+          if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#pool-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'pool-save' || act === 'pool-clear') {
+          const inp = body.querySelector('#pool-in-' + i);
+          const keys = act === 'pool-clear' ? [] : String((inp && inp.value) || '').split(/[\n,;]+/).map(v => v.trim()).filter(Boolean);
+          if (act === 'pool-save' && !keys.length) { notify('paste at least one backup key, or use CLEAR POOL', 'bad'); sfx('bad'); return; }
+          Promise.resolve(h.validateAndSetKeyPool ? h.validateAndSetKeyPool(keys, row.provider) : h.setKeyPool(keys, row.provider)).then(count => {
+            notify(count ? ('✓ ' + count + ' verified backup key' + (count === 1 ? '' : 's') + ' active only for ' + provName(row.provider)) : ('cleared backup keys for ' + provName(row.provider)), count ? 'good' : 'warn');
+            rerender('settings');
+          }).catch(err => { notify('✕ ' + ((err && err.message) || 'could not update backup keys'), 'bad'); sfx('bad'); });
         } else if (act === 'baseurl-edit') {
           const ed = body.querySelector('#base-edit-' + i);
           if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#base-in-' + i); if (inp) inp.focus(); } }
@@ -3310,14 +3598,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           // same proven-store contract as the add path: no success toast over a rejected keychain write.
-          Promise.resolve(h.setKey ? h.setKey(v, row.provider) : null).then(() => {
+          Promise.resolve(h.validateAndSetKey ? h.validateAndSetKey(v, row.provider) : h.setKey(v, row.provider)).then(() => {
             invalidateProviderHealth(row.provider);
             notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
             if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
             rerender('settings');
-          }).catch(() => {
-            notify('✕ could not store the ' + provName(row.provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+          }).catch(err => {
+            notify('✕ ' + ((err && err.message) || ('could not verify and store the ' + provName(row.provider) + ' key')), 'bad');
             sfx('bad');
             rerender('settings');
           });
@@ -3361,15 +3649,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
       if (!h || !h.setKey) { sfx('bad'); return; }
       // same proven-store contract as the key-list paths: success UI only after setKey resolves.
-      Promise.resolve(h.setKey(v, provider)).then(() => {
+      Promise.resolve(h.validateAndSetKey ? h.validateAndSetKey(v, provider) : h.setKey(v, provider)).then(() => {
         invalidateProviderHealth(provider);
         notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
         if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
         if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
         sfx('click');
         rerender('settings');
-      }).catch(() => {
-        notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+      }).catch(err => {
+        notify('✕ ' + ((err && err.message) || ('could not verify and store the ' + provName(provider) + ' key')), 'bad');
         sfx('bad');
         rerender('settings');
       });
@@ -3429,9 +3717,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit ⏼ SIGN IN to start again'; },
           onCode: c => {
             if (code) { code.textContent = c.user_code; code.hidden = false; }
+            // DISPLAY the bare address, OPEN the code-carrying one — kimi's page REQUIRES ?user_code=.
             if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.verification_uri); }; }
-            openExternal(c.verification_uri);
+            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+            openExternal(c.open_uri || c.verification_uri);
           },
           onConnected: () => {
             // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -3861,6 +4150,24 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   // MODELS panel (P0-3) — the ordered FALLBACK CHAIN the loop walks when the primary model fails mid-run.
   // Server-persisted (/api/fallback/chain) + applied live; env SKYNET_FALLBACK_MODELS stays the default until
+  /* ONE catalog fetch, shared. The fallback-chain picker and the class-tier picker both want the same
+     OpenRouter model list, and each used to GET /api/models/openrouter itself on EVERY settings build — so a
+     pane that rebuilt three times fetched the catalog six times, and the sidecar may proxy that to a LIVE
+     upstream call. Memoize the in-flight/last promise for a short window; a picker list going a few minutes
+     stale is invisible, a burst of duplicate catalog fetches is not. Failures are not cached (the next open
+     retries), so an offline sidecar never poisons the picker for the session. */
+  const MODEL_CATALOG_TTL_MS = 5 * 60 * 1000;
+  let modelCatalogAt = 0, modelCatalogPromise = null;
+  function openRouterCatalog() {
+    const now = Date.now();
+    if (modelCatalogPromise && (now - modelCatalogAt) < MODEL_CATALOG_TTL_MS) return modelCatalogPromise;
+    modelCatalogAt = now;
+    modelCatalogPromise = Harness.api.get('/api/models/openrouter')
+      .then(j => (j && Array.isArray(j.models)) ? j.models : [])
+      .catch(e => { modelCatalogPromise = null; throw e; });   // never cache a failure
+    return modelCatalogPromise;
+  }
+
   // saved. Editing is local (add from catalog / remove / reorder) until SAVE posts the whole ordered list.
   function wireFallbackChain(body) {
     const form = body.querySelector('#fbc-form');
@@ -3912,10 +4219,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });   // never paint an error body as an empty chain
     // catalog for the ADD picker — the same warmed OpenRouter catalog the model dock uses. Best-effort: an empty
     // catalog just leaves the picker with its placeholder (the chain itself still paints + saves fine).
-    Harness.api.get('/api/models/openrouter').then(j => {
-      if (!addSel || !j || !Array.isArray(j.models)) return;
+    openRouterCatalog().then(models => {
+      if (!addSel || !Array.isArray(models)) return;
       const frag = document.createDocumentFragment();
-      j.models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
+      models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
         if (!m || !m.id) return;
         const o = document.createElement('option');
         o.value = m.id; o.textContent = (m.name && m.name !== m.id) ? (m.name + '  ·  ' + m.id) : m.id;
@@ -3974,9 +4281,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
     paint();
     // fill the model catalog into all three selects (same warmed catalog the fallback picker uses).
-    Harness.api.get('/api/models/openrouter').then(j => {
-      if (!j || !Array.isArray(j.models)) return;
-      const opts = j.models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    openRouterCatalog().then(models => {
+      if (!Array.isArray(models)) return;
+      const opts = models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
       TM_TIERS.forEach(tier => {
         const sel = selOf(tier); if (!sel) return;
         const frag = document.createDocumentFragment();
@@ -4281,6 +4588,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
       '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
       '<p class="set-about" id="perm-desc"></p>' +
+      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
@@ -4346,6 +4654,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div>' +
       '<div id="tm-msg" class="msg"></div>';
     const customSw = deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph'];   // swatch tint for the CUSTOM chip
+    /* LIVE VOICE — which of the provider's voices speaks in hands-free mode. This lived only in a console
+       call, which is not a setting. The list is fetched from the sidecar (status().voices) rather than
+       hardcoded here, so it can never drift from what the provider actually offers. */
+    const secLiveVoice =
+      '<h4 class="ms-h">SPOKEN VOICE</h4>' +
+      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Built in and keyless &mdash; the same on every provider. A change applies to the next thing spoken.</p>' +
+      '<div class="set-themes" id="set-lv-voices"><span class="dim">reading the provider’s voice list…</span></div>';
+
     const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" aria-pressed="' + (s.theme === t ? 'true' : 'false') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
@@ -4361,10 +4677,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // THE BACKDROP — what the station floats in. Swatches are painted by the REAL backdrop
       // renderer below (SpaceBG.paintSample), never by a stand-in gradient, so a preview can
       // not promise a sky the station won't deliver — the same law the deck/wall swatches follow.
-      '<h4 class="ms-h">BACKDROP <span class="dim">— where the station is parked</span></h4>' +
-      '<p class="set-about">The station holds position somewhere. Change where. Each one is drawn live, not a picture — so the swatch is exactly what you get.</p>' +
+      '<h4 class="ms-h">BACKDROP <span class="dim">— where the station is</span></h4>' +
+      '<p class="set-about">The station is somewhere. Change where — in orbit, over open country, or landed on it. Each one is drawn live, not a picture, so the swatch is exactly what you get.</p>' +
       '<div class="set-backdrops" id="set-backdrop">' +
-      (typeof SpaceBG === 'undefined' ? '' : SpaceBG.list().map(b => {
+      (typeof SpaceBG === 'undefined' ? '' : []
+        .concat(SpaceBG.list())
+        .concat(typeof Terrain === 'undefined' || !Terrain.list ? [] : Terrain.list())
+        .map(b => {
         const on = (s.backdrop || 'void') === b.id;
         return '<button class="set-bd' + (on ? ' sel' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" data-bd="' + esc(b.id) + '" title="' + esc(b.blurb) + '">' +
           '<canvas class="set-bd-cv" width="112" height="63" aria-hidden="true"></canvas>' +
@@ -4452,6 +4771,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
 
     const frag = html => (el => { el.innerHTML = html; });  // curried: fill a pane element with a fragment
+    function wireLiveVoice(host) {
+      const wrap = host && host.querySelector ? host.querySelector('#set-lv-voices') : null;
+      if (!wrap) return;
+      const paint = (list, chosen) => {
+        if (!list.length) { wrap.innerHTML = '<span class="dim">the speech engine has not reported its voices yet</span>'; return; }
+        const group = sex => list.filter(v => v.sex === sex);
+        const row = v => '<button class="set-theme ' + (v.id === chosen ? 'sel' : '') + '" aria-pressed="' +
+          (v.id === chosen ? 'true' : 'false') + '" data-lv-voice="' + v.id + '" title="' + v.accent + ' ' + v.sex + '">' + v.label + '</button>';
+        wrap.innerHTML =
+          '<div class="dim" style="width:100%">MALE</div>' + group('male').map(row).join('') +
+          '<div class="dim" style="width:100%;margin-top:6px">FEMALE</div>' + group('female').map(row).join('');
+        wrap.querySelectorAll('[data-lv-voice]').forEach(btn => {
+          btn.onclick = () => {
+            const want = btn.getAttribute('data-lv-voice');
+            if (typeof VoiceLive !== 'undefined' && VoiceLive.setVoice) VoiceLive.setVoice(want);
+            wrap.querySelectorAll('[data-lv-voice]').forEach(b => {
+              const on = b === btn;
+              b.classList.toggle('sel', on);
+              b.setAttribute('aria-pressed', String(on));
+            });
+            try { SFX.click(); } catch (_) {}
+          };
+        });
+      };
+      if (typeof VoiceLive !== 'undefined' && VoiceLive.voices) {
+        VoiceLive.voices()
+          .then(v => paint(v.available || [], v.current || ''))
+          .catch(() => { wrap.innerHTML = '<span class="dim">voice list unavailable</span>'; });
+      } else {
+        wrap.innerHTML = '<span class="dim">live voice is not loaded on this page</span>';
+      }
+    }
+
     const sections = [
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
@@ -4459,6 +4811,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
+      // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
+      // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
+      { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
       { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
       { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
@@ -4546,8 +4901,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       bdChips.forEach(b => {
         const cv = b.querySelector('canvas');
         if (!cv) return;
-        try { SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000); }
-        catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
+        // route each swatch to the layer that actually owns that id — a ground painted by the
+        // sky renderer would just be a black chip, and vice versa.
+        const isGround = typeof Terrain !== 'undefined' && Terrain.GROUNDS && Terrain.GROUNDS[b.dataset.bd];
+        try {
+          if (isGround) Terrain.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd);
+          else SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000);
+        } catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
       });
       const syncBackdrop = () => bdChips.forEach(x => {
         const on = x.dataset.bd === (s.backdrop || 'void');
@@ -4555,9 +4915,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         x.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
       bdChips.forEach(b => b.addEventListener('click', () => {
-        // trust SpaceBG's resolution rather than the button: it is the thing that decides what
-        // actually renders, so the saved value can never drift from what is on screen.
-        s.backdrop = SpaceBG.setBackdrop(b.dataset.bd);
+        // Offer the id to BOTH layers and save whichever one claimed it. Terrain answers with the
+        // ground id or null; SpaceBG resolves to a sky. Trusting the layers rather than the button
+        // is what keeps the saved value from ever drifting out of step with what is on screen.
+        const asGround = (typeof Terrain !== 'undefined' && Terrain.setGround) ? Terrain.setGround(b.dataset.bd) : null;
+        const asSky = SpaceBG.setBackdrop(b.dataset.bd);
+        s.backdrop = asGround || asSky;
         save(); sfx('click');
         syncBackdrop();
         flashSaved(appMsg());
@@ -4983,7 +5346,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // (permissionsstore). Grants live server-side, so paint from cache now, refresh from the sidecar, repaint. A
     // level click sets BOTH posture + the write grant (so it repaints the dial); the dial syncs back via syncPerm.
     if (typeof PermissionsStore !== 'undefined' && PermissionsStore.snapshot) {
-      const levelWrap = host.querySelector('#perm-level'), grantsWrap = host.querySelector('#perm-grants'), permDesc = host.querySelector('#perm-desc');
+      const levelWrap = host.querySelector('#perm-level'), grantsWrap = host.querySelector('#perm-grants'),
+            permDesc = host.querySelector('#perm-desc'), permStatus = host.querySelector('#perm-status');
       const pdesc = (lvl) => (typeof Permissions !== 'undefined' && Permissions.describeLevel) ? Permissions.describeLevel(lvl) : '';
       const plabel = (k) => (typeof Permissions !== 'undefined' && Permissions.catalogLabel) ? Permissions.catalogLabel(k) : k;
       const pcurated = () => (typeof Permissions !== 'undefined' && Permissions.grantableKeys) ? Permissions.grantableKeys() : [];
@@ -5013,6 +5377,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         : 'No standing approvals yet — when you answer ALWAYS to a permission prompt, it appears here.';
       const renderGrants = (snap) => {
         const curated = pcurated(); const caps = heroCapsNow(); const rows = [];
+        /* THE MID-RUN "FULL ACCESS" WILDCARD. One click on a consent card wrote a per-agent '*' that short-circuits
+           EVERY danger class, and this ledger — whose header promises "every capability it may use unattended …
+           and a REVOKE for each" — listed nothing, because consent.snapshot() only ever returned
+           { permanent, session }. Nothing in the app could withdraw it either; only restarting the sidecar did.
+           It rides at the TOP because it outranks every row below it. */
+        const blanket = Array.isArray(snap.blanket) ? snap.blanket : [];
+        blanket.forEach(b => {
+          rows.push('<div class="set-row"><span>⚠ <b>FULL ACCESS</b> — you clicked "Full access" on a permission card for ' +
+            esc(String(b.agentId || 'this agent')) + ', so its watched sessions may reuse allowed danger-class approvals without asking again; host hardlines still apply' +
+            (b.scope ? ' <span class="dim">(' + esc(String(b.scope)) + ')</span>' : '') +
+            '</span> <button class="bb sm danger" data-perm-revoke="' + esc(String(b.key)) + '">✕ REVOKE</button></div>');
+        });
         // THE LEDGER (P0-5) — every capability ACTUALLY blessed right now: what, WHEN, and a per-row REVOKE. A held
         // CURATED cap shows its friendly label + object-effect hint; a NON-curated class (blessed via a past "always"
         // prompt) shows its raw danger key — so nothing the agent can do unattended is ever hidden or irrevocable.
@@ -5032,10 +5408,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             rows.push('<div class="set-row"><span>✓ ' + esc(plabel(k)) + (hint ? ' <span class="dim">— ' + esc(hint) + '</span>' : '') + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span>' + earnedTxt + '</span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
           });
           held.filter(k => curated.indexOf(k) < 0).forEach(k => {
-            rows.push('<div class="set-row"><span class="dim">' + esc(k) + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
+            // A raw danger key (`path:C:\…`, `mcp:<id>`) is truthful but asks the reader to know the grammar on
+            // the one surface whose job is to make a standing permission revocable ON SIGHT. Show the plain
+            // meaning AND the exact key — never one without the other.
+            const r = (typeof Permissions !== 'undefined' && Permissions.grantRow) ? Permissions.grantRow(k) : { title: k, detail: '', note: '' };
+            const head = r.detail ? (esc(r.title) + ' <span class="dim">' + esc(r.detail) + '</span>') : esc(r.title);
+            rows.push('<div class="set-row"><span>' + head +
+              (r.note ? ' <span class="dim">— ' + esc(r.note) + '</span>' : '') +
+              ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span>' +
+              ' <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
           });
-        } else {
-          // teaching empty state (P0-5): explains how a row lands here instead of looking broken.
+        } else if (!blanket.length) {
+          // teaching empty state (P0-5): explains how a row lands here instead of looking broken. Suppressed when a
+          // FULL ACCESS wildcard is standing — "no standing approvals" over the broadest grant in the product
+          // would be the exact lie this ledger exists to prevent.
           rows.push('<p class="set-about">' + esc(pempty()) + '</p>');
         }
         // BELOW the ledger: the curated capabilities NOT yet granted — an explicit "pre-bless this" offer (GRANT).
@@ -5064,7 +5450,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const snap = PermissionsStore.snapshot();
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
-        if (grantsWrap) { grantsWrap.innerHTML = renderGrants(snap); wireGrants(); }
+        if (permStatus) {
+          if (snap.error) permStatus.textContent = '⚠ ' + snap.error + (snap.loaded ? ' — showing the last confirmed approvals; changes were not applied.' : ' — standing approvals could not be verified; no changes are available.');
+          else permStatus.textContent = snap.loaded ? '' : 'checking standing approvals…';
+        }
+        if (grantsWrap) {
+          grantsWrap.innerHTML = snap.loaded ? renderGrants(snap) : '<p class="set-about">Standing approvals are unavailable until the local permission service confirms them.</p>';
+          if (snap.loaded) wireGrants();
+        }
       };
       syncPerm = repaintPerm;
       if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.setLevel(b.dataset.level)).then(() => { repaintPerm(); repaintDial(); }); sfx('click'); }));
@@ -5118,7 +5511,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (open.notifs) rerender('notifs');
     toast(String(text || ''), cls || '', pref.sound, opts);
   }
-  // transient on-screen toast — slides in, auto-dismisses with a fade-out, stacks cleanly.
+  // A caller that leads with an ALL-CAPS token + colon ("MODEL: gpt / high") is naming a READOUT,
+  // not writing a sentence — that prefix becomes the card's engraved label and the rest becomes the
+  // value, the same dim-label-over-bright-value grammar the bench widgets use. Deliberately strict:
+  // the whole prefix must be caps/digits/separators and short, so ordinary prose ("Keep Computer Awake
+  // failed: …", "could not reach the station") never gets chopped. No match = one plain message line.
+  const TOAST_LABEL_RE = /^([A-Z][A-Z0-9 ·/&+._-]{0,17}):[  ]+(\S.*)$/;
+  function splitToastLabel(text) {
+    const m = TOAST_LABEL_RE.exec(String(text || ''));
+    return m ? { label: m[1].trim(), body: m[2].trim() } : { label: '', body: String(text || '') };
+  }
+  // transient on-screen toast — a station readout card that seats in, holds for its dwell, then leaves.
   // The persistent record still lives in the NOTIFICATIONS panel (buildNotifs); this is the
   // ephemeral heads-up so a result isn't silent when that panel is closed.
   function toast(text, cls, playSound, opts) {
@@ -5131,11 +5534,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const sev = severityOf(cls);
     // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
     // sev-* class so 'error'/'info' also get an edge + the lead glyph.
-    const t = mkEl('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev);
-    // message text rides its own span so the ASCII decode below can target JUST the message —
-    // the severity glyph and timestamp stay stable (a scrambling clock would read as broken).
-    t.innerHTML = '<span class="toast-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
-      '<span class="toast-ts">' + clock(Date.now()) + '</span><span class="toast-txt">' + esc(text) + '</span>';
+    // errors linger a touch longer so a failure isn't gone before it's read; an ACTIONABLE toast
+    // (opts.onClick — e.g. a background consent that must be answered) lingers longer still.
+    const hasAction = !!(opts && typeof opts.onClick === 'function');
+    const dwell = hasAction ? 10000 : sev === 'bad' ? 6500 : 4200;
+    const cut = splitToastLabel(text);
+    const t = mkEl('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev + (cut.label ? ' labeled' : ''));
+    // The dwell rail drains over exactly `dwell` — the card SHOWS how long it has left rather than
+    // vanishing without warning; --dwell is read by the CSS animation so the two can never disagree.
+    t.style.setProperty('--dwell', dwell + 'ms');
+    // message text rides its own node so the ASCII decode below can target JUST the message —
+    // the severity lamp, label and stamp stay stable (a scrambling clock would read as broken).
+    t.innerHTML =
+      '<i class="toast-lamp" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</i>' +
+      '<div class="toast-body">' +
+        (cut.label ? '<span class="toast-kind">' + esc(cut.label) + '</span>' : '') +
+        '<div class="toast-txt">' + esc(cut.body) + '</div>' +
+      '</div>' +
+      '<span class="toast-ts">' + clock(Date.now()) + '</span>' +
+      '<span class="toast-dwell" aria-hidden="true"></span>';
     stack.appendChild(t);
     // ASCII-motion (asciifx.js): the toast message DECODES out of glyph-static as it slides in — the same
     // signal-resolving language as the window titles. Short (toasts are frequent); reduced-motion no-op.
@@ -5149,10 +5566,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       t.addEventListener('animationend', gone, { once: true });
       setTimeout(gone, 360);
     };
-    // errors linger a touch longer so a failure isn't gone before it's read; an ACTIONABLE toast
-    // (opts.onClick — e.g. a background consent that must be answered) lingers longer still.
-    const hasAction = !!(opts && typeof opts.onClick === 'function');
-    setTimeout(kill, hasAction ? 10000 : sev === 'bad' ? 6500 : 4200);
+    setTimeout(kill, dwell);
     if (hasAction) {
       t.classList.add('actionable');
       t.style.cursor = 'pointer';

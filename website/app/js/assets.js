@@ -70,6 +70,64 @@ const SPRITES = (() => {
       return DEFAULT_FOOT;
     } catch (e) { return DEFAULT_FOOT; }   // tainted/unreadable → safe fallback
   }
+  /* ---------- how far one walk CYCLE carries the body ----------
+     The walk is distance-phased, so this number decides whether the feet plant or skate: if the
+     body covers more ground per cycle than the animation's legs actually swing, every foot slides.
+     It used to be `drawnHeight × 0.56` for everyone, which assumes every character's legs swing the
+     same fraction of its height. They don't — measured across the roster the true figure lands
+     between 0.58 and 1.0 of that, so most skins were over-striding by about a third.
+     Derive it per set instead, from the set's OWN side view: at full extension the span across the
+     foot band is one step (leading foot to trailing foot), and a cycle is two steps. Side views
+     only — front and back foreshorten the swing to nothing.
+     Sets whose feet never separate (pikachu, capybara — wide-stance animals whose walk is a bob,
+     not a stride) have no step length to read, so they keep the old constant rather than being
+     handed a fabricated one. */
+  const CYCLE_PER_HEIGHT = 0.56;   // fallback when a set's swing can't be measured
+  const cycleCache = {};
+  function bandGap(img, lo) {
+    try {
+      const w = img.width | 0, h = img.height | 0;
+      if (!w || !h) return null;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, w, h).data;
+      let top = -1, bot = -1, minX = w, maxX = -1;
+      for (let y = 0; y < h; y++) {
+        for (let px = 0; px < w; px++) {
+          if (d[(y * w + px) * 4 + 3] > 16) { if (top < 0) top = y; bot = y; break; }
+        }
+      }
+      if (top < 0) return null;
+      const band = Math.floor(bot - (bot - top) * (lo || 0.16));
+      for (let y = band; y <= bot; y++) {
+        for (let px = 0; px < w; px++) {
+          if (d[(y * w + px) * 4 + 3] > 16) { if (px < minX) minX = px; if (px > maxX) maxX = px; }
+        }
+      }
+      return maxX < minX ? null : (maxX - minX + 1);
+    } catch (e) { return null; }   // tainted/unreadable → caller falls back
+  }
+  function cycleUnitsFor(set, sc, frameH) {
+    if (cycleCache[set] != null) return cycleCache[set];
+    const fallback = frameH * sc * CYCLE_PER_HEIGHT;
+    const side = frames[set + '.walk.east'] || frames[set + '.walk.west'];
+    const idleFr = frames[set + '.rot.east'] || frames[set + '.rot.west'];
+    let out = fallback;
+    if (side && side.length && idleFr && idleFr[0]) {
+      const idle = bandGap(idleFr[0]);
+      let widest = 0;
+      for (const f of side) { const g = bandGap(f); if (g && g > widest) widest = g; }
+      // a real stride has to open the feet WIDER than standing; below that there is no swing to read
+      if (idle && widest && widest - idle >= 3) {
+        const measured = 2 * widest * sc;
+        // never trust the measurement past a sane window — a stray pixel must not halve the gait
+        out = Math.max(fallback * 0.5, Math.min(fallback, measured));
+      }
+    }
+    return (cycleCache[set] = out);
+  }
+
   function getFootPad(set) {
     if (footPad[set] != null) return footPad[set];
     let ref = null;
@@ -101,6 +159,53 @@ const SPRITES = (() => {
     return tinted[ck];
   }
 
+  /* ---------- the contact shadow ----------
+     A body used to stand on a 2px black bar: a sticker, not a shadow. It read as a little line
+     under the feet and gave the crew no weight on the deck. This paints a real pooled shadow.
+
+       shape   a foreshortened ellipse at the station's floor ratio (ry ~ 0.42*rx) — the SAME
+               ratio world.js already uses for its ground cues (wake ripple, listening pulse,
+               work ring), so every circle that claims to lie on the deck agrees.
+       falloff nested ellipses penumbra->umbra instead of one flat blob. The alphas compound
+               (1 - PI(1-a)) to ~0.43 at the contact core and 0.09 at the rim — a soft edge for
+               no per-frame gradient object, which matters at ~10 bodies x 60fps. The core sits
+               deliberately ABOVE propsprites' shadow2 (~0.34): that is a prop's edge contact,
+               while this is a whole body standing on the deck, and the deck it has to read
+               against is DARK — measured at 26/255 luma under the hero. At 0.34 the pool took
+               6 luma off it (23%); a body needs to look planted, not stickered. Do not tune
+               these by eye — `node dev/shadowprobe.mjs` measures the pool on the real deck.
+       bias    nudged SOUTH-EAST. The station's key light is high and north-west; that is the
+               light every prop already assumes (west-biased sheen, north-lit top faces).
+       life    `lift` is how far the idle/talk bob has raised the body off the deck. The pool
+               shrinks and fades with it, so a breathing body's shadow breathes too and a body
+               that rises never drags a full-weight pool up with it.
+       seated  a seated body's feet are on a cushion, not the deck — callers hand it a tighter,
+               fainter pool rather than claim a full contact it doesn't have.
+
+     Alpha is applied RELATIVE to the incoming ctx.globalAlpha and restored afterwards, so the
+     hero's color-into-being fade-up (drawAgent's bornA) survives the shadow pass — the old code
+     slammed globalAlpha back to 1 here and silently cancelled that fade for the sprite too. */
+  const SHADOW_RINGS = [[1, 0.09], [0.80, 0.12], [0.58, 0.14], [0.34, 0.17]];
+  const SHADOW_SQUASH = 0.42;        // floor foreshortening; matches world.js's ground ellipses
+  function groundShadow(ctx, cx, cy, rx, opts) {
+    const o = opts || {};
+    const lift = Math.max(0, o.lift || 0);              // px the body has risen off the deck
+    const k = 1 - Math.min(0.5, lift * 0.14);           // lifted => smaller AND fainter
+    const spread = rx * k * (o.spread || 1);
+    if (!(spread > 0.5)) return;
+    const a0 = ctx.globalAlpha;
+    const fade = k * (o.alpha != null ? o.alpha : 1);
+    const dx = spread * 0.10, dy = spread * 0.04;       // south-east, under the high north-west key
+    ctx.fillStyle = o.color || '#000';
+    for (const r of SHADOW_RINGS) {
+      ctx.globalAlpha = a0 * r[1] * fade;
+      ctx.beginPath();
+      ctx.ellipse(cx + dx, cy + dy, spread * r[0], spread * r[0] * SHADOW_SQUASH, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = a0;
+  }
+
   /* pick best available animation key for a body state */
   function pick(set, names, dir) {
     for (const n of names) {
@@ -117,6 +222,75 @@ const SPRITES = (() => {
     return frames[set + '.rot.south'] ? set + '.rot.south' : null;
   }
 
+  /* ---------- 8-direction render facing ----------
+     world.js keeps game-logic facing 4-valued (`b.dir`) — glance/sit/OPP/social all speak that
+     vocabulary and must keep doing so. Smooth turning is a RENDER concern, so it lives here:
+     each body carries a render-side facing angle that slews toward what the game wants (the
+     continuous walk heading `b.faceA` while walking, the bucketed `dir` otherwise) at the SAME
+     rate stepGait turns a walking body, then buckets into EIGHT sectors with hysteresis. A body
+     turning 180° therefore walks its pose through the diagonal in ~2 steps instead of teleporting
+     it, and a body that stops on a diagonal eases to its cardinal instead of popping.
+     Sets that don't ship diagonal frames are untouched: pick8 falls straight back to the old
+     4-dir pick on `b.dir`, so this is a no-op for every skin until its diagonals exist. */
+  const DIR8_A = {
+    east: 0, 'south-east': Math.PI / 4, south: Math.PI / 2, 'south-west': 3 * Math.PI / 4,
+    west: Math.PI, 'north-west': -3 * Math.PI / 4, north: -Math.PI / 2, 'north-east': -Math.PI / 4
+  };
+  /* A turn has WEIGHT. The first pass slewed the facing at a flat rate, which is exactly a
+     turntable: the pose rotated at constant angular speed and the body appeared to slide around
+     its own axis ("it just perfectly spins" — Andrew, 2026-08-01). Two things fix that, and
+     neither needs new art:
+       1. the facing ACCELERATES and BRAKES. `_rW` is angular velocity, ramped by TURN_ACCEL and
+          capped by the sqrt term so it arrives at the target with zero speed instead of stopping
+          dead. Same shape as the linear speed easing stepGait already does.
+       2. the feet keep the score. `_turnAng` accumulates radians actually swept, and drawBody
+          spends it on WALK frames, so a pivoting body steps its legs around instead of holding a
+          frozen idle pose while the sprite rotates underneath it. */
+  const TURN_MAX = 9;            // rad/s ceiling — below the old flat 12 so the turn is legible
+  const TURN_ACCEL = 55;         // rad/s²: spins up in ~160ms and brakes into the target
+  const TURN_STEP_W = 1.2;       // rad/s a standing body must exceed before its feet shuffle
+  const TURN_STEP_FRAMES = 4 / Math.PI;   // walk frames per radian swept ≈ 2 frames per 90° pivot
+  const DIR8_HYST = 0.10;        // rad a sector holds past its boundary (sectors are π/8 half-width)
+  const ang = a => Math.atan2(Math.sin(a), Math.cos(a));
+  function renderDir8(b, dir, glancing, nowMs) {
+    // while walking (and not glancing) follow the true continuous heading; otherwise the game dir
+    const want = (!glancing && b.state === 'walk' && b.faceA != null) ? ang(b.faceA) : DIR8_A[dir];
+    if (want == null) return dir;
+    const dt = Math.max(0, Math.min(100, nowMs - (b._rAt || 0)));   // clamp: first frame / tab-restore must not spin
+    b._rAt = nowMs;
+    if (b._rA == null) { b._rA = want; b._rW = 0; b._turnAng = 0; }  // new body: snap, no tween
+    else {
+      const turn = ang(want - b._rA), remain = Math.abs(turn);
+      const s = dt / 1000;
+      // brake so the facing ARRIVES at rest: v = sqrt(2·a·s) is the fastest it can still stop in time
+      const target = Math.min(TURN_MAX, Math.sqrt(2 * TURN_ACCEL * remain));
+      const cur = b._rW || 0;
+      b._rW = cur < target ? Math.min(target, cur + TURN_ACCEL * s)
+                           : Math.max(target, cur - TURN_ACCEL * s);
+      const swept = Math.min(remain, b._rW * s);
+      b._rA = ang(b._rA + Math.sign(turn) * swept);
+      b._turnAng = (b._turnAng || 0) + swept;
+    }
+    const cur = b._rD8;
+    if (cur && DIR8_A[cur] != null && Math.abs(ang(b._rA - DIR8_A[cur])) < Math.PI / 8 + DIR8_HYST) return cur;
+    let best = dir, bd = Infinity;
+    for (const d in DIR8_A) {
+      const t = Math.abs(ang(b._rA - DIR8_A[d]));
+      if (t < bd) { bd = t; best = d; }
+    }
+    return (b._rD8 = best);
+  }
+  /* prefer the 8-bucket direction when the set ships it, else the exact old 4-dir path */
+  function pick8(set, names, dir8, dir) {
+    if (dir8 !== dir) {
+      for (const n of names) {
+        const k = set + '.' + n + '.' + dir8;
+        if (frames[k]) return k;
+      }
+    }
+    return pick(set, names, dir);
+  }
+
   /* main draw: foot-anchored at (x, y) */
   function drawBody(ctx, b, nowMs) {
     const set = b.id === 'ULTRON' ? 'ultron'
@@ -128,12 +302,15 @@ const SPRITES = (() => {
     // PHASES[] index for the mood engine), and a whole-frame offset ticks every body's cycle on the same
     // 100ms boundaries — the crew animated in lockstep. Bodies without `aph` (dossier portrait) fall back.
     const aph = (b.aph != null ? b.aph : (b.phase || 0));
-    let key = null, fps = 8, bob = 0;
+    // 8-sector render facing — only locomotion + standing poses use it; seated/desk states keep
+    // the plain 4-dir vocabulary (their frames are cardinal-only and their facing is furniture-set)
+    const dir8 = renderDir8(b, dir, glancing, nowMs);
+    let key = null, fps = 8, bob = 0, turnStep = false;
 
     if (meeting) {
-      key = pick(set, ['rot'], dir); fps = 4;
+      key = pick8(set, ['rot'], dir8, dir); fps = 4;
     } else if (b.state === 'walk') {
-      key = pick(set, ['walk'], dir); fps = 10;
+      key = pick8(set, ['walk'], dir8, dir); fps = 10;
     } else if (b.working && !glancing) {
       key = pick(set, ['type', 'sit'], 'north') || pick(set, ['rot'], 'north'); fps = 6;
     } else if (b.state === 'social' && b.sitting) {
@@ -150,14 +327,60 @@ const SPRITES = (() => {
         ? Math.sin(nowMs / 600 + aph) * 0.7
         : Math.sin(nowMs / 170 + aph) * 1.1 - (Math.floor(nowMs / 150) % 2 ? 1 : 0);
     } else {
-      key = pick(set, ['rot'], dir);
+      key = pick8(set, ['rot'], dir8, dir);
       bob = Math.sin(nowMs / 600 + aph) * 0.7;
+      // PIVOT STEP. A standing body that changes facing used to hold a frozen idle pose while the
+      // sprite rotated under it — the "it just slides round" read. Nobody turns like that; you
+      // shuffle your feet. While the facing is actively sweeping, borrow the set's WALK frames and
+      // spend the swept ANGLE on them, so the legs step the body around. Angle-phased, not
+      // clock-phased, so the shuffle stops dead the instant the turn does.
+      // NOT while glancing: a glance is a ~380ms look toward something, i.e. a HEAD turn. Letting
+      // it drive the legs made a body take a full stride to look sideways and step back again.
+      // The facing still eases round; only the footwork is suppressed.
+      if (!glancing && (b._rW || 0) > TURN_STEP_W) {
+        const wk = pick8(set, ['walk'], dir8, dir);
+        if (wk) { key = wk; turnStep = true; bob *= 0.35; }
+      }
+    }
+
+    // life-like idle gesture: a standing body occasionally plays its set's one-shot `gesture`
+    // track (stretch / arm movement) ONCE through, then returns to the rot pose. Staggered per
+    // agent like the blink so the crew never moves in unison. The index is derived from the
+    // window's own progress (fixedIdx), NOT the free-running clock — a clock index would enter
+    // the animation mid-cycle. Sets without a gesture track skip this entirely.
+    let fixedIdx = null;
+    if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
+        && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
+      // EXACT direction only — never fall back to another facing. Most sets ship the stretch
+      // on the 4 cardinals alone (the diagonals would cost 4 more generations each and are
+      // unreachable in practice: a body that stops walking leaves its diagonal within ~50ms
+      // and holds a cardinal while idle, and only an idle body stretches). Falling back would
+      // snap the body 45° for the length of the stretch — the exact class of pop this pass
+      // was built to remove.
+      const kd = key.slice(key.lastIndexOf('.') + 1);
+      const gk = frames[set + '.gesture.' + kd] ? set + '.gesture.' + kd : null;
+      if (gk) {
+        const GFPS = 8, glen = frames[gk].length, gdur = glen * (1000 / GFPS);
+        // a stretch is a RARE beat (Andrew, 2026-07-31): once every ~90 minutes per body,
+        // not an every-cycle tic. Each body's fire-point is spread uniformly across the
+        // period via its float phase, so the crew never stretches in unison — and a fresh
+        // boot still sees SOMEONE stretch early rather than everyone at minute 90.
+        const GESTURE_PERIOD = 5400000;
+        const gph = Math.abs(aph) % (2 * Math.PI) / (2 * Math.PI);
+        const gt = (nowMs + gph * GESTURE_PERIOD) % GESTURE_PERIOD;
+        if (gt < gdur) {
+          key = gk; fixedIdx = Math.min(glen - 1, Math.floor(gt / (1000 / GFPS)));
+          bob = 0;   // the frames carry the motion; bobbing on top reads as jitter
+        }
+      }
     }
 
     // life-like idle blink: while standing on a 'rot' pose, briefly shut the eyes.
     // staggered per-agent via b.phase so the crew doesn't blink in unison.
+    // keyed off the RESOLVED key's own direction (may be a diagonal): swapping to a cardinal
+    // blink frame under a diagonal pose would snap the head 45° for the blink's 130ms.
     if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk') {
-      const bk = set + '.blink.' + dir;
+      const bk = set + '.blink.' + key.slice(key.lastIndexOf('.') + 1);
       if (frames[bk]) {
         const bt = (nowMs + aph * 900) % 3300;
         if (bt < 130) key = bk;
@@ -178,11 +401,14 @@ const SPRITES = (() => {
     // Do NOT replace this with a constant units-per-frame: that silently over-spins short or oversized sets.
     // Every other state keeps the clock; those aren't locomotion.
     const sc = drawScaleFor(set);
-    const CYCLE_PER_HEIGHT = 0.56;   // world units of ground covered per drawn pixel of character height
-    const stride = (fr[0].height * sc * CYCLE_PER_HEIGHT) / fr.length;
-    const idx = (key.indexOf('.walk.') !== -1 && b.odo != null && stride > 0)
-      ? Math.floor(b.odo / stride + aph)
-      : Math.floor(nowMs / (1000 / fps) + aph);
+    const stride = cycleUnitsFor(set, sc, fr[0].height) / fr.length;
+    const idx = fixedIdx != null ? fixedIdx
+      // a pivoting body spends SWEPT ANGLE on the walk cycle, the same way a travelling one spends
+      // distance — the feet are driven by what the body actually did, never by the clock
+      : turnStep ? Math.floor((b._turnAng || 0) * TURN_STEP_FRAMES + aph)
+      : (key.indexOf('.walk.') !== -1 && b.odo != null && stride > 0)
+        ? Math.floor(b.odo / stride + aph)
+        : Math.floor(nowMs / (1000 / fps) + aph);
     const f = fr.length > 1 ? fr[((idx % fr.length) + fr.length) % fr.length] : fr[0];
     // footprint = native master × per-set scale → identical on-floor size as before, but f is now the
     // full-resolution master. Draw it DOWN to that size with smoothing ON so the detail survives (and
@@ -206,22 +432,20 @@ const SPRITES = (() => {
     const GROUND_BITE = -3;
     const fp = getFootPad(set) * sc;
     const y = snap(b.py - dh + GROUND_BITE + bob + fp);
-    // soft shadow scaled to the body's footprint (kept narrower than the body so it reads as a
-    // tight contact pool under the feet, not a wide slab)
-    const shw = Math.max(6, Math.round(dw * 0.26));
+    // the pool's outer half-width, taken from the body's DRAWN footprint. Masters carry side
+    // padding, so this lands well under dw/2 — a pool wider than the boots reads as a puddle.
+    const shR = Math.max(4.5, dw * 0.21);
     // the contact shadow (and ULTRON's red spill) is a GROUND cue — skip it for off-floor renders
     // like the dossier portrait (b.noShadow), where there's no floor and it scales into a blocky bar.
+    // NOTE: fed the RAW b.px/b.py, not the device-snapped ones. Snapping the pool while the body
+    // itself is sub-unit would let the shadow tick a pixel while the feet slid smoothly over it.
     if (!b.noShadow) {
+      const lift = Math.max(0, -bob);           // bob is +down; a negative bob has raised the body
       if (set === 'ultron') {
-        // menacing red spill under the station's leader
-        ctx.globalAlpha = 0.18 + 0.08 * Math.sin(nowMs / 400);
-        ctx.fillStyle = '#ff4a3d';
-        ctx.fillRect(snap(b.px) - (shw >> 1) - 2, snap(b.py) - 2, shw + 4, 4);
+        // the station leader's menacing red spill — a wider, slower pulse beneath his own pool
+        groundShadow(ctx, b.px, b.py, shR * 1.55, { lift, color: '#ff4a3d', alpha: 0.55 + 0.25 * Math.sin(nowMs / 400) });
       }
-      ctx.globalAlpha = 0.24;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(snap(b.px) - (shw >> 1), snap(b.py) - 1, shw, 2);
-      ctx.globalAlpha = 1;
+      groundShadow(ctx, b.px, b.py, shR, b.sitting ? { lift, alpha: 0.6, spread: 0.8 } : { lift });
     }
     const prevSmooth = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
@@ -267,5 +491,5 @@ const SPRITES = (() => {
     } catch (e) { console.warn('[SPRITES] manifest missing — procedural fallback', e); }
   }
 
-  return { init, drawBody, get ready() { return ready; } };
+  return { init, drawBody, groundShadow, get ready() { return ready; } };
 })();

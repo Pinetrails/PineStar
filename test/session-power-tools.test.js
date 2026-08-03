@@ -96,9 +96,31 @@ A.ok(!/data-term="sessiontools"/.test(html) && !/ws-tools-park/.test(html), 'the
 A.ok(!/buildSessionTools|parkSessionTools|sessiontools:/.test(sui), 'stationui no longer builds a SESSION TOOLS window');
 A.ok(!/ws-tools-btn/.test(html), 'rail head stays SESSIONS/PROJECTS + NEW only (no inline TOOLS button)');
 A.ok(/id="ws-rail-search"[\s\S]*id="ws-search"[\s\S]*search sessions \+ transcripts/.test(html), 'one labelled rail search surface covers sessions and transcripts');
+A.ok(/sessions\.hidden = railView !== 'sessions' \|\| !!q/.test(app), 'an active search replaces ordinary session rows instead of leaving unrelated rows visible below the results');
+A.ok(/input\.value = ''; renderSessionSearch\(\)/.test(app), 'opening a search hit clears search mode and restores the ordinary session rail');
+A.ok(/searchActive = view === 'sessions' && !!\(search && search\.value\.trim\(\)\)/.test(app)
+  && /set\('workstreams', pan\.sessionsList && !searchActive\)/.test(app), 'returning from PROJECTS preserves an active search instead of revealing unfiltered session rows');
 A.ok(/set\('ws-rail-search', pan\.sessionsList\)/.test(app), 'the PROJECTS view hides rail search along with the sessions list');
 A.ok(/item\('export-md', 'Export \.md'/.test(app) && /item\('export-json', 'Export \.json'/.test(app), 'both export formats live in the row actions menu');
 A.ok(/exportSession\(id, 'markdown'\)/.test(app) && /exportSession\(id, 'json'\)/.test(app), 'menu export acts on the exact row session, never an implicit active one');
+A.ok(/role', 'listbox'/.test(app) && /role="option" aria-selected=/.test(app),
+  'the session rail exposes one named composite with selectable options');
+A.ok(/w\.id === railFocusId \? '0' : '-1'/.test(app) && /let railFocusId = null/.test(app),
+  'session rows use a roving tabindex instead of adding every session to the global Tab order');
+A.ok(/<button class="ws-kebab" tabindex="-1" aria-label="session actions"/.test(app),
+  'the pointer-only kebab stays out of the tab order so the rail has one keyboard stop');
+A.ok(/e\.key === 'ArrowDown'[\s\S]{0,500}e\.key === 'ArrowUp'[\s\S]{0,500}e\.key === 'Home'[\s\S]{0,500}e\.key === 'End'[\s\S]{0,700}target\.focus\(\)/.test(app),
+  'arrow, Home and End move the roving focus without opening sessions');
+A.ok(/e\.key === 'Enter'[\s\S]{0,150}switchWorkstream\(id\)[\s\S]{0,1500}e\.key === 'F10'[\s\S]{0,300}openWsMenu\(id, r\.left, r\.bottom \+ 2, li\)/.test(app),
+  'session options still open with Enter or Space and expose actions with Shift+F10');
+A.ok(/restoreFocus[\s\S]{0,2600}target\.focus\(\{ preventScroll: true \}\)/.test(app),
+  'a rail re-render restores focus to the same roving session row');
+A.ok(/openWsMenu\(id, r\.left, r\.bottom \+ 2, keb\)/.test(app),
+  'session actions pass their keyboard-focus origin into the menu');
+A.ok(/menu\.querySelector\('\.ws-menu-item'\)\.focus\(\)/.test(app),
+  'opening the session menu transfers focus to its first action');
+A.ok(/e\.key === 'Escape'[\s\S]{0,100}closeWsMenu\(true\)/.test(app),
+  'Escape closes the session menu and returns focus to its trigger');
 A.ok(/sessionUndo:\s*saved\.sessionUndo/.test(app), 'the durable recovery checkpoint is still hydrated on restart');
 A.ok(/URL\.revokeObjectURL/.test(app), 'export object URL is always revoked');
 

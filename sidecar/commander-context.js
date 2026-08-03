@@ -37,6 +37,32 @@ function compose(input) {
   if (dossier && existing.indexOf(dossier) < 0) lines.push('<commander_context provenance="commander-dossier">\n' + dossier + '\n</commander_context>');
   const goal = input.goal && (input.goal.title || input.goal.text || input.goal.goal);
   if (goal) lines.push('<active_goal provenance="commander-confirmed">' + clip(goal, 500) + '</active_goal>');
+  // ONE evidence projection for every execution lane. These are weak/observed signals: they may help prioritize
+  // and personalize, but never override the current request or masquerade as a stated belief.
+  const evidence = [];
+  const topics = Array.isArray(input.topics) ? input.topics.slice(0, 6) : [];
+  for (const t of topics) {
+    if (!t || !(t.label || t.topic)) continue;
+    evidence.push('TOPIC: ' + clip(t.label || t.topic, 80) + ' (seen ' + Math.max(0, Number(t.count) || 0) + '×)'
+      + ((t.evidence && t.evidence[0]) ? ' — evidence: "' + clip(t.evidence[0], 140) + '"' : ''));
+  }
+  const threads = Array.isArray(input.threads) ? input.threads.slice(0, 5) : [];
+  for (const t of threads) if (t && t.title) evidence.push('OPEN THREAD: ' + clip(t.title, 160) + (t.spec ? ' — ' + clip(t.spec, 180) : ''));
+  if (input.worksignal) evidence.push('WORKFLOW: ' + clip(input.worksignal, 400));
+  const verdicts = input.verdicts && input.verdicts.kinds && typeof input.verdicts.kinds === 'object' ? input.verdicts.kinds : {};
+  const prefs = [];
+  for (const k of Object.keys(verdicts).slice(0, 8)) {
+    const v = verdicts[k] || {}; const w = Number(v.weight) || 0;
+    if (w) prefs.push(k + '=' + (w > 0 ? '+' : '') + Math.round(w * 100) / 100 + ' (' + (Number(v.positive) || 0) + ' kept/' + (Number(v.negative) || 0) + ' declined)');
+  }
+  if (prefs.length) evidence.push('VERDICT PATTERNS: ' + prefs.join(', '));
+  const activity = Array.isArray(input.activity) ? input.activity.slice(0, 6) : [];
+  for (const a of activity) if (a) evidence.push('RECENT ACTIVITY: ' + clip(a, 180));
+  if (evidence.length) {
+    lines.push('<commander_evidence provenance="observed; weak; never override the current request">');
+    for (const e of evidence.slice(0, 20)) lines.push('- ' + e);
+    lines.push('</commander_evidence>');
+  }
   // ASK-WORTHINESS: dimensions the Commander has repeatedly waved off with "use your judgment". The tool gate
   // (taskbrief-tools) refuses these outright; saying so here spends no turn discovering that, and names the
   // honest alternative — decide it, then surface the choice as a correctable assumption.

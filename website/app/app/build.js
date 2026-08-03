@@ -40,7 +40,9 @@ const Build = (() => {
   const VAL_LABEL = {
     ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'NOT CONNECTED — BELT: CLICK IT, THEN A MACHINE',
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
-    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES'
+    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES',
+    // the docks feed each OTHER: no belt loop anywhere, but the work line would run forever, paying each lap
+    CHAIN_CYCLE: 'WORK LINE LOOPS — CUT ONE HANDOFF'
   };
   const esc = s => U.esc(s == null ? '' : s);   // one complete impl (escapes & < > " ' — value="…" attrs here stay injection-safe)
 
@@ -57,6 +59,7 @@ const Build = (() => {
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
+  let propQuery = '';                   // palette SEARCH text: non-empty = browse the whole catalog flat, ignoring tier/cat
 
   const T = () => (station ? station.TILE : 12);
   const MAX_REFIT_CHUNKS = 18;
@@ -200,12 +203,14 @@ const Build = (() => {
      Props are split into two TIERS (functional vs cosmetic) carried on each CATALOG entry, then grouped by
      `cat` within the tier. This is the "clean area for the stuff that actually does something" split. */
   const TIER_ORDER = ['functional', 'cosmetic'];
-  const TIER_LABEL = { functional: '⚙ SYSTEMS', cosmetic: '✦ DECOR' };   // display names; the internal tier keys stay functional/cosmetic
-  const CAT_LABEL = {
-    workstation: 'WORKSTATIONS', workflow: 'WORKFLOW', capability: 'CAPABILITY', isolation: 'ISOLATION',
-    command: 'COMMAND',   // G1b: mission surfaces — functional-but-not-capability (MISSION BOARD)
-    screens: 'SCREENS', lab: 'LAB', storage: 'STORAGE', comms: 'COMMS', lounge: 'LOUNGE', decor: 'DECOR',
-  };
+  // The tier/category DISPLAY names now live with the catalog they describe (PropSprites), because the
+  // palette is no longer their only reader — propsearch.js matches against them so typing what the tab
+  // SAYS finds what the tab shows. Copying them here again is how the tab and the search drift apart.
+  // Read LAZILY, not snapshotted into a const at IIFE-load time: this file is a plain <script> and a
+  // const would freeze whatever PropSprites happened to be when build.js parsed. index.html loads
+  // propsprites.js first today, but a silently-empty label map is a miserable way to find that out.
+  const TIER_LABEL = () => (typeof PropSprites !== 'undefined' && PropSprites.TIER_LABEL) || {};
+  const CAT_LABEL = () => (typeof PropSprites !== 'undefined' && PropSprites.CAT_LABEL) || {};
   // the agent-assignable workstation types — the 'computer' props the agent walks to + sits at (matches
   // world.js isWorkstationProp / deskPropFor seating + the CATALOG seat:true set). These open the picker on place/click.
   const WORKSTATION_TYPES = { desk: 1, desk2: 1, console: 1, consoleL: 1, pixelrig: 1, bench: 1 };
@@ -221,6 +226,107 @@ const Build = (() => {
     const a = list.find(x => x.id === aid);
     return a ? (a.name || a.id) : aid;
   };
+
+  /* ---------- palette SEARCH (the flat way into a 120-prop catalog) ----------
+     PropSearch owns the matching rules and is unit-tested against the real catalog; everything here is
+     presentation. Two things are load-bearing and easy to get wrong:
+       1. a keystroke rebuilds the GALLERY ONLY — never the row holding the <input>, or focus dies;
+       2. while a search is up the tier/cat rows are HIDDEN, not just ignored. A lit "LOUNGE" tab above a
+          grid of workstations is the UI asserting something false about what you're looking at. */
+  const catLabelOf = c => CAT_LABEL()[c] || String(c || '').toUpperCase();
+  const tierLabelOf = t => TIER_LABEL()[t] || String(t || '').toUpperCase();
+  // the power word printed on the tile's badge (COMPUTE / WEB / FILES / …), or '' for inert decor.
+  // It is on screen, so it has to be typeable — the prop -> capability map lives in the world model.
+  const grantLabelOf = c => ((typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp)
+    ? (WorldModel.grantLabelForProp(c && c.id) || '') : '');
+  // one options bundle so the palette and the unit test match on IDENTICAL surfaces
+  const searchOpts = () => ({ catLabel: catLabelOf, tierLabel: tierLabelOf, extra: grantLabelOf });
+  const isSearching = () => (typeof PropSearch !== 'undefined') && PropSearch.active(propQuery);
+
+  // what the gallery is showing right now: matches across the WHOLE catalog, or the chosen tab
+  function propsForGrid() {
+    if (isSearching()) return PropSearch.matchProps(catalog(), propQuery, searchOpts());
+    const CATS = (typeof PropSprites !== 'undefined') ? PropSprites.CATS : {};
+    return CATS[propCat] || [];
+  }
+
+  /* Leave search mode and go back to browsing. This must rebuild the WHOLE palette, not just the
+     gallery: picking a prop out of a search result moves propTier/propCat to that prop's own drawer,
+     so the tier and category buttons carry stale `active` classes until they are re-created. Clearing
+     with only a grid re-render is what left the palette showing WORKSTATIONS with nothing lit while a
+     beanbag was the armed prop. Re-focus the field afterwards — the caller is still typing. */
+  function clearSearch({ refocus = true } = {}) {
+    propQuery = '';
+    renderPalette();
+    if (!refocus) return;
+    const f = root && root.querySelector('#refit-propsearch-input');
+    if (f) f.focus();
+  }
+
+  function propSearchRow() {
+    const row = document.createElement('div'); row.className = 'refit-propsearch';
+    const inp = document.createElement('input');
+    // type=text, NOT type=search — a search field gets the UA's own ✕ and cancel affordance, which is raw
+    // OS chrome sitting inside a CRT panel (the no-white-controls order). We draw our own clear key.
+    inp.type = 'text';
+    inp.className = 'refit-input refit-searchfield';
+    inp.id = 'refit-propsearch-input';
+    inp.value = propQuery;
+    inp.spellcheck = false;
+    inp.autocomplete = 'off';
+    inp.setAttribute('aria-label', 'Search props');
+    // the count is READ from the catalog — a hardcoded "120" becomes a lie the first time a prop lands
+    inp.placeholder = 'SEARCH ' + catalog().length + ' PROPS — NAME OR CATEGORY';
+    inp.oninput = () => { propQuery = inp.value; renderPropGrid(); };
+    inp.onkeydown = (ev) => {
+      if (ev.key !== 'Escape') return;
+      ev.stopPropagation();   // a clear must never bubble out and close REFIT behind the Commander
+      if (inp.value) { clearSearch(); sfx('click'); }
+      else inp.blur();        // an already-empty field hands Escape back to the editor
+    };
+    row.appendChild(inp);
+
+    const clr = document.createElement('button');
+    clr.type = 'button';
+    clr.className = 'bb sm refit-searchclear';
+    clr.textContent = '✕';
+    clr.title = 'clear search';
+    clr.onclick = () => { clearSearch(); sfx('click'); };
+    row.appendChild(clr);
+    return row;
+  }
+
+  /* rebuild ONLY the gallery (and the rows a search hides). Runs on every keystroke and every tile
+     pick, so it must never re-create the <input> above it. */
+  function renderPropGrid() {
+    const host = root && root.querySelector('#refit-propgrid-host');
+    if (!host) return;
+    const on = isSearching();
+    // .refit-tiers/.refit-propcats declare `display:flex`, which beats the UA's [hidden] rule — so the
+    // visibility toggle has to be an inline display, not the hidden attribute.
+    const tiers = root.querySelector('.refit-tiers'), cats = root.querySelector('.refit-propcats');
+    if (tiers) tiers.style.display = on ? 'none' : '';
+    if (cats) cats.style.display = on ? 'none' : '';
+    const clr = root.querySelector('.refit-searchclear');
+    if (clr) clr.style.display = propQuery ? '' : 'none';
+
+    propThumbs.length = 0;   // the gallery is the only thumb source; free the outgoing tiles' canvases
+    host.innerHTML = '';
+    const list = propsForGrid();
+    if (on) {
+      const note = document.createElement('div');
+      note.className = 'refit-searchnote' + (list.length ? '' : ' none');
+      note.textContent = list.length
+        ? list.length + (list.length === 1 ? ' MATCH' : ' MATCHES') + ' · ALL TIERS'
+        : 'NO PROP MATCHES "' + propQuery.trim().toUpperCase() + '"';
+      host.appendChild(note);
+    }
+    const grid = document.createElement('div'); grid.className = 'refit-propgrid';
+    grid.setAttribute('aria-label', 'Props');
+    list.forEach(c => grid.appendChild(propTile(c)));
+    host.appendChild(grid);
+    try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
+  }
 
   function renderPalette() {
     const pal = root.querySelector('#refit-palette');
@@ -258,6 +364,11 @@ const Build = (() => {
       if (TIER_ORDER.indexOf(propTier) < 0) propTier = 'functional';
       let cats = catsForTier(propTier);
       if (cats.indexOf(propCat) < 0) { propCat = cats[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; }
+      // row -1 — SEARCH. Two tiers × ~11 category tabs is a fine map once you know which drawer a thing
+      // lives in and useless when you don't; with 120 props the taxonomy became the slow path. A query
+      // here goes FLAT across the whole catalog (both tiers, every category) and hides the browse rows
+      // while it's active, so what's on screen never disagrees with the lit tab.
+      pal.appendChild(propSearchRow());
       // row 0 — the TIER toggle: a clear, hard split between props that DO something and props that are just looks
       const tierRow = document.createElement('div'); tierRow.className = 'refit-tiers';
       tierRow.setAttribute('aria-label', 'Prop tiers');
@@ -266,8 +377,8 @@ const Build = (() => {
         b.type = 'button';
         b.className = 'bb sm refit-tier refit-tier-' + t + (t === propTier ? ' active' : '');
         b.setAttribute('aria-pressed', t === propTier ? 'true' : 'false');
-        b.textContent = TIER_LABEL[t];
-        b.onclick = () => { propTier = t; const cs = catsForTier(t); propCat = cs[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
+        b.textContent = tierLabelOf(t);
+        b.onclick = () => { propQuery = ''; propTier = t; const cs = catsForTier(t); propCat = cs[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
         tierRow.appendChild(b);
       });
       pal.appendChild(tierRow);
@@ -280,17 +391,18 @@ const Build = (() => {
         b.className = 'bb sm refit-propcat' + (g === propCat ? ' active' : '');
         b.dataset.cat = g;   // lets the tutorial light the exact category tab a step needs
         b.setAttribute('aria-pressed', g === propCat ? 'true' : 'false');
-        b.textContent = CAT_LABEL[g] || g.toUpperCase();
-        b.onclick = () => { propCat = g; if (CATS[g] && CATS[g][0]) propType = CATS[g][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
+        b.textContent = catLabelOf(g);
+        b.onclick = () => { propQuery = ''; propCat = g; if (CATS[g] && CATS[g][0]) propType = CATS[g][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
         catRow.appendChild(b);
       });
       pal.appendChild(catRow);
-      // row 2 — a scrollable gallery of LIVE previews: each tile draws the real animated sprite, not just its name
-      const grid = document.createElement('div'); grid.className = 'refit-propgrid';
-      grid.setAttribute('aria-label', 'Props');
-      (CATS[propCat] || []).forEach(c => grid.appendChild(propTile(c)));
-      pal.appendChild(grid);
-      try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
+      // row 2 — a scrollable gallery of LIVE previews: each tile draws the real animated sprite, not just its name.
+      // It lives in its own HOST because every keystroke rebuilds the gallery and NOTHING else: re-running
+      // renderPalette() here would replace the <input> mid-word and the field would lose focus (and the caret)
+      // after a single character — the classic way a search box ships broken.
+      const gridHost = document.createElement('div'); gridHost.id = 'refit-propgrid-host';
+      pal.appendChild(gridHost);
+      renderPropGrid();
     } else if (tool === 'paint') {
       /* SURFACE — TWO AXES, TWO SECTIONS: the MATERIAL (what the surface is made of) and the HUE
          (what colour it is). They compose — every material renders in whatever colour is selected
@@ -425,7 +537,17 @@ const Build = (() => {
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(c.id) : null;
     b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '');   // native fallback; the rich Fallout-style card is the hover surface
-    b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
+    // Grid-only re-render: a full renderPalette() here would rebuild the search field and steal focus
+    // out of it mid-search. But a pick out of a SEARCH result does change tab state — the prop almost
+    // always lives under a different tier/category than the one still selected behind the results. Move
+    // the tabs to the prop's own drawer NOW (silently, no re-render) so that whenever the search is
+    // cleared the palette opens on the shelf holding what you actually armed, with the tile lit. Without
+    // this, clearing dropped you back on WORKSTATIONS with nothing selected while a beanbag was armed.
+    b.onclick = () => {
+      propType = c.id;
+      if (isSearching()) { propTier = c.tier || 'cosmetic'; propCat = c.cat || propCat; }
+      renderPropGrid(); setHint(); sfx('click');
+    };
     b.onmouseenter = (e) => showPropCard(c, null, e.clientX, e.clientY);   // "what does this do?" card
     b.onmouseleave = hidePropCard;
 
@@ -1421,12 +1543,31 @@ const Build = (() => {
     ctx.imageSmoothingEnabled = false;
     // The backdrop, shared with the live world (SpaceBG) so entering/exiting REFIT doesn't jump the sky —
     // same selection, same camera contract (REFIT's zoom is the world's `scale`), so the parallax matches too.
-    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, { panX, panY, scale: zoom });
+    // A LANDED station has no sky: the ground layer below covers the frame, so skip the starfield entirely.
+    if (typeof Terrain !== 'undefined' && Terrain.active()) {
+      ctx.fillStyle = Terrain.baseColor(); ctx.fillRect(0, 0, cv.width, cv.height);
+    } else if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, { panX, panY, scale: zoom });
     else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
 
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
     ctx.imageSmoothingEnabled = false;
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
+    /* the ground, in world space under the bake — REFIT blits the station at (ox,oy), so the
+       clearing must be placed there too, not at the origin like the live world.
+
+       THE CLEARING'S SIZE COMES FROM THE GEOMETRY, NOT FROM THE BAKE CANVAS. `cache.baseCv` only
+       exists on the WHOLE-CANVAS bake; when StationBake.bakeIncremental is available the cache is
+       CHUNKED and has no baseCv at all, so reading `.width` off it threw a TypeError out of the
+       draw function before a single pixel of ground or station was painted — REFIT went black.
+       The line below it already knew this (it picks drawBase over drawImage(cache.baseCv) for
+       exactly that reason); this call did not. cacheGeo carries COLS/ROWS in tiles on both paths. */
+    if (typeof Terrain !== 'undefined' && Terrain.active()) {
+      const bt = (cacheGeo && cacheGeo.TILE) || t;
+      const bw = cacheGeo ? cacheGeo.COLS * bt : (cache.baseCv ? cache.baseCv.width : 0);
+      const bh = cacheGeo ? cacheGeo.ROWS * bt : (cache.baseCv ? cache.baseCv.height : 0);
+      Terrain.draw(ctx, { scale: zoom, panX, panY }, cv.width, cv.height,
+        { x: ox, y: oy, w: bw, h: bh });
+    }
     const drawVisibleRect = visibleBakeRect(cacheGeo);
     if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy, drawVisibleRect);
     else ctx.drawImage(cache.baseCv, ox, oy);
@@ -1504,7 +1645,15 @@ const Build = (() => {
     const list = station.props();
     if (!list.length) return;
     PropSprites.setCtx(ctx); PropSprites.setNow(now);
-    const sorted = list.slice().sort((a, b) => (a.y + (a.h || 1)) - (b.y + (b.h || 1)));
+    // MOUNT LIFT — resolved per frame through station.mountOf, the SAME seam world.js draws through.
+    // REFIT is where props are actually placed, so a table-top prop that only lifted in the live world
+    // looked, in the one view you judge it from, like it had been dropped INSIDE the table.
+    // The +0.5 goes with it: a mounted prop and its table cover the same tiles, so their sort keys tie
+    // and raw array order (whichever was placed first) would decide who draws on top.
+    const key = p => (p.y + (p.h || 1)) + (p.mount ? 0.5 : 0);
+    const sorted = list
+      .map(p => { const m = station.mountOf ? station.mountOf(p) : null; return m ? Object.assign({}, p, { mount: m }) : p; })
+      .sort((a, b) => key(a) - key(b));
     for (const p of sorted) PropSprites.draw(p, true);
   }
 
@@ -1771,6 +1920,7 @@ const Build = (() => {
     // MOUNT is a placement RULE, so it belongs on the footprint line next to the other placement facts —
     // a player who only meets it as a red ghost has been told "no" without being told "why".
     const mount = c.mount === 'surface' ? ' · stands on a table'
+      : c.stack ? ' · deck or table'
       : (c.surface ? ' · things can stand on it' : '');
     const foot = c.w + '×' + c.h + (c.blocks === false ? ' · walkable' : ' · solid') + mount;
     const desc = c.desc || (fn ? '' : 'Decor — looks only. Sets the mood; no effect on how the station runs.');

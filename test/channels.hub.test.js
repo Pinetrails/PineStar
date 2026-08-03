@@ -49,6 +49,24 @@ async function run() {
     A.ok(events.some(e => e.n === 'channel.delivery' && e.p.ok === true && e.p.chunks === 1 && e.p.reason === 'done'), 'channel.delivery ok=true');
   }
 
+  // ---- A2. ingress authority is passed only when the composition root identifies this exact message as owner DM ----
+  {
+    const store = fakeStore(); const seen = [];
+    const runOnce = async (o) => {
+      seen.push(o.ownerTrusted);
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done' });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false,
+      ownerTrusted: (msg) => msg.channel === 'telegram' && msg.chatType === 'dm' && msg.userId === 'owner', newId: idGen()
+    });
+    await hub.onInbound(Object.assign(dm('owner request', 'owner-chat'), { userId: 'owner' }));
+    await hub.onInbound(dm('ordinary request', 'guest-chat'));
+    A.eq(seen, [true, false], 'only the admitted owner DM carries trusted remote-control authority into runOnce');
+  }
+
   // ---- B. prior history is replayed; isTask=true adds the task suffix to the system prompt ----
   {
     const store = fakeStore(); store.hist.set('tg_9', [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'sure' }]);
@@ -586,6 +604,77 @@ async function run() {
     typed.length = 0;
     await hub.onInbound(dm('/help', '71'));
     A.eq(typed.length, 0, 'a control command never lights the typing bubble (no run happens)');
+  }
+
+  // ---- V. E-STOP is not a supersede: the chat is TOLD it was stopped on purpose ----------------------
+  // Both set `superseded` so the stale partial is abandoned, but they mean opposite things about what happens
+  // next: a supersede has a newer message already running its replacement, an E-STOP has nothing coming. On a
+  // phone — no floor, no browser, no other signal — the shared silent return made a deliberate stop
+  // byte-identical to a crashed bot, while /stop typed in the same chat answers "Stopped the run in progress."
+  {
+    const { killAll } = require('../sidecar/halt.js');
+    const store = fakeStore(); const sends = [];
+    const runOnce = async (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'half an answ' });
+      await new Promise(res => { if (o.signal.aborted) return res(); o.signal.addEventListener('abort', () => res(), { once: true }); });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'cancelled', turns: 0, usd: 0 });
+    };
+    const hub = makeChannelHub({ runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen() });
+    const parked = hub.onInbound(dm('do the long thing'));
+    await new Promise(r => setTimeout(r, 10));
+    const aborted = killAll(null, hub._internals.inflight);   // exactly what handleHalt does
+    A.eq(aborted, 1, 'E-STOP aborted the one in-flight channel run');
+    await parked;
+    A.ok(!sends.some(s => /half an answ/.test(s)), 'the stale partial is still abandoned');
+    A.ok(sends.some(s => /E-STOP/.test(s)), 'the chat is TOLD the run was stopped from the station');
+    A.eq(sends.filter(s => /E-STOP/.test(s)).length, 1, 'the stop notice is delivered exactly once');
+  }
+
+  // ---- V2. a supersede by a NEWER message stays silent (the control for V) ---------------------------
+  {
+    const store = fakeStore(); const sends = []; let call = 0;
+    const runOnce = async (o) => {
+      call++;
+      if (call === 1) {
+        o.emit('agent.token', { delta: 'stale partial' });
+        await new Promise(res => { if (o.signal.aborted) return res(); o.signal.addEventListener('abort', () => res(), { once: true }); });
+        return;
+      }
+      o.emit('agent.token', { delta: 'second-reply' });
+      o.emit('agent.run.end', { reason: 'done' });
+    };
+    const hub = makeChannelHub({ runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen() });
+    const p1 = hub.onInbound(dm('first'));
+    await hub.onInbound(dm('second'));
+    await p1;
+    A.eq(sends, ['second-reply'], 'a supersede by a newer message is still SILENT — no stop notice, no stale partial');
+  }
+
+  // ---- W. quick plain-text bubbles become one thought; commands/media stay exact ---------------------
+  {
+    const store = fakeStore(); const runs = []; const resolved = [];
+    const runOnce = async (o) => {
+      runs.push(o);
+      o.emit('agent.token', { delta: 'batched' });
+      o.emit('agent.run.end', { reason: 'done' });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      textBatchWaitMs: 1, sleep: () => new Promise(r => setTimeout(r, 0)), onResolved: info => resolved.push(info)
+    });
+    const p1 = hub.onInbound(dm('first bubble', 'batch'));
+    const p2 = hub.onInbound(dm('second bubble', 'batch'));
+    const p3 = hub.onInbound(dm('third bubble', 'batch'));
+    await Promise.all([p1, p2, p3]);
+    A.eq(runs.length, 1, 'three quick plain-text bubbles produce one run, not a supersede storm');
+    A.eq(runs[0].messages[runs[0].messages.length - 1].content, 'first bubble\nsecond bubble\nthird bubble', 'the single turn preserves bubble order with clear newlines');
+    A.eq(resolved.length, 1, 'one batch resolves once, so host work telemetry also stays singular');
+    await hub.onInbound(dm('/help', 'batch'));
+    A.eq(runs.length, 1, 'a command bypasses text batching and does not reach the model');
+    const media = dm('caption', 'batch'); media.media = [{ kind: 'photo', fileId: 'p', name: 'p.jpg', mime: 'image/jpeg', size: 1 }];
+    await hub.onInbound(media);
+    A.eq(runs.length, 2, 'a media turn bypasses text batching and keeps its existing delivery path');
   }
 
   A.report('channels.hub.test');

@@ -65,6 +65,10 @@
     const onInbound = typeof o.onInbound === 'function' ? o.onInbound : function () {};
     const onCallback = typeof o.onCallback === 'function' ? o.onCallback : null;   // C6: inline-keyboard taps
     const onStatus = typeof o.onStatus === 'function' ? o.onStatus : null;         // channel.connect telemetry
+    // Delivery health is intentionally separate from poll health: a bot can still receive updates while Telegram
+    // refuses outbound sends (blocked chat, an outbound-only proxy fault, or a transient API outage).
+    const onDelivery = typeof o.onDelivery === 'function' ? o.onDelivery : null;
+    const onMembership = typeof o.onMembership === 'function' ? o.onMembership : null;   // we were added/blocked/kicked
     const pollTimeoutSec = o.pollTimeoutSec || DEFAULT_POLL_TIMEOUT_SEC;
     const backoff = Array.isArray(o.backoffMs) && o.backoffMs.length ? o.backoffMs.slice() : DEFAULT_BACKOFF.slice();
     const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
@@ -76,6 +80,9 @@
     // stays governed by allowedChats, independently.
     let owner = o.ownerUserId ? String(o.ownerUserId) : '';
     const onOwnerClaim = typeof o.onOwnerClaim === 'function' ? o.onOwnerClaim : null;
+    // Optional explicit-enrollment hook. Absent it, existing adapters retain TOFU behavior.
+    // It receives (message, userId) and returns true or { allow, consume, reply }.
+    const ownerAdmission = typeof o.ownerAdmission === 'function' ? o.ownerAdmission : null;
     // Chats whose offline backlog we discarded while the owner was still UNCLAIMED (a fresh install, or any
     // first contact). We cannot apologise at connect: claiming ownership from stale backlog is exactly the
     // anti-stale-directive behaviour we preserve, and answering a chat we have NOT yet proven is the owner
@@ -89,17 +96,160 @@
     // SEE would under-report what we actually DROPPED, and "1 message arrived" when three did is exactly the
     // kind of confident-but-wrong claim this project treats as a defect.
     const OFFLINE_NOTICE = 'I was offline — anything you sent while I was away was not processed. Please resend whatever still matters.';
-    function ownerOk(userId) {
+    function ownerDecision(userId, message) {
       const uid = String(userId == null ? '' : userId);
-      if (!owner) { if (!uid) return false; owner = uid; if (onOwnerClaim) { try { onOwnerClaim(uid); } catch (_) {} } return true; }
-      return uid === owner;
+      if (owner) return { ok: uid === owner, claimed: false, consume: false, reply: '' };
+      if (!uid) return { ok: false, claimed: false, consume: false, reply: '' };
+      let decision = true; // preserve trust-on-first-use for adapter callers that have not opted in
+      if (ownerAdmission) {
+        try { decision = ownerAdmission(message || {}, uid); } catch (_) { decision = false; }
+      }
+      if (decision !== true && !(decision && decision.allow === true)) return { ok: false, claimed: false, consume: false, reply: '' };
+      owner = uid;
+      if (onOwnerClaim) { try { onOwnerClaim(uid); } catch (_) {} }
+      return {
+        ok: true,
+        claimed: true,
+        consume: !!(decision && decision.consume),
+        reply: decision && typeof decision.reply === 'string' ? decision.reply : ''
+      };
+    }
+    function ownerOk(userId, message) { return ownerDecision(userId, message).ok; }
+
+    /* GROUP DISCIPLINE (2026-07-29). We used to answer EVERY message in a whitelisted group, and never checked
+       whether the sender was a bot. In a room with any traffic that is a model call per message — the member
+       pays for a conversation they are not in — and two StarNet bots in one group would answer each other
+       forever. Three gates, each independently disableable, all no-ops for a DM:
+
+         ignoreBots     (default ON)  — a message from another bot never runs. This one is not a preference:
+                                        bot-to-bot is an unbounded spend loop with no human in it.
+         requireMention (default ON)  — in a GROUP, run only when the message addresses us: an @mention of our
+                                        username, a reply to one of OUR messages, or a slash command that is
+                                        either bare or @-suffixed with our name. A group message that addresses
+                                        nobody is somebody else's conversation.
+         allowedUsers   (default off) — when set, only these user ids run, ON TOP of the existing owner gate for
+                                        DMs and the chat allowlist for groups. It NARROWS, it never widens.
+
+       A DM is untouched: it is already owner-only, and requiring the Commander to @-mention a bot in their own
+       private chat would be absurd. */
+    /* botUsername may be a STRING or a FUNCTION. The station bot learns its own @name from getMe() at connect,
+       which resolves AFTER the adapter is constructed — a string captured here would be '' forever and the
+       mention gate would sit permanently dormant (a flag with no reader, the exact bug class this project
+       keeps re-finding). Reading it lazily means the gate arms the moment the name is known. */
+    const botUsernameFn = (typeof o.botUsername === 'function') ? o.botUsername : () => o.botUsername;
+    const botUsernameNow = () => String(botUsernameFn() || '').replace(/^@/, '').trim().toLowerCase();
+    /* requireMention takes the SAME string-or-function treatment, for a different reason: the member has to be
+       able to change their mind. It shipped as a hardcoded default with no command, no route and no UI, which
+       meant a room that wanted free response had no way back — a behaviour change with no escape hatch. As a
+       function of chatId it reads the chat's own saved setting on every message, so `/mention off` takes effect
+       on the next one. Anything other than an explicit `false` keeps the safe default (ON). */
+    const requireMentionFn = (typeof o.requireMention === 'function') ? o.requireMention : () => o.requireMention;
+    const requireMentionFor = (chatId) => {
+      let v;
+      try { v = requireMentionFn(String(chatId)); } catch (_) { v = undefined; }   // a store hiccup must not open the room
+      return v !== false;
+    };
+    const ignoreBots = o.ignoreBots !== false;
+    const allowedUsers = normalizeAllowed(o.allowedUsers);
+
+    /* WAKE WORDS. `@thebot` is how you address a bot; "StarNet, check the logs" is how you address a person, and
+       it is what people actually type. Without this the most natural way to call the agent by the name the member
+       gave it does nothing at all.
+
+       Deliberately LITERAL strings, not the reference harness's regexes: a regex arriving from a config field is
+       a ReDoS surface pointed at the poll loop, and a member who mistypes one gets a gate that silently matches
+       nothing. Matched case-insensitively at a WORD BOUNDARY (so "Ana" does not fire inside "banana"), and
+       anything under three characters is refused — a two-letter agent name would trigger on half the room.
+       Read through a function for the same reason botUsername is: the names are learned after construction.
+
+       Failure mode is deliberately the safe one: this only ever WIDENS what counts as being addressed, so a bad
+       pattern costs an extra run, never a silenced room. */
+    const MIN_WAKE_WORD = 3;
+    const mentionPatternsFn = (typeof o.mentionPatterns === 'function') ? o.mentionPatterns : () => o.mentionPatterns;
+    const isWordChar = (c) => !!c && /[\p{L}\p{N}_]/u.test(c);
+    function wakeWords() {
+      let raw;
+      try { raw = mentionPatternsFn(); } catch (_) { raw = null; }
+      const list = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+      const out = [];
+      for (const p of list) {
+        const s = String(p == null ? '' : p).trim().toLowerCase();
+        if (s.length >= MIN_WAKE_WORD && out.indexOf(s) === -1) out.push(s);
+      }
+      return out;
+    }
+    function namedUs(text) {
+      const t = String(text == null ? '' : text).toLowerCase();
+      if (!t) return false;
+      for (const w of wakeWords()) {
+        for (let i = t.indexOf(w); i !== -1; i = t.indexOf(w, i + 1)) {
+          if (!isWordChar(i === 0 ? '' : t[i - 1]) && !isWordChar(t[i + w.length] || '')) return true;
+        }
+      }
+      return false;
     }
 
-    // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
-    function admitted(m) {
-      if (m.chatType === 'dm') return true;
-      return allowed.has(String(m.chatId));
+    /* OBSERVE-UNMENTIONED. The mention gate bought spend safety and paid for it in amnesia: an unmentioned group
+       message was dropped whole, so when the bot was finally addressed it had no idea what the room had been
+       discussing and could not honour "summarise that" or "what do you think of Ana's idea". Observing keeps the
+       chatter in the transcript while still dispatching only when addressed — zero model calls for the messages
+       it merely hears. Default OFF (as in the reference harness): storing every message a room sends is a real
+       decision about the member's data, not a default they should discover afterwards. */
+    const observeUnmentionedFn = (typeof o.observeUnmentioned === 'function') ? o.observeUnmentioned : () => o.observeUnmentioned;
+    const observeUnmentionedFor = (chatId) => {
+      try { return observeUnmentionedFn(String(chatId)) === true; } catch (_) { return false; }
+    };
+
+    // Does this group message address US? (Only meaningful when botUsername is known.)
+    function addressesUs(m) {
+      if (namedUs(m.text)) return true;   // called by name — works even before getMe answers
+      const botUsername = botUsernameNow();
+      if (!botUsername) return true;   // we don't know our own name — never silence the room over that
+      const mentions = Array.isArray(m.mentions) ? m.mentions : [];
+      if (mentions.indexOf(botUsername) !== -1) return true;
+      // a reply to one of OUR messages is an address, and it is how a thread of follow-ups stays natural
+      if (m.replyTo && String(m.replyTo.userName || '').trim().toLowerCase() === botUsername) return true;
+      // a slash command with NO @suffix is aimed at whatever bot is listening; with a suffix it is aimed by name
+      // (and that name landed in `mentions` above, so a command for a DIFFERENT bot has already failed the check)
+      const t = String(m.text == null ? '' : m.text);
+      if (/^\/[A-Za-z0-9_]+(\s|$)/.test(t)) return true;
+      return false;
     }
+
+    /* ECHO GUARD — the bot must never answer itself.
+       In a group Telegram simply does not deliver our own messages back, so `is_bot` on the sender was enough.
+       A BROADCAST CHANNEL has no sender to check: a channel post carries no `from` at all, and a post the bot
+       itself made arrives looking exactly like one an admin made. Left unguarded that is not a cosmetic bug, it
+       is an unbounded loop — every reply becomes a new question. So we remember the message ids WE created and
+       refuse them on the way back in. Platform-agnostic on purpose: any future transport that echoes is covered
+       by the same net. Bounded and FIFO — this is a recent-echo guard, not a transcript. */
+    const MAX_SENT_IDS = 400;
+    const sentIds = new Set();   // 'chatId|messageId'
+    function rememberSent(chatId, messageId) {
+      if (messageId == null || messageId === '') return;
+      const k = String(chatId) + '|' + String(messageId);
+      sentIds.delete(k); sentIds.add(k);
+      while (sentIds.size > MAX_SENT_IDS) { const f = sentIds.values().next().value; sentIds.delete(f); }
+    }
+    const wasOurs = (chatId, messageId) =>
+      messageId != null && messageId !== '' && sentIds.has(String(chatId) + '|' + String(messageId));
+
+    /* THREE verdicts, not two. 'drop' is silence, 'run' is a real turn, and 'observe' is the middle ground the
+       mention gate created a need for: heard and remembered, but never dispatched. Kept as one function so the
+       order of the gates can only be read one way — an echo, a bot and a non-allowlisted chat are refused before
+       anything is stored, so observing can never become a way around admission. */
+    function admission(m) {
+      if (wasOurs(m.chatId, m.messageId)) return 'drop';               // our own post, echoed back to us
+      if (ignoreBots && m.fromBot) return 'drop';                      // never answer another bot, in any chat
+      if (allowedUsers.size && !allowedUsers.has(String(m.userId == null ? '' : m.userId))) return 'drop';
+      if (m.chatType === 'dm') return 'run';
+      if (!allowed.has(String(m.chatId))) return 'drop';
+      if (!requireMentionFor(m.chatId)) return 'run';
+      if (addressesUs(m)) return 'run';
+      return observeUnmentionedFor(m.chatId) ? 'observe' : 'drop';
+    }
+    // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
+    function admitted(m) { return admission(m) === 'run'; }
 
     let started = false, stopped = false, down = false, confirmed = false;
     let offset = Number.isFinite(o.startOffset) ? o.startOffset : 0;   // next update id to fetch from
@@ -118,13 +268,36 @@
 
     function dispatch(raw) {
       let n;
-      try { n = normalize(raw); } catch (e) { return; }   // a malformed update is skipped, never crashes the loop
+      try { n = normalize(raw); }
+      catch (e) {
+        /* A malformed update must be SKIPPED — which means getting past it, not just declining to handle it.
+           Returning here without advancing left `offset` pinned to the bad update, and since getUpdates keeps
+           returning everything at-or-after `offset` until a higher one confirms it, the poll loop would re-fetch
+           and re-throw on the same update forever: a hot spin against the Bot API with the channel permanently
+           deaf to every message behind it. Advance past it from the RAW id (the only field we still trust) so
+           one unparseable update costs one dropped message instead of the whole channel. */
+        const bad = raw && raw.update_id;
+        if (Number.isFinite(bad)) offset = Math.max(offset, bad + 1);
+        try { console.error('[' + name + '] unparseable update ' + String(bad) + ' skipped:', (e && e.message) || e); } catch (_) {}
+        return;
+      }
       if (!n) return;                                       // non-text / uninteresting update
       if (Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1);   // advance so each update is processed once
       if (n.message) {
         const m = n.message;
-        if (!admitted(m)) return;
-        if (m.chatType === 'dm' && !ownerOk(m.userId)) return;   // a non-owner DM never reaches the run host
+        const verdict = admission(m);
+        if (verdict === 'drop') return;
+        let own = null;
+        if (m.chatType === 'dm') {
+          own = ownerDecision(m.userId, m);
+          if (!own.ok) return;   // a non-owner DM never reaches the run host
+          // Enrollment is an authentication exchange, not an agent instruction. Keep its code out of the
+          // transcript/model prompt and acknowledge success directly on the transport.
+          if (own.claimed && own.consume) {
+            if (own.reply) Promise.resolve(transport.send(String(m.chatId), own.reply, {})).catch(() => {});
+            return;
+          }
+        }
         // This chat had backlog discarded while the owner was unclaimed, and has now PROVEN it is the owner by
         // getting admitted. Pay the deferred apology before its reply — otherwise the Commander's first
         // impression of a bot that was simply switched off is silence, which is what a broken bot looks like.
@@ -149,6 +322,22 @@
         // mediaGroupId marks one album part; the hub debounce-merges parts sharing it into a single turn.
         if (Array.isArray(m.media) && m.media.length) im.media = m.media;
         if (m.mediaGroupId != null && m.mediaGroupId !== '') im.mediaGroupId = String(m.mediaGroupId);
+        // replyTo ({ text, userName?, fromBot?, media? }) rides through untouched, same additive contract as
+        // media: the platform's normalize decides whether this message quotes an earlier one, the hub decides
+        // how to render it. A platform that never sets it is byte-identical to before.
+        if (m.replyTo && typeof m.replyTo === 'object') im.replyTo = m.replyTo;
+        // threadId names the sub-conversation this arrived in (a Telegram forum topic today; a Discord thread
+        // later). Neutral and additive: the hub remembers it per chat and hands it straight back on every send,
+        // and a platform whose normalize never sets it behaves exactly as before.
+        if (m.threadId != null && m.threadId !== '') im.threadId = String(m.threadId);
+        // Both additive flags, both POLICY questions the hub answers: is a correction worth a fresh run, and is
+        // this a broadcast post rather than a person talking. A platform that sets neither behaves as before.
+        if (m.edited) im.edited = true;
+        if (m.channelPost) im.channelPost = true;
+        // OBSERVE-ONLY: heard, to be remembered, never dispatched. The hub files it in the transcript and returns
+        // before a single model call. Additive — a platform that never observes sends the exact old shape.
+        if (verdict === 'observe') im.observeOnly = true;
+        if (Array.isArray(m.mentions) && m.mentions.length) im.mentions = m.mentions.slice();
         onInbound(im);
       } else if (n.callback && onCallback) {
         /* Only the owner's taps act — and an UNCLAIMED owner is not a licence, it is the absence of one.
@@ -158,6 +347,18 @@
            never be the trust-on-first-use moment either: the keyboard is on a message WE sent, so it proves
            nothing about who is talking. Fail closed, exactly like the empty-userId DM case. */
         if (owner && String(n.callback.userId) === owner) onCallback(n.callback);
+      } else if (n.membership && onMembership) {
+        /* OUR OWN membership changed. Not admission-gated and not owner-gated: "you were kicked out of chat X"
+           is true regardless of who did it, and a chat that has just removed us can hardly prove it is allowed
+           to say so. The consumer decides what it means; this is only the wire fact. */
+        onMembership({
+          channel: name,
+          chatId: String(n.membership.chatId),
+          chatType: n.membership.chatType === 'group' ? 'group' : 'dm',
+          status: String(n.membership.status || ''),
+          byUserId: String(n.membership.byUserId || ''),
+          ts: clock.now()
+        });
       }
     }
 
@@ -277,10 +478,19 @@
       async send(chatId, text, sendOpts) {
         const t = text == null ? '' : String(text);
         let r = await transport.send(String(chatId), t, sendOpts || {});
+        let attempts = 1;
         if (r && r.ok === false && r.retryable) {
           const waitMs = Math.min((Number(r.retryAfter) > 0 ? Number(r.retryAfter) : 1) * 1000, 30000);
           await sleep(waitMs);
           r = await transport.send(String(chatId), t, sendOpts || {});
+          attempts++;
+        }
+        if (r && r.ok) rememberSent(chatId, r.messageId);   // so a channel echoing this back is not taken for input
+        if (onDelivery) {
+          try {
+            onDelivery({ ok: !!(r && r.ok), chatId: String(chatId), attempts: attempts,
+              detail: r && r.ok ? '' : String((r && r.error) || 'send failed').slice(0, 240) });
+          } catch (_) {}
         }
         return r;
       },
@@ -288,9 +498,11 @@
       // Fire one "typing…" chat-action (transport-optional, like getFile): { ok, error?, retryable?, retryAfter? },
       // never throws. A transport without sendChatAction answers ok:false NON-retryable, so the hub's keep-alive
       // loop stops after one probe instead of hammering a channel that can't show typing at all.
-      chatAction(chatId) {
+      // actionOpts (optional) carries the same neutral route as send() — a typing bubble raised in the wrong
+      // forum topic is visible to the room, so it must follow the question exactly like the answer does.
+      chatAction(chatId, actionOpts) {
         if (typeof transport.sendChatAction !== 'function') return Promise.resolve({ ok: false, error: 'typing not supported on this channel', retryable: false });
-        try { return Promise.resolve(transport.sendChatAction(String(chatId))); }
+        try { return Promise.resolve(transport.sendChatAction(String(chatId), undefined, actionOpts || undefined)); }
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendChatAction threw', retryable: false }); }
       },
 
@@ -315,10 +527,55 @@
       },
 
       // Publish the bot's slash-command menu (one-shot, at connect).
-      setCommands(list) {
+      setCommands(list, commandOpts) {
         if (typeof transport.setCommands !== 'function') return Promise.resolve({ ok: false, error: 'command menus not supported on this channel' });
-        try { return Promise.resolve(transport.setCommands(list)); }
+        try { return Promise.resolve(transport.setCommands(list, commandOpts || {})); }
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setCommands threw' }); }
+      },
+
+      // The bot's profile status line. Transport-optional; opt-in at the composition root.
+      setShortDescription(text) {
+        if (typeof transport.setShortDescription !== 'function') return Promise.resolve({ ok: false, error: 'status lines are not supported on this channel' });
+        try { return Promise.resolve(transport.setShortDescription(text)); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setShortDescription threw' }); }
+      },
+
+      // Remove a message we sent. Only the streaming path uses it, and only to clear a partial reply it can no
+      // longer finish in place. Transport-optional like the rest.
+      deleteMessage(chatId, messageId) {
+        if (typeof transport.deleteMessage !== 'function') return Promise.resolve({ ok: false, error: 'deleting messages is not supported on this channel' });
+        try { return Promise.resolve(transport.deleteMessage(String(chatId), String(messageId))); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'deleteMessage threw' }); }
+      },
+
+      // React to a message instead of replying to it — the cheapest acknowledgement there is. Transport-optional
+      // like every other capability here; a channel that cannot react simply shows nothing.
+      setReaction(chatId, messageId, emoji) {
+        if (typeof transport.setReaction !== 'function') return Promise.resolve({ ok: false, error: 'reactions not supported on this channel', retryable: false });
+        try { return Promise.resolve(transport.setReaction(String(chatId), String(messageId), emoji || '')); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setReaction threw', retryable: false }); }
+      },
+
+      // ---- OUTBOUND MEDIA (transport-optional, same probe-and-degrade contract) ---------------------------
+      // A channel whose transport cannot upload answers { ok:false, error } and the hub falls back to naming
+      // the file's workspace path in text. That fallback is the whole reason this is a capability method and
+      // not a hard dependency: Discord/Slack/Matrix/Signal keep working untouched until they grow their own.
+      sendMedia(chatId, item, mediaOpts) {
+        if (typeof transport.sendMedia !== 'function') return Promise.resolve({ ok: false, error: 'sending files is not supported on this channel', retryable: false });
+        try {
+          return Promise.resolve(transport.sendMedia(String(chatId), item, mediaOpts || {}))
+            .then(r => { if (r && r.ok) rememberSent(chatId, r.messageId); return r; });
+        }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendMedia threw', retryable: false }); }
+      },
+
+      sendMediaGroup(chatId, items, groupOpts) {
+        if (typeof transport.sendMediaGroup !== 'function') return Promise.resolve({ ok: false, error: 'albums are not supported on this channel', retryable: false });
+        try {
+          return Promise.resolve(transport.sendMediaGroup(String(chatId), items, groupOpts || {}))
+            .then(r => { if (r && r.ok) rememberSent(chatId, r.messageId); return r; });
+        }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendMediaGroup threw', retryable: false }); }
       },
 
       // Download one media file's bytes (transport-optional): { ok, buffer?, error? }, never throws. A transport
@@ -335,7 +592,7 @@
         return { id: String(chatId), type: allowed.has(String(chatId)) ? 'group' : 'dm' };
       },
 
-      _internals: { admitted, ownerOk, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, get offset() { return offset; }, get owner() { return owner; } }
+      _internals: { admitted, admission, ownerOk, ownerDecision, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, wakeWords, namedUs, MIN_WAKE_WORD, get offset() { return offset; }, get owner() { return owner; } }
     };
   }
 

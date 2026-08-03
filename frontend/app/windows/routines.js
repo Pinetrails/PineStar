@@ -65,6 +65,18 @@
         '<div id="rt-preview" class="dim" style="min-height:1em;font-size:.9em"></div>' +
         '<div class="rt-agent-pick" role="group" aria-label="Routine agent">' + roster.map(agentButton).join('') + '</div>' +
         '<input id="rt-agent" type="hidden" value="' + esc(routineAgentId) + '">' +
+        '<details class="brief-block" style="margin:4px 0"><summary>ADVANCED RUNTIME</summary>' +
+          '<div class="mc-form" style="margin-top:8px">' +
+            '<input id="rt-skills" class="key-input" placeholder="saved skills (comma-separated names)">' +
+            '<input id="rt-context" class="key-input" placeholder="upstream routine ids (comma-separated)">' +
+            '<input id="rt-workdir" class="key-input" placeholder="approved project folder (optional absolute path)">' +
+            '<input id="rt-script" class="key-input" placeholder="pre-check script (relative to workspace/project)">' +
+            '<label class="rt-term"><input type="checkbox" id="rt-no-agent"> script only — do not call a model</label>' +
+            '<input id="rt-toolsets" class="key-input" placeholder="allowed toolsets (comma-separated; blank = station defaults)">' +
+            '<select id="rt-deliver" class="key-input"><option value="local">keep result in StarNet</option><option value="origin">return result to this conversation</option></select>' +
+            '<label class="rt-term"><input type="checkbox" id="rt-continue"> keep delivery continuable in its conversation</label>' +
+          '</div>' +
+        '</details>' +
         // UNATTENDED TERMINAL GRANT — default OFF, and it must stay a deliberate tick: this is the one control
         // that lets a scheduled run execute commands with nobody watching. The label states the risk plainly
         // rather than selling the feature (truthful telemetry applies to consent copy too).
@@ -149,7 +161,9 @@
     function row(j) {
       const on = j.enabled;
       const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>' : '<span class="dim">○ paused</span>';
-      const next = on && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
+      // A routine can remain scheduled while E-STOP has durably stood down the global scheduler. Keep the saved
+      // scheduled badge, but never run a moving countdown for work the host has proven will not fire.
+      const next = on && schedulerArmed && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
       // R3 provenance: a routine minted from a recipe (meta.recipeId) shows "from recipe: <name>". Resolve the live
       // recipe name when we can; fall back to the id (never lies — a deleted recipe still shows its id). Tolerates
       // an absent meta (every pre-R3 job) — no badge then.
@@ -168,8 +182,15 @@
       const termBadge =
         grantBadge(grantsOf.indexOf('workbench') >= 0, '⌘ terminal', 'this routine may run shell commands unattended') +
         grantBadge(grantsOf.indexOf('connectors') >= 0, '⧉ connected tools', 'this routine may call your MCP connectors unattended');
+      const runtimeBadge =
+        grantBadge(!!j.noAgent, '⚙ script only', 'this routine completes without calling a model') +
+        grantBadge(!!j.script && !j.noAgent, '⚙ pre-check', 'a script decides whether the agent should wake') +
+        grantBadge(!!(j.skills && j.skills.length), '✦ ' + j.skills.length + ' skill' + (j.skills.length === 1 ? '' : 's'), 'saved skills preload on every run') +
+        grantBadge(!!(j.contextFrom && j.contextFrom.length), '⇢ pipeline', 'uses successful output from upstream routines') +
+        grantBadge(j.enabledToolsets != null, '⊣ restricted tools', 'this routine has an explicit per-job toolset intersection') +
+        grantBadge(String(j.deliver || 'local') !== 'local', '↗ delivery', 'results are delivered to approved destinations');
       return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '">' +
-        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + termBadge + fromRecipe + '</div>' +
+        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + termBadge + runtimeBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
         deliveryLine(j) +
@@ -186,7 +207,9 @@
       try {
         const j = await Harness.api.get('/api/cron');
         const jobs = (j && j.jobs) || [];
-        schedulerArmed = !!(j && j.enabled);   // the live cronArmed — feeds the create-confirm's honest arm-state line
+        // the live cronArmed — feeds the create-confirm's honest arm-state line. A HALTED scheduler is not armed no
+        // matter what the intent flag says, or the create-confirm promises a fire that an E-STOP is holding down.
+        schedulerArmed = !!(j && j.enabled && !j.halted);
         // HONEST disabled-state + one-click ENABLE (G4.6): when the scheduler is OFF, say plainly that routines
         // will NOT fire and offer a one-click ENABLE that arms the live timer (no env edit / restart). When ON,
         // show the armed state + a DISABLE control. `enabled` comes straight from GET /api/cron (the live
@@ -195,7 +218,18 @@
         // APPROVE ask uses) with the ENABLE SCHEDULING action inline, so "saved but won't fire" reads loudly and
         // the fix is one click away. When ON, the calm one-liner + DISABLE control is enough. `#rt-arm`/data-arm
         // stay identical so the arm/disarm wiring below binds unchanged.
-        gateEl.innerHTML = j && j.enabled
+        // E-STOP WINS OVER `enabled` (bug-sweep P0). GET /api/cron carries `halted` — the durable stand-down written
+        // by the emergency stop. `enabled` still records the user's ARM INTENT while halted, so rendering off
+        // `enabled` alone printed "● scheduler armed — routines fire automatically" over a frozen timer. Say the
+        // truth loudly and offer the one-click lift (POST /api/cron/arm {enabled:true} clears the halt server-side,
+        // which is exactly what the existing #rt-arm data-arm="1" handler already does). Mirrors windows/loops.js.
+        gateEl.innerHTML = j && j.halted
+          ? '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
+              '<div class="brief-k" style="color:var(--bad)">✕ SCHEDULING IS STOPPED (E-STOP)</div>' +
+              '<div class="brief-v">Your routines are saved but <b>will not fire</b> — an emergency stop is engaged and it survives a restart.' +
+              '<div style="margin-top:8px"><button class="bb xs" id="rt-arm" data-arm="1">▶ RESUME SCHEDULING</button></div>' +
+            '</div></div>'
+          : j && j.enabled
           ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span>' + tickHealthLine(j) + ' ' +
             '<button class="bb xs" id="rt-arm" data-arm="0">⏸ DISABLE SCHEDULING</button>'
           : '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
@@ -295,13 +329,21 @@
       const act = btn.dataset.act;
       if (act === 'remove') {
         if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
-        sfx('bad'); try { await post('/api/cron/remove', { id }); notify('routine deleted'); } catch (_) {} refresh(); return;
+        // ⛔ FETCH RESOLVES ON 4xx/5xx. `await post(...)` only rejects on a network failure, so the toast used to
+        // announce a delete the sidecar had REFUSED — and then refresh() re-drew the still-present row underneath it.
+        sfx('bad');
+        try { const r = await post('/api/cron/remove', { id }); notify(r.ok ? 'routine deleted' : 'could not delete this routine', r.ok ? 'good' : 'warn'); }
+        catch (_) { notify('could not reach the station — the routine was not deleted', 'warn'); }
+        refresh(); return;
       }
       if (act === 'revoke') {
         // withdraw every unattended grant. Immediate and unconfirmed BY DESIGN: revoking a permission is the
         // safe direction, so it must never be harder than granting it was (delete keeps its two-step arm).
         sfx('click');
-        try { await post('/api/cron/update', { id, patch: { unattendedGrants: [] } }); notify('access revoked', 'good'); } catch (_) {}
+        // A REVOKE CLAIM MUST BE PROVEN, not assumed: a rejected request left the standing unattended grant in
+        // force while the station said "access revoked" — the one lie a permission surface can never tell.
+        try { const r = await post('/api/cron/update', { id, patch: { unattendedGrants: [] } }); notify(r.ok ? 'access revoked' : 'could NOT revoke access — the routine still has it', r.ok ? 'good' : 'warn'); }
+        catch (_) { notify('could not reach the station — access was NOT revoked', 'warn'); }
         refresh(); return;
       }
       if (act === 'toggle') {
@@ -351,7 +393,23 @@
         const grants = [];
         if ((body.querySelector('#rt-term') || {}).checked) grants.push('workbench');
         if ((body.querySelector('#rt-conn') || {}).checked) grants.push('connectors');
-        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider, tz, unattendedGrants: grants.length ? grants : undefined })).json();
+        const split = id => (body.querySelector(id).value || '').split(',').map(x => x.trim()).filter(Boolean);
+        const script = (body.querySelector('#rt-script').value || '').trim();
+        const toolsetText = (body.querySelector('#rt-toolsets').value || '').trim();
+        const workdir = (body.querySelector('#rt-workdir').value || '').trim();
+        const deliveryMode = body.querySelector('#rt-deliver').value;
+        const activeSession = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+        const r = await (await post('/api/cron', {
+          name, prompt, schedule, agentId: agentId || undefined, provider, tz,
+          unattendedGrants: grants.length ? grants : undefined,
+          skills: split('#rt-skills'), contextFrom: split('#rt-context'),
+          workdir: workdir || undefined, script: script || undefined,
+          noAgent: !!body.querySelector('#rt-no-agent').checked,
+          enabledToolsets: toolsetText ? split('#rt-toolsets') : undefined,
+          deliver: deliveryMode,
+          origin: deliveryMode === 'origin' && activeSession ? { sessionId: activeSession.id, streamId: activeSession.id, sessionTitle: activeSession.title || '' } : undefined,
+          attachToSession: !!body.querySelector('#rt-continue').checked
+        })).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
         else {
           msgEl.textContent = '';

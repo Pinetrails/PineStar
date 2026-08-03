@@ -381,5 +381,55 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.eq(formatForInjection(store, 'nobody'), null, 'no active items -> null (nothing injected)');
   }
 
+  // ============ NEAR-DUPE GUARD at the write boundary ============
+  // reflection deduped its PROPOSALS by Jaccard; a direct notebook.write never was, so the same belief
+  // accumulated in N phrasings and diluted top-K recall. A restatement must be refused as a SUCCESS (an error
+  // makes a model retry with different words — the exact loop this stops), write nothing, and emit nothing.
+  {
+    const { findSimilar } = require('../sidecar/memcore.js');
+    const store = memStore();
+    const reg = makeRegistry();
+    makeNotebookTools({ store, clock: makeClock(1000), findSimilar }).register(reg);
+
+    const first = await reg.dispatch(dcall('notebook.write', { title: 'Preference', body: 'the Commander prefers npm start over npm run serve' }), { agentId: 'ag' });
+    A.ok(/Saved note/.test(first.content), 'the first phrasing is saved');
+    A.eq(store.get('notebook:ag').length, 1, 'one record stored');
+
+    // a PARAPHRASE of the same belief — exact-text equality would miss this
+    const again = await reg.dispatch(dcall('notebook.write', { title: 'Preference', body: 'Commander prefers to run npm start rather than npm run serve' }), { agentId: 'ag' });
+    A.ok(!again.isError, 'a restatement is a SUCCESS, not an error (an error would trigger a reworded retry)');
+    A.ok(/already remember/i.test(again.content), 'the reply says the belief is already held');
+    A.ok(/note_1/.test(again.content), 'names the entry that already holds it');
+    A.ok(/npm run serve/.test(again.content), 'and shows the held belief IN FULL so the decision is informed');
+    A.eq(store.get('notebook:ag').length, 1, 'NOTHING was appended');
+
+    // an unrelated belief is untouched by the guard
+    const other = await reg.dispatch(dcall('notebook.write', { title: 'Fact', body: 'the staging database lives in the frankfurt region' }), { agentId: 'ag' });
+    A.ok(/Saved note/.test(other.content), 'an unrelated belief writes normally');
+    A.eq(store.get('notebook:ag').length, 2, 'the new belief is stored');
+
+    // THE FALSE-POSITIVE CASE the challenge design exists for: two genuinely different facts that share a shape.
+    // Token overlap cannot tell these apart, so a silent block would DESTROY the second fact. It must be
+    // challenged, then admitted on distinct:true.
+    const sibling = { title: 'Fact', body: 'the production database lives in the frankfurt region' };
+    const challenged = await reg.dispatch(dcall('notebook.write', sibling), { agentId: 'ag' });
+    A.ok(/already remember/i.test(challenged.content), 'a same-shape different fact is challenged, not silently dropped');
+    A.eq(store.get('notebook:ag').length, 2, 'and is not written on the challenged attempt');
+    const forced = await reg.dispatch(dcall('notebook.write', Object.assign({ distinct: true }, sibling)), { agentId: 'ag' });
+    A.ok(/Saved note/.test(forced.content), 'distinct:true admits the genuinely different fact — no silent loss');
+    A.eq(store.get('notebook:ag').length, 3, 'the distinct fact IS stored');
+
+    // the challenge must NOT emit — a receipt for a write that did not happen is a false claim
+    let emitted = 0;
+    await reg.dispatch(dcall('notebook.write', { title: 'Preference', body: 'the Commander prefers npm start over serve' }),
+      { agentId: 'ag', runId: 'r1', emit: () => { emitted++; } });
+    A.eq(emitted, 0, 'a challenged duplicate emits no memory.write and no deliverable');
+    A.eq(store.get('notebook:ag').length, 3, 'and still writes nothing');
+
+    // a filtered read reports the size of the WHOLE store (the honest half of a capacity signal)
+    const readBack = await reg.dispatch(dcall('notebook.read', { query: 'staging' }), { agentId: 'ag' });
+    A.ok(/1 of 3 entries in memory/.test(readBack.content), 'a filtered read states how much memory is held in total');
+  }
+
   A.report('notebook.test');
 })();

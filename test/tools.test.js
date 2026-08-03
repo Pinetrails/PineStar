@@ -278,6 +278,34 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
     // intentional — making the note eat the content budget would be the worse trade.
     A.ok(capped.content.length > 500, 'the note is additive to the cap, not carved out of it');
     if (prev === undefined) delete process.env.SKYNET_TOOL_OUTPUT_MAX; else process.env.SKYNET_TOOL_OUTPUT_MAX = prev;
+
+    /* PARKING: the elided middle must be RECOVERABLE. "narrow it" is sound advice for a search and useless
+       for output that WAS the answer — a full test run, a big log — where the work is already done and paid
+       for and the part that mattered may be exactly the part thrown away. */
+    {
+      let parked = null;
+      const parkCtx = { timeoutMs: 5000, parkOutput: async (content, meta) => { parked = { content, meta }; return { path: '.output/flood-r1-0.txt' }; } };
+      const r = await reg.dispatch({ id: 'c6', name: 'flood', args: {} }, parkCtx);
+      A.ok(parked && parked.content.length === HUGE.length, 'the FULL output reaches the parker, before any clamp');
+      A.eq(parked.meta.tool, 'flood', 'the parker is told which tool produced it');
+      A.ok(r.content.length <= 81000, 'the in-context result is still capped');
+      A.ok(/\.output\/flood-r1-0\.txt/.test(r.content), 'the note points at the file holding the full output');
+      A.ok(/Do NOT repeat this call/.test(r.content), 'and tells the model to read that file instead of re-running');
+
+      // A parker that fails must never fail the tool call — losing the tail must not also lose the answer.
+      const broken = await reg.dispatch({ id: 'c7', name: 'flood', args: {} }, { timeoutMs: 5000, parkOutput: async () => { throw new Error('disk full'); } });
+      A.ok(broken.ok, 'a parker that throws still yields a successful result');
+      A.ok(/narrow it/.test(broken.content), 'and falls back to the plain clamp note');
+
+      // No parker wired (tests, the /api/file helper, any bare registry) = the old behavior verbatim.
+      const bare = await reg.dispatch({ id: 'c8', name: 'flood', args: {} }, { timeoutMs: 5000 });
+      A.ok(/narrow it/.test(bare.content) && !/WAS SAVED/.test(bare.content), 'no parker wired -> unchanged behavior');
+
+      // Under-cap output must never be parked — parking every small result would litter the workspace.
+      let touched = false;
+      await reg.dispatch({ id: 'c9', name: 'polite', args: {} }, { timeoutMs: 5000, parkOutput: async () => { touched = true; return { path: 'x' }; } });
+      A.ok(!touched, 'ordinary-sized output is never parked');
+    }
     delete require.cache[require.resolve('../sidecar/tools/registry.js')];
   }
 

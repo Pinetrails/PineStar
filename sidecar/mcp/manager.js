@@ -38,6 +38,9 @@
     if (typeof makeTransport !== 'function') throw new Error('makeConnectorManager: makeTransport is required (the network edge)');
     const makeClient = deps.makeClient || (clientMod && clientMod.makeMcpClient);
     const makeToolDef = deps.makeToolDef || (translateMod && translateMod.makeMcpToolDef);
+    // Injected like makeToolDef, and OPTIONAL: a host (or a test) that passes neither simply gets the historic
+    // tools-only projection rather than a crash.
+    const makeAuxDefs = ('makeAuxDefs' in deps) ? deps.makeAuxDefs : (translateMod && translateMod.connectorAuxDefs);
     const clock = deps.clock || { now: () => 0 };
     const timeoutMs = deps.timeoutMs || 30000;
     const onEvent = typeof deps.onEvent === 'function' ? deps.onEvent : function () {};
@@ -100,9 +103,14 @@
       c.state = state; c.detail = detail || ''; c.ts = clock.now();
       try { onEvent({ type: 'connector.state', connectorId: c.id, state: state, detail: c.detail, toolCount: (c.tools || []).length }); } catch (e) {}
     }
+    function closeResources(client, transport, reason) {
+      if (client) { try { client.close(reason || 'reconfigured'); } catch (_) {} }
+      else if (transport && typeof transport.close === 'function') { try { transport.close(); } catch (_) {} }
+    }
     function teardown(c) {
       if (c && c.reconnectTimer != null) { try { clearTimeoutImpl(c.reconnectTimer); } catch (_) {} c.reconnectTimer = null; }
-      if (c && c.client) { try { c.client.close('reconfigured'); } catch (e) {} }
+      if (c && c.connecting) { closeResources(c.connecting.client, c.connecting.transport, 'superseded'); c.connecting = null; }
+      if (c && c.client) closeResources(c.client, c.transport, 'reconfigured');
       if (c) { c.client = null; c.transport = null; }
     }
 
@@ -145,8 +153,12 @@
 
     async function connect(c) {
       if (c.reconnectTimer != null) { try { clearTimeoutImpl(c.reconnectTimer); } catch (_) {} c.reconnectTimer = null; }
-      if (c.client) { try { c.client.close('reconnect'); } catch (_) {} c.client = null; c.transport = null; }   // close a prior (dead) client before reattaching
+      if (c.connecting) { closeResources(c.connecting.client, c.connecting.transport, 'superseded'); c.connecting = null; }
+      if (c.client) { closeResources(c.client, c.transport, 'reconnect'); c.client = null; c.transport = null; }
       const epoch = bumpEpoch(c);
+      const isCurrent = () => conns.get(c.id) === c && c._epoch === epoch;
+      const attempt = { epoch: epoch, transport: null, client: null };
+      c.connecting = attempt;
       setState(c, 'connecting');
       try {
         const connTimeout = c.timeoutMs || timeoutMs;
@@ -156,7 +168,8 @@
         // connector surfaces an HONEST 401/error (visible + reloadable), never a crash or a silently-frozen stale token.
         let liveToken = c.token;
         if (typeof c.tokenProvider === 'function') { try { const t = await c.tokenProvider(); if (t != null) liveToken = String(t); } catch (_) {} }
-        c.transport = makeTransport({
+        if (!isCurrent()) return { ok: false, state: 'down', toolCount: 0, superseded: true };
+        attempt.transport = makeTransport({
           transport: c.transportKind,
           url: c.url,
           token: liveToken,
@@ -168,17 +181,66 @@
           timeoutMs: connTimeout,
           // DEATH HOOK: the transport reports child-exit / repeated failure here. Bound to THIS epoch so a stale
           // callback from a torn-down transport can't flip a reconnected connector back to error.
-          onError: (e) => { try { onTransportDeath(c, epoch, (e && e.message) || String(e)); } catch (_) {} }
+          onError: (e) => {
+            try { if (isCurrent() && c.client === attempt.client) onTransportDeath(c, epoch, (e && e.message) || String(e)); } catch (_) {}
+          }
         });
-        c.client = makeClient({ transport: c.transport, timeoutMs: connTimeout });
-        await c.client.initialize();
-        c.tools = await c.client.listTools() || [];
+        attempt.client = makeClient({ transport: attempt.transport, timeoutMs: connTimeout });
+        await attempt.client.initialize();
+        /* TOOLS ARE NOT MANDATORY. This used to be an unconditional `listTools()`, which meant a server that
+           publishes only RESOURCES or only PROMPTS answered "method not found", the throw fell into the catch
+           below, and the connector died in an `error` state. A perfectly healthy document server looked
+           broken — the precise symptom this whole lane exists to fix, hidden one line above the fix.
+           The rule is capability-driven, with one deliberate legacy allowance: a server that declared NOTHING
+           at all is still probed for tools (older servers under-report), and a probe failure there costs zero
+           tools rather than the connector. A server that DID declare capabilities is taken at its word. */
+        const declared = attempt.client.serverCapabilities || {};
+        const declaredAnything = !!Object.keys(declared).length;
+        let tools = [];
+        if (!declaredAnything) {
+          try { tools = await attempt.client.listTools() || []; }
+          catch (_) { tools = []; }
+        } else if (typeof attempt.client.supports === 'function' && attempt.client.supports('tools')) {
+          tools = await attempt.client.listTools() || [];
+        } else {
+          tools = [];
+        }
+        /* RESOURCES + PROMPTS. Cached on connect exactly like tools, and asked for ONLY when the server's own
+           initialize response declared the capability — probing a server that never claimed `resources` earns
+           a protocol error, not an empty list, and that error is indistinguishable from a broken connector.
+           A LIST FAILURE IS NOT A CONNECT FAILURE: a server whose tools work but whose resources/list throws
+           must still come up `up` with its tools usable. Losing the whole connector over a secondary
+           primitive would be a worse outcome than the one this feature exists to fix. */
+        let resources = [];
+        let prompts = [];
+        if (typeof attempt.client.supports === 'function' && attempt.client.supports('resources')) {
+          try {
+            const [res, tpl] = [await attempt.client.listResources() || [], await attempt.client.listResourceTemplates() || []];
+            resources = res.concat(tpl.map(t => Object.assign({}, t, { isTemplate: true })));
+          } catch (e) { if (isCurrent()) try { onEvent({ type: 'connector.partial', connectorId: c.id, what: 'resources', detail: (e && e.message) || String(e) }); } catch (_) {} }
+        }
+        if (typeof attempt.client.supports === 'function' && attempt.client.supports('prompts')) {
+          try { prompts = await attempt.client.listPrompts() || []; }
+          catch (e) { if (isCurrent()) try { onEvent({ type: 'connector.partial', connectorId: c.id, what: 'prompts', detail: (e && e.message) || String(e) }); } catch (_) {} }
+        }
+        if (!isCurrent()) {
+          closeResources(attempt.client, attempt.transport, 'superseded');
+          return { ok: false, state: 'down', toolCount: 0, superseded: true };
+        }
+        c.connecting = null;
+        c.transport = attempt.transport;
+        c.client = attempt.client;
+        c.tools = tools;
+        c.resources = resources;
+        c.prompts = prompts;
         c.reconnectAttempt = 0;                                 // a clean connect resets the backoff ladder
         setState(c, 'up');
-        return { ok: true, state: 'up', toolCount: c.tools.length };
+        return { ok: true, state: 'up', toolCount: tools.length, resourceCount: resources.length, promptCount: prompts.length };
       } catch (e) {
-        c.tools = [];
-        teardown(c);
+        closeResources(attempt.client, attempt.transport, 'connect failed');
+        if (!isCurrent()) return { ok: false, state: 'down', toolCount: 0, superseded: true };
+        if (c.connecting === attempt) c.connecting = null;
+        c.tools = []; c.resources = []; c.prompts = [];
         setState(c, 'error', (e && e.message) || String(e));
         scheduleReconnect(c);                                   // a failed (re)connect backs off and retries (bounded)
         return { ok: false, state: 'error', toolCount: 0, error: c.detail };
@@ -208,7 +270,7 @@
         // oauth connectors pass a tokenProvider() instead of a frozen token (see connect); carried across reconfigure
         // so a benign toggle/re-warm keeps refreshing the bearer.
         tokenProvider: (typeof cfg.tokenProvider === 'function') ? cfg.tokenProvider : (prev ? prev.tokenProvider : null),
-        state: 'down', detail: '', tools: [], client: null, transport: null, ts: clock.now(),
+        state: 'down', detail: '', tools: [], client: null, transport: null, connecting: null, ts: clock.now(),
         reconnectAttempt: 0, reconnectTimer: null, _epoch: 0
       };
       conns.set(id, c);
@@ -244,6 +306,11 @@
         oauth: !!c.tokenProvider,                        // the panel renders oauth connectors distinctly (re-auth via sign-in, not an http edit)
         timeoutMs: c.timeoutMs || timeoutMs,
         toolCount: (c.tools || []).length,
+        // Surfaced so the connector panel can say what a server ACTUALLY offers. A server with 0 tools and 40
+        // resources used to render as an empty connector, which reads as broken rather than as "this one
+        // serves documents, not actions".
+        resourceCount: (c.resources || []).length,
+        promptCount: (c.prompts || []).length,
         tools: (c.tools || []).map(t => t.name)
       };
       if (c.transportKind === 'stdio') {
@@ -287,7 +354,22 @@
       const c = conns.get(String(id));
       if (!c || c.state !== 'up' || !c.client) return [];
       const bound = (toolName, args) => call(c.id, toolName, args);
-      return (c.tools || []).map(t => makeToolDef({ connectorId: c.id, label: c.label, mcpTool: t, call: bound, localProcess: c.transportKind === 'stdio' }));
+      const defs = (c.tools || []).map(t => makeToolDef({ connectorId: c.id, label: c.label, mcpTool: t, call: bound, localProcess: c.transportKind === 'stdio' }));
+      /* The resources/prompts tools are projected ONLY for a server that actually publishes them, so a
+         tools-only connector's catalogue is byte-identical to before — nobody pays schema bytes for a
+         primitive their server does not serve. They ride the same projection as tools, which is why they
+         need no new registration site: index.js already registers whatever this returns, unions the names
+         into the resolved grant set, and marks them network + consent-gated. */
+      if (makeAuxDefs) {
+        for (const d of makeAuxDefs({
+          connectorId: c.id, label: c.label,
+          listResources: (c.resources || []).length ? (() => Promise.resolve(c.resources)) : null,
+          readResource: (c.resources || []).length ? ((uri) => c.client.readResource(uri)) : null,
+          listPrompts: (c.prompts || []).length ? (() => Promise.resolve(c.prompts)) : null,
+          getPrompt: (c.prompts || []).length ? ((n, a) => c.client.getPrompt(n, a)) : null
+        })) defs.push(d);
+      }
+      return defs;
     }
 
     // PER-AGENT projection: given the objects placed in ONE agent's room, return the tool defs for every
@@ -307,7 +389,22 @@
       conns.clear();
     }
 
-    return { configure, remove, refresh, close, status, list, has, ids, toolDefsFor, toolDefsForObjects, call, _internals: { connectorIdOf } };
+    /* The RESOURCES + PROMPTS read path. Served from the connect-time cache for lists (so a listing costs no
+       round trip and cannot hang a turn) and live for the two fetches, because a resource's CONTENT is the
+       thing that changes between reads — caching that would hand the agent a stale document and call it
+       current. An unknown/down connector is an honest error, never an empty list that reads as "nothing here". */
+    const upConn = (id) => {
+      const c = conns.get(String(id));
+      if (!c) throw new Error('unknown connector: ' + id);
+      if (!c.client || c.state !== 'up') throw new Error('connector ' + c.id + ' is ' + (c.state || 'down') + (c.detail ? ' (' + c.detail + ')' : ''));
+      return c;
+    };
+    const resourcesFor = (id) => (conns.get(String(id)) || {}).resources || [];
+    const promptsFor = (id) => (conns.get(String(id)) || {}).prompts || [];
+    const readResource = (id, uri) => upConn(id).client.readResource(uri);
+    const getPrompt = (id, name, args) => upConn(id).client.getPrompt(name, args);
+
+    return { configure, remove, refresh, close, status, list, has, ids, toolDefsFor, toolDefsForObjects, call, resourcesFor, promptsFor, readResource, getPrompt, _internals: { connectorIdOf } };
   }
 
   return { makeConnectorManager, _internals: { connectorIdOf } };

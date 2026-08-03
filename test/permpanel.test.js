@@ -48,16 +48,26 @@ eq(P.grantableKeys().slice().sort(), GRANTABLE.slice().sort(), 'panel catalog ke
 // --- effectiveness (object=capability): a grant only takes EFFECT once its station object is placed ---
 eq(P.grantObject('cabinet:write'), 'cabinet', 'cabinet:write needs the cabinet object placed to take effect');
 eq(P.grantObject('net:send'), null, 'a grant with no object requirement → null');
-ok(/Filing Cabinet/i.test(P.objectHint('cabinet:write')), 'objectHint names the Filing Cabinet to place');
+ok(/INTEL CAB/i.test(P.objectHint('cabinet:write')), 'objectHint names the INTEL CAB to place (the real palette prop name)');
 ok(P.grantEffective('cabinet:write', ['cabinet', 'workbench']) === true, 'effective when the cabinet is placed');
 ok(P.grantEffective('cabinet:write', ['workbench']) === false, 'NOT effective without the cabinet (so the panel never claims a silent no-op writes files)');
 ok(P.grantEffective('cabinet:write', null) === true, 'unknown caps → assumed effective (no false alarm)');
 ok(P.grantEffective('net:send', ['cabinet']) === true, 'a no-object grant is always effective');
-ok(/Filing Cabinet|cabinet/i.test(P.describeLevel('full')) || /Filing Cabinet/i.test(P.catalogEntry('cabinet:write').desc), 'the full-level / catalog copy is honest about needing a cabinet');
+ok(/INTEL CAB/i.test(P.describeLevel('full')) || /INTEL CAB/i.test(P.catalogEntry('cabinet:write').desc), 'the full-level / catalog copy is honest about needing an INTEL CAB');
 
 // --- normalizeGrants ---
 eq(P.normalizeGrants(['cabinet:write', 'cabinet:write', 'BAD', 42, null, 'net:send']), ['cabinet:write', 'net:send'], 'normalizeGrants filters junk, dedups, sorts');
 eq(P.normalizeGrants('nope'), [], 'normalizeGrants tolerates a non-array');
+/* ⛔ THE SCOPE HALF OF A DANGER KEY IS NOT AN IDENTIFIER. The filter used to be /^[a-z_]+:[a-z]+$/, which
+   dropped every real standing grant that is not the one curated key — folder trust (`path:<root>`, a Windows
+   path with a drive colon, backslashes and spaces) and one-per-connector `mcp:<id>` grants. Filtered out here,
+   they vanished from the Standing-Approvals ledger, which then printed the teaching empty-state while path
+   trust was live and ENFORCED in the sidecar: a permission the Commander could neither see nor revoke. */
+eq(P.normalizeGrants(['path:C:\\Users\\andro\\Projects']), ['path:C:\\Users\\andro\\Projects'], 'a Windows folder-trust grant survives normalization');
+eq(P.normalizeGrants(['path:/home/a/My Work']), ['path:/home/a/My Work'], 'a POSIX path with a space survives');
+eq(P.normalizeGrants(['mcp:github-mcp-2']), ['mcp:github-mcp-2'], 'a per-connector mcp grant survives');
+eq(P.normalizeGrants(['shell.exec:execute']), ['shell.exec:execute'], 'a dotted capability class survives');
+eq(P.normalizeGrants(['nocolon', ':noclass', 'cls:', 'bad:\u0007key']), [], 'still rejects a key with no class, no scope, or control characters');
 
 // --- levelFromState (derive the current level from live posture + grants) ---
 eq(P.levelFromState({ initiative: 'wait' }, []), 'never', 'wait + no grants → never');

@@ -104,7 +104,10 @@
         + '\n\n[DELEGATED EXECUTION] Treat the task context above as settled input from the Commander. Do not ask the Commander another discovery question. If a truly blocking gap remains, report that gap to the lead agent.';
     }
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
-    const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 10;
+    // A delegated research run commonly needs plan + several search/fetch turns + synthesis. Ten turns left no
+    // recovery room: three transient web failures could consume the whole job before it wrote the deliverable.
+    // Keep this well below the lead's 40-turn ceiling while allowing bounded recovery.
+    const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 16;
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
     // Cross-provider dispatch: a roster identity carries its OWN mirrored provider (model is a roster
@@ -114,6 +117,11 @@
     // the worker runs on the LEAD's provider+model (never a foreign model on the lead's wire) with an honest
     // note in the dispatch result.
     const providerAuth = (typeof deps.providerAuth === 'function') ? deps.providerAuth : null;
+    /* THE STATION BRIDGE (optional) — { request(verb, args) -> {ok, result|error} }. Sessions are PAGE state, so
+       resolving "the research session" to a stream id, and folding a worker's answer into that session's thread,
+       both have to ask the live page. Absent (headless run, bare unit caller) -> session targeting is refused
+       honestly rather than silently ignored. See sidecar/station-bridge.js. */
+    const station = (deps.station && typeof deps.station.request === 'function') ? deps.station : null;
     function workerWire(ident) {
       const wanted = (ident && ident.provider) ? String(ident.provider) : '';
       const ownModel = (ident && ident.model) ? String(ident.model) : '';
@@ -150,6 +158,87 @@
       return Math.max(1, Math.min(n, Math.floor(f))); // at least 1 (a full gate still tries, then the retry pass)
     }
 
+    /* SESSION TARGETING (2026-07-30). Delegation used to be agent-addressed only: the lead could say WHO, never
+       WHERE, so a worker's run was filed under whatever session the LEAD was in. The Commander asked for a session
+       called "research", got the researcher, and watched the work land somewhere else while the lead reported
+       success. `session` on a worker closes that: it resolves to a real workstream id, which rides into runOnce as
+       streamId (so runStore + transcriptStore file the run there for real) and back to the page as a delivery.
+
+       ⛔ AN UNMATCHED NAME NEVER FALLS BACK TO THE CURRENT SESSION. Unknown or ambiguous => that worker does NOT
+       run, and the row says why. Defaulting is the exact behaviour this closes: a wrong-but-plausible destination
+       is worse than a refusal, because the lead then truthfully reports work it cannot see was misfiled. A refusal
+       is legible — the model can create the session, or ask which one, and try again.
+
+       Mutates jobs in place: sets streamId + sessionTitle on success, or `error` (which runWorker returns as a row
+       without ever starting the worker). One bridge call for the whole dispatch, not one per worker. */
+    async function resolveSessions(jobs) {
+      const wanted = jobs.filter(j => !j.error && j.session);
+      if (!wanted.length) return;
+      const refuseAll = (why) => { for (const j of wanted) j.error = why(j); };
+      if (!station) {
+        return refuseAll(j => 'this run cannot target sessions — no live station page is attached to resolve "'
+          + j.session + '". Dispatch without `session` and the work runs in the current one.');
+      }
+      let list = null, why = '';
+      try {
+        const out = await station.request('station.sessions', {});
+        if (out && out.ok && out.result && Array.isArray(out.result.sessions)) list = out.result.sessions;
+        else why = String((out && out.error) || 'the station did not answer');
+      } catch (e) { why = String((e && e.message) || e); }
+      if (!list) return refuseAll(j => 'could not read this station\'s session list, so "' + j.session + '" could not be resolved — ' + why);
+      const named = list.filter(s => s && String(s.title || '').trim());
+      const nameList = named.map(s => String(s.title).trim());
+      for (const j of wanted) {
+        const want = String(j.session).trim();
+        const lower = want.toLowerCase();
+        // Three explicit tiers, each requiring a UNIQUE hit. Substring is last and still refuses when it matches
+        // two sessions — so "research" can find "Research plan" without ever silently picking between two.
+        const byId = list.filter(s => s && String(s.id) === want);
+        const byTitle = named.filter(s => String(s.title).trim().toLowerCase() === lower);
+        const byPart = lower ? named.filter(s => String(s.title).trim().toLowerCase().indexOf(lower) >= 0) : [];
+        const hits = byId.length ? byId : (byTitle.length ? byTitle : byPart);
+        if (hits.length === 1) { j.streamId = String(hits[0].id); j.sessionTitle = String(hits[0].title || want); continue; }
+        j.error = hits.length > 1
+          ? 'more than one session matches "' + want + '" (' + hits.map(h => String(h.title || h.id)).join(', ')
+            + ') — name it exactly, or pass the session id. This worker did NOT run.'
+          : 'there is no session called "' + want + '" on this station'
+            + (nameList.length ? '. Open sessions: ' + nameList.join(', ') : '')
+            + '. Create it first, or dispatch without `session` to run in the current one. This worker did NOT run.';
+      }
+    }
+
+    /* THE VISIBLE HALF. runOnce already filed the run under this streamId (runStore + transcriptStore), so the
+       durable record is true either way; this is what puts the worker's answer in front of the Commander, in the
+       session they named. Failure is REPORTED on the row, never swallowed: a lead that says "it's in research"
+       when the fold failed is the same lie as misfiling it. */
+    async function deliverToSession(job, row) {
+      if (!station || !job.streamId) return;
+      let out = null;
+      const args = {
+        streamId: job.streamId, sessionTitle: job.sessionTitle || job.session || '',
+        agentId: job.agentId, runId: row.runId || '', prompt: job.prompt, text: row.result
+      };
+      try { out = await station.request('station.deliver', args); }
+      catch (e) { out = { ok: false, error: String((e && e.message) || e) }; }
+      if (out && out.ok) row.session = job.sessionTitle || job.streamId;
+      else row.sessionNote = 'the work ran and is filed under the "' + (job.sessionTitle || job.streamId)
+        + '" session, but the station could not show it there: ' + String((out && out.error) || 'no answer')
+        + '. The completed run is durable and will be reconciled when that session is opened.';
+    }
+
+    // Busy state belongs to the TARGET session, not whichever session the Commander is currently viewing.
+    // This is intentionally best-effort: a missing page must never delay or cancel paid worker work.
+    function noteSessionActivity(verb, job, runId) {
+      if (!station || !job.streamId) return;
+      try {
+        const pending = station.request(verb, {
+          streamId: job.streamId, sessionTitle: job.sessionTitle || job.session || '',
+          agentId: job.agentId, runId: runId || ''
+        });
+        if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+      } catch (_) {}
+    }
+
     const dispatchTool = {
       // The registry timeout is now only a BACKSTOP: it sits a minute above the dispatch's own budget so the
       // in-tool wall clock (which returns partial rows) always fires first. Letting the registry's timeout be the
@@ -162,13 +251,18 @@
       // user keeps the frictionless flow by choosing it. Lead-only conferral + budget caps + the concurrency
       // ceiling + autonomous workers (default-deny) all still stand underneath.
       name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: true,
-      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working. FILES: each worker saves into its OWN private workspace — you cannot fs.read another agent\'s files, so never "verify" a worker\'s file with your own file tools (absence in YOUR workspace proves nothing). The result\'s artifacts list is the proof of what each worker saved, and the Commander is shown those files as cards automatically — reference them as "<workerId>\'s workspace: <path>".',
+      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working. SESSIONS: pass `session` on a worker (the session\'s NAME, as the Commander says it) to make that subtask run in — and be filed under — that session instead of this one. Only pass it when the Commander named a session; a name that does not match one on this station is REFUSED, not guessed, and that worker does not run. FILES: each worker saves into its OWN private workspace — you cannot fs.read another agent\'s files, so never "verify" a worker\'s file with your own file tools (absence in YOUR workspace proves nothing). The result\'s artifacts list is the proof of what each worker saved, and the Commander is shown those files as cards automatically — reference them as "<workerId>\'s workspace: <path>".',
       schema: {
         type: 'object', required: ['workers'], properties: {
           workers: {
             type: 'array', items: {
               type: 'object', required: ['agentId', 'prompt'],
-              properties: { agentId: { type: 'string' }, prompt: { type: 'string' } }
+              properties: {
+                agentId: { type: 'string' }, prompt: { type: 'string' },
+                // WHERE the work lands. A session NAME (what the Commander calls it) or its exact id. Omit to run
+                // in the current session — see resolveSessions for why an unmatched name never falls back to that.
+                session: { type: 'string' }
+              }
             }
           },
           parallel: { type: 'boolean' },
@@ -201,11 +295,15 @@
         // validate every target up front: a real, live, OTHER worker (never self, never an unknown agentId).
         const jobs = reqs.map(w => {
           const aid = w && String(w.agentId || '');
+          const session = String((w && w.session) || '').trim().slice(0, 80);
           if (!ID_RE.test(aid)) return { agentId: aid, error: 'invalid agentId' };
           if (aid === leadId) return { agentId: aid, error: 'cannot delegate to yourself' };
           if (!crew.has(aid)) return { agentId: aid, error: 'no such live worker — summon them first, or check the agentId against YOUR TEAM' };
-          return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid) };
+          return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid), session: session };
         });
+        // WHERE before WHO does the work: an unresolvable session marks its job failed here, so that worker is
+        // never started in the wrong place (see resolveSessions). One bridge round-trip for the whole dispatch.
+        await resolveSessions(jobs);
 
         const runWorker = async (job, o2) => {
           o2 = o2 || {};
@@ -219,6 +317,9 @@
           // straggler is stopped ALONE and comes back as one honest `timeout` row while its siblings' work survives.
           // Background workers pass no wallMs — outliving the tool call is the whole point of background:true.
           const parentSignal = o2.signal || (ctx && ctx.signal);
+          // minted up front (not inline in the runOnce call) so the row can carry the SAME id the run was filed
+          // under — the page's delivery uses it to append the run to the session and to stay idempotent.
+          const workerRunId = o2.runId || newId();
           const wallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
           const ac = wallMs ? childAbort(parentSignal) : null;
           let timedOut = false, timer = null;
@@ -235,6 +336,7 @@
             };
           };
           let result;
+          noteSessionActivity('station.dispatch_start', job, workerRunId);
           try {
             result = await runOnce({
               key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
@@ -247,7 +349,13 @@
               agentId: job.agentId, isTask: true,
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
               signal: ac ? ac.signal : parentSignal,   // own controller when this worker has a wall clock (see above)
-              runId: o2.runId || newId(), trigger: 'directive', surface: 'autonomous',
+              runId: workerRunId, trigger: 'directive', surface: 'autonomous',
+              // SESSION TARGETING: the run host files a run under its streamId (runStore.record + the durable
+              // transcript) and scopes its working memory to that stream. Absent -> undefined, byte-identical to
+              // the pre-2026-07-30 call. This is the DURABLE half; deliverToSession is the visible one.
+              streamId: job.streamId || undefined,
+              sessionTitle: job.streamId ? (job.sessionTitle || job.session || '') : undefined,
+              sessionPrompt: job.streamId ? job.prompt : undefined,
               // Share the lead's consent broker so a worker's WRITES follow the lead's APPROVAL posture
               // (full-auto bypass, or a prompt forwarded to the watched lead) instead of the headless default-deny.
               // NOT "same access as the orchestrator" — a worker runs surface:'autonomous' (below), and
@@ -261,20 +369,27 @@
               maxIters: workerMaxIters         // a runaway worker can't burn the lead's full iteration budget
             });
           } catch (e) {
+            noteSessionActivity('station.dispatch_end', job, workerRunId);
             if (timedOut) return timeoutRow(null);   // the abort we fired surfaced as a throw — still an honest timeout
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
           } finally {
             if (timer) clearTimeout(timer);
           }
+          noteSessionActivity('station.dispatch_end', job, workerRunId);
           if (timedOut) return timeoutRow(result);   // keep whatever partial text the aborted run did produce
           if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the station\'s concurrent-agent cap was full at that instant, or a provider sign-in is needed. A parallel dispatch already runs in waves sized to the free capacity and retries a refusal once, so a refusal that survives means the cap is genuinely saturated: raise MAX_CONCURRENT_AGENTS in SETTINGS, or dispatch these workers in a follow-up call.', usd: 0 };
           const row = {
             agentId: job.agentId,
             reason: result.reason || 'done',
             result: lastAssistant(result.messages) || '(the worker returned no text)',
-            usd: result.usd || 0
+            usd: result.usd || 0,
+            runId: workerRunId
           };
           if (wire.note) row.note = wire.note;   // honest credential-fallback disclosure (never silent)
+          /* Show it where the Commander asked for it. Only a COMPLETED worker delivers: every other outcome
+             (error / refused / timeout) returned above, so a partial or failed run is reported to the lead but
+             never folded into a session as though it were finished work. */
+          await deliverToSession(job, row);
           // WORK VISIBILITY (ghost-file fix): what the worker PROVABLY produced (its runOnce artifact ledger),
           // stamped with the OWNING agentId. Files live in the WORKER's private workspace — the lead cannot
           // fs.read them and must reference them as the worker's (they are already shown to the Commander as
@@ -462,6 +577,9 @@
     // which resolves ctx.summon (mirroring the consent round-trip). The new id is returned so the lead can hand it
     // work with team.dispatch in the SAME run. consent-gated (APPROVAL beat); ctx.summon is only present on a
     // live interactive lead run, so a headless/worker call degrades to a clear "not available" message.
+    // THE DESK RIDES ALONG: an agent created because the Commander asked for one is useless standing on bare
+    // deck, so the browser's summon seeds that agent's workstation too and reports WHERE on the ack. That is the
+    // only prop this path places, and only for the agent being created — team.summon is not a build tool.
     // Class Loadouts S1: the specialist class list is composed from the SHARED catalog (deps.classes =
     // [{id, tagline}]), NOT hardcoded here, so it never drifts from the Recruitment Bay. Falls back to a
     // static list only if no catalog was injected (keeps the tool self-describing under a bare unit test).
@@ -473,7 +591,7 @@
       // completed" instead of tripping the 30s fast-tool default mid-wait. The happy path acks in well under a second.
       timeoutMs: 180000,
       name: 'team.summon', capability: 'orchestrator', scope: 'write', requiresConsent: true,
-      description: 'Summon a NEW specialist agent onto the crew for the Commander, live — the same thing they would do in the Recruitment Bay. Use this when a specialist you need does not exist yet; if it is already listed under YOUR TEAM, delegate to it with team.dispatch instead. Pick a class with specId (one of: ' + SPEC_IDS + ') or describe a custom one with name + purpose. Returns the new agentId, which you can immediately delegate to. In APPROVAL mode the Commander confirms the summon first.',
+      description: 'Summon a NEW specialist agent onto the crew for the Commander, live — the same thing they would do in the Recruitment Bay. Use this when a specialist you need does not exist yet; if it is already listed under YOUR TEAM, delegate to it with team.dispatch instead. Pick a class with specId (one of: ' + SPEC_IDS + ') or describe a custom one with name + purpose. The station places the new agent\'s workstation with it, so never tell the Commander to go build it a desk. Returns the new agentId, which you can immediately delegate to. In APPROVAL mode the Commander confirms the summon first.',
       schema: {
         type: 'object', required: ['name'], properties: {
           name: { type: 'string' },        // the new agent's display name (e.g. "RESEARCHER")
@@ -494,11 +612,20 @@
           skin: String(a.skin || '').trim().slice(0, 40)
         };
         if (!spec.name && !spec.specId) return { content: 'Provide a name or a specId for the new agent.', summary: 'noop' };
-        let newId;
-        try { newId = await ctx.summon(spec); }
+        let ack;
+        try { ack = await ctx.summon(spec); }
         catch (e) { return { content: 'summon failed: ' + ((e && e.message) || e), summary: 'error' }; }
+        // the station resolves { agentId, desk }; a bare id string is still accepted (older stubs/callers).
+        const newId = (ack && typeof ack === 'object') ? ack.agentId : ack;
+        const desk = (ack && typeof ack === 'object' && ack.desk) ? String(ack.desk) : '';
         if (!newId) return { content: 'The summon was not completed — the Commander declined it, or the station did not respond. No agent was created.', summary: 'declined' };
-        return { content: JSON.stringify({ agentId: newId, name: spec.name || spec.specId }), summary: 'summoned ' + newId + ' — now delegate work to it with team.dispatch' };
+        // DESK: a summoned specialist needs a workstation to sit and work at, so the station sorts its desk as
+        // part of THIS summon. Reported only when the station named a room — never assumed, so the reply can't
+        // promise furniture the floor doesn't have (and can't tell the Commander to go build a second one).
+        // Worded "workstation is in X", not "placed": the station may have bound a free desk it already had.
+        const out = { agentId: newId, name: spec.name || spec.specId };
+        if (desk) out.workstation = desk;
+        return { content: JSON.stringify(out), summary: 'summoned ' + newId + (desk ? ' (workstation in ' + desk + ')' : '') + ' — now delegate work to it with team.dispatch' };
       }
     };
 

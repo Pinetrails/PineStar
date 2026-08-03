@@ -195,14 +195,28 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
       return bots.length === 2 && bots.every(b => b.connected === true);
     }, 5000, 'both bots CONNECTED in status');
 
+    // Each bot has its own explicit local-to-Telegram owner enrollment. First DM is not authority.
+    const pairBot = async (botId, botToken) => {
+      const pair = await api('POST', '/api/channels/telegram/bots/' + botId + '/owner/pair', {});
+      A.eq(pair.status, 200, 'bot ' + botId + ' issued an owner pairing code');
+      A.ok(/^[-A-Z0-9]{11}$/.test(String(pair.j.code || '')), 'bot ' + botId + ' pairing code shape');
+      tg.pushText(botToken, 900, 77, '/pair ' + pair.j.code);
+      await waitUntil(() => tg.perToken[botToken].sends.some(s => String(s.chat_id) === '900' && /Owner paired/i.test(String(s.text || ''))), 8000, 'bot ' + botId + ' pairing acknowledgement');
+    };
+    await pairBot('111', TOK_A);
+    await pairBot('222', TOK_B);
+    const botBSendsBeforeA = tg.perToken[TOK_B].sends.length;
+    const stationSendsBeforeA = tg.perToken[STATION].sends.length;
+
     // ---- 4. DM bot A: hard-locked run as its bound agent; typing + reply through TOKEN A ONLY ----
     tg.pushText(TOK_A, 900, 77, 'do a thing');
-    await waitUntil(() => tg.perToken[TOK_A].sends.length >= 1, 8000, 'bot A replies');
-    A.ok(String(tg.perToken[TOK_A].sends[0].text || '').indexOf('Bound answer') >= 0, 'bot A reply came from the provider');
-    A.eq(String(tg.perToken[TOK_A].sends[0].chat_id), '900', 'bot A replied to its own chat');
+    await waitUntil(() => tg.perToken[TOK_A].sends.some(s => String(s.chat_id) === '900' && String(s.text || '').indexOf('Bound answer') >= 0), 8000, 'bot A replies');
+    const botAReply = tg.perToken[TOK_A].sends.find(s => String(s.chat_id) === '900' && String(s.text || '').indexOf('Bound answer') >= 0);
+    A.ok(String(botAReply.text || '').indexOf('Bound answer') >= 0, 'bot A reply came from the provider');
+    A.eq(String(botAReply.chat_id), '900', 'bot A replied to its own chat');
     A.ok(tg.perToken[TOK_A].actions.some(a => a.action === 'typing' && String(a.chat_id) === '900'), 'bot A showed the typing indicator during the run');
-    A.eq(tg.perToken[TOK_B].sends.length, 0, 'bot B sent NOTHING for bot A\'s chat (no cross-talk)');
-    A.eq(tg.perToken[STATION].sends.length, 0, 'the station bot sent NOTHING for bot A\'s chat');
+    A.eq(tg.perToken[TOK_B].sends.length, botBSendsBeforeA, 'bot B sent NOTHING for bot A\'s chat (no cross-talk)');
+    A.eq(tg.perToken[STATION].sends.length, stationSendsBeforeA, 'the station bot sent NOTHING for bot A\'s chat');
     // hard-lock: the durable CHANNEL history landed under the BOUND agent, not a tg_<chatId> fallback.
     // (read the channel store straight from disk — /api/transcript serves per-STREAM history, not per-agent.)
     const chanHist = (agentId) => {
@@ -214,8 +228,9 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
 
     // ---- 5. DM bot B — SAME chatId (Telegram private chatId == userId, identical across bots): isolated ----
     tg.pushText(TOK_B, 900, 77, 'scout task here');
-    await waitUntil(() => tg.perToken[TOK_B].sends.length >= 1, 8000, 'bot B replies');
-    A.eq(String(tg.perToken[TOK_B].sends[0].chat_id), '900', 'bot B replied in its own chat');
+    await waitUntil(() => tg.perToken[TOK_B].sends.some(s => String(s.chat_id) === '900' && String(s.text || '').indexOf('Bound answer') >= 0), 8000, 'bot B replies');
+    const botBReply = tg.perToken[TOK_B].sends.find(s => String(s.chat_id) === '900' && String(s.text || '').indexOf('Bound answer') >= 0);
+    A.eq(String(botBReply.chat_id), '900', 'bot B replied in its own chat');
     A.ok(tg.perToken[TOK_B].actions.some(a => a.action === 'typing'), 'bot B typing indicator fired too');
     A.ok(chanHist('scout_1').some(t => t.role === 'user' && String(t.content || '').indexOf('scout task here') >= 0), 'bot B turn persisted under ITS bound agent');
     A.ok(!chanHist('scout_1').some(t => String(t.content || '').indexOf('do a thing') >= 0), 'bot A\'s chat never bled into bot B\'s agent');
@@ -229,7 +244,15 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
     tg.pushText(TOK_A, 900, 77, 'owner again');
     await waitUntil(() => tg.perToken[TOK_A].sends.length > aSendsBefore, 8000, 'owner still gets replies after the stranger');
 
-    // ---- 7. disconnect bot A: ITS poller stops; bot B keeps polling ----
+    // ---- 7. malformed disconnect is inert; then a valid disconnect stops exactly bot A ----
+    const botsBeforeMalformed = fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8');
+    const badDisconnect = await fetch(B + '/api/channels/telegram/bots/111/disconnect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: '{bad'
+    });
+    A.eq(badDisconnect.status, 400, 'malformed per-bot disconnect -> 400');
+    A.eq(fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8'), botsBeforeMalformed, 'malformed per-bot disconnect leaves durable bot configuration byte-identical');
+    A.ok((await api('GET', '/api/channels/telegram/status')).j.bots.find(b => b.botId === '111').connected, 'malformed per-bot disconnect leaves its poller connected');
+
     const off = await api('POST', '/api/channels/telegram/bots/111/disconnect', {});
     A.eq(off.status, 200, 'bot A disconnect 200');
     await sleep(400);

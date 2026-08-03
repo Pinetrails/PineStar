@@ -23,39 +23,59 @@ bug fixed.
 
 ## One-Command Sweep
 
-Use the additive runner:
+> **CORRECTION (2026-07-28).** This section previously told you to run
+> `node scripts/bug-hunt.mjs`, `node scripts/board.mjs`, `npm run validate` and
+> `npm run test:world`. **None of those exist.** They were never built, or were
+> renamed out from under this doc. The detector floor they describe was built for
+> real as the **Green Guardian** — use that.
 
-```powershell
-node scripts/bug-hunt.mjs
+The one command is:
+
+```bash
+npm run qa:guardian
 ```
 
-Default quick mode runs:
+It runs the six detectors in dependency order against a **pinned copy of trunk** (its own
+detached worktree, reset each cycle — never the integration tree and never another agent's
+worktree): `test:fast` → `test:http` → `shoot` → `golden` → `audit` → `qa:journeys`. It files
+one deduped ledger finding per regression (fingerprinted per failing suite/frame/assertion, so
+the same defect never re-nags), refreshes the Green Guardian row in `qa/STATUS.md`, and exits
+nonzero if anything is red. A step that CANNOT run files a P0 BLOCKED finding and fails the
+cycle — it never silently passes.
 
-- `node scripts/board.mjs`
-- `npm run validate`
-- `npm run test:world`
-- `node scripts/audit.mjs`
-- `node scripts/golden.mjs`
+Variants:
 
-It writes evidence to `.bugloops/bug-hunt-<timestamp>` and refreshes
-`.bugloops/bug-hunt-latest`. Golden diffs are treated as REVIEW, not automatic
-failure: inspect only the listed PNGs, then fix or intentionally bless.
-
-Before merge, or after a source fix:
-
-```powershell
-node scripts/bug-hunt.mjs --full
+```bash
+npm run qa:guardian:watch
 ```
 
-Full mode adds `npm run test:fast` and `npm run test:http`.
-
-Useful variants:
-
-```powershell
-node scripts/bug-hunt.mjs --no-visual
-node scripts/bug-hunt.mjs --no-audit
-node scripts/bug-hunt.mjs --live-audit
+```bash
+node scripts/qa/guardian.mjs --skip-visual
 ```
+
+`--skip-visual` drops the three Chrome/sidecar gates (`shoot`, `golden`, `audit`) and leaves
+`test:fast` + `test:http` — use it where there is no browser.
+
+Golden diffs are REVIEW, not automatic failure: inspect only the flagged frames in
+`.uigolden/golden-report.json`, then fix or deliberately `npm run golden:bless`.
+
+## The floor finds regressions. The SWEEP finds bugs.
+
+Everything above is a **regression** detector: it proves known-good behavior did not break. No
+detector in this repo can find a defect on a surface nothing exercises, and that is where the
+bugs are. Every real bug caught recently — the voice cold-off guillotining a reply mid-stream,
+`/approvals on` cutting a Telegram agent from 59 tools to 4, the skill guard whose verdict had
+zero consumers, Settings claiming "No standing approvals" while grants were still enforced —
+was found by an agent walking a failure state live, not by a script.
+
+That hunt is `loops/sweep/`: ten adversarial lanes, one per surface slice, filing into a
+**tracked** backlog so findings survive the session that found them.
+
+```bash
+node scripts/qa/bugs.mjs --list --status open
+```
+
+Read `loops/sweep/README.md` before launching one.
 
 ## Bug Classes To Hunt
 
@@ -72,7 +92,7 @@ status files.
 | Spend/model dishonesty | Unknown model, unmetered run shown as free, fallback model lost, managed/BYOK ledgers mixed. | Provider replay, ledger, insights, and live smoke with real env. |
 | Safe-cell escape | Files/shell/verify/subagent surfaces escape agent workspace, consent, checkpoint, or halt. | Path/shell adversarial fuzz plus safe-cell tests. |
 | Release/update false proof | Desktop build, updater, signing, clean install, or migration proof is claimed without machine evidence. | T0-T5 runners, desktop build, updater manifest tests. |
-| Parallel-agent damage | Hot files get edited by multiple lanes; stale branches reintroduce old UI or route behavior. | `board.mjs`, sync-before-merge, post-merge bug-hunt sweep. |
+| Parallel-agent damage | Hot files get edited by multiple lanes; stale branches reintroduce old UI or route behavior. | `.claude/skills/starnet-merge-ritual` (snapshot + sync before merge), a post-merge `npm run qa:guardian` cycle. |
 
 ## The Loop Portfolio
 
@@ -82,11 +102,12 @@ Goal: detect fresh trunk regressions as soon as branches land.
 
 Cycle:
 
-1. Sync an isolated sentry worktree from trunk.
-2. Run `node scripts/bug-hunt.mjs`.
-3. If PASS, record the commit hash and sleep until the next trunk merge.
-4. If REVIEW, inspect only `.bugloops/bug-hunt-latest/golden-frames`.
-5. If FAIL, open a bug lane with the failing log and target owner.
+1. Run `npm run qa:guardian:watch` — it polls trunk HEAD and syncs its own pinned
+   sentry worktree when the head moves, so steps 1 and 2 are the same command.
+2. If PASS, it records the commit and waits for the next merge.
+3. If REVIEW, inspect only the frames flagged in `.uigolden/golden-report.json`.
+4. If FAIL, the cycle exits nonzero and the ledger already carries the finding — open a
+   bug lane with the failing log and target owner.
 
 Best owner: orchestrator or a dedicated read-only sentry agent.
 
@@ -238,8 +259,9 @@ Do not spend loop time on speculative refactors without a failing detector.
 
 ## Routing Rules
 
-- If `board.mjs` says a target file is hot, record ROUTED/HELD with the exact
-  file and owning lanes.
+- If a target file is hot (multiple live lanes touching it — check `git branch -a` and
+  the no-touch set in `.claude/skills/starnet-merge-ritual`), record ROUTED/HELD with the
+  exact file and owning lanes.
 - If the bug crosses `shared/events.js` or `shared/schema.js`, request an
   additive contract change from the owner.
 - If a visual frame changed but looks coherent, route to visual baseline review;
@@ -247,17 +269,20 @@ Do not spend loop time on speculative refactors without a failing detector.
 - If a live-provider or desktop proof needs external state, mark BLOCKED with
   the exact env/toolchain requirement and keep replay/pre-build checks green.
 
-## Current Observed Baseline
+## Where the current baseline lives
 
-From the `agent/bug-loops` sweep on 2026-06-30:
+This section used to pin a hand-copied snapshot from 2026-06-30 (`npm run validate`,
+`npm run test:world` — both since removed). A hand-copied baseline in a doc is stale within
+hours on this repo and then actively misleads, which is how the section above came to describe
+four commands that do not exist.
 
-- `npm run validate`: PASS.
-- `npm run test:world`: PASS.
-- `npm run test:fast`: PASS.
-- `npm run audit`: PASS, with one soft work-pose latch note.
-- `npm run golden`: REVIEW on `work-routines` after fixing the native textarea
-  styling; the remaining diff should be reviewed by the visual baseline owner
-  before blessing.
+**There is no baseline in this file by design.** Read it from the artifacts instead:
 
-That is a good sign: the regression spine is green, and the loop produced one
-small real UI fix plus one visual review item instead of a vague bug list.
+```bash
+npm run qa:ready
+```
+
+- gate/verdict state → `npm run qa:ready` (five checks, receipts, exit 0 only when READY)
+- open detector findings → `node scripts/qa/ledger.mjs --digest`
+- open hunt backlog → `node scripts/qa/bugs.mjs --list --status open`
+- crew dashboard + merge digests → `qa/STATUS.md`

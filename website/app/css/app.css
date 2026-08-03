@@ -134,6 +134,34 @@ input[type=file]::file-selector-button {
 }
 input[type=file]::file-selector-button:hover { border-color: var(--ph); background-color: var(--ph-faint); color: var(--ph-bright); }
 
+/* STATION TOOLTIP — the phosphor hover card that replaces the browser's native `title` bubble
+   (tooltip.js). Same molded-card language as .model-dock-tip, which had this right in one place;
+   this generalizes it to every [title] in the app. position:fixed + body-child = its style px are
+   ZOOMED px (uiZoom law) — tooltip.js divides by z, this sheet must not re-scale anything. */
+.station-tip {
+  position: fixed; z-index: 200; pointer-events: none;
+  width: max-content; max-width: 280px;
+  padding: 7px 10px; text-align: left;
+  font-size: 12px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere;
+  color: var(--ph); background: var(--panel);
+  border: 2px solid var(--ph); border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--ink), 0 0 18px var(--ph-glow2);
+  opacity: 0; transform: translateY(3px);
+  transition: opacity .12s var(--ease-out, ease-out), transform .12s var(--ease-out, ease-out);
+}
+.station-tip[hidden] { display: none; }
+.station-tip.show { opacity: 1; transform: translateY(0); }
+/* the arrow tracks the anchor's centre (--tip-arrow, set by tooltip.js after clamping) */
+.station-tip::after {
+  content: ''; position: absolute; left: var(--tip-arrow, 50%); margin-left: -6px;
+  top: 100%; border: 6px solid transparent; border-top-color: var(--ph);
+}
+.station-tip.below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ph); }
+@media (prefers-reduced-motion: reduce) {
+  .station-tip { transition: none; transform: none; }
+  .station-tip.show { transform: none; }
+}
+
 /* (The standalone TITLE screen was removed — boot auto-resumes into the station, or opens CREATE/RESUME
    directly. The data-status line that used to live there now sits in the connect-screen footer.) */
 .title-status { color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; }
@@ -280,6 +308,14 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
 .cc-title-row h2 { margin: 4px 0 0; }      /* the inverted-block h2 keeps its global look */
 @keyframes cc-blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }   /* used by .sp-rec + .cc-tb-rec */
 
+/* MOBILE CONTROL REACHABILITY: PHOSPHOR is real setup hardware, not expendable title
+   decoration. Give its six switches a dedicated second row before the bezel clips them. */
+@media (max-width: 600px) {
+  .cc-titlebar { flex-wrap: wrap; row-gap: 5px; }
+  .cc-tb-phosphor { flex: 0 0 100%; order: 5; min-width: 0; }
+  .phosphor-swatches { flex-wrap: wrap; }
+}
+
 /* .cc-grid is the CONNECTORS catalog grid (stationui.js), NOT genesis — genesis uses .ov-grid. Kept here;
    the old genesis two-column body (cc-col, cc-emblem, cc-ascii, cc-stamp, cc-cursor, lead-banner) is deleted. */
 .cc-grid {
@@ -351,10 +387,24 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
 
 #game-main { flex: 1; display: flex; gap: 9px; min-height: 0; }
 
+/* ---- TUBE APERTURE (2026-07-27) ----
+   The glass overlay's darkening is a SEPARATE layer from the barrel warp (World.crt.curve): the warp bows
+   the picture, this vignette dims its outer band. Held at `transparent 50%` the clear zone ended barely past
+   the halfway mark, so the outer ~third of each axis was progressively crushed and the panel read as a small
+   oval inside a big black rectangle — real estate lost to styling, not to curvature. These are now dials, not
+   literals: crtlab's TUBE APERTURE section writes them live (?crtlab=1), so the numbers get TUNED and copied
+   back rather than guessed. Curvature is untouched by every one of them. */
+:root {
+  --tube-clear: 68%;      /* how far out the glass stays fully clear (was 50%) */
+  --tube-mid: 88%;        /* the mid stop of the falloff */
+  --tube-mid-a: 0.26;     /* alpha at the mid stop (was 0.34) */
+  --tube-edge-a: 0.70;    /* alpha at the very corner (was 0.82) */
+  --tube-inset: 40px;     /* the wrap's inner edge shadow (was 60px) */
+}
 #stage-wrap {
   flex: 1; position: relative; min-width: 0; border-radius: 9px; overflow: hidden;
   background: var(--bg);
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 60px rgba(0,0,0,.9);
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 var(--tube-inset) rgba(0,0,0,.9);
 }
 /* the live feed graded into the terminal (warms/tints the world so it reads as a
    security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
@@ -390,7 +440,7 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
   content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 9px;
   background:
     radial-gradient(ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17), transparent 52%),   /* bright specular sweep across the top of the glass */
-    radial-gradient(ellipse 142% 136% at 50% 48%, transparent 50%, rgba(0,0,0,0.34) 82%, rgba(0,0,0,0.82) 100%);  /* deep bowed corner vignette → strong convex tube */
+    radial-gradient(ellipse 142% 136% at 50% 48%, transparent var(--tube-clear), rgba(0,0,0,var(--tube-mid-a)) var(--tube-mid), rgba(0,0,0,var(--tube-edge-a)) 100%);  /* bowed corner vignette → convex tube; stops are crtlab dials */
   box-shadow: inset 0 0 30px rgba(0,0,0,0.6), inset 0 2px 1px rgba(255,243,220,0.11), inset 0 0 0 1px rgba(255,238,210,0.04);   /* tube rim + top edge glass highlight */
 }
 body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
@@ -426,6 +476,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   display: flex; flex-direction: column; gap: 3px;
   background: rgba(5, 3, 1, 0.58);
 }
+/* PILL CLEARANCE (2026-07-27): .comms-newpill floats over this scroller's bottom edge and used to sit
+   ON TOP of the last transcript row. While the pill is up, reserve its height at the foot of the scroll
+   so the newest line can always be read past it. Toggled by chat.js showNewPill/hideNewPill. */
+#chat-log.pill-clear { padding-bottom: 48px; }
 #chat-log > * { position: relative; z-index: 1; flex: 0 0 auto; }
 #chat-log > .choice-row { z-index: 2; }
 #chat-log > .cmsg.consent, #chat-log > .cmsg.turnin, #chat-log > .cmsg.nudge { z-index: 3; }
@@ -960,6 +1014,24 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg.tb-read .tb-read-in { width: 100%; font-size: 14px; padding: 6px 9px; }   /* box-sizing is global (style.css `* {}`) */
 .tb-read-ack { font-size: 13px; line-height: 1.4; color: var(--ph); letter-spacing: 0.3px; }
 .tb-read-ack.err { color: var(--bad, #d66); }
+.tb-read-ack.closed { color: var(--ph-dim); }
+
+/* ---- SPENT BRIEF (2026-07-27): the read's run has resolved, so the card stops being a control surface and
+   becomes transcript. It recedes to the passive card weight (the live one keeps the lit phosphor edge — that
+   edge is what says "this is still steerable"), and folds to caption + objective. Click the caption to get
+   the full read back; nothing is deleted. Same fold idiom as the resolved run line's .run-fold. ---- */
+.cmsg.tb-read.tb-read-spent { border-left-color: var(--ph-dim); box-shadow: none; background: rgba(var(--ph-rgb), .03); }
+.tb-read-spent .tb-read-cap { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.tb-read-spent .tb-read-cap:hover, .tb-read-spent .tb-read-cap:focus-visible { color: var(--ph); outline: 0; }
+.tb-read-chev { display: none; font-size: 9px; line-height: 1; transition: transform var(--t-fast, 120ms) var(--ease-soft, ease); }
+.tb-read-spent .tb-read-chev { display: inline-block; }
+.tb-read-spent:not(.folded) .tb-read-chev { transform: rotate(90deg); }
+.tb-read-spent.folded .tb-read-head { font-size: 13px; color: var(--ph); text-shadow: none;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tb-read-spent.folded .tb-read-meta,
+.tb-read-spent.folded .tb-read-cap2,
+.tb-read-spent.folded .tb-read-assumps,
+.tb-read-spent.folded .tb-read-fix { display: none; }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
@@ -1095,7 +1167,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .mic-btn:focus-visible, .voice-toggle:focus-visible, .model-dock-toggle:focus-visible { outline: 1px solid var(--ph-bright); outline-offset: 2px; }
 
 .model-dock-toggle {
-  width: auto; min-width: 54px; max-width: 148px; height: 34px; padding: 0 9px; gap: 6px;
+  width: auto; min-width: 54px; max-width: 172px; height: 34px; padding: 0 9px; gap: 6px;
   font-size: 13px; line-height: 1; letter-spacing: 0; text-shadow: 0 0 5px var(--ph-glow2);
   position: relative; overflow: visible;
 }
@@ -1108,18 +1180,18 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   box-shadow: 0 0 16px var(--ph-glow);
   text-shadow: none;
 }
-.model-dock-sigil {
-  display: inline-grid; place-items: center; width: 16px; height: 16px; opacity: .9;}
-.model-dock-sigil svg { width: 100%; height: 100%; display: block; }
+/* NO SIGIL: the chip carries no icon — the model NAME is the readout, so it gets the type size. */
 .model-dock-effort-chip {
   display: inline-block; max-width: 40px; overflow: hidden; text-overflow: clip;
   white-space: nowrap; font-size: 10px; letter-spacing: 0.6px; color: var(--ph-bright);
 }
 /* resting-state model short-name: legible at rest (full phosphor, not dimmed) so the chip reads
-   "MODEL · TIER" without a click. Capped + truncated so the composer never grows. */
+   "MODEL · TIER" without a click. With the sigil gone this IS the control's face, so it carries
+   the chip's own 13px type — the effort chip stays small so the model name reads first.
+   Still capped + truncated so the composer never grows. */
 .model-dock-model-name {
-  display: inline-block; max-width: 62px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; font-size: 10px; letter-spacing: 0.5px;
+  display: inline-block; max-width: 108px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 13px; letter-spacing: 0.5px;
   color: var(--ph); line-height: 1;
 }
 .model-dock-model-name.empty { color: var(--ph-dim); opacity: 0.7; }
@@ -1250,11 +1322,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 @media (max-width: 780px) {
   .model-dock-toggle { width: auto; min-width: 44px; max-width: 118px; padding: 0 5px; gap: 3px; }
-  .model-dock-sigil { width: 14px; height: 14px; font-size: 10px; }
-  .model-dock-effort-chip { max-width: 30px; font-size: 10px; }
-  /* on the narrow composer the model short-name is redundant with the tooltip — drop it, keep MODEL·TIER glyphs */
-  .model-dock-model-name { display: none; }
-  .model-dock-toggle .model-dock-effort-chip::before { display: none; }
+  /* on the narrow composer the chip can only afford ONE readout. With no sigil the model name IS the
+     control, so the TIER is what drops here (tooltip + dock still name it); the name only tightens. */
+  .model-dock-model-name { max-width: 74px; font-size: 12px; letter-spacing: 0.3px; }
+  .model-dock-effort-chip { display: none; }
   .model-dock-tip { max-width: min(74vw, 244px); }
   .model-dock { position: fixed; left: 8px; right: 8px; bottom: 120px; width: auto; max-height: min(62vh, 410px); }
   .model-dock-list { max-height: 220px; }
@@ -1281,19 +1352,262 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .voice-toggle.off:hover svg { filter: none; }
 /* agent-voice speaking: amber glow pulse on the chip */
 .voice-toggle.speaking { animation: chip-spk .8s infinite; }
-@keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
+.voice-live[aria-pressed="true"] { color: var(--ink); background: var(--ph); box-shadow: 0 0 16px var(--ph-glow); }
+.voice-live[aria-pressed="true"] svg { filter: none; }
 
-/* hands-free LIVE: filled phosphor (inverted) so the active mode clearly pops out of the row */
-/* hands-free LIVE = the held selection block: this control IS selected until toggled off */
-.voice-mode.on {
-  color: var(--ink); background: var(--ph);
-  box-shadow: 0 0 16px var(--ph-glow);
+/* ================= LOCAL LIVE VOICE — the pop-up mic module =================
+   A SMALL WINDOW, not a typical one (Andrew, 2026-07-29). Two earlier passes missed on opposite
+   sides: a 300-440px CRT panel with a bezel, a title bar and a three-row readout rail read as one
+   more window to manage; a chromeless capsule glued to the dock stopped reading as its own thing
+   at all. What this wants to be is a little piece of station hardware that POPS UP over the
+   station — framed, floating, obviously separate — and is done in one glance.
+
+   So it keeps a frame, a lift shadow and the curved-glass sheen (it is a screen), and drops every
+   piece of window furniture: no title chip, no drag bar, no engraved rail, no window buttons.
+   Every colour resolves from the phosphor tokens through one --lv-accent, and --lv-amp lights part
+   of EVERY skin, so no variant can show a level the microphone is not producing. */
+.live-voice-panel {
+  --lv-amp: 0;                 /* live mic RMS, 0..1 — written by voice-live.js pushLevel() */
+  --lv-dl: 0%;                 /* local-model download percent, when the sidecar reports one */
+  --lv-accent: var(--ph-dim);  /* per-state accent; every lit part of the module reads this */
+  --lv-talker: var(--lv-accent); /* current voice: user follows state; agent uses station gold */
+  position: fixed; z-index: 275; left: 18px; bottom: 68px;
+  width: 150px; max-width: calc(100vw - 16px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  padding: 5px 7px 6px;
+  color: var(--text); border-radius: var(--r-lg); overflow: hidden;
+  background:
+    radial-gradient(ellipse 130% 90% at 50% 0%, var(--ph-glow2), transparent 46%),
+    linear-gradient(180deg, rgba(9, 5, 2, 0.97), rgba(4, 2, 1, 0.985));
+  /* a RIM and a LIFT, not a --bezel: one hairline of phosphor so it reads as hardware, and a deep
+     drop so it floats above the station instead of sitting in it */
+  box-shadow:
+    inset 0 0 0 1px var(--ph-dim),
+    inset 0 1px 0 rgba(var(--ph-bright-rgb), 0.08),
+    0 14px 30px rgba(0, 0, 0, 0.62),
+    0 0 22px var(--ph-glow2);
+  transform-origin: left bottom; animation: lv-pop .2s var(--ease-out);
 }
-.voice-mode.on svg { filter: none; }
-.voice-mode.on:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); }
-/* hands-free was on last session but a refresh dropped it → pulse the chip to invite a one-tap resume */
-.voice-mode.resume { animation: chip-resume 1.3s ease-in-out infinite; }
-@keyframes chip-resume { 0%,100% { box-shadow: 0 0 0 0 var(--ph-glow2); border-color: var(--ph-dim); } 50% { box-shadow: 0 0 12px 1px var(--ph-glow); border-color: var(--ph); } }
+/* curved glass over the whole module — it is a screen, like every other StarNet surface */
+.live-voice-panel::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 6; background: var(--glass);
+}
+.live-voice-panel[hidden] { display: none; }
+.live-voice-panel[data-dragging="true"] {
+  animation: none;
+  box-shadow: inset 0 0 0 1px var(--ph), 0 16px 34px rgba(0,0,0,.7), 0 0 26px var(--ph-glow2);
+}
+/* it POPS UP — a CRT power-on entrance on something this small reads as a glitch, not a boot */
+@keyframes lv-pop {
+  0%   { transform: scale(.9) translateY(4px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* per-state accent — one variable, so state reads through the pip, the lamp and the level at once.
+   Idle listening rests on the phosphor; only ACTIVELY hearing you climbs to --ph-bright, so the
+   brightest the module ever gets means "your voice is landing right now". */
+.live-voice-panel[data-state="listening"],
+.live-voice-panel[data-state="speaking"] { --lv-accent: var(--ph); }
+.live-voice-panel[data-state="hearing"] { --lv-accent: var(--ph-bright); }
+.live-voice-panel[data-state="connecting"],
+.live-voice-panel[data-state="warming"],
+.live-voice-panel[data-state="thinking"],
+.live-voice-panel[data-state="transcribing"],
+.live-voice-panel[data-state="reconnecting"] { --lv-accent: var(--warn); }
+.live-voice-panel[data-state="offline"] { --lv-accent: var(--bad); }
+.live-voice-panel[data-talker="agent"] { --lv-talker: var(--gold); }
+
+/* ---- head: the state line doubles as the grab handle (makeDraggable binds it), so no skin may
+   collapse it to nothing — a pop-up you cannot move out of the way is worse than a window. ---- */
+.lv-head {
+  position: relative; z-index: 7; flex: 1 0 100%;
+  display: flex; align-items: center; gap: 5px;
+  min-height: 12px; padding: 0 1px 1px; cursor: grab; touch-action: none; user-select: none;
+}
+.live-voice-panel[data-dragging="true"] .lv-head { cursor: grabbing; }
+/* the LOCAL LIVE title chip is most of what made this read as a window. The mode is already
+   obvious from the composer's lit LIVE toggle — the module does not need to introduce itself. */
+.lv-brand { display: none; }
+.lv-pip {
+  flex: 0 0 auto; width: 5px; height: 5px;
+  background: var(--lv-accent); box-shadow: 0 0 6px var(--lv-accent);
+  animation: lv-pip 1.3s infinite;
+}
+@keyframes lv-pip { 0%, 100% { opacity: 1; } 50% { opacity: .28; } }
+/* the state WORD is gone from the resting module (Andrew, 2026-07-29). It was the widest thing in
+   a 150px module and it repeated what the colour already says: the pip and the whole meter carry
+   the state ladder. It comes back under the cursor, where the exact word is worth the room. */
+.lv-state {
+  display: none;
+  flex: 1 1 auto; color: var(--lv-accent);
+  font-size: 9px; letter-spacing: var(--ls-1); text-shadow: 0 0 8px var(--ph-glow2);
+}
+/* HOVER NO LONGER OPENS THE MODULE (Andrew, 2026-07-29). Passing the cursor over a thing is not a
+   request to read it, and a module that grows under the pointer moves the target you were aiming at —
+   the meter is also the barge-in button, so the resting box must hold still. Everything below opens on
+   FOCUS only (click it, or tab to it), which is a deliberate act with a way back out. */
+.live-voice-panel:focus-within .lv-state { display: block; }
+/* ✕ stays reachable but stops taking resting-state real estate. pointer-events ride the opacity so
+   an invisible button can never eat a click and drop you out of voice mode. */
+.lv-x {
+  flex: 0 0 auto; margin-left: auto; padding: 0 3px; font-size: 10px; background: none;
+  opacity: 0; pointer-events: none; transition: opacity var(--t-fast) linear;
+}
+.live-voice-panel:hover .lv-x,
+.live-voice-panel:focus-within .lv-x { opacity: .75; pointer-events: auto; }
+.lv-x:hover { opacity: 1; color: var(--bad); border-color: var(--bad); background: none; }
+
+@media (hover: none), (pointer: coarse) {
+  /* Touch has no hover reveal. Keep close reachable and make the whole top strip an honest drag target. */
+  .lv-x { opacity: .75; pointer-events: auto; min-width: 24px; min-height: 20px; }
+  .lv-head { min-height: 24px; }
+}
+
+/* ---- the level IS the control (Andrew, 2026-07-29: no icon, only the volume indicator). Every
+   face we tried — orb, lamp, mic glyph, vu column, aperture, slit — was a second thing to look at
+   sitting beside a meter that already said everything this module knows. So the meter is the whole
+   instrument AND the whole button: press anywhere on your own voice to cut in. That keeps the
+   barge-in reachable by mouse, touch and keyboard without drawing a single icon. ---- */
+.lv-stage {
+  position: relative; z-index: 5; flex: 1 0 100%; min-width: 0;
+  display: flex; align-items: center; padding: 0;
+}
+.lv-meter {
+  position: relative; overflow: hidden; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; height: 24px; padding: 0 5px;
+  color: inherit; font-family: inherit; cursor: pointer;
+  background: linear-gradient(180deg, rgba(0,0,0,.6), rgba(0,0,0,.36));
+  border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  box-shadow: var(--well), 0 0 calc(2px + var(--lv-amp) * 13px) color-mix(in srgb, var(--lv-talker) 32%, transparent);
+  transition: border-color var(--t-med) var(--ease-soft), box-shadow var(--t-fast) linear, transform var(--t-fast) var(--ease-out);
+}
+.lv-meter:hover { border-color: var(--lv-talker); }
+/* it travels when you press it — a control that does not move is a picture of a control */
+.lv-meter:active { transform: translateY(1px); box-shadow: inset 0 2px 7px rgba(0,0,0,.92); }
+.lv-meter:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+
+/* level — a rolling window of real RMS, oldest at the left, TYPED in the station's own block ramp
+   (▁▂▃▄▅▆▇█, the same glyphs the link-status bars use). Scaled rectangles read as a widget drawn
+   over the terminal; glyphs read as the terminal itself printing what it hears. voice-live.js
+   writes one character per column — nothing here interpolates, so a step you see is a step the
+   microphone actually sent. */
+.lv-wave {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: flex-end; gap: 2px;
+  /* the glyph must be NARROWER than its cell or the columns touch and fuse into one shape — a
+     block character fills its own em box by definition, so the gap has to come from the cell */
+  font-size: 13px; line-height: .8; letter-spacing: 0;
+  color: var(--lv-accent); text-shadow: 0 0 calc(3px + var(--lv-amp) * 8px) var(--ph-glow2);
+  transition: text-shadow 70ms linear;
+}
+/* one equal CELL per column with a hairline between: butted up against each other the block glyphs
+   fuse into one solid shape and the meter stops reading as columns at all */
+.lv-wave i {
+  flex: 1 1 0; min-width: 0; text-align: center; font-style: normal; opacity: .92;
+}
+/* The history is one strip, but every cell retains who produced it. This makes turn ownership
+   readable without a legend or a second meter: user samples use the live state color, agent
+   samples use the station's established gold voice color. */
+.lv-wave i[data-src="self"] { color: var(--lv-accent); }
+.lv-wave i[data-src="agent"] { color: var(--gold); text-shadow: 0 0 7px color-mix(in srgb, var(--gold) 42%, transparent); }
+
+/* working states (connecting / warming / thinking / transcribing): the station is BUSY, not
+   hearing. A sweep across the meter says so WITHOUT touching the bars — the bars are the
+   microphone and must never move to a timer, or the module would claim to hear a silent room. */
+.live-voice-panel[data-state="connecting"] .lv-meter::after,
+.live-voice-panel[data-state="warming"] .lv-meter::after,
+.live-voice-panel[data-state="thinking"] .lv-meter::after,
+.live-voice-panel[data-state="transcribing"] .lv-meter::after {
+  content: ''; position: absolute; inset: 0; width: 45%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--ph-glow2), transparent);
+  animation: lv-sweep 1.6s var(--ease-soft) infinite;
+}
+@keyframes lv-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(240%); }
+}
+
+/* ---- the one line of text worth carrying: it answers "did it hear me right" without opening
+   COMMS. The reply line only exists once there IS a reply. ---- */
+/* the transcript is the thing you read ONCE, not the thing you watch — at rest it costs two rows
+   for a line COMMS already owns, so it waits under the cursor with the state word and the rail */
+.lv-heard {
+  display: none;
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 1px 1px 0;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  color: var(--ph-bright); font-size: var(--fs-0); line-height: 1.3; letter-spacing: var(--ls-1);
+  text-shadow: 0 0 8px var(--ph-glow2);
+}
+.live-voice-panel:focus-within .lv-heard { display: -webkit-box; }
+.lv-say { display: none; }
+.lv-say.on { display: none; }
+.live-voice-panel:focus-within .lv-say.on {
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 1px 1px 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  color: var(--ph-dim); font-size: 10px; line-height: 1.3; letter-spacing: var(--ls-1);
+}
+.lv-say.on::before { content: '▸ '; color: var(--ph); }
+
+/* ---- ROUTE / SPEECH / TASK are diagnostics, not glanceable state, and carrying them at rest is
+   what forced a 300px panel. Hidden at rest, wrapped onto one line on hover — HIDDEN, never faked:
+   this hover is now the only place a model download reports itself, so the fill stays real. ---- */
+.lv-rail { display: none; }
+.live-voice-panel:focus-within .lv-rail {
+  position: relative; z-index: 5; flex: 1 0 100%;
+  display: flex; flex-flow: row wrap; gap: 1px 9px; margin: 3px 1px 0; padding-top: 4px;
+  border-top: 1px solid var(--ph-faint);
+  background: none; box-shadow: none; overflow: visible;
+}
+.lv-row {
+  position: relative; display: flex; align-items: baseline; gap: 5px;
+  min-width: 0; padding: 0; border-bottom: 0;
+}
+.lv-row dt { flex: 0 0 auto; color: var(--ph-dim); opacity: .5; font-size: 9px; letter-spacing: var(--ls-2); }
+.lv-row dd {
+  flex: 0 1 auto; min-width: 0; margin: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ph); font-size: 9px; letter-spacing: var(--ls-1);
+}
+/* model download: a real fill sweeps the SPEECH row, driven by the sidecar's reported percent */
+.lv-row-dl::before {
+  content: ''; position: absolute; left: -3px; top: -1px; bottom: -1px; width: var(--lv-dl);
+  background: linear-gradient(90deg, var(--ph-glow2), transparent);
+  transition: width var(--t-slow) var(--ease-soft); pointer-events: none;
+}
+.lv-task.busy { color: var(--ph-bright); text-shadow: 0 0 8px var(--ph-glow2); }
+.lv-task.pending { color: var(--warn); text-shadow: 0 0 8px var(--ph-glow2); }
+
+/* ---- a fault is the one thing allowed to grow the module, because a silent dead mic is this
+   feature's worst failure. Still a strip, not a card. ---- */
+.lv-error {
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 4px 1px 0;
+  padding: 4px 0 0; border-top: 1px solid var(--bad);
+  color: var(--bad); background: none; box-shadow: none;
+  font-size: 9px; line-height: 1.35; letter-spacing: var(--ls-1);
+}
+/* [hidden] is the UA's display:none — a bare `display: block` here silently OUT-SPECIFIES it and
+   left TRY AGAIN sitting under a healthy session. Restate the hidden case. */
+.lv-retry[hidden] { display: none; }
+.lv-retry {
+  position: relative; z-index: 5; display: block; flex: 0 0 auto; margin: 5px 1px 0 auto;
+  padding: 2px 9px; cursor: pointer;
+  color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  font-family: inherit; font-size: 9px; letter-spacing: var(--ls-2); text-shadow: none;
+  box-shadow: var(--raise);
+}
+.lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: var(--raise), 0 0 10px var(--ph-glow2); }
+
+
+@media (prefers-reduced-motion: reduce) {
+  .live-voice-panel { animation: none; }
+  .lv-pip { animation: none !important; }
+  .lv-meter::after { animation: none !important; opacity: .5; }
+}
+
+@keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
 
 /* ---------- onboarding / save additions ---------- */
 /* (title-screen rules removed with the title screen; #data-status now styled by .title-status at the top of this file) */
@@ -1755,6 +2069,20 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .bb-menu .bb:hover::before, .bb-menu .bb:hover::after { content: none; }  /* no pip-boy [..] brackets inside the menu */
 .bb-menu .bb.active { background: var(--ph-faint); color: var(--ph-bright); box-shadow: inset 0 0 0 2px var(--ph); }
 
+/* MOBILE CONTROL REACHABILITY: navdock.js supplies the final zoom-aware horizontal
+   clamp because each trigger has a different wrapped-row origin. CSS owns the maximum
+   hardware width and ellipsis so the menu itself can never demand a wider viewport. */
+@media (max-width: 600px) {
+  .bb-menu {
+    min-width: 0;
+    width: min(300px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    box-sizing: border-box;
+  }
+  .bb-menu-h { overflow: hidden; text-overflow: ellipsis; }
+  .bb-menu .bb { min-width: 0; }
+}
+
 /* one-time "what now" coach pointing at the new docks */
 .nav-coach {
   position: fixed; left: 14px; bottom: 58px; z-index: 70; max-width: 470px;
@@ -1850,6 +2178,12 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .sk-card.open .sk-body { display: block; }
 .sk-body pre { white-space: pre-wrap; word-wrap: break-word; font-size: 11px; line-height: 1.45; color: var(--text); opacity: 0.92; margin: 0; font-family: inherit; max-height: 340px; overflow-y: auto; }
 .sk-attr { font-size: 10.5px; opacity: 0.5; margin-top: 8px; font-style: italic; }
+/* WITHHELD: the skill guard is keeping this saved skill out of the agent's prompt. Reads as a
+   quarantine, not a decoration — warn phosphor on the card edge, and the reason line is the one
+   .sk-attr that is NOT dimmed to a whisper (it is the whole reason the card looks different). */
+.sk-card.held { border-color: var(--warn); }
+.sk-card.held .sk-toggle { color: var(--warn); border-color: var(--warn); }
+.sk-attr.sk-held { opacity: 0.95; font-style: normal; color: var(--warn); letter-spacing: 0.3px; line-height: 1.4; }
 
 /* SKILLS redesign (legibility) — a real ON/OFF pill SWITCH (the user's choice) + a SEPARATE readiness chip (the
    floor's grant), so the two axes never collapse into one ambiguous string. State sections group the library by
@@ -1972,7 +2306,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .src-badge.src-saved { color: var(--ph); border-color: var(--ph-faint); background: rgba(0, 0, 0, .25); }
 
 /* ---------- WORKSTREAMS rail (left) ---------- */
-#ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; }
+/* takes the left rail's slack (see the RAIL SPACE SPLIT note on #crew in style.css) */
+#ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .ws-head {
   display: flex; align-items: center; justify-content: space-between;
   color: var(--ink); background: var(--ph); padding: 3px 10px; letter-spacing: 1px;
@@ -2015,8 +2350,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .diag-pre { font-family: inherit; font-size: 11px; line-height: 1.4; color: var(--ph); margin: 0;
   padding: 8px 10px; border: 1px solid var(--ph-dim); border-radius: 2px; background: rgba(0,0,0,.25); }
 .diag-block-bar { display: flex; gap: 8px; margin-top: 6px; }
+/* fills whatever #ws-wrap was given rather than a fixed 40vh slice — the old cap made the list scroll
+   while empty rail sat above it. min-height:0 so the flex child may actually shrink and scroll. */
 #workstreams {
-  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
+  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; gap: 4px;
 }
 /* display:flex above beats the UA [hidden] rule — without this, the PROJECTS tab couldn't actually
@@ -2076,8 +2414,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* the PROJECTS list reuses the SESSIONS rail row vocabulary (.ws-row / .ws-dot / .ws-title / .ws-meta /
    .ws-kebab) but each project is a TWO-LINE card: name line + the honest path line (the path used to hide
    in a tooltip, which read as a bare, cheap row). Sessions preview as an indented phosphor thread. */
+/* same slack rule as #workstreams — the PROJECTS tab shares the rail's lower half */
 #projects {
-  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
+  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; gap: 0;
 }
 #projects[hidden] { display: none; }
@@ -2340,7 +2680,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-command { margin: 10px 0 8px; display: flex; flex-direction: column; gap: 12px; }
 .ag-cmd-sec { border-top: 1px solid var(--hair, rgba(255,255,255,.08)); padding-top: 8px; }
 .ag-cmd-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 6px; }
-.ag-skin-row { max-height: 108px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+/* SKIN: a scrolling well of thumbs on the left, the LIVE preview stage pinned right — a 44px still of a
+   chunky sprite is unidentifiable, so the stage plays the picked/hovered skin's real walk cycle. Same
+   shape + material as the Recruitment Bay's SUMMON stage (.mkt-skin-stage in marketplace.css), sized for
+   the narrower dossier pane; the well's height is matched to the stage so neither side reads lopsided. */
+.ag-skin-section { display: flex; gap: 12px; align-items: flex-start; }
+.ag-skin-row { max-height: 156px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+.ag-skin-stage { flex: 0 0 124px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.ag-skin-stage-frame { width: 124px; height: 124px; box-sizing: border-box; overflow: hidden;
+  background-image: radial-gradient(ellipse 64% 44% at 50% 86%, var(--ph-glow2), transparent 72%);
+  background-color: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.08), 0 1px 0 rgba(0,0,0,.35);
+  display: flex; align-items: flex-end; justify-content: center; }
+/* smooth-downscale the ~92px sprite master (repo law: never nearest-neighbour crush a large sprite) */
+.ag-skin-stage-frame img { width: 88%; height: 88%; object-fit: contain; object-position: center bottom;
+  image-rendering: auto; }
+.ag-skin-stage-name { color: var(--ph-bright); letter-spacing: 1px; font-size: 12px; text-align: center;
+  line-height: 1.25; text-shadow: 0 0 6px var(--ph-glow2); }
+.ag-stage-lbl { color: var(--ph-dim); letter-spacing: 1.5px; font-size: 10px; }
+/* narrow dossier pane: drop the stage below the wells so neither crushes */
+@media (max-width: 720px) {
+  .ag-skin-section { flex-direction: column; }
+  .ag-skin-stage { flex: 0 0 auto; align-self: center; }
+}
 .ag-cmd-danger .ag-cmd-lbl { color: var(--bad); }
 .ag-del-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ag-del { border-color: var(--bad) !important; color: var(--bad) !important; }
@@ -2549,9 +2911,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* Short desktop windows need an explicit vertical path to every major region. */
 @media (max-width: 860px) and (max-height: 680px) {
   #screen-game.active {
-    grid-template-rows: 50px minmax(180px, 1fr) minmax(180px, 1fr) minmax(44px, auto);
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* Landscape phones have very little vertical budget. Keep the fixed controls in-view first:
+       a compact stage can scroll its own rails, while COMMS retains enough height for its header,
+       identity line and full composer. The grid's overflow remains the fallback if docks wrap. */
+    grid-template-rows: 42px minmax(72px, 1fr) minmax(160px, 1fr) minmax(38px, auto);
+    padding: 4px;
+    gap: 3px;
   }
 }
 
@@ -2608,6 +2975,37 @@ body.crew-rail-off #screen-game.active {
   background: var(--panel);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
 }
+/* MOBILE CONTROL REACHABILITY: a touch-only Commander has no hardware Escape key, so
+   DONE and every editor action must stay on the glass. The title owns row one and six
+   compact station keys share row two. */
+@media (max-width: 600px) {
+  .refit-top {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-rows: auto 30px;
+    height: 68px;
+    align-content: center;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+  .refit-title {
+    grid-column: 1 / -1;
+    padding: 2px 8px;
+    font-size: 16px;
+    letter-spacing: 2px;
+  }
+  .refit-sub,
+  .refit-spacer { display: none; }
+  .refit-top .bb {
+    width: 100%;
+    min-width: 0;
+    height: 30px;
+    padding-inline: 3px;
+    font-size: 12px;
+    letter-spacing: 0;
+  }
+}
 .refit-dock-section {
   display: flex; flex-direction: column; align-items: stretch; gap: 6px;
   padding: 9px 10px 10px; min-height: 0;
@@ -2655,6 +3053,25 @@ body.crew-rail-off #screen-game.active {
 .refit-propcats .bb { flex: 0 0 auto; }
 .refit-propcat { font-size: 11px; letter-spacing: 1px; opacity: 0.7; }
 .refit-propcat.active { opacity: 1; }
+
+/* prop palette SEARCH — the flat way into a 120-prop catalog when you don't know its drawer.
+   The field reuses .refit-input (the picker-card field skin) so it carries the same phosphor grade as
+   every other REFIT input; the clear key is a .bb, never a bare button. */
+.refit-propsearch { display: flex; align-items: center; gap: 5px; width: 100%; min-width: 0; }
+.refit-propsearch .refit-searchfield { flex: 1 1 auto; min-width: 0; margin: 4px 0; font-size: 13.5px; letter-spacing: 1px; }
+.refit-searchclear { flex: 0 0 auto; font-size: 12px; padding-inline: 8px; line-height: 1; }
+/* the result readout: a real count, or an honest miss — never an empty grid with no explanation */
+.refit-searchnote {
+  width: 100%; margin: 2px 0 1px; font-size: 11px; letter-spacing: 1.5px;
+  font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
+}
+.refit-searchnote.none { color: var(--bad); text-shadow: none; }
+/* The gallery's wrapper MUST claim the full column. .refit-palette is a wrapping FLEX row, so an
+   undeclared child shrink-wraps to its content — and .refit-propgrid's own `width:100%` then resolves
+   against that shrunken box, collapsing repeat(auto-fill, 84px) from four columns to ONE. Every other
+   full-width row here (.refit-tiers, .refit-propcats, .refit-propsearch) declares the same thing for
+   the same reason. Tile COUNT looks perfect while this is wrong, which is why it took a real frame. */
+#refit-propgrid-host { width: 100%; min-width: 0; }
 
 /* TIER toggle — the hard, obvious split: ⚙ FUNCTIONAL (props that DO something) vs ✦ COSMETIC (looks only) */
 .refit-tiers { display: flex; gap: 6px; width: 100%; min-width: 0; margin-bottom: 2px; }
@@ -2859,6 +3276,10 @@ body.crew-rail-off #screen-game.active {
 .mc-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px; padding: 1px 5px; background: rgba(0,0,0,.4); }
 .mc-acts { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .mc-form { display: flex; flex-direction: column; gap: 6px; }
+/* EXTENSIONS authoring: two fields side by side on a wide panel, stacked when the console is narrow. No
+   colours or chrome of its own — it inherits .key-input / .bb so it can never drift from the control floor. */
+.ext-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+@media (max-width: 620px) { .ext-pair { grid-template-columns: 1fr; } }
 /* ROUTINES — RUN NOW result (P0 #11): renders inline in the ACTIVE pane, spliced under the row that fired it,
    framed like a mini terminal so the paid run's output is unmissable (never streamed into the hidden CREATE pane). */
 .rt-out { margin: 2px 0 8px; border: 1px solid var(--ph-dim); border-left: 2px solid var(--ph);
@@ -3295,3 +3716,134 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 /* dim helper copy inside windows — NOT .mc-detail (that's the CONNECTORS error-detail class, alarm-red) */
 .win-note { font-size: 12px; color: var(--ph-dim); line-height: 1.45; }
 .ob-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; }
+
+
+/* ---- LOOPS window (windows/loops.js) — shape picker, live stepper, review cards -------------------------
+   The stepper is the "presentation" the loop system was missing: a loop must READ as a cycle you can see
+   yourself in, not as a spinner with a status word. Only the stage the server can prove lights up. */
+.lp-shapes { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 4px 0 10px; }
+.lp-shape {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; gap: 1px 10px;
+  align-items: center; text-align: left; padding: 9px 11px; cursor: pointer;
+  background: var(--panel-2, rgba(0,0,0,.25)); border: 1px solid var(--ph-faint); border-left: 3px solid transparent;
+  color: var(--ph-dim); font-family: inherit; font-size: 12px; transition: border-color .12s, background .12s;
+}
+.lp-shape:hover { border-color: var(--ph); background: var(--ph-faint); }
+.lp-shape.on { border-color: var(--ph); border-left-color: var(--gold); background: var(--ph-faint); color: var(--ph-bright); }
+.lp-shape-e { grid-row: 1 / span 3; font-size: 20px; color: var(--gold); opacity: .9; }
+.lp-shape-n { font-weight: 700; letter-spacing: .04em; color: var(--ph-bright); }
+.lp-shape-t { font-size: 11.5px; color: var(--ph-dim); }
+/* RIGOR BADGE — a hard exit condition and a self-reported one must not look alike. */
+.lp-shape-r { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; opacity: .95; }
+.lp-shape-r.hard { color: var(--gold); }
+.lp-shape-r.soft { color: var(--ph-dim); }
+
+.lp-cycle { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 2px 0 6px; font-size: 11px; }
+.lp-step { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 5px 0 3px; }
+.lp-step-i {
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px;
+  border: 1px solid var(--ph-faint); color: var(--ph-dim); background: rgba(0,0,0,.2);
+}
+.lp-step-i.on { border-color: var(--gold); color: var(--gold); background: var(--gold-faint, rgba(255,200,80,.08)); }
+.lp-step-sep { color: var(--ph-faint); font-size: 11px; }
+
+/* a candidate awaiting a verdict — the review gate, and the whole point of the panel */
+.lp-pends { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.lp-pend { padding: 8px 10px; border: 1px solid var(--ph-faint); border-left: 3px solid var(--gold); background: rgba(0,0,0,.22); }
+.lp-pend-h { font-size: 12px; color: var(--ph-bright); }
+.lp-pend-b { font-size: 11.5px; color: var(--ph-dim); margin-top: 4px; line-height: 1.45; white-space: pre-wrap; }
+
+.mc-lbl { display: block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ph-dim); margin: 6px 0 2px; }
+.mc-lbl .key-input, .mc-lbl textarea { margin-top: 3px; text-transform: none; letter-spacing: normal; }
+.lp-dir { display: flex; gap: 6px; align-items: center; }
+.lp-dir .key-input { flex: 1 1 auto; }
+.lp-agent-pick { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 4px; }
+@media (min-width: 560px) { .lp-shapes { grid-template-columns: 1fr 1fr; } }
+
+/* the inline rejection-reason panel (replaced a native window.prompt) */
+.lp-why { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--ph-faint); }
+.lp-why-in { width: 100%; }
+.lp-why-cost { font-size: 11px; color: var(--bad); }
+/* the dock badge — how many loop results are waiting on the Commander */
+.bb { position: relative; }
+.lp-badge {
+  position: absolute; top: 4px; right: 6px; min-width: 15px; height: 15px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; line-height: 1; border-radius: 8px;
+  background: var(--gold); color: #0a0a0a; box-shadow: 0 0 6px rgba(255,200,80,.5);
+}
+
+/* changed-file list on a review card, and the pre-flight objective preview */
+.lp-files { font-size: 11px; color: var(--ph-dim); margin-top: 5px; line-height: 1.7; }
+.lp-files code { background: rgba(0,0,0,.3); border: 1px solid var(--ph-faint); padding: 1px 5px; margin-right: 3px; }
+.lp-preview { margin: 8px 0 6px; font-size: 11.5px; }
+.lp-preview summary { cursor: pointer; color: var(--ph-dim); letter-spacing: .04em; }
+.lp-preview summary:hover { color: var(--ph-bright); }
+.lp-preview pre {
+  margin: 6px 0 0; padding: 8px 10px; max-height: 220px; overflow: auto;
+  background: rgba(0,0,0,.3); border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-faint);
+  color: var(--ph-dim); font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+
+/* the review diff — the change itself, not a description of it */
+.lp-diff { margin-top: 6px; }
+.lp-diff summary { cursor: pointer; font-size: 11px; letter-spacing: .04em; color: var(--gold); opacity: .9; }
+.lp-diff summary:hover { opacity: 1; }
+.lp-diff-note { font-size: 10.5px; margin: 4px 0 3px; }
+.lp-diff-body {
+  margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto;
+  background: rgba(0,0,0,.42); border: 1px solid var(--ph-faint); border-left: 3px solid var(--gold);
+  font-size: 11px; line-height: 1.45; white-space: pre; tab-size: 2;
+}
+.lp-diff-body .d-add  { color: #7bc88a; display: block; }
+.lp-diff-body .d-del  { color: #e0736d; display: block; }
+.lp-diff-body .d-hunk { color: var(--ph); opacity: .75; display: block; }
+.lp-diff-body .d-file { color: var(--ph-bright); display: block; }
+.lp-diff-body .d-ctx  { color: var(--ph-dim); display: block; }
+
+/* ---- the stepped START A LOOP flow: one decision at a time ---- */
+.lp-wiz { display: flex; flex-direction: column; gap: 4px; }
+.lp-step-h {
+  display: flex; align-items: center; gap: 8px; margin: 12px 0 6px;
+  font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--ph-bright);
+}
+.lp-wiz > .lp-step-h:first-child { margin-top: 2px; }
+.lp-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%; flex: 0 0 18px;
+  background: var(--gold); color: #0a0a0a; font-size: 11px; font-weight: 700; line-height: 1;
+}
+.lp-stage { border-top: 1px dashed var(--ph-faint); padding-top: 2px; animation: lpReveal .18s ease-out; }
+@keyframes lpReveal { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+
+/* the check TEST readout — the one field that used to have no feedback at all */
+.lp-testout { font-size: 11px; line-height: 1.5; margin-top: 4px; }
+
+/* step 3: what will actually happen, in plain English */
+.lp-ready { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.lp-ready-r { display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: baseline; font-size: 11.5px; }
+.lp-ready-r b { color: var(--ph-dim); font-weight: 600; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; }
+.lp-ready-r span { color: var(--ph-bright); line-height: 1.5; }
+.lp-go { width: 100%; }
+
+.lp-adv { margin: 10px 0 4px; }
+.lp-adv > summary { cursor: pointer; font-size: 11px; letter-spacing: .04em; color: var(--ph-dim); }
+.lp-adv > summary:hover { color: var(--ph-bright); }
+
+/* the loop row: what you asked for, and what it has done */
+.lp-ask { font-size: 11.5px; color: var(--ph-bright); opacity: .9; margin: 3px 0 1px; line-height: 1.45; }
+.lp-hist { margin-top: 6px; }
+.lp-hist > summary { cursor: pointer; font-size: 11px; color: var(--ph-dim); letter-spacing: .04em; }
+.lp-hist > summary:hover { color: var(--ph-bright); }
+.lp-hist-r { display: grid; grid-template-columns: 26px 14px 1fr; gap: 6px; align-items: baseline; font-size: 11px; padding: 2px 0; }
+.lp-hist-n { color: var(--ph-faint); }
+.lp-hist-v { text-align: center; }
+.lp-hist-t { color: var(--ph-dim); line-height: 1.4; }
+.lp-hist-why { grid-column: 3; margin: 0 0 4px 46px; font-size: 10.5px; color: var(--bad); opacity: .85; line-height: 1.4; }
+
+/* the check line: a stated fact, not a question, when we could detect it */
+.lp-checkline { font-size: 11.5px; color: var(--ph-bright); line-height: 1.6; margin: 8px 0 4px; }
+.lp-checkline code { background: rgba(0,0,0,.35); border: 1px solid var(--ph-faint); padding: 1px 6px; color: var(--gold); }
+.lp-link { font-family: inherit; font-size: 11px; color: var(--ph-dim); background: none; border: 0; border-bottom: 1px dotted var(--ph-faint); cursor: pointer; padding: 0; margin-left: 4px; }
+.lp-link:hover { color: var(--ph-bright); border-bottom-color: var(--ph); }

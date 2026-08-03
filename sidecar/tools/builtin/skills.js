@@ -25,6 +25,54 @@
     const store = deps && deps.store;
     const onView = deps && deps.onView;
     const onManage = deps && deps.onManage;
+    const gate = (deps && deps.gate) || null;                          // skills/gate.js instance: may the MODEL read this skill?
+    const readBeforeWrite = !!(deps && deps.readBeforeWrite);           // set for the autonomous review/curator passes
+
+    /* THE READ-BEFORE-WRITE LEDGER (autonomous passes only).
+       The background review and curator forks are handed skill.write/manage over the Commander's
+       whole skillbase with no human in the loop. Nothing tied a rewrite to a READ, so a pass could
+       patch or archive a skill it had only INFERRED from the run transcript — the most expensive
+       possible failure here, because the loss is silent and the original body is already gone from
+       the prompt. The ledger is closure-scoped, and both forks build their own tool instance per
+       pass, so it starts empty every pass and never leaks between them. Create is always free
+       (there is nothing to have read); pin/unpin/restore are lifecycle, not content. */
+    const viewedThisPass = new Set();
+    const CONTENT_ACTIONS = ['edit', 'patch', 'archive', 'delete', 'write_file', 'remove_file'];
+    function markRead(skill) { if (skill && skill.id) viewedThisPass.add(String(skill.id)); }
+    function unreadRefusal(skill, action) {
+      if (!readBeforeWrite || !skill || !skill.id) return null;
+      if (CONTENT_ACTIONS.indexOf(action) < 0) return null;
+      if (viewedThisPass.has(String(skill.id))) return null;
+      return {
+        content: 'Refused: you have not read "' + skill.name + '" this pass. Call skill.view on it first, then '
+          + action.replace(/_/g, ' ') + ' it — never rewrite a skill from what the transcript implied it says.',
+        summary: 'unread'
+      };
+    }
+    function withheldRefusal(decision, skill) {
+      const cats = (decision && decision.categories && decision.categories.length)
+        ? ' Guard findings: ' + decision.categories.join(', ') + '.' : '';
+      return {
+        content: 'The skill "' + (skill && skill.name) + '" is withheld by the skill guard and its body was not loaded: '
+          + ((decision && decision.reason) || 'held by the skill guard') + '.' + cats
+          + ' Do not recreate it and do not guess its contents; tell the Commander it needs review in ABILITIES > SKILLS.',
+        summary: 'withheld'
+      };
+    }
+    function decideFor(skill, withBody) {
+      if (!gate || !skill) return { visible: true };
+      try {
+        const d = (withBody && typeof gate.verify === 'function') ? gate.verify(skill)
+          : (typeof gate.decide === 'function' ? gate.decide(skill) : { visible: true });
+        return d || { visible: true };
+      } catch (_) { return { visible: true }; }   // a gate hiccup must never strand the library
+    }
+    /* The existing record behind a name, WITHOUT counting as a read: bump:false so an internal
+       lookup can never satisfy the ledger above or inflate usage telemetry. */
+    function peek(agentId, nameOrId) {
+      if (!store || typeof store.view !== 'function' || !nameOrId) return null;
+      try { return store.view(agentId, nameOrId, { bump: false, includeArchived: true, hydrate: false }); } catch (_) { return null; }
+    }
 
     const writeTool = {
       name: 'skill.write', capability: 'memory', scope: 'write', requiresConsent: false,
@@ -44,6 +92,11 @@
       run: (args, ctx) => {
         if (!store) return { content: 'The skill library is unavailable.', summary: 'unavailable' };
         const aid = (ctx && ctx.agentId) || 'agent';
+        // On an existing name this wrapper is an EDIT, so the ledger applies exactly as it does to
+        // skill.manage — otherwise skill.write would be the way around it.
+        const prior = readBeforeWrite ? peek(aid, args && args.name) : null;
+        const unread = unreadRefusal(prior, 'edit');
+        if (unread) return unread;
         const r = store.write({
           agentId: aid, name: args && args.name, summary: args && args.summary, body: args && args.body,
           description: args && args.description, category: args && args.category, setup: args && args.setup,
@@ -77,19 +130,27 @@
           replace: { type: 'string', description: 'replacement text when action=patch' },
           path: { type: 'string', description: 'support file path under references/, templates/, scripts/, or assets/' },
           content: { type: 'string', description: 'support file content when action=write_file' },
+          absorbedInto: { type: 'string', description: 'when archiving after a merge: the skill that now carries this content (required for consolidation passes)' },
           pinned: { type: 'boolean' }
         }
       },
       run: (args, ctx) => {
         if (!store || typeof store.manage !== 'function') return { content: 'The skill manager is unavailable.', summary: 'unavailable' };
         const aid = (ctx && ctx.agentId) || 'agent';
+        const action = String((args && args.action) || 'create').toLowerCase();
+        if (readBeforeWrite && action !== 'create') {
+          const prior = peek(aid, (args && (args.target != null ? args.target : (args.id != null ? args.id : args.name))));
+          const unread = unreadRefusal(prior, action);
+          if (unread) return unread;
+        }
         const r = store.manage(Object.assign({}, args || {}, { agentId: aid, createdBy: (ctx && ctx.createdBy) || (ctx && ctx.skillReview ? 'background-review' : 'agent'), sourceRunId: ctx && ctx.runId }));
         if (!r.ok) return { content: 'Could not manage the skill: ' + r.error, summary: 'not saved' };
         emitSkill(ctx, r.skill);
         if (typeof onManage === 'function') { try { onManage(r.skill, ctx, r.action || (args && args.action) || 'manage'); } catch (_) {} }
-        const action = r.action || (args && args.action) || 'updated';
+        const done = r.action || (args && args.action) || 'updated';
         const path = r.path ? (' (' + r.path + ')') : '';
-        return { content: 'Skill "' + r.skill.name + '" ' + action.replace(/_/g, ' ') + ' complete' + path + '.', summary: action };
+        const heir = r.absorbedInto ? (' Content now lives in "' + r.absorbedInto + '".') : '';
+        return { content: 'Skill "' + r.skill.name + '" ' + done.replace(/_/g, ' ') + ' complete' + path + '.' + heir, summary: done };
       }
     };
 
@@ -101,9 +162,16 @@
         if (!store) return { content: 'The skill library is unavailable.', summary: 'unavailable' };
         const list = store.list((ctx && ctx.agentId) || 'agent', { includeArchived: !!(args && args.includeArchived) });
         if (!list.length) return { content: 'No skills saved yet. Save one with skill.manage after you work out a repeatable procedure.', summary: '0 skills' };
+        let held = 0;
+        const lines = list.map(s => {
+          const d = decideFor(s, false);
+          // Same rule as the prompt index: name a withheld skill, never summarize it.
+          if (d.visible === false) { held++; return '- ' + s.name + ' [WITHHELD: ' + (d.reason || 'held by the skill guard') + ']'; }
+          return '- ' + s.name + (s.summary ? ' -- ' + s.summary : '') + ' [' + (s.state || 'active') + ', used ' + (s.useCount || 0) + 'x' + fileLabel(s.files) + ']';
+        });
         return {
-          content: list.map(s => '- ' + s.name + (s.summary ? ' -- ' + s.summary : '') + ' [' + (s.state || 'active') + ', used ' + (s.useCount || 0) + 'x' + fileLabel(s.files) + ']').join('\n'),
-          summary: list.length + ' skill(s)'
+          content: lines.join('\n'),
+          summary: list.length + ' skill(s)' + (held ? ', ' + held + ' withheld' : '')
         };
       }
     };
@@ -116,6 +184,14 @@
         if (!store) return { content: 'The skill library is unavailable.', summary: 'unavailable' };
         const v = store.view((ctx && ctx.agentId) || 'agent', args && args.name);
         if (!v) return { content: 'No skill named "' + (args && args.name) + '". Use skill.list to see what you have.', summary: 'not found' };
+        /* THE DELIVERY GATE. This is the only place a full body crosses into the conversation, so it
+           gets the strict check (gate.verify re-digests the hydrated package: SKILL.md is read back
+           off disk and can differ from what the scanner saw). A refused view is NOT a read — it must
+           not reach onView (which would list it as a loaded skill in the run's telemetry) and must
+           not satisfy the read-before-write ledger. */
+        const decision = decideFor(v, true);
+        if (decision.visible === false) return withheldRefusal(decision, v);
+        markRead(v);
         if (typeof onView === 'function') { try { onView(v, ctx); } catch (_) {} }
         const files = v.files && v.files.length
           ? '\n\nSupport files:\n' + v.files.map(f => '- ' + f.path + (f.content ? '\n' + f.content : '')).join('\n')

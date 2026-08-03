@@ -85,8 +85,17 @@
      starts overstating most of the input bill.
      A family absent from here keeps the old 1.0x behaviour, so an unmodelled provider can only ever
      OVER-report — the safe direction for a spend seatbelt, and never a silent under-count. */
+  /* The anthropic write multiplier tracks the TTL tier anthropic.js actually requests: the 5-minute tier
+     writes at 1.25x, the 1-hour tier (SKYNET_ANTHROPIC_CACHE_TTL=1h) at 2.0x. Reading the SAME env both
+     sides keeps the estimate honest — an operator who opts into the pricier tier sees it in the seatbelt. */
+  const ANTHROPIC_TTL_1H = (function () {
+    try {
+      const raw = (typeof process !== 'undefined' && process.env) ? process.env.SKYNET_ANTHROPIC_CACHE_TTL : '';
+      return String(raw == null ? '' : raw).trim().toLowerCase() === '1h';
+    } catch (_) { return false; }
+  })();
   const CACHE = {
-    anthropic: { read: 0.10, write: 1.25 },   // ephemeral 5-minute cache. The 1h TTL writes at 2.0x; not modelled.
+    anthropic: { read: 0.10, write: ANTHROPIC_TTL_1H ? 2.00 : 1.25 },
     gemini:    { read: 0.25, write: 1.00 }    // implicit context caching — no separate write charge published
   };
   const NO_CACHE = { read: 1, write: 1 };
@@ -116,12 +125,28 @@
   /* priceOf(family, id) -> { in, out } | null   — per-million USD, or null when nothing matches (honest
      'unpriced'). Deliberately INDEPENDENT of catalog warm state: contextLimit() is 0 until a catalog loads,
      and the spend cap must not inherit that same cold-start hole — it has to work from the very first turn. */
+  /* LIVE CATALOG SEAM (2026-07-31, Hermes-parity pass). The host may wire a lookup backed by the models.dev
+     aggregate (liveprices.js) so a newly-released model gets its real published rate instead of a stale
+     family fallback. Precedence is deliberate: an OPERATOR override always wins; the LIVE published rate
+     beats the built-in snapshot (which goes stale between releases); the snapshot remains the offline floor.
+     Everything from here is still an ESTIMATE (costSource 'catalog') — the honesty channel is unchanged,
+     and a throwing/garbage lookup must never wedge the seatbelt, hence the try + shape check. */
+  let liveLookup = null;
+  function setLiveLookup(fn) { liveLookup = typeof fn === 'function' ? fn : null; }
   function priceOf(family, id) {
     const key = String(id == null ? '' : id).trim();
     if (!key) return null;
     const cache = CACHE[family] || NO_CACHE;   // an operator override rebases in/out, never the cache ratios
     const lower = key.toLowerCase();
     for (const o of OVERRIDES) if (lower.indexOf(o.key) === 0) return { in: o.price.in, out: o.price.out, cache };
+    if (liveLookup) {
+      try {
+        const lv = liveLookup(family, key);
+        if (lv && Number.isFinite(lv.in) && Number.isFinite(lv.out) && lv.in >= 0 && lv.out >= 0) {
+          return { in: lv.in, out: lv.out, cache };
+        }
+      } catch (_) { /* a broken live catalog falls through to the built-in snapshot */ }
+    }
     const table = TABLES[family];
     if (!table) return null;
     for (const [re, price] of table) if (re.test(key)) return { in: price.in, out: price.out, cache };
@@ -138,5 +163,5 @@
     return { prompt: String(p.in / 1e6), completion: String(p.out / 1e6) };
   }
 
-  return { priceOf, pricingBlock, _internals: { ANTHROPIC, GEMINI, OVERRIDES } };
+  return { priceOf, pricingBlock, setLiveLookup, _internals: { ANTHROPIC, GEMINI, OVERRIDES } };
 });

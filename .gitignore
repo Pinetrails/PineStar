@@ -28,6 +28,7 @@ dev/.scratch-workspace/
 dev/.scratch-mock-cron/
 # mock-comms dev sidecar runtime state (same shape; never committed)
 dev/.scratch-mock-comms/
+dev/.scratch-calm-errors/
 dev/.scratch-adversarial/
 
 # rust / tauri desktop shell build output
@@ -44,12 +45,15 @@ src-tauri/binaries/
 # (each run writes a SHOT_DIR with a nested _profile chrome user-data-dir). Never committed.
 .uishots*/
 .mock-shot/
+# qa:summon-delegate journey scratch (seeded workspace + its own chrome profile). Never committed.
+.summon-journey/
 .qa_tmp/
 .tmpshot/
 .postcard-verify/
 .clip-verify/
 .uiplay/
 .uiresidue/
+.wallprobe*/
 .uisummon/
 .uiaudit/
 .uijourneys/
@@ -71,6 +75,14 @@ design/minion_backup_preset/
 # tracked). The scripts read/create qa/findings/ physically via fs, never from git, so ignoring
 # these does not affect them. Keep the dir itself (via .gitkeep) + the README (a .md, not matched).
 qa/findings/*.json
+
+# Red-Green Closer run evidence — one dir per run, written at RUN TIME by scripts/qa/closer.mjs.
+# Same class as qa/findings/ above: MACHINE-LOCAL. manifest.json/verdict.json bake absolute
+# candidate-worktree paths, and the gate logs are per-run detector spew (the same reason
+# .bugloops/ is ignored). The durable record of a closed finding is the digest line + the
+# qa/STATUS.md entry the L11 loop writes, and the winning patch is handed to the merge ritual
+# rather than archived here. The script creates run dirs physically via fs, never from git.
+qa/closer/
 
 # QA READY-GATE machine stamps (EL-7) — last-run state each crew runner writes at RUN TIME for
 # scripts/qa/ready.mjs to read. Same class as qa/findings: machine-local, ephemeral, regenerated
@@ -120,3 +132,14 @@ qa/installed/smoke-*/
 CODEX_HANDOFF.md
 http-gate.err
 qa/digests/
+dev/.scratch-clarify/
+
+# staged runtime node_modules for the desktop bundle (build artifact, ~480MB)
+src-tauri/voice-deps/
+
+# python bytecode from the sprite assembly scripts
+__pycache__/
+*.pyc
+
+# the exact upload for starnetos.com, rebuilt by scripts/stage-website-deploy.mjs each deploy
+website-deploy/

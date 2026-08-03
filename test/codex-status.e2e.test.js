@@ -18,29 +18,8 @@
 
 const A = require('./_assert.js');
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
-const { spawn } = require('child_process');
-const { bootToken } = require('./_httpToken.js');
-
-const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
-
-function boot(port, env, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], { env: Object.assign({}, process.env, env, { SKYNET_PORT: String(port) }), stdio: ['ignore', 'pipe', 'pipe'] });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
-      else if (!settled && /already in use/i.test(out)) { settled = true; try { child.kill(); } catch (_) {} if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1)); else reject(new Error('no free port')); }
-    };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout:\n' + out)); } }, 9000);
-  });
-}
-function kill(child) { return new Promise(r => { try { child.on('exit', () => r()); child.kill(); } catch (_) { r(); } setTimeout(r, 3000); }); }
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
 const ACCESS = 'eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3ODM4NDAwMDB9.ZmFrZS1zaWduYXR1cmUtZm9yLXRlc3Q';
 const REFRESH = 'rf-e2e-test-refresh-token-abcdefghijklmnopqrstuvwxyz-0123456789';
@@ -52,18 +31,18 @@ function seedTokens(ws, envelope) {
 }
 
 (async () => {
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-codexstat-ws-'));
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1' };
+  const fixture = SidecarFixture.create({ prefix: 'sk-codexstat-ws-', env: { SKYNET_DEV: '1' } });
+  const ws = fixture.workspace;
 
   // ===== boot 1: a persisted DEAD marker (what a consumed-token refresh failure wrote before the restart) =====
   seedTokens(ws, {
     access_token: ACCESS, refresh_token: REFRESH, last_refresh: '2026-07-08T01:00:00.000Z', auth_mode: 'device',
     authDead: { reason: 'Codex refresh token was already consumed by another client (e.g. the Codex CLI or VS Code extension). Sign in with ChatGPT again.', code: 'refresh_token_reused', at: '2026-07-08T06:00:00.000Z' }
   });
-  let { child, port } = await boot(8930 + (process.pid % 25), env, 20);
-  let B = 'http://' + HOST + ':' + port;
+  await fixture.start();
+  let B = fixture.baseUrl;
   try {
-    let token = await bootToken(B, B);
+    let token = fixture.token;
     let headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
     const status = async () => (await fetch(B + '/api/auth/codex/status', { headers })).json();
 
@@ -84,18 +63,17 @@ function seedTokens(ws, envelope) {
     A.eq(fs.existsSync(path.join(ws, 'codex', 'tokens.json')), false, 'logout removed the token file');
 
     // ===== boot 2: a HEALTHY envelope (no marker) still reads connected — the good path is untouched =====
-    await kill(child);
+    await fixture.stop();
     seedTokens(ws, { access_token: ACCESS, refresh_token: REFRESH, last_refresh: '2026-07-08T01:00:00.000Z', auth_mode: 'device' });
-    ({ child, port } = await boot(port, env, 20));
-    B = 'http://' + HOST + ':' + port;
-    token = await bootToken(B, B);
+    await fixture.start();
+    B = fixture.baseUrl;
+    token = fixture.token;
     headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
     s = await status();
     A.eq(s.connected, true, 'a healthy persisted sign-in still reads connected:true');
     A.eq(s.expired, false, 'a healthy sign-in is not expired');
   } finally {
-    await kill(child);
-    try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    await fixture.dispose();
   }
   A.report('codex-status.e2e.test');
 })().catch(e => { console.error('codex-status.e2e.test FAILED:', e); process.exit(1); });

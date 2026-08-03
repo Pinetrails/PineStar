@@ -129,8 +129,52 @@ const App = (() => {
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
     logo.style.left = (a.left / z) + 'px';
     logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
+    queueLogoOcclusion();   // the mark moved — its clip is stale
+  }
+
+  /* ---------- the brand mark yields to windows (2026-07-29 layering report) ----------
+     The z960 hoist that keeps the wordmark crisp above the CRT glass also parks it above every
+     floating window: #terms lives INSIDE #screen-game, a z-index:10 stacking context, so a .term
+     can never out-stack a <body> child no matter how high zTop() climbs. Drag a panel into the
+     top-left and the amber art bleeds straight through it. No z-index fixes this — the glass has
+     to stay over the windows, and anything over the glass is over the windows too — so the mark
+     is CLIPPED under them instead. app/logoclip.js owns the geometry (and its unit test). */
+  function syncLogoOcclusion() {
+    const logo = el('logo'), host = el('terms');
+    if (!logo || typeof LogoClip === 'undefined') return;
+    const box = logo.getBoundingClientRect();
+    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px.
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    const rects = host ? Array.prototype.map.call(host.querySelectorAll('.term'), w => w.getBoundingClientRect()) : [];
+    logo.style.clipPath = LogoClip.clipFor(box, rects, z);
+  }
+  let occlusionQueued = false;
+  function queueLogoOcclusion() {
+    if (occlusionQueued) return;
+    occlusionQueued = true;
+    const run = () => { if (!occlusionQueued) return; occlusionQueued = false; syncLogoOcclusion(); };
+    // rAF reads layout right before paint (the cheap place to force one); the timer is the backstop
+    // for when rAF is FROZEN — a hidden/minimized window, and the dev preview pane.
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    if (typeof setTimeout === 'function') setTimeout(run, 120);
   }
   if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
+  // One watcher covers the whole window lifecycle: childList = open/close, style = drag + resize
+  // + placeTerm, class = minimize/restore. animationend catches the power-on scale settling, which
+  // moves no attribute and so fires no mutation of its own.
+  if (typeof document !== 'undefined' && typeof MutationObserver === 'function') {
+    const host = el('terms');
+    if (host) {
+      new MutationObserver(recs => {
+        for (const r of recs) {
+          if (r.type === 'childList' && r.target === host) { queueLogoOcclusion(); return; }
+          const t = r.target;
+          if (t && t.nodeType === 1 && t.classList && t.classList.contains('term')) { queueLogoOcclusion(); return; }
+        }
+      }).observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      host.addEventListener('animationend', queueLogoOcclusion);
+    }
+  }
   // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
   // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
   // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).
@@ -910,6 +954,18 @@ const App = (() => {
     a.systemPrompt = composeSystemPrompt(a);
     agents.set(id, a);
     registerAgent(id, a.color);                                // sprite tint shim
+    // ITS DESK COMES WITH IT (opts.desk): a specialist created because the Commander ASKED for one has
+    // nowhere to sit, so it stands where work is delivered instead of walking to a workstation — the
+    // "you also have to go build it a desk" step nobody asked for. When the summon is the answer to a
+    // direct request (the overseer's team.summon), seed the ONE per-agent prop the same way the hero's
+    // starter desk is seeded (ensureWorkstation: idempotent, spawn room first, real placed prop). This is
+    // NOT a general "the agent can place props" power — only this one desk, only on this one path, and
+    // only for the agent being created. Deliberately BEFORE World.spawnAgent so the desk exists as the
+    // body arrives (containBody re-homes the body next tick in the rare case the two pick the same tile).
+    const desk = (opts.desk === true && station && typeof station.ensureWorkstation === 'function')
+      ? station.ensureWorkstation(id) : null;
+    const deskRoom = (desk && desk.ok && desk.roomId && station.roomById) ? (station.roomById(desk.roomId) || {}).name : null;
+    if (opts.desk === true && !(desk && desk.ok)) console.warn('[summon] no desk seeded for', id, desk && desk.error);
     const _spawned = (typeof World !== 'undefined' && !!World.spawnAgent);
     if (_spawned) World.spawnAgent(a);                          // Phase C: a real floor body
     else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
@@ -939,7 +995,9 @@ const App = (() => {
       // desk placement teed up. FINALE (Lane D): the toast is ONE line now — the desk requirement + its door move
       // into the diegetic line + chip below (the standing record no longer duplicates the whole instruction).
       _notify(a.name + ' summoned — type to task it now.', 'good');
-      if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
+      // …unless its desk already came with it (opts.desk): the "nowhere to sit" line would then be a lie, and
+      // the chip would open REFIT to place a SECOND desk the agent can't own (one workstation per agent).
+      if (!(desk && desk.ok) && typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
           && (typeof Chat.beatBusy !== 'function' || !Chat.beatBusy())) {   // a pending question/beat owns the COMMS moment — its chips must survive; the desk line stays available via REFIT
         Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
         Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
@@ -951,7 +1009,12 @@ const App = (() => {
       // RECRUIT dock button). Guarded on visibility so a closed COMMS panel is a no-op.
       setTimeout(() => { const ci = el('chat-input'); if (ci && ci.offsetParent !== null) { try { ci.focus(); } catch (_) {} } }, 0);
     } else {
-      _notify(a.name + ' summoned — switch to its stream to task it, or let the overseer delegate.', 'good');
+      // say WHERE its desk landed when one was seeded — the Commander needs to be able to go look at it (and
+      // move it in REFIT). Only claimed when the placement actually returned ok; a failed seed says nothing.
+      // "took the free desk" vs "desk placed": ensureWorkstation may ADOPT an unbound workstation instead of
+      // building one, and saying "placed" for a desk that was already there is a small lie about the floor.
+      const deskLine = (desk && desk.ok) ? ((desk.adopted ? 'took the free desk' : 'desk placed') + (deskRoom ? ' in ' + deskRoom : '') + '. ') : '';
+      _notify(a.name + ' summoned — ' + deskLine + 'switch to its stream to task it, or let the overseer delegate.', 'good');
     }
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
     // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent
@@ -1178,10 +1241,32 @@ const App = (() => {
   // the full backoff loop (the roster is re-derivable from local state and re-pushed constantly): track a
   // single failed flag, warn EXACTLY once on the healthy→failing edge, and let the next persist re-attempt.
   let rosterPushFailed = false;
+  /* S3 — MAKE THE METERS LOAD-BEARING (without gating anything).
+     Until now every reader of an agent's stats was a display surface: the level chip, the dossier, /whoami.
+     Nothing in the station ACTED on them, so a TRUSTED veteran and a stranger were identical to delegation —
+     which is what made the whole leveling system feel cosmetic. This publishes each agent's EARNED track
+     record onto the roster, where the sidecar renders it on the lead's team.dispatch briefing, so the lead
+     picks a worker on evidence instead of on nothing.
+
+     It INFORMS, it never GATES: no level threshold blocks a dispatch, an unproven agent is simply described
+     without a track line (Xp.credential returns '' until something is actually earned), and the Commander can
+     still hand any work to anyone. The sandbox law holds.
+
+     WHY HERE AND NOT IN THE CACHED SYSTEM PROMPT: the plan originally aimed this at rosterClause(), but that
+     line is baked into the stored a.systemPrompt and needs a recomposeOrchestrators() to refresh — the
+     documented cached-prompt trap (see the note above rosterClause). The sidecar's [ORCHESTRATION] briefing is
+     rebuilt from the roster on EVERY run instead, so it is the same list the lead actually picks from with
+     none of the staleness risk. Duplicating a slow-moving copy into the cached prompt as well would buy
+     nothing and add a second thing to keep in sync, so it is deliberately not done. */
+  function rosterTrack(a) {
+    if (!a || typeof Xp === 'undefined' || !Xp.credential || !a.stats) return '';
+    try { return Xp.credential(a.stats).text || ''; } catch (_) { return ''; }
+  }
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+        track: rosterTrack(a),    // S3: this agent's EARNED track record, so the lead's dispatch briefing can pick on evidence (see rosterTrack)
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
       // P1.1 (UPDATE_STATE_SAFETY_AUDIT): stamp a freshness `updatedAt` so the sidecar can refuse a STALE push (a
@@ -1227,11 +1312,24 @@ const App = (() => {
       persona: ev.persona || (base && base.persona) || undefined,
       purpose: ev.purpose || (base && base.purpose) || undefined
     });
+    // desk:true — this summon IS the answer to "create me an agent", so the worker arrives with the one
+    // per-agent prop it needs to sit and work. See summonAgent: the seed is that agent's desk and nothing
+    // else; the Commander can move or reclaim it in REFIT like any placed prop.
     let a = null;
-    try { a = summonAgent(spec, { activate: false }); } catch (_) { a = null; }
+    try { a = summonAgent(spec, { activate: false, desk: true }); } catch (_) { a = null; }
     if (!a) return null;
     try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
-    return a.id;
+    // READ BACK what actually landed, so the ack can tell the lead where the desk is. Deliberately a PURE
+    // read (propsByAgent), never a second ensureWorkstation call: re-running the seeder here could place a
+    // desk AFTER summonAgent's persist() — a floor change that would not be saved until the next write.
+    // Blank when nothing was placed, and the tool then says nothing about a desk.
+    let deskWhere = '';
+    try {
+      const mine = (station && station.propsByAgent) ? station.propsByAgent(a.id) : [];
+      const seat = mine.find(p => station.capForProp && station.capForProp(p.t) === 'computer');
+      if (seat) { const rm = station.roomById ? station.roomById(station.roomAt(seat.x, seat.y)) : null; deskWhere = (rm && rm.name) ? String(rm.name) : 'the station'; }
+    } catch (_) { deskWhere = ''; }
+    return { agentId: a.id, desk: deskWhere };
   }
 
   function persist() {
@@ -1759,9 +1857,10 @@ const App = (() => {
       onCode: c => {
         codeEl.textContent = c.user_code; codeEl.classList.remove('hidden');
         openBtn.classList.remove('hidden');
-        openBtn.onclick = () => openExternalUrl(c.verification_uri);
+        // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — see codexsignin.js.
+        openBtn.onclick = () => openExternalUrl(c.open_uri || c.verification_uri);
         statusEl.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-        openExternalUrl(c.verification_uri);
+        openExternalUrl(c.open_uri || c.verification_uri);
       },
       onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
       onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshCodexStatus(); loadCodexModels(); }
@@ -1878,9 +1977,10 @@ const App = (() => {
       onCode: cc => {
         codeEl.textContent = cc.user_code; codeEl.classList.remove('hidden');
         openBtn.classList.remove('hidden');
-        openBtn.onclick = () => openExternalUrl(cc.verification_uri);
+        // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — kimi's page REQUIRES ?user_code=.
+        openBtn.onclick = () => openExternalUrl(cc.open_uri || cc.verification_uri);
         statusEl.innerHTML = 'enter this code at <b>' + esc(cc.verification_uri) + '</b> (opening it now)…';
-        openExternalUrl(cc.verification_uri);
+        openExternalUrl(cc.open_uri || cc.verification_uri);
       },
       onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
       onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshOAuthGenesisStatus(pid); loadOAuthModels(pid); }
@@ -1910,6 +2010,9 @@ const App = (() => {
     const inFamily = id => id === def || id.indexOf(def + '_') === 0;
     const ids = Object.keys(DATA.SKINS);
     const ordered = [def, ...ids.filter(id => id !== def && inFamily(id)), ...ids.filter(id => !inFamily(id))].filter(id => DATA.SKINS[id]);
+    // stage handle (assigned by the mount below): drive THIS stage, not the module-level shortcut, which
+    // belongs to whichever picker mounted last once more than one is on screen.
+    let stage = null;
     ordered.forEach(id => {
       const sk = DATA.SKINS[id];
       const b = document.createElement('button');
@@ -1923,15 +2026,15 @@ const App = (() => {
       b.onclick = () => {
         pickedSkin = id;
         [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
-        if (typeof SkinStage !== 'undefined') SkinStage.show(id);
+        if (stage) stage.show(id);
         SFX.click();
       };
       // hover scrubs the stage so you can compare without committing; leaving snaps back to the pick
-      b.onmouseenter = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(id); };
+      b.onmouseenter = () => { if (stage) stage.show(id); };
       wrap.appendChild(b);
     });
-    wrap.onmouseleave = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSkin); };
-    if (typeof SkinStage !== 'undefined') SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
+    wrap.onmouseleave = () => { if (stage) stage.show(pickedSkin); };
+    if (typeof SkinStage !== 'undefined') stage = SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
   }
 
   /* ---------- VOICE & MANNER (the create-screen personality system) ----------
@@ -2270,7 +2373,7 @@ const App = (() => {
       }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
-      if (key) await Harness.setKey(key, pickedProvider);
+      if (key) await (Harness.validateAndSetKey ? Harness.validateAndSetKey(key, pickedProvider) : Harness.setKey(key, pickedProvider));
       Harness.setModel(model); Harness.setProv(pickedProvider);
     }
 
@@ -2292,6 +2395,11 @@ const App = (() => {
 
     wakeBtnBusy(true);   // COMMIT POINT: past every validation gate — show WAKING… and hold the latch through enterGame
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return true; }
+
+    // LOCK DOWN before the NEW hero or any of its local stores are committed. A failed durable revoke rejects,
+    // leaves the prior station intact, and keeps its confirmed grant visible instead of commissioning a fresh
+    // Commander who silently inherited cabinet:write. Saved-station resume returns above and keeps its grants.
+    if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();
 
     // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
     // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
@@ -2334,7 +2442,6 @@ const App = (() => {
     if (typeof BottleStore !== 'undefined') BottleStore.reset();   // …and R5's per-run bottle-decision denylist clears — a fresh hero re-earns every "bottle it?" offer (own key)
     if (typeof ResummonStore !== 'undefined') ResummonStore.reset();   // …and P3.1's per-run re-summon-decision denylist clears — a fresh hero re-earns every "run it again?" offer (own key)
     if (typeof TrustStore !== 'undefined') TrustStore.reset();   // GROWTH Tier 3: …and a fresh EARNED-AUTONOMY track record — a new Commander never inherits the prior hero's earned rungs / declined-offer state / streak (own key); the earned dial rung must be re-earned from scratch
-    if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
@@ -2404,7 +2511,7 @@ const App = (() => {
     if (typeof PropSprites !== 'undefined' && WorldModel.setPropRules) {
       WorldModel.setPropRules((t) => {
         const s = PropSprites.spec(t);
-        return s ? { mount: s.mount || null, surface: !!s.surface } : null;
+        return s ? { mount: s.mount || null, stack: !!s.stack, surface: !!s.surface } : null;
       });
     }
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
@@ -2454,7 +2561,10 @@ const App = (() => {
     }
     // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, station: pendingStationStats, persist: persist }); pendingStationStats = null; }
+    // S3: onCredential fires only on a coarse track-record change (tier crossing / band flip), and re-pushes
+    // the roster so the lead's next dispatch briefing describes its crew truthfully. Rare by construction.
+    // S4: `agents` lets the boot-time trophy reconcile reach every specialist's case, not just the hero's.
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.
@@ -2606,11 +2716,12 @@ const App = (() => {
           const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
           if (!s || !s.dominant) return '';
           const lanes = Object.keys(s.laneTags || {}).map(l => l + ' (' + s.laneTags[l] + ')').join(', ');
-          return 'dominant lane: ' + s.dominant + '; ' + s.samples + ' tool-samples; lanes worked: ' + (lanes || s.dominant);
+          return 'dominant lane: ' + s.dominant + '; ' + s.samples + ' completed task-runs; lanes worked: ' + (lanes || s.dominant);
         } catch (_) { return ''; }
       };
       ProspectStore.init({
         fetch: (u, o) => (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch(u, o) : fetch(u, o),
+        setLearningEnabled: (on) => { if (typeof ProfileStore !== 'undefined' && ProfileStore.setEnabled) ProfileStore.setEnabled(on); if (typeof MintStore !== 'undefined' && MintStore.setEnabled) MintStore.setEnabled(on); },
         getWorksignalSummary: worksignalSummaryText,
         getCustomClasses: () => { try { return (typeof Specialties !== 'undefined' && Specialties.customs) ? (Specialties.customs() || []).map(s => ({ name: s.name, tagline: s.tagline })) : []; } catch (_) { return []; } },
         getCustomRecipes: () => { try { return (typeof Recipes !== 'undefined' && Recipes.customs) ? (Recipes.customs() || []).map(r => ({ name: r.name, tagline: r.tagline })) : []; } catch (_) { return []; } },
@@ -2638,6 +2749,7 @@ const App = (() => {
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.init({
       getSystem: () => agent ? agent.systemPrompt : '',
       getName: () => agent ? agent.name : 'AGENT',
+      readiness: () => (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null,
       getBeliefs: () => {
         const out = {};
         if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return out;
@@ -2647,10 +2759,14 @@ const App = (() => {
         }
         return out;
       },
-      getExistingJobs: () => fetch('/api/cron', { cache: 'no-store' }).then(r => r.ok ? r.json() : { jobs: [] }).then(j => (j.jobs || []).map(x => x && x.name).filter(Boolean)).catch(() => []),
+      getExistingJobs: () => (typeof QuerySpine !== 'undefined' && QuerySpine.refresh ? QuerySpine.refresh('cron') : Promise.reject(new Error('cron query unavailable')))
+        .then(q => (((q && q.hasData && q.data) || {}).jobs || []).map(x => x && x.name).filter(Boolean)).catch(() => []),
       // W6: surface the server's `duplicate` flag so the store retires a proposal the mint gate refused (rather than
       // treating it as a plain success and re-offering). A non-JSON body degrades to { ok } exactly as before.
-      scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json().then(j => ({ ok: r.ok, duplicate: !!(j && j.duplicate) })).catch(() => ({ ok: r.ok }))).catch(() => ({ ok: false })),
+      scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json().then(j => ({ ok: r.ok, duplicate: !!(j && j.duplicate) })).catch(() => ({ ok: r.ok }))).then(out => {
+        if (out.ok && typeof QuerySpine !== 'undefined' && QuerySpine.invalidate) QuerySpine.invalidate('cron');
+        return out;
+      }).catch(() => ({ ok: false })),
       // G4 feature 2: is a MISSION BOARD placed? When it is, a proposal gets a BODY (agent walks + pins an amber
       // card on the board) instead of the inline Dialogue approval. No board → the Dialogue flow is untouched.
       boardPlaced: () => { try { const d = World.stationDoc && World.stationDoc(); return !!(d && d.props && d.props.some(p => p && p.t === 'missionboard')); } catch (_) { return false; } }
@@ -2669,9 +2785,9 @@ const App = (() => {
         try { if (typeof TrustStore !== 'undefined' && TrustStore.onManualInitiative && typeof AutonomyStore !== 'undefined' && AutonomyStore.get) TrustStore.onManualInitiative((AutonomyStore.get() || {}).initiative); } catch (_) {}
       },
       api: {
-        load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { grants: [], grantable: [] }).catch(() => ({ grants: [], grantable: [] })),
-        grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false })),
-        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false }))
+        load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { ok: false, reason: 'permissions service unavailable' }).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission grant failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
       }
     });
     // GROWTH Tier 3 — EARNED AUTONOMY (track record → trust): folds the SAME run outcomes xpstore folds into a
@@ -2719,6 +2835,9 @@ const App = (() => {
     // recovers sessions for routines that finished while the browser was closed. Read-only on U.bus. Init AFTER
     // Chat.init + App is fully formed (this returns App) so the module's App.refreshRail/persist bridges resolve.
     if (typeof AutoSessions !== 'undefined') AutoSessions.init();
+    // Delegated-session recovery: if no page received the live delivery (or another open page won the ACK race
+    // with a divergent local id), fold the durable run envelope into the matching named session exactly once.
+    if (typeof StationCommands !== 'undefined' && StationCommands.reconcile) StationCommands.reconcile();
     // G3a PRIDE LAYER: arm the durable lifetime STATION RECORD — folds real completed runs / delivered
     // work-items / fired routines / summed run durations into counters that persist across sessions (own key,
     // read-only on the bus). The COMMANDER DOSSIER panel renders snapshot() as the STATION RECORD block.
@@ -2906,6 +3025,7 @@ const App = (() => {
   // row's hover tooltip so the one-line layout never has to spell it out.
   let railTicker = 0;
   let railShowArchived = false;   // when true the rail also lists archived (put-away) sessions, dimmed
+  let railFocusId = null;         // roving-tabindex cursor: one rail stop regardless of session count
   function railFmtElapsed(ms) {
     const s = Math.floor((ms < 0 ? 0 : ms) / 1000);
     if (s < 60) return s + 's';
@@ -2951,12 +3071,19 @@ const App = (() => {
     const ul = el('workstreams');
     if (!ul || typeof Workstreams === 'undefined') return;
     const activeId = Workstreams.activeId();
-    ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
+    const oldFocus = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.ws-row[data-id]') : null;
+    const restoreFocus = !!(oldFocus && ul.contains(oldFocus));
+    if (oldFocus && oldFocus.dataset.id) railFocusId = oldFocus.dataset.id;
+    const rows = Workstreams.list({ includeArchived: railShowArchived });
+    if (!rows.some(w => w.id === railFocusId)) railFocusId = rows.some(w => w.id === activeId) ? activeId : (rows[0] && rows[0].id);
+    ul.setAttribute('role', 'listbox');
+    ul.setAttribute('aria-label', 'Sessions');
+    ul.innerHTML = rows.map((w, index) => {
       const title = w.title || 'General';
       const st = railRowState(w);
       const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '')
-        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — right-click for actions';
-      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" title="' + U.esc(tip) + '">' +
+        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — Shift+F10 or right-click for actions';
+      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" tabindex="' + (w.id === railFocusId ? '0' : '-1') + '" role="option" aria-selected="' + (w.id === activeId ? 'true' : 'false') + '" aria-posinset="' + (index + 1) + '" aria-setsize="' + rows.length + '" aria-label="' + U.esc(title + ' session; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
         (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
@@ -2968,11 +3095,39 @@ const App = (() => {
     ul.querySelectorAll('.ws-row').forEach(li => {
       const id = li.dataset.id;
       li.onclick = () => switchWorkstream(id);
+      li.onkeydown = (e) => {
+        if (e.target !== li) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchWorkstream(id); return; }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+          e.preventDefault();
+          const items = Array.from(ul.querySelectorAll('.ws-row[data-id]'));
+          const at = items.indexOf(li);
+          let next = at;
+          if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = items.length - 1;
+          else next = Math.max(0, Math.min(items.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
+          const target = items[next];
+          if (target && target !== li) {
+            li.tabIndex = -1; target.tabIndex = 0; railFocusId = target.dataset.id;
+            target.focus(); if (target.scrollIntoView) target.scrollIntoView({ block: 'nearest' });
+          }
+          return;
+        }
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+          e.preventDefault();
+          const r = li.getBoundingClientRect();
+          openWsMenu(id, r.left, r.bottom + 2, li);
+        }
+      };
       // right-click OR the hover ⋯ button opens the same actions menu (rename · pin · archive · delete)
-      li.oncontextmenu = (e) => { e.preventDefault(); openWsMenu(id, e.clientX, e.clientY); };
+      li.oncontextmenu = (e) => { e.preventDefault(); openWsMenu(id, e.clientX, e.clientY, li); };
       const keb = li.querySelector('.ws-kebab');
-      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const r = keb.getBoundingClientRect(); openWsMenu(id, r.left, r.bottom + 2); };
+      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const r = keb.getBoundingClientRect(); openWsMenu(id, r.left, r.bottom + 2, keb); };
     });
+    if (restoreFocus && railFocusId) {
+      const target = Array.from(ul.querySelectorAll('.ws-row[data-id]')).find(li => li.dataset.id === railFocusId);
+      if (target) target.focus({ preventScroll: true });
+    }
     updateArchivedToggle();
     armRailTicker();
     if (typeof StationUI !== 'undefined' && StationUI.refreshBoard) StationUI.refreshBoard();
@@ -3018,6 +3173,7 @@ const App = (() => {
     focusAgent(ws.agentId || 'agent');   // the focused agent follows the stream's binding (multi-agent COMMS)
     if (typeof World !== 'undefined' && World.lockBody) World.lockBody(ws.agentId || 'agent');   // Commander PICKED this session → the camera follow-locks its agent (any wheel/drag releases it)
     Chat.load(ws); refreshUsage(); renderRail(); persist();
+    if (typeof StationCommands !== 'undefined' && StationCommands.reconcile) StationCommands.reconcile(id);
     if (railView === 'projects') renderProjects();   // keep the entered-project selection truthful
   }
   function openWorkstream(id) { switchWorkstream(id); }
@@ -3046,8 +3202,11 @@ const App = (() => {
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'nothing to export in “' + ((w && w.title) || 'General') + '”', ok ? '' : 'warn');
   }
   function renderSessionSearch() {
-    const input = el('ws-search'), out = el('ws-search-results'); if (!input || !out) return;
+    const input = el('ws-search'), out = el('ws-search-results'), sessions = el('workstreams'); if (!input || !out) return;
     const q = input.value.trim(); out.innerHTML = '';
+    // Search results replace the ordinary rail rows; showing both made a no-match result claim "nothing
+    // matches" while unrelated sessions stayed selectable directly underneath it.
+    if (sessions) sessions.hidden = railView !== 'sessions' || !!q;
     if (!q) return;
     const hits = Workstreams.search(q);
     for (const hit of hits) {
@@ -3055,7 +3214,7 @@ const App = (() => {
       const title = document.createElement('b'); title.textContent = hit.title || 'General';
       const snippet = document.createElement('small'); snippet.textContent = hit.snippet;
       li.append(title, snippet);
-      const open = () => { switchWorkstream(hit.id); input.value = ''; out.innerHTML = ''; };
+      const open = () => { switchWorkstream(hit.id); input.value = ''; renderSessionSearch(); };
       li.onclick = open; li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
       out.appendChild(li);
     }
@@ -3110,19 +3269,22 @@ const App = (() => {
      and every mutation goes through the Workstreams store — which already guards General from being
      archived or deleted — then re-renders + persists. Archived streams are hidden by default; the
      ARCHIVED toggle in the rail head reveals them so they can be restored or deleted. */
-  let wsMenuEl = null;
-  function closeWsMenu() {
+  let wsMenuEl = null, wsMenuReturnEl = null;
+  function closeWsMenu(restoreFocus) {
     if (!wsMenuEl) return;
+    const returnEl = wsMenuReturnEl;
     wsMenuEl.remove(); wsMenuEl = null;
+    wsMenuReturnEl = null;
     document.removeEventListener('pointerdown', onWsMenuOutside, true);
     document.removeEventListener('keydown', onWsMenuKey, true);
     window.removeEventListener('blur', closeWsMenu);
     window.removeEventListener('resize', closeWsMenu);
     const ul = el('workstreams'); if (ul) ul.removeEventListener('scroll', closeWsMenu, true);
+    if (restoreFocus === true && returnEl && returnEl.isConnected && returnEl.focus) returnEl.focus();
   }
   function onWsMenuOutside(e) { if (wsMenuEl && !wsMenuEl.contains(e.target)) closeWsMenu(); }
-  function onWsMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeWsMenu(); } }
-  function openWsMenu(id, x, y) {
+  function onWsMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeWsMenu(true); } }
+  function openWsMenu(id, x, y, returnEl) {
     closeWsMenu();
     const w = Workstreams.get(id); if (!w) return;
     const isGeneral = (id === Workstreams.generalId());
@@ -3147,6 +3309,7 @@ const App = (() => {
     menu.style.left = Math.max(6, Math.min(x / z, vw - r.width / z - 6)) + 'px';
     menu.style.top = Math.max(6, Math.min(y / z, vh - r.height / z - 6)) + 'px';
     wsMenuEl = menu;
+    wsMenuReturnEl = returnEl && returnEl.focus ? returnEl : null;
     menu.querySelectorAll('.ws-menu-item').forEach(btn => {
       const act = btn.dataset.act;
       if (act === 'delete') {   // destructive → arm on first click, act on a second within 4s
@@ -3166,6 +3329,7 @@ const App = (() => {
     window.addEventListener('blur', closeWsMenu);
     window.addEventListener('resize', closeWsMenu);
     const ul = el('workstreams'); if (ul) ul.addEventListener('scroll', closeWsMenu, true);
+    menu.querySelector('.ws-menu-item').focus();
     SFX.click();
   }
   function wsMenuAction(act, id) {
@@ -3274,9 +3438,16 @@ const App = (() => {
   // the entered-project scope (null = overview). Persisted like the reference harness's projectScope, so a reload lands back
   // inside the project you were organizing — pure view state, deliberately outside the world save.
   let projScope = null;
+  // Last response the sidecar actually confirmed. A failed refresh must never become an authoritative empty
+  // ledger or erase an entered scope; keep rendering this snapshot with an explicit stale warning instead.
+  let lastConfirmedProjects = null;
+  // A remembered project root is not necessarily still trusted. Default false on reload/entry and only
+  // enable scoped session creation after GET /api/projects proves the current row is still blessed.
+  let projScopeBlessed = false;
   try { projScope = localStorage.getItem('starnet.projscope') || null; } catch (_) {}
-  function setProjScope(root) {
+  function setProjScope(root, blessed) {
     projScope = root || null;
+    projScopeBlessed = !!(projScope && blessed === true);
     try { if (root) localStorage.setItem('starnet.projscope', root); else localStorage.removeItem('starnet.projscope'); } catch (_) {}
     updateProjHeadAction();
   }
@@ -3284,8 +3455,15 @@ const App = (() => {
   // a session in it (+ NEW) — one slot, two labelled truths, same as the reference harness's scoped "+".
   function updateProjHeadAction() {
     const b = el('ws-addproject'); if (!b) return;
-    if (projScope) { b.textContent = '+ NEW'; b.title = 'start a new session in this project'; }
-    else { b.textContent = '+ ADD'; b.title = 'bless a folder as a trusted project'; }
+    if (projScope) {
+      b.textContent = '+ NEW';
+      b.disabled = !projScopeBlessed;
+      b.title = projScopeBlessed ? 'start a new session in this project' : 're-add this project before starting new work';
+    } else {
+      b.textContent = '+ ADD';
+      b.disabled = false;
+      b.title = 'bless a folder as a trusted project';
+    }
   }
   function setRailView(view) {
     view = (view === 'projects') ? 'projects' : 'sessions';
@@ -3294,8 +3472,9 @@ const App = (() => {
     SFX.click();
     const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', addBtn: view === 'projects' };
     const set = (id, show) => { const e = el(id); if (e) e.hidden = !show; };
+    const search = el('ws-search'), searchActive = view === 'sessions' && !!(search && search.value.trim());
     set('ws-rail-search', pan.sessionsList);   // search is a SESSIONS-view affordance; PROJECTS hides it with the list
-    set('workstreams', pan.sessionsList);
+    set('workstreams', pan.sessionsList && !searchActive);
     set('projects', pan.projectsList);
     set('ws-new', pan.newBtn);
     set('ws-addproject', pan.addBtn);
@@ -3306,28 +3485,47 @@ const App = (() => {
     if (view === 'projects') { updateProjHeadAction(); renderProjects(); }
     else { updateArchivedToggle(); }   // sessions view: ARCHIVED button re-asserts its own "≥1 archived" gate
   }
-  function enterProject(root) { setProjScope(root); SFX.click(); renderProjects(); }
-  function exitProjectScope() { setProjScope(null); SFX.click(); renderProjects(); }
+  function enterProject(root, blessed) { setProjScope(root, blessed); SFX.click(); renderProjects(); }
+  function exitProjectScope() { setProjScope(null, false); SFX.click(); renderProjects(); }
   // the live dot class + git badge for one project row (pure read of the shaped row)
   function projDot(r) { return 'ws-dot ' + (!r.blessed ? 'proj-plain' : (r.isGitRepo ? 'proj-git' : 'proj-plain')); }
+  function renderProjectRows(ul, rows) {
+    if (projScope) {
+      // entered scope: the project may have been forgotten/renamed under us — fall back to the overview
+      // honestly instead of rendering a ghost. This runs only against a confirmed server snapshot.
+      const row = rows.filter(r => Projects.sameRoot && Projects.sameRoot(r.root, projScope))[0] || null;
+      if (!row) { setProjScope(null); return renderProjectsOverview(ul, rows); }
+      projScopeBlessed = row.blessed === true;
+      updateProjHeadAction();
+      return renderProjectEntered(ul, row);
+    }
+    renderProjectsOverview(ul, rows);
+  }
+  function renderProjectsUnavailable(ul) {
+    if (!lastConfirmedProjects) {
+      ul.innerHTML = '<li class="proj-empty" role="status">Could not load projects. Reload to reconnect.</li>';
+      return;
+    }
+    renderProjectRows(ul, lastConfirmedProjects);
+    const warning = document.createElement('li');
+    warning.className = 'proj-empty';
+    warning.setAttribute('role', 'status');
+    warning.textContent = 'Could not refresh projects — showing the last confirmed list. Reload to reconnect.';
+    ul.insertBefore(warning, ul.firstChild);
+  }
   function renderProjects() {
     const ul = el('projects'); if (!ul) return;
     ul.innerHTML = '<li class="proj-empty">loading projects…</li>';
     fetch('/api/projects', { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : { projects: [] })
+      .then(r => { if (!r.ok) throw new Error('projects unavailable'); return r.json(); })
       .then(j => {
         if (railView !== 'projects') return;   // toggled away while the fetch was in flight
-        const rows = (typeof Projects !== 'undefined') ? Projects.toRows(j && j.projects, Date.now()) : [];
-        if (projScope) {
-          // entered scope: the project may have been forgotten/renamed under us — fall back to the overview
-          // honestly instead of rendering a ghost.
-          const row = rows.filter(r => Projects.sameRoot && Projects.sameRoot(r.root, projScope))[0] || null;
-          if (!row) { setProjScope(null); return renderProjectsOverview(ul, rows); }
-          return renderProjectEntered(ul, row);
-        }
-        renderProjectsOverview(ul, rows);
+        if (!j || !Array.isArray(j.projects)) throw new Error('invalid projects response');
+        const rows = (typeof Projects !== 'undefined') ? Projects.toRows(j.projects, Date.now()) : [];
+        lastConfirmedProjects = rows;
+        renderProjectRows(ul, rows);
       })
-      .catch(() => { if (railView === 'projects') ul.innerHTML = '<li class="proj-empty">Could not load projects.</li>'; });
+      .catch(() => { if (railView === 'projects') renderProjectsUnavailable(ul); });
   }
   // sessions attached to one project — the REAL stored w.projectRoot link, never a title guess.
   function projSessionsOf(root) {
@@ -3346,7 +3544,7 @@ const App = (() => {
       const tip = (r.blessed ? '' : 'REVOKED (trust withdrawn) — ') + 'click to open this project · right-click for actions';
       const sess = projSessionsOf(r.root);
       const extra = Math.max(0, sess.length - 3);
-      return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
+      return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" tabindex="0" role="button" aria-label="' + U.esc(r.name + ' project' + (r.blessed ? '' : ', access revoked') + '; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
         '<span class="' + projDot(r) + '"></span>' +
         '<span class="proj-main">' +
           '<span class="proj-line">' +
@@ -3362,11 +3560,11 @@ const App = (() => {
         '</span>' +
         '</li>' +
         sess.slice(0, 3).map(s =>
-          '<li class="proj-sess' + (s.id === activeId ? ' on' : '') + '" data-ws="' + U.esc(s.id) + '" data-root="' + U.esc(r.root) + '" title="open this session">' +
+          '<li class="proj-sess' + (s.id === activeId ? ' on' : '') + '" data-ws="' + U.esc(s.id) + '" data-root="' + U.esc(r.root) + '" tabindex="0" role="button" aria-label="' + U.esc(s.title + ' session; Enter to open') + '"' + (s.id === activeId ? ' aria-current="true"' : '') + ' title="open this session">' +
             '<span class="ws-title">' + U.esc(s.title) + '</span>' +
             '<span class="ws-meta">' + U.esc(s.rel) + '</span>' +
           '</li>').join('') +
-        (extra ? '<li class="proj-sess proj-more" data-root="' + U.esc(r.root) + '" title="open this project">▸ ' + extra + ' more session' + (extra === 1 ? '' : 's') + '</li>' : '');
+        (extra ? '<li class="proj-sess proj-more" data-root="' + U.esc(r.root) + '" tabindex="0" role="button" aria-label="Open ' + extra + ' more session' + (extra === 1 ? '' : 's') + ' in ' + U.esc(r.name) + '" title="open this project">▸ ' + extra + ' more session' + (extra === 1 ? '' : 's') + '</li>' : '');
     }).join('');
     // preview sub-row click: open the session AND follow it into its project scope — the rail stays in PROJECTS.
     // The overflow "▸ N more" row just enters the project (where every session renders as a full row).
@@ -3378,15 +3576,22 @@ const App = (() => {
           if (id !== Workstreams.activeId()) switchWorkstream(id);
           SFX.open();
         }
-        enterProject(li.dataset.root);
+        const row = rows.find(x => Projects.sameRoot && Projects.sameRoot(x.root, li.dataset.root));
+        enterProject(li.dataset.root, !!(row && row.blessed));
       };
+      li.onkeydown = (e) => { if (e.target === li && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); li.click(); } };
     });
     ul.querySelectorAll('.proj-row').forEach(li => {
       const row = rows.find(x => x.root === li.dataset.root);
-      li.onclick = () => enterProject(row.root);
+      li.onclick = () => enterProject(row.root, row.blessed);
+      li.onkeydown = (e) => {
+        if (e.target !== li) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enterProject(row.root, row.blessed); return; }
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const b = li.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, li); }
+      };
       li.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
       const keb = li.querySelector('.ws-kebab');
-      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
+      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, keb); };
     });
   }
   /* ENTERED: breadcrumb back-row + project header + this project's sessions as FULL rail rows (they are real
@@ -3398,7 +3603,7 @@ const App = (() => {
     const byId = {}; try { for (const w of Workstreams.all()) byId[w.id] = w; } catch (_) {}
     let html =
       '<li class="proj-crumb"><button class="proj-back" title="back to all projects">◂ ALL PROJECTS</button></li>' +
-      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" title="right-click for project actions">' +
+      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" tabindex="0" role="button" aria-label="' + U.esc(row.name + ' project actions; Enter to open actions') + '" aria-keyshortcuts="Shift+F10" title="project actions">' +
         '<span class="' + projDot(row) + '"></span>' +
         '<span class="proj-main">' +
           '<span class="proj-line">' +
@@ -3411,13 +3616,15 @@ const App = (() => {
         '</span>' +
       '</li>';
     if (!sess.length) {
-      html += '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>';
+      html += row.blessed
+        ? '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>'
+        : '<li class="proj-empty">Access revoked — re-add this project before starting new work. Existing sessions remain browseable.</li>';
     } else {
       html += sess.map(s => {
         const w = byId[s.id];
         const st = w ? railRowState(w) : { dot: 'ws-dot', meta: s.rel, busy: false, attn: false };
         const cls = w ? rowClass(w, st, activeId) : ('ws-row' + (s.id === activeId ? ' sel' : ''));
-        return '<li class="' + cls + ' proj-sess-full" data-ws="' + U.esc(s.id) + '" title="' + U.esc(s.title + ' — open this session') + '">' +
+        return '<li class="' + cls + ' proj-sess-full" data-ws="' + U.esc(s.id) + '" tabindex="0" role="button" aria-label="' + U.esc(s.title + ' session; Enter to open') + '"' + (s.id === activeId ? ' aria-current="true"' : '') + ' title="' + U.esc(s.title + ' — open this session') + '">' +
           '<span class="' + st.dot + '"></span>' +
           '<span class="ws-title">' + U.esc(s.title) + '</span>' +
           '<span class="ws-meta">' + U.esc(st.meta || s.rel) + '</span>' +
@@ -3428,9 +3635,13 @@ const App = (() => {
     { const back = ul.querySelector('.proj-back'); if (back) back.onclick = exitProjectScope; }
     { const head = ul.querySelector('.proj-head');
       if (head) {
+        head.onkeydown = (e) => {
+          if (e.target !== head) return;
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const b = head.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, head); }
+        };
         head.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
         const keb = head.querySelector('.ws-kebab');
-        if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
+        if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2, keb); };
       } }
     ul.querySelectorAll('.proj-sess-full').forEach(li => {
       li.onclick = () => {
@@ -3439,12 +3650,13 @@ const App = (() => {
         SFX.open();
         renderProjects();   // stay HERE — the rail keeps the project scope, only the selection moves
       };
+      li.onkeydown = (e) => { if (e.target === li && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); li.click(); } };
     });
   }
   // + NEW inside an entered project: a fresh untitled session ANCHORED to the project (projectRoot rides every
   // run as the working folder; the title auto-mints from the first message, same as the sessions rail's + NEW).
   function newSessionInProject(root) {
-    if (!root) return;
+    if (!root || !projScopeBlessed) return;
     const ws = Workstreams.startSession({ activate: false, projectRoot: root });
     if (!ws) return;
     switchWorkstream(ws.id);
@@ -3452,20 +3664,23 @@ const App = (() => {
     renderProjects();   // the new row appears under its project; the rail stays in the entered scope
   }
   // the project row actions menu (reuses the .ws-menu phosphor chrome): Jump in · Remove (revoke trust, arm/confirm).
-  let projMenuEl = null;
-  function closeProjectMenu() {
+  let projMenuEl = null, projMenuReturn = null;
+  function closeProjectMenu(returnFocus) {
     if (!projMenuEl) return;
     projMenuEl.remove(); projMenuEl = null;
     document.removeEventListener('pointerdown', onProjMenuOutside, true);
     document.removeEventListener('keydown', onProjMenuKey, true);
     window.removeEventListener('blur', closeProjectMenu);
     window.removeEventListener('resize', closeProjectMenu);
+    if (returnFocus === true && projMenuReturn && projMenuReturn.isConnected) projMenuReturn.focus();
+    projMenuReturn = null;
   }
   function onProjMenuOutside(e) { if (projMenuEl && !projMenuEl.contains(e.target)) closeProjectMenu(); }
-  function onProjMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeProjectMenu(); } }
-  function openProjectMenu(r, x, y) {
+  function onProjMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeProjectMenu(true); } }
+  function openProjectMenu(r, x, y, origin) {
     closeProjectMenu();
     if (!r) return;
+    projMenuReturn = origin || null;
     const menu = document.createElement('div');
     menu.className = 'ws-menu'; menu.setAttribute('role', 'menu');
     const item = (act, label, glyph, cls) =>
@@ -3497,27 +3712,35 @@ const App = (() => {
           setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.classList.remove('armed'); btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>' + (r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)'); } }, 4000);
         });
       } else if (act === 'newsess') {
-        btn.addEventListener('click', () => { closeProjectMenu(); setProjScope(r.root); newSessionInProject(r.root); });
+        btn.addEventListener('click', () => { closeProjectMenu(); setProjScope(r.root, r.blessed); newSessionInProject(r.root); });
       } else {
-        btn.addEventListener('click', () => { closeProjectMenu(); enterProject(r.root); });
+        btn.addEventListener('click', () => { closeProjectMenu(); enterProject(r.root, r.blessed); });
       }
     });
     document.addEventListener('pointerdown', onProjMenuOutside, true);
     document.addEventListener('keydown', onProjMenuKey, true);
     window.addEventListener('blur', closeProjectMenu);
     window.addEventListener('resize', closeProjectMenu);
+    { const first = menu.querySelector('.ws-menu-item'); if (first) first.focus(); }
     SFX.click();
   }
-  // REMOVE = revoke the standing path:<root> grant through the EXISTING permissions surface (truthful: the list
-  // then mirrors the grant store — after a revoke the row reports blessed:false on the next render, so a second
-  // "Forget" removes nothing new; the metadata row stays until the store's own forget path lands). No parallel store.
+  // REMOVE has two explicit stages: a blessed row revokes its standing path:<root> grant, while a row whose trust
+  // is already revoked hard-forgets only its projects-store metadata. The server refuses to forget a still-blessed
+  // row, so neither endpoint silently does both jobs and every success message describes the state actually changed.
   function removeProject(r) {
     if (!r) return;
-    fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'path:' + r.root }) })
+    const isForget = !r.blessed;
+    const endpoint = isForget ? '/api/projects/forget' : '/api/permissions/revoke';
+    const body = isForget ? { root: r.root } : { key: 'path:' + r.root };
+    fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(res => res.ok ? res.json() : { ok: false })
       .then(j => {
         SFX.bad();
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((j && j.ok ? 'removed “' : 'could not remove “') + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        if (typeof StationUI !== 'undefined' && StationUI.notify) {
+          const success = isForget ? 'forgot “' : 'trust revoked for “';
+          const failure = isForget ? 'could not forget “' : 'could not revoke trust for “';
+          StationUI.notify((j && j.ok ? success : failure) + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        }
         renderProjects();
       })
       .catch(() => { renderProjects(); });
@@ -3714,8 +3937,18 @@ const App = (() => {
           if (msg) msg.textContent = 'checking for an update…';
           try {
             const snap = await Updates.check(true, 'future-save-gate');
-            if (snap && snap.phase === 'available') { try { await Updates.install(); } catch (_) {} }
-            else if (msg) msg.textContent = 'no newer build is published yet — check back shortly.';
+            const phase = (snap && snap.phase) || '';
+            // ⛔ ONLY `current` MEANS "NOTHING NEWER IS PUBLISHED". Everything that is not 'available' used to
+            // collapse into that one reassuring line — including 'error' (the check FAILED and we told the
+            // Commander all was well), 'unsupported' (this build has no updater at all), and 'checking' (a
+            // re-click while a check is in flight returns the busy snapshot immediately). This gate is a HARD
+            // STOP on a save this build cannot read: a false "check back shortly" strands the user with no
+            // idea that the one action on the screen didn't work. Name each state for what it is.
+            if (phase === 'available') { try { await Updates.install(); } catch (e) { if (msg) msg.textContent = 'update found, but the install failed — open the Update Center and retry.'; } }
+            else if (phase === 'current') { if (msg) msg.textContent = 'no newer build is published yet — check back shortly.'; }
+            else if (phase === 'error') { if (msg) msg.textContent = 'the update check failed' + (snap && snap.error ? ' — ' + snap.error : '') + '. Check your connection and try again.'; }
+            else if (phase === 'checking' || phase === 'downloading' || phase === 'installing' || phase === 'restarting') { if (msg) msg.textContent = 'an update check is already running — one moment…'; }
+            else if (msg) msg.textContent = 'this build cannot check for updates — download the latest StarNet from starnetos.com, then reopen.';
           } catch (_) { if (msg) msg.textContent = 'update check failed — try again in a moment.'; }
         } else if (msg) {
           msg.textContent = 'Update StarNet to the latest version (in the desktop app: Update Center), then reopen.';
@@ -3790,6 +4023,28 @@ const App = (() => {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
     if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
     if (typeof Updates !== 'undefined' && typeof StationUI !== 'undefined') Updates.init({ notify: StationUI.notify, rerender: StationUI.rerender });
+
+    /* EXTENSIONS AWAITING APPROVAL. Hooks and plugins are opt-in by design: an unapproved one is silently
+       inert. That is the correct security posture and the worst possible UX if it is never surfaced — the
+       Commander writes a hook, nothing happens, and there is nothing on screen that says why. So the gate
+       announces itself through the SAME channel an agent's approval prompt uses (category 'needsApproval', so
+       the existing mute honors it), and clicking lands directly on the tab that resolves it. Fire-and-forget:
+       a station with no extensions is the common case and must stay completely silent. */
+    (async () => {
+      try {
+        const [h, p] = await Promise.all([
+          fetch('/api/hooks').then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch('/api/plugins').then(r => r.ok ? r.json() : null).catch(() => null)
+        ]);
+        const waiting = ((h && h.pending) || []).length + (((p && p.plugins) || []).filter(x => x && x.pending).length);
+        if (!waiting || typeof StationUI === 'undefined' || !StationUI.notify) return;
+        StationUI.notify(
+          waiting + ' extension' + (waiting === 1 ? '' : 's') + ' awaiting your approval — click to review',
+          'warn', 'needsApproval',
+          { onClick: () => { try { StationUI.openTerm('connectors', 'extensions'); } catch (_) {} } }
+        );
+      } catch (_) { /* a station that cannot answer is a station with nothing to approve yet */ }
+    })();
     // (the title screen — RESUME / NEW STATION / the destructive NEW AGENT wipe — is gone; boot auto-resumes,
     //  see the three-way at the foot of init(). Re-entry is handled by reentry()/startCreation().)
 
@@ -3809,7 +4064,9 @@ const App = (() => {
       const f = fileImport.files && fileImport.files[0];
       if (!f) return;
       const r = await Backup.importFile(f);
-      if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.error && SFX.error(); return; }
+      // bad(), not a bespoke error() — that cue never existed, so the `&&` guard silently swallowed
+      // the only audible signal a restore had failed. bad() is the station's negative-outcome voice.
+      if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.bad(); return; }
       SFX.boot();
       const mem = (typeof r.memoriesRestored === 'number') ? r.memoriesRestored
         : (r.memories ? r.memories + ' in file' : 0);
@@ -3898,6 +4155,9 @@ const App = (() => {
   // and per-agent config (/agents, /model, /personality, …).
   return { show, refreshUsage, persist, pushRoster, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size,
     agentName: id => { const a = agents.get(id); return a ? (a.name || a.id) : null; },
+    // WORK LINES: a downstream stage runs as ANOTHER agent, so the chat host needs THAT agent's composed
+    // prompt — never the focused one's. Read-only; null for an id that is not on the live roster.
+    systemFor: id => { const a = agents.get(id); return a ? (a.systemPrompt || '') : null; },
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),

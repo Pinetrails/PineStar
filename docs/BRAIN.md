@@ -1,7 +1,7 @@
 # BRAIN.md — start here
 
 **The 5-minute orientation for any agent session (Claude, Codex, or human) opening this repo.**
-Last full reconciliation: **2026-07-06** (grounded against trunk + git log, not doc claims).
+Last full reconciliation: **2026-08-03** (grounded against the Phase 0–8 cleanup candidate, not doc claims).
 
 ## What this is
 
@@ -15,9 +15,10 @@ telemetry**: the UI never asserts anything the harness can't prove.
 - Lineage: UltronOS (banned from Claude API 2026-04-04) → "v7" fake sim → this real harness
   (reuses v7's canvas + U.bus). Rebranded Skynet→StarNet 2026-06-22; internal `skynet.*`
   keys are intentionally kept.
-- Current shipped desktop version: **v0.2.2** staged as a signed 4-platform draft on the
-  private `starnet-releases` repo; Andrew's installed app ~0.2.4-dev. Repo `package.json`
-  stays `0.0.0` (versions live in `src-tauri/tauri.conf.json` + `Cargo.toml`).
+- Current repository desktop version: **v0.8.5**. **Three files carry the version and must agree** —
+  `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` — `release:cut` refuses to
+  build if the last two disagree. `package.json` is no longer pinned at `0.0.0`; `release:bump`
+  moves all three together.
 
 ## Architecture in one screen
 
@@ -25,27 +26,31 @@ telemetry**: the UI never asserts anything the harness can't prove.
 npm start  →  node sidecar/index.js  (ONE process, port 8787)
               ├─ sidecar/loop.js      runAgentLoop() — THE agentic loop (messages array,
               │                       tool accumulation/repair; stateless between runs)
-              ├─ sidecar/index.js     HTTP + SSE server (~6.5k lines) — /api/run, serves
-              │                       frontend/, emits frozen U.bus events as ndjson
+              ├─ sidecar/index.js     composition root (~14.8k lines) — routes + subsystem wiring
+              ├─ http-body.js / file-response.js / media-service.js
+              │                       bounded request/file/media policy extracted from the root
+              ├─ run-execution-state.js / domain-store.js
+              │                       explicit per-run bookkeeping + normalized singleton persistence
               ├─ providers/           anthropic, openrouter, openai-compat, codex(OAuth), gemini
               ├─ capability/          station layout → tool allowlist (object=capability)
               ├─ tools/ (14)          web/browser/computer/fs/shell/notebook/recall/skills/…
               ├─ channels/            telegram, discord, SSE hub, keychain-split secrets
               ├─ mcp/                 MCP connector manager + curated catalog + OAuth 2.1
-              ├─ cron*.js             schedules → real runs (auto-notify to channels)
+              ├─ cron*.js             schedules → scripts/real runs → bounded outputs/delivery/pipelines
               └─ *-store.js (10+)     atomic fsync-rename persistence per subsystem
 
 frontend/  (no build step; index.html loads ~80 app/*.js modules in order)
               ├─ app/world.js (~5.6k) canvas station renderer — hero agent + crew[] bodies
               ├─ app/app.js           U.bus wiring, roster, run state (frontend OWNS roster)
-              ├─ app/chat.js          COMMS window, streaming, beats
+              ├─ app/chat.js          COMMS window + streaming; beatcard.js owns beat lifecycle
+              ├─ app/queryspine.js    keyed GET dedupe, TTL, last-good state, subscriber polling
               └─ app/*                dossier, quests, recruiter, build mode, stores, voice…
 
 shared/    FROZEN contract — events.js (~60 event types) + schema.js validator.
            OWNED files: additive changes only, by request to the owner lane.
 
-src-tauri/ desktop shell (Tauri 2, NSIS/dmg, embedded node, keyring; updater feeds from
-           GitHub Releases: androoAGI/starnet-releases)
+src-tauri/ desktop shell (Tauri 2, NSIS/dmg, embedded node; credentials.rs owns keychain and
+           legacy secret migration; updater feeds from GitHub Releases: androoAGI/starnet-releases)
 ```
 
 Most bugs are **seam bugs**: emitter → store → renderer. Trace the full path before editing.
@@ -83,7 +88,8 @@ not the authority boundary.
    (frontend/backend), `starnet-verify` before claiming done, `starnet-merge-ritual` to
    integrate. They encode the locked judgment; they win over anything conflicting in older
    docs.
-3. **Gate:** `npm run test:fast` (~254 steps) green before merge. Live-app verification via
+3. **Gate:** `npm run test:fast` (509 manifest-owned steps as of 2026-08-03) green before merge. Sidecar/route
+   changes also owe the 56-suite `npm run test:http`. Live-app verification via
    `node dev/seed.js --keep` (pre-onboarded workspace, no ceremony) + preview/CDP DOM
    round-trips (canvas screenshots time out — see MISTAKES.md).
 4. Read [DECISIONS.md](DECISIONS.md) (locked, don't re-litigate) and

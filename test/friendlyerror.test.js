@@ -5,7 +5,60 @@
 const A = require('./_assert.js');
 const { friendlyError, actionButton, KINDS, CAP_INFO } = require('../frontend/app/friendlyerror.js');
 
-// ---- transport loss during an established SSE stream => local-service recovery, never "unknown" ----
+/* ---- THE SIDECAR'S OUTBOUND CALL FAILED => name the PROVIDER, not the local service ----
+   From a real 0.7.0 user report (2026-07-29): their diagnostics showed a healthy local engine serving the report
+   itself, with five `fetch failed` entries — the sidecar could not reach chatgpt.com/api.openai.com — while the
+   app told them "Can't reach StarNet's local service, restart it". They lost a day to it.
+   The discriminator is word order and it is decisive: NODE/undici says "fetch failed", a BROWSER says "Failed to
+   fetch". So `fetch failed` can only have been produced inside the sidecar and forwarded, i.e. the broken hop is
+   sidecar -> provider. These assertions lock BOTH directions, because the whole defect was one string being
+   claimed by the wrong bucket. */
+for (const raw of [
+  'fetch failed',
+  'TypeError: fetch failed',
+  'getaddrinfo ENOTFOUND api.openai.com',
+  'getaddrinfo EAI_AGAIN chatgpt.com',
+  'UND_ERR_CONNECT_TIMEOUT'
+]) {
+  const v = friendlyError(new Error(raw));
+  A.eq(v.kind, 'provider_unreachable', raw + ' is an UPSTREAM failure, not a local one');
+  A.eq(v.retryable, true, raw + ' is retryable (provider blips are usually transient)');
+  A.eq(v.action, null, raw + ' keeps RETRY as the primary chip, not a SETTINGS door that fixes nothing');
+  A.ok(!/local service/i.test(v.userMessage), raw + ' must NEVER blame the local service');
+  A.ok(!/restart/i.test(v.userMessage), raw + ' must NEVER tell the user to restart the app');
+  A.ok(/provider/i.test(v.userMessage), raw + ' names the AI provider as the failing hop');
+  A.ok(/running fine/i.test(v.userMessage), raw + ' reassures the user their install is healthy');
+}
+// …and the browser-side wordings must NOT be captured by the upstream bucket (they really are local transport).
+for (const raw of ['Failed to fetch', 'cannot reach the STARNET sidecar', 'terminated', 'Load failed']) {
+  A.eq(friendlyError(new Error(raw)).kind, 'network', raw + ' stays a LOCAL transport verdict');
+}
+
+/* ⛔ THE BROWSER LADDER, TESTED DIRECTLY. Everything above ran under node, where friendlyerror successfully
+   `require`s sidecar/providers/errorClass.js — so it exercised the DELEGATE path. Real users run the FALLBACK
+   ladder (kindFromRaw), because in the browser classifyApiError is null. That asymmetry is exactly how the
+   original defect shipped: the sidecar classifier already got undici transport codes right, so a node-only test
+   looked green over the half no user ever executes. These assertions hit kindFromRaw directly. */
+{
+  const { kindFromRaw } = require('../frontend/app/friendlyerror.js')._internals;
+  A.eq(kindFromRaw('fetch failed', null), 'provider_unreachable', 'BROWSER ladder: "fetch failed" -> upstream');
+  A.eq(kindFromRaw('getaddrinfo ENOTFOUND api.openai.com', null), 'provider_unreachable', 'BROWSER ladder: node DNS text -> upstream');
+  A.eq(kindFromRaw('failed to fetch', null), 'network', 'BROWSER ladder: the browser word order stays LOCAL');
+  A.eq(kindFromRaw('cannot reach the starnet sidecar', null), 'network', 'BROWSER ladder: an explicit sidecar-unreachable stays LOCAL');
+  // precedence guard: isTransportLoss also matches `fetch failed`, so whichever test runs first owns the verdict.
+  const { isTransportLoss, isUpstreamFetchFailure } = require('../frontend/app/friendlyerror.js')._internals;
+  A.ok(isTransportLoss('fetch failed'), 'isTransportLoss still matches "fetch failed" (so ORDER is load-bearing)');
+  A.ok(isUpstreamFetchFailure('fetch failed'), 'isUpstreamFetchFailure claims it');
+  A.ok(!isUpstreamFetchFailure('Failed to fetch'), 'isUpstreamFetchFailure must NOT claim the browser wording');
+}
+
+/* ---- transport loss during an established SSE stream => retryable `network`, never "unknown" ----
+   THIS BLOCK USED TO ASSERT THE DEFECT (fixed 2026-07-29). It required every one of these strings to produce
+   "local service / reload / restart" guidance. But these five are precisely the shapes undici emits when the
+   MODEL PROVIDER's stream dies mid-answer, which the sidecar forwards verbatim — so the assertion was pinning
+   in place a message that told users with a perfectly healthy install to restart and reinstall. A 0.7.0 user
+   lost a day to it. The kind and retryability are unchanged (they drive behavior); what is now locked is that
+   the COPY only ever names the local service when liveness was actually MEASURED. */
 for (const raw of [
   'terminated',
   'socket hang up',
@@ -14,9 +67,23 @@ for (const raw of [
   'read ECONNRESET'
 ]) {
   const v = friendlyError(new Error(raw));
-  A.eq(v.kind, 'network', raw + ' classifies as a local-service/network disconnect');
+  A.eq(v.kind, 'network', raw + ' classifies as a transport disconnect');
   A.eq(v.retryable, true, raw + ' remains retryable after the station returns');
-  A.ok(/local service|app.*running|reload|restart/i.test(v.userMessage), raw + ' gives concrete local-service recovery guidance');
+  A.ok(/try again/i.test(v.userMessage), raw + ' still gives a concrete next step');
+  // the regression guard: unprobed, it must not blame (or absolve) the local engine.
+  A.eq(v.engineAlive, null, raw + ' unprobed => engineAlive null');
+  A.ok(!/local service|restart/i.test(v.userMessage), raw + ' unprobed must NOT prescribe restarting the app');
+
+  // measured DOWN => the restart advice is earned, and only here.
+  const down = friendlyError(new Error(raw), null, { engineAlive: false });
+  A.ok(/local service/i.test(down.userMessage), raw + ' + proven-down engine names the local service');
+  A.ok(/restart/i.test(down.userMessage), raw + ' + proven-down engine prescribes a restart');
+
+  // measured UP => naming the local service would be a lie; it must point at the stream instead.
+  const up = friendlyError(new Error(raw), null, { engineAlive: true });
+  A.ok(!/Can't reach/i.test(up.userMessage), raw + ' + proven-up engine never claims it is unreachable');
+  A.ok(/reply stream/i.test(up.userMessage), raw + ' + proven-up engine names the reply stream');
+  A.eq(up.retryable, true, raw + ' + proven-up engine is still retryable');
 }
 
 // ---- managed-credit exhaustion => STORE upsell (only reachable when a credits backend is wired) ----
@@ -43,6 +110,16 @@ for (const raw of [
   A.eq(v.kind, 'auth', 'a pre-flight "no API key set" is an auth/misconfig, not a fault');
   A.eq(v.action, 'settings', 'auth points at Settings/CONNECTIONS where both paths live');
   A.ok(/chatgpt/i.test(v.userMessage) && /key/i.test(v.userMessage), 'the auth message offers BOTH the ChatGPT sign-in and the add-a-key path');
+}
+{
+  // /api/run's pre-stream guard uses this exact 400 body. If the browser classifier misses it,
+  // COMMS renders an unknown retryable fault and offers a doomed "Try again" loop.
+  const v = friendlyError(new Error('sidecar HTTP 400 — missing key/model'));
+  A.eq(v.kind, 'auth', 'the exact /api/run missing-credential body classifies as auth');
+  A.eq(v.action, 'settings', 'the missing-credential response points at provider settings');
+  A.eq(v.retryable, false, 'missing credentials never offer a blind retry');
+  const btn = actionButton(v);
+  A.ok(btn && /key|settings/i.test(btn.label), 'the recovery action opens the provider-key door');
 }
 
 // ---- expired ChatGPT sign-in => oauth, and still offers the key alternative ----
@@ -78,10 +155,10 @@ for (const raw of [
   A.ok(/REFIT/.test(v.userMessage), 'the copy points at REFIT as the door');
 }
 {
-  // a files denial names FILE ACCESS + the CABINET
+  // a files denial names FILE ACCESS + the INTEL CAB (the real palette prop, not a generic "cabinet")
   const v = friendlyError(new Error('no cabinet — no capability for fs.write in room ops'));
   A.eq(v.cap, 'cabinet', 'a cabinet denial parses to cabinet');
-  A.ok(/FILE ACCESS/.test(v.userMessage) && /CABINET/.test(v.userMessage), 'the copy names FILE ACCESS + the CABINET');
+  A.ok(/FILE ACCESS/.test(v.userMessage) && /INTEL CAB/.test(v.userMessage), 'the copy names FILE ACCESS + the INTEL CAB');
 }
 {
   // the compute (turn-precondition) denial the loop emits: "no compute — no compute capability …"
@@ -161,6 +238,102 @@ for (const raw of [
   for (const id of ['compute', 'web', 'cabinet', 'workbench', 'memory', 'studio', 'jukebox', 'orchestrator']) {
     A.ok(CAP_INFO[id] && CAP_INFO[id].power && CAP_INFO[id].gear, 'CAP_INFO names a power + gear for ' + id);
   }
+}
+
+/* ---- a SPENT ALLOWANCE must not be dressed up as a busy moment ------------------------------------
+   A ChatGPT-subscription weekly quota resets in DAYS. The old copy said "wait a few seconds and try again"
+   with retryable:true, so the row offered a doomed retry and named nothing the user could act on. */
+{
+  const q = friendlyError(Object.assign(new Error("codex http 429 — You've hit your usage limit. Resets in 3 days"), { status: 429 }));
+  A.eq(q.kind, 'quota_exhausted', 'a spent allowance gets its own kind');
+  A.eq(q.retryable, false, 'no doomed retry is offered');
+  A.ok(!/wait a few seconds|too many requests/i.test(q.userMessage), 'and the busy-provider copy is gone');
+  A.ok(/allowance is used up/i.test(q.userMessage), 'the copy says the allowance is spent');
+  A.ok(/weekly/i.test(q.userMessage), 'and names the subscription schedule, not a seconds-scale wait');
+  A.ok(/PROVIDERS/.test(q.userMessage), 'and points at a door that can keep the work moving now');
+  A.eq(q.action, 'settings', 'the action opens that door');
+  // a real rate limit is untouched
+  const rl = friendlyError(Object.assign(new Error('openrouter http 429 — slow down'), { status: 429 }));
+  A.eq(rl.kind, 'rate_limit', 'a plain 429 is still a rate limit');
+  A.eq(rl.retryable, true, 'and still offers a retry');
+}
+
+/* ---- THE BROWSER PATH, which is the one real users take -------------------------------------------
+   friendlyerror.js pulls the sidecar's classifyApiError in through `require` — "never required in the
+   browser", says its own comment. So under node every verdict comes from the shared truth table, and in the
+   BROWSER every verdict comes from the kindFromRaw fallback. A test that only runs under node therefore
+   proves the half users never execute: this exact gap is why the live app still said "the provider is busy"
+   for a spent weekly quota after the shared table had already been fixed. Load the module with no `require`
+   in scope — a real browser sandbox — and assert the fallback on the shapes Harness actually throws. */
+{
+  const vm = require('vm');
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const src = fs2.readFileSync(path2.join(__dirname, '..', 'frontend', 'app', 'friendlyerror.js'), 'utf8');
+  const sandbox = { console };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(src + '\nthis.__F = Friendly;', sandbox, { filename: 'friendlyerror.js' });
+  const B = sandbox.__F;
+  A.ok(B && typeof B.friendlyError === 'function', 'the module loads with no require() in scope (the browser shape)');
+
+  const kindOf = (m, st) => B.friendlyError(m, st);
+  const weekly = kindOf("sidecar HTTP 429 — codex: You've hit your usage limit. Resets in 3 days");
+  A.eq(weekly.kind, 'quota_exhausted', 'BROWSER: a spent weekly allowance is quota_exhausted');
+  A.eq(weekly.retryable, false, 'BROWSER: and offers no doomed retry');
+  A.ok(/allowance is used up/i.test(weekly.userMessage), 'BROWSER: with copy that names the spent allowance');
+  A.ok(!/wait a few seconds/i.test(weekly.userMessage), 'BROWSER: and never the busy-provider line');
+
+  A.eq(kindOf('sidecar HTTP 429 — gemini: Quota exceeded for quota metric: requests per minute').kind, 'rate_limit',
+    'BROWSER: a PER-MINUTE quota stays a plain rate limit');
+  A.eq(kindOf('sidecar HTTP 429 — rate limited, slow down').kind, 'rate_limit', 'BROWSER: a bare 429 is unchanged');
+  A.eq(kindOf('sidecar HTTP 429 — openai: insufficient_quota').kind, 'billing',
+    'BROWSER: an out-of-money account is billing, not a busy provider');
+  A.eq(kindOf("codex: You've hit your usage limit. Resets in 3 days", 429).kind, 'quota_exhausted',
+    'BROWSER: the explicit status argument works too');
+  // the shared table and the fallback must agree, or the two halves drift again
+  A.eq(kindOf("sidecar HTTP 429 — codex: You've hit your usage limit. Resets in 3 days").kind,
+    friendlyError(Object.assign(new Error("codex http 429 — You've hit your usage limit. Resets in 3 days"), { status: 429 })).kind,
+    'the browser fallback and the shared sidecar table give the SAME verdict');
+}
+
+/* ---- PROVIDER 5xx/OVERLOAD => name the PROVIDER's servers, never the local service (2026-07-30) ----
+   The report wave behind this: users seeing "servers are unavailable out of the blue" during industry-wide
+   provider load spikes, because every provider 500/529/"overloaded" landed on the server_error copy that says
+   "The LOCAL StarNet service hit an error". A message naming a component owes proof it is at fault. The
+   discriminator is EVIDENCE in the raw: provider phrasing or a provider name → provider; a "sidecar HTTP 5xx"
+   with neither → the one case where our own route demonstrably answered, and only THAT keeps the local copy. */
+{
+  const { kindFromRaw } = require('../frontend/app/friendlyerror.js')._internals;
+  // in-band adapter labels (the dominant real path: the provider answered 5xx mid-run)
+  for (const raw of [
+    'Anthropic http 529 - Overloaded',
+    'OpenRouter http 503 - upstream is overloaded, try again later',
+    'Anthropic http 500 - internal server error',
+    'openai: The server is temporarily unavailable'
+  ]) {
+    const v = friendlyError(new Error(raw));
+    A.eq(v.kind, 'provider_server_error', raw + ' is the PROVIDER\'s server fault (delegate path)');
+    A.eq(kindFromRaw(raw.toLowerCase(), null), 'provider_server_error', raw + ' — BROWSER ladder agrees');
+    A.eq(v.retryable, true, raw + ' is retryable (load spikes pass)');
+    A.ok(!/local .*service|starnet service/i.test(v.userMessage) || /StarNet itself is fine/i.test(v.userMessage),
+      raw + ' must NEVER blame the local service');
+    A.ok(/provider/i.test(v.userMessage), raw + ' names the provider\'s servers');
+    A.ok(/fine/i.test(v.userMessage), raw + ' reassures the user their install is healthy');
+  }
+  // a proxied provider body under the sidecar prefix still reads as the provider's fault
+  A.eq(kindFromRaw('sidecar http 503 — anthropic: overloaded', null), 'provider_server_error',
+    'a PROXIED provider overload under the sidecar prefix is still the provider');
+  // …but a sidecar 5xx with NO provider evidence in the body is genuinely local, both ladders
+  A.eq(kindFromRaw('sidecar http 500 — internal error', null), 'server_error',
+    'BROWSER: a bare sidecar 500 keeps the local-service copy');
+  A.eq(friendlyError(Object.assign(new Error('sidecar HTTP 500 — internal error'), { status: 500 })).kind,
+    'server_error', 'DELEGATE: a bare sidecar 500 keeps the local-service copy');
+  A.ok(/local starnet service/i.test(KINDS.server_error.msg), 'the local copy still exists for the proven-local case');
+  // the two ladders must agree on the flagship shape, or the halves drift again
+  A.eq(kindFromRaw('anthropic http 529 - overloaded', null),
+    friendlyError(new Error('Anthropic http 529 - Overloaded')).kind,
+    'browser fallback and delegate give the SAME verdict on a provider overload');
 }
 
 A.report('friendlyerror.test');

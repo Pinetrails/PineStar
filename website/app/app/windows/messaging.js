@@ -39,6 +39,11 @@
         // exclusively from the status payload's bots[] (truthful per-instance transport state); the add flow is
         // token + agent — the sidecar validates the token with getMe before anything persists.
         extraHtml:
+          '<div class="ch-bots" id="tg-owner">' +
+            '<div class="ch-bots-head">OWNER ENROLLMENT <span class="dim" id="tg-owner-state">not paired</span></div>' +
+            '<p class="ch-note">Pair this local app with your Telegram account before a new bot accepts DMs. The code is shown here once and expires in 10 minutes.</p>' +
+            '<div class="set-save"><button class="bb xs" id="tg-owner-pair">PAIR OWNER</button> <button class="bb xs danger" id="tg-owner-revoke" style="display:none">REVOKE OWNER</button></div>' +
+          '</div>' +
           '<div class="ch-bots" id="tg-bots">' +
             '<div class="ch-bots-head">AGENT BOTS <span class="dim">— a separate Telegram contact per agent</span></div>' +
             '<div id="tg-bots-list"></div>' +
@@ -179,7 +184,10 @@
             '<span class="ch-state" id="' + c.pre + '-status">checking…</span>' +
           '</div>' +
           '<p class="set-about ch-tagline">' + c.tagline + '</p>' +
-          '<details class="ch-setup"><summary>SETUP GUIDE</summary>' +
+          // OPEN by default: the steps are the whole point of a card nobody has set up yet, and a folded
+          // <details> hides them at exactly the moment they are needed. paintCard folds it once this
+          // platform is actually configured (and never again after the Commander toggles it by hand).
+          '<details class="ch-setup" open data-autofold="1"><summary>SETUP GUIDE</summary>' +
             '<ol class="ch-steps"><li>' + c.steps.join('</li><li>') + '</li></ol>' +
             (c.note ? '<p class="ch-note">' + c.note + '</p>' : '') +
           '</details>' +
@@ -253,12 +261,15 @@
         state.textContent = bItem.connected ? '● connected' : inFlight ? '◐ connecting…'
           : bItem.state === 'error' ? ('✕ ' + (bItem.detail || 'error')) : (bItem.enabled === false ? '○ off' : '○ offline');
         if (bItem.ownerLocked) state.title = 'owner-locked';
+        if (bItem.delivery && bItem.delivery.state === 'down') state.title = 'outbound delivery degraded' + (bItem.delivery.detail ? ': ' + bItem.delivery.detail : '');
         row.appendChild(name); row.appendChild(state);
         const btn = (label, act, danger) => {
           const b = document.createElement('button');
           b.className = 'bb xs' + (danger ? ' danger' : ''); b.textContent = label; b.dataset.act = act; b.dataset.bot = String(bItem.botId || '');
           row.appendChild(b); return b;
         };
+        if (!bItem.ownerLocked) btn('PAIR', 'pair', false).title = 'issue a local owner pairing code for this bot';
+        else btn('UNPAIR', 'revokeOwner', true).title = 'revoke this bot owner locally';
         if (!bItem.connected && bItem.configured) btn('⏵', 'resume', false).title = 'reconnect this bot';
         if (bItem.connected || bItem.enabled !== false) btn('⏏', 'off', false).title = 'disconnect (token kept)';
         btn('⌫', 'forget', true).title = 'forget this bot — removes its saved token';
@@ -294,6 +305,18 @@
         sum.textContent = conn ? '● connected' : inFlight ? '◐ connecting…'
           : state === 'error' ? '✕ error' : configured ? '○ saved — offline' : '○ not connected';
       }
+      // SETUP GUIDE auto-fold — keyed off `configured` (a real saved config), never off `conn`: a platform
+      // that is saved-but-offline is set up, while a cold card still needs its steps in front of the user.
+      // One-shot: activating the SUMMARY clears the flag, after which we never move it again. Do not listen
+      // for `toggle` here: assigning guide.open below emits that event too, so the old listener mistook our
+      // automatic fold for a hand toggle and left a later cold/unconfigured card collapsed.
+      const guide = body.querySelector('#ch-card-' + c.id + ' .ch-setup');
+      if (guide && !guide.dataset.foldWired) {
+        guide.dataset.foldWired = '1';
+        const summary = guide.querySelector('summary');
+        if (summary) summary.addEventListener('click', () => { delete guide.dataset.autofold; });
+      }
+      if (guide && guide.dataset.autofold === '1') guide.open = !configured;
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
       if (card) card.classList.toggle('on', conn);
@@ -305,6 +328,7 @@
         const bits = [];
         if ((conn || configured) && nm) bits.push('ANSWERS AS: ' + nm);
         if (st && st.ownerLocked) bits.push('owner-locked ✓');
+        if (c.id === 'telegram' && st && st.delivery && st.delivery.state === 'down') bits.push('OUTBOUND DEGRADED: ' + (st.delivery.detail || 'send failed'));
         ans.textContent = bits.join('  ·  ');
         ans.style.display = bits.length ? '' : 'none';
       }
@@ -327,7 +351,18 @@
         inp.placeholder = (configured && !inp.value) ? '•••• saved — paste to replace' : savedPlaceholder[inp.id];
       });
 
-      if (c.id === 'telegram') { try { paintTelegramBots(st && st.bots); } catch (_) {} }
+      if (c.id === 'telegram') {
+        try { paintTelegramBots(st && st.bots); } catch (_) {}
+        const ownerState = body.querySelector('#tg-owner-state');
+        const pairBtn = body.querySelector('#tg-owner-pair');
+        const revokeBtn = body.querySelector('#tg-owner-revoke');
+        const ownerLocked = !!(st && st.ownerLocked);
+        const pairingActive = !!(st && st.ownerPairingActive);
+        if (ownerState) ownerState.textContent = ownerLocked ? 'owner paired'
+          : pairingActive ? 'pairing code active - awaiting /pair' : 'not paired';
+        if (pairBtn) { pairBtn.style.display = configured && !ownerLocked ? '' : 'none'; pairBtn.disabled = !configured; }
+        if (revokeBtn) { revokeBtn.style.display = ownerLocked ? '' : 'none'; if (!ownerLocked) disarm('tg-owner-revoke', revokeBtn, 'REVOKE OWNER'); }
+      }
 
       // finalize a pending connect's MESSAGE from the proven status (not the optimistic POST body).
       if (pendingConnect[c.id]) {
@@ -539,6 +574,32 @@
       });
     }
 
+    // ---- Telegram owner enrollment: code comes from the local authenticated sidecar and is never polled back. ----
+    (function wireTelegramOwner() {
+      const msgEl = body.querySelector('#tg-msg');
+      const pairBtn = body.querySelector('#tg-owner-pair');
+      const revokeBtn = body.querySelector('#tg-owner-revoke');
+      if (!pairBtn || !revokeBtn) return;
+      pairBtn.addEventListener('click', async () => {
+        try {
+          const r = await Harness.api.post('/api/channels/telegram/owner/pair', {});
+          const j = r.j || {};
+          if (!r.ok || j.error || !j.code) { setMsg(msgEl, 'could not issue a pairing code: ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); return; }
+          setMsg(msgEl, 'In Telegram, DM this bot: /pair ' + j.code + ' (code expires in 10 minutes).', 'info');
+          sfx('click'); refreshAll();
+        } catch (_) { setMsg(msgEl, 'could not reach the sidecar', ''); sfx('bad'); }
+      });
+      revokeBtn.addEventListener('click', () => armed('tg-owner-revoke', revokeBtn, 'REVOKE OWNER', 'CONFIRM REVOKE', async () => {
+        try {
+          const r = await Harness.api.post('/api/channels/telegram/owner/revoke', {});
+          const j = r.j || {};
+          if (!r.ok || j.error) { setMsg(msgEl, 'could not revoke owner: ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); }
+          else { setMsg(msgEl, 'owner revoked locally - issue a new pairing code before Telegram can run the agent again', 'info'); sfx('click'); }
+        } catch (_) { setMsg(msgEl, 'could not reach the sidecar', ''); sfx('bad'); }
+        refreshAll();
+      }));
+    })();
+
     // ---- multi-bot telegram wiring: add / resume / disconnect / forget --------------------------------------
     (function wireTelegramBots() {
       const msgEl = body.querySelector('#tg-bots-msg');
@@ -603,6 +664,17 @@
           refreshAll();
         };
         if (act === 'resume') doPost('/api/channels/telegram/bots/' + botId + '/connect', {}, null);
+        else if (act === 'pair') (async () => {
+          try {
+            const r = await Harness.api.post('/api/channels/telegram/bots/' + botId + '/owner/pair', {});
+            const j = r.j || {};
+            if (!r.ok || j.error || !j.code) { sfx('bad'); setMsg(msgEl, 'could not issue pairing code: ' + (j.error || ('HTTP ' + r.status)), ''); }
+            else { sfx('click'); setMsg(msgEl, 'DM that bot: /pair ' + j.code + ' (expires in 10 minutes).', 'info'); }
+          } catch (_) { sfx('bad'); setMsg(msgEl, 'could not reach the sidecar', ''); }
+          refreshAll();
+        })();
+        else if (act === 'revokeOwner') armed('tg-bot-owner-' + botId, b, 'UNPAIR', 'CONFIRM UNPAIR', () =>
+          doPost('/api/channels/telegram/bots/' + botId + '/owner/revoke', {}, 'bot owner revoked locally'));
         else if (act === 'off') doPost('/api/channels/telegram/bots/' + botId + '/disconnect', {}, 'bot disconnected — token kept; ⏵ to reconnect');
         else if (act === 'forget') armed('tg-bot-forget-' + botId, b, '⌫', '⌫ SURE?', () =>
           doPost('/api/channels/telegram/bots/' + botId + '/disconnect', { purge: true }, 'bot forgotten — its token was removed'));

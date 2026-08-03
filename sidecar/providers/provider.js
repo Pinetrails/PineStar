@@ -8,6 +8,11 @@
          | { type:'tool_start', index, id, name }
          | { type:'tool_args',  index, chunk }   // argument STRING fragment
          | { type:'tool_done',  index }
+         | { type:'reasoning',  block }          // OPTIONAL, one per COMPLETED provider-native reasoning block.
+         |     `block` is OPAQUE to the loop: it parks the blocks on the assistant turn (`msg.reasoning`) and
+         |     hands them back to the same adapter on the next request. This exists because signed thinking
+         |     blocks must be replayed VERBATIM beside that turn's tool_calls or the provider rejects the turn.
+         |     Reasoning is NEVER a 'text' event — the loop concatenates those into the delivered answer.
          | { type:'usage',      usage }          // prompt_tokens, completion_tokens, total_tokens,
          |                                       //   prompt_tokens_details.cached_tokens, reasoning_tokens, cost
          | { type:'done',       finishReason, truncated? }   // finishReason normalized via normalizeFinish()
@@ -31,7 +36,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const EVENT_TYPES = ['text', 'tool_start', 'tool_args', 'tool_done', 'usage', 'done'];
+  const EVENT_TYPES = ['text', 'tool_start', 'tool_args', 'tool_done', 'reasoning', 'usage', 'done'];
   const FINISH = ['tool_calls', 'stop', 'length', 'content_filter', 'error'];
 
   function normalizeFinish(r) {
@@ -137,6 +142,32 @@
   }
   function makeAbortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
 
+  // Shared pre-stream retry primitives. Adapter-local copies left abort listeners attached after successful
+  // delays, so repeated retries accumulated stale listeners on the run signal. Cleanup is symmetric here.
+  function isAbort(error, signal) {
+    return !!((signal && signal.aborted) || (error && error.name === 'AbortError'));
+  }
+  function abortableDelay(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) return reject(makeAbortError());
+      let settled = false;
+      let timer = null;
+      function cleanup() {
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (signal && typeof signal.removeEventListener === 'function') signal.removeEventListener('abort', onAbort);
+      }
+      function finish(fn, value) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn(value);
+      }
+      function onAbort() { finish(reject, makeAbortError()); }
+      timer = setTimeout(() => finish(resolve), Math.max(0, Number(ms) || 0));
+      if (signal && typeof signal.addEventListener === 'function') signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
   // Wrap a WHATWG stream reader with a per-read idle watchdog. Each read() races a timer (reset every read);
   // on expiry the reader is cancelled and a `timeout` error is thrown. A user-cancel resolves as an AbortError
   // so the loop reports 'cancelled'. Returns a reader-shaped object exposing read()/cancel().
@@ -191,6 +222,7 @@
   }
 
   const timeouts = { envInt, connectMs, idleMs, connectSignal, connectGuard, idleGuardedReader, timeoutError, makeAbortError };
+  const runtime = { isAbort, abortableDelay };
 
-  return { EVENT_TYPES, FINISH, normalizeFinish, timeouts };
+  return { EVENT_TYPES, FINISH, normalizeFinish, timeouts, runtime };
 });

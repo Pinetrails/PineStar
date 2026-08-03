@@ -19,11 +19,17 @@ const PermissionsStore = (() => {
   let grants = [];        // cached standing grants (dangerKey strings) — last seen from the server
   let grantable = [];     // cached curated catalog keys the server will accept
   let meta = {};          // cached provenance { dangerKey: { grantedAt } } — additive, may be {} for legacy stores
+  /* The mid-run FULL ACCESS wildcards the server reports. Kept separate from `grants` on purpose: a blanket is
+     NOT a danger key, so normalizeGrants would drop it (that is the same shape as the path:/mcp: bug), and it is
+     process-lifetime rather than durable. The ledger renders it above the durable rows with its own REVOKE. */
+  let blanket = [];
   let loaded = false;     // a successful load/refresh has happened at least once
+  let error = '';         // last authority/mutation failure; never replace confirmed grants with guessed emptiness
 
   const ready = () => typeof Permissions !== 'undefined';
   const posture = () => { try { return (deps.getPosture ? deps.getPosture() : null) || {}; } catch (_) { return {}; } };
   const norm = (arr) => ready() ? Permissions.normalizeGrants(arr) : (Array.isArray(arr) ? arr.slice() : []);
+  const failure = (r, fallback) => String((r && r.reason) || fallback || 'permissions service unavailable');
   // keep only well-formed provenance rows ({ grantedAt:number|null }) so a malformed payload can't poison the cache.
   const normMeta = (m) => {
     const out = {};
@@ -39,11 +45,20 @@ const PermissionsStore = (() => {
     if (deps.api && typeof deps.api.load === 'function') {
       try {
         const r = await deps.api.load();
+        if (!r || r.ok === false || !Array.isArray(r.grants)) {
+          error = failure(r, 'permissions service unavailable');
+          return snapshot();
+        }
         if (r && Array.isArray(r.grants)) grants = norm(r.grants);
         if (r && Array.isArray(r.grantable)) grantable = r.grantable.slice();
         meta = normMeta(r && r.meta);   // additive: absent → {}, no provenance shown (legacy store)
+        // additive: a server with no blanket support, or none standing, yields []
+        blanket = Array.isArray(r && r.blanket)
+          ? r.blanket.filter(b => b && b.key).map(b => ({ key: String(b.key), agentId: String(b.agentId || ''), scope: String(b.scope || '') }))
+          : [];
         loaded = true;
-      } catch (_) {}
+        error = '';
+      } catch (e) { error = String((e && e.message) || 'permissions service unavailable'); }
     }
     return snapshot();
   }
@@ -56,8 +71,10 @@ const PermissionsStore = (() => {
       grants: grants.slice(),
       grantable: grantable.length ? grantable.slice() : (ready() ? Permissions.grantableKeys() : []),
       meta: Object.assign({}, meta),   // provenance { key: { grantedAt } } — additive; {} when the store is legacy
+      blanket: blanket.map(b => Object.assign({}, b)),
       level: currentLevel(),
-      loaded
+      loaded,
+      error
     };
   }
 
@@ -66,13 +83,25 @@ const PermissionsStore = (() => {
   // that DOES return meta updates it here so the "granted just now" line shows without a round-trip.
   async function grant(key) {
     if (deps.api && typeof deps.api.grant === 'function') {
-      try { const r = await deps.api.grant(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); if (r && r.meta) meta = normMeta(r.meta); } catch (_) {}
+      try {
+        const r = await deps.api.grant(key);
+        if (!r || r.ok === false) { error = failure(r, 'could not confirm permission grant'); return snapshot(); }
+        if (Array.isArray(r.grants)) grants = norm(r.grants);
+        if (r.meta) meta = normMeta(r.meta);
+        error = '';
+      } catch (e) { error = String((e && e.message) || 'could not confirm permission grant'); }
     }
     return snapshot();
   }
   async function revoke(key) {
     if (deps.api && typeof deps.api.revoke === 'function') {
-      try { const r = await deps.api.revoke(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); if (r && r.meta) meta = normMeta(r.meta); else { const m = Object.assign({}, meta); delete m[key]; meta = m; } } catch (_) {}
+      try {
+        const r = await deps.api.revoke(key);
+        if (!r || r.ok === false) { error = failure(r, 'could not confirm permission revoke'); return snapshot(); }
+        if (Array.isArray(r.grants)) grants = norm(r.grants);
+        if (r.meta) meta = normMeta(r.meta); else { const m = Object.assign({}, meta); delete m[key]; meta = m; }
+        error = '';
+      } catch (e) { error = String((e && e.message) || 'could not confirm permission revoke'); }
     }
     return snapshot();
   }
@@ -92,23 +121,34 @@ const PermissionsStore = (() => {
   // opts: { api:{ load(), grant(key), revoke(key) }, getPosture(), applyPreset(id), load:bool }
   function init(opts) {
     deps = opts || {};
-    grants = []; grantable = []; meta = {}; loaded = false;
+    grants = []; grantable = []; meta = {}; loaded = false; error = '';
     if (deps.load !== false) { try { refresh(); } catch (_) {} }
   }
 
-  // a brand-new hero starts LOCKED DOWN: drop the cache and revoke the curated autonomous grants, so a fresh station
-  // can never inherit a previous one's standing permission to write files unattended (re-grant via the panel).
-  // RETURNS A PROMISE so onWake can AWAIT the lockdown before the new agent enters the game — closing the window
-  // where a fresh Commander could briefly inherit the prior write grant (the posture reset to 'wait' is the backstop;
-  // this makes the claimed lockdown authoritative, not fire-and-forget). Sync-safe + node-safe (resolves immediately
-  // with no api wired); the revoke calls are still INITIATED synchronously. Non-curated grants are left to the user.
-  function reset() {
+  // a brand-new hero starts LOCKED DOWN: revoke the curated autonomous grants before the fresh station commits.
+  // A revoke failure must preserve the last confirmed cache and REJECT — clearing first made the UI claim lockdown
+  // while the server still held cabinet:write. Non-curated grants remain visible and untouched.
+  async function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
-    grants = []; grantable = []; meta = {}; loaded = false;
-    if (!deps.api || typeof deps.api.revoke !== 'function') return Promise.resolve();
-    const jobs = [];
-    for (const k of keys) { try { jobs.push(Promise.resolve(deps.api.revoke(k)).catch(() => {})); } catch (_) {} }
-    return Promise.all(jobs);
+    const had = blanket.slice();
+    if (!deps.api || typeof deps.api.revoke !== 'function') {
+      grants = []; grantable = []; meta = {}; blanket = []; loaded = false; error = '';
+      return snapshot();
+    }
+    error = '';
+    // Curated grants first, then any standing FULL ACCESS wildcard: a lockdown that left the broadest grant
+    // standing would be the same lie as the ledger not listing it. Both go through the local revoke() so a
+    // server refusal lands in `error` and REJECTS here — and note nothing is cleared optimistically, because
+    // blanket is only ever refreshed from the server; wiping it locally is precisely the claim we cannot make.
+    for (const k of keys) {
+      const snap = await revoke(k);
+      if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
+    }
+    for (const b of had) {
+      const snap = await revoke(b.key);
+      if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
+    }
+    return snapshot();
   }
 
   return { init, refresh, snapshot, currentLevel, setLevel, grant, revoke, reset, _grants: () => grants.slice() };

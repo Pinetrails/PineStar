@@ -29,7 +29,10 @@ function setup(over) {
   let beatResolve = null;      // hold a beat open to test the in-flight guard
   const cfg = {
     getState: () => state,
-    setState: (s) => { state = s; persisted.push(s); },
+    setState: (s) => {
+      if (over.persistError) throw over.persistError;
+      state = s; persisted.push(s);
+    },
     getPosture: () => ({ actsUnattended: over.actsUnattended !== false, leashPerDay: over.leashPerDay != null ? over.leashPerDay : 3 }),
     lastActivity: () => (over.lastActivity != null ? over.lastActivity : clock - 20 * 60000),   // away by default
     isHalted: () => !!over.halted,
@@ -65,6 +68,20 @@ function setup(over) {
   await flush();
   A.eq(h.driver.runInFlight(), false, 'guard clears after the beat settles');
   A.ok(h.ledger.some(e => e.kind === 'outcome' && e.delivered === true), 'ledger records the outcome');
+})();
+
+// ---- persistence failure stands down BEFORE ledgering/firing (restart-safe leash authority) ----
+(function persistFailureFailsClosed() {
+  const err = new Error('disk full'); err.code = 'ENOSPC';
+  const h = setup({ persistError: err, autoResolve: false });
+  const r = h.driver.applyTick(T0);
+  A.eq(r.fired, false, 'a failed leash/accounting write prevents the beat from firing');
+  A.eq(r.binding, 'persist-failed', 'the failed authority boundary is named');
+  A.eq(h.state.beatsUsedToday, 0, 'RAM does not claim a spend that disk rejected');
+  A.eq(h.persisted.length, 0, 'no state commit is recorded');
+  A.eq(h.beats.length, 0, 'the autonomous beat pipeline is never called');
+  A.ok(!h.ledger.some(e => e.kind === 'beat'), 'no phantom beat/act is ledgered');
+  A.ok(h.ledger.some(e => e.kind === 'decline' && e.binding === 'persist-failed' && e.preSpend === true), 'the fail-closed stand-down is ledgered honestly');
 })();
 
 // ---- a blocked tick declines with a named binding ----

@@ -76,7 +76,19 @@
       return entry;
     }
 
-    function sum(pred) { let t = 0; for (let i = 0; i < rows.length; i++) if (!pred || pred(rows[i])) t += num(rows[i].usd); return t; }
+    /* METERED dollars only. `unmetered` marks a run paid for by a SUBSCRIPTION (Grok/Kimi OAuth, a
+       ChatGPT plan) whose provider-reported figure is an estimate of nothing the Commander was charged.
+       The flag was stamped at record time and had ZERO readers on this side, so the same run read two
+       different amounts depending on the surface: /api/insights said $0.00 "subscription / unmetered"
+       (insights.js honors it) while /api/budget's spentToday + lifetime and the budget governor's day and
+       global pools counted the full figure — and that phantom spend then BLOCKED a later real BYOK run with
+       reason 'budget' and a CAP HIT note naming money nobody spent. The contract was already written down
+       in docs/STARNET_REF_REPLACEMENT_LOOPS.md: exclude unmetered rows from metered USD aggregates while
+       still counting runs and tokens. count()/all() are deliberately untouched — the run HAPPENED. */
+    function metered(r) { return !(r && r.unmetered); }
+    function sum(pred) { let t = 0; for (let i = 0; i < rows.length; i++) { const r = rows[i]; if (!metered(r)) continue; if (!pred || pred(r)) t += num(r.usd); } return t; }
+    // the same folds WITHOUT the metered filter, for a surface that wants "what the provider reported".
+    function sumAll(pred) { let t = 0; for (let i = 0; i < rows.length; i++) if (!pred || pred(rows[i])) t += num(rows[i].usd); return t; }
 
     return {
       record,
@@ -87,7 +99,10 @@
       usdSince(ts) { ts = num(ts); return sum(r => num(r.ts) >= ts); },
       usdForDay(now) { const n = num(now) || clock.now(); return sum(r => num(r.ts) > n - dayMs); },
       usdForRun(runId) { runId = str(runId); return sum(r => r.runId === runId); },
-      usdForAgent(agentId) { agentId = str(agentId); return sum(r => r.agentId === agentId); }
+      usdForAgent(agentId) { agentId = str(agentId); return sum(r => r.agentId === agentId); },
+      // provider-REPORTED totals, subscription runs included — never feed these to a cap.
+      reportedUsd() { return sumAll(null); },
+      reportedUsdForRun(runId) { runId = str(runId); return sumAll(r => r.runId === runId); }
     };
   }
 

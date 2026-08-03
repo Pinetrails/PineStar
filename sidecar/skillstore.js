@@ -24,6 +24,10 @@
 
   const NAME_MAX = 80, SUMMARY_MAX = 280, CATEGORY_MAX = 80, BODY_MAX = 20000;
   const DEFAULT_MAX_PER_AGENT = 100, SUPPORT_FILE_MAX = 64000;
+  // A package is bounded by three numbers, not one. Per-file content was always clamped
+  // (SUPPORT_FILE_MAX), but nothing bounded HOW MANY files or the package total — so a review
+  // pass that keeps demoting session detail into references/ could grow one skill without limit.
+  const DEFAULT_MAX_FILES = 24, DEFAULT_MAX_PACKAGE_BYTES = 256000;
   // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
   // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
   const STATES = new Set(['active', 'stale', 'archived']);
@@ -121,6 +125,8 @@
       packagePath: r.packagePath ? str(r.packagePath) : '',
       scan: r.scan || null,
       guardAction: r.guardAction || '',
+      contentDigest: r.contentDigest ? str(r.contentDigest) : '',
+      absorbedInto: r.absorbedInto ? str(r.absorbedInto) : '',
       files: normFiles(r.files)
     };
   }
@@ -140,6 +146,7 @@
       createdAt: s.createdAt || 0, updatedAt: s.updatedAt || 0, lastUsedAt: s.lastUsedAt || null,
       viewCount: s.viewCount || 0, useCount: s.useCount || 0, patchCount: s.patchCount || 0,
       packagePath: s.packagePath || '', scan: s.scan || null, guardAction: s.guardAction || '',
+      contentDigest: s.contentDigest || '', absorbedInto: s.absorbedInto || '',
       files
     };
     if (includeBody) out.body = s.body || '';
@@ -156,6 +163,11 @@
     const supportFileMax = opts.supportFileMax || SUPPORT_FILE_MAX;
     const packageStore = opts.packageStore || opts.packages || null;
     const guard = opts.guard || null;
+    // skills/gate.js digestOf, injected. The stamp is what lets the metadata-only list() answer
+    // "is this exact content still the content the Commander approved?" without loading bodies.
+    const digest = typeof opts.digest === 'function' ? opts.digest : null;
+    const maxFiles = opts.maxFiles > 0 ? opts.maxFiles : DEFAULT_MAX_FILES;
+    const maxPackageBytes = opts.maxPackageBytes > 0 ? opts.maxPackageBytes : DEFAULT_MAX_PACKAGE_BYTES;
 
     const latest = new Map();
     try {
@@ -182,9 +194,12 @@
       return entry;
     }
     function persist(entry) {
+      const projected = projectSkill(entry, true);
       try {
         if (guard && typeof guard.scanSkillRecord === 'function') {
-          const scan = guard.scanSkillRecord(projectSkill(entry, true), { source: entry.createdBy === 'user' ? 'trusted' : 'agent-created' });
+          // 'user' (the Commander's own typing) is its own trust tier — see the TRUST table in
+          // skills/guard.js for why it asks rather than blocks now that verdicts are enforced.
+          const scan = guard.scanSkillRecord(projected, { source: entry.createdBy === 'user' ? 'user' : 'agent-created' });
           entry.scan = scan;
           if (guard && typeof guard.shouldAllow === 'function') {
             const policy = guard.shouldAllow(scan, { allowAsk: true });
@@ -192,6 +207,9 @@
           }
         }
       } catch (_) {}
+      // Stamp the digest of the content that was JUST scanned, so the verdict and the digest can
+      // never disagree about which bytes they describe.
+      try { if (digest) entry.contentDigest = str(digest(projected)); } catch (_) {}
       try {
         if (packageStore && typeof packageStore.writePackage === 'function') {
           const dir = packageStore.writePackage(projectSkill(entry, true));
@@ -259,8 +277,25 @@
         packagePath: existing ? existing.packagePath || '' : '',
         scan: existing ? existing.scan || null : null,
         guardAction: existing ? existing.guardAction || '' : '',
+        contentDigest: existing ? existing.contentDigest || '' : '',
+        absorbedInto: existing ? existing.absorbedInto || '' : '',
         files: existing ? clone(existing.files || {}) : {}
       } };
+    }
+
+    /* PINNED IS A LOCK, NOT A LABEL. It used to be neither: the only thing protecting a pinned
+       skill was a bullet in the curator's PROMPT ("Never modify pinned skills"), so any model
+       that ignored it — or any ordinary agent run that never saw that prompt — could rewrite or
+       archive the Commander's pinned procedure. A rule enforced only in a prompt is a suggestion.
+       The one exemption is an explicit, forced call from the human surface: the Commander may
+       overwrite their own pin deliberately (the panel sends force), never a model. */
+    const CONTENT_ACTIONS = ['edit', 'patch', 'archive', 'delete', 'write_file', 'remove_file'];
+    function pinnedGuard(existing, e, action) {
+      if (!existing || !existing.pinned) return null;
+      if (CONTENT_ACTIONS.indexOf(action) < 0) return null;
+      const byHuman = str(e && e.createdBy) === 'user';
+      if (byHuman && (e && e.force === true)) return null;
+      return { ok: false, error: '"' + existing.name + '" is pinned - unpin it first (pinned skills are protected from ' + action + ')' };
     }
 
     function write(e) {
@@ -269,6 +304,11 @@
       const n = cleanName(e.name);
       if (!n.ok) return { ok: false, error: n.error };
       const existing = find(agentId, n.name, { includeArchived: true });
+      // write() is the compatibility wrapper, and on an existing name it is an EDIT — so it is a
+      // content action and the pin applies. Without this, skill.write was a hole straight through
+      // the guard below.
+      const pinBlock = pinnedGuard(existing, e, 'edit');
+      if (pinBlock) return pinBlock;
       if (!existing && countFor(agentId) >= maxPerAgent) return { ok: false, error: 'skill library is full (max ' + maxPerAgent + ') - edit or archive one first' };
       const made = makeEntry(Object.assign({}, e, { agentId, name: n.name, state: 'active' }), existing);
       if (!made.ok) return { ok: false, error: made.error };
@@ -311,6 +351,9 @@
       existing = find(agentId, target, { includeArchived: true });
       if (!existing) return { ok: false, error: 'no such skill: ' + str(target || '') };
 
+      const pinBlock = pinnedGuard(existing, e, action);
+      if (pinBlock) return pinBlock;
+
       if (action === 'edit') {
         made = makeEntry(Object.assign({}, e, { agentId, name: existing.name }), existing);
         if (!made.ok) return { ok: false, error: made.error };
@@ -329,9 +372,28 @@
       }
 
       if (action === 'archive' || action === 'delete') {
+        /* A CONSOLIDATION MUST NAME ITS HEIR. The curator's whole job is to fold narrow siblings
+           into one umbrella, and its prompt already forbids archiving before the content is
+           preserved — but nothing checked. An archive with no surviving target is indistinguishable
+           from losing the skill, and "delete" is aliased to archive precisely so nothing is ever
+           lost: keep that promise auditable. Only the curator is held to this; a Commander or an
+           ordinary run may archive a skill for any reason. The heir must be LIVE (an archived heir
+           is a chain into the dark) and must not be the skill itself. */
+        const byCurator = str(e.createdBy) === 'curator';
+        let heir = null;
+        if (byCurator) {
+          const want = str(e.absorbedInto || e.absorbed_into || e.mergedInto).trim();
+          if (!want) return { ok: false, error: 'a curator archive must set absorbedInto to the skill that now carries this content' };
+          heir = find(agentId, want, { includeArchived: false });
+          if (!heir) return { ok: false, error: 'absorbedInto "' + want + '" is not a live skill - merge the content first, then archive' };
+          if (heir.id === existing.id) return { ok: false, error: 'absorbedInto cannot be the skill being archived' };
+        } else if (str(e.absorbedInto || '').trim()) {
+          heir = find(agentId, str(e.absorbedInto).trim(), { includeArchived: false });
+        }
         entry = clone(existing); entry.state = 'archived'; entry.updatedAt = now();
+        if (heir) entry.absorbedInto = heir.name;
         entry = persist(entry);
-        return { ok: true, action: 'archive', skill: projectSkill(entry, true), edited: true };
+        return { ok: true, action: 'archive', absorbedInto: entry.absorbedInto || '', skill: projectSkill(entry, true), edited: true };
       }
       if (action === 'restore') {
         entry = clone(existing); entry.state = 'active'; entry.updatedAt = now();
@@ -349,7 +411,19 @@
         t = now();
         entry = clone(existing);
         entry.files = normFiles(entry.files);
-        entry.files[p.path] = { path: p.path, content: red(e.content, supportFileMax), updatedAt: t };
+        const content = red(e.content, supportFileMax);
+        // Per-file bytes were already clamped above; these two bound the PACKAGE. Overwriting an
+        // existing path is always allowed (it cannot grow the count, and its old bytes leave with it).
+        const isNew = !entry.files[p.path];
+        if (isNew && Object.keys(entry.files).length >= maxFiles) {
+          return { ok: false, error: 'this skill already has ' + maxFiles + ' support files - replace or remove one instead' };
+        }
+        let bytes = str(entry.body).length + str(entry.setup).length;
+        for (const k of Object.keys(entry.files)) if (k !== p.path) bytes += str(entry.files[k].content).length;
+        if (bytes + content.length > maxPackageBytes) {
+          return { ok: false, error: 'the skill package would exceed ' + maxPackageBytes + ' bytes - trim it or split the content into a second skill' };
+        }
+        entry.files[p.path] = { path: p.path, content: content, updatedAt: t };
         entry.patchCount = (entry.patchCount || 0) + 1;
         entry.updatedAt = t;
         entry = persist(entry);
@@ -389,14 +463,23 @@
         } catch (_) {}
       }
       if (opts2.bump !== false) {
-        out = clone(out);
-        out.viewCount = (out.viewCount || 0) + 1;
-        out.useCount = (out.useCount || 0) + 1;
-        out.lastUsedAt = now();
-        if (out.state === 'stale') out.state = 'active';
+        const bumped = {
+          viewCount: (s.viewCount || 0) + 1,
+          useCount: (s.useCount || 0) + 1,
+          lastUsedAt: now(),
+          state: s.state === 'stale' ? 'active' : s.state
+        };
         // RAM-only: the bump rides the next real mutation / compaction flush instead of appending a JSONL line
         // per view (unbounded growth was the whole problem). See bumpView.
-        bumpView(out);
+        //
+        // The bump carries ONLY the counters, and it carries them onto the STORED record — never onto the
+        // hydrated copy. `out.body` may be the whole RENDERED SKILL.md (setup + body + support-file
+        // pointers); writing that into `latest` makes the next persist — markUsed() runs on EVERY run —
+        // re-render '## Setup' in front of a body that already has one, and persist() does not clamp, so
+        // it grows without bound and re-stamps contentDigest (invalidating any Commander approval) every
+        // single cycle.
+        bumpView(Object.assign(clone(s), bumped));
+        out = Object.assign(clone(out), bumped);
       }
       return projectSkill(out, true);
     }

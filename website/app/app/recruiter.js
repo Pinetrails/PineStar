@@ -17,10 +17,13 @@
 'use strict';
 (function (root, factory) {
   const WS = (typeof module !== 'undefined' && module.exports) ? require('./worksignal.js') : root.WorkSignal;
-  const api = factory(WS);
+  const TM = (typeof module !== 'undefined' && module.exports)
+    ? (() => { try { return require('./topicmatch.js'); } catch (_) { return null; } })()
+    : (root.TopicMatch || null);
+  const api = factory(WS, TM);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.Recruiter = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (WorkSignal) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (WorkSignal, TopicMatch) {
   'use strict';
 
   // scoring weights (one place to retune the blend). kit-affinity is the CORE new signal; coverage-gap is the
@@ -73,6 +76,17 @@
     const sig = opts.worksignal || null;
     const catalog = Array.isArray(opts.catalog) ? opts.catalog : [];
     const rostered = new Set((opts.roster || []).filter(Boolean));
+    const preferenceModel = opts.preferenceModel && typeof opts.preferenceModel === 'object' ? opts.preferenceModel : null;
+    const preferenceFor = (cls) => {
+      if (!preferenceModel) return 0;
+      const rows = [];
+      const kind = preferenceModel.kinds && (preferenceModel.kinds.recruit || preferenceModel.kinds.prospect);
+      if (kind && Number.isFinite(kind.weight)) rows.push(kind.weight);
+      const traits = preferenceModel.traits || {};
+      const keys = [cls.id].concat(cls.kit || [], Object.keys(cls.tags || {}).filter(k => Number(cls.tags[k]) > 0));
+      for (const key of keys) { const row = traits[String(key || '').toLowerCase()]; if (row && Number.isFinite(row.weight)) rows.push(row.weight); }
+      return rows.length ? rows.reduce((a, b) => a + b, 0) / rows.length : 0;
+    };
 
     // WARM GATE: below the shared sample floor the histogram hasn't earned a read — return empty so the bay falls
     // back to the honest cold-start lineup (never a fabricated "curated" pick).
@@ -117,8 +131,9 @@
 
       // (d) PROFILE affinity — a mild interest prior (0..1), only when a profile scorer is supplied.
       const profAff = (opts.profile && typeof opts.profile.score === 'function') ? (Number(opts.profile.score(cls.tags || {})) || 0) : 0;
+      const outcomePreference = preferenceFor(cls);
 
-      const v = kitAff * W_KIT + gap * W_GAP + Math.min(dossierHits, 3) * W_DOSSIER + profAff * W_PROFILE;
+      const v = kitAff * W_KIT + gap * W_GAP + Math.min(dossierHits, 3) * W_DOSSIER + profAff * W_PROFILE + outcomePreference * 3;
       // (only classes the Commander's work actually TOUCHES are eligible — a zero-kit-affinity class has no honest
       // workflow reason to be "curated", so it never surfaces even if the dossier keyword-matches.)
       if (kitAff <= 0) return;
@@ -140,7 +155,7 @@
       const confidence = clamp01(0.35 + 0.5 * share * (0.5 + 0.5 * volume));
 
       scored.push({ classId: cls.id, why, confidence,
-        evidence: { kitAffinity: round(kitAff), dominantLane, bestLane, coversGap, dossierHits, profileAffinity: round(profAff), samples },
+        evidence: { kitAffinity: round(kitAff), dominantLane, bestLane, coversGap, dossierHits, profileAffinity: round(profAff), outcomePreference: round(outcomePreference), samples },
         _v: v, _idx: idx });
     });
 
@@ -149,9 +164,75 @@
     return { warm: true, items };
   }
 
+  /* ============================ THE INTEREST GAP — the one recommendation recommend() structurally cannot make
+     ============================================================================================================
+     recommend() above is deliberately walled: a class with `kitAff <= 0` returns early, so a class is only ever
+     eligible if the Commander's work ALREADY touched the lanes its kit covers. That wall is load-bearing — it is
+     what stops the curated shelf inventing a workflow reason — but it also means the bay can only ever recommend
+     MORE OF WHAT YOU ALREADY DO. It can never say the most valuable thing a recruiter can say: "you keep asking
+     about X and nobody here can do it." An echo chamber cannot grow the station.
+
+     So this is a SEPARATE path, not a loosening of that gate. recommend() is untouched, byte-for-byte. This one
+     reads the LEARNED TOPIC histogram (sidecar/interests.js — folded only from real observed activity, each topic
+     carrying its evidence quote) and asks a different question: is there a WARM topic that NO ONE ON THE CREW
+     covers? If so, name the catalog class that does. The claim is honest because both halves are real persisted
+     counters — the topic's own observation count, and the crew's actual coverage — and the surface says exactly
+     what it checked. When nothing is warm, or the crew already covers everything warm, it returns NOTHING (the
+     bay then renders what it renders today: this can only ever ADD a shelf where there was none).
+
+       opts = { topics (interests.summary rows), roster ([specialtyId]), rosterSpecs ([{name,tagline,blurb,tags}] —
+                the crew's REAL specs, including custom classes the catalog doesn't contain), catalog, limit }
+     Returns { items: [{ classId, why, topic:{label,count,weight}, coverage, evidence }] }. */
+  const GAP_LIMIT = 2;            // at most two uncovered topics surfaced at once — a shelf, not a backlog
+  const GAP_MAX_TOPICS = 4;       // only the strongest warm topics are worth a hire recommendation
+  function interestGaps(opts) {
+    opts = opts || {};
+    if (!TopicMatch || !TopicMatch.warmTopics) return { items: [] };
+    const warm = TopicMatch.warmTopics(opts.topics).slice(0, GAP_MAX_TOPICS);
+    if (!warm.length) return { items: [] };
+    const catalog = Array.isArray(opts.catalog) ? opts.catalog : [];
+    const rostered = new Set((opts.roster || []).filter(Boolean));
+    // the crew's real corpora: every rostered catalog class PLUS any explicitly-passed specs (custom classes the
+    // catalog never held). A topic one of these covers is NOT a gap, whatever the catalog could also serve.
+    const crew = [];
+    for (const cls of catalog) if (rostered.has(cls && cls.id)) crew.push(corpusOf(cls));
+    for (const s of (Array.isArray(opts.rosterSpecs) ? opts.rosterSpecs : [])) if (s) crew.push(corpusOf(s));
+    const limit = Number.isFinite(opts.limit) ? Math.max(0, Math.floor(opts.limit)) : GAP_LIMIT;
+    const items = []; const taken = new Set();
+    for (const topic of warm) {
+      if (items.length >= limit) break;
+      if (crew.some(c => TopicMatch.coversTopic(topic, c))) continue;         // somebody on the crew already does this
+      // the catalog class that covers it best; catalog order breaks ties (deterministic, mirrors recommend()).
+      let best = null;
+      catalog.forEach((cls, idx) => {
+        if (!cls || rostered.has(cls.id) || taken.has(cls.id)) return;
+        const cov = TopicMatch.coverage(topic.label, corpusOf(cls));
+        if (cov <= TopicMatch.MIN_COVERAGE) return;
+        if (!best || cov > best.cov) best = { cls, cov, idx };
+      });
+      if (!best) continue;                                                    // nothing in the catalog covers it either
+      taken.add(best.cls.id);
+      items.push({
+        classId: best.cls.id,
+        why: 'you keep working on ' + String(topic.label) + (topic.count > 0 ? ' (seen ' + Math.floor(topic.count) + '×)' : '') + ' — nobody on the crew covers it',
+        topic: { label: String(topic.label), count: Math.floor(Number(topic.count) || 0), weight: round(topic.weight) },
+        coverage: round(best.cov),
+        evidence: (Array.isArray(topic.evidence) ? topic.evidence.slice(0, 1) : [])
+      });
+    }
+    return { items: items };
+  }
+  // the searchable text of a class — the SAME corpus shape the archetype matcher reads, so "covers this topic"
+  // means one identical thing wherever it is asked.
+  function corpusOf(cls) {
+    return ((cls && cls.name) || '') + ' ' + ((cls && cls.tagline) || '') + ' ' + ((cls && cls.blurb) || '') + ' ' +
+      ((cls && cls.purpose) || '') + ' ' + Object.keys((cls && cls.tags) || {}).join(' ');
+  }
+
   function tagWord(tag) { return tag === 'code' ? 'that engineering work' : tag === 'research' ? 'that research work' : 'that work'; }
   function clamp01(n) { return n < 0 ? 0 : n > 1 ? 1 : n; }
   function round(n) { return Math.round((Number(n) || 0) * 1000) / 1000; }
 
-  return { recommend, _keywordHits: keywordHits, _classDominantTag: classDominantTag, CAL_N, W_KIT, W_GAP, W_DOSSIER, W_PROFILE };
+  return { recommend, interestGaps, _keywordHits: keywordHits, _classDominantTag: classDominantTag, _corpusOf: corpusOf,
+    CAL_N, W_KIT, W_GAP, W_DOSSIER, W_PROFILE, GAP_LIMIT, GAP_MAX_TOPICS };
 });

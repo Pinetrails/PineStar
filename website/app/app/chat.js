@@ -55,7 +55,6 @@ const Chat = (() => {
                                 // in BETWEEN text blocks, exactly where it happened.
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   let studyWired = false;       // the agent.run.end STUDY (dossier Phase B) listener is registered exactly once
-  let studyRunsSeen = new Set();   // runIds already study-fetched (agent.run.end can re-fire; fetch once per run)
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   let arcWired = false;         // GROWTH Tier 2: the agent.run.end goal-arc confirm-beat listener (registers once)
   let arcRunsSeen = new Set();  // GROWTH Tier 2: runIds already arc-offered (agent.run.end can re-fire; offer once per run)
@@ -63,17 +62,12 @@ const Chat = (() => {
   let skillDelivSeen = new Set();   // deliverable ids already asided → the background review re-firing never double-asides
   let recentInRunSkill = 0;     // ts of the last IN-RUN skill.* tool call — suppresses the aside for a save the A1 chip already showed
   let trustWired = false;       // GROWTH Tier 3: the agent.run.end earned-autonomy offer-beat listener (registers once)
-  let trustRunsSeen = new Set();// GROWTH Tier 3: runIds already trust-offered (agent.run.end can re-fire; offer once per run)
-  let activeTrust = null;       // GROWTH Tier 3: the single visible trust offer card { node, offer, decided }
   let threadWired = false;      // NS-6: the agent.run.end THREAD turn-in beat listener is registered exactly once
-  let threadRunsSeen = new Set();  // NS-6: runIds already thread-fetched (agent.run.end can re-fire; fetch once per run)
-  let activeThreadCard = null;  // NS-6: the single visible thread turn-in card { node, prop, decided }
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   let recruitShown = false;     // adaptive recruitment: the ONE recruit beat is offered at most once per session (in-memory, resets each app run)
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
-  const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const receiptRunsSeen = new Set();    // runIds whose SILENT auto-saved receipts already rendered (memory.write triggers once per run)
   const clarificationRuns = new Set();  // an intent-question turn is a continuation, not completed work
   const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
@@ -95,6 +89,7 @@ const Chat = (() => {
   const el = id => document.getElementById(id);
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
+  let historyPinSeq = 0, historyPinPending = 0;   // a load owns one final post-layout pin; a real user gesture cancels it
   function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
   function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; else if (log) showNewPill(true); }   // content landed while unstuck → "new messages"
 
@@ -105,6 +100,20 @@ const Chat = (() => {
      Anchored to #chat-log's bottom EDGE (just above the composer) by measuring the composer height each show,
      so it rides a one- or multi-line composer instead of a magic offset. Click jumps down + re-arms stickiness. */
   function jumpToBottom() { if (log) { log.scrollTop = log.scrollHeight; stick = true; hideNewPill(); } }
+  function cancelHistoryPin() { historyPinPending = 0; }
+  function pinLoadedHistoryAfterLayout(seq) {
+    const pin = () => {
+      if (!log || historyPinPending !== seq) return;
+      log.scrollTop = log.scrollHeight;
+      historyPinPending = 0;
+      stick = nearBottom();
+      if (stick) hideNewPill();
+    };
+    // Bulk history rows can grow after their synchronous append as markdown/font layout settles. Two paint
+    // frames make the final scroll use the rendered height, not the transient height seen by row().
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(pin));
+    else setTimeout(pin, 0);
+  }
   function positionNewPill(pill) {
     // sit the pill just above the composer: distance from the panel's bottom = the composer stack's height.
     const composer = el('chat-inputrow'), queuedEl = el('chat-queued');
@@ -125,8 +134,12 @@ const Chat = (() => {
     pill.setAttribute('aria-label', isNew ? 'Jump to newest messages' : 'Scroll to latest');
     positionNewPill(pill);
     pill.classList.add('show');
+    if (log) log.classList.add('pill-clear');   // reserve the pill's height at the foot of the scroll so it never covers the newest line
   }
-  function hideNewPill() { const p = el('comms-newpill'); if (p) { p.classList.remove('show'); p.classList.remove('hasnew'); } }
+  function hideNewPill() {
+    const p = el('comms-newpill'); if (p) { p.classList.remove('show'); p.classList.remove('hasnew'); }
+    if (log) log.classList.remove('pill-clear');
+  }
 
   /* COMMS PROCESSING TIMER — a live wall-clock readout in the header (▸ thinking · 3s) that counts how long
      the DISPLAYED stream's turn has been running. The start instant lives on the channel (Channels.startedAt),
@@ -244,6 +257,7 @@ const Chat = (() => {
   // resolve the live card into a compact one-line summary that STAYS in the transcript. opts: { error, raw,
   // stopped, endReason, steps, cost }. Truthful: steps/cost only appear when a real number is supplied.
   function resolvePresence(ws, opts) {
+    foldBriefCards();   // the run is over → any "my read" contract for it can no longer steer; retire + fold it (before the early-out, so the registry can't hold a stale card)
     if (!isActiveWs(ws)) { clearPresence(); return; }
     opts = opts || {};
     const started = (typeof Channels !== 'undefined') ? Channels.startedAtOf(ws.id) : 0;
@@ -285,9 +299,10 @@ const Chat = (() => {
       };
       card.addEventListener('click', toggle);
       card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
-      // ERROR HONESTY: a FAILED run's work log self-exposes — collapsing machinery is for successes;
-      // when something broke the evidence must not hide behind a click.
-      if (isErr) toggle();
+      // A FAILED run keeps its fold CLOSED like any other (2026-07-31). The old rule auto-expanded
+      // every chip "for honesty" — but the failure's evidence is already IN the transcript (the ⚠ error
+      // row, its raw .err-detail line, the diagnostics chip), and dumping the whole rail open painted a
+      // wall of machinery that read as fifty failures when one thing failed. One click still shows it all.
     } else {
       card.setAttribute('role', 'note');
     }
@@ -463,14 +478,14 @@ const Chat = (() => {
     system = opts.system || ''; name = opts.name || 'AGENT';
     sentHistory.length = 0; histIdx = -1; histDraft = '';   // recall never crosses a session/agent switch
     onTurn = opts.onTurn || null; interview = null;
-    proposalRunsSeen.clear(); receiptRunsSeen.clear(); studyRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
+    receiptRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
     // never flush into a new session (same law as turninQueue above). A fresh beat-slot arbiter matches the DOM.
-    studyPending.length = 0; tastePending.length = 0; activeStudy = null;
     arcRunsSeen.clear();   // GROWTH Tier 2: the arc side starts clean per session (a prior hero's arc offers never carry over)
-    trustRunsSeen.clear(); activeTrust = null;   // GROWTH Tier 3: the trust side starts clean per session (a prior hero's earned-autonomy offers never carry over)
-    threadRunsSeen.clear(); threadPending.length = 0; activeThreadCard = null;   // NS-6: the thread turn-in side starts clean per session (same law)
-    beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
+    clearNudge();
+    if (beatCards) beatCards.reset();
+    beatCards = (typeof BeatCard !== 'undefined' && BeatCard.create) ? BeatCard.create({ vanish: vanish }) : null;
+    beatSlot = beatCards ? beatCards.slot : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     // F2: re-derive the idle status on the same cadence the topbar repaints #sig (3s) so a link that dies with
     // NO run in flight still downgrades 'online' → 'station unreachable'. Once-armed (init re-runs per session).
@@ -479,7 +494,14 @@ const Chat = (() => {
     }
     attachInput = el('chat-attach-input'); attachStrip = el('chat-attach-strip');
     clearAttachments();   // a fresh agent session starts with no staged attachments (matches the clean-slate init above)
-    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); else showNewPill(false); });   // at the bottom → retire the pill; scrolled up → a persistent "↓ latest" affordance
+    if (log) {
+      log.addEventListener('scroll', () => {
+        if (historyPinPending) return;   // row()-driven replay scroll events cannot cancel the load's final pin
+        stick = nearBottom(); if (stick) hideNewPill(); else showNewPill(false);
+      });   // at the bottom → retire the pill; scrolled up → a persistent "↓ latest" affordance
+      // A real attempt to inspect history wins even during the two-frame settle window.
+      ['wheel', 'touchstart', 'pointerdown'].forEach(type => log.addEventListener(type, cancelHistoryPin, { passive: true }));
+    }
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
     // row's prose, then flashes a ✓ confirm. Wired once per log element so a re-init can't stack handlers.
     if (log && !log.__copyWired) {
@@ -852,6 +874,16 @@ const Chat = (() => {
       ? ModelDock.labels.short(model)
       : ((model.split('/').pop() || model).toUpperCase());
   }
+  // The COMMS header's model slot, de-duplicated against the composer's model-dock chip (see renderIdBar).
+  // Never invents a name: every branch reads the same real roster/localStorage state agentModelText does.
+  function pinReadout(a) {
+    const mine = agentModelText(a);
+    if (!a.model) return mine;                                    // unpinned — "follows station default", no bogus "pin:" prefix
+    const station = (typeof Harness !== 'undefined' && Harness.getModel) ? String(Harness.getModel() || '') : '';
+    const stationShort = (station && typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.short)
+      ? ModelDock.labels.short(station) : '';
+    return (stationShort && mine === stationShort) ? 'pinned' : ('pin: ' + mine);
+  }
   // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — an honest one-line notice shown in the COMMS header's model slot when the
   // focused agent id is NOT in the live registry (roster out of sync). focusAgent sets it instead of silently
   // rebinding to the overseer; a subsequent focus onto a REAL agent clears it (''). No new window, no .reply beat —
@@ -886,8 +918,13 @@ const Chat = (() => {
       if (activeId != null) sel.value = activeId;
     }
     const cur = list.find(a => a.id === activeId) || null;
-    // "pin:" prefix so this per-agent PINNED model readout can't be misread as the dock's active-model chip
-    if (modelEl) modelEl.textContent = cur ? ('pin: ' + agentModelText(cur)) : '';
+    // "pin:" prefix so this per-agent PINNED model readout can't be misread as the dock's active-model chip.
+    // DEDUPE (2026-07-27): the composer's dock chip already names the active model a few rows below. When an
+    // agent's pin resolves to that SAME model, spelling the name twice in one panel adds nothing — collapse to
+    // the one fact the dock chip genuinely can't carry ("this agent is pinned, it won't follow the default").
+    // The full name stays whenever the two actually differ, which is the case worth reading. And an UNPINNED
+    // agent no longer prints the self-contradicting "pin: follows station default".
+    if (modelEl) modelEl.textContent = cur ? pinReadout(cur) : '';
     if (bar) bar.hidden = !list.length;   // no roster yet (pre-wake) → hide the row rather than show an empty selector
   }
   // wire the agent <select> once: a change hands off to App.selectAgent (switch/mint a stream bound to that
@@ -907,15 +944,14 @@ const Chat = (() => {
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
+    const historyPin = ++historyPinSeq;
+    historyPinPending = historyPin;
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
     // SPEAKER IDENTITY: re-resolve `name` (the reply-chip + agent-beat speaker, else stuck at init's hero) from the
     // displayed stream's agent, so switching agents relabels replies. Guard: an unknown id keeps the current name.
     if (activeWs && typeof App !== 'undefined' && App.agentName) { const nm = App.agentName(activeWs.agentId || 'agent'); if (nm) name = nm; }
-    activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
-    activeStudy = null;   // the study card is the same kind of visible review layer — it belongs to the outgoing DOM
-    activeTrust = null;   // GROWTH Tier 3: the trust offer card is likewise a visible review layer bound to the outgoing DOM
-    activeThreadCard = null;   // NS-6: the thread turn-in card is likewise a visible review layer bound to the outgoing DOM
-    if (beatSlot && beatSlot.visibleBeat()) beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;   // the visible beat left with its DOM; a fresh arbiter matches the new stream
+    activeTurnin = null; turninQueue.length = 0; clearNudge(); clearChoices();   // visible review/choice layers belong to the current COMMS DOM
+    if (beatCards) beatCards.reset({ seen: false, queues: false });   // every stream switch invalidates stale async results from the outgoing COMMS generation
     endToolRail(); presenceCurTool = null;   // COMMS-PREMIUM: the tool rail + live-tool state belong to the OUTGOING stream's DOM
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
     if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
@@ -943,6 +979,7 @@ const Chat = (() => {
     if (activeWs && typeof WorkshopStore !== 'undefined' && WorkshopStore.presentFor) {
       try { WorkshopStore.presentFor(activeWs.id).catch(() => {}); } catch (_) {}
     }
+    pinLoadedHistoryAfterLayout(historyPin);
   }
 
   async function restoreTaskQuestion(ws) {
@@ -1157,7 +1194,11 @@ const Chat = (() => {
     const d = document.createElement('div'); d.className = 'cmsg ' + role + (renderingHistory ? ' no-anim' : '');
     // COMMS-PREMIUM: the speaker chip + a dim HH:MM stamp share one header row (a flex .cmsg-head).
     const who = document.createElement('span'); who.className = 'who';
-    who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : name;
+    // opts.who NAMES THE ACTUAL SPEAKER. Every agent row used to be stamped with the FOCUSED agent's name,
+    // which was true while one agent owned every turn — a work line breaks that: stages 2..N are other agents
+    // and labelling their work with the entry dock's name is a fabricated attribution (the same law that
+    // stopped the hub writing a downstream stage's reply into the entry dock's transcript).
+    who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : ((opts && opts.who) || name);
     const body = document.createElement('span'); body.className = 'body';
     // TIMESTAMP TRUTH (P0): opts.stamp is `true` for a row created LIVE (real wall-clock now), a number/Date for a
     // stored turn's REAL recorded time, or falsy for a legacy turn that carries no time — in which case we render
@@ -1218,7 +1259,7 @@ const Chat = (() => {
         }).catch(() => {});
       } else {
         const chip = document.createElement('a'); chip.className = 'filechip'; chip.title = name;
-        wireBlobOpen(chip, rel, aid);
+        wireFileOpen(chip, rel, aid);
         chip.appendChild(glyphSpan(SVG_FILE));   // themed file glyph, not 📄
         chip.appendChild(document.createTextNode(' ' + (name.split(/[\\/]/).pop() || name)));
         view.appendChild(chip);
@@ -1486,18 +1527,27 @@ const Chat = (() => {
       return r.blob();
     }).then(b => URL.createObjectURL(b));
   }
-  function wireBlobOpen(a, title, agentId) {
-    a.href = '#'; a.target = '_blank'; a.rel = 'noopener';
-    a.addEventListener('click', ev => {
-      ev.preventDefault();
-      fileBlobUrl(title, agentId).then(u => {
-        try { window.open(u, '_blank', 'noopener'); } catch (_) {}
-        // the new tab has taken the blob by now — revoke so a 24/7 station doesn't leak one object URL per
-        // deliverable opened (matches backup.js/clip.js delayed-revoke; every other createObjectURL site frees).
-        setTimeout(() => { try { URL.revokeObjectURL(u); } catch (_) {} }, 60000);
-      })
-        .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — the sidecar may be unreachable', 'warn'); });
-    });
+  // Wire an anchor to OPEN a workspace file. The href IS the real jailed /api/file URL (query-token
+  // auth — apiauth's documented native-load escape hatch, since a link navigation cannot attach the
+  // custom header), so in a browser this is a TRUE link: left-click opens the tab natively and
+  // right-click → open-in-new-tab / copy-link-address work. The old wiring (href='#' + fetch→blob→
+  // window.open AFTER an async fetch) was a silent no-op everywhere it mattered: popup blockers kill a
+  // post-async window.open, the desktop Tauri window policy kills it always, and right-click opened '#'.
+  // On desktop a _blank navigation is equally dead under that policy (the same law as the delegated
+  // prose-link handler in init), so hand the URL to the OS browser; stopPropagation so that delegated
+  // handler can't open it a second time.
+  function wireFileOpen(a, title, agentId) {
+    a.href = fileUrl(title, agentId);
+    a.target = '_blank'; a.rel = 'noopener';
+    const core = tauriCore();
+    if (core && core.invoke) {
+      a.addEventListener('click', ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (window.getSelection && String(window.getSelection())) return;   // a drag-selection release is not an open (the delegated handler's SELECTION GUARD law)
+        Promise.resolve(core.invoke('open_external_url', { url: a.href }))
+          .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file in your browser — the folder button copies its path on disk', 'warn'); });
+      });
+    }
   }
 
   /* ── IMAGE LIGHTBOX ─ clicking any COMMS image (sent attachment, staged composer attachment, agent image
@@ -1617,7 +1667,7 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
     const a = document.createElement('a');
-    wireBlobOpen(a, title, agentId);
+    wireFileOpen(a, title, agentId);
     a.textContent = String(title).split(/[\\/]/).pop() || title;   // show the filename, not the whole path
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
@@ -1664,19 +1714,31 @@ const Chat = (() => {
     const ext = String(title || '').split(/[?#]/, 1)[0].split('.').pop().toLowerCase();
     return MEDIA_KIND_BY_EXT[ext] || 'file';
   }
+  // The jailed /api/file URL for a workspace file — usable as a REAL href/src, not just inside fetch().
+  // Token: the SYNC injected global (the same value Harness.apiToken() RESOLVES to — apiToken() itself
+  // returns a Promise, and the old String(promise) baked `token=[object Promise]` into the query, a
+  // guaranteed 403 on any native load that can't ride the header shim). Base: on desktop the page runs
+  // on the tauri.localhost origin and the shell rewrites ONLY window.fetch to the sidecar — a relative
+  // href would navigate into the bundled-asset protocol and vanish (the same trap cloudsave's unload
+  // beacon hit), so native loads carry the ABSOLUTE loopback base (window.__STARNET_API__); in a
+  // browser the base is '' and the URL stays same-origin relative.
   function fileUrl(title, agentId) {
-    const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
-    return '/api/file?agent=' + encodeURIComponent(agentId || 'agent') +
+    let base = '', tok = '';
+    try { base = (typeof window !== 'undefined' && window.__STARNET_API__) ? String(window.__STARNET_API__) : ''; } catch (_) {}
+    try { tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : ''; } catch (_) {}
+    return base + '/api/file?agent=' + encodeURIComponent(agentId || 'agent') +
       '&path=' + encodeURIComponent(title) +
       (tok ? '&token=' + encodeURIComponent(tok) : '');
   }
   // append a small "open in a new tab" fallback link — shown when an inline player can't decode the file
   // (e.g. an .mkv/.avi the browser won't play), mirroring the reference harness's OpenMediaButton.
-  function openFallback(parent, label, url, title, agentId) {
+  // Always a real /api/file link (re-served with Range support), never the player's blob URL: a blob href
+  // is dead on desktop (the Tauri window policy) and dies with the page.
+  function openFallback(parent, label, title, agentId) {
     if (parent.querySelector('.media-fallback')) return;   // once
     const a = document.createElement('a');
-    a.href = url || '#'; a.target = '_blank'; a.rel = 'noopener'; a.className = 'deliverable-link media-fallback';
-    if (!url) wireBlobOpen(a, title, agentId);
+    a.className = 'deliverable-link media-fallback';
+    wireFileOpen(a, title, agentId);
     a.textContent = label; a.title = title;
     parent.appendChild(a);
   }
@@ -1692,7 +1754,7 @@ const Chat = (() => {
     const el = document.createElement(kind === 'audio' ? 'audio' : 'video');
     el.controls = true; el.preload = 'metadata'; el.className = 'deliverable-' + kind;
     let blobUrl = '';
-    el.addEventListener('error', () => openFallback(r.body, 'open ' + kind, blobUrl, title, agentId), { once: true });
+    el.addEventListener('error', () => openFallback(r.body, 'open ' + kind, title, agentId), { once: true });
     r.body.appendChild(el);
     // a <video>/<audio> keeps needing its object URL for the WHOLE row lifetime (seek/replay re-read it, and
     // the error fallback links to it), so we don't revoke on load here. But free any prior URL before we
@@ -1701,7 +1763,7 @@ const Chat = (() => {
     fileBlobUrl(title, agentId).then(u => {
       if (blobUrl && blobUrl !== u) { try { URL.revokeObjectURL(blobUrl); } catch (_) {} }
       blobUrl = u; el.src = u;
-    }).catch(() => openFallback(r.body, 'open ' + kind, '', title, agentId));
+    }).catch(() => openFallback(r.body, 'open ' + kind, title, agentId));
     autoscroll();
   }
 
@@ -1725,7 +1787,7 @@ const Chat = (() => {
     const path = String(a.path || '');
     d.appendChild(document.createTextNode(a.kind === 'image' ? '▤ made ' : '▤ wrote '));
     const link = document.createElement('a');
-    wireBlobOpen(link, path, agentId);                       // the same jailed /api/file open every deliverable row uses
+    wireFileOpen(link, path, agentId);                       // the same jailed /api/file open every deliverable row uses
     link.className = 'deliverable-link';
     link.textContent = path.split(/[\\/]/).pop() || path;    // filename shown, full path on hover
     link.title = path;
@@ -1788,18 +1850,75 @@ const Chat = (() => {
     if (/summon/.test(t)) return 'summon a new agent onto the crew' + (ev.argsSummary ? ' (' + ev.argsSummary + ')' : '');
     // NS-5 conversational path trust: a file was referenced OUTSIDE the agent's workspace — "Always" blesses
     // the whole project folder for future reads (revocable in Permissions); argsSummary is the proposed root.
-    if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" trusts it for later)';
+    if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" or "Full access" trusts it for later)';
     // ATTENDED BROWSER LOGIN: two-phase takeover. Phase 1 asks to open a visible Chrome window the COMMANDER
     // drives; phase 2 holds the run until they click Done. Password honesty is part of the card copy.
     if (t === 'browser.login') return 'open a browser window so YOU can log in to ' + (ev.argsSummary || 'a website') + ' (you type your password in that window — the agent never sees it)';
     if (t === 'browser.login.done') return 'wait while you log in to ' + (ev.argsSummary || 'the website') + ' in the browser window — click Done here when you\'ve finished';
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
+    if (t === 'brief.ask') return 'ask you a quick question about the task';   // clarify card renders its own body
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
+  }
+
+  /* IN-TURN CLARIFY CARD (2026-07-31, Hermes-parity). A brief.ask prompt rides the consent transport but is
+     a QUESTION, not a permission grade — approve/deny buttons would be a lie. Renders the question with the
+     same one-tap choice chips the end-run TASK_QUESTION card uses (★ = the agent's recommended option, plus
+     the standing "use your judgment" skip), and answers via POST /api/consent/answer so the SAME turn
+     resumes with the decision — the run never ends. Ignoring the card is safe: the sidecar's fail-closed
+     timer falls back to today's durable end-run question. Joins the consent card's lifecycle contract:
+     decided chips vanish into a verdict tag, pending-span bookkeeping excludes the wait from run time, and
+     focus is never stolen from a mid-typing Commander. */
+  function clarifyRow(p, ws) {
+    let q = { question: '', options: [], recommended: '', reason: '' };
+    try { q = Object.assign(q, JSON.parse(p.argsSummary || '{}')); } catch (_) {}
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
+    r.body.appendChild(document.createTextNode('▣ ' + name + ' asks: ' + (q.question || 'which way should this go?') + ' '));
+    if (q.reason) {
+      const why = document.createElement('div'); why.className = 'dim'; why.textContent = q.reason;
+      r.body.appendChild(why);
+    }
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    let decided = false;
+    function answer(text, doneLabel) {
+      if (decided) return; decided = true;
+      const rid = (ws && typeof Channels !== 'undefined') ? Channels.runIdOf(ws.id) : null;
+      Harness.consentAnswer(rid, p.promptId, text);
+      if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // the wait never counts as run time
+      if (isActiveWs(ws)) renderPresence();
+      btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result'; tag.textContent = doneLabel;
+      r.body.appendChild(tag);
+      syncStatus();
+    }
+    const opts = Array.isArray(q.options) ? q.options.slice(0, 6) : [];
+    for (const opt of opts) {
+      const b = document.createElement('button');
+      b.className = 'consent-btn';
+      b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
+      b.onclick = () => answer(opt, '✓ ' + opt);
+      btns.appendChild(b);
+    }
+    const skip = document.createElement('button');
+    skip.className = 'consent-btn';
+    skip.textContent = 'use your judgment';
+    skip.onclick = () => answer('use your judgment', '✓ your call');
+    btns.appendChild(skip);
+    r.body.appendChild(btns);
+    // Esc = "use your judgment": the reflexive dismiss defers the decision rather than silently denying a
+    // question (a deny makes no sense here), matching the end-run card's skip chip semantics.
+    r.d.tabIndex = -1;
+    r.d.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); answer('use your judgment', '✓ your call'); } });
+    status('awaiting your answer…');
+    if (typeof StationUI !== 'undefined') StationUI.notify(name + ' has a quick question for you', 'warn', 'needsApproval');
+    autoscroll();
+    const composerBusy = !!(input && (document.activeElement === input || (input.value && input.value.trim())));
+    if (!composerBusy) { try { r.d.focus({ preventScroll: true }); } catch (_) { try { r.d.focus(); } catch (_) {} } }
   }
   // p = a consent payload { promptId, tool, argsSummary } — works for both a live onPermission event and a
   // Channels snapshot.pending (re-rendered after a switch). ws is the origin stream, so the answer routes to
   // THAT stream's run (per-channel runId), not a single global one.
   function permissionRow(p, ws) {
+    if (p && p.tool === 'brief.ask') return clarifyRow(p, ws);   // a question, not a grade — its own card
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
     r.body.appendChild(document.createTextNode('▣ ' + name + ' wants to ' + actionPhrase(p) + ' '));
     const btns = document.createElement('span'); btns.className = 'consent-btns';
@@ -1811,12 +1930,12 @@ const Chat = (() => {
       // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
-      // NS conversational anchor: "Always" on a path.trust card IS the project bless (a standing path grant +
-      // known-projects row land on the sidecar). Stamp the origin session's projectRoot with the SAME proposed
-      // root so the PROJECTS rail lists this session under its project — the identical anchor "Work here" stamps.
-      // Only "Always" (once/full grant nothing standing, so there is no project row to attach to), and never
-      // overwrite an anchor the session already has.
-      if (p.tool === 'path.trust' && decision === 'always' && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
+      // NS conversational anchor: "Always" — and now "Full access" — on a path.trust card IS the project bless
+      // (a standing path grant + known-projects row land on the sidecar). Stamp the origin session's projectRoot
+      // with the SAME proposed root so the PROJECTS rail lists this session under its project — the identical
+      // anchor "Work here" stamps. Both standing grades, never "once" (it grants nothing standing, so there is
+      // no project row to attach to), and never overwrite an anchor the session already has.
+      if (p.tool === 'path.trust' && (decision === 'always' || decision === 'full') && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
         try { if (p.argsSummary && !(Workstreams.get(ws.id) || {}).projectRoot) Workstreams.setProjectRoot(ws.id, p.argsSummary); } catch (_) {}
       }
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // closes the paused span — approval wait never counts as run time
@@ -2008,11 +2127,14 @@ const Chat = (() => {
   // STANDALONE rate-the-work beat (when a run produced NO memory proposal) — its own gold-inset row in the ONE
   // post-run slot. Hero-only, mirroring the curiosity/suggestion beats.
   function workRateBeat(agentId, runId) {
-    if (!log) return;
+    if (!log) return false;
     clearNudge();   // claim the one post-run beat slot, retiring any prior gentle nudge
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
-    workRateControl(r.body, agentId, runId, () => vanish(r.d));
+    const beat = beatCards && beatCards.claim({ kind: 'rate', runId: runId, node: r.d });
+    if (!beat) { if (r.d && r.d.parentNode) r.d.remove(); return false; }
+    workRateControl(r.body, agentId, runId, () => { beat.decide(); beat.finish(); });
     autoscroll();
+    return true;
   }
 
   /* G2.4 — CLOSE THE RATE-STARVE HOLE. The rate control used to reach the Commander on exactly two
@@ -2033,17 +2155,29 @@ const Chat = (() => {
   //   'never'   — PERMANENT: rated already, not the hero, or no real work — stop asking
   function maybeStandaloneRate(agentId, runId) {
     if (!log || !runId || workRatedRuns.has(runId)) return 'never';
-    if ((agentId || 'agent') !== 'agent') return 'never';               // hero-only, mirroring the post-run slot
+    // S1 SPECIALIST RATE-STARVE FIX. This was hero-only, which starved every summoned specialist of the PRIMARY
+    // leveling beat: an interactive run in a specialist-bound workstream could only ever be rated if it happened
+    // to also produce a memory turn-in card (the one other control that routes by the run's own agentId). So a
+    // specialist stayed Lv 1 forever while the hero collected the whole roster's growth.
+    // The beat renders into the ONE shared #chat-log, so the honest predicate is not "is this the hero" but
+    // "is this run's agent the one whose stream is ON SCREEN" (the activeWs idiom used by the skill aside).
+    // Deliberately ADDITIVE: the hero keeps its exact prior behavior (it may fire while another stream is
+    // displayed); only the non-hero case is new, and it waits for its own stream rather than rendering a
+    // specialist's rating into somebody else's transcript. 'blocked' (not 'never') so armRateFallback keeps
+    // retrying — switching to that stream within the fallback window still lands the beat.
+    // A dispatched WORKER's forwarded run.end never reaches here: it has no runWork stash (only the local stream
+    // loop sets one), so the real-work gate below returns 'never' — its credit rides the lead's crewSplit instead.
+    if ((agentId || 'agent') !== 'agent' && !(activeWs && (activeWs.agentId || 'agent') === (agentId || 'agent'))) return 'blocked';
     const w = runWork.get(runId);
     if (!w || ((w.toolsOk || 0) < 1 && (w.delivered || 0) < 1)) return 'never';   // real work only — pure chat is never rate-prompted
     if (isBusy() || interview) return 'blocked';                        // never mid-run / mid-awakening
     if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return 'blocked';
     if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return 'blocked';
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return 'blocked';   // a focused panel is up (e.g. the tutorial) — retry after it closes
+    if (beatCards && beatCards.visibleBeat() && beatCards.visibleBeat() !== 'nudge') return 'blocked';
     if (activeTurnin && activeTurnin.node && activeTurnin.node.isConnected) return 'blocked';   // a review deck is up (it carries its own control)
     if (log.querySelector('.cmsg.work-rate') || log.querySelector('.turnin-rate')) return 'blocked';   // a rate control is already live somewhere (one ask at a time)
-    workRateBeat(agentId || 'agent', runId);
-    return 'fired';
+    return workRateBeat(agentId || 'agent', runId) ? 'fired' : 'blocked';
   }
   // the self-retrying fallback: armed once per completed task run at run end, it keeps re-attempting
   // (5s cadence, bounded ~5min) until the beat fires or the run is permanently ineligible — so a
@@ -2669,6 +2803,12 @@ const Chat = (() => {
   function renderTurninBatch(batch) {
     if (beatSlot) beatSlot.memoryShown();   // hard-claim the beat slot on EVERY deck-render path (idempotent)
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin');
+    const beatHandle = beatCards && beatCards.claim({
+      kind: 'memory', runId: batch.runId, node: head.d, data: batch, preclaimed: true,
+      handoff: () => turninQueue.length > 0 ? 'memory' : null,
+      onRelease: () => { if (beatCards) beatCards.releaseReservation('memory', batch.runId); }
+    });
+    if (!beatHandle) { if (head.d && head.d.parentNode) head.d.remove(); return; }
     const n = batch.proposals.length;
     const title = document.createElement('span'); title.className = 'turnin-title';
     const queueNote = document.createElement('span'); queueNote.className = 'turnin-queue'; queueNote.hidden = true;
@@ -2683,19 +2823,19 @@ const Chat = (() => {
       workRateControl(rate, batch.agentId || 'agent', batch.runId, () => vanish(rate));
     }
 
-    const state = { node: head.d, queueNote, index: 0 };
+    const state = { node: head.d, queueNote, index: 0, beat: beatHandle };
     activeTurnin = state;
     updateTurninQueueNote();
 
     function finishBatch() {
       activeTurnin = null;
-      slotMemoryDone(batch.runId, turninQueue.length > 0);   // release (or hand on) the beat slot + clear this run's pending claim
-      vanish(head.d, () => {
+      beatHandle.decide();
+      beatHandle.finish({ onGone: () => {
         showNextTurnin();
         // G2.4 starve hole 2: the deck (and its embedded control) just vanished — if the Commander
         // curated the memories but never rated the WORK, the standalone beat picks the rating up.
         if (batch.runId) maybeStandaloneRate(batch.agentId || 'agent', batch.runId);
-      });
+      } });
     }
     function updateTitle() {
       title.textContent = '◈ ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — review ' + (state.index + 1) + ' of ' + n;
@@ -2770,8 +2910,7 @@ const Chat = (() => {
     // A MIXED batch (some high-stakes) fires both; the shared guard renders it once (receipts + deck together).
     U.bus.on('memory.proposed', p => {
       const runId = p && p.runId; const agentId = (p && p.agentId) || 'agent';
-      if (!runId || proposalRunsSeen.has(runId)) return;
-      proposalRunsSeen.add(runId);
+      if (!runId || !beatCards || !beatCards.once('memory', runId)) return;
       slotMemoryProposed(runId);   // reserve the slot for the coming confirm deck (released if the fetch is deck-empty)
       setTimeout(() => routeProposalBatch(runId, agentId, true), 350);
     });
@@ -2780,7 +2919,7 @@ const Chat = (() => {
       // dedup vs BOTH the deck path (proposalRunsSeen, set by memory.proposed) and this receipt path. Deliberately
       // NOT added to proposalRunsSeen: a passive receipt is not a review DECK, so it must not suppress the run's
       // curiosity/suggestion nudge (the wireCuriosity guard keys on proposalRunsSeen = "a deck owns the moment").
-      if (!runId || proposalRunsSeen.has(runId) || receiptRunsSeen.has(runId)) return;
+      if (!runId || (beatCards && beatCards.hasSeen('memory', runId)) || receiptRunsSeen.has(runId)) return;
       receiptRunsSeen.add(runId);
       if (receiptRunsSeen.size > 200) receiptRunsSeen.delete(receiptRunsSeen.values().next().value);
       // NO slot reservation — receipts are passive log lines. A tiny debounce lets the per-record memory.write
@@ -2796,8 +2935,10 @@ const Chat = (() => {
     // MIXED-BATCH RACE: the server emits memory.write (auto-saves) BEFORE memory.proposed (high-stakes) for the
     // same run, so both triggers can schedule a route before either fires. At fire time the deck route owns the
     // whole render (receipts + deck together); the receipt-only route bails so nothing draws twice.
-    if (!reservedSlot && proposalRunsSeen.has(runId)) return;
+    if (!reservedSlot && beatCards && beatCards.hasSeen('memory', runId)) return;
+    const lifecycle = beatCards, lifecycleGeneration = lifecycle && lifecycle.generation();
     const items = await Harness.memoryProposals(runId, agentId);
+    if (!lifecycle || beatCards !== lifecycle || lifecycle.generation() !== lifecycleGeneration) return;
     const saved = items.filter(p => p && p.saved);
     const pending = items.filter(p => p && !p.saved);
     // route to the ORIGIN stream (many streams share agentId 'agent', so agentId-gating can drop the card into
@@ -2979,13 +3120,48 @@ const Chat = (() => {
       briefReadCard(ws, p);
     });
   }
+  /* SPENT-BRIEF FOLD (2026-07-27). The "my read" card is a PRE-RUN contract: its meta rows, its assumption
+     chips and its steer box all exist so the Commander can argue with the read BEFORE the work happens. Once
+     the run it describes has resolved, none of that can act any more — but the card kept its full height
+     forever, so a finished run left ~40% of the visible transcript occupied by a control surface that no
+     longer controls anything (and whose chips still said "tap to correct", a promise only send() ever
+     retracted). At run end each live card retires its own affordances and folds to its headline, keeping the
+     same click-to-expand vocabulary as the resolved run line above it. Nothing is deleted — one click and the
+     whole read is back, so the transcript stays a complete record. */
+  let briefCards = [];
+  function foldBriefCards() {
+    const cards = briefCards; briefCards = [];
+    for (const close of cards) { try { close(); } catch (_) { /* a detached card must never break run teardown */ } }
+  }
+  /* ⛔ LIVE VOICE RENDERS NO CLICKABLE PROMPTS (Andrew, 2026-07-30: "it should not give the same clickable
+     popups, it should just directly ask the user — live mode is different from regular session mode").
+     While a call is live, the interactive beats — the tap-to-correct brief card and choice-chip rows — are
+     SUPPRESSED, not narrated: the agent's own spoken words are the ask, and the Commander's spoken words
+     are the answer. The consent/approval card is deliberately NOT suppressed: it is the durable record of a
+     permission decision, and live mode asks it aloud (voice-live announceWaits) and answers it by voice. */
+  function liveVoiceCall() {
+    try { return typeof VoiceLive !== 'undefined' && VoiceLive.isActive && VoiceLive.isActive(); } catch (_) { return false; }
+  }
+  function liveVoiceOwns(ws) {
+    if (!liveVoiceCall()) return true;
+    // Fail closed during a live call: only the session captured when the call opened may use the
+    // shared speaker/coordinator. A rail click changes the visible session, never call ownership.
+    try {
+      const bound = VoiceLive.boundSessionId && VoiceLive.boundSessionId();
+      return !!(bound && ws && String(ws.id) === String(bound));
+    } catch (_) { return false; }
+  }
   function briefReadCard(ws, p) {
+    if (liveVoiceCall()) return;   // in a call the read is not a form — the agent says what it heard, or asks
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
     // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
     // the one line that matters, so the objective started mid-sentence at caption size. Caption above, objective
     // as the card's headline.
     const cap = document.createElement('div'); cap.className = 'tb-read-cap';
     cap.textContent = 'my read';
+    // the fold handle — inert (and invisible) until the run ends and closeCard() arms it
+    const chev = document.createElement('span'); chev.className = 'tb-read-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸';
+    cap.appendChild(chev);
     r.body.appendChild(cap);
     const head = document.createElement('div'); head.className = 'tb-read-head';
     head.textContent = p.objective;
@@ -3049,6 +3225,28 @@ const Chat = (() => {
     input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
     line.appendChild(input);
     r.body.appendChild(line);
+    // Run over → retire what can no longer act, then fold to the headline. The steer box is replaced only when
+    // it's still the live input: a send() that already landed owns `line` and its ✔/✕ receipt must survive.
+    const closeCard = () => {
+      retire();
+      if (input.isConnected) {
+        line.textContent = '';
+        const t = document.createElement('span'); t.className = 'tb-read-ack closed';
+        t.textContent = 'this read is closed — say it in chat instead';
+        line.appendChild(t);
+      }
+      r.d.classList.add('tb-read-spent', 'folded');
+      cap.setAttribute('role', 'button'); cap.tabIndex = 0; cap.setAttribute('aria-expanded', 'false');
+      cap.title = 'show the full read';
+      const toggle = () => {
+        const open = !r.d.classList.toggle('folded');
+        cap.setAttribute('aria-expanded', open ? 'true' : 'false');
+        cap.title = open ? 'fold this read away' : 'show the full read';
+      };
+      cap.addEventListener('click', toggle);
+      cap.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+    };
+    briefCards.push(closeCard);
     autoscroll();
   }
 
@@ -3107,34 +3305,23 @@ const Chat = (() => {
      and renders the moment the card resolves; a deferred study re-offers at the next task end. */
   const STUDY_ARM_MS = 12000;        // arm the study offer WELL after run end so reflection's memory.proposed (an LLM
                                      // round-trip away) claims the moment first; the beat-slot closes the residual race.
-  let beatSlot = null;               // the pure one-beat arbiter (created per session in init; null-safe wrappers below)
-  let activeStudy = null;            // the single visible study card { node, prop, decided } — one at a time
-  const studyPending = [];           // {runId, agentId} study offers deferred behind a busy moment — FIFO, retried next run end
-  const tastePending = [];           // ready-made taste proposals (from a ratings streak) waiting for a free beat — FIFO
-  function studyBusy() { return !!(activeStudy && activeStudy.node && activeStudy.node.isConnected); }
+  let beatCards = null;              // shared lifecycle: one slot, dedupe, expiry/vanish, stale-async guard
+  let beatSlot = null;               // compatibility view used by the arc lane while it migrates
+  function studyBusy() { return !!(beatCards && beatCards.busy('study')); }
   // null-safe slot wrappers (Study may be absent under old bundles — memory then behaves exactly as before).
   function slotMemoryProposed(runId) { if (beatSlot) beatSlot.memoryProposed(runId); }
   function slotMemoryDeck() { return beatSlot ? beatSlot.memoryDeck() : 'render'; }
-  function slotMemoryDone(runId, more) { if (beatSlot) beatSlot.memoryDone(runId, more); }
   function slotMemoryEmpty(runId) { if (beatSlot) beatSlot.memoryEmpty(runId); }
   function slotCanStudy() { return beatSlot ? beatSlot.canStudy() : 'busy'; }   // no arbiter -> study stands down
-  function slotStudyShown() { if (beatSlot) beatSlot.studyShown(); }
-  function slotStudyDone(more) { if (beatSlot) beatSlot.studyDone(more); }
   // GROWTH Tier 2 — the goal-arc confirm beat: the LOWEST-priority participant (memory turn-in + study both win
   // first). null arbiter OR an older bundle without canArc -> arc stands down (byte-identical pre-Tier-2 behavior).
   function slotCanArc() { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc() : 'busy'; }
-  function slotArcShown() { if (beatSlot && beatSlot.arcShown) beatSlot.arcShown(); }
-  function slotArcDone(more) { if (beatSlot && beatSlot.arcDone) beatSlot.arcDone(more); }
   // GROWTH Tier 3 — the earned-autonomy offer beat: the LOWEST-priority participant (memory + study + arc all win
   // first). null arbiter OR an older bundle without canTrust -> trust stands down (byte-identical pre-Tier-3 behavior).
   function slotCanTrust() { return (beatSlot && beatSlot.canTrust) ? beatSlot.canTrust() : 'busy'; }
-  function slotTrustShown() { if (beatSlot && beatSlot.trustShown) beatSlot.trustShown(); }
-  function slotTrustDone(more) { if (beatSlot && beatSlot.trustDone) beatSlot.trustDone(more); }
   // NS-6 — the THREAD turn-in beat: the LOWEST-priority participant (memory > study > arc > trust > thread —
   // study always wins the moment first). null arbiter OR an older bundle without canThread -> thread stands down.
   function slotCanThread() { return (beatSlot && beatSlot.canThread) ? beatSlot.canThread() : 'busy'; }
-  function slotThreadShown() { if (beatSlot && beatSlot.threadShown) beatSlot.threadShown(); }
-  function slotThreadDone(more) { if (beatSlot && beatSlot.threadDone) beatSlot.threadDone(more); }
   // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
   // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
   function studyBlocked() {
@@ -3146,22 +3333,11 @@ const Chat = (() => {
   }
   // defer a study offer for a later moment — SINGLE queue path, FIFO, deduped by runId (no double-queue).
   function queueStudy(runId, agentId) {
-    if (!runId) return;
-    for (const q of studyPending) if (q.runId === runId) return;
-    studyPending.push({ runId: runId, agentId: agentId });
+    if (!runId || !beatCards) return;
+    beatCards.enqueue('study', runId, { runId: runId, agentId: agentId });
   }
   // FINDING-4 lifecycle: an undecided study card from a PRIOR task end EXPIRES when a new task ends — that is the
   // "ignored" verdict (2× = stop proposing that belief) — and releases the slot so queued beats can't starve.
-  function expireActiveStudy() {
-    if (!activeStudy) return;
-    const a = activeStudy;
-    if (!a.node || !a.node.isConnected) { activeStudy = null; slotStudyDone(turninQueue.length > 0); return; }   // COMMS re-rendered under it
-    if (a.decided) return;   // mid-settle — its own 600ms timer is about to close it
-    activeStudy = null;
-    try { if (a.prop && typeof StudyStore !== 'undefined' && StudyStore.ignore) StudyStore.ignore(a.prop); } catch (_) {}
-    slotStudyDone(turninQueue.length > 0);
-    vanish(a.node, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
-  }
   // render ONE study proposal as a gold-inset turn-in card (Keep / Edit / Discard). Mirrors renderTurninBatch's
   // family but routes consent to StudyStore (the dossier write is client-side; the server batch is consumed via
   // /api/study/resolve inside StudyStore). Returns true iff the card actually rendered.
@@ -3175,7 +3351,7 @@ const Chat = (() => {
       if (!target) return false;
     }
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
-    if (typeof StudyStore.markShown === 'function') StudyStore.markShown();   // spend one session-cap slot
+    if (typeof StudyStore.markShown === 'function') StudyStore.markShown(prop, agentId);   // spend one session-cap slot + record the shown recommendation
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('study');
     const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === prop.dim) || {}).label || prop.dim) : prop.dim;
     const verb = prop.kind === 'retire' ? 'thinks one of your beliefs no longer holds' : 'learned something about your ' + String(dimName).toLowerCase();
@@ -3197,24 +3373,21 @@ const Chat = (() => {
     if (prop.evidence) why.push('from “' + prop.evidence + '”');
     if (why.length) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
-    const card = { node: r.d, prop: prop, decided: false };
-    activeStudy = card;
-    slotStudyShown();
-    function done() {
-      if (activeStudy === card) activeStudy = null;
-      slotStudyDone(turninQueue.length > 0);
-      // hand the moment to a memory deck that queued behind this card (memory wins; no study chains here —
-      // at most ONE study proposal per task end, the next deferred one waits for the next run end).
-      vanish(r.d, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
-    }
+    const card = beatCards && beatCards.claim({
+      kind: 'study', runId: runId, node: r.d, data: prop,
+      handoff: () => turninQueue.length > 0 ? 'memory' : null,
+      onExpire: () => { if (typeof StudyStore.ignore === 'function') StudyStore.ignore(prop); },
+      onGone: () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); }
+    });
+    if (!card) { if (r.d && r.d.parentNode) r.d.remove(); return false; }
     function settle(label, isDeny) {
-      card.decided = true; btns.remove();
+      btns.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
       item.appendChild(tag);
-      setTimeout(done, 600);
+      card.finish({ delay: 600 });
     }
     function commit(verdict, editedText) {
-      if (card.decided) return;
+      if (!card.decide()) return;
       if (verdict === 'keep') {
         const ok = StudyStore.accept(prop, editedText, agentId);
         if (!ok) { settle('✕ couldn’t apply — it changed', true); return; }   // honest: never flash "✓ retired" on a failed write
@@ -3232,7 +3405,7 @@ const Chat = (() => {
       mk('Discard', 'deny', () => commit('discard'));
     }
     function enterEdit() {
-      if (card.decided) return;
+      if (card.isDecided()) return;
       const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'turnin-edit'; inp.value = prop.text;
       item.replaceChild(inp, text); inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
       const commitEdit = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } text.textContent = v; item.replaceChild(text, inp); commit('keep', v); };
@@ -3251,8 +3424,8 @@ const Chat = (() => {
   function flushStudyPending() {
     if (typeof StudyStore === 'undefined' || studyBusy() || slotCanStudy() !== 'free' || studyBlocked()) return;
     if (!StudyStore.canShow || !StudyStore.canShow()) return;
-    if (tastePending.length) { const t = tastePending.shift(); if (t && studyCard(t, 'agent', null)) return; }
-    if (studyPending.length) { const next = studyPending.shift(); if (next) offerStudy(next.runId, next.agentId); }
+    const taste = beatCards && beatCards.shift('taste'); if (taste && studyCard(taste, 'agent', null)) return;
+    const next = beatCards && beatCards.shift('study'); if (next) offerStudy(next.runId, next.agentId);
   }
   // fetch + offer ONE live study proposal for a run, obeying the one-beat arbiter + stand-down guards + session
   // cap. Any blocked moment QUEUES (single path, FIFO, deduped) — deferred, never starved, never stacked.
@@ -3260,7 +3433,9 @@ const Chat = (() => {
     if (typeof StudyStore === 'undefined') return;
     if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked()) { queueStudy(runId, agentId); return; }
     if (!StudyStore.canShow || !StudyStore.canShow()) return;                    // session cap spent (per-session, not deferrable)
+    const lifecycle = beatCards, lifecycleGeneration = lifecycle && lifecycle.generation();
     const proposals = await StudyStore.fetchProposals(runId, agentId);
+    if (!lifecycle || beatCards !== lifecycle || lifecycle.generation() !== lifecycleGeneration) return;
     const prop = StudyStore.nextLive(proposals);   // drops resolved/declined/ignored + unmatchable retires
     if (!prop) return;
     // re-check the moment after the async fetch — reflection's memory.proposed may have claimed it meanwhile.
@@ -3276,13 +3451,12 @@ const Chat = (() => {
       const runId = p.runId || p.id;
       // a new task ended: the PREVIOUS task's undecided study card expires as an "ignore" (finding-4 lifecycle),
       // then one deferred beat may take the freed moment (anti-starve). Short delay = after the reply renders.
-      setTimeout(() => { expireActiveStudy(); flushStudyPending(); }, 900);
+      if (beatCards) beatCards.scheduleExpire('study', 900);
+      setTimeout(flushStudyPending, 900);
       // THIS run's own study offer arms much later (STUDY_ARM_MS): reflection's memory.proposed is a whole LLM
       // round-trip away, and MEMORY WINS the moment — by then the beat-slot knows whether reflection claimed it.
       setTimeout(() => {
-        if (!runId || studyRunsSeen.has(runId)) return;            // fetch a run's study proposals at most once
-        studyRunsSeen.add(runId);
-        if (studyRunsSeen.size > 200) studyRunsSeen.delete(studyRunsSeen.values().next().value);
+        if (!runId || !beatCards || !beatCards.once('study', runId)) return;
         offerStudy(runId, p.agentId || 'agent');
       }, STUDY_ARM_MS);
     });
@@ -3302,19 +3476,26 @@ const Chat = (() => {
     if (typeof studyBlocked === 'function') return studyBlocked();
     return isBusy() || interview;
   }
-  async function offerArc() {
+  async function offerArc(runId) {
     if (typeof GoalStore === 'undefined' || typeof Dialogue === 'undefined') return;
     if (!GoalStore.willOfferDecomposition || !GoalStore.willOfferDecomposition()) return;
     if (slotCanArc() !== 'free' || arcBlocked()) return;   // the LOWEST priority: a taken/blocked moment just drops (re-offers next run end)
     if (GoalStore.isFiring && GoalStore.isFiring()) return;
+    const lifecycle = beatCards, lifecycleGeneration = lifecycle && lifecycle.generation();
     GoalStore.setFiring && GoalStore.setFiring(true);
     try {
       const res = await GoalStore.proposeDecomposition();   // the aux model call (reason-only) + parse
+      if (!lifecycle || beatCards !== lifecycle || lifecycle.generation() !== lifecycleGeneration) return;
       if (!res || !res.belief || !Array.isArray(res.texts) || res.texts.length < 3) return;   // no usable path — stay un-offered so a later belief change retries
       // re-check the moment after the async model round-trip — memory/study may have claimed it meanwhile.
       if (slotCanArc() !== 'free' || arcBlocked()) return;
       clearNudge();                 // claim the one post-run beat, retiring any gentle nudge
-      slotArcShown();
+      const arcBeat = beatCards && beatCards.claim({
+        kind: 'arc', runId: runId,
+        handoff: () => turninQueue.length > 0 ? 'memory' : null,
+        onGone: () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); }
+      });
+      if (!arcBeat) return;
       let path = res.texts.slice();
       try {
         Dialogue.open({ name: (name || 'AGENT') });
@@ -3348,9 +3529,9 @@ const Chat = (() => {
         // release the moment — and if a memory deck QUEUED behind this panel (a late memory.proposed during a
         // minutes-long confirm), HAND it the slot and render it now (mirrors studyCard's done()): the consent deck
         // must never sit invisible while its pendingMemory claim freezes the study/arc lanes.
-        slotArcDone(turninQueue.length > 0);
+        arcBeat.decide();
+        arcBeat.finish();
         try { if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close(); } catch (_) {}
-        if (turninQueue.length && !activeTurnin) showNextTurnin();
       }
     } catch (_) {
     } finally {
@@ -3369,7 +3550,7 @@ const Chat = (() => {
       setTimeout(() => {
         if (runId && arcRunsSeen.has(runId)) return;
         if (runId) { arcRunsSeen.add(runId); if (arcRunsSeen.size > 200) arcRunsSeen.delete(arcRunsSeen.values().next().value); }
-        offerArc();
+        offerArc(runId);
       }, ARC_ARM_MS);
     });
   }
@@ -3383,23 +3564,13 @@ const Chat = (() => {
      the existing AutonomyStore/permgrants plumbing); Not-yet declines (stop offering that rung this level band);
      leaving it undecided tallies an ignore (2× in a band = stop). One trust offer per session (TrustStore cap). */
   const TRUST_ARM_MS = 16000;   // later than ARC_ARM_MS (14000): the trust offer yields the moment to memory, study AND the arc
-  function trustBusy() { return !!(activeTrust && activeTrust.node && activeTrust.node.isConnected); }
+  function trustBusy() { return !!(beatCards && beatCards.busy('trust')); }
   // an undecided trust card from a PRIOR task end EXPIRES when a new task ends — that's the "ignored" verdict
   // (2× in a band = stop) — and releases the slot so queued beats can't starve (mirrors expireActiveStudy).
-  function expireActiveTrust() {
-    if (!activeTrust) return;
-    const a = activeTrust;
-    if (!a.node || !a.node.isConnected) { activeTrust = null; slotTrustDone(turninQueue.length > 0); return; }   // COMMS re-rendered under it
-    if (a.decided) return;   // mid-settle — its own timer is about to close it
-    activeTrust = null;
-    try { if (a.offer && typeof TrustStore !== 'undefined' && TrustStore.ignore) TrustStore.ignore(a.offer); } catch (_) {}
-    slotTrustDone(turninQueue.length > 0);
-    vanish(a.node, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
-  }
   // render ONE trust offer as a gold-inset beat card (Accept / Not yet). Mirrors studyCard's family + lifecycle
   // discipline exactly (the finally-hands-off-to-queued-memory pattern both prior review rounds hit). textContent
   // only for the dynamic copy. Returns true iff the card actually rendered.
-  function trustCard(offer) {
+  function trustCard(offer, runId) {
     if (!log || !offer || typeof TrustStore === 'undefined') return false;
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
     if (typeof TrustStore.markShown === 'function') TrustStore.markShown();   // spend the one session-cap slot
@@ -3424,37 +3595,36 @@ const Chat = (() => {
     why.push(offer.kind === 'grant' ? 'writes stay jailed + reversible' : 'raises the dial to ' + String(offer.to).toUpperCase());
     { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
-    const card = { node: r.d, offer: offer, decided: false };
-    activeTrust = card;
-    slotTrustShown();
-    function done() {
-      if (activeTrust === card) activeTrust = null;
-      slotTrustDone(turninQueue.length > 0);
-      // hand the moment to a memory deck that queued behind this card (mirrors studyCard's done()).
-      vanish(r.d, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
-    }
+    const card = beatCards && beatCards.claim({
+      kind: 'trust', runId: runId, node: r.d, data: offer,
+      handoff: () => turninQueue.length > 0 ? 'memory' : null,
+      onExpire: () => { if (typeof TrustStore.ignore === 'function') TrustStore.ignore(offer); },
+      onGone: () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); }
+    });
+    if (!card) { if (r.d && r.d.parentNode) r.d.remove(); return false; }
     function settle(label, isDeny) {
-      card.decided = true; btns.remove();
+      if (!card.isCurrent()) return;
+      btns.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
       item.appendChild(tag);
-      setTimeout(done, 600);
+      card.finish({ delay: 600 });
     }
     function commit(verdict) {
-      if (card.decided) return;
+      if (!card.decide()) return;
       if (verdict === 'accept') {
         // ASYNC-SAFE ACCEPT (review fix 2): a grant accept resolves against the server — disable the buttons while
         // pending (no double-tap, no decline-during-apply) and mark the card decided NOW (the user answered; an
         // expiry sweep must not tally an "ignore" under an in-flight accept). Settle only on the VERIFIED result.
-        card.decided = true;
         btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
         Promise.resolve(TrustStore.accept(offer)).then(ok => {
+          if (!card.isCurrent()) return;
           if (!ok) { settle('✕ couldn’t apply', true); return; }   // honest: never flash "✓ granted" on a failed/unverified apply
           settle(offer.kind === 'grant' ? '✓ granted' : '✓ ' + String(offer.to).toLowerCase(), false);
           if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
           if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(offer.kind === 'grant' ? '◈ earned — it may write files on its own now (revoke any time in Settings)' : '◈ earned — autonomy raised to ' + String(offer.to).toUpperCase() + ' (adjust any time in Settings)', 'gold');
           // if the Settings AUTONOMY panel is open, repaint its EARNED badge live (fail-open no-op otherwise).
           if (typeof StationUI !== 'undefined' && StationUI.repaintAutonomy) { try { StationUI.repaintAutonomy(); } catch (_) {} }
-        }).catch(() => { settle('✕ couldn’t apply', true); });
+        }).catch(() => { if (card.isCurrent()) settle('✕ couldn’t apply', true); });
         return;
       }
       TrustStore.decline(offer); settle('✕ not yet', true);
@@ -3468,13 +3638,13 @@ const Chat = (() => {
   // fetch + offer ONE live trust offer for a run, obeying the one-beat arbiter + stand-down guards + session cap.
   // The LOWEST priority: a taken/blocked moment just DROPS (it re-offers at the next task end — a rung offer is
   // rare by construction, so it need not queue like study/taste; anti-nag).
-  function offerTrust() {
+  function offerTrust(runId) {
     if (typeof TrustStore === 'undefined') return;
     if (trustBusy() || slotCanTrust() !== 'free' || studyBlocked()) return;
     if (!TrustStore.canShow || !TrustStore.canShow()) return;        // session cap spent
     const offer = TrustStore.currentOffer ? TrustStore.currentOffer() : null;
     if (!offer) return;
-    trustCard(offer);
+    trustCard(offer, runId);
   }
   function wireTrust() {
     if (trustWired || typeof U === 'undefined' || !U.bus) return;
@@ -3484,13 +3654,12 @@ const Chat = (() => {
       if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never trust-offers)
       const runId = p.runId || p.id;
       // a new task ended: the PREVIOUS task's undecided trust card expires as an "ignore", freeing the slot.
-      setTimeout(() => { expireActiveTrust(); }, 900);
+      if (beatCards) beatCards.scheduleExpire('trust', 900);
       // THIS run's own offer arms LAST (TRUST_ARM_MS): memory turn-in + study + the arc all claim the moment first;
       // only a wholly free slot at this point lets the offer open (slotCanTrust gate inside offerTrust).
       setTimeout(() => {
-        if (runId && trustRunsSeen.has(runId)) return;
-        if (runId) { trustRunsSeen.add(runId); if (trustRunsSeen.size > 200) trustRunsSeen.delete(trustRunsSeen.values().next().value); }
-        offerTrust();
+        if (!runId || !beatCards || !beatCards.once('trust', runId)) return;
+        offerTrust(runId);
       }, TRUST_ARM_MS);
     });
   }
@@ -3505,26 +3674,14 @@ const Chat = (() => {
      (slotCanThread), obeying the SAME stand-down guards (studyBlocked). Blocked moments QUEUE (FIFO, deduped) —
      deferred, never starved, never stacked. Leaving a card undecided tallies an ignore (2× = stop offering). */
   const THREAD_ARM_MS = 18000;   // later than TRUST_ARM_MS (16000): the thread turn-in yields the moment to every other beat
-  const threadPending = [];      // {runId, agentId} thread offers deferred behind a busy moment — FIFO, retried next run end
-  function threadBusy() { return !!(activeThreadCard && activeThreadCard.node && activeThreadCard.node.isConnected); }
+  function threadBusy() { return !!(beatCards && beatCards.busy('thread')); }
   // defer a thread offer for a later moment — SINGLE queue path, FIFO, deduped by runId (mirrors queueStudy).
   function queueThread(runId, agentId) {
-    if (!runId) return;
-    for (const q of threadPending) if (q.runId === runId) return;
-    threadPending.push({ runId: runId, agentId: agentId });
+    if (!runId || !beatCards) return;
+    beatCards.enqueue('thread', runId, { runId: runId, agentId: agentId });
   }
   // an undecided thread card from a PRIOR task end EXPIRES when a new task ends — the "ignored" verdict
   // (2× = stop offering that idea) — and releases the slot so queued beats can't starve (mirrors expireActiveStudy).
-  function expireActiveThread() {
-    if (!activeThreadCard) return;
-    const a = activeThreadCard;
-    if (!a.node || !a.node.isConnected) { activeThreadCard = null; slotThreadDone(turninQueue.length > 0); return; }   // COMMS re-rendered under it
-    if (a.decided) return;   // mid-settle — its own timer is about to close it
-    activeThreadCard = null;
-    try { if (a.prop && typeof ThreadStore !== 'undefined' && ThreadStore.ignore) ThreadStore.ignore(a.prop); } catch (_) {}
-    slotThreadDone(turninQueue.length > 0);
-    vanish(a.node, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
-  }
   // render ONE mined thread candidate as a gold-inset turn-in card (Keep / Edit / Discard). Mirrors studyCard's
   // family + lifecycle discipline exactly; consent routes to ThreadStore → POST /api/threads/turnin (awaited —
   // the card only claims what the ledger verified: truthful telemetry). Returns true iff the card rendered.
@@ -3545,41 +3702,41 @@ const Chat = (() => {
     // provenance line: the VERBATIM quote the mine grounded this idea in (the evidence, never a paraphrase).
     if (prop.spec) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ you said “' + prop.spec + '” · kept threads feed the night shift'; item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
-    const card = { node: r.d, prop: prop, decided: false };
-    activeThreadCard = card;
-    slotThreadShown();
-    function done() {
-      if (activeThreadCard === card) activeThreadCard = null;
-      slotThreadDone(turninQueue.length > 0);
-      // hand the moment to a memory deck that queued behind this card (mirrors studyCard's done()).
-      vanish(r.d, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
-    }
+    const card = beatCards && beatCards.claim({
+      kind: 'thread', runId: batchRunId, node: r.d, data: prop,
+      handoff: () => turninQueue.length > 0 ? 'memory' : null,
+      onExpire: () => { if (typeof ThreadStore.ignore === 'function') ThreadStore.ignore(prop); },
+      onGone: () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); }
+    });
+    if (!card) { if (r.d && r.d.parentNode) r.d.remove(); return false; }
     function settle(label, isDeny) {
-      card.decided = true; btns.remove();
+      if (!card.isCurrent()) return;
+      btns.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
       item.appendChild(tag);
-      setTimeout(done, 600);
+      card.finish({ delay: 600 });
     }
     // ASYNC-SAFE VERDICTS (the trustCard accept pattern): every verdict resolves against the server — disable the
     // buttons while pending + mark the card decided NOW (the user answered; an expiry sweep must not tally an
     // "ignore" under an in-flight verdict). Settle only on the VERIFIED result — never flash "kept" on a refusal.
     function commit(verdict, edits) {
-      if (card.decided) return;
-      card.decided = true;
+      if (!card.decide()) return;
       btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
       if (verdict === 'keep') {
         Promise.resolve(ThreadStore.keep(prop, batchRunId, agentId, edits || null)).then(res => {
+          if (!card.isCurrent()) return;
           if (!res || res.ok !== true) { settle('✕ couldn’t reach the ledger', true); return; }
           if (res.reason === 'added') settle(edits ? '✓ kept (edited) — on the ledger' : '✓ kept — on the ledger', false);
           else if (res.reason === 'duplicate') settle('✓ already on the ledger', false);
           else if (res.reason === 'declined') settle('✕ you discarded this idea before', true);   // the permanent denylist refused it — honest
           else settle('✕ the ledger refused it', true);   // 'unknown'/stale — nothing was committed
-        }).catch(() => { settle('✕ couldn’t reach the ledger', true); });
+        }).catch(() => { if (card.isCurrent()) settle('✕ couldn’t reach the ledger', true); });
         return;
       }
       Promise.resolve(ThreadStore.discard(prop, batchRunId, agentId)).then(res => {
+        if (!card.isCurrent()) return;
         settle((res && res.ok === true) ? '✕ discarded — never again' : '✕ couldn’t reach the ledger', true);
-      }).catch(() => { settle('✕ couldn’t reach the ledger', true); });
+      }).catch(() => { if (card.isCurrent()) settle('✕ couldn’t reach the ledger', true); });
     }
     function renderChoices() {
       btns.innerHTML = '';
@@ -3589,7 +3746,7 @@ const Chat = (() => {
       mk('Discard', 'deny', () => commit('discard'));
     }
     function enterEdit() {
-      if (card.decided) return;
+      if (card.isDecided()) return;
       // inline title + spec tweak, then keep (verdict 'edit' carries both to the ledger).
       const wrap = document.createElement('span'); wrap.style.display = 'grid'; wrap.style.gap = '4px'; wrap.style.minWidth = '0';
       const inpTitle = document.createElement('input'); inpTitle.type = 'text'; inpTitle.className = 'turnin-edit'; inpTitle.value = prop.title;
@@ -3617,7 +3774,7 @@ const Chat = (() => {
   function flushThreadPending() {
     if (typeof ThreadStore === 'undefined' || threadBusy() || slotCanThread() !== 'free' || studyBlocked()) return;
     if (!ThreadStore.canShow || !ThreadStore.canShow()) return;
-    if (threadPending.length) { const next = threadPending.shift(); if (next) offerThread(next.runId, next.agentId); }
+    const next = beatCards && beatCards.shift('thread'); if (next) offerThread(next.runId, next.agentId);
   }
   // fetch + offer ONE live mined thread candidate for a run, obeying the one-beat arbiter + stand-down guards +
   // session cap. Any blocked moment QUEUES (single path, FIFO, deduped) — deferred, never starved, never stacked.
@@ -3625,7 +3782,9 @@ const Chat = (() => {
     if (typeof ThreadStore === 'undefined') return;
     if (threadBusy() || slotCanThread() !== 'free' || studyBlocked()) { queueThread(runId, agentId); return; }
     if (!ThreadStore.canShow || !ThreadStore.canShow()) return;                    // session cap spent (per-session, not deferrable)
+    const lifecycle = beatCards, lifecycleGeneration = lifecycle && lifecycle.generation();
     const batch = await ThreadStore.fetchProposals(runId, agentId);
+    if (!lifecycle || beatCards !== lifecycle || lifecycle.generation() !== lifecycleGeneration) return;
     const prop = ThreadStore.nextLive(batch.proposals);   // drops resolved/ignored candidates
     if (!prop) return;
     // re-check the moment after the async fetch — a higher-priority beat may have claimed it meanwhile.
@@ -3641,13 +3800,12 @@ const Chat = (() => {
       const runId = p.runId || p.id;
       // a new task ended: the PREVIOUS task's undecided thread card expires as an "ignore", then one deferred
       // offer may take the freed moment (anti-starve). Short delay = after the reply renders.
-      setTimeout(() => { expireActiveThread(); flushThreadPending(); }, 900);
+      if (beatCards) beatCards.scheduleExpire('thread', 900);
+      setTimeout(flushThreadPending, 900);
       // THIS run's own offer arms LAST (THREAD_ARM_MS): memory turn-in, study, arc and trust all claim the moment
       // first — the mine itself is an aux LLM round-trip away, so by now the stash is populated if it fired.
       setTimeout(() => {
-        if (!runId || threadRunsSeen.has(runId)) return;           // fetch a run's thread proposals at most once
-        threadRunsSeen.add(runId);
-        if (threadRunsSeen.size > 200) threadRunsSeen.delete(threadRunsSeen.values().next().value);
+        if (!runId || !beatCards || !beatCards.once('thread', runId)) return;
         offerThread(runId, p.agentId || 'agent');
       }, THREAD_ARM_MS);
     });
@@ -3663,7 +3821,7 @@ const Chat = (() => {
     if (!prop) return;
     // ride the one-beat discipline: if the moment is taken/blocked, queue it (FIFO; drained at the next task end).
     setTimeout(() => {
-      if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked() || !StudyStore.canShow()) { tastePending.push(prop); return; }
+      if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked() || !StudyStore.canShow()) { if (beatCards) beatCards.enqueue('taste', null, prop); return; }
       studyCard(prop, agentId || 'agent', runId);
     }, 300);
   }
@@ -3682,7 +3840,9 @@ const Chat = (() => {
     if (!activeNudge) return;
     const a = activeNudge; activeNudge = null;
     if (a.choiceRow) activeChoiceRows.delete(a.choiceRow);
-    vanish(a.choiceRow); vanish(a.row);
+    vanish(a.choiceRow);
+    if (a.beat && a.beat.isCurrent()) { a.beat.decide(); a.beat.finish(); }
+    else vanish(a.row);
   }
   function curiosityNudge(dim) {
     if (!log) return;
@@ -3693,7 +3853,8 @@ const Chat = (() => {
     autoscroll();
     const choiceRow = choices([{ label: 'sure — ask me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }], item => {
       const a = activeNudge; activeNudge = null;   // answered → release the post-run beat slot (the choice row removes itself)
-      if (a) vanish(a.row);   // decided beats LEAVE: the prompt goes with its chips, never lingers over what follows
+      if (a && a.beat && a.beat.isCurrent()) { a.beat.decide(); a.beat.finish(); }
+      else if (a) vanish(a.row);   // decided beats LEAVE: the prompt goes with its chips, never lingers over what follows
       if (item.value === 'yes' && typeof Intake !== 'undefined' && typeof Dossier !== 'undefined') {
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
@@ -3708,7 +3869,10 @@ const Chat = (() => {
         CuriosityStore.markDismissed(dim);   // waved off → never raise this dimension again
       }
     });
-    activeNudge = { row: r.d, choiceRow: choiceRow, dim: dim };   // track both halves so a turn-in can retire the whole nudge
+    const beat = beatCards && beatCards.claim({ kind: 'nudge', node: r.d, data: { dim: dim } });
+    if (!beat) { if (choiceRow) { activeChoiceRows.delete(choiceRow); choiceRow.remove(); } vanish(r.d); return false; }
+    activeNudge = { row: r.d, choiceRow: choiceRow, dim: dim, beat: beat };   // track both halves so a turn-in can retire the whole nudge
+    return true;
   }
 
   // V3 §7 HUNT MODE — the session-opener probe chip. Tapping it IS the consent, so it goes straight into
@@ -3738,10 +3902,13 @@ const Chat = (() => {
     autoscroll();
     const choiceRow = choices(options || [], item => {
       const a = activeNudge; activeNudge = null;
-      if (a) vanish(a.row);   // decided beats LEAVE (same law as the curiosity nudge — no stacked residue)
+      if (a && a.beat && a.beat.isCurrent()) { a.beat.decide(); a.beat.finish(); }
+      else if (a) vanish(a.row);   // decided beats LEAVE (same law as the curiosity nudge — no stacked residue)
       try { if (onPick) onPick(item); } catch (_) {}
     });
-    activeNudge = { row: r.d, choiceRow: choiceRow, dim: null };   // share the curiosity-nudge lifecycle so a turn-in's clearNudge() retires a suggestion beat too (keeps "one beat at a time")
+    const beat = beatCards && beatCards.claim({ kind: 'nudge', node: r.d, data: { text: text } });
+    if (!beat) { if (choiceRow) { activeChoiceRows.delete(choiceRow); choiceRow.remove(); } vanish(r.d); return null; }
+    activeNudge = { row: r.d, choiceRow: choiceRow, dim: null, beat: beat };   // share the curiosity-nudge lifecycle so a turn-in's clearNudge() retires a suggestion beat too (keeps "one beat at a time")
     return { row: r.d, choiceRow: choiceRow };
   }
 
@@ -3897,7 +4064,12 @@ const Chat = (() => {
     curiosityWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
-      if ((p.agentId || 'agent') !== 'agent') return;   // only the HERO's runs drive the hero-dossier beat — a summoned worker's run must not fire a curiosity/suggestion/seed nudge
+      // S1: the hero gate used to sit HERE, which meant a specialist's clean run never even ARMED the rate
+      // fallback — the second half of the rate-starve. It now sits just below the rate attempt (search
+      // `isHeroRun`): every gentle nudge (suggestion / seed / curiosity / recruitment) stays hero-only exactly
+      // as before, but RATE THE WORK — which is about the run itself, not an unsolicited ask — reaches the
+      // agent that actually did the work.
+      const isHeroRun = (p.agentId || 'agent') === 'agent';
       const runId = p.runId || p.id;
       setTimeout(() => {
         // G2.4: arm the self-retrying rate fallback FIRST, before any stand-down guard — a focused
@@ -3913,7 +4085,7 @@ const Chat = (() => {
         // dogpile). Standing down can no longer STARVE the rating: the armRateFallback armed above (plus
         // the wireProposals empty/off-stream hooks and the finishBatch hand-off) keeps re-attempting the
         // standalone beat until it fires or the run is permanently ineligible.
-        if (runId && proposalRunsSeen.has(runId)) return;
+        if (runId && beatCards && beatCards.hasSeen('memory', runId)) return;
         // (scoped to REAL turn-in decks: the away-digest reuses .turnin-item for styling, but a
         // session-open digest sitting in the feed must not suppress a fresh run's rate beat — G2.4)
         if (log && log.querySelector('.cmsg.turnin:not(.away-digest) .turnin-item')) return;
@@ -3921,6 +4093,9 @@ const Chat = (() => {
         // it takes the one post-run slot (the same attempt the armed fallback retries — real-work-gated, so
         // a pure chat reply is never rate-prompted; 'blocked'/'never' fall through to the gentler beats).
         if (runId && maybeStandaloneRate(p.agentId || 'agent', runId) === 'fired') return;
+        // S1: from here down is the GENTLE-NUDGE slot, and it stays HERO-ONLY — a summoned worker's clean run
+        // must never fire a curiosity / suggestion / seed / recruitment ask against the hero's dossier.
+        if (!isHeroRun) return;
         // FIRE ON SALIENCE, not after every run: a basic conversational turn (not a task) earns NO proactive beat —
         // the station only reaches for a suggestion / seed / get-to-know-you question after it did real WORK. This
         // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
@@ -4001,7 +4176,10 @@ const Chat = (() => {
       if (m && m.sys) { if ((m.content || '').trim()) toolLine(m.content, !!m.error); continue; }
       if (m.role !== 'assistant') continue;   // only dialogue turns render (a stray system marker never shows as an agent reply)
       if (!(m.content || '').trim()) { if (m.stopped) lastReal = m; continue; }   // zero-token stop: durable recovery truth, never a blank speech row
-      const r = row('agent', { stamp: stamp });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
+      // a turn produced by a WORK LINE stage carries its own agentId — replay names that agent, not the focused
+      // one, or a reload would silently re-attribute two other agents' work to whoever owns the stream now.
+      const spoke = (m && m.agentId && typeof App !== 'undefined' && App.agentName) ? App.agentName(m.agentId) : null;
+      const r = row('agent', { stamp: stamp, who: spoke });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
       lastReal = m;
@@ -4048,11 +4226,13 @@ const Chat = (() => {
   // caret; when an action happens (tool call/result, deliverable, approval) the caller breaks the current
   // paragraph so the action row lands BELOW it, and the next tokens open a fresh paragraph under the action —
   // so a turn reads top-to-bottom as "said this → did that → said this", classic-harness style.
-  function streamingAgent() {
+  // whoName (optional) = the speaker to stamp on every row this controller opens. Passed by a WORK LINE stage so
+  // the transcript names the agent that actually produced the text; omitted everywhere else = the focused agent.
+  function streamingAgent(whoName) {
     let seg = null, caret = null, raw = '';   // seg: the currently-open agent row; raw: its accumulated prose (so URLs can be linkified as they complete)
     function open() {
       endToolRail();   // a fresh prose paragraph opening below a rail closes it, so the next tool call starts a NEW rail under this prose (keeps chronological "said → did → said → did")
-      seg = row('agent', { stamp: true }); raw = '';
+      seg = row('agent', { stamp: true, who: whoName || null }); raw = '';
       caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
       seg.d.appendChild(caret);   // caret is a sibling of .body, so re-rendering .body's content never disturbs it
     }
@@ -4140,6 +4320,16 @@ const Chat = (() => {
     const arr = queued.get(id) || []; arr.push(text); queued.set(id, arr);
     renderQueued();
     if (typeof SFX !== 'undefined' && SFX.type) SFX.type();
+  }
+  function sendOrQueue(text) {
+    const value = String(text == null ? '' : text).trim();
+    if (!value || !activeWs) return { ok: false, state: 'empty' };
+    if (isBusy()) {
+      enqueue(value);
+      return { ok: true, state: 'queued', workstreamId: activeWs.id };
+    }
+    send(value);
+    return { ok: true, state: 'started', workstreamId: activeWs.id };
   }
   function renderQueued() {
     const strip = el('chat-queued'); if (!strip) return;
@@ -4234,24 +4424,29 @@ const Chat = (() => {
     // verdict to { label, run } — capdenied -> REFIT (with the named capability), auth/no-key -> the real key
     // field or "reconnect ChatGPT", model-not-found -> models. One source of truth; no local per-action ladder.
     const btn = (typeof Friendly !== 'undefined' && Friendly.actionButton) ? Friendly.actionButton(verdict) : null;
-    if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(); return; }
-    if (verdict.retryable) { offerTryAgain(); diagAffordance(); return; }
+    if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(verdict); return; }
+    if (verdict.retryable) { offerTryAgain(); diagAffordance(verdict); return; }
     // non-retryable with no destination: leave no primary chip rather than inviting a doomed re-run — but a stuck
     // user still gets the quiet bug-report affordance so they can grab a diagnostic readout in place.
-    diagAffordance();
+    diagAffordance(verdict);
   }
   // T3.9 — a SECONDARY, quiet "copy diagnostics for a bug report" affordance dropped under a failed turn, alongside
   // whatever recovery chip offerRetry rendered. Kept low-key (a subdued pill) so it never competes with the primary
   // action; one tap copies the sidecar-assembled, SECRET-FREE report (Diag.copy) so a user in a failure state can
   // email a useful report without leaving the moment. Appends its OWN row so picking the primary chip doesn't wipe it.
-  function diagAffordance() {
+  // `verdict` (optional) rides into Diag.copy as opts.context so the PAGE-SIDE fallback report — the one that
+  // renders when the sidecar itself can't be read — carries the failure text, its classified kind, and the
+  // measured engine-liveness verdict. Without it a dead-engine report would say "something failed" and nothing
+  // more, which is the same dead end as the screenshot-only bug reports this whole change exists to end.
+  function diagAffordance(verdict) {
     if (!log || typeof Diag === 'undefined' || !Diag.copy) return;
+    const context = verdict ? { error: verdict.raw, kind: verdict.kind, engineAlive: verdict.engineAlive } : null;
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
     const b = document.createElement('button'); b.className = 'choice quiet'; b.type = 'button';
     b.textContent = '⧉ copy diagnostics for a bug report';   // ⧉ = the house copy glyph (not the 📋 emoji)
     b.addEventListener('click', () => {
       b.disabled = true;
-      Diag.copy({ notify: false }).then(ok => {
+      Diag.copy({ notify: false, context: context }).then(ok => {
         b.textContent = ok ? '✓ diagnostics copied — paste into your report' : 'copy failed — try again';
         if (!ok) { b.disabled = false; return; }
         if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
@@ -5003,7 +5198,7 @@ const Chat = (() => {
     const raw = String(args || '').trim().toLowerCase();
     if (!raw || raw === 'status') {
       return localLine('Voice: replies ' + (Voice.isOn && Voice.isOn() ? 'on' : 'off')
-        + ', hands-free ' + (Voice.inVoiceMode && Voice.inVoiceMode() ? 'on' : 'off')
+        + ', Local Live ' + (typeof VoiceLive !== 'undefined' && VoiceLive.isActive && VoiceLive.isActive() ? 'on' : 'off')
         + ', listening support ' + (Voice.canListen && Voice.canListen() ? 'yes' : 'no')
         + ', speech support ' + (Voice.canSpeak && Voice.canSpeak() ? 'yes' : 'no') + '.');
     }
@@ -5012,15 +5207,23 @@ const Chat = (() => {
       return localLine('Voice replies are on.');
     }
     if (/^(off|false|no|mute)$/.test(raw)) {
+      if (typeof VoiceLive !== 'undefined' && VoiceLive.end) VoiceLive.end();
       if (Voice.stopConvo) Voice.stopConvo();
       if (Voice.setSpeakReplies) Voice.setSpeakReplies(false);
       return localLine('Voice replies are off.');
     }
     if (/^(handsfree|hands-free|convo|conversation|live)$/.test(raw)) {
-      if (Voice.toggleVoiceMode) Voice.toggleVoiceMode();
-      return localLine('Hands-free voice mode toggled.');
+      if (typeof VoiceLive === 'undefined' || !VoiceLive.start || !VoiceLive.end) {
+        return localLine('Local Live voice is not available in this surface.');
+      }
+      if (VoiceLive.isActive && VoiceLive.isActive()) {
+        VoiceLive.end();
+        return localLine('Local Live voice stopped.');
+      }
+      VoiceLive.start(false);
+      return localLine('Local Live voice is opening.');
     }
-    localLine('Usage: /voice [on|off|status|handsfree]');
+    localLine('Usage: /voice [on|off|status|live]');
   }
   // /tools and /usage are dispatch:'server' — the sidecar owns CAP_REGISTRY and the spend ledger, so it answers
   // them (see sidecar/slash-actions.js). The browser versions were removed rather than kept as a fallback: a
@@ -5029,7 +5232,10 @@ const Chat = (() => {
     try {
       const key = slashCatalogKey();
       const r = await fetch('/api/skills?placed=' + encodeURIComponent(key), { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // ⛔ AN ERRORED ENDPOINT IS NOT AN EMPTY ONE. A non-2xx used to collapse to `[]` and print the confirmed
+      // "No skill recipes are installed." — a station that could not be asked, reported as a station with none.
+      if (!r.ok) return localLine('Could not load skills from the sidecar (HTTP ' + r.status + ') — this is not a claim that you have none.');
+      const j = await r.json();
       const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
       if (!skills.length) return localLine('No skill recipes are installed.');
       const active = skills.filter(s => s.enabled && s.available).map(s => s.slug);
@@ -5059,15 +5265,18 @@ const Chat = (() => {
     let skillCount = 0, activeSkills = [];
     try {
       const r = await fetch('/api/skills?placed=' + encodeURIComponent(slashCatalogKey()), { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
       const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
       skillCount = skills.length;
       activeSkills = skills.filter(s => s.enabled && s.available).map(s => s.slug);
-    } catch (_) {}
+    } catch (_) { skillCount = null; }   // null = COULD NOT ASK, never "you have zero" (see skillsCommand)
     localLine('Bundles: ' + recipes.length + ' recipe blueprint' + (recipes.length === 1 ? '' : 's')
       + (recipes.length ? ' (' + recipes.slice(0, 6).map(r => r.id).join(', ') + ')' : '')
-      + '; ' + skillCount + ' skill recipe' + (skillCount === 1 ? '' : 's')
-      + (activeSkills.length ? ', active: ' + activeSkills.slice(0, 6).join(', ') : '') + '.');
+      + (skillCount == null
+        ? '; skill recipes could not be read from the sidecar'
+        : '; ' + skillCount + ' skill recipe' + (skillCount === 1 ? '' : 's')
+          + (activeSkills.length ? ', active: ' + activeSkills.slice(0, 6).join(', ') : '')) + '.');
   }
   function recipeByRef(raw) {
     const q = String(raw || '').trim().toLowerCase();
@@ -5128,18 +5337,23 @@ const Chat = (() => {
         return localLine(r.ok && j ? ('Routines scheduler ' + (j.enabled ? 'enabled' : 'disabled') + '.') : 'Could not update the routines scheduler.');
       }
       const r = await fetch('/api/cron', { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // an errored read is NOT "scheduler off, 0 jobs" — that reassuring line is exactly the lie to avoid.
+      if (!r.ok) return localLine('Could not read the routines scheduler (HTTP ' + r.status + ') — its real state is unknown.');
+      const j = await r.json();
       const jobs = (j && Array.isArray(j.jobs)) ? j.jobs : [];
       const bits = jobs.slice(0, 5).map((job, i) => (i + 1) + '. ' + (job.name || job.id || 'routine') + (job.enabled === false ? ' [paused]' : ''));
-      localLine('Routines: scheduler ' + (j && j.enabled ? 'on' : 'off') + ', ' + jobs.length + ' job' + (jobs.length === 1 ? '' : 's')
-        + (bits.length ? ' - ' + bits.join(' | ') : '.') + ' Use /cron on or /cron off to arm/disarm.');
+      const schedulerLine = j && j.halted ? 'stopped (E-STOP)' : (j && j.enabled ? 'on' : 'off');
+      localLine('Routines: scheduler ' + schedulerLine + ', ' + jobs.length + ' job' + (jobs.length === 1 ? '' : 's')
+        + (bits.length ? ' - ' + bits.join(' | ') : '.') + (j && j.halted ? ' Use /cron on to resume.' : ' Use /cron on or /cron off to arm/disarm.'));
     } catch (_) { localLine('Could not load routines from the sidecar.'); }
   }
   async function reloadMcpCommand(args) {
     const target = String(args || '').trim();
     try {
       const r = await fetch('/api/connectors', { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // an errored read is NOT "no connectors are configured" — say which one it is.
+      if (!r.ok) return localLine('Could not read your MCP connectors (HTTP ' + r.status + ') — this is not a claim that you have none.');
+      const j = await r.json();
       let conns = (j && Array.isArray(j.connectors)) ? j.connectors : [];
       if (target) conns = conns.filter(c => String(c.id || '').toLowerCase() === target.toLowerCase());
       if (!conns.length) return localLine(target ? ('No MCP connector matched "' + target + '".') : 'No MCP connectors are configured.');
@@ -5530,6 +5744,95 @@ const Chat = (() => {
     try { item.run(args); } catch (_) {}
   }
 
+  /* ═══════════════ WORK LINES IN COMMS (agentic graphs) ═══════════════════════════════════════════════
+     A directive typed here lands at ONE dock. If the Commander drew belts PAST that dock, those stages are
+     the work — and until this existed they were scenery on this surface while channel and cron work ran the
+     whole line. The sidecar advances its own lines because it owns those turns; a COMMS turn streams through
+     /api/run to the BROWSER, which owns it, so the browser asks the SAME router the same question
+     (/api/routing/chain) and runs the same hops with the SAME shared handoff prompt. One floor, one answer,
+     whoever started it.
+
+     Every stage renders as its OWN agent turn under its own name. That is not decoration: the line really is
+     three agents doing three pieces of work, and collapsing it to one reply would hide who wrote what. The
+     LAST stage's text is the answer (returned to the caller, which re-points voice/title at it).
+
+     Bounded exactly like the sidecar executor: LINE_MAX_HOPS, an agent never runs twice, and a stop / stream
+     switch / empty stage ends the line keeping the last good text. */
+  const LINE_MAX_HOPS = 6;   // mirrors MAX_HOPS in sidecar/routing/chain.js — these two must not drift
+
+  function lineTag(t) { return (typeof Classify !== 'undefined' && Classify.getTag) ? Classify.getTag(t) : 'general'; }
+
+  // WHERE DOES THIS DOCK'S OUTPUT GO? Asked of the router, never re-derived here — the browser holds a plan for
+  // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides.
+  async function nextStageOf(agentId, tag) {
+    try {
+      const h = {}, tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) || '';
+      if (tok) h['X-StarNet-Token'] = String(tok);
+      const r = await fetch('/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { cache: 'no-store', headers: h });
+      if (!r || !r.ok) return null;
+      const j = await r.json();
+      return (j && j.next) ? String(j.next) : null;
+    } catch (_) { return null; }   // no floor, no sidecar, no line — the single-stage reply already stands
+  }
+
+  /* Run every stage downstream of `fromAgentId`. Returns { text, agentId, hops } — text is the LINE's answer
+     (the seed text unchanged when no stage ran). Never throws: a work line is an enhancement to a reply the
+     caller already has, exactly like the sidecar's. */
+  async function runWorkLine(ws, seed) {
+    const out = { text: seed.text, agentId: seed.fromAgentId, hops: 0 };
+    if (!seed.fromAgentId || !String(seed.text || '').trim()) return out;
+    const visited = {}; visited[seed.fromAgentId] = true;
+    let cur = seed.fromAgentId;
+    for (let hop = 1; hop <= LINE_MAX_HOPS; hop++) {
+      if (seed.signal && seed.signal.aborted) return out;
+      if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
+      const nx = await nextStageOf(cur, lineTag(out.text));
+      if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
+      const sys = (typeof App !== 'undefined' && App.systemFor) ? App.systemFor(nx) : null;
+      if (!sys) return out;                                         // a dock bound to an agent this roster doesn't have
+      visited[nx] = true;
+
+      const who = (typeof App !== 'undefined' && App.agentName && App.agentName(nx)) || nx;
+      const wiHop = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
+      const hopStart = Date.now();
+      // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next
+      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
+      if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
+
+      const prompt = (typeof Pipeline !== 'undefined' && Pipeline.handoffPrompt)
+        ? Pipeline.handoffPrompt(seed.originalText, cur, out.text, hop) : out.text;
+      const hopRow = isActiveWs(ws) ? streamingAgent(who) : null;
+      if (hopRow) activeLiveRow = hopRow;
+      let hopAcc = '';
+      let res = null;
+      try {
+        res = await Harness.chat({
+          system: sys, messages: [{ role: 'user', content: prompt }], agentId: nx, isTask: true,
+          signal: seed.signal, streamId: ws.id,
+          placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(nx) : [],
+          stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],
+          onToken: d => { hopAcc += d; if (hopRow) hopRow.append(d); App.refreshUsage(); },
+          onToolCall: ev => { if (isActiveWs(ws)) { if (hopRow && hopRow.breakSeg) hopRow.breakSeg(); toolChip(ev); } }
+        });
+      } catch (e) { res = { error: e }; }
+      if (hopRow) hopRow.done();
+      const hopText = String((res && res.text) || hopAcc || '').trim();
+
+      // A STAGE THAT FAILED OR SAID NOTHING ENDS THE LINE WITH THE LAST GOOD ANSWER — the belt is never a gate.
+      if (!hopText || (res && res.error)) {
+        wiEmit('workitem.superseded', { workitemId: wiHop, agentId: nx, ts: Date.now() });
+        if (isActiveWs(ws)) toolLine('⚠ the work line stopped at ' + who + ' — showing ' + ((typeof App !== 'undefined' && App.agentName && App.agentName(cur)) || cur) + '’s answer above', true);
+        return out;
+      }
+      wiEmit('workitem.delivered', { workitemId: wiHop, finalQueueId: nx, agentId: nx, box: '', ms: Date.now() - hopStart, ts: Date.now() });
+      ws.history.push({ role: 'assistant', content: hopText, agentId: nx, ts: Date.now() });   // agentId = the ACTUAL speaker (renderHistory names it)
+      capHistory(ws);
+      out.text = hopText; out.agentId = nx; out.hops++;
+      cur = nx;
+    }
+    return out;
+  }
+
   async function send(text, opts) {
     const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
     // ATTACHMENTS: photos/files staged in the composer, snapshotted by the Enter handler into opts.attachments as
@@ -5610,7 +5913,8 @@ const Chat = (() => {
     // exists for the orchestrator to DELEGATE to — the Commander talks to the orchestrator, not to a crowd of
     // agents — so a summoned agent's replies are never voiced (and never get the short spoken-style prompt).
     const isOrchestrator = !ws.agentId || ws.agentId === 'agent';
-    const willSpeak = isOrchestrator && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    const willSpeak = isOrchestrator && liveVoiceOwns(ws)
+      && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
     // REACTIVE DESK TRIP — the honest signal. We no longer pre-commit the walk on the classifier's GUESS:
     // every turn the agent first turns to face the Commander (listen), and it only gets up and walks to its
     // workstation the instant it ACTUALLY reaches for a tool (web / files / terminal) — see walkToDesk(),
@@ -5678,7 +5982,9 @@ const Chat = (() => {
       return s;
     };
     const pushSpeech = (finalize, finalText) => {
-      if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
+      // Ownership is checked again for every chunk. A voice-commanded rebind can happen while an
+      // older run is still streaming; none of its late words may leak into the new call owner.
+      if (typeof Voice === 'undefined' || !willSpeak || !liveVoiceOwns(ws) || !Voice.speakChunk) return;
       const src = speakSafe(finalize ? (finalText || acc) : acc);
       const pending = src.slice(spokenIdx);
       if (!pending) return;
@@ -5725,9 +6031,11 @@ const Chat = (() => {
         // harness emit; this handler owns the transcript chips + desk walk + presence only.
         onToolCall: ev => { callNames[ev.callId] = ev.name; Channels.addToolCall(ws.id, { callId: ev.callId, name: ev.name, argsSummary: ev.argsSummary }); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } },
         // Re-emit the hero's tool RESULT onto U.bus so the world's per-prop capability surge fires on the REAL
-        // outcome (the station SSE tee drops tool_result; the hero's interactive stream is the only place it's
-        // seen). callId joins it to its tool_call; isError drives the success-vs-failure (green-vs-red) surge.
-        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; Channels.addToolResult(ws.id, { callId: ev.callId, name: nm, summary: ev.summary, isError: ev.isError, ms: ev.ms }); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError }); },
+        // outcome. (The station SSE tee DOES carry tool_result now, but outcome-only and without `summary` —
+        // sse.js:runTeeView — so the in-band stream stays the richest source for the page that started the run.)
+        // callId joins it to its tool_call; isError drives the success-vs-failure surge. `summary`/`ms` ride
+        // along per the frozen event shape so any consumer sees the result's own words, never a bare 'error'.
+        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; Channels.addToolResult(ws.id, { callId: ev.callId, name: nm, summary: ev.summary, isError: ev.isError, ms: ev.ms }); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError, summary: ev.summary, ms: ev.ms }); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
           // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the reference harness's model), not
@@ -5763,14 +6071,19 @@ const Chat = (() => {
         onSummon: ev => {
           const rid = Channels.runIdOf(ws.id);
           Promise.resolve((typeof App !== 'undefined' && App.summonForRequest) ? App.summonForRequest(ev) : null)
-            .then(newId => Harness.summonAck(rid, ev.requestId, newId))
+            // summonForRequest resolves { agentId, desk } — desk = where the new worker's seeded workstation
+            // landed (blank if none). A legacy plain-id resolution still acks correctly.
+            .then(r => { const o = (r && typeof r === 'object') ? r : { agentId: r || null, desk: '' }; return Harness.summonAck(rid, ev.requestId, o.agentId, o.desk); })
             .catch(() => Harness.summonAck(rid, ev.requestId, null));
         }
       });
       if (error) {
         // PLAIN-LANGUAGE: lead with the beginner-facing message, keep the raw error as a dim sub-line; persist
         // the friendly text (not the plumbing) so a switch-back / replay shows the same readable failure.
-        const v = (typeof Friendly !== 'undefined') ? Friendly.friendlyError(error) : { userMessage: error, retryable: true, action: null, raw: error };
+        // engineAlive:true is PROVEN, not assumed: `error` is IN-BAND, so the sidecar composed and streamed it —
+        // it was alive serving this request. Matters because a forwarded upstream stream failure reads as
+        // `terminated`/`premature close`, so this path used to tell healthy users to restart. (2026-07-29)
+        const v =(typeof Friendly !== 'undefined') ? Friendly.friendlyError(error, null, { engineAlive: true }) : { userMessage: error, retryable: true, action: null, raw: error };
         // A mutex race can still happen after the local preflight. The sidecar is authoritative, but this is an
         // availability state — not an assistant turn. Undo the optimistic user row, restore its directive to the
         // composer, and let the existing run remain the only durable conversation activity.
@@ -5820,10 +6133,15 @@ const Chat = (() => {
         if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion) {
-          if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
+          // NO ECHO OF THE HEADLINE (2026-07-27): resolvePresence already prints "■ RUN STOPPED" for every one
+          // of these reasons, so a work-log line that only says "stopped" restated the card verbatim one row
+          // below it. Emit this line only when it carries something the card can't: what to do next (step limit,
+          // budget door) or a reason the label doesn't name. Your own interrupt → the card alone tells the truth.
+          const stopLine = endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? budgetStopLine(budgetScope, budgetCapUsd)
-            : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
-            : 'stopped (' + endReason + ')'));
+            : endReason === 'cancelled' ? (interrupted.has(ws.id) ? '' : 'run cancelled')
+            : 'stopped (' + endReason + ')';
+          if (isActiveWs(ws)) { breakLive(); if (stopLine) toolLine('⏹ ' + stopLine); }
           markStoppedTurn(ws, replyText);
           // a budget stop's honest door is the BUDGET settings section, not a doomed retry (the same cap fires
           // again immediately); every other stop keeps the plain retry chip.
@@ -5848,6 +6166,17 @@ const Chat = (() => {
         if (isActiveWs(ws) && replyText && typeof Fork !== 'undefined' && Fork.parse) {
           const fk = Fork.parse(replyText);
           if (fk) { offerFork(fk); if (!voiceQuestion && fk.question) voiceQuestion = fk.question; }
+        }
+        /* THE WORK LINE. This dock has answered; if the Commander drew stages past it, run them now — still
+           INSIDE the run's try, so the stream stays busy and Stop/E-STOP reach the whole line rather than a
+           transcript that goes quiet while three more agents keep spending. Gated on a real TASK directive
+           (the belt is work-only — "hello" never rides), on a clean finish, and never on a run that ended by
+           ASKING something: a question is the turn's answer, and handing it downstream would answer it on the
+           Commander's behalf. finalReply is re-pointed at the line's last stage so voice speaks, and the
+           session titles from, the answer that actually leaves. */
+        if (isTask && !taskQuestion && !cutShort && (!endReason || endReason === 'done') && replyText.trim()) {
+          const line = await runWorkLine(ws, { fromAgentId: turnAgentId, text: replyText, originalText: text, signal: ac.signal });
+          if (line.hops) { finalReply = line.text; replyText = line.text; titleOk = !!line.text.trim(); }
         }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.
@@ -5886,18 +6215,25 @@ const Chat = (() => {
       const stopped = interrupted.has(ws.id);   // the Commander pressed Stop on THIS stream — a graceful interrupt, not a fault
       if (stopped) {
         // keep whatever already streamed, mark it stopped, and log NO error (the stop was intentional).
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
+        // No toolLine (2026-07-27): resolvePresence already prints "■ RUN STOPPED · …" — `⏹ stopped` echoed it.
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
         markStoppedTurn(ws, acc);
         if (isActiveWs(ws)) offerTryAgain();
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
       } else {
-        // A throw that is NOT a deliberate Stop: an unexpected disconnect (the reader aborted with no Stop) or a
-        // hard fetch/network error. An unexpected abort here means the connection dropped — classify it as a
-        // network fault (NOT a user cancel) so it reads "can't reach the sidecar" and still offers a retry.
-        const v = (typeof Friendly !== 'undefined')
-          ? Friendly.friendlyError(aborted ? new Error('cannot reach the STARNET sidecar — connection dropped') : e)
-          : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
+        // A throw that is NOT a deliberate Stop: an unexpected disconnect or a hard fetch/network error. Persist
+        // whatever streamed FIRST — before the await below (ordering locked by test/comms-presence.test.js).
+        // NEVER synthesize 'cannot reach the STARNET sidecar' here again (2026-07-29): it forced the "restart the
+        // app" copy onto every abort, including a dead PROVIDER stream on a healthy install. Say only what we
+        // witnessed and let Harness.pingEngine measure the rest — full rationale in harness.js + friendlyerror.js.
         persistPartial(ws, acc);
+        let engineAlive = null;
+        if (typeof Harness !== 'undefined' && Harness.pingEngine) {
+          try { engineAlive = await Harness.pingEngine(); } catch (_) { engineAlive = null; }
+        }
+        const v = (typeof Friendly !== 'undefined')
+          ? Friendly.friendlyError(aborted ? new Error('connection dropped mid-reply') : e, null, { engineAlive: engineAlive })
+          : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); resolvePresence(ws, { error: true }); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // keep a readable trace of the failure
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (a dropped connection is retryable)
@@ -5965,7 +6301,7 @@ const Chat = (() => {
       if (titleOk && (firstTurn || (typeof Workstreams !== 'undefined' && Workstreams.needsModelTitle && Workstreams.needsModelTitle(ws.id)))) maybeRetitle(ws, text, finalReply);
       // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
       // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
-      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) {
+      if (willSpeak && liveVoiceOwns(ws) && typeof Voice !== 'undefined' && Voice.endReply) {
         pushSpeech(true, finalReply);
         // VOICE-AWARE CHOICES: the choice itself is spoken as a natural question — question text only;
         // the 2-3 options are on-screen chips (reading them out was the "reads every option" glitch).
@@ -5973,7 +6309,7 @@ const Chat = (() => {
         Voice.endReply();
       }
       // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
-      if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
+      if ((!liveVoiceCall() || liveVoiceOwns(ws)) && typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
       // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).
       setTimeout(() => flushQueued(ws.id), 0);
       // GOAL LOOP: after the teardown, judge this turn against the standing goal and maybe fire the next continuation.
@@ -6071,7 +6407,7 @@ const Chat = (() => {
   function endInterview() {
     interview = null;
     clearChoices();
-    if (input) input.placeholder = 'speak to your agent… ( / for commands )';
+    if (input) input.placeholder = 'speak to your agent · / commands';   // must stay byte-identical to index.html's attribute (see PLACEHOLDER WIDTH LAW there)
     status('online');
     // a memory deck that arrived MID-interview queued behind the focused flow — drain it now that the
     // question is answered (short hold so the interview's closing line lands first, not under the deck).
@@ -6099,6 +6435,9 @@ const Chat = (() => {
   }
   function choices(items, onPick) {
     if (!log) return;
+    // in a live voice call, chips never render (see liveVoiceCall) — no pick means the producer's optional
+    // beat simply goes unanswered, exactly as if the Commander never clicked, which every caller tolerates
+    if (liveVoiceCall()) return;
     clearEmptyState();
     clearChoices();   // chips are a focused prompt, never a background layer behind the next question
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
@@ -6123,7 +6462,11 @@ const Chat = (() => {
   // streaming caret, so the newborn is SEEN assembling its first broken sentence rather than printing it.
   // Pass a string or an array of {text, cps, holdAfter} segments. onDone ALWAYS fires (try/finally) so a
   // missed timer can never leave the awakening stuck. Returns a force-finish handle.
-  function typeLine(segments, onDone) {
+  /* opts.silent — type the line WITHOUT the keystroke sound. Live voice needs this: the agent's words are
+     already being spoken aloud, so clacking a keyboard under them is a second, contradictory performance of
+     the same sentence. Default stays noisy; only a caller that owns the delivery turns it off. */
+  function typeLine(segments, onDone, opts) {
+    const silent = !!(opts && opts.silent);
     if (typeof segments === 'string') segments = [{ text: segments }];
     if (!log || !Array.isArray(segments)) { if (onDone) onDone(); return () => {}; }
     const out = streamingAgent();
@@ -6140,7 +6483,7 @@ const Chat = (() => {
       if (ci >= text.length) { si++; ci = 0; setTimeout(stepOne, seg.holdAfter != null ? seg.holdAfter : 0); return; }
       const ch = text[ci++];
       try { out.append(ch); } catch (_) { finish(); return; }
-      if (typeof SFX !== 'undefined' && SFX.type && ch !== ' ' && (ci % 2 === 0)) SFX.type();
+      if (!silent && typeof SFX !== 'undefined' && SFX.type && ch !== ' ' && (ci % 2 === 0)) SFX.type();
       const cps = seg.cps || 40;
       setTimeout(stepOne, (1000 / cps) * (0.6 + Math.random() * 0.8));
     }
@@ -6155,5 +6498,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();
