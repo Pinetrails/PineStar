@@ -328,13 +328,11 @@ const ROUTES = {
       A.eq((await driver.tabs()).length, 1, 'a _blank LINK CLICK spawns no target in headless (browser behaviour, not a driver gap)');
 
       await driver.testEval('void window.open("/second","_blank")');
-      let list = [];
-      for (let attempt = 0; attempt < 15; attempt++) {
-        await new Promise(r => setTimeout(r, 200));
-        list = await driver.tabs();
-        if (list.length >= 2) break;
-      }
+      const adopted = await driver.waitForTabCount(2, 10000);
+      const list = await driver.tabs();
+      A.eq(adopted, true, 'popup adoption reaches the driver within its bounded event wait');
       A.eq(list.length, 2, 'a popup is ADOPTED as a REAL second tab instead of being killed');
+      if (list.length < 2) throw new Error('popup adoption did not expose the second tab after the bounded event wait');
       A.eq(list[0].active, true, 'the ORIGINAL tab stays active — switching is never implicit');
       A.ok(/\/second/.test(list[1].url), 'the new tab reports its own URL (' + list[1].url + ')');
 
