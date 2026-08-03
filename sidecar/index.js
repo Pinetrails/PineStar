@@ -5921,7 +5921,14 @@ function handleLoopsControl(req, res) {
     }
     const id = String(body.id || '');
     if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    if (['pause', 'resume', 'stop'].indexOf(action) < 0) return json(400, { error: 'action must be pause, resume, stop or unhalt' });
     const now = Date.now();
+    // Cancel through the driver's HOST-AUTHORITATIVE seam before changing the requested quiet state. A raw
+    // AbortController signal only asks the provider to stop; a provider/tool that ignores it used to remain
+    // durably RUNNING, and its late settlement could overwrite PAUSED/STOPPED back to IDLE/WAITING.
+    if (action !== 'resume') {
+      try { loopDriver.abortLease(id, action === 'stop' ? 'stopped by the Commander' : 'paused by the Commander'); } catch (_) {}
+    }
     try {
       let candidate;
       if (action === 'pause') candidate = loopjobStore.pauseLoop(loopJobs, id, body.reason || 'paused by the Commander', { now: now });
@@ -5930,12 +5937,6 @@ function handleLoopsControl(req, res) {
       else return json(400, { error: 'action must be pause, resume, stop or unhalt' });
       commitLoops(candidate);
     } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
-    // stopping/pausing must also kill an iteration already in flight — otherwise the Commander clicks STOP and
-    // the run keeps spending until it finishes, which the button plainly implies it will not.
-    if (action !== 'resume') {
-      const lease = loopDriver.leases.get(id);
-      try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
-    }
     armLoops(true);
     json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: now }) });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
@@ -6015,8 +6016,7 @@ function handleLoopsRemove(req, res) {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
     if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
-    const lease = loopDriver.leases.get(id);
-    try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+    try { loopDriver.abortLease(id, 'removed by the Commander'); } catch (_) {}
     try { commitLoops(loopjobStore.removeLoop(loopJobs, id)); }
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     if (!anyLiveLoop()) disarmLoops();

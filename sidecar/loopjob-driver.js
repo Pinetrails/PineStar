@@ -514,21 +514,29 @@
     /* abortAllLeases — the E-STOP hook. Aborts every in-flight iteration; each one's rejection path settles it
        as 'cancelled', which costs neither the fail streak nor the dry streak. Returns how many were aborted.
        Must never throw: an E-STOP that fails halfway is worse than no E-STOP. */
+    function abortLease(loopId, reason) {
+      const lease = leases.get(loopId);
+      if (!lease || lease.recoveryBlocked) return false;
+      try { if (lease.abort && isFn(lease.abort.abort)) lease.abort.abort(); } catch (_) {}
+      try {
+        settle(loopId, lease.runId, {
+          status: 'error', cancelled: true, error: String(reason || 'cancelled by the Commander')
+        });
+      } catch (_) {}
+      return true;
+    }
+
     function abortAllLeases() {
       let n = 0;
-      // settle() mutates the lease map, so iterate a stable snapshot. The host owns cancellation: once E-STOP
-      // is accepted the loop is durably terminal even if a provider or tool never acknowledges AbortSignal.
-      for (const [loopId, lease] of Array.from(leases.entries())) {
-        if (lease && lease.recoveryBlocked) continue;
-        try { if (lease && lease.abort && isFn(lease.abort.abort)) lease.abort.abort(); } catch (_) {}
-        try { settle(loopId, lease && lease.runId, { status: 'error', cancelled: true, error: 'cancelled by E-STOP' }); } catch (_) {}
-        n++;
-      }
+      // abortLease/settle mutates the lease map, so iterate a stable snapshot. The host owns cancellation: once
+      // E-STOP is accepted the loop is durably terminal even if a provider or tool ignores AbortSignal.
+      for (const [loopId] of Array.from(leases.entries())) if (abortLease(loopId, 'cancelled by E-STOP')) n++;
       return n;
     }
 
     return {
       applyTick: applyTick,
+      abortLease: abortLease,
       abortAllLeases: abortAllLeases,
       leases: leases,
       _internals: { fireLoop: fireLoop, settle: settle, reconcileBoot: reconcileBoot, buildMessages: buildMessages, defaultHarvest: defaultHarvest }

@@ -490,5 +490,23 @@ function world(opts) {
     A.eq(resumed.loop().iterations.filter(it => it.outcome === 'running').length, 1, 'only the replacement pass is RUNNING');
   }
 
+  /* ---- 18. ENDURANCE: cancelling one standing loop cannot kill siblings or revive after PAUSE ---------- */
+  {
+    let loops = S.createLoop([], { id: 'l1', objective: 'first' }, { now: T0 });
+    loops = S.createLoop(loops, { id: 'l2', objective: 'second' }, { now: T0 });
+    const w = world({ loops, maxParallel: 2 });
+    w.tick(T0);
+    A.eq(w.drv.abortLease('l1', 'paused by the Commander'), true, 'the targeted loop cancellation is accepted');
+    A.eq(S.getLoop(w.loops, 'l1').iterations[0].outcome, 'cancelled', 'the targeted pass settles cancelled immediately');
+    A.eq(S.getLoop(w.loops, 'l2').iterations[0].outcome, 'running', 'a sibling pass remains live');
+    A.eq(w.drv.leases.size, 1, 'only the sibling lease remains');
+
+    await w.finish({ text: 'late first result' });
+    A.eq(S.getLoop(w.loops, 'l1').iterations[0].outcome, 'cancelled', 'the targeted pass cannot revive on a late result');
+    await w.finish({ text: 'second completed' });
+    A.eq(S.getLoop(w.loops, 'l2').iterations[0].outcome, 'candidate', 'the sibling still completes normally');
+    A.eq(w.drv.abortLease('missing'), false, 'targeted cancellation is idempotent for an absent lease');
+  }
+
   A.report('loopjob-driver (LOOP tick driver)');
 })().catch(e => { console.log('FAIL: unexpected throw — ' + (e && e.stack || e)); process.exit(1); });
