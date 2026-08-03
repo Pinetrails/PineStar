@@ -94,6 +94,7 @@
     "qa:bugs:validate": "node scripts/qa/bugs.mjs --validate",
     "eval:contract": "node scripts/eval/runner.mjs contract",
     "eval:fault": "node scripts/eval/runner.mjs fault",
+    "eval:fault:capture": "node scripts/eval/runner.mjs capture-fault",
     "eval:parity": "node scripts/eval/runner.mjs compare",
     "eval:baseline": "node scripts/eval/runner.mjs baseline",
     "qa:model": "node scripts/qa/model-conformance.mjs",

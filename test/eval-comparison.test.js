@@ -10,6 +10,7 @@ const { tmpdir } = require('node:os');
   const root = resolve(__dirname, '..');
   const core = await import('../scripts/eval/core.mjs');
   const cmp = await import('../scripts/eval/comparison.mjs');
+  const faultAdapters = await import('../scripts/eval/adapters/fault.mjs');
   const contract = JSON.parse(readFileSync(join(root, 'scripts/eval/contracts/v0.9.0.json'), 'utf8'));
   const claims = JSON.parse(readFileSync(join(root, 'qa/product-perfect/claims.json'), 'utf8'));
   const parityTasks = core.readJsonl(join(root, 'scripts/eval/packs/parity-v0.9.0.jsonl'));
@@ -17,6 +18,8 @@ const { tmpdir } = require('node:os');
 
   const checked = cmp.validateComparisonContract(contract, claims);
   A.ok(checked.ok, 'the v0.9 contract classifies the live claims ledger without drift: ' + checked.errors.join('; '));
+  A.eq(contract.reference.tagObject, 'd25e2dbdbc40b49808c0a0e9cfed21cc90cffab3', 'the annotated tag object is recorded separately');
+  A.eq(contract.reference.commit, 'cc4cab2f592e60a197e796506de9168f74baf3ea', 'the frozen reference identity is the peeled commit, not the tag object');
   A.eq(checked.summary, {
     claims: 37, classified: 37,
     byClassification: { required: 26, experimental: 2, excluded: 3, differentiator: 6 },
@@ -30,17 +33,18 @@ const { tmpdir } = require('node:os');
     'the crash gauntlet freezes all ten run boundaries as active critical scenarios');
 
   const hash = 'a'.repeat(64);
-  const trajectory = (task, fault) => ({
-    schemaVersion: core.TRAJECTORY_SCHEMA, taskId: task.id, runId: 'run-' + task.id,
+  const trajectory = (task, fault, attempt) => ({
+    schemaVersion: core.TRAJECTORY_SCHEMA, taskId: task.id, attempt, runId: 'run-' + task.id + '-' + attempt,
     startedAt: '2026-08-02T12:00:00.000Z', endedAt: '2026-08-02T12:00:00.200Z', finalText: 'done',
     events: [{ seq: 1, at: '2026-08-02T12:00:00.000Z', type: 'agent.run.start', data: {} },
       { seq: 2, at: '2026-08-02T12:00:00.200Z', type: 'agent.run.end', data: { reason: 'done' } }],
     artifacts: [{ path: 'output.bin', sha256: hash, mutatedAt: '2026-08-02T12:00:00.100Z', verifiedSha256: hash, verifiedAt: '2026-08-02T12:00:00.150Z' }],
     outcome: { passed: true, violations: { falseDone: 0, wrongDestination: 0, duplicateMutation: 0, authorityEscape: 0 } },
     routing: { requestedAgentId: 'agent', observedAgentId: 'agent', requestedSessionId: 'session', observedSessionId: 'session', requestedDestination: 'chat:1', deliveredDestination: 'chat:1' },
-    fault: fault ? { injectedAt: task.id, expectedRecovery: 'review-or-resume', observedRecovery: 'review-or-resume', ambiguous: false } : undefined
+    fault: fault ? { injectedAt: task.graders.find(row => row.type === 'fault_recovery').injectedAt,
+      observedRecovery: task.graders.find(row => row.type === 'fault_recovery').value, ambiguous: false } : undefined
   });
-  const parityRows = parityTasks.map(task => trajectory(task, false));
+  const parityRows = parityTasks.flatMap(task => [1, 2, 3].map(attempt => trajectory(task, false, attempt)));
   const parity = cmp.compareHarnesses({ tasks: parityTasks, starnetRows: parityRows, referenceRows: parityRows, contract });
   A.ok(parity.pass, 'a fully evidenced equal comparison passes all parity gates');
   A.eq(parity.summary.starnetPassRatePct, 100, 'StarNet pass rate is calculated from active scenarios');
@@ -52,21 +56,33 @@ const { tmpdir } = require('node:os');
   A.ok(!refused.pass && refused.checks.some(row => row.id === 'zero-falseDone' && !row.pass),
     'one false-done event fails the release comparison even when ordinary scoring is otherwise green');
 
-  const faultRows = faultTasks.map(task => trajectory(task, true));
-  const fault = cmp.evaluateFaultGauntlet({ tasks: faultTasks, candidateRows: faultRows });
+  const faultRows = faultTasks.flatMap(task => Array.from({ length: 100 }, (_, index) => trajectory(task, true, index + 1)));
+  const fault = cmp.evaluateFaultGauntlet({ tasks: faultTasks, candidateRows: faultRows, contract });
   A.ok(fault.pass, 'all ten exact recovery outcomes produce a green fault receipt');
   const ambiguous = JSON.parse(JSON.stringify(faultRows));
   ambiguous[3].fault.ambiguous = true;
-  A.ok(!cmp.evaluateFaultGauntlet({ tasks: faultTasks, candidateRows: ambiguous }).pass,
+  A.ok(!cmp.evaluateFaultGauntlet({ tasks: faultTasks, candidateRows: ambiguous, contract }).pass,
     'an ambiguous mutation boundary fails closed');
+
+  const observedFaultRows = await faultAdapters.runFaultAdapters({ tasks: faultTasks, repeats: 2 });
+  A.eq(observedFaultRows.filter(row => row.outcome.passed).length, 14,
+    'the production-module fault adapters currently prove seven of ten boundaries on every attempt');
+  A.eq(Array.from(new Set(observedFaultRows.filter(row => !row.outcome.passed).map(row => row.taskId))), [
+    'fault-read-intent-before-dispatch', 'fault-compaction-rotation', 'fault-routine-subagent-finalization'
+  ], 'the adapter receipt names the three still-unproved recovery boundaries exactly');
 
   const sourceReceipt = cmp.makeReceipt({ kind: 'parity', contract, subject: { commit: 'b'.repeat(40), sourceTree: { algorithm: 'git-tree', value: 'tree' } }, result: parity });
   A.ok(!sourceReceipt.candidateBound && sourceReceipt.limitations.some(x => /not installed-candidate proof/.test(x)),
     'a source-only receipt names its limitation instead of impersonating installed proof');
   const installedReceipt = cmp.makeReceipt({ kind: 'parity', contract, subject: {
-    commit: 'b'.repeat(40), sourceTree: { algorithm: 'git-tree', value: 'tree' }, executable: { path: 'StarNet.exe', sha256: hash }
+    commit: 'b'.repeat(40), sourceTree: { algorithm: 'git-tree', value: 'tree' }, executable: { path: 'StarNet.exe', sha256: hash },
+    provenance: { verified: true }, dirty: false
   }, result: parity });
-  A.ok(installedReceipt.candidateBound, 'commit + source tree + executable hash binds a receipt to a candidate');
+  A.ok(installedReceipt.candidateBound, 'verified clean provenance + commit + source tree + executable hash bind a receipt to a candidate');
+  const unverifiedReceipt = cmp.makeReceipt({ kind: 'parity', contract, subject: {
+    commit: 'b'.repeat(40), sourceTree: { algorithm: 'git-tree', value: 'tree' }, executable: { path: 'StarNet.exe', sha256: hash }, dirty: false
+  }, result: parity });
+  A.ok(!unverifiedReceipt.candidateBound, 'an executable hash cannot bind itself to an unrelated source commit without verified provenance');
 
   const temp = mkdtempSync(join(tmpdir(), 'starnet-eval-wave-a-'));
   try {
@@ -77,12 +93,22 @@ const { tmpdir } = require('node:os');
     const contractCli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'contract'], { cwd: root, encoding: 'utf8' });
     A.eq(contractCli.status, 0, 'contract CLI exits zero');
     A.ok(/CONTRACT PASS claims=37 classified=37/.test(contractCli.stdout), 'contract CLI prints a compact frozen-scope receipt');
-    const compareCli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'compare', '--starnet', starnetFile, '--reference', referenceFile, '--receipt', join(temp, 'parity.json')], { cwd: root, encoding: 'utf8' });
+    const helpCli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', '--help'], { cwd: root, encoding: 'utf8' });
+    A.eq(helpCli.status, 0, '--help exits without running the default adapter pack');
+    A.ok(/usage: runner\.mjs/.test(helpCli.stdout) && !/existing-basic-response/.test(helpCli.stdout), '--help prints usage only');
+    const privateKey = join(temp, 'receipt-private.pem'), publicKey = join(temp, 'receipt-public.pem');
+    const keygenCli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'keygen', '--private', privateKey, '--public', publicKey], { cwd: root, encoding: 'utf8' });
+    A.eq(keygenCli.status, 0, 'receipt key generation exits zero');
+    const parityReceipt = join(temp, 'parity.json');
+    const compareCli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'compare', '--starnet', starnetFile, '--reference', referenceFile, '--receipt', parityReceipt, '--signing-key', privateKey], { cwd: root, encoding: 'utf8' });
     A.eq(compareCli.status, 0, 'parity CLI exits zero for passing evidence');
     A.ok(/PARITY PASS StarNet=100.0%/.test(compareCli.stdout), 'parity CLI prints the scored comparison');
+    const verifyCli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'verify-receipt', '--receipt', parityReceipt], { cwd: root, encoding: 'utf8' });
+    A.eq(verifyCli.status, 0, 'a signed receipt verifies through the CLI');
+    A.ok(/SIGNATURE PASS/.test(verifyCli.stdout), 'signature verification prints the key identity');
     const faultCli = spawnSync(process.execPath, ['scripts/eval/runner.mjs', 'fault', '--candidate', faultFile, '--receipt', join(temp, 'fault.json')], { cwd: root, encoding: 'utf8' });
     A.eq(faultCli.status, 0, 'fault CLI exits zero for all ten boundaries');
-    A.ok(/FAULT PASS passed=10\/10/.test(faultCli.stdout), 'fault CLI prints the boundary count');
+    A.ok(/FAULT PASS passed=1000\/1000/.test(faultCli.stdout), 'fault CLI prints all 100 repetitions across ten boundaries');
   } finally { rmSync(temp, { recursive: true, force: true }); }
 
   A.report('eval-comparison.test');

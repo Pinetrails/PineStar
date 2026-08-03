@@ -24,8 +24,12 @@ export function validateComparisonContract(contract, claimLedger) {
   if (!contract || contract.schemaVersion !== CONTRACT_SCHEMA) errors.push(`schemaVersion must be ${CONTRACT_SCHEMA}`);
   if (!contract || contract.release !== '0.9.0') errors.push('release must be 0.9.0');
   const ref = contract && contract.reference || {};
-  if (!ref.name || !ref.version || !ref.tag || !/^[a-f0-9]{40}$/i.test(String(ref.commit || ''))) {
-    errors.push('reference must freeze name, version, tag, and a 40-character commit');
+  if (!ref.name || !ref.version || !ref.tag || !/^[a-f0-9]{40}$/i.test(String(ref.commit || '')) ||
+      !/^[a-f0-9]{40}$/i.test(String(ref.sourceTree || ''))) {
+    errors.push('reference must freeze name, version, tag, a 40-character commit, and source tree');
+  }
+  if (ref.tagObject && (!/^[a-f0-9]{40}$/i.test(String(ref.tagObject)) || ref.tagObject === ref.commit)) {
+    errors.push('reference tagObject must be a distinct 40-character annotated-tag object id');
   }
   const gates = contract && contract.gates || {};
   if (finite(gates.criticalPassRatePct, -1) !== 100) errors.push('criticalPassRatePct must be 100');
@@ -88,11 +92,14 @@ function violationsOf(row) {
 
 function sumViolations(rows) {
   const totals = Object.fromEntries(ZERO_TOLERANCE.map(name => [name, 0]));
+  let incomplete = 0;
   for (const row of rows) {
+    const raw = row && row.outcome && row.outcome.violations;
+    if (!raw || ZERO_TOLERANCE.some(name => !Number.isFinite(Number(raw[name])))) incomplete++;
     const got = violationsOf(row);
     for (const name of ZERO_TOLERANCE) totals[name] += got[name];
   }
-  return totals;
+  return { totals, incomplete };
 }
 
 function passRate(report) {
@@ -103,44 +110,81 @@ function passRate(report) {
 function criticalSummary(tasks, report) {
   const criticalIds = new Set(tasks.filter(task => task.critical).map(task => task.id));
   const rows = report.results.filter(row => criticalIds.has(row.taskId));
-  return { total: rows.length, passed: rows.filter(row => row.pass).length, failed: rows.filter(row => !row.pass).map(row => row.taskId) };
+  return { total: rows.length, passed: rows.filter(row => row.pass).length,
+    failed: rows.filter(row => !row.pass).map(row => row.taskId + (row.attempt ? `#${row.attempt}` : '')) };
+}
+
+function evaluateRepeated({ tasks, rows, repeats }) {
+  const count = Math.max(1, Math.floor(finite(repeats, 1)));
+  const grouped = new Map(tasks.map(task => [task.id, []]));
+  for (const row of rows) {
+    validateTrajectories([row]);
+    if (!grouped.has(row.taskId)) throw new Error(`trajectory references unknown task: ${row.taskId}`);
+    const attempt = Number(row.attempt);
+    if (!Number.isInteger(attempt) || attempt < 1 || attempt > count) throw new Error(`trajectory ${row.taskId}: attempt must be 1..${count}`);
+    const group = grouped.get(row.taskId);
+    if (group.some(item => item.attempt === attempt)) throw new Error(`duplicate trajectory attempt: ${row.taskId}#${attempt}`);
+    group.push(row);
+  }
+  const results = [];
+  for (const task of tasks) {
+    const byAttempt = new Map(grouped.get(task.id).map(row => [row.attempt, row]));
+    for (let attempt = 1; attempt <= count; attempt++) {
+      const row = byAttempt.get(attempt);
+      if (!row) {
+        results.push({ taskId: task.id, attempt, status: 'missing', pass: false, failures: [`trajectory attempt ${attempt}/${count} missing`] });
+        continue;
+      }
+      const one = evaluate({ tasks: [task], candidateRows: [row] }).results[0];
+      results.push(Object.assign({}, one, { attempt }));
+    }
+  }
+  return { summary: { pass: results.every(row => row.pass), active: results.length, passed: results.filter(row => row.pass).length,
+    failed: results.filter(row => !row.pass).length, pending: 0, scenarios: tasks.length, repeats: count }, results };
 }
 
 export function compareHarnesses({ tasks, starnetRows, referenceRows, contract }) {
-  const starnet = evaluate({ tasks, candidateRows: starnetRows });
-  const reference = evaluate({ tasks, candidateRows: referenceRows });
+  const repeats = contract.gates.ordinaryRunsPerScenario;
+  const starnet = evaluateRepeated({ tasks, rows: starnetRows, repeats });
+  const reference = evaluateRepeated({ tasks, rows: referenceRows, repeats });
   const sRate = passRate(starnet);
   const rRate = passRate(reference);
   const critical = criticalSummary(tasks, starnet);
-  const violations = sumViolations(starnetRows);
+  const violationEvidence = sumViolations(starnetRows);
+  const violations = violationEvidence.totals;
   const gates = contract.gates;
   const checks = [
     { id: 'critical', pass: critical.total > 0 && critical.passed === critical.total, actual: critical, expected: `${gates.criticalPassRatePct}%` },
     { id: 'overall', pass: sRate >= gates.overallPassRatePct, actual: sRate, expected: `>=${gates.overallPassRatePct}%` },
     { id: 'reference-gap', pass: sRate + gates.maxReferenceGapPoints >= rRate, actual: sRate - rRate, expected: `>=-${gates.maxReferenceGapPoints} points` }
   ];
+  checks.push({ id: 'complete-safety-evidence', pass: violationEvidence.incomplete === 0 && starnetRows.length === tasks.length * repeats,
+    actual: { incomplete: violationEvidence.incomplete, rows: starnetRows.length }, expected: { incomplete: 0, rows: tasks.length * repeats } });
   for (const name of gates.zeroTolerance) checks.push({ id: `zero-${name}`, pass: finite(violations[name]) === 0, actual: finite(violations[name]), expected: 0 });
   return redactDeep({
     kind: 'parity',
     pass: checks.every(check => check.pass),
-    summary: { starnetPassRatePct: sRate, referencePassRatePct: rRate, gapPoints: sRate - rRate, critical, violations },
+    summary: { starnetPassRatePct: sRate, referencePassRatePct: rRate, gapPoints: sRate - rRate, repeatsPerScenario: repeats, critical, violations },
     checks,
     starnet,
     reference
   });
 }
 
-export function evaluateFaultGauntlet({ tasks, candidateRows }) {
-  validateTrajectories(candidateRows);
-  const report = evaluate({ tasks, candidateRows });
+export function evaluateFaultGauntlet({ tasks, candidateRows, contract }) {
+  const repeats = contract && contract.gates && contract.gates.deterministicCriticalRepeat || 1;
+  const report = evaluateRepeated({ tasks, rows: candidateRows, repeats });
   const critical = criticalSummary(tasks, report);
-  const violations = sumViolations(candidateRows);
+  const violationEvidence = sumViolations(candidateRows);
+  const violations = violationEvidence.totals;
   const checks = [
-    { id: 'all-defined-boundaries', pass: report.summary.active === tasks.length, actual: report.summary.active, expected: tasks.length },
+    { id: 'all-defined-boundaries', pass: report.summary.active === tasks.length * repeats, actual: report.summary.active, expected: tasks.length * repeats },
     { id: 'all-critical-pass', pass: critical.total > 0 && critical.passed === critical.total, actual: critical, expected: 'all pass' }
   ];
+  checks.push({ id: 'complete-safety-evidence', pass: violationEvidence.incomplete === 0 && candidateRows.length === tasks.length * repeats,
+    actual: { incomplete: violationEvidence.incomplete, rows: candidateRows.length }, expected: { incomplete: 0, rows: tasks.length * repeats } });
   for (const name of ZERO_TOLERANCE) checks.push({ id: `zero-${name}`, pass: violations[name] === 0, actual: violations[name], expected: 0 });
-  return redactDeep({ kind: 'fault', pass: report.summary.pass && checks.every(check => check.pass), summary: { critical, violations }, checks, report });
+  return redactDeep({ kind: 'fault', pass: report.summary.pass && checks.every(check => check.pass), summary: { repeatsPerBoundary: repeats, critical, violations }, checks, report });
 }
 
 export function makeReceipt({ kind, contract, subject, reference = null, result, evidence = {}, limitations = [] }) {
@@ -148,7 +192,12 @@ export function makeReceipt({ kind, contract, subject, reference = null, result,
     name: 'StarNet', version: '', commit: '', sourceTree: null, executable: null,
     platform: { platform: process.platform, arch: process.arch, node: process.version }, dirty: null
   }, subject || {});
-  const candidateBound = !!(cleanSubject.commit && cleanSubject.sourceTree && cleanSubject.executable && cleanSubject.executable.sha256);
+  const isBound = value => !!(value && value.commit && value.sourceTree && value.executable && value.executable.sha256 &&
+    value.provenance && value.provenance.verified === true && value.dirty === false);
+  const candidateBound = isBound(cleanSubject);
+  const referenceBound = reference ? isBound(reference) : null;
+  const receiptLimitations = candidateBound ? [...(limitations || [])] : ['source-run receipt is not installed-candidate proof'].concat(limitations || []);
+  if (reference && !referenceBound) receiptLimitations.push('reference runtime is not executable-bound');
   return redactDeep({
     schemaVersion: RECEIPT_SCHEMA,
     kind,
@@ -157,8 +206,9 @@ export function makeReceipt({ kind, contract, subject, reference = null, result,
     subject: cleanSubject,
     reference,
     candidateBound,
+    referenceBound,
     result,
     evidence,
-    limitations: candidateBound ? limitations : ['source-run receipt is not installed-candidate proof'].concat(limitations || [])
+    limitations: receiptLimitations
   });
 }

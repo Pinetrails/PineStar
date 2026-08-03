@@ -8,6 +8,7 @@
   "properties": {
     "schemaVersion": { "const": "starnet.eval.trajectory.v1" },
     "taskId": { "type": "string", "minLength": 1 },
+    "attempt": { "type": "integer", "minimum": 1 },
     "runId": { "type": "string" },
     "startedAt": { "type": "string" },
     "endedAt": { "type": "string" },

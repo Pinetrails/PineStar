@@ -6,7 +6,11 @@ UI, release, and workload gates; it does not replace them or make a release-read
 ## v0.9 reliability and parity contract
 
 The frozen comparison contract is `contracts/v0.9.0.json`. It binds the comparison to Hermes Agent
-v0.19.1/tag `v2026.7.30`, classifies every advertised StarNet claim, and freezes the release gates.
+v0.19.1/tag `v2026.7.30`. The annotated tag object is
+`d25e2dbdbc40b49808c0a0e9cfed21cc90cffab3`; its peeled commit is
+`cc4cab2f592e60a197e796506de9168f74baf3ea`, with tree
+`fcdc6093750ed0a3a556e20927799d7245ba65e4`. The contract classifies every advertised StarNet
+claim and freezes the release gates.
 Validate it against the live product-perfect claim ledger:
 
 ```powershell
@@ -14,17 +18,40 @@ npm run eval:contract
 ```
 
 The 10 run-boundary fault scenarios and 32 shared workload scenarios live under `packs/`. They are
-all active: a missing trajectory is a failure, never a pending green. Run captured evidence with:
+all active: a missing trajectory is a failure, never a pending green. Fault evidence requires 100
+attempts per boundary (1,000 rows), and parity evidence requires three attempts per harness and
+scenario (96 rows each). Run captured evidence with:
 
 ```powershell
-node scripts/eval/runner.mjs fault --candidate fault-trajectories.jsonl --receipt fault-receipt.json
-node scripts/eval/runner.mjs compare --starnet starnet.jsonl --reference hermes.jsonl --receipt parity-receipt.json
+node scripts/eval/runner.mjs capture-fault --out fault-trajectories.jsonl
+node scripts/eval/runner.mjs fault --candidate fault-trajectories.jsonl --subject-manifest starnet-manifest.json --signing-key receipt-private.pem --receipt fault-receipt.json
+node scripts/eval/runner.mjs compare --starnet starnet.jsonl --reference hermes.jsonl --subject-manifest starnet-manifest.json --reference-manifest hermes-manifest.json --signing-key receipt-private.pem --receipt parity-receipt.json
 ```
 
-Both commands emit `starnet.eval.receipt.v1`. A source run is truthfully marked
-`candidateBound:false`; installed-candidate proof additionally supplies `--executable <path>` so the
-receipt records its SHA-256. The zero-tolerance invariants are false completion, wrong destination,
-duplicate mutation, and authority escape.
+Bind exact installed/runtime identities before scoring, then create or verify Ed25519 receipt keys:
+
+```powershell
+node scripts/eval/runner.mjs bind --profile starnet --source-dir <source> --runtime-root <installed-root> --executable <desktop-exe> --commit <commit> --tree <tree> --describe <describe> --version 0.8.5 --health-url <health-url> --manifest starnet-manifest.json
+node scripts/eval/runner.mjs bind --profile hermes --source-dir <frozen-checkout> --executable <venv-python> --home-dir <isolated-home> --manifest hermes-manifest.json
+node scripts/eval/runner.mjs keygen --private receipt-private.pem --public receipt-public.pem
+node scripts/eval/runner.mjs verify-receipt --receipt fault-receipt.json
+```
+
+Receipts emit `starnet.eval.receipt.v1`. `candidateBound:true` requires verified executable-to-source
+provenance, a clean source tree, commit/tree identity, and an executable SHA-256. Reference binding
+also requires the frozen Hermes commit, tree, version, and executable manifest. A source run remains
+truthfully `candidateBound:false`. The zero-tolerance invariants are false completion, wrong
+destination, duplicate mutation, and authority escape.
+
+If a harness or grader cannot actually execute, record all expected rows as explicit failures instead
+of manufacturing a partial score:
+
+```powershell
+node scripts/eval/runner.mjs mark-unavailable --harness starnet --reason <reason> --out starnet-unavailable.jsonl
+```
+
+Provider evaluation homes may copy non-secret roster/state fixtures, but must never copy OAuth token,
+auth, or `.env` files. Bindings prove the executable; they do not authorize credential use.
 
 Capture the provisional source-harness performance baseline with:
 

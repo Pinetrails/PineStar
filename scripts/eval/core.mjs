@@ -195,11 +195,12 @@ function gradeOne(grader, trajectory) {
       const fault = trajectory.fault;
       actual = fault && typeof fault === 'object' ? {
         injectedAt: fault.injectedAt || '',
-        expectedRecovery: fault.expectedRecovery || '',
         observedRecovery: fault.observedRecovery || '',
         ambiguous: !!fault.ambiguous
       } : null;
-      return { pass: !!actual && !!actual.injectedAt && !!actual.expectedRecovery && actual.expectedRecovery === actual.observedRecovery && !actual.ambiguous, actual, expected: 'injected boundary recovered exactly as declared, with no ambiguity' };
+      const expected = { injectedAt: String(grader.injectedAt || ''), observedRecovery: String(grader.value || ''), ambiguous: false };
+      return { pass: !!actual && !!expected.injectedAt && !!expected.observedRecovery && actual.injectedAt === expected.injectedAt &&
+        actual.observedRecovery === expected.observedRecovery && !actual.ambiguous, actual, expected };
     }
     default:
       return { pass: false, actual: null, expected: null, error: `unknown grader type: ${grader.type}` };
