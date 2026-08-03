@@ -461,19 +461,19 @@ async function readNdjson(res) {
       return { prompts, calls, results };
     }
 
-    // THE EXACT REPORTED CASE. Before the fix this was four popups for four calls, every "Full access" click
-    // discarded. Ordering below matters: a DENY grants nothing, "Full access" is a per-AGENT blanket, and
-    // "Always" is a GLOBAL standing grant — so each grade gets a fresh agent, and deny runs before always.
+    // A standing grant covers the first call only. Its result is remote-authored content, so each later call
+    // crosses a fresh exact boundary. Even "Full access" collapses to one-shot authority after taint.
     const full = await driveWatched('mcp-agent', 'FOURLOOKUPS please read four theme assets', 'full');
     A.eq(full.calls.length, 4, 'the watched run made four connector tool calls');
-    A.eq(full.prompts.length, 1, 'FOUR connector calls raise exactly ONE approval popup after "Full access"');
-    A.eq(full.prompts[0].tool, 'mcp__demo__lookup', 'the one popup names the connector tool');
-    A.eq(full.results.filter(r => r.ok === true).length, 4, 'all four connector calls succeeded under the single grant');
+    A.eq(full.prompts.length, 4, 'each connector call after remote content gets an exact confirmation');
+    A.eq(full.prompts[0].tool, 'mcp__demo__lookup', 'the approval names the connector tool');
+    A.eq(full.results.filter(r => r.ok === true).length, 4, 'all four connector calls succeeded after four confirmations');
 
-    // Full Access is per-AGENT and outlives the run (in memory, until restart) — so the NEXT run is silent too.
+    // Full Access covers the next run's first call; the returned remote content re-arms the boundary.
     const again = await driveWatched('mcp-agent', 'FOURLOOKUPS read them again', 'deny');
     A.eq(again.calls.length, 4, 'the follow-up run made four connector calls');
-    A.eq(again.prompts.length, 0, 'a granted agent is not re-asked on its next run either');
+    A.eq(again.prompts.length, 3, 'a granted agent is re-asked only after the next run reads connector content');
+    A.eq(again.results.filter(r => r.ok === true).length, 1, 'denying fresh prompts leaves only the pre-taint call successful');
 
     // The wildcard is now part of the REAL permissions authority surface, rather than invisible process state.
     const afterFullPermissions = await (await fetch(B + '/api/permissions', {
@@ -512,12 +512,12 @@ async function readNdjson(res) {
     A.eq(denied.results.filter(r => r.ok === true).length, 0, 'no denied connector call ever performed an action');
     A.ok(denied.results.some(r => r.ok === false), 'the denied connector call comes back as a refusal');
 
-    /* "Always" — the narrower grade: one standing grant on the danger CLASS (capability:scope) that the
-       Commander can SEE and revoke, which a one-shot answer never was. Runs last: it persists globally. */
+    /* "Always" remains visible and revocable for a clean run's first call. It cannot suppress fresh prompts
+       after connector-authored content enters context. Runs last: it persists globally. */
     const alwaysRun = await driveWatched('mcp-agent-always', 'FOURLOOKUPS read the four assets again', 'always');
     A.eq(alwaysRun.calls.length, 4, 'the "always" run also made four connector calls');
-    A.eq(alwaysRun.prompts.length, 1, '"Always" is likewise asked once, not once per call');
-    A.eq(alwaysRun.results.filter(r => r.ok === true).length, 4, 'all four calls succeeded under the standing grant');
+    A.eq(alwaysRun.prompts.length, 4, '"Always" cannot suppress fresh post-content confirmations');
+    A.eq(alwaysRun.results.filter(r => r.ok === true).length, 4, 'all four calls succeeded after exact confirmations');
     const perms = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok(JSON.stringify(perms).indexOf('mcp:demo') >= 0, 'the "Always" grant is visible in the Permissions panel, so it can be revoked');
 
