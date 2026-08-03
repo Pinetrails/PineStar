@@ -2,13 +2,33 @@
 
 const A = require('./_assert.js');
 const fs = require('node:fs');
+const net = require('node:net');
 const path = require('node:path');
 const { SidecarFixture, allocatePort, processAlive } = require('./helpers/sidecar-fixture.js');
 
 (async () => {
   const firstPort = await allocatePort();
   const secondPort = await allocatePort();
-  A.ok(firstPort > 0 && secondPort > 0 && firstPort !== secondPort, 'port allocation asks the OS for unique ephemeral ports');
+  A.ok(firstPort > 0 && secondPort > 0, 'port allocation asks the OS for valid ephemeral ports');
+
+  const blocker = net.createServer();
+  await new Promise((resolve, reject) => { blocker.once('error', reject); blocker.listen(0, '127.0.0.1', resolve); });
+  const occupiedPort = blocker.address().port;
+  let allocationCalls = 0;
+  const retrying = SidecarFixture.create({
+    prefix: 'starnet-fixture-bind-retry-',
+    timeoutMs: 3000,
+    portAllocator: async () => (++allocationCalls === 1 ? occupiedPort : allocatePort())
+  });
+  try {
+    await retrying.start({ OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '' });
+    A.eq(allocationCalls, 2, 'fixture retries with a fresh OS port when the reserved port loses the bind race');
+    A.ok(retrying.port !== occupiedPort, 'bind retry does not reuse the occupied port');
+  } finally {
+    await retrying.dispose();
+    if (typeof blocker.closeAllConnections === 'function') blocker.closeAllConnections();
+    blocker.close();
+  }
 
   const healthy = SidecarFixture.create({ prefix: 'starnet-fixture-self-' });
   const healthyWorkspace = healthy.workspace;

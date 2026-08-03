@@ -55,6 +55,8 @@ class SidecarFixture {
     this.args = Array.isArray(opts.args) ? opts.args.slice() : [];
     this.env = Object.assign({}, opts.env || {});
     this.timeoutMs = Number(opts.timeoutMs) || 9000;
+    this.bindRetries = Number.isInteger(opts.bindRetries) ? Math.max(0, opts.bindRetries) : 3;
+    this.portAllocator = opts.portAllocator || allocatePort;
     this.acquireToken = opts.acquireToken !== false;
     this.child = null;
     this.port = null;
@@ -69,10 +71,11 @@ class SidecarFixture {
 
   output() { return this._output; }
 
-  async start(extraEnv) {
+  async start(extraEnv, bindAttempt) {
     if (this._disposed) throw new Error('sidecar fixture is already disposed');
     if (this.child) throw new Error('sidecar fixture is already running');
-    this.port = await allocatePort();
+    const attempt = Number(bindAttempt) || 0;
+    this.port = await this.portAllocator();
     this.baseUrl = 'http://' + HOST + ':' + this.port;
     this.token = '';
     this._output = '';
@@ -100,6 +103,10 @@ class SidecarFixture {
       return this;
     } catch (error) {
       const output = this._output;
+      if (/EADDRINUSE|already in use/i.test(output) && attempt < this.bindRetries) {
+        await this.stop();
+        return this.start(extraEnv, attempt + 1);
+      }
       await this.dispose();
       error.message += '\nsidecar output:\n' + output;
       throw error;
@@ -110,11 +117,14 @@ class SidecarFixture {
     const child = this.child;
     const deadline = Date.now() + this.timeoutMs;
     while (Date.now() < deadline) {
+      if (/EADDRINUSE|already in use/i.test(this._output)) {
+        throw new Error('sidecar port bind failed');
+      }
       if (!child || child.exitCode !== null || child.signalCode) {
         throw new Error('sidecar exited before readiness (exit=' + child.exitCode + ', signal=' + child.signalCode + ')');
       }
       try {
-        const response = await fetch(this.baseUrl + '/api/health');
+        const response = await fetch(this.baseUrl + '/api/health', { signal: AbortSignal.timeout(250) });
         if (response.status === 200) return;
       } catch (_) {}
       await sleep(25);
