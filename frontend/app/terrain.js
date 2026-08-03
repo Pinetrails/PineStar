@@ -154,8 +154,12 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     blurb: 'Landed in old growth. Deep litter, high canopy, no one around.',
     base: '#131a15',
     PATCH: 512,                       // world px of the tiling floor texture
-    DAPPLE: 640,                      // world px of the sunlight-through-canopy pass
-    OVERLAY_ALPHA: 0.34,              // how hard that pass lands on the floor
+    /* 704, not 640, because 512 and 640 share a factor of 128 and therefore line up again every
+       2560px — close enough to a screenful that the two repeats beat visibly. 512 and 704 share
+       only 64, so the combined pattern does not come back for 5632px and never lines up on
+       screen at any zoom the camera reaches. */
+    DAPPLE: 704,                      // world px of the sunlight-through-canopy pass
+    OVERLAY_ALPHA: 0.62,              // how hard that pass lands on the floor
     CELL: 64,                         // world px per scatter cell (~5 station tiles)
     LEVELS: 6,                        // flat bands in the floor — pixel art, not a photograph
 
@@ -168,12 +172,23 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          boundary — never a smooth blend between them. Blending soil into moss across a hundred
          pixels is precisely how the first pass turned into mud: every pixel differed from its
          neighbour by one unit, so the surface had no shapes in it at all. */
-      SOIL: [[9, 8, 6], [14, 12, 9], [20, 17, 12], [27, 22, 15], [35, 28, 18],],
-      MOSS: [[10, 15, 9], [14, 21, 12], [19, 29, 15], [25, 38, 18], [33, 49, 22]],
+      SOIL: [[10, 9, 7], [15, 13, 10], [21, 18, 13], [28, 24, 16], [36, 30, 20], [46, 38, 25]],
+      MOSS: [[13, 19, 11], [18, 27, 14], [24, 35, 17], [31, 44, 21], [39, 55, 26]],
       SOIL_D: [17, 14, 11], SOIL_L: [56, 44, 29],
       MOSS_D: [19, 30, 18], MOSS_L: [58, 82, 41],
       LITTER: [92, 64, 33], TWIG: [46, 34, 22], STONE: [44, 45, 42],
-      DAPPLE: [150, 132, 66],                          // warm sun on the floor, used additively
+      /* THE FLOOR'S OWN OBJECT RAMPS. Litter is where the floor's WHOLE VALUE RANGE lives: a dry
+         leaf lying face-up is the lightest thing on the ground by a distance, and a wet one is
+         nearly the darkest. Without those two ends the entire surface sits inside one narrow
+         band, and a surface with no value range cannot have figure and ground — which is the
+         other half of why this floor read as camouflage. */
+      LEAF_DRY: [[54, 38, 22], [78, 55, 30], [104, 75, 39], [134, 100, 51], [166, 128, 66]],
+      LEAF_WET: [[24, 20, 14], [35, 29, 19], [48, 40, 25], [63, 52, 32], [80, 66, 40]],
+      NEEDLES: [[25, 27, 18], [35, 38, 24], [47, 50, 31], [60, 63, 39]],   // conifer drift: cool, aligned
+      GRASS: [[22, 34, 17], [33, 51, 23], [47, 71, 31], [65, 95, 41], [88, 122, 53]],
+      ROOT: [[30, 24, 17], [45, 36, 25], [63, 51, 36], [84, 69, 49]],      // surface roots and twigs
+      GRIT: [[52, 50, 45], [72, 70, 63], [96, 93, 84]],                    // the only cool grey down there
+      DAPPLE: [176, 152, 84],                          // warm sun on the floor, used additively
       /* THE SAME LESSON THE MOON TAUGHT, and this ground had it wrong first. At [10,14,10] the
          canopy gaps were holes: not "floor you cannot see well", but nothing at all, and a frame
          with a dozen of them reads as a torn photograph. Shade under a canopy is the one place in
@@ -192,61 +207,246 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       PALE: [[64, 62, 56], [92, 90, 81], [124, 120, 107]],     // birch bark, bone, bare wood
     },
 
-    /* ---- the tiling floor: humus, moss, litter, twigs ---- */
+    /* ---- the tiling floor: duff, moss, litter, needles, grass, roots, stones ----
+
+       ANDREW'S NOTE ON THE FIRST ONE — "it almost blends like camouflage when the ground is
+       visible" — was not a metaphor. It was a diagnosis, and it was exact.
+
+       DPM camouflage is made by ONE recipe: irregular soft-outlined blobs a few hundred px
+       across, in two or three hues at near-equal VALUE, with no smaller structure inside them.
+       That is what this floor was, and it was nothing else. A wetness field at lattice 3 and 7
+       over a 512 tile drew blobs 170px and 73px wide — TREE-CROWN SCALE — choosing between two
+       ramps whose value barely differed, and over that went a dapple pass of quantized 3-step
+       blobs at 640px. The only other content was 2600 litter flakes, 420 twigs and 700 moss dots
+       drawn 1-3px at 14-50% alpha: below the size and above the transparency at which an eye
+       resolves a shape, so from any real viewing distance they integrate into a flat wash and
+       contribute nothing at all. The entire legible content of the surface was two fields of
+       soft blobs at the same scale and the same value as the trees standing on it. That IS
+       camouflage — it is the definition, not a resemblance.
+
+       THE THREE MOVES OUT, and every one of them is about FIGURE AND GROUND:
+
+       1. MOSS STOPS BEING A SECOND GROUND. There is one material now — duff — and moss is
+          STIPPLED onto it with a density that fades to zero, the same trick that stopped crowns
+          merging into a mat. A filled region has an outline, and an outline at crown scale is a
+          camo patch; a density gradient of individual specks has no outline anywhere, and reads
+          as something growing where it can. Its field also runs four times faster, so where moss
+          does gather it is smaller than every crown and can never be mistaken for one.
+
+       2. THE FLOOR GETS OBJECTS, NOT MARKS. Every leaf, needle, twig, blade and stone below is
+          OPAQUE, is sized from a POWER LAW so a handful are 9px and most are 3px, and sits on
+          its own CONTACT SHADOW. That last part is the entire difference: a translucent flake is
+          noise, but a 5px leaf with a darkened pixel under its down-sun edge is a thing LYING on
+          the ground — and two thousand of those are a forest floor. Value structure has to come
+          from objects, because value is what the eye segments on.
+
+       3. THE FLOOR GETS LONG LINES. Surface roots run out from every trunk in a real wood, and a
+          surface with no long feature in it can only ever read as texture. They are drawn as
+          RELIEF — lit crest, shaded down-sun flank, contact shadow beyond — the same way the
+          moon's wrinkle ridges are.
+
+       ⛔ WHY THIS WRITES BYTES INSTEAD OF CALLING fillRect. Canvas fills are anti-aliased and
+       there is no flag to stop it, so a 3px leaf drawn through the 2D API arrives as a grey
+       smudge — the exact "blurry" the first forest died of. Writing into the ImageData buffer
+       gives hard pixels; the modulo inside idx() makes the tile seamless for free, with no 3x3
+       re-stamping to get wrong; and being able to READ a pixel back is what lets a contact
+       shadow DARKEN whatever is under it instead of painting a flat patch on top of it.
+       Occlusion darkens, it never removes. */
     buildPatch(rnd) {
-      const P = FOREST.PATCH, LT = FOREST.LIGHT, L = FOREST.LEVELS;
+      const P = FOREST.PATCH, LT = FOREST.LIGHT;
       const cv = mkCv(P, P), c = cv.getContext('2d');
-      const n1 = noiseField(3, rnd), n2 = noiseField(7, rnd), n3 = noiseField(15, rnd), n4 = noiseField(31, rnd);
       const img = c.createImageData(P, P), D = img.data;
+
+      const idx = (x, y) => {
+        const yi = ((Math.floor(y) % P) + P) % P, xi = ((Math.floor(x) % P) + P) % P;
+        return (yi * P + xi) * 4;
+      };
+      const put = (x, y, col) => { const i = idx(x, y); D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; };
+      /* A CONTACT SHADOW MULTIPLIES WHAT IS ALREADY THERE, and keeps more green than red on the
+         way down, because the light that fills it has bounced off ten thousand leaves to get in.
+         Shade under a canopy is the one place in nature that is emphatically not dark. */
+      const shade = (x, y, f) => {
+        const i = idx(x, y);
+        D[i] *= f; D[i + 1] *= f + (1 - f) * 0.30; D[i + 2] *= f + (1 - f) * 0.08;
+      };
+
+      /* THE BASE: ONE material, a brown duff, whose entire variety is TOOTH. Three octaves and a
+         per-pixel hash, dithered between adjacent ramp steps so a band edge is never drawn. */
+      const g1 = noiseField(11, rnd), g2 = noiseField(27, rnd), g3 = noiseField(59, rnd);
       let p = 0;
       for (let y = 0; y < P; y++) {
         for (let x = 0; x < P; x++) {
           const u = x / P, v = y / P;
-          /* two independent fields, not one: WETNESS decides soil vs moss (big shapes), GRAIN is
-             the tooth of the surface. One field alone gives you a cloud; two give you a material
-             with something growing on it. */
-          const wet = n1(u, v) * 0.62 + n2(u, v) * 0.38;
-          const grain = n3(u, v) * 0.42 + n4(u, v) * 0.38 + h01(x, y, 5) * 0.20;
-          /* HARD material boundary with a DITHERED band. A pixel-art surface changes material at
-             an edge; the only softening allowed is a one-band checker of hashed pixels along that
-             edge, which is how every pixel artist has ever faded one texture into another. */
-          const dw = wet - 0.46;
-          const mossy = Math.abs(dw) < 0.05 ? (h01(x, y, 9) < 0.5 + dw * 10) : dw > 0;
-          const pal = mossy ? LT.MOSS : LT.SOIL;
-          /* quantize to the ramp's own steps, then let a 1px hash push the odd pixel one step —
-             the dither is what stops five flat bands looking like five flat bands. */
-          const col = dither(pal, grain * 1.06 - 0.03, x, y, 13);
+          const grain = g1(u, v) * 0.30 + g2(u, v) * 0.32 + g3(u, v) * 0.22 + h01(x, y, 5) * 0.16;
+          const col = dither(LT.SOIL, grain * 1.18 - 0.09, x, y, 13);
           D[p] = col[0]; D[p + 1] = col[1]; D[p + 2] = col[2]; D[p + 3] = 255;
           p += 4;
         }
       }
-      c.putImageData(img, 0, 0);
 
-      /* discrete marks on top. Every one is stamped nine times (3x3 wrap) so the patch stays
-         seamless — a mark clipped at the edge is a visible seam once it tiles. */
-      const stamp = (x, y, w, h, style) => {
-        c.fillStyle = style;
-        for (const ox of [-P, 0, P]) for (const oy of [-P, 0, P]) c.fillRect(x + ox, y + oy, w, h);
-      };
-      for (let i = 0; i < 2600; i++) {                       // leaf litter — warm flat flakes
-        const x = (rnd() * P) | 0, y = (rnd() * P) | 0;
-        const w = 1 + ((rnd() * 3) | 0), h = 1 + ((rnd() * 2) | 0);
-        stamp(x, y, w, h, rgba(mix(LT.LITTER, LT.SOIL_D, rnd() * 0.55), 0.16 + 0.34 * rnd()));
+      /* MOSS — STIPPLED, NEVER FILLED. Density fades to zero at its own edge, so the gather has
+         no outline for the eye to read as a patch of paint. */
+      const wetA = noiseField(13, rnd), wetB = noiseField(29, rnd), mclump = noiseField(61, rnd);
+      for (let y = 0; y < P; y++) {
+        for (let x = 0; x < P; x++) {
+          const u = x / P, v = y / P;
+          const w = wetA(u, v) * 0.60 + wetB(u, v) * 0.40;
+          const dens = clamp01((w - 0.48) * 3.2);
+          if (dens <= 0) continue;
+          const cl = mclump(u, v);
+          if (h01(x, y, 29) > dens * (0.30 + 0.95 * cl)) continue;
+          put(x, y, dither(LT.MOSS, 0.20 + cl * 0.60 + (h01(x, y, 31) - 0.5) * 0.55, x, y, 33));
+        }
       }
-      for (let i = 0; i < 420; i++) {                        // twigs — short 1px runs, any angle
-        const x = (rnd() * P) | 0, y = (rnd() * P) | 0;
-        const len = 3 + ((rnd() * 7) | 0), horiz = rnd() < 0.5;
-        stamp(x, y, horiz ? len : 1, horiz ? 1 : len, rgba(LT.TWIG, 0.30 + 0.35 * rnd()));
+
+      /* SURFACE ROOTS — the floor's only LONG feature and the reason it now has direction.
+         ⛔ A ROOT IS RELIEF IN THE GROUND; A TWIG IS AN OBJECT ON IT. At w0 1.4-4 and full
+         contrast the two populations were indistinguishable and the floor just had "sticks" all
+         over it. A root has to be BROAD, LONG and LOW-CONTRAST — it is the ground bulging — and
+         the twigs on top of it stay thin and sharp. Same distinction the moon needed between a
+         wrinkle ridge and a scratch: a buckle is broad or it is a crack. */
+      for (let i = 0; i < 15; i++) {
+        let x = rnd() * P, y = rnd() * P, a = rnd() * TAU;
+        const steps = 130 + ((rnd() * 240) | 0), w0 = 2.6 + rnd() * 4.4;
+        for (let s = 0; s < steps; s++) {
+          a += (rnd() - 0.5) * 0.11;
+          x += Math.cos(a); y += Math.sin(a);
+          const w = Math.max(1.2, w0 * (1 - (s / steps) * 0.62));
+          const nx = -Math.sin(a), ny = Math.cos(a);
+          const lim = Math.ceil(w) + 2;
+          for (let k = -lim; k <= lim; k++) {
+            const e = k / (w + 0.001);
+            const px = Math.round(x + nx * k), py = Math.round(y + ny * k);
+            /* WHICH WAY THIS FLANK FACES. The outward normal is (nx,ny) signed by k, and a face
+               is LIT when it runs along SUN — the one convention the whole ground now shares. */
+            const face = (k < 0 ? -1 : 1) * (nx * SUN.x + ny * SUN.y);
+            if (Math.abs(e) > 1) {
+              if (face < -0.1 && Math.abs(e) < 2.1) shade(px, py, 0.66);
+              continue;
+            }
+            put(px, py, dither(LT.ROOT, 0.30 + 0.22 * (1 - e * e) + 0.26 * face, px, py, 37));
+          }
+        }
       }
-      for (let i = 0; i < 700; i++) {                        // moss speckle — the fine green tooth
-        const x = (rnd() * P) | 0, y = (rnd() * P) | 0;
-        stamp(x, y, 1, 1, rgba(LT.MOSS_L, 0.14 + 0.30 * rnd()));
+
+      /* NEEDLE DRIFT — conifer litter gathers in mats that all lie one way, and that shared
+         HEADING is what tells it apart from broadleaf litter at a glance. Cool and dark, so it
+         also does the job of separating the warm leaves from each other. */
+      const ndrift = noiseField(9, rnd), nang = noiseField(5, rnd);
+      for (let i = 0; i < 9000; i++) {
+        const x = rnd() * P, y = rnd() * P, u = x / P, v = y / P;
+        if (rnd() > clamp01((ndrift(u, v) - 0.50) * 3.4)) continue;
+        const a = nang(u, v) * TAU + (rnd() - 0.5) * 0.55;
+        const len = 2 + ((rnd() * 4) | 0);
+        const col = ramp(LT.NEEDLES, 0.18 + rnd() * 0.75);
+        for (let s = 0; s < len; s++) put(Math.round(x + Math.cos(a) * s), Math.round(y + Math.sin(a) * s), col);
       }
-      for (let i = 0; i < 130; i++) {                        // pebbles, lit on the sun side
-        const x = (rnd() * P) | 0, y = (rnd() * P) | 0, s = 1 + ((rnd() * 2) | 0);
-        stamp(x, y, s, s, rgba(LT.STONE, 0.20 + 0.20 * rnd()));
-        stamp(x, y, 1, 1, rgba([104, 104, 96], 0.22));
+
+      /* TWIGS — a long thin object WITH A SHADOW BESIDE IT, which is the whole of what makes it
+         read as lying ON the floor rather than being drawn INTO it. */
+      for (let i = 0; i < 380; i++) {
+        const x = rnd() * P, y = rnd() * P;
+        const a = rnd() * TAU, len = 5 + ((rnd() * 17) | 0), th = rnd() < 0.30 ? 2 : 1;
+        const col = ramp(LT.ROOT, 0.20 + rnd() * 0.45), hi = ramp(LT.ROOT, 0.75 + rnd() * 0.25);
+        for (let s = 0; s <= len; s++) {
+          const px = x + Math.cos(a) * s, py = y + Math.sin(a) * s;
+          for (let k = 0; k < th + 1; k++)
+            shade(Math.round(px - SUN.x * 1.7), Math.round(py - SUN.y * 1.7 + k), 0.62);
+          for (let k = 0; k < th; k++)
+            put(Math.round(px), Math.round(py + k), k === 0 && rnd() < 0.45 ? hi : col);
+        }
       }
+
+      /* LEAF LITTER — the dominant object, and the one that was doing nothing whatsoever. Each
+         leaf is an oriented lozenge with a midrib, opaque, drawn on its own contact shadow, and
+         sized from a POWER LAW: a distribution with no big end carries no scale cue at all, and
+         a floor of uniformly 2px specks is a wash by another name. */
+      const drift = noiseField(7, rnd);
+      for (let i = 0; i < 9000; i++) {
+        const x = rnd() * P, y = rnd() * P, u = x / P, v = y / P;
+        /* LEAVES DRIFT: they gather in hollows and pile against things, and the ground between
+           the piles is SWEPT BARE. Density variation of DISCRETE OBJECTS is structure the eye
+           reads as terrain; the identical variation applied to COLOUR is a camouflage blob. Same
+           field, opposite outcome — which is why the big fields did not have to be thrown away,
+           only moved off the paint and onto the population.
+           The curve matters as much as the field: a linear accept spreads leaves everywhere at
+           slightly different rates, which is CONFETTI. The power term is what buys genuinely bare
+           duff next to genuinely deep litter, and that contrast is the large-scale read. */
+        if (rnd() > Math.pow(clamp01((drift(u, v) - 0.26) * 1.7), 1.5)) continue;
+        const L = 2 + Math.pow(rnd(), 2.6) * 8.5, W = L * (0.40 + rnd() * 0.32);
+        /* A DRY LEAF IS AN EVENT. At a third of them the floor was orange confetti; the bright
+           end has to be rare or it stops being the bright END and becomes the base colour. */
+        const dry = rnd() < 0.15;
+        const pal = dry ? LT.LEAF_DRY : LT.LEAF_WET;
+        const t = (dry ? 0.40 : 0.14) + rnd() * 0.52;
+        const face = ramp(pal, t), rib = ramp(pal, t + 0.30);
+        const a = rnd() * TAU, ca = Math.cos(a), sa = Math.sin(a);
+        const hl = L / 2, hw = W / 2;
+        for (let pass = 0; pass < 2; pass++) {
+          const ox = pass ? 0 : -SUN.x * 1.5, oy = pass ? 0 : -SUN.y * 1.5;
+          for (let tt = -hl; tt <= hl; tt += 0.55) {
+            const wq = hw * Math.sqrt(Math.max(0, 1 - (tt / hl) * (tt / hl)));
+            for (let ss = -wq; ss <= wq; ss += 0.55) {
+              const px = Math.round(x + tt * ca - ss * sa + ox), py = Math.round(y + tt * sa + ss * ca + oy);
+              if (pass) put(px, py, Math.abs(ss) < 0.55 && L > 4.5 ? rib : face);
+              else shade(px, py, 0.58);
+            }
+          }
+        }
+      }
+
+      /* GRASS AND SEDGE — the floor had none of it, and Andrew named it first. A tuft seen from
+         directly above is a ROSETTE: blades fanning from one crown, dark where they leave the
+         ground and bright at the tips, because a blade tilts up into the light along its length.
+         Tufts want damp and they want light, so they ride the same wetness field the moss does. */
+      /* ⛔ A TUFT HAS TO BE BIG ENOUGH TO BE A TUFT. At R 2.5-7.5 with five blades these read as
+         green dust — the same mistake the old litter made, a mark below the size at which the eye
+         resolves a shape. A blade must be long enough that its dark base and its lit tip are two
+         separate pixels, or the whole gradient that says "grass" averages away. */
+      for (let i = 0; i < 520; i++) {
+        const x = rnd() * P, y = rnd() * P, u = x / P, v = y / P;
+        const w = wetA(u, v) * 0.6 + wetB(u, v) * 0.4;
+        if (rnd() > clamp01((w - 0.34) * 2.4)) continue;
+        const n = 7 + ((rnd() * 11) | 0), Rr = 4 + Math.pow(rnd(), 1.5) * 8;
+        for (let k = 0; k < 14; k++) {                       // one shadow under the crown, not per blade
+          const aa = rnd() * TAU, dd = rnd() * Rr * 0.5;
+          shade(Math.round(x + Math.cos(aa) * dd - SUN.x * 1.6), Math.round(y + Math.sin(aa) * dd - SUN.y * 1.6), 0.64);
+        }
+        for (let b = 0; b < n; b++) {
+          const a = rnd() * TAU, len = Rr * (0.5 + 0.6 * rnd()), bow = (rnd() - 0.5) * 0.7;
+          for (let s = 0; s <= len; s += 0.6) {
+            const tt = s / len, aa = a + bow * tt;
+            put(Math.round(x + Math.cos(aa) * s), Math.round(y + Math.sin(aa) * s),
+              ramp(LT.GRASS, 0.06 + tt * 0.80 + (rnd() - 0.5) * 0.20));
+          }
+        }
+      }
+
+      /* STONES — a lit face and a cast shadow, where before there was a flat translucent square.
+         The only cool grey in all that warm litter, so a handful buy a lot of separation.
+         ⛔ A HANDFUL. At 170 evenly-scattered round pebbles this read as a gravel driveway: the
+         moment a minority material is spread evenly at one size it stops being an accent and
+         becomes the surface. They are rarer, mostly tiny, and LOBED — a perfect circle is the one
+         outline out here that could only have been made by a machine. */
+      for (let i = 0; i < 55; i++) {
+        const x = rnd() * P, y = rnd() * P;
+        const Rr = 1.1 + Math.pow(rnd(), 2.2) * 4.2, lim = Math.ceil(Rr) + 2;
+        const m = 3 + ((rnd() * 3) | 0), ph = rnd() * TAU, amp = 0.14 + rnd() * 0.16;
+        const rAt = th => Rr * (1 + amp * Math.sin(th * m + ph));
+        for (let pass = 0; pass < 2; pass++) {
+          for (let dy = -lim; dy <= lim; dy++) {
+            for (let dx = -lim; dx <= lim; dx++) {
+              const d = Math.sqrt(dx * dx + dy * dy);
+              if (d > rAt(Math.atan2(dy, dx))) continue;
+              if (pass) put(Math.round(x + dx), Math.round(y + dy),
+                ramp(LT.GRIT, 0.22 + 0.55 * ((dx * SUN.x + dy * SUN.y) / Rr) + (rnd() - 0.5) * 0.28));
+              else shade(Math.round(x + dx - SUN.x * 1.7), Math.round(y + dy - SUN.y * 1.7), 0.58);
+            }
+          }
+        }
+      }
+
+      c.putImageData(img, 0, 0);
       return cv;
     },
 
@@ -255,27 +455,72 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
        the trees stand on top of it. It tiles at a different period from the patch, so the two
        repeats beat against each other instead of lining up into visible wallpaper.
 
-       IT IS QUANTIZED, NOT SOFT. The first cut stacked radial gradients, and once that was blitted
-       across the whole floor the result was exactly the note the first forest died of: a soft brown
-       haze over everything, with no edge anywhere. A sun pool falling through a canopy gap has a
-       SHAPE. Three flat steps give it one, and the CRT pass will do the rest of the softening. */
+       ⛔ SUNFLECKS, NOT BLOBS — and this pass was the other half of the camouflage. It used to be
+       a three-step quantization of a 640px noise field: pale amoebas a hundred pixels across with
+       hard contour rings inside them, laid over the entire floor at 34% alpha. That is a camo
+       stencil with the serial number filed off, and it was also wrong about the physics.
+
+       A sunfleck is the SUN'S OWN DISC projected through a gap in the canopy. That makes it
+       SMALL (the gap's height divides its width by about a hundred), hard-edged, ringed by a
+       real penumbra because the sun is half a degree wide, and CLUSTERED, because the gaps are.
+       Small and bright reads as a highlight; large and mid-value reads as a patch of paint. Same
+       pass, same field even — opposite outcome.
+
+       The tile is BLACK between flecks, and black adds nothing under 'lighter', so the floor
+       keeps its own colour everywhere the sun does not actually reach. Which is most of it: a
+       closed canopy passes a few percent of the light standing above it. */
     buildOverlay(rnd) {
       const P = FOREST.DAPPLE, LT = FOREST.LIGHT;
       const cv = mkCv(P, P), c = cv.getContext('2d');
-      const big = noiseField(4, rnd), mid = noiseField(9, rnd), fine = noiseField(19, rnd);
       const img = c.createImageData(P, P), D = img.data;
-      let p = 0;
-      for (let y = 0; y < P; y++) {
-        for (let x = 0; x < P; x++) {
-          const u = x / P, v = y / P;
-          const n = big(u, v) * 0.50 + mid(u, v) * 0.32 + fine(u, v) * 0.18;
-          /* only the top of the distribution lights up at all — a canopy is mostly closed, so most
-             of the floor gets nothing and the pools that do exist are worth looking at. */
-          const t = clamp01((n - 0.56) * 3.4);
-          const step = t <= 0 ? 0 : t < 0.34 ? 0.34 : t < 0.72 ? 0.66 : 1;
-          D[p] = LT.DAPPLE[0] * step; D[p + 1] = LT.DAPPLE[1] * step; D[p + 2] = LT.DAPPLE[2] * step;
-          D[p + 3] = 255;
-          p += 4;
+      for (let i = 3; i < D.length; i += 4) D[i] = 255;             // opaque black
+
+      const idx = (x, y) => {
+        const yi = ((Math.floor(y) % P) + P) % P, xi = ((Math.floor(x) % P) + P) % P;
+        return (yi * P + xi) * 4;
+      };
+      /* BRIGHTEST WINS where flecks overlap. Adding them would let a cluster stack into one big
+         saturated blob, which is the exact failure this pass exists to undo. */
+      const lift = (x, y, s) => {
+        const i = idx(x, y), r = LT.DAPPLE[0] * s;
+        if (r > D[i]) { D[i] = r; D[i + 1] = LT.DAPPLE[1] * s; D[i + 2] = LT.DAPPLE[2] * s; }
+      };
+
+      /* WHERE THE GAPS ARE. One field decides which parts of the tile sit under a hole in the
+         canopy; flecks exist only there and crowd toward the middle of a gap. A uniform scatter
+         of flecks is a starfield, not sunlight through leaves. */
+      /* ⛔ FLECKS THAT TOUCH ARE A BLOB AGAIN. First cut ran 4200 flecks against a lattice-4 gap
+         field (176px openings) and let them grow to 13px: inside an opening the coverage went
+         past 100% and every fleck fused with its neighbours into one pale continent — camouflage
+         with the values inverted, which is still camouflage. Three things hold them apart, and
+         all three are needed: the gap field runs at lattice 11 (64px openings, smaller than a
+         crown, so an opening is never a landscape feature), the accept curve is CUBED so only
+         the very centre of an opening lights up at all, and the flecks are small. What should be
+         legible is a SPRAY OF SEPARATE BRIGHT MARKS with dark floor between them — that gap
+         between the marks is the entire read. */
+      const gap = noiseField(11, rnd);
+      for (let i = 0; i < 2600; i++) {
+        const x = rnd() * P, y = rnd() * P;
+        const open = clamp01((gap(x / P, y / P) - 0.56) * 3.4);
+        if (rnd() > open * open * open) continue;
+        /* A FLECK'S SHAPE IS THE GAP'S SHAPE, not the sun's — two harmonics on the radius give
+           the ragged leaf-bitten outline every real sunfleck has. A circle would read as a dot. */
+        const r0 = 1.3 + Math.pow(rnd(), 2.6) * 7.5 * (0.5 + open);
+        const m1 = 2 + ((rnd() * 3) | 0), m2 = 5 + ((rnd() * 4) | 0);
+        const p1 = rnd() * TAU, p2 = rnd() * TAU;
+        const a1 = 0.14 + rnd() * 0.18, a2 = 0.06 + rnd() * 0.12;
+        const amp = 0.52 + 0.48 * open, lim = Math.ceil(r0 * 1.4) + 2;
+        for (let dy = -lim; dy <= lim; dy++) {
+          for (let dx = -lim; dx <= lim; dx++) {
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d > r0 * 1.4 + 2) continue;
+            const th = Math.atan2(dy, dx);
+            const k = d / (r0 * (1 + a1 * Math.sin(th * m1 + p1) + a2 * Math.sin(th * m2 + p2)));
+            /* THREE FLAT STEPS: core, penumbra, edge. The penumbra is real, but it is a RING and
+               not a gradient — and a ring is what keeps this pixel art instead of a photograph. */
+            const s = k < 0.62 ? 1 : k < 0.88 ? 0.60 : k < 1.06 ? 0.28 : 0;
+            if (s > 0) lift(x + dx, y + dy, s * amp);
+          }
         }
       }
       c.putImageData(img, 0, 0);
