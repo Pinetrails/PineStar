@@ -83,7 +83,7 @@
       { id: 'slack', title: 'SLACK', pre: 'sl', accent: '#b98ec8',
         // HONESTY: channel messages need a chat allowlist no production path supplies yet — DMs only today.
         // audit finding 5: Slack appears in BOTH panels — say which direction THIS one is.
-        tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet. Want the agent to USE Slack as a tool instead? That\'s ⇄ TOOLSETS.)',
+        tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet. Want the agent to USE Slack as a tool instead? That\'s ⇄ ABILITIES.)',
         verb: 'receiving',
         steps: [
           'Open <b>api.slack.com/apps</b> → <b>Create New App</b> → From scratch.',

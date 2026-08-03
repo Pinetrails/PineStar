@@ -6265,9 +6265,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // LAST OUTCOME — the most recent honest attempt (minted/none/rejected/skipped/error) the refresher recorded.
     const last = s && s.ledger && s.ledger.length ? s.ledger[s.ledger.length - 1] : null;
     const OUTCOME_LABEL = { minted: 'minted a quest', none: 'no new step needed', rejected: 'rejected', skipped: 'skipped', error: 'error' };
+    let lastReason = last ? String(last.reason || '') : '';
+    let lastRawTip = '';
+    if (last && last.outcome === 'error' && lastReason && typeof Friendly !== 'undefined') {
+      try {
+        const fe = Friendly.friendlyError(lastReason);
+        if (fe && fe.userMessage) { lastRawTip = lastReason; lastReason = fe.userMessage; }
+      } catch (_) {}
+    }
     const lastHtml = last
       ? '<div class="sub q-refresh-last"><span class="q-outcome q-oc-' + esc(last.outcome || 'skipped') + '">' + esc(OUTCOME_LABEL[last.outcome] || last.outcome || '—') + '</span> '
-          + esc(last.reason || '') + (last.title ? ' &mdash; &ldquo;' + esc(last.title) + '&rdquo;' : '')
+          + (lastRawTip ? '<span title="' + esc(lastRawTip) + '">' + esc(lastReason) + '</span>' : esc(lastReason))
+          + (last.title ? ' &mdash; &ldquo;' + esc(last.title) + '&rdquo;' : '')
           + ' <span class="dim">&middot; ' + esc(qrRel(last.at)) + '</span></div>'
       : '<div class="sub q-refresh-last dim">no refresh has run yet.</div>';
     // DUE — when the next standing cycle lands (or that one is due now). Honest read of the engine's own clock.

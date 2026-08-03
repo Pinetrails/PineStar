@@ -250,10 +250,10 @@ const Marketplace = (() => {
         '<span class="mkt-screw tl"></span><span class="mkt-screw tr"></span><span class="mkt-screw bl"></span><span class="mkt-screw br"></span>' +
         '<span class="mkt-brk tl"></span><span class="mkt-brk tr"></span><span class="mkt-brk bl"></span><span class="mkt-brk br"></span>' +
         '<div class="mkt-head">' +
-          '<div class="mkt-nameplate"><span class="mkt-title" id="mkt-title">▮ RECRUITMENT BAY</span>' +
+          '<div class="mkt-nameplate"><span class="mkt-title" id="mkt-title">' + esc(title()) + '</span>' +
             '<span class="mkt-sub" id="mkt-sub">' + esc(subtitle()) + '</span></div>' +
           '<div class="mkt-search">⌕ <input id="mkt-q" type="text" autocomplete="off" spellcheck="false" placeholder="search classes…" aria-label="Search classes"></div>' +
-          '<button class="mkt-x" aria-label="Close recruitment bay" title="close">✕</button>' +
+          '<button class="mkt-x" id="mkt-x" aria-label="' + esc('Close ' + plainTitle().toLowerCase()) + '" title="close">✕</button>' +
         '</div>' +
         '<div class="mkt-bar" id="mkt-bar"></div>' +
         '<div class="mkt-stage" id="mkt-stage"></div>' +
@@ -393,6 +393,17 @@ const Marketplace = (() => {
       if (q) { e.preventDefault(); q.focus(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (_) {} }
     }
   }
+  /* The bay hosts TWO dock doors: CREW ▸ RECRUIT (agents) and WORK ▸ RECIPES. The nameplate used to be
+     hardcoded to RECRUITMENT BAY, so launching a recipe opened a window titled with a CREW concept — the
+     subtitle and search placeholder already tracked the tab, the title never did (UI audit 2026-08-03).
+     LABEL LAW (index.html): the title must match or be prefixed by the dock button that opened it, so the
+     recipes tab reads RECIPES — exactly the ❒ RECIPES label. plainTitle() feeds the close button's
+     aria-label; title() adds the ▮ nameplate glyph. */
+  function plainTitle() {
+    return (!(ctx && ctx.mode === 'pick') && tab === 'recipes' && hasRecipes()) ? 'RECIPES' : 'RECRUITMENT BAY';
+  }
+  function title() { return '▮ ' + plainTitle(); }
+
   function subtitle() {
     if (ctx && ctx.mode === 'pick') return ctx.summon
       ? ('summon a new agent onto your crew — it gets its own chat thread'
@@ -462,7 +473,7 @@ const Marketplace = (() => {
       tab = next; view = 'grid'; laneFilter = 'all'; catFilter = 'all'; sfx('click');
       if (next === 'recipes') bumpRecipeVisits();   // arriving via the tab IS a visit (open() only sees ctx.tab)
       pendingCardAnim = true;   // a tab switch is a fresh context — animate; a filter/search rebuild is not
-      renderBar(); renderStage(); syncSub(); syncFoot();
+      renderBar(); renderStage(); syncTitle(); syncSub(); syncFoot();
     }));
     bar.querySelectorAll('.mkt-lane[data-lane]').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.lane; if (next === laneFilter) return;
@@ -478,6 +489,11 @@ const Marketplace = (() => {
     const impAgent = bar.querySelector('.mkt-import-agent');
     if (impAgent) impAgent.addEventListener('click', () => { sfx('click'); enterHarnessImport(); });
     wireImport(bar);
+  }
+  // the nameplate + the close button's aria-label follow the tab, exactly like syncSub does for the subtitle.
+  function syncTitle() {
+    const t = root && root.querySelector('#mkt-title'); if (t) t.textContent = title();
+    const x = root && root.querySelector('#mkt-x'); if (x) x.setAttribute('aria-label', 'Close ' + plainTitle().toLowerCase());
   }
   function syncSub() { const s = root && root.querySelector('#mkt-sub'); if (s) s.textContent = subtitle(); }
   // the footer legend explains the CARD glyphs of the CURRENT tab — clearance pips on AGENTS, setup marks on
@@ -2700,7 +2716,7 @@ const Marketplace = (() => {
     if (typeof fetch === 'undefined') return paint([], 'no station — type the service name in the directive instead');
     fetch('/api/connectors', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => {
       const list = (j && j.connectors) || [];
-      if (!list.length) return paint([], 'no connected services yet — add one in ⇄ TOOLSETS');
+      if (!list.length) return paint([], 'no connected services yet — add one in ⇄ ABILITIES');
       paint(list.map(c => ({ id: c.id, label: c.label || c.id })), '');
     }).catch(() => paint([], 'could not reach the station'));
   }

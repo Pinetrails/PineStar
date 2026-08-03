@@ -93,7 +93,7 @@
         '<label class="rt-term" for="rt-conn" style="display:flex;gap:.5em;align-items:flex-start;cursor:pointer">' +
           '<input type="checkbox" id="rt-conn" style="margin-top:.25em">' +
           '<span>Let this routine use your <b>connected tools</b> ' +
-          '<span class="dim">— the MCP connectors you set up in TOOLSETS, called unattended on your behalf. Connectors you switched off stay off.</span></span>' +
+          '<span class="dim">— the MCP connectors you set up in ⇄ ABILITIES, called unattended on your behalf. Connectors you switched off stay off.</span></span>' +
         '</label>' +
         '<button class="bb sm" id="rt-add">+ ADD ROUTINE</button>' +
       '</div>' +
