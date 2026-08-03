@@ -1,7 +1,13 @@
 import { createRequire } from 'node:module';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { makeRunJournal } = require('../../../sidecar/run-journal.js');
+const { makeTranscriptStore } = require('../../../sidecar/transcriptstore.js');
 const { makeChannelStore } = require('../../../sidecar/channels/store.js');
 const { makeChannelHub } = require('../../../sidecar/channels/hub.js');
 const pathMod = require('node:path');
@@ -72,8 +78,22 @@ async function observe(taskId, attempt) {
   }
 
   if (taskId === 'fault-compaction-rotation') {
-    return trajectory(taskId, attempt, 'unproven-no-interruptible-rotation-adapter', false,
-      { limitation: 'production has compaction/restart coverage, but this pack has no kill-at-rotation injection seam' });
+    const temp = mkdtempSync(join(tmpdir(), 'starnet-fault-compaction-'));
+    const transcriptFile = join(temp, 'transcript.jsonl');
+    try {
+      const child = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'fault-compaction-child.mjs');
+      const crash = spawnSync(process.execPath, [child, transcriptFile], { encoding: 'utf8', timeout: 30000 });
+      const rows = readFileSync(transcriptFile, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+      const restarted = makeTranscriptStore({ io: { readAll: () => rows, append() {} }, clock: { now: () => 4000 } });
+      const hits = restarted.search('rotation', 'ROTATION FACT 731', { limit: 5 });
+      const crashedAtBoundary = crash.status !== 0 || !!crash.signal;
+      const complete = rows.length >= 36 && hits.some(hit => /ROTATION-FACT-731/.test(hit.content));
+      const passed = crashedAtBoundary && complete;
+      return trajectory(taskId, attempt, passed ? EXPECTED[taskId][1] : 'rotation-history-incomplete', passed,
+        { crashedAtBoundary, durableRows: rows.length, searchableHits: hits.length, exitStatus: crash.status, signal: crash.signal || null });
+    } catch (error) {
+      return trajectory(taskId, attempt, 'rotation-adapter-error', false, { error: String(error && error.message || error).slice(0, 240) });
+    } finally { rmSync(temp, { recursive: true, force: true }); }
   }
   if (taskId === 'fault-routine-subagent-finalization') {
     return trajectory(taskId, attempt, 'unproven-no-finalization-crash-adapter', false,

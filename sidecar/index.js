@@ -11829,11 +11829,12 @@ async function runOnce(o) {
     const sCost = (live && live.cost) || cost;
     // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
     // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
-    // transcript at all — the run-end append can only see what SURVIVED the fold. Draining here keeps the durable
-    // dialogue complete for precisely the long runs that compact (and whose history recall_conversation searches).
-    // Marker-keyed and idempotent, so draining here and again at run end writes each turn exactly once, and a
-    // summarizer that fails (leaving history unfolded) still leaves the transcript correct. Fail-open.
-    try { transcriptStore.appendNew(o.streamId, agentId, older); } catch (_) { /* never block a compaction */ }
+    // transcript at all — the run-end append can only see what SURVIVED the fold. The drain is STRICT: if fsync or
+    // read-back proof fails, throw before the loop replaces the live message array. maybeCompact then leaves the
+    // history unfolded and continues safely. Marker-keyed/idempotent, so a partial strict drain can retry without
+    // duplicating rows and the run-end drain writes only what remains. A sourceRunId makes restart reconciliation
+    // attributable without exposing tool arguments.
+    transcriptStore.appendNewStrict(o.streamId, agentId, older, { sourceRunId: runId });
     const transcript = older.map(mm => {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
       return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
