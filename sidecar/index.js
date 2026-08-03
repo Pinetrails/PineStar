@@ -82,6 +82,7 @@ const { makeHarnessSnapshot } = require('./harness-snapshot.js');   // bounded s
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
 const localVoice = require('./local-voice.js');
+const { makeMediaService } = require('./media-service.js');
 const {
   selectProvider,
   listProviderProfiles,
@@ -1629,6 +1630,27 @@ const realtimeVoice = makeRealtimeVoice({
   safetySeed: API_TOKEN
 });
 const nativeStt = makeNativeStt({ platform: process.platform, execFile });
+const media = makeMediaService({
+  workspaces: WORKSPACES,
+  fs,
+  fsp,
+  fetch: globalThis.fetch,
+  edgetts,
+  localVoice,
+  nativeStt,
+  readBody,
+  readBodyBuffer,
+  providerRuntimeKey,
+  providerRuntimeBaseUrl,
+  normalizeProviderId,
+  getRuntimeKey: () => runtimeKey,
+  env: ENV,
+  processEnv: process.env,
+  redact,
+  logger: console,
+  now: () => Date.now(),
+  randomUUID: () => crypto.randomUUID()
+});
 function providerCredentialError(provider) {
   const id = normalizeProvider(provider);
   const profile = getProviderProfile(id);
@@ -2382,41 +2404,6 @@ const TELEGRAM_STATUS_OFFLINE = String(ENV('TELEGRAM_STATUS_OFFLINE') || '').tri
 function telegramStatusLine(ad, up) {
   if (!TELEGRAM_STATUS_INDICATOR || !ad || typeof ad.setShortDescription !== 'function') return;
   try { Promise.resolve(ad.setShortDescription(up ? TELEGRAM_STATUS_ONLINE : TELEGRAM_STATUS_OFFLINE)).catch(() => {}); } catch (_) {}
-}
-const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
-try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
-let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
-
-// STT model for /api/stt — an audio-INPUT-capable chat model on OpenRouter (verified live). Overridable so a
-// better/cheaper transcription model can be swapped without a code change. gemini-3.1-flash-lite-preview
-// documents audio input/ASR; a comma-list lets us try fallbacks in order if the first is unavailable.
-const STT_MODELS = String(ENV('STT_MODELS') || 'google/gemini-3.1-flash-lite-preview,google/gemini-2.5-flash')
-  .split(',').map(s => s.trim()).filter(Boolean);
-
-// Voice round-trips (TTS/STT) are the app's hottest external calls, back-to-back to one host. Node's global
-// fetch (undici) already pools + keep-alives connections, but a dedicated dispatcher lets us widen the pool and
-// give TTS/STT their own generous timeouts without touching every other fetch. undici isn't a resolvable module
-// in this Node build (it's the internal impl, not a package), so this is guarded: on failure we simply pass no
-// dispatcher and rely on the default pool — never a hack, never a hard dependency.
-let voiceDispatcher = null;
-(async () => {
-  try {
-    const u = await import('undici');
-    if (u && u.Agent) voiceDispatcher = new u.Agent({ keepAliveTimeout: 30000, keepAliveMaxTimeout: 60000, connections: 8 });
-  } catch (_) { voiceDispatcher = null; }   // internal undici not importable → default global pool (still keep-alived)
-})();
-// voiceFetchOpts — attach the keep-alive dispatcher AND a hard wall-clock via AbortSignal.timeout so a stalled
-// TTS/STT upstream can't hang the request (and, via the 200-always contract, the frontend voice loop) forever.
-// timeoutMs is per-caller (TTS ~60s, STT ~120s — a longer clip transcription). If a base.signal is ever passed,
-// combine the two so either aborts. Falls back gracefully if AbortSignal.timeout/any is unavailable.
-function voiceFetchOpts(base, timeoutMs) {
-  base = base || {};
-  if (timeoutMs > 0 && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-    const t = AbortSignal.timeout(timeoutMs);
-    const signal = (base.signal && typeof AbortSignal.any === 'function') ? AbortSignal.any([base.signal, t]) : t;
-    base = Object.assign({}, base, { signal });
-  }
-  return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base;
 }
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 
@@ -6132,11 +6119,7 @@ function startTelegram(token, key, model, agentCfg) {
     // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
     // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
     // failure degrades to a note naming the saved .ogg, exactly the old behaviour.
-    transcribe: async (buffer, mime) => {
-      const fmt = /ogg|opus/.test(String(mime || '')) ? 'ogg' : (/(webm|wav|mp3|mpeg|m4a|mp4)/.exec(String(mime || '')) || [, 'ogg'])[1];
-      try { return await transcribeAudioBuffer(buffer, fmt === 'mpeg' ? 'mp3' : fmt, runtimeKey); }
-      catch (e) { return { ok: false, reason: (e && e.message) || 'transcribe failed' }; }
-    },
+    transcribe: media.transcribeForMime,
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
   });
@@ -6355,11 +6338,7 @@ function startTelegramBot(botId) {
     // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
     // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
     // failure degrades to a note naming the saved .ogg, exactly the old behaviour.
-    transcribe: async (buffer, mime) => {
-      const fmt = /ogg|opus/.test(String(mime || '')) ? 'ogg' : (/(webm|wav|mp3|mpeg|m4a|mp4)/.exec(String(mime || '')) || [, 'ogg'])[1];
-      try { return await transcribeAudioBuffer(buffer, fmt === 'mpeg' ? 'mp3' : fmt, runtimeKey); }
-      catch (e) { return { ok: false, reason: (e && e.message) || 'transcribe failed' }; }
-    },
+    transcribe: media.transcribeForMime,
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
     // INLINE KEYBOARDS (C6) — same wiring as the station bot, with its OWN registry so tokens minted for this
@@ -6827,7 +6806,7 @@ function routeFailure(res, err) {
    table so the contract is visible as data:
    - runFailPolicy       — /api/run streams NDJSON; a failure writes a run-shaped NDJSON error line
                            (runroute.js contract) instead of the generic 500 envelope.
-   - ttsFailOpenPolicy / sttFailOpenPolicy — the 200-always media contract (backend law, LOCKED in
+   - media.ttsFailOpenPolicy / media.sttFailOpenPolicy — the 200-always media contract (backend law, LOCKED in
                            DECISIONS.md): a thrown failure must still answer 200 with an error
                            payload, NOT flow into routeFailure's 500 — the frontend voice loop
                            depends on it.
@@ -6836,8 +6815,6 @@ function routeFailure(res, err) {
    - attachmentFailPolicy — upload failures answer a JSON {ok:false} envelope (500) so the COMMS
                            attach flow shows an honest error instead of a broken fetch. */
 function runFailPolicy(res, e) { return runRouteFailure(res, e, redact); }
-function ttsFailOpenPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: redact('tts failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } }
-function sttFailOpenPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason: redact('stt failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } }
 function devInboundFailPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: redact('dev inbound failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) {} }
 function attachmentFailPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: false, error: redact('upload failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } }
 
@@ -6877,15 +6854,15 @@ const ROUTES = [
   { m: 'POST', exact: '/api/station/ack', h: handleStationAck },
   { m: 'GET', qsplit: '/api/realtime/status', h: handleRealtimeStatus },
   { m: 'POST', qsplit: '/api/realtime/session', h: handleRealtimeSession },
-  { m: 'GET', exact: '/api/stt/native/status', h: handleNativeSttStatus },
-  { m: 'POST', exact: '/api/stt/native', h: handleNativeStt },
-  { m: 'GET', exact: '/api/local-voice/status', h: handleLocalVoiceStatus },
-  { m: 'POST', exact: '/api/local-voice/warm', h: handleLocalVoiceWarm },
-  { m: 'POST', exact: '/api/local-voice/transcribe', h: handleLocalVoiceTranscribe },
+  { m: 'GET', exact: '/api/stt/native/status', h: media.handleNativeSttStatus },
+  { m: 'POST', exact: '/api/stt/native', h: media.handleNativeStt },
+  { m: 'GET', exact: '/api/local-voice/status', h: media.handleLocalVoiceStatus },
+  { m: 'POST', exact: '/api/local-voice/warm', h: media.handleLocalVoiceWarm },
+  { m: 'POST', exact: '/api/local-voice/transcribe', h: media.handleLocalVoiceTranscribe },
   { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
-  { m: 'POST', exact: '/api/tts', h: handleTts, errorPolicy: ttsFailOpenPolicy },
+  { m: 'POST', exact: '/api/tts', h: media.handleTts, errorPolicy: media.ttsFailOpenPolicy },
   // stt: qsplit == the old (url === '/api/stt' || url.indexOf('/api/stt?') === 0) disjunction, verbatim.
-  { m: 'POST', qsplit: '/api/stt', h: handleStt, errorPolicy: sttFailOpenPolicy },
+  { m: 'POST', qsplit: '/api/stt', h: media.handleStt, errorPolicy: media.sttFailOpenPolicy },
   { m: 'POST', exact: '/api/cancel', h: handleCancel },
   { m: 'POST', exact: '/api/run/steer', h: handleRunSteer },
   { m: 'GET', exact: '/api/version', h: handleVersion },
@@ -7503,52 +7480,6 @@ async function handleRealtimeSession(req, res) {
   const out = await realtimeVoice.createCall(offer, provider, wantVoice);
   res.writeHead(out.status, { 'Content-Type': out.contentType, 'Cache-Control': 'no-store' });
   res.end(out.body);
-}
-function handleNativeSttStatus(req, res) {
-  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(nativeStt.status()));
-}
-async function handleNativeStt(req, res) {
-  const ac = new AbortController();
-  res.on('close', () => { if (!res.writableEnded) ac.abort(); });
-  const out = await nativeStt.recognize({ signal: ac.signal });
-  if (res.destroyed || res.writableEnded) return;
-  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(out));
-}
-function handleLocalVoiceStatus(req, res) {
-  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(localVoice.status()));
-}
-async function handleLocalVoiceWarm(req, res) {
-  const json = (code, value) => {
-    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(value));
-  };
-  // A build without the offline model packages can never warm — say so outright rather than 202-ing a
-  // load that will only surface as a module-not-found string in the panel.
-  const current = localVoice.status();
-  if (!current.available) return json(501, current);
-  // Loading continues on the server even if the panel closes. The client polls status for download progress.
-  localVoice.warm().catch(error => console.error('[local-voice] warm failed:', error && error.message || error));
-  json(202, current);
-}
-async function handleLocalVoiceTranscribe(req, res) {
-  const json = (code, value) => {
-    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(value));
-  };
-  let pcm;
-  try { pcm = await readBodyBuffer(req, 4 * 16000 * 30, res); }
-  catch (error) { if (!res.headersSent) json(error && error.tooLarge ? 413 : 400, { error: 'invalid audio payload' }); return; }
-  try {
-    const text = await localVoice.transcribe(pcm);
-    json(200, { ok: true, text });
-  } catch (error) {
-    // 501 (not 503) when the packages are simply absent: 503 invites the client to retry a capability
-    // this build will never have.
-    json(error && error.unavailable ? 501 : 503, { ok: false, error: String(error && error.message || error) });
-  }
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
    base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */
@@ -11324,9 +11255,9 @@ async function runOnce(o) {
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
   // STUDIO, third skill: voice_generate — the agent MAKES a clip (voiceover, narration, audio message) into its
-  // workspace. It drives the SAME ladder /api/tts does (agentSpeechSynth below: the keyed neural chain, then the
+  // workspace. It drives the SAME media-service ladder /api/tts does (keyed neural chain, then the
   // free keyless Edge floor), so it needs no voice-specific credential and a zero-key station can still record.
-  makeVoiceTools({ synth: agentSpeechSynth, fsp, pathMod: path, root: WORKSPACES }).register(registry);
+  makeVoiceTools({ synth: media.synthesizeForAgent, fsp, pathMod: path, root: WORKSPACES }).register(registry);
   // JUKEBOX (Spotify): registered every run, EXPOSED via a 'jukebox' object; no-op (clear error) until the user
   // connects Spotify in TOOLSETS. The OAuth session + auto-refresh live in the station-wide spotifyStore above.
   makeSpotifyTools({ store: spotifyStore }).register(registry);
@@ -14504,609 +14435,6 @@ function consentSummary(call) {
   if (typeof a.path === 'string' && a.path) return a.path;
   try { const s = JSON.stringify(a); return s.length > 80 ? s.slice(0, 77) + '…' : s; } catch (_) { return ''; }
 }
-
-/* POST /api/tts — neural text-to-speech from WHATEVER AI credential the station already holds (no
-   voice-specific secret): OpenRouter /audio/speech, native Gemini TTS (same prebuilt voices), or
-   OpenAI /audio/speech as an approximation. Returns audio bytes, or a small {fallback:true} JSON so
-   the browser drops back to its built-in speechSynthesis. Results are cached on disk by
-   (model,voice,style,text) so repeated lines (acks, catchphrases) cost nothing and play instantly. */
-const TTS_DEFAULT_MODEL = 'google/gemini-3.1-flash-tts-preview';
-// Credential preference order for TTS. OpenRouter first (the historical path), then Gemini natively
-// (identical model + prebuilt voices — Algenib IS a Gemini voice, so the clip is the same), then OpenAI
-// (different vendor: nearest-voice approximation via gpt-4o-mini-tts + its `instructions` steer).
-// Codex (ChatGPT OAuth) is deliberately absent: that token only reaches the Codex responses endpoint —
-// there is no audio API it can call, so it can never speak. TRUTHFUL degrade: such a station gets the
-// honest 'no key' fallback, never a fake voice.
-const TTS_KEY_PROVIDERS = ['openrouter', 'gemini', 'openai'];
-const OPENAI_TTS_MODEL = 'gpt-4o-mini-tts';
-// nearest OpenAI voice for the station's locked Ultron identity (Algenib = low gravelly male → onyx).
-const OPENAI_TTS_VOICE = 'onyx';
-// prepend a 44-byte WAV header so the browser can play raw PCM (Gemini TTS only outputs pcm).
-function pcmToWav(pcm, sampleRate, channels) {
-  const bits = 16, blockAlign = channels * bits / 8, byteRate = sampleRate * blockAlign;
-  const h = Buffer.alloc(44);
-  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8);
-  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(channels, 22);
-  h.writeUInt32LE(sampleRate, 24); h.writeUInt32LE(byteRate, 28); h.writeUInt16LE(blockAlign, 32); h.writeUInt16LE(bits, 34);
-  h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([h, pcm]);
-}
-// the voice cache writes one file per distinct spoken line and never pruned them — over weeks as the
-// PRIMARY interaction that's hundreds of MB of orphaned audio. Sweep opportunistically (throttled, after
-// the response, never blocking it): unlink stale .tmp orphans, then evict oldest by mtime past a cap.
-async function maybeEvictVoiceCache() {
-  if (evictingVoiceCache) return;
-  evictingVoiceCache = true;
-  try {
-    const names = await fsp.readdir(VOICE_CACHE_DIR);
-    const now = Date.now();
-    const audio = []; let total = 0;
-    for (const n of names) {
-      const fp = path.join(VOICE_CACHE_DIR, n);
-      let st; try { st = await fsp.stat(fp); } catch (_) { continue; }
-      if (!st.isFile()) continue;
-      if (n.endsWith('.tmp')) { if (now - st.mtimeMs > 5 * 60 * 1000) { try { await fsp.unlink(fp); } catch (_) {} } continue; }
-      audio.push({ fp, mtime: st.mtimeMs, size: st.size }); total += st.size;
-    }
-    const MAX_FILES = 600, MAX_BYTES = 200 * 1024 * 1024, LOW = 0.8;
-    if (audio.length <= MAX_FILES && total <= MAX_BYTES) return;
-    audio.sort((a, b) => a.mtime - b.mtime);   // oldest first
-    let files = audio.length, bytes = total;
-    for (const f of audio) {
-      if (files <= MAX_FILES * LOW && bytes <= MAX_BYTES * LOW) break;
-      try { await fsp.unlink(f.fp); files--; bytes -= f.size; } catch (_) {}
-    }
-  } catch (_) { /* eviction must never throw into the request path */ }
-  finally { evictingVoiceCache = false; }
-}
-/* One keyed-provider synthesis attempt (gemini native / openai / openrouter). Returns the audio on success
-   or { ok:false, reason } on ANY failure — it NEVER touches `res`, so handleTts can fall through to the free
-   Edge floor instead of committing a hard degrade. The provider was chosen upstream (TTS_KEY_PROVIDERS chain). */
-async function ttsSynthKeyed(ttsProvider, o) {
-  const { model, voice, input, text, style, key } = o;
-  if (ttsProvider === 'gemini') {
-    // Native Gemini TTS — the SAME model + prebuilt voice as the OpenRouter path, spoken straight from the
-    // user's Gemini key. generateContent with AUDIO modality returns base64 PCM we wrap to WAV.
-    const base = (providerRuntimeBaseUrl('gemini', '') || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
-    const nativeModel = model.replace(/^google\//, '');
-    let gr;
-    try {
-      gr = await fetch(base + '/models/' + encodeURIComponent(nativeModel) + ':generateContent', voiceFetchOpts({
-        method: 'POST',
-        headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: input }] }],
-          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
-        })
-      }, 60000));
-    } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
-    if (!gr.ok) {
-      let detail = ''; try { detail = (await gr.text()).slice(0, 300); } catch (_) {}
-      return { ok: false, reason: 'gemini ' + gr.status + (detail ? ' — ' + detail : '') };
-    }
-    let j; try { j = await gr.json(); } catch (e) { return { ok: false, reason: 'gemini: bad json' }; }
-    const part = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts
-      && j.candidates[0].content.parts.find(p => p && p.inlineData && p.inlineData.data);
-    if (!part) return { ok: false, reason: 'gemini: no audio in response' };
-    let buf; try { buf = Buffer.from(part.inlineData.data, 'base64'); } catch (e) { return { ok: false, reason: 'gemini: bad audio data' }; }
-    if (!buf || !buf.length) return { ok: false, reason: 'empty audio' };
-    const mt = String(part.inlineData.mimeType || '').toLowerCase();
-    const rate = parseInt((mt.match(/rate=(\d+)/) || [])[1], 10) || 24000;
-    return { ok: true, buf: pcmToWav(buf, rate, 1), outType: 'audio/wav', ext: 'wav' };
-  } else if (ttsProvider === 'openai') {
-    // OpenAI /audio/speech — a different vendor, so the nearest voice (onyx) steered by the same style text
-    // via `instructions`. Honest approximation: it will not be byte-identical to the Gemini voice.
-    const base = (providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1').replace(/\/+$/, '');
-    const payload = { model: OPENAI_TTS_MODEL, input: text, voice: OPENAI_TTS_VOICE, response_format: 'mp3' };
-    if (style) payload.instructions = style;
-    let oa;
-    try {
-      oa = await fetch(base + '/audio/speech', voiceFetchOpts({
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }, 60000));
-    } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
-    if (!oa.ok) {
-      let detail = ''; try { detail = (await oa.text()).slice(0, 300); } catch (_) {}
-      return { ok: false, reason: 'openai ' + oa.status + (detail ? ' — ' + detail : '') };
-    }
-    let buf; try { buf = Buffer.from(await oa.arrayBuffer()); } catch (e) { return { ok: false, reason: 'read: ' + ((e && e.message) || e) }; }
-    if (!buf || !buf.length) return { ok: false, reason: 'empty audio' };
-    return { ok: true, buf, outType: 'audio/mpeg', ext: 'mp3' };
-  }
-  // OpenRouter /audio/speech (the historical path). pcm is the only format Gemini TTS supports (and is widely
-  // available); we wrap it to WAV below.
-  const payload = { model, input, voice, response_format: 'pcm' };
-  let or;
-  try {
-    or = await fetch('https://openrouter.ai/api/v1/audio/speech', voiceFetchOpts({
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
-      body: JSON.stringify(payload)
-    }, 60000));
-  } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
-  if (!or.ok) {
-    let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
-    return { ok: false, reason: 'openrouter ' + or.status + (detail ? ' — ' + detail : '') };
-  }
-  const ct = (or.headers.get('content-type') || '').toLowerCase();
-  let buf; try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return { ok: false, reason: 'read: ' + ((e && e.message) || e) }; }
-  if (!buf || !buf.length) return { ok: false, reason: 'empty audio' };
-  // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
-  if (/pcm|octet-stream/.test(ct) || /rate=|channels=/.test(ct)) {
-    const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
-    const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
-    return { ok: true, buf: pcmToWav(buf, rate, channels), outType: 'audio/wav', ext: 'wav' };
-  }
-  if (/mpeg|mp3/.test(ct)) return { ok: true, buf, outType: 'audio/mpeg', ext: 'mp3' };
-  if (/wav/.test(ct)) return { ok: true, buf, outType: 'audio/wav', ext: 'wav' };
-  if (/ogg/.test(ct)) return { ok: true, buf, outType: 'audio/ogg', ext: 'ogg' };
-  // anything else (e.g. a 200 with a JSON error body) is NOT silently wrapped as WAV — that ships a corrupt blob.
-  return { ok: false, reason: 'unexpected content-type: ' + ct };
-}
-/* agentSpeechSynth({ text, voice, style }) -> { ok, buf, ext, mime, provider } | { ok:false, reason }
-   ONE clip for the voice_generate TOOL (tools/builtin/voice.js). Same ladder POST /api/tts climbs — keyed
-   neural providers in TTS_KEY_PROVIDERS order, then the free keyless Edge floor — reusing ttsSynthKeyed
-   rather than re-implementing it, so the agent's voiceover and the station's own voice come from the same
-   credential and never drift apart. Deliberately NOT sharing the /api/tts disk cache: that cache is keyed
-   for short repeated station lines, and a voiceover is written to the workspace anyway.
-   A failure reports EVERY leg it tried — "no audio" with no reason is the kind of dead end that gets
-   diagnosed as "StarNet can't do voice" when the truth is one dead key. */
-async function agentSpeechSynth(o) {
-  const text = String((o && o.text) || '').replace(/\s+/g, ' ').trim();
-  if (!text) return { ok: false, reason: 'no text' };
-  const style = String((o && o.style) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
-  const wantVoice = String((o && o.voice) || '').trim();
-  const input = style ? ('Say the following in ' + style + ': ' + text) : text;
-  const reasons = [];
-  for (const p of TTS_KEY_PROVIDERS) {
-    const key = providerRuntimeKey(p, '');
-    if (!key) continue;
-    let r;
-    try { r = await ttsSynthKeyed(p, { model: TTS_DEFAULT_MODEL, voice: wantVoice || 'Umbriel', input, text, style, key }); }
-    catch (e) { r = { ok: false, reason: (e && e.message) || String(e) }; }
-    if (r && r.ok && r.buf && r.buf.length) return { ok: true, buf: r.buf, ext: r.ext, mime: r.outType, provider: p };
-    reasons.push(p + ': ' + ((r && r.reason) || 'failed'));
-  }
-  if (edgetts.enabled()) {
-    // Edge names voices 'en-US-ChristopherNeural'. A voice the agent picked for a KEYED provider ('Umbriel')
-    // is meaningless here and would fail the whole synthesis, so it is dropped rather than forwarded — the
-    // floor speaks in its default voice instead of not speaking at all.
-    const edgeVoice = /^[a-z]{2}-[A-Za-z]{2,8}-\w+$/.test(wantVoice) ? wantVoice : '';
-    try {
-      const buf = await edgetts.synth(text, edgeVoice ? { nowMs: Date.now(), voice: edgeVoice } : { nowMs: Date.now() });
-      if (buf && buf.length) return { ok: true, buf: buf, ext: 'mp3', mime: 'audio/mpeg', provider: 'edge' };
-      reasons.push('edge: empty audio');
-    } catch (e) { reasons.push('edge: ' + ((e && e.message) || e)); }
-  } else reasons.push('edge: disabled');
-  return { ok: false, reason: reasons.join('; ') || 'this station holds no voice-capable credential' };
-}
-
-async function handleTts(req, res) {
-  const fallback = (reason) => { console.error('[tts] fallback →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
-  let body;
-  try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
-  catch (e) { return fallback('bad json'); }
-  let text = String((body && body.text) || '').replace(/\s+/g, ' ').trim();
-  // backstop cap (the client already segments to <1000): if it ever overruns, cut back to the last
-  // sentence boundary within the window rather than chopping mid-word.
-  if (text.length > 1200) { const head = text.slice(0, 1200); const m = head.match(/[\s\S]*[.!?]["')\]]?(?=\s|$)/); text = (m && m[0].length > 600 ? m[0] : head).trim(); }
-  const model = String((body && body.model) || TTS_DEFAULT_MODEL).trim();
-  const voice = String((body && body.voice) || 'Umbriel').trim();
-  // per-persona delivery style (personas.js:ttsStyle) — Gemini TTS is steered by a natural-language
-  // instruction PREPENDED to the input ("Say the following in <style>: <text>"). Optional; capped so a
-  // malformed client can't blow the input past the model's limit. Empty style → plain synthesis (unchanged).
-  // 500 (was 240): character voices need room for PROSODY direction (pauses, savored words, emphasis)
-  // on top of the timbre spec — 240 forced choosing one or the other and silently truncated the rest.
-  const style = String((body && body.style) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
-  if (!text) return fallback('no text');
-  // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
-  // namespace; the provider chain below is irrelevant there, so dispatch BEFORE the no-key gate.
-  if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
-  // one 32nd-miss cache sweep helper, shared by every serving tier (runs AFTER the response, never blocking
-  // it). Declared BEFORE serveEdge so the local-fallback caller — which runs earliest — is never in its TDZ.
-  const sweepMaybe = () => { if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); }); };
-  /* THE EDGE FLOOR AS A NAMED SERVING PATH (shared by the keyless floor below and the local-voice fallback
-     above it). One implementation so the cache namespace, headers and failure wording cannot drift between
-     the two callers; `reasonPrefix` carries the caller's story into the terminal fallback so the client
-     still learns WHICH leg died. Returns via res in every branch. */
-  const serveEdge = async (edgeVoice, reasonPrefix) => {
-    if (!edgetts.enabled()) return fallback(reasonPrefix ? (reasonPrefix + '; edge floor disabled') : 'no key');
-    const eck = crypto.createHash('sha1').update('edge|' + edgeVoice + '|' + text).digest('hex');
-    try {
-      const cached = await fsp.readFile(path.join(VOICE_CACHE_DIR, eck + '.mp3'));
-      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Provider': 'edge:' + edgeVoice, 'X-Voice-Cache': 'hit' });
-      return res.end(cached);
-    } catch (_) { /* miss → synthesize */ }
-    let ebuf;
-    try { ebuf = await edgetts.synth(text, { voice: edgeVoice, nowMs: Date.now() }); }   // clock injected here (index.js = ambient composition root)
-    catch (e) { return fallback(reasonPrefix ? (reasonPrefix + '; edge: ' + ((e && e.message) || e)) : ('edge: ' + ((e && e.message) || e))); }
-    // APPEND the edge detail, never let the earlier reason swallow it: the client needs the transient leg to
-    // pick a 4s cool-off over a 60s one, and 'edge: empty audio' is the only leg that names what just failed.
-    if (!ebuf || !ebuf.length) return fallback(reasonPrefix ? (reasonPrefix + '; edge: empty audio') : 'edge: empty audio');
-    try { const tmp = path.join(VOICE_CACHE_DIR, eck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, ebuf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, eck + '.mp3')); } catch (_) {}
-    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Provider': 'edge:' + edgeVoice, 'X-Voice-Cache': 'miss' });
-    res.end(ebuf); sweepMaybe(); return;
-  };
-
-  // Local Live explicitly opts into the downloaded voice. Other voice surfaces retain their configured
-  // provider ladder, so this experimental path cannot silently change an existing persona.
-  if (body && body.local) {
-    try {
-      const localVoiceId = String(body.localVoice || localVoice.defaultVoice());
-      const localSpeed = Number(body.speed) || 1;
-      const ck = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
-      const cachePath = path.join(VOICE_CACHE_DIR, `local-${ck}.wav`);
-      try {
-        const cached = await fsp.readFile(cachePath);
-        res.writeHead(200, {
-          'Content-Type': 'audio/wav',
-          'Cache-Control': 'no-store',
-          'X-Voice-Provider': 'local-kokoro',
-          'X-Voice-Cache': 'hit'
-        });
-        return res.end(cached);
-      } catch (_) {}
-      const buf = await localVoice.synthesize(text, {
-        voice: localVoiceId,
-        speed: localSpeed
-      });
-      try {
-        const tmp = `${cachePath}.${crypto.randomUUID()}.tmp`;
-        await fsp.writeFile(tmp, buf);
-        await fsp.rename(tmp, cachePath);
-      } catch (_) {}
-      res.writeHead(200, {
-        'Content-Type': 'audio/wav',
-        'Cache-Control': 'no-store',
-        'X-Voice-Provider': 'local-kokoro',
-        'X-Voice-Cache': 'miss'
-      });
-      return res.end(buf);
-    } catch (error) {
-      /* ⛔ A LOCAL REQUEST NEVER FALLS INTO THE KEYED PROVIDER CHAIN. It used to, and the result was the
-         2026-07-30 identity bug: on any station without the offline engine (EVERY installed build — the
-         bundle ships no node_modules) live voice silently spoke with the keyed provider's voice while the
-         picker adjusted an engine that wasn't there. The caller asked for the BUILT-IN identity; the honest
-         degrade is the keyless Edge floor in the NEAREST MAPPED voice (sex/accent preserved, picker still
-         live), and if Edge cannot serve either, an honest fallback envelope — never a different provider's
-         voice wearing the built-in name. */
-      const why = 'local voice engine: ' + ((error && error.message) || error);
-      console.error('[tts] local Kokoro failed → edge-mapped floor:', (error && error.message) || error);
-      return serveEdge(localVoice.edgeVoiceFor(body.localVoice), why);
-    }
-  }
-
-  // WHICH credential speaks: an explicit key from the page (tagged with its provider) wins; otherwise
-  // the first provider in the chain the sidecar itself holds a credential for (runtime push / keychain
-  // env / provider env) — so any station that can run an agent on OpenRouter, Gemini, or OpenAI gets the
-  // neural voice out of the box, no separate voice key. The chain is REORDERED to put the user's active
-  // RUN provider (body.preferProvider) first when it has a native voice API — the station speaks from
-  // the same account it thinks with. A run provider with no voice API (codex/anthropic/…) isn't in
-  // TTS_KEY_PROVIDERS, so the default order stands.
-  const prefer = normalizeProviderId(String((body && body.preferProvider) || ''));
-  const ttsChain = TTS_KEY_PROVIDERS.indexOf(prefer) >= 0
-    ? [prefer].concat(TTS_KEY_PROVIDERS.filter(p => p !== prefer))
-    : TTS_KEY_PROVIDERS;
-  let ttsProvider = '', ttsKey = '';
-  const explicitKey = String((body && body.key) || '').trim();
-  if (explicitKey) {
-    ttsProvider = normalizeProviderId(String((body && body.keyProvider) || '')) || 'openrouter';
-    if (TTS_KEY_PROVIDERS.indexOf(ttsProvider) < 0) ttsProvider = 'openrouter';
-    ttsKey = explicitKey;
-  } else {
-    for (const p of ttsChain) { const k = providerRuntimeKey(p, ''); if (k) { ttsProvider = p; ttsKey = k; break; } }
-  }
-
-  // fold the style into the spoken input the way Gemini TTS documents (a leading directive it obeys but
-  // does not read aloud). Kept separate from `text` so the cache key can include the style (below).
-  const input = style ? ('Say the following in ' + style + ': ' + text) : text;
-
-  // TIER 1 — a keyed provider (the station's own AI credential). Attempt only if a key resolved; on ANY
-  // failure (4xx/402 billing, network, bad body) record the reason and FALL THROUGH to the free Edge floor
-  // rather than returning a hard degrade — voice must not depend on which brain/credential the station picked.
-  // Cache key: model+voice+STYLE+text (pacing is client-side, so it stays out of the key for better hits).
-  // OpenRouter and native Gemini SHARE a key (same model + prebuilt voice ⇒ same clip); OpenAI is a different
-  // vendor voice, so it gets its own namespace (like elevenlabs/) and can never collide.
-  /* 'no key' is a STRUCTURAL fact about the keyed tier, never a diagnosis of the failure that actually
-     happened. With the free keyless Edge floor enabled, a station holding no credential still has working
-     voice — so reporting an Edge blip as "no key" tells the user to go buy an API key to fix a network
-     hiccup, and the client (which classifies by substring and takes the terminal class first) then treats
-     the whole composite as terminal: no retry, and a 60s dead-voice cold-off instead of 4s. Carry it into
-     the reason only when the floor cannot serve either — there the credential really is what is missing. */
-  let keyedReason = '';
-  if (ttsKey) {
-    const ck = (ttsProvider === 'openai')
-      ? crypto.createHash('sha1').update('openai/' + OPENAI_TTS_MODEL + '|' + OPENAI_TTS_VOICE + '|' + style + '|' + text).digest('hex')
-      : crypto.createHash('sha1').update(model + '|' + voice + '|' + style + '|' + text).digest('hex');
-    for (const ext of ['wav', 'mp3']) {
-      try {
-        const cached = await fsp.readFile(path.join(VOICE_CACHE_DIR, ck + '.' + ext));
-        res.writeHead(200, { 'Content-Type': ext === 'mp3' ? 'audio/mpeg' : 'audio/wav', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
-        return res.end(cached);
-      } catch (_) { /* try next ext */ }
-    }
-    const keyed = await ttsSynthKeyed(ttsProvider, { model, voice, input, text, style, key: ttsKey });
-    if (keyed.ok) {
-      try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + keyed.ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, keyed.buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + keyed.ext)); } catch (_) {}
-      res.writeHead(200, { 'Content-Type': keyed.outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
-      res.end(keyed.buf); sweepMaybe(); return;
-    }
-    keyedReason = keyed.reason;
-  }
-
-  // TIER 2 — the FREE, KEYLESS Edge neural floor (serveEdge above). Reached when the station has no
-  // voice-capable key OR every keyed attempt failed (billing/network/etc.). NO style (Edge has no
-  // style-prompt support). Skippable via SKYNET_EDGE_TTS=0 (test determinism) — serveEdge then returns the
-  // terminal 200 {fallback}: the 200-always contract holds; the client drops to text + an honest speaker
-  // tooltip, never a hard error.
-  return serveEdge(edgetts.resolveVoice(), keyedReason);
-}
-
-/* ElevenLabs TTS — speak with a user-trained ElevenLabs voice (e.g. the Commander's own Ultron clone).
-   BYOK: the key rides the request (body.elKey, from the voicelab field) or ELEVENLABS_API_KEY in the
-   sidecar env — never stored by this route, never echoed. Same 200-degrade contract + disk voice cache
-   as the OpenRouter path; ElevenLabs returns mp3, so no PCM wrapping. Style/voice steering lives in the
-   ElevenLabs voice itself (that's the point — the voice was designed there), so no style param here. */
-const EL_TTS_MODEL = 'eleven_multilingual_v2';
-async function ttsElevenLabs(res, body, text, fallback) {
-  const key = String((body && body.elKey) || '').trim() || String(process.env.ELEVENLABS_API_KEY || '').trim();
-  const voiceId = String((body && body.voiceId) || '').trim();
-  const modelId = String((body && body.modelId) || EL_TTS_MODEL).trim();
-  if (!/^[A-Za-z0-9]{8,48}$/.test(voiceId)) return fallback('bad voiceId');
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(modelId)) return fallback('bad modelId');
-  if (!key) return fallback('no elevenlabs key');
-  // cache under an elevenlabs/ namespace so it can never collide with an OpenRouter clip of the same text
-  const ck = crypto.createHash('sha1').update('elevenlabs/' + modelId + '|' + voiceId + '||' + text).digest('hex');
-  try {
-    const buf = await fsp.readFile(path.join(VOICE_CACHE_DIR, ck + '.mp3'));
-    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
-    return res.end(buf);
-  } catch (_) { /* miss → synthesize */ }
-  let r;
-  try {
-    r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + encodeURIComponent(voiceId), voiceFetchOpts({
-      method: 'POST',
-      headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, model_id: modelId })
-    }, 60000));
-  } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
-  if (!r.ok) {
-    let detail = ''; try { detail = (await r.text()).slice(0, 300); } catch (_) {}
-    return fallback('elevenlabs ' + r.status + (detail ? ' — ' + detail : ''));
-  }
-  const ct = (r.headers.get('content-type') || '').toLowerCase();
-  let buf;
-  try { buf = Buffer.from(await r.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
-  if (!buf || !buf.length) return fallback('empty audio');
-  // anything that isn't mp3 (e.g. a 200 with a JSON error body) is NOT blindly served — degrade cleanly.
-  if (!/mpeg|mp3/.test(ct)) return fallback('unexpected content-type: ' + ct);
-  try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.mp3')); } catch (_) {}
-  res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
-  res.end(buf);
-  if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
-}
-
-/* POST /api/stt — speech-to-text for the DESKTOP voice path (WebView2 has no SpeechRecognition, so the
-   frontend records mic audio and posts it here). Accepts the audio two ways, whichever the client finds
-   simplest:
-     • raw bytes    — Content-Type: audio/webm | audio/wav | …  (the recorder-provider default; smallest)
-     • JSON base64  — { audio: <base64>, format: 'webm'|'wav', key }
-   Transcribes via an audio-input chat model on OpenRouter (STT_MODELS, tried in order). Returns {text}.
-   On ANY failure returns 200 {text:'', reason} so the frontend degrades gracefully (never a hard error that
-   would wedge the hands-free loop) — the caller surfaces `reason` in a console.warn + status line. */
-const STT_MAX_BYTES = 10 * 1024 * 1024;   // ~10MB — a ~30s opus clip is well under this; a JSON base64 body is ~1.33x
-const STT_PROMPT = 'Transcribe this audio verbatim. Output ONLY the transcribed words, nothing else. If there is no speech, output nothing.';
-// Dedicated ASR models for the OpenAI-compatible /audio/transcriptions endpoints (Groq + OpenAI). These are
-// PURPOSE-BUILT speech models (Whisper family) — far faster + more accurate than routing a clip through a
-// generic chat model, and they close the STT half of the voice-decoupling bar (a station transcribes from a
-// Groq/OpenAI key even with no OpenRouter chat credential).
-const STT_GROQ_MODEL = 'whisper-large-v3-turbo';
-const STT_OPENAI_MODEL = 'whisper-1';
-// Base-URL overrides for the dedicated ASR hosts, mirroring the SKYNET_OPENROUTER_BASE pattern (real hosts by
-// default; a test points these at a loopback mock). The provider profile's own base is the middle fallback.
-const STT_GROQ_BASE = String(ENV('GROQ_BASE') || '').trim();
-const STT_OPENAI_BASE = String(ENV('OPENAI_BASE') || '').trim();
-// Build a multipart/form-data body by hand (zero-dep): the file part named `file` + any scalar fields. The audio
-// container (webm/opus, wav, …) is passed through from the request's derived format so the ASR server tags it right.
-function sttMultipartBody(audioBuf, filename, contentType, fields) {
-  const boundary = '----StarNetSTT' + crypto.randomBytes(16).toString('hex');
-  const parts = [];
-  for (const k of Object.keys(fields || {})) {
-    parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="' + k + '"\r\n\r\n' + String(fields[k]) + '\r\n', 'utf8'));
-  }
-  parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="' + filename + '"\r\nContent-Type: ' + contentType + '\r\n\r\n', 'utf8'));
-  parts.push(audioBuf);
-  parts.push(Buffer.from('\r\n--' + boundary + '--\r\n', 'utf8'));
-  return { body: Buffer.concat(parts), contentType: 'multipart/form-data; boundary=' + boundary };
-}
-// One dedicated-ASR transcription attempt against an OpenAI-compatible /audio/transcriptions endpoint. Returns
-// { ok:true, text } or { ok:false, reason } — NEVER touches res, so a failure falls through to the next tier.
-async function sttTranscribe(baseUrl, apiKey, whisperModel, audioBuf, filename, contentType) {
-  const mp = sttMultipartBody(audioBuf, filename, contentType, { model: whisperModel });
-  let r;
-  try {
-    r = await fetch(baseUrl.replace(/\/+$/, '') + '/audio/transcriptions', voiceFetchOpts({
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': mp.contentType },
-      body: mp.body
-    }, 120000));
-  } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
-  if (!r.ok) { let d = ''; try { d = (await r.text()).slice(0, 200); } catch (_) {} return { ok: false, reason: whisperModel + ' ' + r.status + (d ? ' — ' + d : '') }; }
-  let j; try { j = await r.json(); } catch (e) { return { ok: false, reason: 'bad json from ' + whisperModel }; }
-  return { ok: true, text: String((j && j.text) || '').trim() };
-}
-/* The THREE transcription tiers, extracted from handleStt so a caller that is not an HTTP request can use them.
-   Telegram voice notes are the second caller (channels/hub.js): a member sends a voice message and we owned an
-   STT engine the whole time while telling the model "saved to <path>", which it cannot hear.
-
-   Resolves its own credentials exactly as handleStt did — env / runtime-pushed provider keys — so there is ONE
-   answer to "can this station transcribe", not two that drift. Returns { ok:true, text } (an EMPTY string is a
-   valid "no speech heard" result, not a failure) or { ok:false, reason }. Never throws. */
-async function transcribeAudioBuffer(audioBuf, format, apiKey) {
-  if (!audioBuf || !audioBuf.length) return { ok: false, reason: 'no audio' };
-  const key = String(apiKey || runtimeKey || '');
-  const groqKey = providerRuntimeKey('groq', '');
-  const openaiKey = providerRuntimeKey('openai', '');
-  /* NO EARLY "no key" DEAD END. This line used to end the chain before any keyless engine could be reached,
-     which is why a station whose brain is a ChatGPT/Codex or Anthropic subscription had NO EARS AT ALL: none of
-     those credentials is a transcription key, every keyed tier missed, and there was nothing underneath. Voice
-     is a STATION subsystem, not a property of whichever model you picked
-     (docs/REF_HARNESS_VOICE_ANALYSIS_2026-07-14) — so the local floor gets its turn before we report failure. */
-  const localReady = (() => { try { return !!localVoice.status().available; } catch (_) { return false; } })();
-  if (!groqKey && !openaiKey && !key && !localReady) return { ok: false, reason: 'no key' };
-  format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
-  const sttFilename = 'audio.' + format;
-  const sttContentType = 'audio/' + format;
-  let lastReason = 'no transcription';
-
-  // TIER 1 — Groq whisper-large-v3-turbo (very fast + cheap), dedicated speech model over the OpenAI-compatible
-  // multipart /audio/transcriptions endpoint. A non-2xx/timeout/parse failure falls through to the next tier.
-  if (groqKey) {
-    const base = STT_GROQ_BASE || providerRuntimeBaseUrl('groq', '') || 'https://api.groq.com/openai/v1';
-    const g = await sttTranscribe(base, groqKey, STT_GROQ_MODEL, audioBuf, sttFilename, sttContentType);
-    if (g.ok) return { ok: true, text: String(g.text || '') };
-    lastReason = 'groq: ' + g.reason;
-  }
-
-  // TIER 2 — OpenAI whisper-1. Same dedicated-ASR shape; key via providerRuntimeKey (page/runtime/env).
-  if (openaiKey) {
-    const base = STT_OPENAI_BASE || providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1';
-    const o = await sttTranscribe(base, openaiKey, STT_OPENAI_MODEL, audioBuf, sttFilename, sttContentType);
-    if (o.ok) return { ok: true, text: String(o.text || '') };
-    lastReason = 'openai: ' + o.reason;
-  }
-
-  // TIER 3 — the chat-model chain (OpenRouter/Gemini) as the final fallback. Only worth trying when an
-  // OpenRouter chat key is present (otherwise it is a guaranteed 401).
-  if (key) {
-    const audioB64 = audioBuf.toString('base64');
-    const payload = (model) => ({
-      model,
-      messages: [{ role: 'user', content: [
-        { type: 'input_audio', input_audio: { data: audioB64, format } },
-        { type: 'text', text: STT_PROMPT }
-      ] }]
-    });
-    for (const model of STT_MODELS) {
-      let r;
-      try {
-        r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
-          body: JSON.stringify(payload(model))
-        }, 120000));
-      } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
-      if (!r.ok) {
-        let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
-        lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
-        continue;
-      }
-      let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
-      const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
-      return { ok: true, text: text };
-    }
-  }
-  /* TIER 4 — THE LOCAL FLOOR. Keyless, private, and the reason a station with no transcription credential can
-     still hear. It is the LAST tier on purpose: a dedicated cloud Whisper is faster and more accurate when the
-     Commander has one, so this catches the stations that would otherwise be deaf rather than competing.
-
-     Format note, stated rather than hidden: the local engine takes raw 16 kHz mono Float32 PCM, so it can serve
-     WAV directly but cannot decode a compressed container (webm/ogg) without a decoder we do not ship. A caller
-     that may land here should record WAV; one that sends webm gets an honest reason instead of silence. */
-  if (localReady) {
-    if (/^wav$/i.test(format)) {
-      try {
-        const pcm = wavToMono16kFloat32(audioBuf);
-        if (pcm) {
-          const text = await localVoice.transcribe(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
-          return { ok: true, text: String(text || '') };
-        }
-        lastReason = 'local: unreadable wav';
-      } catch (e) { lastReason = 'local: ' + ((e && e.message) || e); }
-    } else {
-      lastReason = lastReason === 'no transcription'
-        ? 'local engine needs wav (got ' + format + ')'
-        : lastReason + '; local engine needs wav (got ' + format + ')';
-    }
-  }
-  return { ok: false, reason: lastReason };
-}
-
-/* Decode a RIFF/WAVE buffer to mono 16 kHz Float32 — what the local ASR engine expects. Handles 16-bit PCM and
-   32-bit float, any sample rate, mono or interleaved multi-channel. Returns null if it is not a WAV we can read
-   (never throws, never guesses: an unreadable clip must degrade honestly rather than transcribe noise). */
-function wavToMono16kFloat32(buf) {
-  if (!buf || buf.length < 44) return null;
-  if (buf.toString('latin1', 0, 4) !== 'RIFF' || buf.toString('latin1', 8, 12) !== 'WAVE') return null;
-  let pos = 12, fmt = null, dataOff = 0, dataLen = 0;
-  while (pos + 8 <= buf.length) {
-    const id = buf.toString('latin1', pos, pos + 4);
-    const size = buf.readUInt32LE(pos + 4);
-    if (id === 'fmt ') fmt = { audioFormat: buf.readUInt16LE(pos + 8), ch: buf.readUInt16LE(pos + 10), rate: buf.readUInt32LE(pos + 12), bits: buf.readUInt16LE(pos + 22) };
-    else if (id === 'data') { dataOff = pos + 8; dataLen = Math.min(size, buf.length - dataOff); break; }
-    pos += 8 + size + (size % 2);
-  }
-  if (!fmt || !dataOff || !dataLen || !fmt.ch || !fmt.rate) return null;
-  const bytesPer = fmt.bits / 8;
-  if (bytesPer !== 2 && bytesPer !== 4) return null;
-  const frames = Math.floor(dataLen / bytesPer / fmt.ch);
-  if (!frames) return null;
-  const mono = new Float32Array(frames);
-  for (let i = 0; i < frames; i++) {
-    let sum = 0;
-    for (let c = 0; c < fmt.ch; c++) {
-      const off = dataOff + (i * fmt.ch + c) * bytesPer;
-      sum += bytesPer === 4 ? buf.readFloatLE(off) : buf.readInt16LE(off) / 32768;
-    }
-    mono[i] = sum / fmt.ch;
-  }
-  if (fmt.rate === 16000) return mono;
-  const ratio = fmt.rate / 16000;
-  const out = new Float32Array(Math.floor(mono.length / ratio));
-  for (let i = 0; i < out.length; i++) {
-    const start = Math.floor(i * ratio), end = Math.min(mono.length, Math.floor((i + 1) * ratio));
-    let sum = 0;
-    for (let j = start; j < end; j++) sum += mono[j];
-    out[i] = sum / Math.max(1, end - start);
-  }
-  return out;
-}
-
-async function handleStt(req, res) {
-  const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
-  const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
-
-  const ctReq = String(req.headers['content-type'] || '').toLowerCase();
-  let audioB64 = '', format = '', key = '';
-  try {
-    if (ctReq.indexOf('application/json') === 0) {
-      const body = JSON.parse((await readBodyBuffer(req, Math.ceil(STT_MAX_BYTES * 1.4)).catch(() => Buffer.alloc(0))).toString('utf8') || '{}');
-      audioB64 = String((body && body.audio) || '').replace(/^data:[^,]*,/, '');   // tolerate a data: URL prefix
-      format = String((body && body.format) || '').trim();
-      key = String((body && body.key) || '').trim();
-    } else {
-      const buf = await readBodyBuffer(req, STT_MAX_BYTES);
-      audioB64 = buf.toString('base64');
-      // derive format from the content-type: audio/webm → webm, audio/wav|x-wav → wav, audio/ogg → ogg
-      const m = ctReq.match(/audio\/(?:x-)?([a-z0-9]+)/);
-      format = m ? m[1] : '';
-      // key travels out-of-band for the raw path via the X-OpenRouter-Key HEADER only. A query ?key= was removed
-      // (audit P2): URLs land in access logs / proxy history / referrers, so a key on the query string is a leak.
-      // The desktop path sends no key at all (it lives in runtimeKey below); the browser recorder sends the header.
-      key = String(req.headers['x-openrouter-key'] || '').trim();
-    }
-  } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
-
-  if (!audioB64) return degrade('no audio');
-  // The three tiers (and their credential resolution) live in transcribeAudioBuffer so the Telegram voice-note
-  // path uses the SAME engine chain rather than a second implementation that drifts. An empty transcript is a
-  // valid "no speech heard" result and is delivered as-is, never treated as a failure.
-  const r = await transcribeAudioBuffer(Buffer.from(audioB64, 'base64'), format, key);
-  return r.ok ? ok(r.text) : degrade(r.reason);
-}
-
 function throttleSearch(registry) {
   const t = registry.get('web_search');
   if (!t) return;
