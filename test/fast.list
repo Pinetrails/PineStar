@@ -473,6 +473,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/crt-glass-screen-space.test.js
 test/mobile-control-reachability.test.js
 test/station-tooltip.test.js
 test/channels.discord-wire.test.js
