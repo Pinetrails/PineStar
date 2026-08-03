@@ -365,9 +365,17 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
            by its own radial angle gives a bright rim all the way round — an OUTLINE, the exact
            note that killed the first forest. A real crown is a dome lit from ONE side: the term
            that matters is how far the leaf sits UP-SUN of the trunk, measured linearly. */
+        /* ⛔ THE SIGN. SUN points FROM the sun INTO the scene, so a surface faces the light when
+           its offset from centre runs ALONG SUN — up and left. Everything else on this ground
+           already assumes that (the boulder's lit cap, the log's lit flank and every cast shadow
+           are all built from `-SUN`), and the crown alone had the term negated: its leaves were
+           brightest on the bottom-right while its own shadow fell on the bottom-right too. A frame
+           cannot hold two light directions — the eye reads the contradiction as "none", and a
+           scene with no light direction is a PATTERN rather than a place. That is half of why the
+           ground read as camouflage: the canopy above it was lit from the opposite side. */
         const k = rr / edge;
         const dome = Math.sqrt(Math.max(0, 1 - k * k));                      // height on the crown dome
-        const side = -((x - cx) * SUN.x + (y - cy) * SUN.y) / R;             // -1 (shade) .. +1 (sun)
+        const side = ((x - cx) * SUN.x + (y - cy) * SUN.y) / R;              // -1 (shade) .. +1 (sun)
         /* the clump field is subtracted, not added: it carves BRANCH-SCALE shadow into the mass,
            which is what stops a crown reading as one smooth ball of confetti. */
         const branch = clump(u * 2.3, v * 2.3);
@@ -384,7 +392,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       for (let i = 0; i < Math.round(R * R * 0.10); i++) {
         const th = rnd() * TAU, rr = radAt(th) * (0.35 + 0.62 * rnd());
         const x = cx + Math.cos(th) * rr, y = cy + Math.sin(th) * rr;
-        const shade = clamp01(0.5 + (Math.cos(th) * SUN.x + Math.sin(th) * SUN.y) * 0.5) * (rr / R);
+        const shade = clamp01(0.5 - (Math.cos(th) * SUN.x + Math.sin(th) * SUN.y) * 0.5) * (rr / R);
         if (shade < 0.55 || rnd() > shade) continue;
         c.fillRect(Math.round(x), Math.round(y), 1 + ((rnd() * 2) | 0), 1);
       }
@@ -404,7 +412,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const th = rnd() * TAU, edge = radAt(th);
         const t = Math.pow(rnd(), 0.55);                    // hugs the outline
         const rr = edge * (1 - 0.13 * t);
-        const down = clamp01(0.5 + (Math.cos(th) * SUN.x + Math.sin(th) * SUN.y) * 0.5);
+        const down = clamp01(0.5 - (Math.cos(th) * SUN.x + Math.sin(th) * SUN.y) * 0.5);
         if (rnd() > (0.34 + 0.66 * down) * (1 - t * 0.55)) continue;
         c.fillRect(Math.round(cx + Math.cos(th) * rr), Math.round(cy + Math.sin(th) * rr),
           1 + ((rnd() * 2) | 0), 1);
@@ -530,7 +538,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const cv = mkCv(S, S), c = cv.getContext('2d');
         for (let i = 0, n = 6 + ((rnd() * 5) | 0); i < n; i++) {
           const a = rnd() * TAU, len = R * (0.6 + 0.4 * rnd());
-          const lit = 0.45 + 0.45 * clamp01(0.5 - (Math.cos(a) * SUN.x + Math.sin(a) * SUN.y) * 0.5);
+          const lit = 0.45 + 0.45 * clamp01(0.5 + (Math.cos(a) * SUN.x + Math.sin(a) * SUN.y) * 0.5);
           c.strokeStyle = rgb(ramp(LT.LEAF, lit)); c.lineWidth = 1.2;
           c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); c.stroke();
           for (let k = 1; k <= 4; k++) {                     // pinnae: the tooth that says "fern"
