@@ -113,6 +113,7 @@ const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryB
 const { runRouteFailure } = require('./runroute.js');   // a failure escaping handleRun must never read as an empty 200
 const { json: respondJson, readJsonBody, isAgentId } = require('./respond.js');   // canonical json()/body/agent-id helpers — adopt incrementally, don't mass-migrate
 const { readBody, readBodyBuffer } = require('./http-body.js');
+const { MIME, CHANNEL_UPLOAD_MAX_BYTES, mimeForPath, safeDownloadName, isActiveDeliverable, parseRange } = require('./file-response.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
@@ -15105,60 +15106,6 @@ function throttleSearch(registry) {
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     return orig(args, ctx);
   };
-}
-
-const MIME = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif',
-  '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.map': 'application/json',
-  '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8',
-  '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.log': 'text/plain; charset=utf-8',
-  // media types so an agent-produced clip serves with the right content-type and the chat can <video>/<audio> it.
-  // Webp/jpeg already covered above (image set). mkv/avi stream fine but most browsers can't decode them — the
-  // COMMS player falls back to an "open" link in that case, mirroring the reference harness's OpenMediaButton.
-  '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
-  '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
-  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
-};
-// OUTBOUND CHANNEL FILES (channel.send `files`): the ceiling we enforce BEFORE reading a file into memory, and
-// the mime the platform is told. 20MB sits under Telegram's 50MB bot-upload cap with headroom for the multipart
-// framing, and it is a size a phone on mobile data can actually receive. `MIME` is the same table the static
-// server uses — one source of truth, so a type served correctly on the station is typed correctly in the chat.
-const CHANNEL_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
-function mimeForPath(abs) {
-  const m = MIME[path.extname(String(abs || '')).toLowerCase()];
-  // strip the charset — the Bot API wants a bare content-type on a form part
-  return m ? String(m).split(';')[0].trim() : 'application/octet-stream';
-}
-const ACTIVE_DELIVERABLE_EXTS = new Set([
-  '.html', '.htm', '.xhtml', '.js', '.mjs', '.cjs', '.svg', '.xml', '.xsl', '.xslt', '.wasm'
-]);
-function safeDownloadName(abs) {
-  return path.basename(abs).replace(/[^A-Za-z0-9_.-]/g, '_') || 'download';
-}
-function isActiveDeliverable(abs) {
-  return ACTIVE_DELIVERABLE_EXTS.has(path.extname(abs).toLowerCase());
-}
-
-// parse a single-range `Range: bytes=a-b` header against a known size. Returns { start, end } (inclusive,
-// clamped) or null when there's no/blank range, or { unsatisfiable: true } when the range can't be served
-// (so the caller can answer 416). We honor only the first range — enough for <video>/<audio> seeking, which
-// is exactly what FileResponse / Electron's net stack give the reference harness for free.
-function parseRange(header, size) {
-  if (!header) return null;
-  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
-  if (!m || (m[1] === '' && m[2] === '')) return { unsatisfiable: true };
-  let start, end;
-  if (m[1] === '') {                                  // suffix range: last N bytes
-    const n = parseInt(m[2], 10);
-    if (!n) return { unsatisfiable: true };
-    start = Math.max(0, size - n); end = size - 1;
-  } else {
-    start = parseInt(m[1], 10);
-    end = m[2] === '' ? size - 1 : Math.min(parseInt(m[2], 10), size - 1);
-  }
-  if (!(start >= 0) || start > end || start >= size) return { unsatisfiable: true };
-  return { start, end };
 }
 
 // GET /api/workspace/dir?agent=<id> — the ABSOLUTE per-agent workspace directory on disk. Read-only,
