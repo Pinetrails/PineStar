@@ -44,7 +44,7 @@ const AutoJobStore = (() => {
   }
   // is the SIDECAR SCHEDULER armed right now? (GET /api/cron `.enabled` = the live cronArmed). This is the REAL gate
   // on whether a just-scheduled routine will actually fire — the done-line must not promise a run the scheduler
-  // won't make. Injected accessor wins (app.js already reads /api/cron); else a direct best-effort fetch. Undefined
+  // won't make. Injected accessor wins; else force the shared cron resource fresh. Undefined
   // on any failure so the caller can degrade to the neutral copy rather than assert a scheduler state it can't read.
   function cronRunnable(j) {
     return j && typeof j.enabled === 'boolean' ? !!(j.enabled && !j.halted) : undefined;
@@ -52,11 +52,9 @@ const AutoJobStore = (() => {
   async function schedulerArmed() {
     try { if (deps.schedulerArmed) return !!(await deps.schedulerArmed()); } catch (_) {}
     try {
-      if (typeof fetch === 'undefined') return undefined;
-      const r = await fetch('/api/cron', { cache: 'no-store' });
-      if (!r.ok) return undefined;
-      const j = await r.json().catch(() => null);
-      return cronRunnable(j);
+      if (typeof QuerySpine === 'undefined' || !QuerySpine.refresh) return undefined;
+      const q = await QuerySpine.refresh('cron');
+      return cronRunnable(q && q.hasData ? q.data : null);
     } catch (_) { return undefined; }
   }
 

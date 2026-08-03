@@ -484,6 +484,8 @@ test/crt-glass-screen-space.test.js
 test/mobile-control-reachability.test.js
 test/station-tooltip.test.js
 test/channels.discord-wire.test.js
+test/queryspine.test.js
+test/queryspine-wiring.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
 test/terminal-resize.test.js
