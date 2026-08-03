@@ -15,46 +15,15 @@
    NOT in test:fast (child-process boot); run via `npm run test:http`. Mirrors lifecycle-armed.http.test.js. */
 'use strict';
 const A = require('./_assert.js');
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { bootToken } = require('./_httpToken.js');
-
-const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function boot(port, workspaces, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, { SKYNET_PORT: String(port), SKYNET_WORKSPACES: workspaces }),
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
-      if (!settled && /already in use/i.test(out)) {
-        settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, workspaces, attemptsLeft - 1));
-        else reject(new Error('no free port'));
-      }
-    };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout; output:\n' + out)); } }, 9000);
-  });
-}
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
 const SECRET = 'rk-live-verySECRET-9876';
 
 (async () => {
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-servicekeys-'));
-  let booted = await boot(9030 + (process.pid % 40), ws, 20);
-  let child = booted.child; let port = booted.port;
-  const B = () => 'http://' + HOST + ':' + port;
-  let apiToken = await bootToken(B(), B());
+  const fixture = SidecarFixture.create({ prefix: 'sk-servicekeys-' });
+  await fixture.start();
+  const B = () => fixture.baseUrl;
+  let apiToken = fixture.token;
   const j = async (m, p, body) => {
     const headers = { 'Content-Type': 'application/json', Origin: B() };
     if (apiToken) headers['X-StarNet-Token'] = apiToken;
@@ -102,10 +71,8 @@ const SECRET = 'rk-live-verySECRET-9876';
     A.eq(upd.body.key.last4, '····9876', 'kept key still masks to the same last4');
 
     // ---- RESTART round-trip: the key survives a reboot ----
-    try { child.kill(); } catch (_) {} await sleep(250);
-    booted = await boot(port + 100, ws, 20);
-    child = booted.child; port = booted.port;
-    apiToken = await bootToken(B(), B());
+    await fixture.restart();
+    apiToken = fixture.token;
     const after = await j('GET', '/api/servicekeys');
     A.eq(after.body.keys.length, 1, 'REBOOT: key survived the restart');
     A.eq(after.body.keys[0].envVar, 'RESEND_API_KEY', 'REBOOT: env var intact');
@@ -120,9 +87,7 @@ const SECRET = 'rk-live-verySECRET-9876';
     A.eq(rm.status, 200, 'remove -> 200');
     A.eq((await j('GET', '/api/servicekeys')).body.keys, [], 'list empty after remove');
   } finally {
-    try { child.kill(); } catch (_) {}
-    await sleep(150);
-    try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    await fixture.dispose();
   }
 
   A.report('servicekeys.http.test');

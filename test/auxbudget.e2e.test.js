@@ -19,14 +19,9 @@
 
 const A = require('./_assert.js');
 const http = require('http');
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
-const { spawn } = require('child_process');
-const { bootToken } = require('./_httpToken.js');
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
 const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // a ~6 KB plain-text assistant reply: no tool calls, finish 'stop' -> the MAIN run is exactly ONE model call,
@@ -69,22 +64,6 @@ function startMock() {
   });
 }
 
-function boot(port, env, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], { env: Object.assign({}, process.env, env, { SKYNET_PORT: String(port) }), stdio: ['ignore', 'pipe', 'pipe'] });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (process.env.AUXDEBUG) { const s = d.toString(); if (s.indexOf("[aux-") >= 0) process.stderr.write('CHILD ' + s); }
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
-      else if (!settled && /already in use/i.test(out)) { settled = true; try { child.kill(); } catch (_) {} if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1)); else reject(new Error('no free port')); }
-    };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout:\n' + out)); } }, 9000);
-  });
-}
-
 async function driveRun(B, token, agentId, text) {
   const r = await fetch(B + '/api/run', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
@@ -112,12 +91,14 @@ const COMMON = { SKYNET_QUEST_REFRESH: '0' };
 
 async function runArm(label, budgetEnv) {
   const mock = await startMock();
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-auxbudget-'));
-  const env = Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base, SKYNET_AUX_BUDGET: budgetEnv }, COMMON);
-  const { child, port } = await boot(8964 + (process.pid % 12), env, 20);
-  const B = 'http://' + HOST + ':' + port;
+  const fixture = SidecarFixture.create({
+    prefix: 'sk-auxbudget-',
+    env: Object.assign({ SKYNET_OPENROUTER_BASE: mock.base, SKYNET_AUX_BUDGET: budgetEnv }, COMMON)
+  });
+  await fixture.start();
+  const B = fixture.baseUrl;
   try {
-    const token = await bootToken(B, B);
+    const token = fixture.token;
     // ONE substantial run on a FRESH workspace: every aux cooldown is cold, so every gate that its salience
     // clears becomes a candidate this single run-end.
     await driveRun(B, token, 'auxbudget-e2e', 'MAIN-RUN-SENTINEL rebuild the staging deploy rollback path and write up what changed and why');
@@ -126,10 +107,8 @@ async function runArm(label, budgetEnv) {
     const aux = total - main;   // every non-'[RUNTIME]' call is an aux pass model call
     return { aux, total, main, bodies: mock.state.bodies.slice() };
   } finally {
-    try { child.kill(); } catch (_) {}
+    await fixture.dispose();
     try { mock.server.close(); } catch (_) {}
-    await sleep(150);
-    try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
   }
 }
 

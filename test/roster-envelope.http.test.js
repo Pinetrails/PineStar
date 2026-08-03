@@ -7,46 +7,16 @@
    (a child-process boot test shouldn't gate the fast unit lane). */
 'use strict';
 const A = require('./_assert.js');
-const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { bootToken } = require('./_httpToken.js');
-
-const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function boot(port, workspaces, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, {
-        SKYNET_PORT: String(port),
-        SKYNET_WORKSPACES: workspaces,
-        OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: ''
-      }),
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port, output: () => out }); }
-      if (!settled && /already in use/i.test(out)) {
-        settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, workspaces, attemptsLeft - 1));
-        else reject(new Error('no free port'));
-      }
-    };
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout; output:\n' + out)); } }, 9000);
-  });
-}
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
 (async () => {
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-roster-'));
+  const fixture = SidecarFixture.create({
+    prefix: 'sk-roster-',
+    env: { OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '' }
+  });
+  const ws = fixture.workspace;
   // PRE-SEED a LEGACY roster file: the pre-P1.1 on-disk shape with NO updatedAt and an UNKNOWN field an older
   // sidecar never modeled. A correct load must NOT crash, must adopt baseline updatedAt 0, and must not choke
   // on the unknown field.
@@ -55,9 +25,8 @@ function boot(port, workspaces, attemptsLeft) {
     agents: [{ agentId: 'agent', system: 'hero', name: 'Ultron', provider: 'openrouter', legacyOnlyField: 'from-old-version' }]
   }));
 
-  const booted = await boot(8760 + (process.pid % 40), ws, 20);
-  const { child, port } = booted;
-  const B = 'http://' + HOST + ':' + port;
+  await fixture.start();
+  let B = fixture.baseUrl;
   const rosterFile = path.join(ws, 'agent.roster.json');
   let apiToken = '';
   const j = async (m, p, body) => {
@@ -69,7 +38,7 @@ function boot(port, workspaces, attemptsLeft) {
   };
 
   try {
-    try { apiToken = await bootToken(B, B); } catch (_) { apiToken = ''; }
+    apiToken = fixture.token;
 
     // the sidecar booted WITHOUT crashing on the legacy (updatedAt-less) file — health answers.
     const health = await j('GET', '/api/health');
@@ -97,8 +66,7 @@ function boot(port, workspaces, attemptsLeft) {
     const savedAgent = (onDisk.agents || []).find(a => a.agentId === 'agent') || {};
     A.eq(savedAgent.approvalMode, 'full', 'approvalMode:full is written to the on-disk roster (was silently dropped before the fix)');
   } finally {
-    try { child.kill(); } catch (_) {}
-    await sleep(150);
+    await fixture.stop();
   }
 
   // RESTART SURVIVAL (the actual bug): boot a SECOND sidecar against the SAME workspace. On boot it runs
@@ -109,10 +77,10 @@ function boot(port, workspaces, attemptsLeft) {
   // instead re-push approvalMode:'full' with a fresher stamp and confirm the reloaded-then-saved file still carries
   // it. The load correctness is proven because the SECOND sidecar started from the on-disk 'full' with no memory of
   // session 1, and its own save re-serializes only from the freshly-loaded live Map + this push.
-  const booted2 = await boot(8760 + ((process.pid + 7) % 40), ws, 20);
+  await fixture.start();
   try {
-    const B2 = 'http://' + HOST + ':' + booted2.port;
-    let tok2 = ''; try { tok2 = await bootToken(B2, B2); } catch (_) { tok2 = ''; }
+    const B2 = fixture.baseUrl;
+    const tok2 = fixture.token;
     const jj = async (m, p, body) => {
       const headers = { 'Content-Type': 'application/json' }; if (tok2) headers['X-StarNet-Token'] = tok2;
       const r = await fetch(B2 + p, { method: m, headers, body: body ? JSON.stringify(body) : undefined });
@@ -136,9 +104,7 @@ function boot(port, workspaces, attemptsLeft) {
     const saved2 = (afterSave.agents || []).find(a => a.agentId === 'agent') || {};
     A.eq(saved2.approvalMode, 'full', 'the second sidecar RE-SAVES approvalMode:full (save->load->save round-trip is closed)');
   } finally {
-    try { booted2.child.kill(); } catch (_) {}
-    await sleep(150);
-    try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    await fixture.dispose();
   }
 
   A.report('roster-envelope.http.test');
