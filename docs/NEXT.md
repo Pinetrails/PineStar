@@ -1,5 +1,29 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 - v0.9.0 WAVE B CANDIDATE CONTROL (`agent/release-090-parity-plan`)
+
+PROVIDER-FREE WORK CONTINUES; RELEASE GATES REMAIN BLOCKED. A clean Windows candidate was compiled from commit
+`194bf60f2d301112654125adf991df6b5c1cf42f` and cryptographically bound to executable SHA-256
+`7d101005b8f38314b7e6441cf0773add5c3f7bf5887d2ade4bff1abfdc3b2e45`, tree
+`ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5`, and live health describe `v0.8.5-74-g194bf60f`.
+The NSIS installer was also produced with SHA-256 `c329aa6e25b3463cd6aef538744efbf68955ff7e5f8a79d076585ad3ec2ab01b`.
+The updater-signature phase correctly remained incomplete because the release private key was not supplied; the
+candidate was not installed and the user's currently running 0.8.5 app was not interrupted.
+
+A signed, candidate-bound provider-free performance control passed 15 samples and verifies under Ed25519 key ID
+`29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`. Median/p95 measurements were
+4,782.998/6,338.395 ms for the bridge adapter pack and 60.036/201.831 ms for Node startup; evaluator median was
+0.301 ms. These are source/control measurements, not installed cold-start, first-token, or useful-artifact claims.
+
+A reusable soak runner now fails closed on zero checks and marks provider-free results `qualifiesRelease:false`.
+Its smoke passed two checks with no health failures or unexpected exits. A provisional 48-hour control-plane soak
+started at `2026-08-03T07:59:42.752Z`, is sampling once per minute, and is scheduled to end at
+`2026-08-05T07:59:42.752Z`. It does not replace the post-parity installed active/idle release soak. The credential
+envelope still predates the required rotation, so three-attempt provider parity, installed latency, the 100%
+critical / 95% overall / at-most-5-point gates, and the qualifying soak remain pending. Evidence and exact
+limitations are indexed in
+[`docs/baselines/v0.9.0-wave-b-candidate-control.json`](baselines/v0.9.0-wave-b-candidate-control.json).
+
 ## 2026-08-03 - v0.9.0 WAVE B SOURCE RECOVERY VERDICT (`agent/release-090-parity-plan`)
 
 SOURCE GAUNTLET GREEN; INSTALLED RELEASE GATES STILL BLOCKED. Read-intent recovery now separates explicitly

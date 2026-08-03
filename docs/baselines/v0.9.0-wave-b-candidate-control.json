@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "starnet.eval.evidence-index.v1",
+  "release": "0.9.0",
+  "kind": "wave-b-candidate-control",
+  "candidateCommit": "194bf60f2d301112654125adf991df6b5c1cf42f",
+  "controlRunnerCommit": "25f875c6",
+  "candidate": {
+    "sourceTree": "ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5",
+    "describe": "v0.8.5-74-g194bf60f",
+    "executable": {
+      "path": "src-tauri/target/release/skynet-desktop.exe",
+      "bytes": 15269888,
+      "sha256": "7d101005b8f38314b7e6441cf0773add5c3f7bf5887d2ade4bff1abfdc3b2e45"
+    },
+    "installer": {
+      "path": "src-tauri/target/release/bundle/nsis/StarNet_0.8.5_x64-setup.exe",
+      "bytes": 108562181,
+      "sha256": "c329aa6e25b3463cd6aef538744efbf68955ff7e5f8a79d076585ad3ec2ab01b"
+    },
+    "manifest": {
+      "path": ".dogfood/eval/starnet-wave-b-candidate-manifest.json",
+      "sha256": "4b5bbf613587feb069c1e3dc5b45dd944e6c4c2ff5a1debc8dea62fe4dfa691e",
+      "provenanceVerified": true,
+      "runtimeFilesVerified": 4205
+    }
+  },
+  "performanceControl": {
+    "path": ".dogfood/eval/starnet-wave-b-performance-control.json",
+    "sha256": "189ef51edff5b9e044b47387c6b059a909e53318ffb45e85da1c5752528c62d8",
+    "candidateBound": true,
+    "signature": {
+      "algorithm": "Ed25519",
+      "keyId": "29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d",
+      "verified": true
+    },
+    "samples": 15,
+    "pass": true,
+    "bridgeAdapterPackMs": { "median": 4782.998, "p95": 6338.395 },
+    "evaluationPackMs": { "median": 0.301, "p95": 0.878 },
+    "nodeStartupMs": { "median": 60.036, "p95": 201.831 },
+    "processRssDeltaBytes": 43802624
+  },
+  "controlSoak": {
+    "path": ".dogfood/eval/starnet-wave-b-control-soak.json",
+    "mode": "provider-free-control-plane",
+    "qualifiesRelease": false,
+    "startedAt": "2026-08-03T07:59:42.752Z",
+    "plannedEndAt": "2026-08-05T07:59:42.752Z",
+    "intervalSeconds": 60,
+    "statusAtIndexWrite": {
+      "running": true,
+      "healthChecks": 1,
+      "healthFailures": 0,
+      "unexpectedExits": 0
+    }
+  },
+  "dependencyAudit": {
+    "high": 5,
+    "critical": 0,
+    "automaticFixAvailable": false,
+    "classification": "voice-stack dependencies: @huggingface/transformers, kokoro-js, onnxruntime-node/adm-zip, and sharp/libvips"
+  },
+  "limitations": [
+    "The candidate and installer were built but were not installed over the user's current application.",
+    "The updater bundle is not release-signed because the release private key was not supplied.",
+    "The active StarNet credential envelope still predates the required August 3 rotation; no provider-backed run was authorized.",
+    "The performance control excludes installed desktop cold boot, first token, first tool activity, useful artifact, and final durable delivery latency.",
+    "The running provider-free control-plane soak cannot qualify the release or replace the post-parity installed active/idle 48-hour soak.",
+    "Three-attempt installed parity and the 100% critical / 95% overall / at-most-5-point gates remain unevaluated."
+  ]
+}
