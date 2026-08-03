@@ -932,9 +932,9 @@ const VoiceLive = (() => {
     ensurePanel();
     if (active && !retry) { $('live-voice-panel').hidden = false; return; }
     if (retry) finish(true);
-    // Local Live rides on the offline speech packages, and the shipped desktop bundle carries no
-    // node_modules — so ASK the sidecar before opening the microphone. Going live first and failing on the
-    // first model import is how this panel used to show users a raw "Cannot find module" string.
+    // Local Live rides on staged offline speech packages, so ASK the sidecar instead of assuming this particular
+    // install is intact before opening the microphone. Going live first and failing on the first model import is
+    // how this panel used to show users a raw "Cannot find module" string.
     // A failed sidecar probe refuses before touching the microphone. Every engine below still depends on
     // that sidecar, so "try anyway" can only produce a live-looking session that cannot hear or speak.
     /* ONE ENGINE FOR EVERY STATION (Andrew, 2026-07-30). The provider-native realtime path is deliberately NOT
@@ -975,7 +975,7 @@ const VoiceLive = (() => {
       setState('unavailable');
       if ($('lv-model')) $('lv-model').textContent = 'LOCAL MODELS: NOT INSTALLED';
       caption('user', 'Local Live is unavailable in this build.');
-      caption('agent', 'The offline speech models are not bundled with the installer, and this platform has no keyless dictation engine, so hands-free listening cannot start. The standard voice controls are unaffected.');
+      caption('agent', 'The offline speech engine is unavailable in this build, and this platform has no keyless dictation engine, so hands-free listening cannot start. The standard voice controls are unaffected.');
       // The sidecar's `reason` carries a source-checkout hint ("run npm install") that is noise to a user
       // of the installer — it stays in the API and the log, not in the panel's error row.
       setUnrecoverableError('Offline speech models are not installed in this build.');

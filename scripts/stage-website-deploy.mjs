@@ -39,6 +39,10 @@ const HELD_BACK = new Set([
   'legal/_privacy.nocredits.html'
 ]);
 
+// Build-time sprite tooling is source, not a public web asset. Prefix rules cover future assembly helpers without
+// requiring every new script to be added to this list, while HELD_BACK above remains strict for product pages.
+const HELD_BACK_PREFIXES = ['app/assets/sprites/_assembly/'];
+
 /* Holding pricing back is not only about the pricing page: terms.html clause 2 and privacy.html
    both describe the paid StarNet Credits program, and the terms cite the pricing page as forming
    part of them. Publishing that while the page itself is hidden would announce a paid tier nobody
@@ -66,8 +70,9 @@ function walk(dir, acc = []) {
 }
 
 const all = walk(SRC);
-const held = all.filter(f => HELD_BACK.has(f));
-const shipping = all.filter(f => !HELD_BACK.has(f));
+const isHeldBack = f => HELD_BACK.has(f) || HELD_BACK_PREFIXES.some(prefix => f.startsWith(prefix));
+const held = all.filter(isHeldBack);
+const shipping = all.filter(f => !isHeldBack(f));
 
 // A name in HELD_BACK that matches nothing is a silent no-op — the file was renamed or removed and
 // the guard stopped guarding. Fail rather than deploy something the list believes it is blocking.

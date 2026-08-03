@@ -1,9 +1,9 @@
-# Deploys website/ to GitHub Pages.
+# Stages the guarded public artifact, then deploys website-deploy/ to GitHub Pages.
 #
 # One-time setup after the repo is public:
 #   Settings -> Pages -> Source: "GitHub Actions"
 # Then run this workflow from the Actions tab (workflow_dispatch), or push a
-# change under website/ on the default branch.
+# change to the website or its staging contract on the default branch.
 #
 # Custom domain later: add a CNAME record at your DNS host pointing to
 # <owner>.github.io, set the domain in Settings -> Pages, and commit a
@@ -14,7 +14,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main, feat/harness-backend]
-    paths: ['website/**']
+    paths:
+      - 'website/**'
+      - 'scripts/stage-website-deploy.mjs'
+      - 'package.json'
+      - '.github/workflows/deploy-website.yml'
 
 permissions:
   contents: read
@@ -33,9 +37,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Stage guarded website artifact
+        run: npm run website:stage
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: website
+          path: website-deploy
       - id: deployment
         uses: actions/deploy-pages@v4

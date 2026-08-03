@@ -3090,23 +3090,6 @@ const connectors = makeConnectorManager({
    returned by /api/connectors. The access token lives ONLY here — an oauth connector's persisted config carries
    `oauth:true` but no token, so a stale/expired token is never persisted or reused. ---- */
 const CONNECTOR_OAUTH_REDIRECT = 'http://127.0.0.1:' + PORT + '/api/connectors/oauth/callback';
-// Persist the connector-OAuth store (DCR clientId cache + per-connector access/refresh tokens). Returns true ONLY
-// when a READ-BACK proves the write reached disk. `verifyId`, when given, additionally confirms that connector's
-// token bundle is on disk — so the sign-in callback can prove the tokens it just exchanged are durable before it
-// reports success (a silent write failure otherwise leaves the connector unsigned + the DCR clientId orphaned on
-// the NEXT boot, while the popup lied "connected"). Retries once. Never throws.
-function saveConnectorOauth(verifyId) {
-  const intended = String((verifyId && connectorOauth.byId[verifyId] && connectorOauth.byId[verifyId].accessToken) || '');
-  const next = connectorStateMod.envelope(connectorConfigs, connectorOauth);
-  if (!persistConnectorState(next.configs, next.oauth)) return false;
-  if (verifyId) {
-    let raw = null; try { raw = loadResilient(CONNECTORS_STATE_FILE, 'connector-state'); } catch (_) {}
-    const got = raw && raw.oauth && raw.oauth.byId && raw.oauth.byId[verifyId];
-    if (!got || String(got.accessToken || '') !== intended) return false;
-  }
-  adoptConnectorState(next);
-  return true;
-}
 // drop the cached dynamically-registered client for an authorization server (when the AS reports it invalid), so the
 // next sign-in RE-REGISTERS a fresh one instead of wedging forever on a pruned/rotated client id.
 function forgetOauthClient(authServer) {
@@ -14734,8 +14717,8 @@ async function handleTts(req, res) {
       return res.end(buf);
     } catch (error) {
       /* ⛔ A LOCAL REQUEST NEVER FALLS INTO THE KEYED PROVIDER CHAIN. It used to, and the result was the
-         2026-07-30 identity bug: on any station without the offline engine (EVERY installed build — the
-         bundle ships no node_modules) live voice silently spoke with the keyed provider's voice while the
+         2026-07-30 identity bug: on any station without a working offline engine, live voice silently spoke
+         with the keyed provider's voice while the
          picker adjusted an engine that wasn't there. The caller asked for the BUILT-IN identity; the honest
          degrade is the keyless Edge floor in the NEAREST MAPPED voice (sex/accent preserved, picker still
          live), and if Edge cannot serve either, an honest fallback envelope — never a different provider's

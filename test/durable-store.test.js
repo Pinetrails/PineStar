@@ -216,7 +216,7 @@ async function main() {
   }
 
   // ---- E. saveJsonVerified (EL-5b F1/F3/F4): read-back PROOF + retry-once for irreplaceable credentials ----
-  // The shared primitive behind saveConnectorOauth() and saveCodexTokens(): a swallowed write on a rotated/
+  // The shared primitive behind connector-state and Codex-token persistence: a swallowed write on a rotated/
   // exchanged token silently loses the credential on the NEXT boot while the UI claims "connected". This must
   // report ok:false (never a false success) when the read-back cannot prove the value reached disk.
   {

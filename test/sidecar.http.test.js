@@ -1114,8 +1114,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         A.eq(b2.equals(audioPayload), true, 'the cached edge clip is byte-identical');
         A.ok(/^edge:/.test(r2.headers.get('x-voice-provider') || ''), 'the serving tier names itself (X-Voice-Provider: edge:…)');
 
-        /* ---- THE SHIPPED SHAPE: local:true where the offline engine cannot load (every installed build —
-           the bundle ships no node_modules; reproduced here with the STARNET_LOCAL_VOICE=0 kill-switch).
+        /* ---- THE DEGRADED SHAPE: local:true where the staged offline engine cannot load (a damaged/custom
+           build, reproduced here with the STARNET_LOCAL_VOICE=0 kill-switch).
            ⛔ THE BUG THIS LOCKS OUT (2026-07-30, found by ear): this request used to fall through into the
            KEYED provider chain, so live voice silently spoke with a different provider's identity and the
            voice picker adjusted an engine that was not there. Now the picked voice maps onto the nearest

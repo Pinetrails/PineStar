@@ -16,9 +16,7 @@
   var PRICING_LIVE = false;
   // Mark the whole sentence, not just the <a>, wherever pricing is mentioned mid-paragraph —
   // hiding a bare link would leave the surrounding prose referring to a page nobody can reach.
-  if(!PRICING_LIVE){
-    document.querySelectorAll('[data-pricing-link]').forEach(function(el){ el.hidden = true; });
-  }
+  document.querySelectorAll('[data-pricing-link]').forEach(function(el){ el.hidden = !PRICING_LIVE; });
 
   // Community links — paste real URLs here and the DISCORD / X links appear
   // everywhere automatically. Empty string keeps them hidden (no dead links).
@@ -31,7 +29,6 @@
     if(url){ a.href = url; a.hidden = false; a.target = '_blank'; a.rel = 'noopener'; }
   });
   var RELEASES_REPO = 'androoAGI/starnet-releases';
-  var RELEASES_PAGE = 'https://github.com/' + RELEASES_REPO + '/releases/latest';
 
   // StarNet Credits (managed plans). The billing service is a separate host; until it is
   // deployed `live:false` keeps every buy button honest — no button on this site may imply
