@@ -132,6 +132,7 @@ test/capgate.test.js
 test/capdrift.test.js
 test/capsummary.test.js
 test/boot-security.test.js
+test/sidecar-fixture.test.js
 test/sidecar.security.test.js
 test/tauri.hardening.test.js
 test/manual.test.js
