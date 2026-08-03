@@ -1002,15 +1002,13 @@ const App = (() => {
       // desk placement teed up. FINALE (Lane D): the toast is ONE line now — the desk requirement + its door move
       // into the diegetic line + chip below (the standing record no longer duplicates the whole instruction).
       _notify(a.name + ' summoned — type to task it now.', 'good');
-      // …unless its desk already came with it (opts.desk): the "nowhere to sit" line would then be a lie, and
-      // the chip would open REFIT to place a SECOND desk the agent can't own (one workstation per agent).
-      if (!(desk && desk.ok) && typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
-          && (typeof Chat.beatBusy !== 'function' || !Chat.beatBusy())) {   // a pending question/beat owns the COMMS moment — its chips must survive; the desk line stays available via REFIT
-        Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
-        Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
-          if (item && item.value === 'desk') openDeskPlacement();
-        });
-      }
+      // WHERE THAT LINE COMES FROM (2026-08-03): the Chat.load(ws) above opened the new agent's session, and the
+      // desk prompt is now a property of THAT SESSION (chat.js maybeDeskPrompt → App.needsWorkstation), not a
+      // one-shot printed here. It used to be printed once, DOM-only: the first stream switch (or any reload) wiped
+      // the only place the required step was ever stated, and a live beat could drop it outright — leaving a brand
+      // new agent's session showing nothing but the generic starter hint. Re-derived from the live floor on every
+      // open instead, so it stands until the desk actually exists, and it never fires when the desk came with the
+      // agent (opts.desk) — "nowhere to sit" would then be a lie about the floor.
       // land the cursor in the COMMS composer so "type to task it now" is literal. Deferred a tick so it wins over
       // the bay's close() focus-restore (which runs synchronously right after this returns, sending focus to the
       // RECRUIT dock button). Guarded on visibility so a closed COMMS panel is a no-op.
@@ -1030,6 +1028,18 @@ const App = (() => {
     const lo = loadoutSummary(a, spec);
     if (lo) _notify(a.name + ' loadout - ' + lo, 'info');
     return a;
+  }
+  // DOES THIS CREW MEMBER STILL HAVE NOWHERE TO SIT? A truthful read of the LIVE FLOOR, never a flag: a
+  // specialist owns exactly one prop — its workstation (capForProp === 'computer') — so "no such prop bound to
+  // it" IS "no desk". Re-derived every time it's asked, which is what lets the COMMS prompt stand until the desk
+  // exists and then vanish for good, in the same tick the Commander places it. Excludes the hero (its starter
+  // desk is seeded at wake, and its stream owns the first-run hint) and any id that isn't on the live roster.
+  // Fails CLOSED on a missing station: the app must never claim a floor state it cannot prove.
+  function needsWorkstation(agentId) {
+    const id = String(agentId || '');
+    if (!id || id === 'agent' || !agents.has(id)) return false;
+    if (!station || typeof station.propsByAgent !== 'function' || typeof station.capForProp !== 'function') return false;
+    try { return !station.propsByAgent(id).some(p => station.capForProp(p.t) === 'computer'); } catch (_) { return false; }
   }
   // OPEN REFIT WITH DESK PLACEMENT TEED UP — the target of the post-summon "PLACE ITS DESK" chip. Opens the
   // builder (the same door the ⚒ BUILD dock opens) and, once its DOM is up, drives it to the PROP tool on the
@@ -4177,6 +4187,10 @@ const App = (() => {
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
+    // THE POST-SUMMON DESK STEP, owned by the session (chat.js maybeDeskPrompt): the read that decides whether a
+    // stream still owes its agent a workstation, and the door its chip opens (REFIT, armed on WORKSTATIONS).
+    needsWorkstation: needsWorkstation,
+    openDeskPlacement: openDeskPlacement,
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
     applyConfig: applyAgentConfig };
