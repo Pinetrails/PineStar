@@ -182,6 +182,7 @@ const configExport = require('./configexport.js');   // P1-7: station backup —
 const harnessImport = require('./harness-import.js'); // IMPORT-AN-AGENT: read-only OpenClaw/Hermes home -> normalized preview (pure; index does the fs)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { makeDomainStore } = require('./domain-store.js'); // normalized/versioned policy for ordinary non-secret singleton state
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
@@ -583,6 +584,14 @@ function loadResilient(file, tag) {
 }
 // durable single-file write: fsync-before-rename + snapshot the prior good value to <file>.bak.
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
+function reportDomainStoreIssue(tag) {
+  return function onDomainStoreIssue(status, detail) {
+    const file = detail && detail.file;
+    if (status === 'recovered') console.warn('[' + tag + '] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.');
+    else if (status === 'corrupt') quarantineCorrupt(file, tag);
+    else console.warn('[' + tag + '] could not load ' + file + ' (' + status + '); using safe defaults.');
+  };
+}
 
 /* ---- P3 bounded append-only JSONL logs ----
    The ledger / run-history are append-only and were read into RAM IN FULL at boot
@@ -670,18 +679,22 @@ if (credits.configured()) { credits.refresh().catch(() => {}); }   // warm the b
    mutable source the status endpoint + loop read; BUDGET_CAPS stays the frozen env-default fallback. */
 const BUDGET_FILE = path.join(WORKSPACES, 'budget.json');
 const BUDGET_CAP_KEYS = budgetCaps.KEYS;
+const budgetStore = makeDomainStore({
+  fs, path, file: BUDGET_FILE, version: 1, writeDurable: writeFileDurable,
+  defaults: () => ({}),
+  normalize: value => budgetCaps.cleanOverrides(value || {}),
+  encode: value => ({ caps: value }),
+  decode: envelope => envelope && envelope.caps && typeof envelope.caps === 'object' && !Array.isArray(envelope.caps) ? envelope.caps : undefined,
+  onIssue: reportDomainStoreIssue('budget')
+});
 // the caps actually in force this process = persisted-or-env, recomputed by applyBudgetCaps(). Starts = env defaults.
 let effectiveCaps = Object.assign({}, BUDGET_CAPS);
 let budgetOverrides = {};   // only the keys the user has explicitly saved (each a finite >=0 number); absent = use env
 function loadBudgetOverrides() {
-  try {
-    const raw = loadResilient(BUDGET_FILE, 'budget');
-    const caps = (raw && typeof raw.caps === 'object' && raw.caps) ? raw.caps : {};
-    return budgetCaps.cleanOverrides(caps);   // drops any junk/negative value -> that key silently falls back to env
-  } catch (e) { return {}; }   // unrecoverable -> fall back entirely to env defaults
+  return budgetStore.load().value;
 }
 function saveBudgetOverrides() {
-  try { saveResilient(BUDGET_FILE, { version: 1, caps: budgetOverrides }); }   // fsync-durable + .bak last-known-good
+  try { budgetStore.save(budgetOverrides); }   // fsync-durable + .bak last-known-good + normalized read-back proof
   catch (e) { console.warn('[budget] persist failed:', (e && e.message) || e); }
 }
 // recompute effectiveCaps from (persisted override ?? env default) and push the cross-run pools into the live
@@ -707,18 +720,22 @@ applyBudgetCaps();
    (404), and auth/billing/rate_limit — see loop.js. */
 const FALLBACK_FILE = path.join(WORKSPACES, 'fallback.json');
 const ENV_FALLBACK = fallbackChain.parseEnvChain(ENV('FALLBACK_MODELS') || '');   // frozen env default baseline
+const fallbackStore = makeDomainStore({
+  fs, path, file: FALLBACK_FILE, version: 1, writeDurable: writeFileDurable,
+  defaults: () => null,
+  normalize: value => Array.isArray(value) ? fallbackChain.cleanChain(value) : null,
+  encode: value => ({ models: value }),
+  decode: envelope => envelope && Array.isArray(envelope.models) ? envelope.models : undefined,
+  onIssue: reportDomainStoreIssue('fallback')
+});
 let fallbackSaved = null;   // null = never saved (use env); an array (incl. []) = an explicit saved choice that wins
 function loadFallbackChain() {
-  try {
-    const raw = loadResilient(FALLBACK_FILE, 'fallback');
-    if (raw && Array.isArray(raw.models)) return fallbackChain.cleanChain(raw.models);   // present (incl. empty) -> explicit choice
-    return null;   // no file / no models key -> never saved -> env default
-  } catch (e) { return null; }   // unrecoverable -> fall back entirely to env default
+  return fallbackStore.load().value;
 }
 function saveFallbackChain() {
   // null = the user reset to env default: remove the file so a torn/leftover blob can't resurrect a stale chain.
-  if (fallbackSaved == null) { try { fs.unlinkSync(FALLBACK_FILE); } catch (_) {} try { fs.unlinkSync(FALLBACK_FILE + '.bak'); } catch (_) {} return; }
-  try { saveResilient(FALLBACK_FILE, { version: 1, models: fallbackSaved }); }   // fsync-durable + .bak last-known-good
+  if (fallbackSaved == null) { try { fallbackStore.remove(); } catch (_) {} return; }
+  try { fallbackStore.save(fallbackSaved); }   // fsync-durable + .bak last-known-good + normalized read-back proof
   catch (e) { console.warn('[fallback] persist failed:', (e && e.message) || e); }
 }
 // the fallback chain actually in force for a run that DOESN'T carry its own per-run list = saved-or-env.
@@ -1671,10 +1688,8 @@ const STUDY_TIMEOUT_MS = 30000;
    proposes memories at all; `reflectCooldownMs` (default 180s) is the min gap between turn-in beats per agent.
    Both read live on every run (no restart) and stored in a protected sibling of the fs jail. ---- */
 const MEMORY_CONFIG_FILE = path.join(WORKSPACES, 'memory.config.json');
-let memoryConfig = (function loadMemoryConfig() {
-  try {
-    const raw = loadResilient(MEMORY_CONFIG_FILE, 'memory-config');
-    const c = (raw && typeof raw === 'object') ? raw : {};
+function normalizeMemoryConfig(value) {
+    const c = (value && typeof value === 'object') ? value : {};
     const cd = Number(c.reflectCooldownMs);
     const sd = Number(c.studyCooldownMs);
     return {
@@ -1685,10 +1700,18 @@ let memoryConfig = (function loadMemoryConfig() {
       studyEnabled: c.studyEnabled !== false,       // default ON
       studyCooldownMs: (isFinite(sd) && sd >= 0) ? Math.floor(sd) : STUDY_COOLDOWN_MS
     };
-  } catch (_) { return { reflectEnabled: true, reflectCooldownMs: REFLECT_COOLDOWN_MS, studyEnabled: true, studyCooldownMs: STUDY_COOLDOWN_MS }; }
-})();
+}
+const memoryConfigStore = makeDomainStore({
+  fs, path, file: MEMORY_CONFIG_FILE, version: 1, writeDurable: writeFileDurable,
+  defaults: () => ({}),
+  normalize: normalizeMemoryConfig,
+  encode: value => value,
+  decode: envelope => envelope && typeof envelope === 'object' ? envelope : undefined,
+  onIssue: reportDomainStoreIssue('memory-config')
+});
+let memoryConfig = memoryConfigStore.load().value;
 function saveMemoryConfig() {
-  try { saveResilient(MEMORY_CONFIG_FILE, { version: 1, reflectEnabled: memoryConfig.reflectEnabled, reflectCooldownMs: memoryConfig.reflectCooldownMs, studyEnabled: memoryConfig.studyEnabled, studyCooldownMs: memoryConfig.studyCooldownMs }); }
+  try { memoryConfigStore.save(memoryConfig); }
   catch (e) { console.warn('[memory-config] persist failed:', (e && e.message) || e); }
 }
 const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, proposals:[{id,kind,content,scope}] }
