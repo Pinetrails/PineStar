@@ -58,8 +58,8 @@ A.ok(/Build\.isOpen\(\)\s*&&\s*Build\.close\)\s*\{\s*Build\.close\(\);\s*return;
   'inside REFIT the bail just closes it — kitTick reads that as the normal exit (no double dialogue)');
 A.ok(/kitClosedDuringPlace\(\)/.test(bailSeg), 'outside REFIT it lands on the same honest wired-vs-dark accounting');
 A.ok(/class = 'tut-coach-bail'|className = 'tut-coach-bail'/.test(tut), 'every kit-out step renders a visible way out');
-A.ok(/e\.key !== 'Escape'[\s\S]{0,140}Build\.isOpen\(\)\) return;\s*kitBail\(\)/.test(tut),
-  'Esc bails only OUTSIDE REFIT — inside, build.js already owns the key');
+A.ok(/e\.key !== 'Escape'[\s\S]{0,200}\.refit-overlay'\)[\s\S]{0,80}#terms \.term'\)\) return;\s*kitBail\(\)/.test(tut),
+  'Esc bails only when nothing else claims the key — not over REFIT, not over an open station panel');
 
 /* ---------- P1: the tour's two closing surfaces must not cover each other ---------- */
 A.ok(/function dodgeBrief\(/.test(tut), 'the coachmark dodges the FIRST STEPS brief');
