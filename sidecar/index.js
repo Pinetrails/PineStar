@@ -2499,7 +2499,7 @@ function channelResolveConsent(runId, promptId, decision) {
 // that file's header for the threat model and the deliberate v1 boundaries. ONE definition, shared by the
 // dispatch gate and the consent-broker predicates so the two can never disagree about what a taint revokes.
 const taintPolicy = require('./taint.js');
-const revokedByTaint = { ok: taintPolicy.allowedWhenTainted, isSource: taintPolicy.isUntrustedSource };
+const revokedByTaint = { ok: taintPolicy.allowedWhenTainted, isSource: taintPolicy.isUntrustedSource, boundary: taintPolicy.postTaintBoundary };
 
 function hardlineFloor(call) {
   const p = call && call.args && call.args.path;
@@ -11384,6 +11384,7 @@ async function handleRun(req, res) {
   try {
     // USER ATTACHMENTS: expand any Commander-attached photos/files (carried as lightweight references on the
     // user turns) into real provider content blocks before the model call. Degrades per-attachment, never throws.
+    const hasUserAttachments = messages.some(m => m && Array.isArray(m.attachments) && m.attachments.length > 0);
     let runMessages = messages;
     try { runMessages = await attachments.expandUserAttachments(messages, agentId); } catch (_) { runMessages = messages; }
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
@@ -11391,6 +11392,7 @@ async function handleRun(req, res) {
     await runOnce({
       key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal, evidence,
+      initialTaint: hasUserAttachments ? 'user attachment' : null,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
       askCommander,            // in-turn clarify: brief.ask blocks + resumes the SAME turn on this watched surface
@@ -11538,14 +11540,13 @@ async function runOnce(o) {
      It does not matter what the injected text says — the powers it would need are gone.
 
      Deliberately narrow, because over-tainting would gut the feature: revoked = the host process (shell/verify),
-     connector WRITES/EXECUTES, and credential-spending requests. Connector READS stay allowed, or a routine
-     whose whole job is "read three things from Notion" would break on its second call. Reading more untrusted
-     data can't be turned into an outward action; acting on it can.
+     every connector/unknown external effect, and credential-spending requests. Connector metadata is supplied
+     by the remote server, so readOnlyHint cannot be trusted to exempt a second call after hostile content.
 
-     Holds the FIRST tainting tool name, so the refusal can name the actual cause. Autonomous only: a watched
-     run has a human and live consent prompts, and taking powers away mid-conversation there would be hostile. */
+     Holds the FIRST tainting source, so the refusal can name the actual cause. Unattended runs lose the power;
+     a watched run may recover exactly one call only through a fresh confirmation after the taint occurred. */
   const execution = makeRunExecutionState({
-    initialTaint: o.initialTaint ? 'scheduled upstream context' : null,
+    initialTaint: o.initialTaint ? String(o.initialTaint === true ? 'scheduled upstream context' : o.initialTaint) : null,
     artifacts: makeArtifactCollector(),
     now: () => Date.now()
   });
@@ -12284,10 +12285,10 @@ async function runOnce(o) {
     // The taint check is repeated here, not just at dispatch, so consent and the dispatch gate can never
     // disagree: a tool the gate will refuse must not be one consent says yes to (the incoherent state the
     // terminal lane hit). Same predicate source (`revokedByTaint`) on both sides.
-    terminalGrant: (call, tool) => (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) && (!execution.taintedBy() || ownerTrusted || revokedByTaint.ok(tool)),
+    terminalGrant: (call, tool) => !execution.taintedBy() && (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0),
     // UNATTENDED CONNECTOR GRANT: same host-side source as the authority gate, so an offered MCP tool can
     // never be refused by consent (the incoherent state the terminal lane hit before this was wired).
-    connectorGrant: (call, tool) => (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) && (!execution.taintedBy() || ownerTrusted || revokedByTaint.ok(tool)),
+    connectorGrant: (call, tool) => !execution.taintedBy() && (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0),
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
@@ -12640,20 +12641,30 @@ async function runOnce(o) {
     if (directDomainTask && c.name === 'web_fetch' && !DomainTask.isTargetFetch(c, directDomainTask)) {
       return { ok: false, isError: true, summary: 'direct-domain-target-only', content: 'Fetch only the exact requested host ' + directDomainTask.host + '. Do not try spelling variants or alternate domains unless the Commander asks.' };
     }
-    // TAINT ENFORCEMENT — see `taintedBy`. Runs before consent/dispatch so a revoked power never executes, and
-    // returns an honest refusal naming the source rather than a silent failure, so the agent can report what it
-    // could not finish instead of pretending. The tool STAYS in the wire list on purpose: consent-not-absence.
-    // The taint lockout protects unattended automation after outside content enters context. An authenticated
-    // owner DM is the Commander at the controls, with the same deliberate tradeoff as an interactive desktop
-    // session: do not silently take its tools away mid-task. Physical-input/visible-desktop floors still apply.
-    if (execution.taintedBy() && surface !== 'interactive' && !ownerTrusted && !revokedByTaint.ok(liveTool)) {
+    // TAINT ENFORCEMENT — see `taintedBy`. Runs before consent/dispatch so cached/session/full grants cannot
+    // silently survive attacker-authored content. An unattended run loses the effect. A watched run may recover
+    // exactly THIS call through a fresh prompt made after the taint; affirmative "always"/"full" answers collapse
+    // to one-shot here and never create or consult a standing grant. Owner identity is not a substitute for that
+    // temporal boundary: an owner chat with approvals off has no live confirmation channel and therefore blocks.
+    let postTaint = revokedByTaint.boundary(liveTool, {
+      taintedBy: execution.taintedBy(), surface, hasPrompt: typeof prompt === 'function'
+    });
+    if (postTaint.needsConfirmation) {
+      let decision = 'deny';
+      try { decision = await prompt(c, liveTool); } catch (_) {}
+      postTaint = revokedByTaint.boundary(liveTool, {
+        taintedBy: execution.taintedBy(), surface, hasPrompt: true, decision
+      });
+    }
+    const postTaintConfirmed = postTaint.oneShot;
+    if (!postTaint.allow) {
       return {
         ok: false, isError: true, summary: 'untrusted-content-lockout',
         content: 'BLOCKED: "' + c.name + '" is no longer available on this run. This run has already read '
           + 'outside content (via ' + execution.taintedBy() + '), which could contain instructions from whoever wrote it. '
-          + 'An unattended run therefore gives up its terminal, credentialed requests, and connector actions '
-          + 'once that happens — reading more is still fine. This is not a failure of the tool and retrying will '
-          + 'not help: finish what you can, then state plainly that this step needs a watched session.'
+          + 'Unattended runs give up terminal, credentialed-request, and connector/unknown-external powers; a watched '
+          + 'run needs a fresh confirmation for this exact call after the outside content was read. Retrying without '
+          + 'that confirmation will not help: finish what you can and report the withheld step plainly.'
       };
     }
     const internalBriefControl = internalBriefTools.indexOf(c.name) >= 0;
@@ -12700,7 +12711,21 @@ async function runOnce(o) {
         if (snap && snap.created) { emit('checkpoint.created', { agentId, runId, turn, snapshotId: snap.id, files: snap.files || 0, bytes: snap.bytes || 0, label: c.name }); execution.advanceCheckpoint(); }
       } catch (_) { /* a checkpoint failure must never break a run */ }
     }
-    const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
+    let dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
+    if (postTaintConfirmed) {
+      const baseAuthorize = dctx && dctx.authorize;
+      dctx = Object.assign({}, dctx, {
+        // The prompt above is the exact, post-taint one-call grant. Do not ask the ordinary broker again and do
+        // not let a pre-existing session/permanent/full grant be the fact that authorizes this effect.
+        consent: () => ({ allow: true, reason: 'fresh post-taint one-call confirmation' }),
+        authorize: async (call, tool) => {
+          if (impactOfTool(tool) === 'external-unknown') {
+            return { ok: true, impact: 'external-unknown', surface: 'interactive', isTask, oneShot: true };
+          }
+          return typeof baseAuthorize === 'function' ? baseAuthorize(call, tool) : { ok: true };
+        }
+      });
+    }
     // Persist the exact call before it can have side effects. If the process dies after this barrier but before a
     // durable result, restart classifies the outcome as unknown and never replays it automatically.
     const fatalToolBoundary = (stage, cause) => {
@@ -12759,7 +12784,7 @@ async function runOnce(o) {
        puts it verbatim into the tool_result the model reads. So `isError: true` was a one-flag bypass that let
        a hostile connector inject text while the run kept its terminal / credentialed / connector-write powers.
        What actually matters is whether untrusted BYTES reached the context, not whether the call succeeded. */
-    if (!execution.taintedBy() && r && typeof r.content === 'string' && r.content.length && revokedByTaint.isSource(liveTool)) {
+    if (!execution.taintedBy() && r && typeof r.content === 'string' && r.content.length && revokedByTaint.isSource(liveTool, c)) {
       execution.latchTaint(c.name);
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
