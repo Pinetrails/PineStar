@@ -43,17 +43,17 @@
     {
       name: 'research',
       triggers: ['research', 'news', 'latest', 'source', 'sources', 'web', 'paper', 'papers', 'arxiv', 'scan', 'monitor', 'brief'],
-      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist', 'paralegal', 'jobhunter', 'opportunist', 'sentinel', 'harvester']
+      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist', 'paralegal', 'jobhunter', 'opportunist', 'sentinel', 'harvester', 'hiring', 'pitchwriter']
     },
     {
       name: 'engineering',
       triggers: ['code', 'repo', 'bug', 'test', 'build', 'implement', 'fix', 'debug', 'ci'],
-      roles: ['engineer', 'engineering', 'developer', 'coder', 'reviewer', 'drafter']
+      roles: ['engineer', 'engineering', 'developer', 'coder', 'reviewer', 'drafter', 'apptester', 'auditor', 'deployer', 'dbhelper', 'a11y']
     },
     {
       name: 'writing',
       triggers: ['write', 'draft', 'copy', 'post', 'email', 'newsletter', 'document', 'summary', 'script', 'publish'],
-      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer', 'ghostwriter', 'negotiator', 'anchor', 'diplomat']
+      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer', 'ghostwriter', 'negotiator', 'anchor', 'diplomat', 'emailmarketer', 'adcopy', 'landingwriter', 'support', 'processwriter']
     },
     {
       name: 'ops',

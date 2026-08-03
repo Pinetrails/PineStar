@@ -60,7 +60,13 @@ for (const b of CATALOG) {
   }
 }
 
-/* ---------- 1b. ROSTER CONTENT: 28 curated builtins + 18 archetypes, seals/codes, sanity ----------
+/* ---------- 1b. ROSTER CONTENT: 36 curated builtins + 21 archetypes, seals/codes, sanity ----------
+   Third wave 2026-08-03 adds the SHIP-YOUR-APP lane (apptester / auditor / deployer / dbhelper — the jobs an
+   AI-assembled app actually fails at: nothing tested it, keys shipped to the browser, it will not build on the
+   host, the database is readable by anyone), the marketing SUB-NICHES (emailmarketer / adcopy / landingwriter,
+   which the one generic "marketer" was standing in for), and the business roles (support on the roster;
+   hiring / processwriter / pitchwriter in the archive). The security auditor was PROMOTED out of the archive
+   and re-aimed at app security rather than generic file sweeps.
    Expansion 2026-08-03 (supersedes the 2026-07-16 business-grade redesign): the 12-class business bar had
    narrowed the VISIBLE roster to job titles and folded everything else into a collapsed archive, which read
    as bare. The bar is now "does this class own an outcome nobody else on the roster owns", which admits:
@@ -74,18 +80,24 @@ for (const b of CATALOG) {
    near-duplicate would shadow them in the scout's matcher. curator and muse were deliberately KEPT (distinct
    jobs, not duplicates). */
 const classicons = require('../frontend/app/classicons.js');
-A.eq(builtins.length, 28, 'the curated roster ships exactly 28 classes');
-A.eq(archetypes.length, 18, 'the archetype pool holds the 18 deep cuts');
-const CURATED = ['strategist', 'chief', 'opportunist', 'researcher', 'engineer', 'drafter', 'analyst',
-  'harvester', 'pilot', 'foreman', 'nightwatch', 'sentinel', 'marketer', 'publisher', 'producer',
-  'writer', 'ghostwriter', 'prospector', 'treasurer', 'paralegal', 'negotiator', 'jobhunter',
-  'envoy', 'registrar', 'tutor', 'provisioner', 'taskmaster', 'scout'];
-A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 28 expansion classes');
+A.eq(builtins.length, 36, 'the curated roster ships exactly 36 classes');
+A.eq(archetypes.length, 21, 'the archetype pool holds the 21 deep cuts');
+const CURATED = ['strategist', 'chief', 'opportunist', 'researcher', 'engineer', 'drafter',
+  'apptester', 'auditor', 'deployer', 'dbhelper', 'analyst', 'harvester', 'pilot', 'foreman',
+  'nightwatch', 'sentinel', 'marketer', 'emailmarketer', 'adcopy', 'landingwriter', 'publisher',
+  'producer', 'writer', 'ghostwriter', 'prospector', 'treasurer', 'paralegal', 'negotiator',
+  'jobhunter', 'support', 'envoy', 'registrar', 'tutor', 'provisioner', 'taskmaster', 'scout'];
+A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 36 expansion classes');
 A.eq(builtins[0].id, 'strategist', 'the strategist is the roster\'s first card (the bay\'s default focus)');
+// the SHIP-YOUR-APP lane must stay on the DEFAULT roster: it is the reason the vibe-coding audience opens the
+// bay at all, and burying any of it in the archive is the exact regression the expansion existed to undo.
+for (const id of ['apptester', 'auditor', 'deployer', 'dbhelper']) {
+  A.ok(builtins.some(b => b.id === id), 'the build lane stays on the default roster: ' + id);
+}
 const ARCH_IDS = ['quartermaster', 'anchor', 'medic', 'diplomat', 'operator', 'designer', 'navigator',
-  'curator', 'muse', 'reviewer', 'archivist', 'broker', 'auditor', 'translator', 'herald',
-  'closer', 'steward', 'optimizer'];
-A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 18 deep cuts');
+  'curator', 'muse', 'reviewer', 'archivist', 'broker', 'a11y', 'hiring', 'processwriter',
+  'pitchwriter', 'translator', 'herald', 'closer', 'steward', 'optimizer'];
+A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 21 deep cuts');
 for (const id of ARCH_IDS) A.ok(!builtins.some(b => b.id === id), 'archetype is OFF the default roster: ' + id);
 // the retired near-duplicates must be GONE from both shelves (they would shadow their superset builtins)
 for (const id of ['liaison', 'publicist', 'bookkeeper', 'scribe']) A.ok(!CATALOG.some(b => b.id === id), 'retired class is fully removed: ' + id);
@@ -96,7 +108,10 @@ const NEW_CLASSES = ['strategist', 'opportunist', 'marketer', 'publisher', 'prod
   // 2026-08-03 expansion classes — each carries the full loadout + presentation fields
   'pilot', 'foreman', 'nightwatch', 'ghostwriter', 'paralegal', 'negotiator', 'jobhunter', 'quartermaster', 'anchor',
   // 2026-08-03 second wave
-  'drafter', 'harvester', 'sentinel', 'registrar', 'provisioner', 'taskmaster', 'medic', 'diplomat'];
+  'drafter', 'harvester', 'sentinel', 'registrar', 'provisioner', 'taskmaster', 'medic', 'diplomat',
+  // 2026-08-03 third wave — the ship-your-app lane, marketing sub-niches, and business roles
+  'apptester', 'deployer', 'dbhelper', 'emailmarketer', 'adcopy', 'landingwriter', 'support',
+  'a11y', 'hiring', 'processwriter', 'pitchwriter'];
 const byId = new Map(CATALOG.map(b => [b.id, b]));
 for (const id of NEW_CLASSES) {
   const b = byId.get(id);
@@ -243,7 +258,11 @@ const NEW_SKILLS = ['source-triangulation', 'feed-watch', 'adversarial-review-pa
   'browser-operation', 'work-splitting', 'voice-match', 'contract-review', 'negotiation-case', 'application-tailoring',
   // 2026-08-03 second wave
   'dataset-harvest', 'spec-drafting', 'exposure-reduction', 'relationship-log', 'meal-planning',
-  'commitment-tracking', 'health-record-prep', 'hard-conversation'];
+  'commitment-tracking', 'health-record-prep', 'hard-conversation',
+  // 2026-08-03 third wave
+  'exposed-secrets-audit', 'deploy-checklist', 'schema-and-access', 'accessibility-audit',
+  'email-sequence', 'ad-copy-testing', 'landing-copy', 'support-replies', 'hiring-screen',
+  'sop-writing', 'pitch-deck'];
 for (const slug of NEW_SKILLS) {
   const sk = SLUGS.get(slug);
   A.ok(!!sk, 'S2 new skill authored: ' + slug);
@@ -259,7 +278,7 @@ const arch = S.get('translator');
 A.ok(arch && arch.id === 'translator' && arch.custom === false, 'Specialties.get resolves an archetype id');
 A.ok(!S.builtins().some(b => b.id === 'translator'), 'builtins() (the default roster) excludes archetypes');
 A.ok(!S.list().some(b => b.id === 'translator'), 'list() (roster + customs) excludes archetypes — they are asked for explicitly');
-A.eq(S.archetypes().length, 18, 'archetypes() exposes the pool');
+A.eq(S.archetypes().length, 21, 'archetypes() exposes the pool');
 const archCompose = S.compose('reviewer');
 A.ok(archCompose && archCompose.purpose.length > 0 && archCompose.manual.length > 0, 'compose() works on an archetype (summonable as-is, same deploy path)');
 // a custom can never shadow an archetype id (uniqueId consults get(), which now spans both shelves)

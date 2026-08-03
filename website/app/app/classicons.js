@@ -110,6 +110,29 @@
     medic: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><path fill="' + D + '" d="M10.4 5.4 H13.6 V10.4 H18.6 V13.6 H13.6 V18.6 H10.4 V13.6 H5.4 V10.4 H10.4 Z"/></svg>',
     // diplomat: the span holding between two sides — the message that keeps the relationship standing.
     diplomat: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.4" y="8.8" width="3.2" height="11.4" rx=".6"/><rect x="18.4" y="8.8" width="3.2" height="11.4" rx=".6"/><rect x="1.4" y="19.6" width="21.2" height="2.4" rx=".6"/></g><path fill="none" stroke="currentColor" stroke-width="2.2" d="M4 9.6 a8 8 0 0 1 16 0"/><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10.8 V19.6"/><path d="M12 8.9 V19.6"/><path d="M16 10.8 V19.6"/></g></svg>',
+    // ---- 2026-08-03 third wave: the build lane + marketing sub-niches (same engraved-coin style) ----
+    // apptester: the cursor caught mid-click on a live surface — the app used, not read.
+    apptester: '<svg viewBox="0 0 24 24"><rect x="2.4" y="3" width="19.2" height="15" rx="1.8" fill="currentColor"/><path fill="' + D + '" d="M4.4 7 H19.6 V15.6 H4.4 Z"/><path fill="currentColor" d="M9.6 9 L17 13.2 L13.6 14 L15.4 17.4 L13.6 18.4 L11.8 15 L9.6 17.4 Z"/><rect x="8.4" y="19.4" width="7.2" height="1.8" rx=".6" fill="currentColor"/></svg>',
+    // deployer: the payload leaving the pad — from your machine to live.
+    deployer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 1.6 L15.6 7.4 V14 H8.4 V7.4 Z"/><path fill="' + D + '" d="M10.6 6.6 a1.4 1.4 0 0 1 2.8 0 a1.4 1.4 0 0 1 -2.8 0 Z"/><path fill="currentColor" d="M8.4 10.4 L5.2 14.4 V17 L8.4 15.2 Z"/><path fill="currentColor" d="M15.6 10.4 L18.8 14.4 V17 L15.6 15.2 Z"/><g fill="currentColor"><rect x="10.8" y="16" width="2.4" height="3.4" rx=".8"/><rect x="7.6" y="20.2" width="8.8" height="1.8" rx=".7"/></g></svg>',
+    // dbhelper: the stacked drum with one band locked — the rows, and who may read them.
+    dbhelper: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8.4" ry="3.2" fill="currentColor"/><path fill="currentColor" d="M3.6 8 v4 a8.4 3.2 0 0 0 16.8 0 v-4 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="currentColor" d="M3.6 14 v4 a8.4 3.2 0 0 0 16.8 0 v-4 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="' + D + '" d="M10.6 15.4 h2.8 v3.4 h-2.8 Z"/><path fill="' + D + '" d="M11 14.2 a1 1 0 0 1 2 0 v1.4 h-2 Z"/></svg>',
+    // emailmarketer: the envelope going OUT, with the send trail behind it.
+    emailmarketer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7.6 5.4 H21.4 V18.6 H7.6 Z"/><path fill="' + D + '" d="M9.2 7.4 L14.5 11.4 L19.8 7.4 L19.8 8.9 L14.5 12.9 L9.2 8.9 Z"/><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M1.6 8.6 H5.4"/><path d="M0.8 12 H4.6"/><path d="M1.6 15.4 H5.4"/></g></svg>',
+    // adcopy: the split test — two panels, one lit.
+    adcopy: '<svg viewBox="0 0 24 24"><rect x="2.2" y="4.4" width="8.6" height="15.2" rx="1.4" fill="currentColor"/><rect x="13.2" y="4.4" width="8.6" height="15.2" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.8"/><g fill="' + D + '"><rect x="3.8" y="6.6" width="5.4" height="1.6" rx=".5"/><rect x="3.8" y="9.6" width="3.6" height="1.6" rx=".5"/></g><g fill="currentColor"><rect x="14.8" y="6.6" width="5.4" height="1.6" rx=".5"/><rect x="14.8" y="9.6" width="3.6" height="1.6" rx=".5"/></g><path fill="currentColor" d="M5.2 14.4 L8 18.4 H2.4 Z"/></svg>',
+    // landingwriter: the page with the fold marked and one call to action under it.
+    landingwriter: '<svg viewBox="0 0 24 24"><rect x="3" y="2.6" width="18" height="18.8" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="5.2" y="5" width="13.6" height="2.6" rx=".5"/><rect x="5.2" y="8.8" width="9.4" height="1.6" rx=".5"/></g><path fill="' + D + '" d="M4.4 12.4 H19.6 V13.4 H4.4 Z"/><rect x="7.6" y="15.6" width="8.8" height="3.4" rx="1.2" fill="' + D + '"/><rect x="9.2" y="16.8" width="5.6" height="1" rx=".4" fill="currentColor"/></svg>',
+    // support: the handset with the answered line.
+    support: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.8 2.6 a2.2 2.2 0 0 1 2.6 1.2 l1.6 3.4 a2.2 2.2 0 0 1 -.6 2.6 L8.8 11 a13 13 0 0 0 4.2 4.2 l1.2-1.6 a2.2 2.2 0 0 1 2.6-.6 l3.4 1.6 a2.2 2.2 0 0 1 1.2 2.6 l-.6 2.2 a2.2 2.2 0 0 1 -2.4 1.6 C10.6 20.2 3.8 13.4 2.8 5.6 a2.2 2.2 0 0 1 1.6-2.4 Z"/><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M15.6 2.4 a6 6 0 0 1 6 6"/></g></svg>',
+    // a11y: the figure with arms out inside the ring — the standing accessibility mark.
+    a11y: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><circle cx="12" cy="6.6" r="1.9" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.9" stroke-linecap="round"><path d="M5.6 10.2 H18.4"/><path d="M12 9.6 V14"/><path d="M12 14 L9 19.4"/><path d="M12 14 L15 19.4"/></g></svg>',
+    // hiring: two candidate cards, one marked.
+    hiring: '<svg viewBox="0 0 24 24"><rect x="2.2" y="4" width="9" height="16" rx="1.4" fill="currentColor"/><rect x="12.8" y="4" width="9" height="16" rx="1.4" fill="currentColor"/><circle cx="6.7" cy="9" r="2.1" fill="' + D + '"/><g fill="' + D + '"><rect x="3.8" y="13" width="5.8" height="1.5" rx=".5"/><rect x="3.8" y="16" width="4" height="1.5" rx=".5"/><circle cx="17.3" cy="9" r="2.1"/><rect x="14.4" y="13" width="5.8" height="1.5" rx=".5"/></g><path fill="none" stroke="' + D + '" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M14.8 17.2 L16.6 19 L20 15.6"/></svg>',
+    // processwriter: the numbered run of steps with a branch.
+    processwriter: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.4" y="3.4" width="4.4" height="4.4" rx="1.2"/><rect x="2.4" y="9.8" width="4.4" height="4.4" rx="1.2"/><rect x="2.4" y="16.2" width="4.4" height="4.4" rx="1.2"/><rect x="9.4" y="4.6" width="12.2" height="2" rx=".7"/><rect x="9.4" y="11" width="12.2" height="2" rx=".7"/><rect x="9.4" y="17.4" width="8.4" height="2" rx=".7"/></g><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4.6 7.8 V9.8"/><path d="M4.6 14.2 V16.2"/></g></svg>',
+    // pitchwriter: the deck on the easel — one slide, one argument.
+    pitchwriter: '<svg viewBox="0 0 24 24"><rect x="2.6" y="2.6" width="18.8" height="13" rx="1.4" fill="currentColor"/><g fill="' + D + '"><rect x="4.8" y="4.8" width="9.6" height="2.2" rx=".5"/><rect x="4.8" y="8.4" width="6.4" height="1.6" rx=".5"/></g><path fill="' + D + '" d="M13.4 12.8 L16.2 8.6 L19.2 12.8 Z"/><g fill="currentColor"><rect x="11.2" y="15.6" width="1.6" height="4" rx=".5"/><path d="M6.4 21.4 L11.6 16.4 L12.8 17.6 L7.6 22.4 Z"/><path d="M17.6 21.4 L12.4 16.4 L11.2 17.6 L16.4 22.4 Z"/></g></svg>',
     // herald: a banner/pennant on a staff — the periodic broadcast.
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
@@ -131,7 +154,11 @@
     negotiator: 'NEG', jobhunter: 'JOB', quartermaster: 'REC', anchor: 'NWS',
     // 2026-08-03 second wave
     drafter: 'SPC', harvester: 'DAT', sentinel: 'PRG', registrar: 'CNT', provisioner: 'MEA',
-    taskmaster: 'ACC', medic: 'HLT', diplomat: 'MED'
+    taskmaster: 'ACC', medic: 'HLT', diplomat: 'MED',
+    // 2026-08-03 third wave — the build lane, marketing sub-niches, and business roles
+    apptester: 'TST', deployer: 'DPL', dbhelper: 'DBS', emailmarketer: 'EML', adcopy: 'ADS',
+    landingwriter: 'LND', support: 'SUP', a11y: 'ACS', hiring: 'HIR', processwriter: 'SOP',
+    pitchwriter: 'PCH'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.

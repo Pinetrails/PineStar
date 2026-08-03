@@ -68,7 +68,17 @@ const HITS = [
   ['plan out what I am cooking this week', 'provisioner'],
   ['hold me to the commitments I made', 'taskmaster'],
   ['organize my medical records before the appointment', 'medic'],
-  ['draft the difficult message I keep avoiding', 'diplomat']
+  ['draft the difficult message I keep avoiding', 'diplomat'],
+  // third wave — the ship-your-app lane, marketing sub-niches, and business roles
+  ['audit my app for security holes', 'auditor'],
+  ['my build fails when I deploy', 'deployer'],
+  ['test my app and tell me what breaks', 'apptester'],
+  ['design the database tables for this', 'dbhelper'],
+  ['write a welcome email sequence for new signups', 'emailmarketer'],
+  ['rewrite my landing page so it converts', 'landingwriter'],
+  ['draft replies to these customer support questions', 'support'],
+  ['write a job description to hire someone', 'hiring'],
+  ['write an SOP for this process', 'processwriter']
 ];
 for (const [q, id] of HITS) {
   const m = IO.match(q, C);
@@ -116,7 +126,14 @@ const NEVER = [
   ['what can strangers find out about me online', 'prospector'],
   ['find out what is exposed about me on the internet', 'prospector'],
   ['help me get my internet bill lowered', 'sentinel'],
-  ['organize my medical records before the appointment', 'archivist']
+  ['organize my medical records before the appointment', 'archivist'],
+  // the employer/candidate pair share job/post/role, and "hand it off" collides with the chief's "right hand".
+  // Both SHOULD go silent rather than guess — what must never happen is confidently picking the opposite side.
+  ['write a job post for this role', 'jobhunter'],
+  ['document this so I can hand it off', 'chief'],
+  // the ship-your-app lane shares heavy vocabulary; each must not answer for its neighbour
+  ['audit my app for security holes', 'apptester'],
+  ['test my app and tell me what breaks', 'auditor']
 ];
 for (const [q, wrong] of NEVER) {
   const m = IO.match(q, C);

@@ -37,7 +37,12 @@
     + 'my need needs new no nor not now of off on once one only or other our out over own please put re really right '
     + 'said same say see should show so some something still such sure take tell than that the their them then there '
     + 'these they thing things this those through to too try up us use using very want wants was way we well were what '
-    + 'when where which while who why will with would you your yours').split(' '));
+    + 'when where which while who why will with would you your yours '
+    // POSITIONAL TIME WORDS carry no topic. Left in, "prep me for an interview next week" scored a recipe on
+    // "next"+"week" hard enough to tie the job hunter out of its own match — calendar adverbials must not vote.
+    // Deliberately NOT stopped: week, month, day, night, morning — those ARE topical for some classes
+    // (a week of meals, the night shift).
+    + 'next last today tomorrow yesterday soon later ago again already yet').split(' '));
 
   // a crude, deterministic stem — enough to join plural/gerund forms without a stemmer's false merges.
   function stem(w) {
