@@ -159,4 +159,25 @@ A.ok(/taskQuestionLive\(\)/.test(chat), 'the nudge path stands down while a task
 // the accept must deep-link to a REAL destination, never a dead end.
 A.ok(/App\.openClassDossier|App\.openRecipeLaunch/.test(seg), 'accepting deep-links into the bay (class dossier) or the recipe launch form');
 
+/* ---------- 5b. THE OFFER FIRES POST-RUN, NOT AT SEND (proved live: chips are a single layer) ----------
+   choices() calls clearChoices() — only ONE chip row may exist at a time. An offer rendered at send time has its
+   buttons stripped by the run's own beats (the failed-run "Add a key" row did exactly this in the live app),
+   leaving the offer TEXT stranded with nothing to click. So send() only STAGES the directive and the post-run
+   beat slot fires it. These assertions exist so that placement can never be silently moved back. */
+A.ok(/pendingOfferText\s*=\s*\(isTask/.test(chat), 'send() STAGES the directive rather than rendering the offer inline');
+const stageIdx = chat.indexOf('pendingOfferText = (isTask');
+const fireIdx = chat.indexOf('maybeIntentOffer(staged)');
+A.ok(stageIdx > 0 && fireIdx > 0, 'the staged directive is consumed by a separate firing site');
+A.ok(/const staged = pendingOfferText; pendingOfferText = null;/.test(chat),
+  'the staged directive is cleared as it is read — an offer can never leak onto a later, unrelated run');
+// it must sit INSIDE the post-run gentle-nudge chain, above the work-earned floor (the Commander's own words
+// earned it, not accumulated session work) but below the isTask salience gate.
+const iTaskGate = chat.indexOf('if (meta && !meta.isTask) return;');
+const iFloor = chat.indexOf('CuriosityStore.earned && !CuriosityStore.earned()');
+const iRecruitBeat = chat.indexOf('if (maybeRecruit()) return;');
+A.ok(iTaskGate > 0 && fireIdx > iTaskGate, 'the offer fires only after the isTask salience gate (never on chatter)');
+A.ok(iFloor > 0 && fireIdx < iFloor, 'the offer sits ABOVE the work-earned floor (a fresh Commander still discovers the catalog)');
+A.ok(iRecruitBeat > 0 && fireIdx < iRecruitBeat, 'the offer is checked before adaptive recruitment (it is the more specific, message-derived ask)');
+A.ok(/if \(staged && maybeIntentOffer\(staged\)\) return;/.test(chat), 'a fired offer takes the slot and returns, so nothing stacks on that run');
+
 A.report('intent-offer');

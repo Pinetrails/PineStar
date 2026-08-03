@@ -5162,6 +5162,10 @@ const Chat = (() => {
         // server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
         const meta = runId ? runMeta(runId) : null;
         if (!meta || meta.isTask) {
+          // An intent offer is earned by the Commander's just-finished directive, so it is allowed before
+          // the accumulated-work floor. Consume the staged text exactly once on the slow post-run arm.
+          const staged = pendingOfferText; pendingOfferText = null;
+          if (staged && maybeIntentOffer(staged)) return;
           // WORK-EARNED ASK FLOOR: a real task-run banks toward the session's ask budget, and no gentle
           // unsolicited beat fires until the station has completed Curiosity.MIN_WORK task-runs this session.
           if (typeof CuriosityStore !== 'undefined' && CuriosityStore.noteWork) CuriosityStore.noteWork();
