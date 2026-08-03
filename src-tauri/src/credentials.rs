@@ -140,6 +140,24 @@ pub(crate) fn delete_credential_honest(entry: &keyring::Entry) -> Result<(), Str
     }
 }
 
+pub(crate) fn restore_credential(
+    entry: &keyring::Entry,
+    previous: Option<&str>,
+) -> Result<(), String> {
+    match previous {
+        Some(value) => entry.set_password(value).map_err(|error| error.to_string()),
+        None => delete_credential_honest(entry),
+    }
+}
+
+pub(crate) fn rollback_error(primary: String, failures: Vec<String>) -> String {
+    if failures.is_empty() {
+        primary
+    } else {
+        format!("{primary}; rollback incomplete: {}", failures.join("; "))
+    }
+}
+
 /// The stored bot token for a channel, or `None` if unset/empty.
 pub(crate) fn read_channel_token(channel: &str) -> Option<String> {
     channel_keychain_entry(channel)
@@ -280,6 +298,21 @@ mod tests {
                 ("telegram", "SKYNET_TELEGRAM_TOKEN"),
                 ("discord", "SKYNET_DISCORD_TOKEN"),
             ]
+        );
+    }
+
+    #[test]
+    fn rollback_errors_never_hide_incomplete_restoration() {
+        assert_eq!(
+            rollback_error("push failed".to_string(), Vec::new()),
+            "push failed"
+        );
+        assert_eq!(
+            rollback_error(
+                "push failed".to_string(),
+                vec!["keychain restore failed".to_string()],
+            ),
+            "push failed; rollback incomplete: keychain restore failed"
         );
     }
 }

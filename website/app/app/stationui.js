@@ -2281,11 +2281,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!cv) return;
     const pctx = cv.getContext('2d');
     pctx.clearRect(0, 0, cv.width, cv.height);
-    if (!(typeof SPRITES === 'object' && SPRITES.ready)) {
+    if (!(typeof SPRITES === 'object' && SPRITES.ready) || !SPRITES.isSkinReady(a.skin)) {
       // procedural fallback (sprites not yet loaded) — a simple body+head sized to the larger frame.
       pctx.imageSmoothingEnabled = false;
       pctx.fillStyle = a.color; pctx.fillRect(cv.width / 2 - 9, cv.height - 64, 18, 44);
       pctx.fillStyle = '#f0e6c0'; pctx.fillRect(cv.width / 2 - 7, cv.height - 80, 14, 16);
+      if (typeof SPRITES === 'object' && SPRITES.ready) {
+        SPRITES.ensureSkin(a.skin).then(ok => { if (ok && cv.isConnected) drawPortrait(cv, a); });
+      }
       return;
     }
     // drawBody sizes sprites for the FLOOR: each skin at its own small footprint scale (ULTRON ~0.6, most
@@ -3353,7 +3356,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<input type="password" class="key-input" id="pool-in-' + i + '" placeholder="paste backup keys, separated by commas…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="pool-save" data-i="' + i + '">REPLACE POOL</button>' +
         '<button class="bb sm danger" data-act="pool-clear" data-i="' + i + '">CLEAR POOL</button>' +
-        '<span class="dim">up to 8 · scoped only to ' + esc(provName(k.provider)) + ' · existing backups stay active until this save succeeds</span>' +
+        '<span class="dim">up to 8 · scoped only to ' + esc(provName(k.provider)) + ' · failed saves restore the prior pool or report an incomplete rollback</span>' +
         '</div>' +
         baseBlock;
     });
