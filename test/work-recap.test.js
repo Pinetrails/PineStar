@@ -70,7 +70,7 @@ A.ok(/classList\.add\('tool'\)/.test(recap) && /classList\.add\('recap'\)/.test(
 A.ok(!/activeNudge/.test(recap), 'the recap never touches the activeNudge beat-slot state');
 
 // file artifacts: open via the SAME jailed /api/file path every deliverable row uses + click-to-copy the path
-A.ok(/wireBlobOpen\(link, path, agentId\)/.test(recap), 'file artifacts open through the existing jailed blob-open helper');
+A.ok(/wireFileOpen\(link, path, agentId\)/.test(recap), 'file artifacts open through the existing jailed file-open helper');
 A.ok(/copyText\(path\)/.test(recap), 'the reveal action is click-to-copy of the path (no invented Tauri permissions)');
 A.ok(!/__TAURI__/.test(recap), 'no new Tauri capability is reached for the recap');
 
