@@ -5125,9 +5125,9 @@ async function loopHarvest(loop, res, iterN, ctx) {
   // the exact paths THIS pass introduced. Uncapped by the review card's 40 — a file we decline to commit is a
   // file a rejection cannot undo, so the commit set must be the whole delta, not the readable slice of it.
   const after = await loopChangedFiles(root);
-  if (!after.gitProven) throw new Error('git could not report what changed in ' + root);
-  const beforeSet = new Set(((ctx && ctx.before && ctx.before.files) || []));
-  const paths = loopgit.commitPaths(after.files.filter(f => !beforeSet.has(f)));
+  const delta = loopgit.harvestDelta(ctx && ctx.before, after);
+  if (!delta.ok) throw new Error(delta.reason + ' in ' + root + '; refusing to guess which files belong to the loop');
+  const paths = delta.paths;
   if (!paths.length) return base;                  // the pass changed no file — a real outcome, not a failure.
 
   if (target.create) {
