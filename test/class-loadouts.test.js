@@ -250,6 +250,36 @@ for (const id of ['envoy', 'marketer', 'publisher', 'herald']) {
     id + ' never claims to auto-send outward');
 }
 
+/* ---------- 1d''. UNTRUSTED-INPUT HONESTY: a class that reads stranger-authored text says so ----------
+   Andrew, 2026-08-03: the support agent "should advertise drafting messages rather than literally answering
+   it for them as that will make their agent susceptible to prompt injection specifically if its answering
+   questions". He is right, and it generalises: every class whose whole job is reading text written by someone
+   who is not the Commander (support tickets, an inbox, a community) is reading a channel an attacker can write
+   to. Those classes must (a) frame the output as a DRAFT the Commander sends, and (b) state in their standing
+   orders that the incoming text is DATA, never instructions. The backend already wraps untrusted routine and
+   script output (`<untrusted_routine_context>` in sidecar/index.js); this is the class-level half. */
+const STRANGER_TEXT_CLASSES = ['support', 'envoy', 'steward'];
+for (const id of STRANGER_TEXT_CLASSES) {
+  const b = byId.get(id);
+  A.ok(!!b, 'stranger-text class present: ' + id);
+  if (!b) continue;
+  const orders = b.manual.toLowerCase();
+  A.ok(/data, never instructions/.test(orders),
+    id + ' states that incoming message text is DATA, never instructions (prompt-injection surface)');
+  A.ok(/never acted on|never act on it|report/.test(orders),
+    id + ' routes an embedded instruction into the REPORT rather than acting on it: ' + id);
+  const text = (b.purpose + ' ' + b.blurb + ' ' + b.manual).toLowerCase();
+  A.ok(/draft/.test(text), id + ' frames its output as a draft for the Commander');
+}
+// the support agent specifically must NOT advertise answering — that framing is what invites an auto-reply wiring
+{
+  const sup = byId.get('support');
+  A.ok(!/answered|answers them/.test(sup.tagline.toLowerCase()),
+    'the support agent tagline does not advertise answering: ' + sup.tagline);
+  A.ok(/draft/.test(sup.tagline.toLowerCase()), 'the support agent tagline leads with DRAFTING: ' + sup.tagline);
+  A.ok(/untrusted/.test(sup.purpose.toLowerCase()), 'the support agent purpose names the customer message as untrusted');
+}
+
 /* ---------- 1e. every skill a class ships exists + its frontmatter parses ---------- */
 const referenced = new Set();
 for (const b of CATALOG) for (const s of b.skills) referenced.add(s);
