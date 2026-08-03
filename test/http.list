@@ -30,6 +30,7 @@ test/autonomy-ledger.e2e.test.js
 test/loops.e2e.test.js
 test/loops-check.e2e.test.js
 test/loops-git.e2e.test.js
+test/loops-endurance.e2e.test.js
 test/workshop.e2e.test.js
 test/nightshift-act.e2e.test.js
 test/nightshift-grant.e2e.test.js
