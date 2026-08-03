@@ -74,8 +74,8 @@ const HITS = [
   ['my build fails when I deploy', 'deployer'],
   ['test my app and tell me what breaks', 'apptester'],
   ['design the database tables for this', 'dbhelper'],
-  ['write a welcome email sequence for new signups', 'emailmarketer'],
-  ['rewrite my landing page so it converts', 'landingwriter'],
+  ['write a welcome email sequence for new signups', 'copywriter'],
+  ['redesign my website pages', 'webdesigner'],
   ['draft replies to these customer support questions', 'support'],
   ['write a job description to hire someone', 'hiring'],
   ['write an SOP for this process', 'processwriter']
@@ -97,7 +97,7 @@ for (const [q, id] of HITS) {
 // NOTE these use the DISPLAY names, which are deliberately plain-English (2026-08-03: the station-flavour names
 // — paralegal, nightwatch, harvester — were renamed after Andrew reported they read as abstract). The catalog
 // ids stayed put, so a rename only ever moves what a user can SAY to reach a class, never a saved agent.
-for (const [q, id] of [['i need a contract reader for this', 'paralegal'], ['get me a ghostwriter', 'ghostwriter'], ['can I get a meal planner', 'provisioner']]) {
+for (const [q, id] of [['i need a legal assistant to check this', 'paralegal'], ['get me a ghostwriter', 'ghostwriter'], ['can I get a home manager', 'provisioner']]) {
   const m = IO.match(q, C);
   A.ok(!!m && m.id === id, 'naming the class outright offers it: "' + q + '"');
 }

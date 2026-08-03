@@ -89,8 +89,6 @@
     negotiator: '<svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M1.6 7.2 H7.8 V3.9 L13.6 8.8 L7.8 13.7 V10.4 H1.6 Z"/><path d="M22.4 16.8 H16.2 V20.1 L10.4 15.2 L16.2 10.3 V13.6 H22.4 Z"/></g></svg>',
     // jobhunter: the case, with the clasp carved out — the role, packed for.
     jobhunter: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.6 3 h6.8 a1.8 1.8 0 0 1 1.8 1.8 V7.4 h-2.2 V5.2 h-6 V7.4 H6.8 V4.8 A1.8 1.8 0 0 1 8.6 3 Z"/><rect x="2.4" y="7.4" width="19.2" height="13.6" rx="1.8" fill="currentColor"/><path fill="' + D + '" d="M2.4 12.2 H10.2 V14 H2.4 Z"/><path fill="' + D + '" d="M13.8 12.2 H21.6 V14 H13.8 Z"/><rect x="10.4" y="11.2" width="3.2" height="3.8" rx=".6" fill="' + D + '"/></svg>',
-    // quartermaster: the crate, braced and stamped — everything held and dated.
-    quartermaster: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.4 2.2 H15.6 V4.8 H8.4 Z"/><rect x="2.6" y="5" width="18.8" height="15" rx="1.6" fill="currentColor"/><path fill="' + D + '" d="M4.6 7 H19.4 V9.2 H4.6 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.6" stroke-linecap="round"><path d="M5.4 11.4 L18.6 17.4"/><path d="M18.6 11.4 L5.4 17.4"/></g></svg>',
     // anchor: the studio microphone — the briefing spoken, not printed.
     anchor: '<svg viewBox="0 0 24 24"><rect x="8.9" y="2.2" width="6.2" height="11.4" rx="3.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M5.2 11.6 a6.8 6.8 0 0 0 13.6 0"/><path fill="currentColor" d="M11 17.2 H13 V21 H11 Z"/><path fill="currentColor" d="M7.2 20.4 H16.8 V22 H7.2 Z"/><path fill="' + D + '" d="M10.2 4.6 H13.8 V6.1 H10.2 Z"/></svg>',
     // ---- 2026-08-03 second wave (same matte engraved-coin style: currentColor + deboss only) ----
@@ -117,12 +115,9 @@
     deployer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 1.6 L15.6 7.4 V14 H8.4 V7.4 Z"/><path fill="' + D + '" d="M10.6 6.6 a1.4 1.4 0 0 1 2.8 0 a1.4 1.4 0 0 1 -2.8 0 Z"/><path fill="currentColor" d="M8.4 10.4 L5.2 14.4 V17 L8.4 15.2 Z"/><path fill="currentColor" d="M15.6 10.4 L18.8 14.4 V17 L15.6 15.2 Z"/><g fill="currentColor"><rect x="10.8" y="16" width="2.4" height="3.4" rx=".8"/><rect x="7.6" y="20.2" width="8.8" height="1.8" rx=".7"/></g></svg>',
     // dbhelper: the stacked drum with one band locked — the rows, and who may read them.
     dbhelper: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8.4" ry="3.2" fill="currentColor"/><path fill="currentColor" d="M3.6 8 v4 a8.4 3.2 0 0 0 16.8 0 v-4 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="currentColor" d="M3.6 14 v4 a8.4 3.2 0 0 0 16.8 0 v-4 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="' + D + '" d="M10.6 15.4 h2.8 v3.4 h-2.8 Z"/><path fill="' + D + '" d="M11 14.2 a1 1 0 0 1 2 0 v1.4 h-2 Z"/></svg>',
-    // emailmarketer: the envelope going OUT, with the send trail behind it.
-    emailmarketer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7.6 5.4 H21.4 V18.6 H7.6 Z"/><path fill="' + D + '" d="M9.2 7.4 L14.5 11.4 L19.8 7.4 L19.8 8.9 L14.5 12.9 L9.2 8.9 Z"/><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M1.6 8.6 H5.4"/><path d="M0.8 12 H4.6"/><path d="M1.6 15.4 H5.4"/></g></svg>',
-    // adcopy: the split test — two panels, one lit.
-    adcopy: '<svg viewBox="0 0 24 24"><rect x="2.2" y="4.4" width="8.6" height="15.2" rx="1.4" fill="currentColor"/><rect x="13.2" y="4.4" width="8.6" height="15.2" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.8"/><g fill="' + D + '"><rect x="3.8" y="6.6" width="5.4" height="1.6" rx=".5"/><rect x="3.8" y="9.6" width="3.6" height="1.6" rx=".5"/></g><g fill="currentColor"><rect x="14.8" y="6.6" width="5.4" height="1.6" rx=".5"/><rect x="14.8" y="9.6" width="3.6" height="1.6" rx=".5"/></g><path fill="currentColor" d="M5.2 14.4 L8 18.4 H2.4 Z"/></svg>',
     // landingwriter: the page with the fold marked and one call to action under it.
-    landingwriter: '<svg viewBox="0 0 24 24"><rect x="3" y="2.6" width="18" height="18.8" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="5.2" y="5" width="13.6" height="2.6" rx=".5"/><rect x="5.2" y="8.8" width="9.4" height="1.6" rx=".5"/></g><path fill="' + D + '" d="M4.4 12.4 H19.6 V13.4 H4.4 Z"/><rect x="7.6" y="15.6" width="8.8" height="3.4" rx="1.2" fill="' + D + '"/><rect x="9.2" y="16.8" width="5.6" height="1" rx=".4" fill="currentColor"/></svg>',
+    copywriter: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 21 l1.3-4.2 L16.5 4.6 l2.9 2.9 L7.2 19.7 Z"/><path fill="' + D + '" d="M4.6 18.4 l1 1 -1.8.6 Z"/><path fill="currentColor" d="M17.6 3.5 l1.4-1.4 a1.6 1.6 0 0 1 2.3 0 l.6.6 a1.6 1.6 0 0 1 0 2.3 l-1.4 1.4 Z"/></svg>',
+    webdesigner: '<svg viewBox="0 0 24 24"><rect x="3" y="2.6" width="18" height="18.8" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="5.2" y="5" width="13.6" height="2.6" rx=".5"/><rect x="5.2" y="8.8" width="9.4" height="1.6" rx=".5"/></g><path fill="' + D + '" d="M4.4 12.4 H19.6 V13.4 H4.4 Z"/><rect x="7.6" y="15.6" width="8.8" height="3.4" rx="1.2" fill="' + D + '"/><rect x="9.2" y="16.8" width="5.6" height="1" rx=".4" fill="currentColor"/></svg>',
     // support: the handset with the answered line.
     support: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.8 2.6 a2.2 2.2 0 0 1 2.6 1.2 l1.6 3.4 a2.2 2.2 0 0 1 -.6 2.6 L8.8 11 a13 13 0 0 0 4.2 4.2 l1.2-1.6 a2.2 2.2 0 0 1 2.6-.6 l3.4 1.6 a2.2 2.2 0 0 1 1.2 2.6 l-.6 2.2 a2.2 2.2 0 0 1 -2.4 1.6 C10.6 20.2 3.8 13.4 2.8 5.6 a2.2 2.2 0 0 1 1.6-2.4 Z"/><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M15.6 2.4 a6 6 0 0 1 6 6"/></g></svg>',
     // a11y: the figure with arms out inside the ring — the standing accessibility mark.
@@ -146,19 +141,20 @@
     analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN',
     broker: 'DLF', tutor: 'TCH', auditor: 'SEC', translator: 'XLT', herald: 'DGS',
     navigator: 'TRP', curator: 'FIL', muse: 'BRN',
-    strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'VID', writer: 'SCR',
+    strategist: 'STG', marketer: 'MKT', publisher: 'CNT', producer: 'VID', writer: 'SCR',
     prospector: 'LED', envoy: 'INB', treasurer: 'TRE',
     closer: 'CLO', steward: 'COM', optimizer: 'SEO', opportunist: 'OPF',
     // 2026-08-03 catalog expansion
-    pilot: 'WEB', foreman: 'TML', nightwatch: 'NGT', ghostwriter: 'GHW', paralegal: 'CON',
-    negotiator: 'NEG', jobhunter: 'JOB', quartermaster: 'REC', anchor: 'NWS',
+    pilot: 'VAS', foreman: 'TML', nightwatch: 'NGT', ghostwriter: 'GHW', paralegal: 'LGL',
+    negotiator: 'NEG', jobhunter: 'JOB', anchor: 'NWS',
     // 2026-08-03 second wave
-    drafter: 'SPC', harvester: 'DAT', sentinel: 'PRG', registrar: 'CNT', provisioner: 'MEA',
-    taskmaster: 'ACC', medic: 'HLT', diplomat: 'MED',
+    drafter: 'PDM', harvester: 'DAT', sentinel: 'PRG', registrar: 'REL', provisioner: 'HOM',
+    taskmaster: 'CCH', medic: 'HLT', diplomat: 'MED',
     // 2026-08-03 third wave — the build lane, marketing sub-niches, and business roles
-    apptester: 'TST', deployer: 'DPL', dbhelper: 'DBS', emailmarketer: 'EML', adcopy: 'ADS',
-    landingwriter: 'LND', support: 'SUP', a11y: 'ACS', hiring: 'HIR', processwriter: 'SOP',
-    pitchwriter: 'PCH'
+    apptester: 'QAT', deployer: 'OPS', dbhelper: 'DBE', support: 'SUP', a11y: 'ACS', hiring: 'HIR', processwriter: 'SOP',
+    pitchwriter: 'PCH',
+    // 2026-08-03 consolidation: broad roles replace the marketing micro-classes
+    copywriter: 'CPY', webdesigner: 'WDS'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
