@@ -9,8 +9,8 @@
        manifest UNDER the jail; it lands as a pending workshop deliverable and workshop.built fires.
      · JAIL CONFINEMENT — a write the model attempts OUTSIDE the run dir never lands on disk (fs-jail + the manifest
        validator only surface disk-proven files).
-     · APPROVE → SHIP — decide keep copies the artifact OUT to a Commander folder; the archetype UP-weights (LEARN).
-     · DENY → LEARN — decide discard wipes the run dir AND DOWN-weights the archetype (fed back into scoreAndSelect).
+     · APPROVE → SHIP — decide keep copies the artifact OUT and records a positive shared recommendation verdict.
+     · DENY → LEARN — decide discard wipes the run dir and records a negative verdict in that same authority.
      · LEDGER TRUTH — the tool-run outcome records kind 'act' with the artifact path + runId; the verdicts record too.
 
    Uses the workshop return-card flow VERBATIM (/api/workshop/pending + /decide) — NS-3 reuses it, doesn't reinvent. */
@@ -145,6 +145,11 @@ async function ledger(B, headers) {
   return (j && Array.isArray(j.entries)) ? j.entries : (Array.isArray(j) ? j : []);
 }
 
+async function recommendations(B, headers) {
+  const r = await fetch(B + '/api/recommendations?surface=nightshift&limit=20', { headers });
+  return r.json();
+}
+
 (async () => {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-nsact-e2e-'));
@@ -204,9 +209,11 @@ async function ledger(B, headers) {
     A.ok(keep.status === 200 && keepJ.ok === true && keepJ.copied >= 1, 'APPROVE: keep copies the artifact out of the jail');
     A.ok(fs.existsSync(path.join(dest, 'tool.py')), 'APPROVE: the shipped artifact is observable at its destination (out of the jail)');
     A.ok(fs.existsSync(runDir), 'APPROVE: the run dir stays in the workshop as an archive (undo/rollback path present)');
-    // learn store up-weighted advance-goal.
-    const learn1 = JSON.parse(fs.readFileSync(path.join(ws, 'nightshift.learn.json'), 'utf8'));
-    A.ok(learn1.learn && learn1.learn['advance-goal'] && learn1.learn['advance-goal'].up >= 1, 'APPROVE fed the LEARN loop (advance-goal up-weighted)');
+    const prefs1 = await recommendations(B, headers);
+    const keptRec = (prefs1.entries || []).find(e => e.id === 'nightshift:' + runId);
+    A.ok(keptRec && keptRec.state === 'completed', 'APPROVE records completion in the shared recommendation ledger');
+    const keptWeight = prefs1.model && prefs1.model.kinds && prefs1.model.kinds['advance-goal'] && prefs1.model.kinds['advance-goal'].weight;
+    A.ok(keptWeight > 0, 'APPROVE raises the effective advance-goal preference');
     try { fs.rmSync(dest, { recursive: true, force: true }); } catch (_) {}
 
     // ===== 5. DENY → LEARN — build a fresh deliverable, discard it → run dir wiped + archetype DOWN-weighted. =====
@@ -218,14 +225,22 @@ async function ledger(B, headers) {
     const disc = await (await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'agent', runId: runId2, decision: 'discard' }) })).json();
     A.ok(disc.ok === true && disc.decision === 'discard', 'DENY: discard accepted');
     A.ok(!fs.existsSync(runDir2), 'DENY: discard wiped the run dir');
-    const learn2 = JSON.parse(fs.readFileSync(path.join(ws, 'nightshift.learn.json'), 'utf8'));
-    A.ok(learn2.learn['advance-goal'] && learn2.learn['advance-goal'].down >= 1, 'DENY fed the LEARN loop (advance-goal down-weighted) — deny actually adjusts the bias');
+    const prefs2 = await recommendations(B, headers);
+    const declinedRec = (prefs2.entries || []).find(e => e.id === 'nightshift:' + runId2);
+    A.ok(declinedRec && declinedRec.state === 'declined' && declinedRec.reason === 'bad_quality', 'DENY records a typed negative verdict in the shared recommendation ledger');
+    const kind2 = prefs2.model && prefs2.model.kinds && prefs2.model.kinds['advance-goal'];
+    A.ok(kind2 && kind2.negative >= 1 && kind2.weight < keptWeight, 'DENY lowers the effective advance-goal preference');
     // a verdict was recorded in the ledger too.
     const led2 = await ledger(B, headers);
     A.ok(led2.some(e => e.reason === 'denied' && e.detail && e.detail.archetype === 'advance-goal'), 'DENY recorded a verdict in the autonomy ledger');
 
-    // ===== 6. PERSISTENCE — the learn store survives a sidecar restart (the compounding moat is durable). =====
-    A.ok(fs.existsSync(path.join(ws, 'nightshift.learn.json')), 'the learn store persisted to disk');
+    // ===== 6. PERSISTENCE — one durable authority, with no fresh writes to the compatibility-only legacy file. =====
+    const recommendationFile = path.join(ws, 'recommendations.json');
+    A.ok(fs.existsSync(recommendationFile), 'the shared recommendation ledger persisted to disk');
+    const persisted = JSON.parse(fs.readFileSync(recommendationFile, 'utf8'));
+    A.ok(persisted.entries.some(e => e.id === 'nightshift:' + runId && e.state === 'completed') &&
+      persisted.entries.some(e => e.id === 'nightshift:' + runId2 && e.state === 'declined'), 'both verdict directions survive in one durable ledger');
+    A.eq(fs.existsSync(path.join(ws, 'nightshift.learn.json')), false, 'new installs do not recreate the compatibility-only legacy learn store');
   } finally {
     try { child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}

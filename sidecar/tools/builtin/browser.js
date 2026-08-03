@@ -717,7 +717,17 @@
        target exists. So we connect to the browser endpoint; if that fails we fall back to the page
        endpoint with popups BLOCKED, which is the old behaviour. openerSession is the original tab -
        under browser-level auto-attach every command is session-scoped, including tab 0's. */
-    let popupsAdopted = false, openerSession = null;
+    let popupsAdopted = false, openerSession = null, resolveOpenerAttach;
+    const openerAttach = new Promise(resolve => { resolveOpenerAttach = resolve; });
+    function adoptOpenerSession(sessionId) {
+      if (openerSession !== null) return false;
+      openerSession = sessionId;
+      if (resolveOpenerAttach) {
+        resolveOpenerAttach(sessionId);
+        resolveOpenerAttach = null;
+      }
+      return true;
+    }
     async function deriveStationIdentity(sessionId) {
       if (attachPort !== null) return null;
       let browserInfo = null, natural = null;
@@ -846,7 +856,7 @@
                   if (viaBrowser && openerSession === null) {
                     // The original tab. Its setup is finished by connect() below, which needs to
                     // await it; recording the session is all that happens here.
-                    openerSession = sid;
+                    adoptOpenerSession(sid);
                     return;
                   }
                   /* ADOPT, don't kill. A target=_blank link or a popup used to be closed outright
@@ -930,8 +940,11 @@
             });
               await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
               if (viaBrowser) {
-                // auto-attach on the browser connection also attaches the EXISTING tab; wait for it.
-                for (let w = 0; w < 100 && openerSession === null; w++) await sleep(20);
+                // Auto-attach on the browser connection also attaches the EXISTING tab. Wait on that
+                // protocol event, not a fixed scheduler-speed poll: under full-suite load the event can
+                // arrive after two seconds, and installing the immutable popup block before it does is
+                // permanent for the page. The ordinary CDP timeout keeps this proof bounded and fail-closed.
+                await Promise.race([openerAttach, sleep(timeoutMs)]);
                 popupsAdopted = openerSession !== null;
               }
             }

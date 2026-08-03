@@ -11,6 +11,8 @@ const root = path.join(__dirname, '..');
 const yml = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-train.yml'), 'utf8');
 const submitScript = fs.readFileSync(path.join(root, 'scripts', 'notarize-macos-submit.sh'), 'utf8');
 const finalizeScript = fs.readFileSync(path.join(root, 'scripts', 'notarize-macos-finalize.sh'), 'utf8');
+const hydrateScript = fs.readFileSync(path.join(root, 'scripts', 'hydrate-sharp-macos-x64.sh'), 'utf8');
+const nativeScript = fs.readFileSync(path.join(root, 'scripts', 'sign-macos-native-deps.sh'), 'utf8');
 
 const requiredStep = yml.match(
   /- name: Require complete Apple signing credentials([\s\S]*?)(?=\n      - name:)/
@@ -41,13 +43,14 @@ const hydrateStep = yml.match(
 A.ok(hydrateStep, 'release train hydrates the Intel Sharp runtime on ARM-hosted macOS runners');
 const hydrate = hydrateStep[1];
 A.ok(/matrix\.target == 'darwin-x64'/.test(hydrate), 'Sharp hydration only runs for the Intel cross-build');
-A.ok(/package-lock\.json'[\s\S]*sharp-darwin-x64/.test(hydrate) && /sharp-libvips-darwin-x64/.test(hydrate),
+A.ok(/bash scripts\/hydrate-sharp-macos-x64\.sh/.test(hydrate), 'workflow delegates Sharp hydration to one named script');
+A.ok(/package-lock\.json'[\s\S]*sharp-darwin-x64/.test(hydrateScript) && /sharp-libvips-darwin-x64/.test(hydrateScript),
   'Intel Sharp package versions are read from the immutable source lockfile');
-A.ok(/npm pack "\$spec@\$version"/.test(hydrate) && /tar -xzf/.test(hydrate),
+A.ok(/npm pack "\$spec@\$version"/.test(hydrateScript) && /tar -xzf/.test(hydrateScript),
   'cross-build hydration extracts target packages without host-platform install checks or lifecycle scripts');
-A.ok(/openssl dgst -sha512/.test(hydrate) && /if \[ "\$actual" != "\$expected" \]/.test(hydrate),
+A.ok(/openssl dgst -sha512/.test(hydrateScript) && /if \[ "\$actual" != "\$expected" \]/.test(hydrateScript),
   'downloaded target packages must match their package-lock SHA-512 integrity');
-A.ok(/git diff --exit-code -- package\.json package-lock\.json/.test(hydrate),
+A.ok(/git diff --exit-code -- package\.json package-lock\.json/.test(hydrateScript),
   'cross-build hydration proves package manifests remain unchanged');
 
 const nativeStep = yml.match(
@@ -56,13 +59,16 @@ const nativeStep = yml.match(
 A.ok(nativeStep, 'release train has a pre-bundle native dependency signing step');
 const native = nativeStep[1];
 A.ok(/if: runner\.os == 'macOS'/.test(native), 'native signing only runs on macOS legs');
-A.ok(/security import/.test(native) && /security set-key-partition-list/.test(native),
+A.ok(/bash scripts\/sign-macos-native-deps\.sh/.test(native), 'workflow delegates nested native signing to one named script');
+A.ok(/APPLE_CERTIFICATE:\?/.test(nativeScript) && /APPLE_SIGNING_IDENTITY:\?/.test(nativeScript) && /TARGET:\?/.test(nativeScript),
+  'native signing script fails closed when required inputs are missing');
+A.ok(/security import/.test(nativeScript) && /security set-key-partition-list/.test(nativeScript),
   'native signing imports the Developer ID certificate into an unlocked CI keychain');
-A.ok(/sharp-darwin-arm64/.test(native) && /sharp-darwin-x64/.test(native),
+A.ok(/sharp-darwin-arm64/.test(nativeScript) && /sharp-darwin-x64/.test(nativeScript),
   'each macOS leg prunes Sharp to its matching architecture');
-A.ok(/file -b "\$native" \| grep -q 'Mach-O'/.test(native),
+A.ok(/file -b "\$native" \| grep -q 'Mach-O'/.test(nativeScript),
   'native signing discovers every Mach-O file instead of relying on filename extensions');
-A.ok(/codesign --force --options runtime --timestamp --sign "\$APPLE_SIGNING_IDENTITY" "\$native"/.test(native),
+A.ok(/codesign --force --options runtime --timestamp --sign "\$APPLE_SIGNING_IDENTITY" "\$native"/.test(nativeScript),
   'every staged Mach-O dependency receives Developer ID signing with a secure timestamp');
 
 const buildStep = yml.match(

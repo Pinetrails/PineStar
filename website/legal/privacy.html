@@ -101,17 +101,18 @@ your search query or the URL you asked to read is sent, and only when an agent a
 web search or fetch. (The fetch tool also refuses to reach private/internal network addresses,
 as an anti-abuse guard.)</p>
 <h3>5. Voice — two different paths, and they behave differently</h3>
-<p><strong>Spoken agent lines</strong> are synthesized through your model provider (OpenRouter by default;
-OpenAI or Gemini if that's the key you configured), so the line of text to be spoken is sent to
-that provider. If you configure an <strong>ElevenLabs</strong> voice with your own ElevenLabs key, the line
-is sent to <code>api.elevenlabs.io</code> instead. Voices off means no TTS requests at all.</p>
-<p><strong>Hands-free Live Voice does not use any of that.</strong> It runs on a speech engine built into the
-app (Whisper for listening, Kokoro for speaking), on your CPU, with no key and no account.
-<strong>Your recorded audio never leaves your machine</strong> — it is never uploaded to us or to any provider.
-The one outbound request it makes is the <strong>first-run model download</strong>: the open model weights
-(<code>Xenova/whisper-tiny.en</code> and <code>onnx-community/Kokoro-82M-v1.0-ONNX</code>) are fetched once from
-<code>huggingface.co</code> and cached in your user profile. That download carries no audio, no text, and
-no identifier; after it completes, Live Voice works with no network at all.</p>
+<p><strong>Spoken agent lines</strong> use local Kokoro when the built-in voice engine is available. Other
+spoken lines use your configured model provider (OpenRouter, OpenAI, or Gemini), or ElevenLabs when
+you configure an ElevenLabs voice, so the line of text is sent to that service. If those paths are
+unavailable, StarNet can use Microsoft's keyless Edge Read Aloud service, which sends the line of text
+to Microsoft. Voices off means no TTS requests at all.</p>
+<p><strong>Hands-free Live Voice does not use a vendor realtime-voice session.</strong> Listening runs on local
+Whisper when installed; on Windows, offline System.Speech dictation can serve as the fallback. On those
+paths, <strong>your recorded audio never leaves your machine</strong>. The open Whisper and Kokoro weights may
+be fetched from <code>huggingface.co</code> on first use and cached in your user profile; that download carries
+no audio or transcript. Once cached, listening is offline. Speaking is also offline while Kokoro is
+available; if it is not, the Edge Read Aloud fallback described above may send only the answer text
+(not your recorded audio) to Microsoft.</p>
 <h3>6. A version check for updates (no personal data)</h3>
 <p>The desktop app checks for updates by fetching a single public manifest file from GitHub
 Releases:</p>

@@ -327,6 +327,8 @@ const ROUTES = {
       await new Promise(r => setTimeout(r, 600));
       A.eq((await driver.tabs()).length, 1, 'a _blank LINK CLICK spawns no target in headless (browser behaviour, not a driver gap)');
 
+      A.eq((await driver.testState(null)).popupBlocked, false,
+        'browser-level opener attachment is proven before the immutable page shim allows popups');
       await driver.testEval('void window.open("/second","_blank")');
       const adopted = await driver.waitForTabCount(2, 10000);
       const list = await driver.tabs();
