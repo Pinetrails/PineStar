@@ -57,7 +57,11 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
       // Golden/shoot frames are layout evidence, not samples of the idle-wander simulation. Freeze
       // the already-painted world once the floor is ready so translucent panels do not inherit a
       // different agent position from scheduler speed. Panel code can still repaint explicitly.
-      try { await evalJS(cdp, `(() => { if (typeof World !== 'undefined' && World.stop) { World.stop(); return 'world-frozen'; } return 'world-unavailable'; })()`); } catch {}
+      try { await evalJS(cdp, `(() => {
+        if (document.body) document.body.classList.add('no-flicker');
+        if (typeof World !== 'undefined' && World.stop) { World.stop(); return 'world-frozen'; }
+        return 'world-unavailable';
+      })()`); } catch {}
       // 4. Capture every state.
       const states = buildStates();
       for (const st of states) {
