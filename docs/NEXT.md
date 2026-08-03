@@ -1,5 +1,35 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 — CLEANUP PHASES 0–8 (`agent/cleanup-phases-0-8`)
+
+COMPLETE CANDIDATE. Phase 0 closed all seven remaining P2 bug-register records with production-path
+proofs, including release-receipt candidate binding, provider recovery/accounting, channel SSE, tooltip,
+and watched-only Full Access behavior. Phase 1 replaced repeated sidecar process setup with one lifecycle
+fixture and moved the fast/HTTP gates from hand-maintained command chains to ordered manifests. Phase 2
+extracted bounded body reads, file/range response policy, and the full TTS/STT/media subsystem from the
+sidecar composition root; the media move removed 706 lines from `sidecar/index.js` and kept the 200-always
+voice contract. Phase 3 introduced one explicit per-run execution state for taint, loop detection, output
+budgets, checkpoints, journaling, artifacts, and proof-of-work counts. Phase 4 added normalized, versioned,
+read-back-proven domain stores and migrated budget, fallback-chain, and memory settings.
+
+Phase 5 added `QuerySpine` for keyed GET dedupe, TTL/last-good state, invalidation, and subscriber-owned
+polling, then migrated the cron-family frontend consumers. Phase 6 added `BeatCard` and moved memory, study,
+arc, trust, thread, nudge, and rating cards onto one arbitration/expiry/generation lifecycle. Phase 7 moved
+provider abort classification and retry delays into the shared provider runtime, fixing stale abort-listener
+accumulation. Phase 8 extracted native credential/keychain and legacy token migration from Tauri `main.rs`,
+removed 14 unreachable sprite frames, added a 3,656-frame manifest integrity gate, refreshed `BRAIN.md`, and
+re-locked both the release surface and moved credential authority locators.
+
+Verification on the combined candidate: `npm run test:fast` **509/509 GREEN**; `npm run test:http` **56/56
+GREEN**; claims planning authority **PASS** (37 claims / 192 files); website mirror **GREEN**; sprite manifest
+**15,577 assertions GREEN**. A final seeded live sidecar returned `/api/health` = `ok`, served the app and both
+new frontend modules with HTTP 200, and proved `queryspine.js` and `beatcard.js` load before `chat.js`; the
+test port was released. Keyless live TTS and STT each returned their required HTTP-200 fallback envelope.
+`credentials.rs` passes rustfmt and 258 focused native/static assertions. Full Cargo compilation could not be
+completed on this Windows host: both parallel and `-j1` attempts exhausted compiler memory while building the
+upstream `windows` crate (`0xc000012d` / `STATUS_STACK_BUFFER_OVERRUN`), before any StarNet source diagnostic.
+No provider spend, external message/write, credential mutation, push, PR, deploy, tag, or publication occurred.
+
 ## 2026-08-03 — PROVIDER P2 REGISTER CLOSURE (`agent/cleanup-p0-providers`)
 
 READY FOR CLEAN-BASE CHERRY-PICK. The three provider P2 records `8d7b0b52`, `cb8dc6c3`, and
