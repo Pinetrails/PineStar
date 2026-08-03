@@ -484,6 +484,8 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/personalization-authority-wiring.test.js
+test/sprite-loading.test.js
 test/textsize-screen-space.test.js
 test/mobile-control-reachability.test.js
 test/station-tooltip.test.js
@@ -503,6 +505,7 @@ test/release-train-provenance.test.js
 test/desktop-build-macos-notarization.test.js
 test/release-train-macos-trust.test.js
 test/release-train-windows-trust.test.js
+test/website-deploy-staging.test.js
 test/website-app-sync.test.js
 test/sprite-assets.test.js
 test/lint-gate-can-fail.js

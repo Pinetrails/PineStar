@@ -29,6 +29,8 @@
     "test:fast": "node scripts/timeout.mjs --label test:fast --timeout=600000 -- npm run test:fast:raw",
     "test:fast:raw": "node scripts/run-fast-tests.mjs",
     "test": "npm run test:fast && npm run test:http",
+    "website:stage": "node scripts/stage-website-deploy.mjs",
+    "website:stage:check": "node scripts/stage-website-deploy.mjs --check",
     "start": "node sidecar/index.js",
     "mcp:serve": "node sidecar/mcp/serve.js",
     "acp:serve": "node sidecar/acp/serve.js",

@@ -115,6 +115,23 @@
     return out;
   }
 
+  /* harvestDelta — ownership must be proven at BOTH ends of an iteration. A missing pre-run snapshot is not
+     equivalent to a clean tree: treating it that way lets every pre-existing untracked file appear "new" and
+     sweeps the Commander's work into the loop commit. Fail closed and leave the tree untouched instead. */
+  function harvestDelta(before, after) {
+    if (!before || before.gitProven !== true || !Array.isArray(before.files)) {
+      return { ok: false, paths: [], reason: 'git could not prove the pre-iteration file state' };
+    }
+    if (!after || after.gitProven !== true || !Array.isArray(after.files)) {
+      return { ok: false, paths: [], reason: 'git could not prove the post-iteration file state' };
+    }
+    const beforeSet = new Set(before.files.map(f => str(f && typeof f === 'object' ? f.path : f)));
+    return {
+      ok: true,
+      paths: commitPaths(after.files.filter(f => !beforeSet.has(str(f && typeof f === 'object' ? f.path : f))))
+    };
+  }
+
   function isSha(v) { return SHA_RE.test(str(v).trim()); }
 
   /* undoPlan(loop, n) — what REJECT must undo, before the verdict is recorded.
@@ -203,7 +220,7 @@
   }
 
   return {
-    isProtectedRef, slugify, branchName, commitSubject, commitPaths, isSafeRel, isSha,
+    isProtectedRef, slugify, branchName, commitSubject, commitPaths, harvestDelta, isSafeRel, isSha,
     undoPlan, harvestTarget,
     SUBJECT_CAP, PATHS_CAP,
     _internals: { PROTECTED, SHA_RE }
