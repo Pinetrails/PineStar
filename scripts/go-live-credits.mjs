@@ -20,6 +20,7 @@
  *   node scripts/go-live-credits.mjs --check   # probe the service, list every edit, write nothing
  *   node scripts/go-live-credits.mjs --apply   # make the edits (probe must pass)
  *   node scripts/go-live-credits.mjs --apply --force   # proceed on a DEGRADED (503) service
+ *   node scripts/go-live-credits.mjs --check --no-probe   # skip the network call (the gate uses this)
  *
  * It does NOT cut a release, run the gate, or deploy the site — those stay deliberate acts. It
  * prints them, in order, when it finishes. Full context: starnet-cloud/LAUNCH.md
@@ -123,8 +124,18 @@ const url = bakedCloudUrl();
 console.log('StarNet Credits go-live');
 console.log('  baked service URL (sidecar/index.js CLOUD_URL_DEFAULT): ' + url + '\n');
 
-const health = await probe(url);
-if (health.ok) {
+/* --no-probe exists for the test gate, which runs offline and is asking a different question: not
+   "is the service up" but "does every edit this script promises still match the tree it edits".
+   It is refused with --apply — going live is exactly when you want the network call. */
+const NO_PROBE = process.argv.includes('--no-probe');
+if (NO_PROBE && APPLY) {
+  console.error('--no-probe cannot be combined with --apply: the probe is the point.');
+  process.exit(2);
+}
+const health = NO_PROBE ? { ok: false, skipped: true } : await probe(url);
+if (health.skipped) {
+  console.log('  service: NOT PROBED (--no-probe)');
+} else if (health.ok) {
   console.log('  service: HEALTHY (200)');
 } else if (health.degraded) {
   console.log('  service: DEGRADED (503) — it is up and reporting a problem:');
