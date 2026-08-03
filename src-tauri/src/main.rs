@@ -26,7 +26,8 @@ use sha2::{Digest, Sha256};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -123,20 +124,19 @@ unsafe impl Send for KeepAwakeHandle {}
 #[cfg(windows)]
 impl KeepAwakeHandle {
     fn create() -> Result<Self, String> {
-        use windows_sys::Win32::Foundation::{
-            CloseHandle, GetLastError, INVALID_HANDLE_VALUE,
-        };
+        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE};
         use windows_sys::Win32::System::Power::{
-            PowerCreateRequest, PowerSetRequest, PowerRequestSystemRequired,
+            PowerCreateRequest, PowerRequestSystemRequired, PowerSetRequest,
         };
         use windows_sys::Win32::System::Threading::{
-            REASON_CONTEXT, REASON_CONTEXT_0, POWER_REQUEST_CONTEXT_SIMPLE_STRING,
+            POWER_REQUEST_CONTEXT_SIMPLE_STRING, REASON_CONTEXT, REASON_CONTEXT_0,
         };
 
-        let mut reason: Vec<u16> = "StarNet scheduled tasks are allowed to run while the app is open"
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
+        let mut reason: Vec<u16> =
+            "StarNet scheduled tasks are allowed to run while the app is open"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
         let context = REASON_CONTEXT {
             Version: 0,
             Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
@@ -147,7 +147,9 @@ impl KeepAwakeHandle {
         let handle = unsafe { PowerCreateRequest(&context) };
         if handle.is_null() || handle == INVALID_HANDLE_VALUE {
             let code = unsafe { GetLastError() };
-            return Err(format!("PowerCreateRequest failed with Windows error {code}"));
+            return Err(format!(
+                "PowerCreateRequest failed with Windows error {code}"
+            ));
         }
         if unsafe { PowerSetRequest(handle, PowerRequestSystemRequired) } == 0 {
             let code = unsafe { GetLastError() };
@@ -167,9 +169,7 @@ impl KeepAwakeHandle {
 impl Drop for KeepAwakeHandle {
     fn drop(&mut self) {
         use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::Power::{
-            PowerClearRequest, PowerRequestSystemRequired,
-        };
+        use windows_sys::Win32::System::Power::{PowerClearRequest, PowerRequestSystemRequired};
 
         unsafe {
             let _ = PowerClearRequest(self.handle, PowerRequestSystemRequired);
@@ -222,7 +222,9 @@ impl KeepAwakeState {
             desktop: true,
             supported: false,
             enabled: false,
-            message: Some("Keep Computer Awake is currently supported on Windows desktop builds.".to_string()),
+            message: Some(
+                "Keep Computer Awake is currently supported on Windows desktop builds.".to_string(),
+            ),
         }
     }
 
@@ -527,7 +529,10 @@ mod workspace_migration_tests {
             std::slice::from_ref(&legacy),
             &Some(startup_log.clone()),
         );
-        assert!(migrated.is_empty(), "a failed legacy root is not reported as migrated");
+        assert!(
+            migrated.is_empty(),
+            "a failed legacy root is not reported as migrated"
+        );
         assert!(
             !current.join(MIGRATION_MARKER).exists(),
             "a failed copy must not stamp the one-shot marker"
@@ -539,7 +544,11 @@ mod workspace_migration_tests {
 
         drop(lock);
         let retried = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
-        assert_eq!(retried, vec![legacy.clone()], "the next boot retries the legacy root");
+        assert_eq!(
+            retried,
+            vec![legacy.clone()],
+            "the next boot retries the legacy root"
+        );
         assert_eq!(
             std::fs::read(current.join("sessions").join("history.jsonl")).unwrap(),
             b"important session"
@@ -886,7 +895,10 @@ fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
 
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
-        log_startup(startup_log, "sidecar-reap: snapshot failed — skipped (fail-open)");
+        log_startup(
+            startup_log,
+            "sidecar-reap: snapshot failed — skipped (fail-open)",
+        );
         return 0;
     }
 
@@ -1018,7 +1030,10 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     for provider in KEYCHAIN_PROVIDERS {
         let pool = read_key_pool_for(provider);
         if !pool.is_empty() {
-            let env_name = format!("SKYNET_KEY_POOL_{}", provider.to_ascii_uppercase().replace('-', "_"));
+            let env_name = format!(
+                "SKYNET_KEY_POOL_{}",
+                provider.to_ascii_uppercase().replace('-', "_")
+            );
             cmd.env(env_name, pool.join(","));
         }
     }
@@ -1117,9 +1132,7 @@ fn show_startup_failure_dialog(startup_log: &Option<PathBuf>) -> bool {
          {log_line}\n\n\
          Click Retry to try starting the engine again, or Cancel to close StarNet."
     );
-    let to_wide = |s: &str| -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    };
+    let to_wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
     let text = to_wide(&body);
     let caption = to_wide("StarNet — startup failed");
     // SYSTEMMODAL + SETFOREGROUND so the box is seen even though the main window isn't up yet.
@@ -1158,7 +1171,10 @@ fn spawn_sidecar_with_retry(state: &AppState) -> bool {
             // User chose Cancel — stop prompting; the guardian may still recover it silently.
             return false;
         }
-        log_startup(&state.startup_log, "startup: user chose Retry — respawning sidecar");
+        log_startup(
+            &state.startup_log,
+            "startup: user chose Retry — respawning sidecar",
+        );
     }
     log_startup(
         &state.startup_log,
@@ -1584,7 +1600,8 @@ fn spawn_tray_updater(app: AppHandle) {
             if state.shutting_down.load(Ordering::SeqCst) {
                 break;
             }
-            let probe = probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
+            let probe =
+                probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
             let (tooltip, status_text) = match probe {
                 LifecycleProbe::Armed(l) if l.armed => {
                     let summary = if l.reasons.is_empty() {
@@ -1661,7 +1678,11 @@ fn harness_store_provider_key(
     if let Some(ref key_value) = key_trimmed {
         // codex + the device-OAuth providers (grok/kimi) authenticate by OAuth token (sidecar-owned), not a
         // keychain API key; ollama is keyless. None of them get a keychain entry.
-        if provider_id != "codex" && provider_id != "ollama" && provider_id != "grok" && provider_id != "kimi" {
+        if provider_id != "codex"
+            && provider_id != "ollama"
+            && provider_id != "grok"
+            && provider_id != "kimi"
+        {
             let entry = keychain_entry_for(provider_id).map_err(|e| e.to_string())?;
             let previous = entry.get_password().ok().filter(|v| !v.trim().is_empty());
             if key_value.is_empty() {
@@ -1714,8 +1735,12 @@ fn harness_store_provider_key_pool(
     let mut cleaned: Vec<String> = Vec::new();
     for key in keys {
         let trimmed = key.trim().to_string();
-        if !trimmed.is_empty() && !cleaned.contains(&trimmed) { cleaned.push(trimmed); }
-        if cleaned.len() == 8 { break; }
+        if !trimmed.is_empty() && !cleaned.contains(&trimmed) {
+            cleaned.push(trimmed);
+        }
+        if cleaned.len() == 8 {
+            break;
+        }
     }
     let entry = keychain_pool_entry_for(provider_id).map_err(|e| e.to_string())?;
     let previous_raw = entry.get_password().ok();
@@ -2501,7 +2526,10 @@ mod sidecar_reap_tests {
         std::thread::sleep(Duration::from_millis(400));
 
         let reaped = reap_orphan_sidecars(&bundled, &None);
-        assert!(reaped >= 1, "expected at least the planted orphan to be reaped");
+        assert!(
+            reaped >= 1,
+            "expected at least the planted orphan to be reaped"
+        );
 
         std::thread::sleep(Duration::from_millis(400));
         assert!(
@@ -2561,16 +2589,33 @@ mod lifecycle_probe_tests {
     fn rejects_non_200_status() {
         // A 403 (token mismatch) or 500 must NOT read as a snapshot — the caller classifies it Ambiguous
         // (alive but unwell), never "not armed".
-        assert!(parse_lifecycle_response("HTTP/1.1 403 Forbidden\r\n\r\nforbidden token").is_none());
-        assert!(parse_lifecycle_response("HTTP/1.1 500 Internal Server Error\r\n\r\n{\"error\":\"x\"}").is_none());
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 403 Forbidden\r\n\r\nforbidden token").is_none()
+        );
+        assert!(parse_lifecycle_response(
+            "HTTP/1.1 500 Internal Server Error\r\n\r\n{\"error\":\"x\"}"
+        )
+        .is_none());
     }
 
     #[test]
     fn rejects_missing_or_garbage_body() {
-        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n").is_none(), "empty body");
-        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\nnot-json").is_none(), "garbage body");
-        assert!(parse_lifecycle_response("HTTP/1.1 200 OK").is_none(), "no header/body separator");
-        assert!(parse_lifecycle_response("").is_none(), "empty response (read timeout yielded nothing)");
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n").is_none(),
+            "empty body"
+        );
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\nnot-json").is_none(),
+            "garbage body"
+        );
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 200 OK").is_none(),
+            "no header/body separator"
+        );
+        assert!(
+            parse_lifecycle_response("").is_none(),
+            "empty response (read timeout yielded nothing)"
+        );
     }
 
     #[test]
@@ -2583,7 +2628,8 @@ mod lifecycle_probe_tests {
 
     #[test]
     fn tolerates_missing_reasons() {
-        let l = parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":true}").expect("armed without reasons parses");
+        let l = parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":true}")
+            .expect("armed without reasons parses");
         assert!(l.armed);
         assert!(l.reasons.is_empty());
     }

@@ -491,7 +491,8 @@ const SPRITES = (() => {
 
   function setForSkin(skin) {
     const catalog = (typeof DATA !== 'undefined' && DATA.SKINS) || {};
-    const picked = catalog[skin] || catalog[DATA.DEFAULT_SKIN];
+    const fallback = typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '';
+    const picked = catalog[skin] || catalog[fallback];
     return picked && picked.set ? picked.set : '';
   }
 

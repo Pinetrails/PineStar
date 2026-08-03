@@ -3920,7 +3920,7 @@ function recordNightshiftDraft(entry) {
 const NIGHTSHIFT_LEARN_FILE = path.join(WORKSPACES, 'nightshift.learn.json');
 function loadNightshiftLearn() { try { const o = loadResilient(NIGHTSHIFT_LEARN_FILE, 'nightshift-learn'); return (o && o.learn && typeof o.learn === 'object') ? o.learn : {}; } catch (_) { return {}; } }
 let nightshiftLearn = loadNightshiftLearn();
-function nightshiftLearnWeights() {
+function nightshiftPreferenceWeights() {
   let enabled = false;
   try { enabled = personalizationStore.read().enabled === true; } catch (_) { return {}; }
   if (!enabled) return {};
@@ -4297,7 +4297,7 @@ function personalizationInventory() {
   try { scoutDrafts = (scoutState.staged || []).length; } catch (_) {}
   try { recommendations = recommendationLedger.read().entries.length; } catch (_) {}
   try { for (const v of studyDeclinedByAgent.values()) studyDeclines += Array.isArray(v) ? v.length : 0; } catch (_) {}
-  try { nightTraits = Object.keys(nightshiftLearnWeights()).length; } catch (_) {}
+  try { nightTraits = Object.keys(nightshiftPreferenceWeights()).length; } catch (_) {}
   return { topics, scoutDrafts, recommendations, studyDeclines, nightTraits };
 }
 async function handlePersonalization(req, res) {
@@ -4398,7 +4398,7 @@ function nightshiftContextPack() {
     }
   } catch (_) { landed = []; }
   const beliefs = nightshiftBeliefMap();
-  const learn = Recommendation.preferenceTallies(nightshiftLearnWeights());
+  const learn = Recommendation.preferenceTallies(nightshiftPreferenceWeights());
   const pack = contextpack.assemble({ runs, briefs, chats, goal, landed, beliefs, learn, redact }, { now });
   // the count of recent USER-INITIATED runs the pack recognized — the ACTIVITY-as-grounding evidence for readiness.
   pack.userRunCount = (pack.counts && pack.counts.runs) || 0;
@@ -4536,7 +4536,7 @@ async function runNightshiftBeat(opts) {
   if (cRes.error) return { delivered: false, reason: cRes.error };
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
-  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
+  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   const draftRecId = 'nightshift-draft:' + String(opts.runId || crypto.randomUUID());
   recommendationLedger.record({ id: draftRecId, surface: 'nightshift', kind: sel.selected.archetype || 'draft', title: sel.selected.title,
@@ -4642,7 +4642,7 @@ async function runNightshiftActShift(opts) {
   // honest evidence to ground in. Bounded already (projectscan caps it).
   const vetoActivity = projectSnapshot ? activity.concat(projectSnapshot.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) : activity;
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity: vetoActivity, threads });
-  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
+  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // NS-6 writeback: a build grounded on an open thread marks it PICKED now; a later keep/discard verdict (return
   // card → nightshiftDecideLearn) moves it to delivered/declined.
