@@ -80,6 +80,16 @@ npm run eval:baseline -- --samples 15 --receipt .dogfood/eval/performance-baseli
 That baseline covers the deterministic bridge/evaluation rails and process startup. It explicitly
 does not stand in for installed cold boot, first-token/useful-artifact latency, or the 48-hour soak.
 
+After a provider-free control soak ends, validate every sample and bind the immutable evidence to the
+candidate before signing it. This finalizer checks completion time, at least 99% planned sample coverage,
+health/version continuity, process survival, and manifest provenance. Its receipt always retains
+`qualifiesRelease:false` and cannot replace the installed provider-backed soak:
+
+```powershell
+node scripts/eval/soak-receipt.mjs --soak <soak.json> --manifest <starnet-manifest.json> --contract scripts/eval/contracts/v0.9.0.json --signing-key <receipt-private.pem> --receipt <soak-receipt.json>
+node scripts/eval/runner.mjs verify-receipt --receipt <soak-receipt.json>
+```
+
 Run the deterministic seed pack:
 
 ```powershell
