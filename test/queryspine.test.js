@@ -54,6 +54,33 @@ async function rejects(p, label) {
   A.ok(honest.stale && honest.error && honest.error.message === 'offline now' && honest.errorAt === clock,
     'failure publishes explicit stale/error metadata');
 
+  // A mutation invalidation outranks an older GET already on the wire. Its response must not become fresh
+  // after the write, and a reader arriving after invalidation waits for a new-generation request.
+  Q.define('mutation-race', { path: '/mutation-race', ttlMs: 1000 });
+  let releaseOld;
+  calls = 0;
+  Q._setGetForTest(() => {
+    calls++;
+    if (calls === 1) return new Promise(resolve => { releaseOld = resolve; });
+    return Promise.resolve({ revision: 'after-mutation' });
+  });
+  const published = [];
+  const offRace = Q.subscribe('mutation-race', s => published.push(s), { refresh: false });
+  const oldRead = Q.refresh('mutation-race');
+  await Promise.resolve();
+  Q.invalidate('mutation-race');
+  const postMutationRead = Q.get('mutation-race');
+  A.ok(postMutationRead !== oldRead, 'a post-invalidation reader does not adopt the older in-flight request');
+  releaseOld({ revision: 'before-mutation' });
+  await oldRead;
+  const afterMutation = await postMutationRead;
+  offRace();
+  A.eq(calls, 2, 'invalidation queues one new-generation wire request');
+  A.eq(afterMutation.data.revision, 'after-mutation', 'the post-mutation reader receives the new-generation payload');
+  A.ok(!afterMutation.stale, 'the new-generation response becomes fresh');
+  A.ok(!published.some(s => s.hasData && s.data && s.data.revision === 'before-mutation'),
+    'the obsolete response is never published as shared resource truth');
+
   // Invalidation keeps last-good for display but forces the next ordinary read to the wire.
   Q.define('invalidate', { path: '/invalidate', ttlMs: 1000 });
   calls = 0;

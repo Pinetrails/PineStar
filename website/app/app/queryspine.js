@@ -37,7 +37,9 @@ const QuerySpine = (() => {
         invalidated: false,
         error: null,
         errorAt: 0,
+        generation: 0,
         inFlight: null,
+        inFlightGeneration: 0,
         listeners: new Set(),
         timer: null
       });
@@ -86,13 +88,18 @@ const QuerySpine = (() => {
     const fresh = r.hasData && !r.invalidated && !r.error &&
       (r.ttlMs <= 0 || (now() - r.updatedAt) < r.ttlMs);
     if (!force && fresh) return Promise.resolve(snapshotOf(r));
-    if (r.inFlight) return r.inFlight;
+    if (r.inFlight) {
+      if (r.inFlightGeneration === r.generation) return r.inFlight;
+      return r.inFlight.catch(() => {}).then(() => request(key, force));
+    }
 
+    const generation = r.generation;
     let p;
     p = Promise.resolve()
       .then(() => getJson(r.path))
       .then(data => {
         if (r.validate && !r.validate(data)) throw new Error('invalid response for ' + r.key);
+        if (r.generation !== generation) return data;
         r.data = data;
         r.hasData = true;
         r.updatedAt = now();
@@ -102,8 +109,10 @@ const QuerySpine = (() => {
         return data;
       })
       .catch(err => {
-        r.error = errorMeta(err);
-        r.errorAt = now();
+        if (r.generation === generation) {
+          r.error = errorMeta(err);
+          r.errorAt = now();
+        }
         throw err;
       })
       .finally(() => {
@@ -112,6 +121,7 @@ const QuerySpine = (() => {
       })
       .then(() => snapshotOf(r));
     r.inFlight = p;
+    r.inFlightGeneration = generation;
     notify(r);
     return p;
   }
@@ -120,6 +130,7 @@ const QuerySpine = (() => {
   function refresh(key) { return request(key, true); }
   function invalidate(key, opts) {
     const r = resource(key);
+    r.generation++;
     r.invalidated = true;
     notify(r);
     if (opts && opts.refresh) return refresh(key);
@@ -170,7 +181,8 @@ const QuerySpine = (() => {
       for (const r of resources.values()) {
         stopTimer(r);
         r.hasData = false; r.data = undefined; r.updatedAt = 0; r.invalidated = false;
-        r.error = null; r.errorAt = 0; r.inFlight = null; r.listeners.clear();
+        r.error = null; r.errorAt = 0; r.generation = 0; r.inFlight = null;
+        r.inFlightGeneration = 0; r.listeners.clear();
       }
     },
     _setGetForTest(fn) { getJson = fn; },
