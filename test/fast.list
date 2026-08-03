@@ -31,6 +31,7 @@ test/todo.durability.test.js
 test/halt.test.js
 test/readbody.test.js
 test/file-response.test.js
+test/test-list-runner.test.js
 test/runroute.test.js
 test/checkpoint.test.js
 test/module-scope-shadowing.test.js
