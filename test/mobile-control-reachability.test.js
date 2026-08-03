@@ -52,7 +52,7 @@ for (const width of [320, 360, 390]) {
 has(/\.bb-menu\s*\{[^}]*min-width:\s*0;[^}]*width:\s*min\(300px, calc\(100vw - 16px\)\);[^}]*max-width:\s*calc\(100vw - 16px\)/s,
   'mobile dock menu can never demand more than viewport minus two 8px edges');
 has(/function clampMenu\(g\)[\s\S]*cssWidth = Math\.max\(0, window\.innerWidth - edge \* 2\) \/ zoom[\s\S]*getBoundingClientRect\(\)[\s\S]*shift \/ zoom/s,
-  'navdock caps width, clamps visual rects and divides once for uiZoom', navSrc);
+  'navdock caps width, clamps visual rects and divides once by the zoom the menu renders at', navSrc);
 has(/window\.addEventListener\('resize',[^\n]*clampMenu/s,
   'open dock menus re-clamp after responsive resize', navSrc);
 
@@ -100,7 +100,11 @@ function runClamp(baseLeft, width, zoom) {
   const window = { innerWidth: 320, addEventListener() {} };
   const sandbox = {
     document, window,
-    U: { uiZoom: () => zoom },
+    // The synthetic menu's rect scales its style.left by `zoom`, i.e. it models an element
+    // RENDERING at that zoom — which is exactly what U.elZoom reports (see js/util.js). navdock
+    // asks elZoom rather than uiZoom because the dock is cabinet: TEXT SIZE counter-zooms
+    // #bottombar back to 1:1, so the popover's local frame is visual px while <body> is zoomed.
+    U: { uiZoom: () => zoom, elZoom: () => zoom },
     MutationObserver: class { observe() {} },
     requestAnimationFrame(fn) { fn(); }
   };
@@ -115,6 +119,11 @@ A.ok(Math.abs(r.left - 8) < 0.01 && Math.abs(r.right - 312) < 0.01,
 r = runClamp(-20, 280, 1.25);
 A.ok(Math.abs(r.left - 8) < 0.01 && r.right <= 312,
   'left-overflowing zoomed dock clamps to the 8px viewport edge');
+// ...and at effective zoom 1, which is what the dock actually renders at once TEXT SIZE
+// counter-zooms it as cabinet. The clamp must land on the same edges either way.
+r = runClamp(127, 304, 1);
+A.ok(Math.abs(r.left - 8) < 0.01 && Math.abs(r.right - 312) < 0.01,
+  'counter-zoomed (1:1) dock clamps to the same 8px viewport edges');
 
 // Short landscape: fixed controls fit before the grid's own overflow fallback is needed.
 has(/@media \(max-width: 860px\) and \(max-height: 680px\)[\s\S]*overflow-y:\s*auto[\s\S]*grid-template-rows:\s*42px minmax\(72px, 1fr\) minmax\(160px, 1fr\) minmax\(38px, auto\)[\s\S]*padding:\s*4px[\s\S]*gap:\s*3px/s,
