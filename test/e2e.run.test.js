@@ -200,7 +200,8 @@ function boot(port, env, attemptsLeft) {
       A.ok(evs.some(e => e.name === 'agent.tool_result' && e.payload.callId === 'domain_fetch'), 'real web_fetch returned terminal domain evidence');
       const domainMain = mock.requests.slice(before).filter(q => JSON.stringify((q && q.messages) || []).indexOf('[DIRECT DOMAIN CHECK') >= 0);
       A.eq(domainMain.length, 2, 'terminal domain evidence permits exactly one tool-free synthesis turn');
-      A.ok(!domainMain[1].tools || domainMain[1].tools.length === 0, 'the synthesis request exposes zero tools');
+      const synthesisTools = ((domainMain[1] && domainMain[1].tools) || []).map(t => t && t.function && t.function.name);
+      A.ok(synthesisTools.length === 0, 'the synthesis request exposes zero tools (saw: ' + synthesisTools.join(', ') + ')');
       const firstDomainReq = domainMain[0];
       const offered = ((firstDomainReq && firstDomainReq.tools) || []).map(t => t && t.function && t.function.name);
       A.ok(offered.indexOf('team_dispatch') < 0 && offered.indexOf('web_search') < 0, 'lead is not offered delegation or expansive search for a single-host check');

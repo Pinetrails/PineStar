@@ -255,15 +255,20 @@
       throw new Error('refusing to fetch private/loopback/intranet host: ' + h);
     return u;
   }
-  // DNS-rebinding guard: resolve a NAME and refuse if any address is private. Injectable + best-effort
-  // (a resolution failure is left for the fetch to surface). IP literals are already checked statically.
+  // DNS-rebinding guard: resolve a NAME and refuse if any address is private. Injectable + best-effort.
+  // A proven ENOTFOUND is preserved for web_fetch to report immediately; transient resolver failures are
+  // still left for fetch to surface because they are not proof that the domain is absent.
   function nodeLookup(host) { const dns = require('node:dns'); return dns.promises.lookup(host, { all: true }); }
   async function assertResolvedSafe(u, lookup) {
     if (!lookup) return;
     const h = hostOf(u);
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.indexOf(':') >= 0) return;   // already a literal
     let addrs;
-    try { addrs = await lookup(u.hostname); } catch (e) { return; }
+    try { addrs = await lookup(u.hostname); }
+    catch (e) {
+      if (e && e.code === 'ENOTFOUND') throw e;
+      return;
+    }
     for (const a of (addrs || [])) {
       const ip = (a && a.address) || '';
       if (isPrivateV4(ip) || isPrivateV6(ip)) throw new Error('refusing: ' + u.hostname + ' resolves to private address ' + ip);
@@ -659,7 +664,10 @@
       // (EAI_AGAIN / ECONNREFUSED / resets stay hard errors: they can also mean the USER'S network is down,
       // and calling that "web weather" would be the harness lying about its own connectivity.)
       const cause = e && e.cause;
-      const causeCodes = cause ? [cause.code].concat((cause.errors || []).map(x => x && x.code)) : [];
+      const causeCodes = [e && e.code].concat(
+        (e && e.errors || []).map(x => x && x.code),
+        cause ? [cause.code].concat((cause.errors || []).map(x => x && x.code)) : []
+      );
       if (causeCodes.indexOf('ENOTFOUND') >= 0) return {
         content: 'The domain ' + host + ' does not resolve — the site no longer exists or the hostname is ' +
                  'mistyped. Do not retry this URL; search for the right address or use another source.',
