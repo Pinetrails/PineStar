@@ -1,5 +1,24 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 — PHASE 0 WORLD + SAFECELL P2 RECONCILIATION (`agent/cleanup-p0-world-safe`)
+
+READY FOR CLEAN-TRUNK CHERRY-PICK. Three P2 ledger records were stale: their implementations had
+already landed in `f4d03511` (single-flight channel SSE + pending-tooltip cancellation) and
+`226cec3c` (watched-only Full Access, permissions readout, and revoke), but the records remained open.
+`0b9270fb` re-proves those fixes at the behavioral seams: it executes world.js's production `open()`
+closure through error → pending retry → re-entry → stale callback and ends with exactly one live
+EventSource; extends the real MCP/sidecar flow to prove a watched wildcard is listed, cannot authorize
+the same agent's ungranted routine, revokes real authority, and prompts again; and makes the Full Access
+row explicitly name its watched-session boundary and surviving host hardlines. The existing real-module
+tooltip rig proves pointerout during the 320ms delay cannot create a ghost while a rested anchor still
+shows normally. Focused receipts: channel SSE 75 assertions, tooltip 353, permissions 69, permissions UI
+34, MCP HTTP 87, website mirror 8. A seeded station on `:18761` reached ONLINE; SETTINGS › PERMISSIONS
+rendered its authoritative ledger, the station tooltip self-started/adopted its CINEMA title and hid on
+exit, and the browser warning/error log was empty. The canonical fast gate reached step 198/499, then
+hit the known `qa-product-perfect-claims` authority failure introduced by this lane's obsolete base
+`90df36dd`; integration has already reset to clean `9aa72820`, so the coordinator must re-run `test:fast`
+after cherry-picking the isolated commits there. No sidecar/route code changed in this reconciliation.
+
 ## 2026-08-02 — RECOMMENDATION FABRIC 1–5 (MERGED)
 
 MERGED to `feat/harness-backend` at `68cc7af7`; the release surface was re-locked at `c8397e1f`.

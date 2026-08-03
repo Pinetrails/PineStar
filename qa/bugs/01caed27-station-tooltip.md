@@ -4,10 +4,10 @@ slug: station-tooltip
 title: Station tooltip: pointerout during the 320ms show delay cannot clear the pending timer (`if (!anchor) return` runs before hide()), so a ghost card pops up besid
 surface: world
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/world
-fix: 
+fix: f4d03511
 ---
 
 # Station tooltip: pointerout during the 320ms show delay cannot clear the pending timer (`if (!anchor) return` runs before hide()), so a ghost card pops up besid
@@ -34,4 +34,4 @@ _Found by the `sweep/world` lane, 2026-07-28. Finder confidence: high. Severity 
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Confirmed and fixed in `f4d03511`; the stale open ledger row outlived the implementation. The controller now records a pending anchor before the 320ms timer and pointerout clears that pending timer through `hide()`. The real-module delayed-pointer regression proves a flicked-away control never receives `aria-describedby`, while the rested-hover path still shows and hides normally.
