@@ -117,8 +117,8 @@ try {
     'fresh candidate save-store instance reads the v0.8.5 workspace unchanged');
 
   const memory = makeMemoryStore({ fs, path, workspaces: root });
-  const notebook = { entries: [{ id: 'm1', kind: 'fact', text: 'Migration safety matters.', createdAt: 1 }] };
-  const todo = { items: [{ id: 't1', text: 'ship 0.9 safely', done: false }] };
+  const notebook = [{ id: 'm1', title: 'Upgrade safety', body: 'Migration safety matters.', ts: 1 }];
+  const todo = [{ id: 't1', text: 'ship 0.9 safely', done: false }];
   memory.set('notebook:agent', notebook);
   memory.set('todo:agent', todo);
   const memoryRestart = makeMemoryStore({ fs, path, workspaces: root });
