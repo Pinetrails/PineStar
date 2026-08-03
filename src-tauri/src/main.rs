@@ -877,6 +877,18 @@ fn delete_credential_honest(entry: &keyring::Entry) -> Result<(), String> {
     }
 }
 
+fn restore_credential(entry: &keyring::Entry, previous: Option<&str>) -> Result<(), String> {
+    match previous {
+        Some(value) => entry.set_password(value).map_err(|e| e.to_string()),
+        None => delete_credential_honest(entry),
+    }
+}
+
+fn rollback_error(primary: String, failures: Vec<String>) -> String {
+    if failures.is_empty() { primary }
+    else { format!("{primary}; rollback incomplete: {}", failures.join("; ")) }
+}
+
 /// The stored bot token for a channel, or None if unset/empty.
 fn read_channel_token(channel: &str) -> Option<String> {
     channel_keychain_entry(channel)
@@ -1488,7 +1500,6 @@ fn push_provider_config(
     key: Option<&str>,
     base_url: Option<&str>,
 ) -> Result<(), String> {
-    use std::io::{Read, Write};
     let mut payload = serde_json::Map::new();
     payload.insert(
         "provider".to_string(),
@@ -1507,25 +1518,7 @@ fn push_provider_config(
         );
     }
     let body = serde_json::Value::Object(payload).to_string();
-    let head = format!(
-        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        state.ipc_token,
-        body.as_bytes().len()
-    );
-    let mut s = TcpStream::connect(("127.0.0.1", state.port))
-        .map_err(|e| format!("sidecar key push connect failed: {e}"))?;
-    s.set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| format!("sidecar key push timeout setup failed: {e}"))?;
-    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key push header failed: {e}"))?;
-    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key push body failed: {e}"))?;
-    s.flush().map_err(|e| format!("sidecar key push flush failed: {e}"))?;
-    let mut buf = [0u8; 96];
-    let n = s.read(&mut buf).map_err(|e| format!("sidecar key push acknowledgement failed: {e}"))?;
-    let head = String::from_utf8_lossy(&buf[..n]);
-    if !head.starts_with("HTTP/1.1 200") && !head.starts_with("HTTP/1.0 200") {
-        return Err(format!("sidecar rejected provider configuration: {}", head.lines().next().unwrap_or("no response")));
-    }
-    Ok(())
+    post_sidecar_json(state, "/api/key", &body, "provider configuration")
 }
 
 fn push_key(state: &AppState, key: &str) -> Result<(), String> {
@@ -1533,30 +1526,86 @@ fn push_key(state: &AppState, key: &str) -> Result<(), String> {
 }
 
 fn push_provider_key_pool(state: &AppState, provider: &str, keys: &[String]) -> Result<(), String> {
-    use std::io::{Read, Write};
     let body = serde_json::json!({
         "provider": normalize_provider(provider),
         "keyPool": keys,
     }).to_string();
+    post_sidecar_json(state, "/api/key", &body, "provider key pool")
+}
+
+fn parse_sidecar_status(response: &[u8]) -> Result<u16, String> {
+    let header_end = response.windows(4).position(|w| w == b"\r\n\r\n")
+        .ok_or_else(|| "incomplete HTTP acknowledgement".to_string())?;
+    let head = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| "non-UTF-8 HTTP acknowledgement".to_string())?;
+    let line = head.lines().next().ok_or_else(|| "empty HTTP acknowledgement".to_string())?;
+    let mut parts = line.split_whitespace();
+    let version = parts.next().unwrap_or("");
+    if version != "HTTP/1.1" && version != "HTTP/1.0" {
+        return Err(format!("invalid HTTP acknowledgement: {line}"));
+    }
+    parts.next().ok_or_else(|| format!("missing HTTP status: {line}"))?
+        .parse::<u16>().map_err(|_| format!("invalid HTTP status: {line}"))
+}
+
+/// Send one authenticated JSON mutation and wait for a complete, bounded HTTP response head. TCP reads are not
+/// message-framed: a successful status line may arrive in several packets, so one small read cannot prove an ack.
+fn post_sidecar_json(state: &AppState, path: &str, body: &str, operation: &str) -> Result<(), String> {
+    use std::io::Write;
+    const MAX_RESPONSE_HEAD: usize = 8192;
     let head = format!(
-        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         state.ipc_token,
         body.as_bytes().len()
     );
     let mut s = TcpStream::connect(("127.0.0.1", state.port))
-        .map_err(|e| format!("sidecar key-pool push connect failed: {e}"))?;
+        .map_err(|e| format!("sidecar {operation} connect failed: {e}"))?;
     s.set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| format!("sidecar key-pool timeout setup failed: {e}"))?;
-    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key-pool header failed: {e}"))?;
-    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key-pool body failed: {e}"))?;
-    s.flush().map_err(|e| format!("sidecar key-pool flush failed: {e}"))?;
-    let mut buf = [0u8; 96];
-    let n = s.read(&mut buf).map_err(|e| format!("sidecar key-pool acknowledgement failed: {e}"))?;
-    let response = String::from_utf8_lossy(&buf[..n]);
-    if !response.starts_with("HTTP/1.1 200") && !response.starts_with("HTTP/1.0 200") {
-        return Err(format!("sidecar rejected provider key pool: {}", response.lines().next().unwrap_or("no response")));
+        .map_err(|e| format!("sidecar {operation} read-timeout setup failed: {e}"))?;
+    s.set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("sidecar {operation} write-timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar {operation} header failed: {e}"))?;
+    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar {operation} body failed: {e}"))?;
+    s.flush().map_err(|e| format!("sidecar {operation} flush failed: {e}"))?;
+    let mut response = Vec::with_capacity(512);
+    let mut chunk = [0u8; 512];
+    while !response.windows(4).any(|w| w == b"\r\n\r\n") {
+        let n = s.read(&mut chunk).map_err(|e| format!("sidecar {operation} acknowledgement failed: {e}"))?;
+        if n == 0 { break; }
+        if response.len() + n > MAX_RESPONSE_HEAD {
+            return Err(format!("sidecar {operation} acknowledgement exceeded {MAX_RESPONSE_HEAD} bytes"));
+        }
+        response.extend_from_slice(&chunk[..n]);
     }
-    Ok(())
+    let status = parse_sidecar_status(&response)
+        .map_err(|e| format!("sidecar {operation} acknowledgement invalid: {e}"))?;
+    if status == 200 { Ok(()) }
+    else { Err(format!("sidecar rejected {operation}: HTTP {status}")) }
+}
+
+#[cfg(test)]
+mod sidecar_ack_tests {
+    use super::*;
+
+    #[test]
+    fn parses_complete_http_status_after_arbitrary_headers() {
+        assert_eq!(parse_sidecar_status(b"HTTP/1.1 200 OK\r\nX-Long: value\r\n\r\n").unwrap(), 200);
+        assert_eq!(parse_sidecar_status(b"HTTP/1.0 409 Conflict\r\n\r\n").unwrap(), 409);
+    }
+
+    #[test]
+    fn rejects_partial_or_malformed_acknowledgements() {
+        assert!(parse_sidecar_status(b"HTTP/1.1 200 OK\r\nX-Part: yes\r\n").is_err());
+        assert!(parse_sidecar_status(b"NOTHTTP 200 OK\r\n\r\n").is_err());
+        assert!(parse_sidecar_status(b"HTTP/1.1 nope\r\n\r\n").is_err());
+    }
+
+    #[test]
+    fn rollback_errors_never_hide_incomplete_restoration() {
+        assert_eq!(rollback_error("push failed".to_string(), Vec::new()), "push failed");
+        assert_eq!(rollback_error("push failed".to_string(), vec!["keychain restore failed".to_string()]),
+            "push failed; rollback incomplete: keychain restore failed");
+    }
 }
 
 /// Push a channel bot token to the already-running sidecar (no restart), authenticated by the per-launch IPC
@@ -1801,11 +1850,14 @@ fn harness_store_key(key: String, state: State<AppState>) -> Result<(), String> 
         entry.set_password(trimmed).map_err(|e| e.to_string())?;
     }
     if let Err(e) = push_key(&state, trimmed) {
-        match previous.as_deref() {
-            Some(old) => { let _ = entry.set_password(old); let _ = push_key(&state, old); }
-            None => { let _ = delete_credential_honest(&entry); let _ = push_key(&state, ""); }
+        let mut failures = Vec::new();
+        if let Err(restore) = restore_credential(&entry, previous.as_deref()) {
+            failures.push(format!("keychain restore failed: {restore}"));
         }
-        return Err(e);
+        if let Err(restore) = push_key(&state, previous.as_deref().unwrap_or("")) {
+            failures.push(format!("sidecar restore failed: {restore}"));
+        }
+        return Err(rollback_error(e, failures));
     }
     Ok(())
 }
@@ -1844,10 +1896,14 @@ fn harness_store_provider_key(
         base_trimmed.as_deref(),
     ) {
         if let Some((entry, previous)) = rollback {
-            match previous.as_deref() {
-                Some(old) => { let _ = entry.set_password(old); let _ = push_provider_config(&state, provider_id, Some(old), None); }
-                None => { let _ = delete_credential_honest(&entry); let _ = push_provider_config(&state, provider_id, Some(""), None); }
+            let mut failures = Vec::new();
+            if let Err(restore) = restore_credential(&entry, previous.as_deref()) {
+                failures.push(format!("keychain restore failed: {restore}"));
             }
+            if let Err(restore) = push_provider_config(&state, provider_id, Some(previous.as_deref().unwrap_or("")), None) {
+                failures.push(format!("sidecar restore failed: {restore}"));
+            }
+            return Err(rollback_error(e, failures));
         }
         return Err(e);
     }
@@ -1855,7 +1911,7 @@ fn harness_store_provider_key(
 }
 
 /// Replace the complete alternate-key pool for exactly one provider. The old keychain value and live sidecar
-/// pool are restored if either half cannot be acknowledged, so the UI observes one atomic result.
+/// pool restoration is attempted if the live update cannot be acknowledged; any incomplete rollback is reported.
 #[tauri::command]
 fn harness_store_provider_key_pool(
     provider: String,
@@ -1882,12 +1938,14 @@ fn harness_store_provider_key_pool(
         entry.set_password(&encoded).map_err(|e| e.to_string())?;
     }
     if let Err(e) = push_provider_key_pool(&state, provider_id, &cleaned) {
-        match previous_raw.as_deref() {
-            Some(raw) => { let _ = entry.set_password(raw); }
-            None => { let _ = delete_credential_honest(&entry); }
+        let mut failures = Vec::new();
+        if let Err(restore) = restore_credential(&entry, previous_raw.as_deref()) {
+            failures.push(format!("keychain restore failed: {restore}"));
         }
-        let _ = push_provider_key_pool(&state, provider_id, &previous);
-        return Err(e);
+        if let Err(restore) = push_provider_key_pool(&state, provider_id, &previous) {
+            failures.push(format!("sidecar restore failed: {restore}"));
+        }
+        return Err(rollback_error(e, failures));
     }
     Ok(cleaned.len())
 }

@@ -3345,7 +3345,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<input type="password" class="key-input" id="pool-in-' + i + '" placeholder="paste backup keys, separated by commas…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="pool-save" data-i="' + i + '">REPLACE POOL</button>' +
         '<button class="bb sm danger" data-act="pool-clear" data-i="' + i + '">CLEAR POOL</button>' +
-        '<span class="dim">up to 8 · scoped only to ' + esc(provName(k.provider)) + ' · existing backups stay active until this save succeeds</span>' +
+        '<span class="dim">up to 8 · scoped only to ' + esc(provName(k.provider)) + ' · failed saves restore the prior pool or report an incomplete rollback</span>' +
         '</div>' +
         baseBlock;
     });
