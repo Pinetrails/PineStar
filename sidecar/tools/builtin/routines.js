@@ -43,7 +43,7 @@
     {
       name: 'research',
       triggers: ['research', 'news', 'latest', 'source', 'sources', 'web', 'paper', 'papers', 'arxiv', 'scan', 'monitor', 'brief'],
-      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist']
+      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist', 'paralegal', 'jobhunter', 'opportunist']
     },
     {
       name: 'engineering',
@@ -53,12 +53,12 @@
     {
       name: 'writing',
       triggers: ['write', 'draft', 'copy', 'post', 'email', 'newsletter', 'document', 'summary', 'script', 'publish'],
-      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer']
+      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer', 'ghostwriter', 'negotiator', 'anchor']
     },
     {
       name: 'ops',
       triggers: ['check', 'remind', 'watch', 'backup', 'sync', 'ops', 'operate', 'admin'],
-      roles: ['operator', 'ops', 'chief', 'treasurer']
+      roles: ['operator', 'ops', 'chief', 'treasurer', 'nightwatch', 'quartermaster', 'foreman', 'pilot']
     },
     {
       name: 'design',

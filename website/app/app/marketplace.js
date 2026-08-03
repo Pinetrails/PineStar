@@ -275,6 +275,29 @@ const Marketplace = (() => {
     const panel = root.querySelector('.mkt'); if (panel) panel.focus();
     maybeConsumeRecipeMint();   // R5: if opened to bottle a run, drop straight into the editor pre-filled from it
     maybeConsumeLaunchSeed();   // lane D: if opened by the routine nudge, drop straight into the launch/SCHEDULE IT form
+    maybeConsumeClassSeed();    // intent offer: if opened from a COMMS offer, focus THAT class's dossier
+  }
+  /* INTENT-OFFER class seed (the launchSeed pattern, AGENTS tab): app.js seeds ctx.classSeed = { id } before
+     opening the bay, so accepting a COMMS offer lands on the dossier of the class that was offered rather than
+     on the roster's default card — otherwise the Commander has to go find it again, which is the friction the
+     offer exists to remove. An ARCHETYPE is not on the default roster, so its card only renders once the
+     SPECIALIST ARCHIVE is expanded: seeding one opens the archive too, or the dossier would name a class with
+     no visible card. One-shot (cleared before any render) and a graceful no-op on an unknown id. */
+  function maybeConsumeClassSeed() {
+    const seed = ctx && ctx.classSeed;
+    if (!seed || typeof seed !== 'object') return;
+    if (ctx) ctx.classSeed = null;   // one-shot: consume before anything that could re-render
+    if (tab !== 'agents' || typeof Specialties === 'undefined') return;
+    const id = String(seed.id || '');
+    const spec = id && Specialties.get ? Specialties.get(id) : null;
+    if (!spec) return;                                            // unknown class → leave the bay exactly as it opened
+    focusAgent = spec.id;
+    // a deep cut lives in the collapsed archive — open it so the focused class actually has a card on screen.
+    try {
+      const archs = (Specialties.archetypes && Specialties.archetypes()) || [];
+      if (archs.some(a => a && a.id === spec.id)) archiveOpen = true;
+    } catch (_) {}
+    renderBar(); renderStage();
   }
   // R5 "BOTTLE A RUN" consume: app.js seeds ctx.recipeMint (a Recipes.mintFromRun proposal — a DRAFT custom recipe
   // pre-filled from a 👍-rated run's directive, carrying sourceRunId) before opening the bay on the RECIPES tab.

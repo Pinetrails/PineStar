@@ -1116,11 +1116,22 @@ const App = (() => {
   // <current agent> (deploySpecialty). The old split (ROSTER=deploy door, SUMMON=new-agent door)
   // was two dock buttons opening the same screen; the verbs now live on the card, not the dock.
   let concurrentCap = null;   // server MAX_CONCURRENT_AGENTS (how many agents RUN at once) — fetched once, kept honest
-  function openSummonBay() {
+  // the ONE recruit door. Wired directly to a click handler (#bb-recruit), so it takes NO arguments — an
+  // optional first param would receive the DOM event. Deep-links pass through openClassDossier instead.
+  function openSummonBay() { openSummonBayWith(null); }
+  // INTENT OFFER deep-link: open the same bay already focused on ONE class's dossier (the class a COMMS offer
+  // named). Without this the accept dumps the Commander on the roster's default card and they have to hunt for
+  // the class that was just offered to them — the exact friction the offer exists to remove.
+  function openClassDossier(classId) {
+    if (!classId) return openSummonBay();
+    openSummonBayWith({ id: String(classId) });
+  }
+  function openSummonBayWith(classSeed) {
     if (typeof Marketplace === 'undefined' || !agent) return;
     SFX.click();
     const go = () => Marketplace.open({
       mode: 'pick', summon: true, concurrentCap: concurrentCap,
+      classSeed: classSeed || null,   // one-shot: the bay focuses this class's dossier on open (maybeConsumeClassSeed)
       notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
       onPick: summonAgent,
       // deploy-to-current context (the merged ROSTER verb): who the current agent is + what it
@@ -4283,6 +4294,7 @@ const App = (() => {
     needsWorkstation: needsWorkstation,
     openDeskPlacement: openDeskPlacement,
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
+    openClassDossier: openClassDossier,   // intent-offer beat: accepting a class offer opens the bay ON that class's dossier
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
     applyConfig: applyAgentConfig };
 })();

@@ -4333,6 +4333,89 @@ const Chat = (() => {
     return true;
   }
 
+  /* INTENT OFFER — the discovery seam. The bay holds 38 preconfigured classes and the library ~50 ready-made
+     jobs, and BOTH live two clicks deep inside a bottom-bar popover, so most Commanders never learn they exist.
+     Rather than move those doors, the station answers from the side the Commander is already on: when what they
+     just typed is plainly a class's or a recipe's job, it says so ONCE, inline, and the accept deep-links
+     straight to it.
+
+     Three things keep this from becoming a nag:
+       • it only fires on a REAL TASK directive (the same Classify gate the belt uses) — never on chatter;
+       • the match must survive intentoffer.js's precision gates (distinctive terms, corroboration, a clear
+         winner) — a vague match produces silence, which is the honest answer;
+       • it rides the SHARED gentle nudge, so it obeys one-beat-at-a-time, decided beats vanish(), and it stands
+         down for a live task question. Capped at OFFER_CAP per session, and never the same thing twice.
+     Never offers a class the crew already has — that is not discovery, it is noise about what they own. */
+  const OFFER_CAP = 2;                 // at most two intent offers per session (in-memory; resets each app run)
+  let offersShown = 0;
+  const offeredIds = new Set();        // never re-offer the same class/recipe in one session, accepted or not
+
+  // the matchable surface, built from the LIVE catalogs (never a hardcoded keyword list — a class added
+  // tomorrow is matchable today). `text` deliberately excludes purpose/manual: their shared vocabulary blurs
+  // every class into every other. Mirrored by test/intent-offer.test.js.
+  function offerCandidates() {
+    const out = [];
+    const taken = new Set();
+    try {
+      const mine = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
+      for (const a of mine) if (a && a.specialtyId) taken.add(a.specialtyId);
+    } catch (_) {}
+    try {
+      if (typeof Specialties !== 'undefined' && Specialties.builtins) {
+        const archs = Specialties.archetypes ? (Specialties.archetypes() || []) : [];
+        for (const c of (Specialties.builtins() || []).concat(archs)) {
+          if (!c || !c.id || taken.has(c.id)) continue;      // already on the crew → nothing to discover
+          out.push({
+            kind: 'class', id: c.id, name: c.name, label: c.tagline,
+            headline: c.name + ' ' + c.tagline,
+            text: [c.name, c.tagline, c.blurb, (c.starters || []).join(' ')].join(' ')
+          });
+        }
+      }
+    } catch (_) {}
+    try {
+      if (typeof Recipes !== 'undefined' && Recipes.list) {
+        for (const r of (Recipes.list() || [])) {
+          if (!r || !r.id) continue;
+          out.push({
+            kind: 'recipe', id: r.id, name: r.name, label: r.tagline || '',
+            headline: r.name + ' ' + (r.tagline || ''),
+            text: [r.name, r.tagline, r.blurb, r.task].join(' ')
+          });
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  // Returns true iff an offer was actually shown. Silent (and cheap) on every guard.
+  function maybeIntentOffer(text) {
+    if (offersShown >= OFFER_CAP) return false;
+    if (typeof IntentOffer === 'undefined' || !IntentOffer.match) return false;
+    if (typeof App === 'undefined') return false;
+    if (taskQuestionLive()) return false;                    // a pending task question owns the moment
+    let m = null;
+    try { m = IntentOffer.match(text, offerCandidates()); } catch (_) { return false; }
+    if (!m || offeredIds.has(m.kind + ':' + m.id)) return false;
+    // the accept must have a real destination — never offer a door that does not open.
+    const isClass = m.kind === 'class';
+    if (isClass && !App.openClassDossier) return false;
+    if (!isClass && !App.openRecipeLaunch) return false;
+
+    offersShown++;                                           // spend the slot even on dismiss (never re-ask)
+    offeredIds.add(m.kind + ':' + m.id);
+    const line = isClass
+      ? '✦ there is a class built for this — ' + m.name + ', ' + String(m.label || '').replace(/^./, c => c.toLowerCase()) + '. want to look?'
+      : '❒ there is a ready-made job for this — ' + m.name + '. want it loaded?';
+    if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }
+    const shown = nudge(line, [{ label: isClass ? 'show me' : 'load it', value: 'go' }, { label: 'not now', value: 'no', skip: true }], choice => {
+      if (!choice || choice.value !== 'go') return;
+      try { if (isClass) App.openClassDossier(m.id); else App.openRecipeLaunch(m.id, 'run'); } catch (_) {}
+    });
+    if (!shown) { offersShown--; offeredIds.delete(m.kind + ':' + m.id); return false; }   // the beat slot was busy — do not burn the offer
+    return true;
+  }
+
   /* A2 — THE SKILL ASIDE. When the quiet background review distills a completed run into a saved skill it fires
      the EXISTING `deliverable` (kind:'skill') event (see skillreview.makeReviewObserver). Here we surface ONE
      gentle, NON-interactive gold-inset aside — "◈ <agent> distilled this run into skill: <name>" — so the
@@ -6948,6 +7031,12 @@ const Chat = (() => {
     }
 
     const isTask = !!pending || Classify.isTaskDirective(text);
+    // INTENT OFFER: a real, fresh directive is the one moment the Commander has stated what they want in their
+    // own words — the only honest place to say "there is a class built for exactly this". Gated to genuine new
+    // work: never a retry (already offered on the original), never a recipe launch (they came FROM the library),
+    // never a goal-loop continuation (the station wrote that text, not the Commander), never a reply to a
+    // pending task question. Fires alongside the run — it never blocks or delays the answer.
+    if (isTask && !retry && !fromRecipe && !goalContinuation && !pending) { try { maybeIntentOffer(text); } catch (_) {} }
     // P1 + BELT IS WORK-ONLY (Andrew's ruling 2026-07-05): only a real TASK directive drops an INTAKE ore box
     // on the belt / bumps the queue gauge (mirrors the Telegram admit shape — the sidecar gates on the SAME
     // classifier). Pure chat ("hello") gets its reply with NOTHING on the floor.
