@@ -89,10 +89,17 @@ const CURATED = ['strategist', 'chief', 'opportunist', 'researcher', 'engineer',
   'jobhunter', 'support', 'envoy', 'registrar', 'tutor', 'provisioner', 'taskmaster', 'scout'];
 A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 36 expansion classes');
 A.eq(builtins[0].id, 'strategist', 'the strategist is the roster\'s first card (the bay\'s default focus)');
-// the SHIP-YOUR-APP lane must stay on the DEFAULT roster: it is the reason the vibe-coding audience opens the
-// bay at all, and burying any of it in the archive is the exact regression the expansion existed to undo.
-for (const id of ['apptester', 'auditor', 'deployer', 'dbhelper']) {
-  A.ok(builtins.some(b => b.id === id), 'the build lane stays on the default roster: ' + id);
+// ROSTER ORDER IS A PRODUCT DECISION (Andrew, 2026-08-03): the roster opens on TRADITIONAL jobs and the
+// build-your-app block sits at the BOTTOM. A first insertion put the technical classes at position 7 and he
+// rejected it on sight — "i like the previous setup as it was more traditional jobs, and towards the bottom
+// should be where the more vibe coding related agents are". So the lane must stay on the default roster (it is
+// why the vibe-coding audience opens the bay at all) AND stay last.
+const BUILD_LANE = ['drafter', 'engineer', 'dbhelper', 'apptester', 'auditor', 'deployer'];
+for (const id of BUILD_LANE) A.ok(builtins.some(b => b.id === id), 'the build lane stays on the default roster: ' + id);
+A.eq(builtins.slice(-BUILD_LANE.length).map(b => b.id), BUILD_LANE, 'the build-your-app block sits at the BOTTOM of the roster, in build order');
+// and nothing technical creeps back above the traditional jobs: the first ten cards carry no build-lane class
+for (const b of builtins.slice(0, 10)) {
+  A.ok(BUILD_LANE.indexOf(b.id) < 0, 'the roster opens on traditional jobs, not the build lane: ' + b.id);
 }
 const ARCH_IDS = ['quartermaster', 'anchor', 'medic', 'diplomat', 'operator', 'designer', 'navigator',
   'curator', 'muse', 'reviewer', 'archivist', 'broker', 'a11y', 'hiring', 'processwriter',
