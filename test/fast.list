@@ -28,6 +28,7 @@ test/concurrency.test.js
 test/workspace-lease.test.js
 test/durable-store.test.js
 test/domain-store.test.js
+test/run-execution-state.test.js
 test/todo.durability.test.js
 test/halt.test.js
 test/readbody.test.js
