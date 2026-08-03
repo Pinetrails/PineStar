@@ -6121,7 +6121,10 @@ const Chat = (() => {
     localLine('Undid ' + removed + ' message' + (removed === 1 ? '' : 's') + '.');
   }
   function compressCommand() {
-    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState((activeWs && activeWs.agentId) || 'agent') : null;
+    const ref = contextRef();
+    const cs = (typeof Harness !== 'undefined' && Harness.contextState)
+      ? Harness.contextState(ref ? ref.agentId : ((activeWs && activeWs.agentId) || 'agent'), ref && ref.streamId, ref && ref.messages)
+      : null;
     // The run host is STATELESS — the conversation lives in the browser and is sent per call — so there is no
     // persistent server-side context to fold on demand between runs. Auto-compaction runs INSIDE a run when the
     // live prompt crosses the threshold. This is the honest status; see the slash-parity report for the rationale.

@@ -23,6 +23,7 @@ const vm = require('vm');
 const CtxGauge = require('../frontend/app/ctxgauge.js');
 const SRC = path.join(__dirname, '..', 'frontend', 'app', 'harness.js');
 const source = fs.readFileSync(SRC, 'utf8');
+const chatSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'chat.js'), 'utf8');
 
 /* ---------- slice the real bodies out of harness.js ---------- */
 
@@ -180,5 +181,30 @@ A.ok(store.size > 0, 'the calibration is actually written to storage, not just h
 const web = fs.readFileSync(path.join(__dirname, '..', 'website', 'app', 'app', 'harness.js'), 'utf8');
 A.ok(web.indexOf('let contextByKey') >= 0, 'the website mirror carries the per-conversation keying too');
 A.ok(/function contextState\(agentId, streamId, messages\)/.test(web), 'the website mirror carries the conversation-scoped read too');
+
+/* 12. The /compress status command is another reader of this state. Execute its REAL body with a
+       conversation ref and prove it asks for that exact stream + message array. The 2026-08-03 merge
+       updated the bottom gauge but left this call on the old agent-only signature, so the live gauge
+       read ~13k / 200k while /compress confidently reported 0 / 200000 for the same open chat. */
+const compressStart = chatSource.indexOf('  function compressCommand() {');
+const compressEnd = chatSource.indexOf('\n  // /clear', compressStart);
+A.ok(compressStart >= 0 && compressEnd > compressStart, 'chat.js compress command body is locatable');
+const compressCalls = [];
+const compressLines = [];
+const compressMessages = [{ role: 'user', content: 'measured conversation' }];
+const compressApi = vm.runInNewContext(
+  chatSource.slice(compressStart, compressEnd) + '\n({ compressCommand });',
+  {
+    activeWs: { id: 'ws_measured', agentId: 'agent' },
+    contextRef: () => ({ agentId: 'agent', streamId: 'ws_measured', messages: compressMessages }),
+    Harness: { contextState: (...args) => { compressCalls.push(args); return { used: 13000, limit: 200000 }; } },
+    localLine: line => compressLines.push(line)
+  },
+  { filename: 'chat.js#compress-command' }
+);
+compressApi.compressCommand();
+A.eq(compressCalls.length, 1, '/compress reads context exactly once');
+A.eq(compressCalls[0], ['agent', 'ws_measured', compressMessages], '/compress reads the active conversation, not the streamless agent bucket');
+A.ok(/13000 \/ 200000 tokens used \(7%/.test(compressLines[0] || ''), '/compress reports the same measured occupancy as the visible chat');
 
 A.report('ctx-conversation-scope');
