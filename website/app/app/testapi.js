@@ -73,7 +73,16 @@
     }
     return { cost, tokens: tokensIn + tokensOut, tokensIn, tokensOut, calls };
   }
-  function ctx() { try { if (typeof CtxGauge === 'undefined' || typeof Harness === 'undefined') return null; const cs = Harness.contextState(); return CtxGauge.compute(cs.used, cs.limit, { measured: cs.measured !== false }); } catch (_) { return null; } }
+  // Reads the ACTIVE conversation's occupancy (Chat.contextRef), exactly as the bottom-bar gauge does —
+  // a per-agent reading would report a different chat's fill than the one on screen.
+  function ctx() {
+    try {
+      if (typeof CtxGauge === 'undefined' || typeof Harness === 'undefined') return null;
+      const ref = (typeof Chat !== 'undefined' && Chat.contextRef) ? Chat.contextRef() : null;
+      const cs = ref ? Harness.contextState(ref.agentId, ref.streamId, ref.messages) : Harness.contextState();
+      return CtxGauge.compute(cs.used, cs.limit, { measured: cs.measured !== false, projected: !!cs.projected });
+    } catch (_) { return null; }
+  }
 
   // ---- HUD truthfulness: displayed (DOM) vs reduced-over-events ----
   // Parse a HUD chip's text into a number, honoring k/M/B suffixes ("234.9k" -> 234900, "Lv 3" -> 3).

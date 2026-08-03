@@ -1029,6 +1029,15 @@ const Chat = (() => {
     return real.length > HISTORY_CAP ? real.slice(-HISTORY_CAP) : real;
   }
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
+  /* What the CONTEXT gauge needs to answer "how full is THIS chat?" — which conversation is on screen
+     and the exact array its next request would carry. Deliberately routed through historyWindow (not
+     raw ws.history) so the gauge estimates the same bytes the send path actually puts on the wire:
+     local markers the model never sees must not inflate the reading. Returns null with no active
+     stream, which the gauge reads as "nothing to measure yet". */
+  function contextRef() {
+    if (!activeWs) return null;
+    return { agentId: activeWs.agentId || 'agent', streamId: activeWs.id, messages: historyWindow(activeWs) };
+  }
   // A streamed fragment is real assistant output even when the transport dies before a clean result envelope.
   // Persist it as its own turn before the failure marker so switch/reload cannot erase what was already visible.
   function persistPartial(ws, text) {
@@ -6477,5 +6486,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();

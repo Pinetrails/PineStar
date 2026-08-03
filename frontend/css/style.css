@@ -574,6 +574,11 @@ body.no-scan .crt-scan { display: none; }
   color: #3fd07c; text-shadow: 0 0 6px rgba(63,208,124,0.45);
   transition: color 0.3s, text-shadow 0.3s;
 }
+/* the HALF cell — the same lit glyph held back to a partial state, which is how the bar carries 20
+   steps in ten cells of width without introducing a glyph VT323 might not have (a fallback glyph
+   would change that one cell's advance width and visibly break the row). Inherits every level colour
+   above, so the amber/red escalation still applies to it. */
+.ctx-gauge .ctx-cells .ctx-half { opacity: 0.42; }
 /* one-shot brightness tick when a new cell lights (class re-armed by ctxTick) */
 .ctx-gauge .ctx-cells.ctx-tick { animation: ctx-cell-tick 0.35s ease-out; }
 @keyframes ctx-cell-tick { 0% { filter: brightness(2.1); } 100% { filter: brightness(1); } }

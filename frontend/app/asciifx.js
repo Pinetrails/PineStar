@@ -202,5 +202,29 @@ const AsciiFX = (() => {
     return ON.repeat(on) + OFF.repeat(N - on);
   }
 
-  return { reduced, scramble, dissolveIn, typewriter, frame, bar };
+  /* ── BAR CELLS : the same bar at DOUBLE resolution — { full, half, off } cell counts ─────────────
+     bar() rounds to whole cells, which is right for a coarse readout but too blunt for a gauge over a
+     big range: at ten cells on a 200k context window one cell is 20,000 tokens, so 7% and 14% paint
+     identically and the bar looks frozen through most of a real session. This floors the lit cells and
+     reports whether the remainder deserves a HALF cell, giving 20 steps in the same width — the caller
+     renders that half as the same glyph at reduced opacity, so no new glyph can fall out of the VT323
+     face and change the cell width mid-bar.
+
+     The two honesty rules bar() enforces are kept verbatim, because they are the reason the bar can be
+     trusted next to the numeral: any nonzero fraction lights SOMETHING (4% never reads as empty), and
+     only a genuinely full fraction lights every cell (96% never reads as full). */
+  function barCells(frac, cells) {
+    const N = Math.max(1, (cells | 0) || 10);
+    frac = Number(frac); if (!isFinite(frac)) frac = 0;
+    if (frac < 0) frac = 0; if (frac > 1) frac = 1;
+    let full = Math.floor(frac * N);
+    let rem = frac * N - full;
+    if (frac >= 1) { full = N; rem = 0; }
+    else if (full >= N) { full = N - 1; rem = 0.99; }   // just under full can never light them all
+    let half = rem >= 0.5;
+    if (frac > 0 && full === 0 && !half) half = true;   // nonzero always lights at least the half cell
+    return { full: full, half: half, off: Math.max(0, N - full - (half ? 1 : 0)), cells: N };
+  }
+
+  return { reduced, scramble, dissolveIn, typewriter, frame, bar, barCells };
 })();

@@ -5334,7 +5334,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (typeof CtxGauge === 'undefined') return;
     const cs = access.context ? access.context() : ((typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState() : null);
     if (!cs) return;
-    const s = CtxGauge.compute(cs.used, cs.limit, { measured: cs.measured !== false });
+    const s = CtxGauge.compute(cs.used, cs.limit, { measured: cs.measured !== false, projected: !!cs.projected });
     g.dataset.level = s.level;
     // ASCII cell bar (asciifx.js): the gauge ticks in whole ▮/▯ cells instead of sliding — deliberate,
     // chunky, CRT-honest. Same real numbers (CtxGauge.compute), only the presentation is quantized;
@@ -5343,23 +5343,49 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const cells = g.querySelector('.ctx-cells');
     if (cells) {
       const N = 10;
-      const txt = (typeof AsciiFX !== 'undefined' && AsciiFX.bar)
-        ? AsciiFX.bar(s.known ? s.pct / 100 : 0, N)
-        : '▯'.repeat(N);
-      if (cells.textContent !== txt) {
+      // TWENTY steps in TEN cells of width: AsciiFX.barCells floors the lit cells and hands back whether
+      // the remainder earns a HALF cell (same glyph, dimmed by .ctx-half). Ten whole cells over a 200k
+      // window meant one notch per 20k tokens — the bar sat on one cell from 5% to 14% and read as stuck.
+      // Driven off s.frac, not the rounded s.pct, so the extra resolution is real and not re-quantised.
+      const frac = s.known ? s.frac : 0;
+      const b = (typeof AsciiFX !== 'undefined' && AsciiFX.barCells)
+        ? AsciiFX.barCells(frac, N)
+        : { full: 0, half: false, off: N };
+      const sig = b.full + (b.half ? '+' : '') + '/' + N;
+      if (cells.dataset.sig !== sig) {
         const prev = parseInt(cells.dataset.on || '0', 10);
-        const on = (txt.split('▮').length - 1);
-        cells.textContent = txt;
-        cells.dataset.on = String(on);
-        if (on > prev) { cells.classList.remove('ctx-tick'); void cells.offsetWidth; cells.classList.add('ctx-tick'); }
+        cells.textContent = '';
+        const put = (cls, txt) => {
+          if (!txt) return;
+          const e = document.createElement('span');
+          if (cls) e.className = cls;
+          e.textContent = txt;
+          cells.appendChild(e);
+        };
+        put('', '▮'.repeat(b.full));
+        put('ctx-half', b.half ? '▮' : '');
+        put('', '▯'.repeat(b.off));
+        cells.dataset.sig = sig;
+        cells.dataset.on = String(b.full);
+        if (b.full > prev) { cells.classList.remove('ctx-tick'); void cells.offsetWidth; cells.classList.add('ctx-tick'); }
       }
     }
     const num = g.querySelector('.ctx-num'); if (num) num.textContent = s.pctLabel;
     const cap = g.querySelector('.ctx-cap'); if (cap) cap.textContent = s.label;
+    // A PROJECTED reading is a real number derived from a real measurement, but it is not itself a
+    // measurement — mark it in the DOM as well as in the "~" labels so the distinction survives for
+    // anything reading this gauge (tests, the self-test station, a future readout).
+    g.dataset.provenance = s.projected ? 'projected' : (s.measured ? 'measured' : 'none');
     // beginner-facing tooltip (UX sweep 2026-07-15): say what the gauge MEANS and what to do when it fills,
-    // not just the raw token fraction.
+    // not just the raw token fraction. The projected wording says plainly that it is an estimate of the NEXT
+    // request rather than a reading of one that happened — the app must never let a derived number read as
+    // a measured one.
     g.title = 'MEMORY OF THIS CHAT — ' + (s.known
-      ? s.label + ' (' + s.pctLabel + ' full). How much of this conversation the model can still hold; when it fills, older turns are folded into a summary automatically.'
+      ? (s.label + ' (' + s.pctLabel + ' full)' +
+         (s.projected
+           ? ', estimated for this chat’s next message from a real measurement of this model. It becomes exact the moment the agent replies.'
+           : ', measured on this chat’s last request.') +
+         ' How much of this conversation the model can still hold; when it fills, older turns are folded into a summary automatically.')
       : (s.limit ? 'measuring… send a message and this fills in' : 'measuring this model’s memory size…'));
   }
   let compactWired = false;

@@ -2546,7 +2546,15 @@ const App = (() => {
     if (typeof StationUI !== 'undefined') {
       StationUI.enter(liveAgents(), {
         totals: () => Harness.totals(),
-        context: () => Harness.contextState(agent ? agent.id : 'agent'),
+        // CONTEXT is a property of the conversation ON SCREEN, not of the primary agent: ask Chat which
+        // workstream is open and hand the gauge that stream's own agent + message array. Binding this to
+        // `agent.id` alone is what made a fresh session inherit the previous chat's fill, and made a crew
+        // member's chat report the overseer's occupancy. Falls back to the old shape if Chat isn't up yet.
+        context: () => {
+          const ref = (typeof Chat !== 'undefined' && Chat.contextRef) ? Chat.contextRef() : null;
+          return ref ? Harness.contextState(ref.agentId, ref.streamId, ref.messages)
+            : Harness.contextState(agent ? agent.id : 'agent');
+        },
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
         config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setApproval: setAgentApproval, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
