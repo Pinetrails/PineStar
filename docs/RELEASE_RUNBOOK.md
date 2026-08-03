@@ -162,6 +162,26 @@ click **Publish release**.
 The moment you publish, GitHub repoints `releases/latest` at v0.2.0, and every client's
 6-hour check loop will start pulling the new `latest.json`.
 
+### 1.8a Source repository release mirror (automatic)
+
+Do **not** create a second release by hand on `androoAGI/starnet`. The
+`sync-source-release` workflow in the source repository checks the dedicated distribution
+repository every 15 minutes (and also supports **Run workflow** for an immediate sync).
+After the distribution release is published it automatically:
+
+1. reads only `starnet-releases/releases/latest` (drafts and prereleases are ineligible),
+2. requires the matching immutable `v<version>` tag to exist in `androoAGI/starnet`,
+3. downloads each human installer and verifies its GitHub SHA-256 digest,
+4. creates the source release as a draft, uploads the byte-identical installers, and only
+   then publishes it as the source repository's **Latest** release, and
+5. re-reads the published source release and proves every asset digest still matches.
+
+The workflow is idempotent: an exact existing mirror is a no-op, and an interrupted draft is
+repaired on the next run. It refuses to rewrite a published release whose assets differ from
+the distribution authority. If the source repository sidebar has not updated after 15 minutes,
+open **Actions → sync-source-release → Run workflow**; a red run is a mirror problem and does
+not change the already-published updater feed.
+
 ### 1.9 Prove the live endpoint is coherent
 
 ```
