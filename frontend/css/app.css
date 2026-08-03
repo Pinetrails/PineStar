@@ -17,14 +17,40 @@
 @keyframes boot-fade { 0%, 100% { opacity: .62; } 50% { opacity: .9; } }
 @media (prefers-reduced-motion: reduce) { .boot-veil { animation: none; } .boot-dots::after { animation: none; } }
 #screen-connect.active { align-items: center; justify-content: center; }
+/* THE CABINET IS HARDWARE — TEXT SIZE is a type dial, not a magnifying glass.
+   body carries the TEXT SIZE zoom (stationui.js applySettings), and it multiplies into every
+   length below, so the whole frame used to swell with the text: at HUGE the crew rail went
+   232→336px and COMMS 360→522px, and the station view — the thing you are actually watching —
+   was squeezed 1279→995px (-29% area). --sn-unzoom is the exact reciprocal, so every CABINET
+   dimension here resolves back to the size it was designed at while the type inside still grows.
+   `1fr` then hands the reclaimed space to the stage automatically. Unset (the 100% default)
+   resolves to 1, i.e. these are the shipped numbers untouched.
+   --chat-w (chatresize.js, the draggable COMMS seam) is written in VISUAL px for the same reason,
+   so a dragged width means the same thing at every text size. */
 #screen-game.active {
   display: grid;
-  grid-template-rows: 64px 1fr 44px;
+  grid-template-rows: calc(64px * var(--cz)) 1fr calc(44px * var(--cz));
   /* COMMS width is a live var so the user can drag the stage/COMMS divider (chatresize.js) */
-  grid-template-columns: 232px 1fr var(--chat-w, 360px);
+  grid-template-columns: calc(232px * var(--cz)) 1fr calc(var(--chat-w, 360px) * var(--cz));
   grid-template-areas: "top top top" "left center chat" "bot bot bot";
-  padding: 11px; gap: 9px;
+  padding: calc(11px * var(--cz)); gap: calc(9px * var(--cz));
 }
+/* The cabinet BLOCKS whose whole content is hardware — the instrument bar, the dock, and the two
+   molded nameplates with their engraved labels. Their boxes are now fixed by the grid above, so
+   their contents have to come back to 1:1 too or they overflow a box that no longer grew with
+   them. One declaration each resets a whole subtree, which is why this is a `zoom` and not a
+   per-property counter-scale. #logo is a <body> child (hoisted over the CRT glass) rather than a
+   topbar descendant, so it needs its own — app.js positionLogo() measures the effective ratio off
+   the element, so it follows this either way.
+   `.ws-head` (SESSIONS / PROJECTS / + NEW) is here too, and that was measured rather than assumed:
+   it is a control strip, so the first pass let it scale with the type — and in a rail that no
+   longer widens, 45% bigger tabs ran straight off the edge and clipped "+ NEW". A view switcher
+   that loses a button is worse than one that stays the size it was drawn at, so it is furniture.
+   `--cz: 1` because these subtrees are already at 1:1: it keeps `calc(<designed>px * var(--cz))`
+   (style.css `body`) correct on BOTH sides of the counter-zoom line, so shared rules like the
+   panel bezel radius need no fork. */
+#topbar, #bottombar, #logo,
+#left > h3, #chat-panel > h3, .ws-head { zoom: var(--sn-unzoom, 1); --cz: 1; }
 .hidden { display: none !important; }
 
 /* visually-hidden but exposed to assistive tech (screen-reader-only live regions / labels) */
@@ -402,9 +428,11 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
   --tube-inset: 40px;     /* the wrap's inner edge shadow (was 60px) */
 }
 #stage-wrap {
-  flex: 1; position: relative; min-width: 0; border-radius: 9px; overflow: hidden;
+  /* radius + the phosphor ring are the tube's CASING — hardware, so they hold their drawn size at
+     every TEXT SIZE (see the --cz note on `body` in style.css). */
+  flex: 1; position: relative; min-width: 0; border-radius: calc(9px * var(--cz)); overflow: hidden;
   background: var(--bg);
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 var(--tube-inset) rgba(0,0,0,.9);
+  box-shadow: 0 0 0 calc(2px * var(--cz)) var(--ph), 0 0 0 calc(3.5px * var(--cz)) rgba(0,0,0,.9), inset 0 0 var(--tube-inset) rgba(0,0,0,.9);
 }
 /* the live feed graded into the terminal (warms/tints the world so it reads as a
    security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
@@ -459,9 +487,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* chat panel */
 #chat-panel {
-  flex: 0 0 360px; display: flex; flex-direction: column; min-height: 0; border-radius: 9px;
+  flex: 0 0 360px; display: flex; flex-direction: column; min-height: 0; border-radius: calc(9px * var(--cz));
   background: var(--panel);
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 40px rgba(0,0,0,.8);
+  box-shadow: 0 0 0 calc(2px * var(--cz)) var(--ph), 0 0 0 calc(3.5px * var(--cz)) rgba(0,0,0,.9), inset 0 0 40px rgba(0,0,0,.8);
   isolation: isolate;
 }
 #chat-panel h3 {
