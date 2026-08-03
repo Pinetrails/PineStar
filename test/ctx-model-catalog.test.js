@@ -37,8 +37,13 @@ function fnRegion(label, startMarker) {
 
 // the catalog STATE declaration — `let modelMap = {}` before the fix, `modelsByProv` + catalogModel after.
 // Anchored on two markers present in both versions so the revert fails on behaviour, not on a slice miss.
+// The CLOSING anchor is whichever comment opens the context-occupancy state that follows the catalog
+// state. That comment was rewritten when occupancy moved from per-agent to per-conversation keying
+// (2026-08-03), so both spellings are accepted: the newer one first, the pre-2026-08-03 one as fallback,
+// which keeps this test red against 1fa14b35^1 exactly as it was verified to be.
 const stateStart = source.indexOf('  let totals = { tokens: 0, cost: 0, calls: 0 };');
-const stateEnd = source.indexOf('  // Per-agent context-window occupancy');
+const OCCUPANCY_ANCHORS = ['  /* CONTEXT OCCUPANCY IS PER CONVERSATION', '  // Per-agent context-window occupancy'];
+const stateEnd = OCCUPANCY_ANCHORS.map(a => source.indexOf(a)).find(i => i >= 0);
 A.ok(stateStart >= 0 && stateEnd > stateStart, 'the catalog state region can be isolated from harness.js');
 const stateRegion = source.slice(stateStart, stateEnd);
 

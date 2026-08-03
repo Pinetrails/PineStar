@@ -353,6 +353,7 @@ test/chat-linkify.test.js
 test/mint.test.js
 test/ctxgauge.test.js
 test/ctx-model-catalog.test.js
+test/ctx-conversation-scope.test.js
 test/floorstats.test.js
 test/insights.test.js
 test/slaglog.test.js
