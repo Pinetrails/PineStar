@@ -33,8 +33,26 @@ const CHECK = process.argv.includes('--check');
 
 // Paths (relative to website/, POSIX separators) that exist in the repo but must NOT be published.
 const HELD_BACK = new Set([
-  'pricing.html'
+  'pricing.html',
+  // The no-credits legal variants below are sources for SUBSTITUTIONS, never pages of their own.
+  'legal/_terms.nocredits.html',
+  'legal/_privacy.nocredits.html'
 ]);
+
+/* Holding pricing back is not only about the pricing page: terms.html clause 2 and privacy.html
+   both describe the paid StarNet Credits program, and the terms cite the pricing page as forming
+   part of them. Publishing that while the page itself is hidden would announce a paid tier nobody
+   can read the price of, via a citation that resolves to the homepage.
+   So the staged copies swap in variants carrying the wording ALREADY PUBLISHED on starnetos.com —
+   no legal language invented for the hold. The repo keeps the full Credits versions, and the day
+   pricing ships you delete these three entries and the real files publish untouched. */
+const SUBSTITUTIONS = {
+  'legal/terms.html': 'legal/_terms.nocredits.html',
+  'legal/privacy.html': 'legal/_privacy.nocredits.html'
+};
+
+// Anything the staged legal pages must not contain while the paid tier is unannounced.
+const CREDITS_WORDS = /credit|stripe|gateway|billing|subscription/i;
 
 const PROJECT = 'starnet-site';
 
@@ -66,11 +84,36 @@ if (CHECK) {
   process.exit(0);
 }
 
+// A substitution whose source vanished would silently publish the full-credits original.
+for (const [target, source] of Object.entries(SUBSTITUTIONS)) {
+  if (!all.includes(source)) {
+    console.error('SUBSTITUTIONS points at a missing file: ' + source + ' (for ' + target + ')');
+    process.exit(1);
+  }
+  if (!all.includes(target)) {
+    console.error('SUBSTITUTIONS names a target that no longer exists: ' + target);
+    process.exit(1);
+  }
+}
+
 if (existsSync(OUT)) rmSync(OUT, { recursive: true });
 for (const rel of shipping) {
   const dest = join(OUT, rel.split('/').join(sep));
+  const from = SUBSTITUTIONS[rel] || rel;
   mkdirSync(dirname(dest), { recursive: true });
-  copyFileSync(join(SRC, rel.split('/').join(sep)), dest);
+  copyFileSync(join(SRC, from.split('/').join(sep)), dest);
+  if (SUBSTITUTIONS[rel]) console.log('substituted: ' + rel + ' <- ' + from);
+}
+
+/* Prove the swap actually removed what it exists to remove, on the bytes that will be uploaded —
+   not on the source we believed we copied. */
+for (const rel of Object.keys(SUBSTITUTIONS)) {
+  const staged = readFileSync(join(OUT, rel.split('/').join(sep)), 'utf8');
+  const hit = staged.match(CREDITS_WORDS);
+  if (hit) {
+    console.error('staged ' + rel + ' still mentions "' + hit[0] + '" — refusing to deploy.');
+    process.exit(1);
+  }
 }
 
 /* The sitemap is the one file that can leak a held-back page even though the page itself never
