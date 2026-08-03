@@ -1,5 +1,26 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-02 - v0.9.0 RELIABILITY PROOF PLAN (`agent/release-090-parity-plan`)
+
+PLAN READY FOR REVIEW. v0.9.0 is reframed around the actual field signal: model output has
+performed exceptionally, while roughly 95% of reported problems concern harness behavior. The
+release therefore freezes feature accumulation and attacks lost, duplicated, stranded,
+misrouted, unrecoverable, or falsely reported work. The executable plan lives at
+[`docs/PLAN_v0.9.0.md`](PLAN_v0.9.0.md).
+
+The sequence is: freeze a finite claim contract and Hermes v0.19.1 comparator; extend the existing
+evaluation format into a candidate-bound fault/concurrency/credential/persistence gauntlet; run a
+32-scenario same-model shared workload pack; finish replayable onboarding and glossary deployment;
+classify all remaining P2 evidence; then freeze one signed installed candidate for W0-W7, five
+beginner journeys, and a 48-hour soak. v1.0.0 becomes a promotion of that proven v0.9 contract after
+a seven-day field window and ten clean installs, with no new feature wave.
+
+DONE means the exact installed candidate has 100% critical recovery/security/delivery success,
+at least 95% shared-workload success within five points of the frozen reference, zero P0/P1 and
+zero unclassified P2 findings, measured performance/cost, coherent public release surfaces, READY,
+and the required product-perfect wave receipts. No code, merge, push, publication, external message,
+credential, or production-data change is part of this planning lane.
+
 ## 2026-08-02 — RECOMMENDATION FABRIC 1–5 (MERGED)
 
 MERGED to `feat/harness-backend` at `68cc7af7`; the release surface was re-locked at `c8397e1f`.
