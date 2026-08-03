@@ -1242,18 +1242,32 @@ const Chat = (() => {
      it cannot outlive the desk it asks for, and cannot assert a floor state the station can't prove.
      Anti-nag: it is one system line + the chip row that answers it, in the session that owes the desk, and it is
      silent while that stream is mid-run (the run owns its own DOM; the prompt returns on the next open). */
+  // REFIT can satisfy the prompt while this stream remains open. Its text is a derived floor claim, not history,
+  // so retire both of its DOM rows as soon as the live floor proves the desk now exists. Keep every unrelated
+  // system/choice row intact; a broad clearChoices() here would erase whichever real question owns COMMS.
+  function retireDeskPrompt() {
+    if (!log || !activeWs || typeof App === 'undefined' || !App.needsWorkstation) return false;
+    const rows = Array.from(log.querySelectorAll('.comms-desk-prompt'));
+    if (!rows.length || App.needsWorkstation(activeWs.agentId || 'agent')) return false;
+    for (const r of rows) { activeChoiceRows.delete(r); r.remove(); }
+    maybeEmptyState();   // the desk prompt can be the empty stream's only content; restore its normal starter state
+    return true;
+  }
   function maybeDeskPrompt() {
     if (!log || interview || !activeWs || isBusy()) return;
     const id = activeWs.agentId || 'agent';
     if (typeof App === 'undefined' || !App.needsWorkstation || !App.needsWorkstation(id)) return;
     const who = (App.agentName && App.agentName(id)) || name;
-    localLine(who + ' has nowhere to sit yet — it needs a desk of its own before it can take floor work. want to place one?');
+    const prompt = row('system'); prompt.d.classList.add('comms-desk-prompt');
+    prompt.body.textContent = who + ' has nowhere to sit yet — it needs a desk of its own before it can take floor work. want to place one?';
+    autoscroll();
     // the chip is the whole point: it opens REFIT already armed on the WORKSTATIONS palette, so the next floor
     // click drops the desk. 'later' just dismisses this view of it — the step is still owed, so the next open
     // of this session says so again (it stops for good the moment the desk exists).
-    choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
+    const chips = choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
       if (item && item.value === 'desk' && App.openDeskPlacement) App.openDeskPlacement();
     });
+    if (chips) chips.classList.add('comms-desk-prompt');
   }
 
   // opts.live === true marks the streaming reply row, which always pins to the BOTTOM. Every other row (tool
@@ -7665,5 +7679,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus, askBudgetSpent, spendAsk };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, retireDeskPrompt, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus, askBudgetSpent, spendAsk };
 })();

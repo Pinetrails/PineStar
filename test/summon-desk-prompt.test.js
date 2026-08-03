@@ -11,6 +11,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const A = require('./_assert.js');
 
 const app = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
@@ -47,6 +48,40 @@ A.ok(/if \(!log \|\| interview \|\| !activeWs \|\| isBusy\(\)\) return/.test(bea
   'silent only while that stream is mid-run or awakening — it returns on the next open');
 A.ok(!/beatBusy\(\)/.test(beat[0]),
   'a live beat elsewhere can no longer swallow the required step (the old one-shot line was dropped, never queued)');
+
+/* ---- satisfying the step retires its live claim without reloading COMMS ---- */
+A.ok(/prompt\.d\.classList\.add\('comms-desk-prompt'\)/.test(beat[0])
+  && /chips\.classList\.add\('comms-desk-prompt'\)/.test(beat[0]),
+  'the derived line and its chips are tagged together so floor reconciliation cannot touch unrelated COMMS rows');
+const retire = /function retireDeskPrompt\(\)[\s\S]{0,900}?\n  \}/.exec(chat);
+A.ok(retire, 'chat.js owns a bounded retireDeskPrompt reconciliation');
+A.ok(/onClose:[\s\S]{0,160}Chat\.retireDeskPrompt\(\)/.test(app),
+  'finishing REFIT reconciles the still-open transcript after the floor mutation commits');
+function fakeRow() {
+  return { removed: false, remove() { this.removed = true; } };
+}
+const line = fakeRow(), chips = fakeRow(), unrelated = fakeRow();
+const activeChoiceRows = new Set([chips, unrelated]);
+let emptyRestores = 0;
+const removed = vm.runInNewContext('(' + retire[0] + ')()', {
+  log: { querySelectorAll: sel => sel === '.comms-desk-prompt' ? [line, chips] : [] },
+  activeWs: { agentId: 'strategist' }, App: { needsWorkstation: () => false }, activeChoiceRows, Array,
+  maybeEmptyState: () => { emptyRestores++; }
+});
+A.eq(removed, true, 'a newly proven workstation retires the stale derived prompt');
+A.ok(line.removed && chips.removed, 'both stale prompt rows leave the open transcript');
+A.ok(!activeChoiceRows.has(chips) && activeChoiceRows.has(unrelated) && !unrelated.removed,
+  'retirement cleans its tracked chip row while preserving every unrelated question');
+A.eq(emptyRestores, 1, 'an empty specialist stream regains its normal starter state instead of becoming blank');
+const stillLine = fakeRow(), stillChips = fakeRow();
+const stillChoices = new Set([stillChips]);
+const kept = vm.runInNewContext('(' + retire[0] + ')()', {
+  log: { querySelectorAll: () => [stillLine, stillChips] }, activeWs: { agentId: 'strategist' },
+  App: { needsWorkstation: () => true }, activeChoiceRows: stillChoices, Array, maybeEmptyState: () => {}
+});
+A.eq(kept, false, 'a specialist that still lacks a workstation keeps the required prompt');
+A.ok(!stillLine.removed && !stillChips.removed && stillChoices.has(stillChips),
+  'the missing-desk path leaves its line and action intact');
 
 /* ---- and summonAgent no longer keeps a second, weaker copy of it ---- */
 A.ok(!/Chat\.localLine\([\s\S]{0,120}nowhere to sit/.test(app),

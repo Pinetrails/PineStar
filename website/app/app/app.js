@@ -2585,7 +2585,10 @@ const App = (() => {
       // agents: the live multi-agent roster the BAY agent-picker / builder offer. The bay->agent binding
       // persists via station.serialize (prop.agentId round-trips), so the routing floor is saved per agent.
       Build.init({ getStation: () => station, persist: persist, world: World,
-        agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })) });
+        agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })),
+        // A workstation can be placed while its owning COMMS stream stays open. Reconcile the derived
+        // "nowhere to sit" row after REFIT commits so the transcript cannot outlive the floor truth.
+        onClose: () => { if (typeof Chat !== 'undefined' && Chat.retireDeskPrompt) Chat.retireDeskPrompt(); } });
       const bbBuild = el('bb-build');
       if (bbBuild) {
         let seenBuild = false; try { seenBuild = !!localStorage.getItem('starnet.refit.seen'); } catch (e) {}
