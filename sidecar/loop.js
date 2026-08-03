@@ -800,7 +800,10 @@
         // fallback class (overloaded/server_error) with an EMPTY or exhausted chain — every single-provider
         // station, e.g. ChatGPT-login codex — fell straight to fatal on the first blip. The chain-exhausted
         // case the comment always promised is now real.
-        if (!signal.aborted && cls.retryable && (!cls.shouldFallback || fbIndex >= fallbacks.length) && retriesUsed < MAX_STREAM_RETRIES) {
+        // Adapters mark a fully exhausted pre-stream ladder. Re-running that ladder here multiplied one outage
+        // into 15 requests; only errors from a stream that actually started belong to this recovery budget.
+        if (!signal.aborted && !streamErr.preStreamRetriesExhausted && cls.retryable
+            && (!cls.shouldFallback || fbIndex >= fallbacks.length) && retriesUsed < MAX_STREAM_RETRIES) {
           retriesUsed++;
           // NOTE: no provider.fallback emit here — a same-provider retry is NOT a failover; emitting it would
           // inflate the floor's failover counter and lie about a model/credential switch that didn't happen

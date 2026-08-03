@@ -104,14 +104,29 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'hi', 'after retry it streams normally');
   }
 
+  // G2. When all pre-stream attempts fail, the adapter marks its own retry ladder exhausted. The loop uses
+  //     this provenance to avoid multiplying these three POSTs into fifteen indistinguishable POSTs.
+  {
+    let calls = 0, caught;
+    const down = async (url) => {
+      if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      calls++;
+      return new Response('{"error":{"message":"controlled outage"}}', { status: 503 });
+    };
+    try { await collect(makeOpenRouterProvider({ fetch: down, key: 'k' }), { model: 'm', messages: [] }); } catch (e) { caught = e; }
+    A.eq(calls, 3, 'an immediate 503 is attempted exactly three times inside the adapter');
+    A.ok(caught && caught.preStreamRetriesExhausted === true, 'the terminal adapter error records exhausted pre-stream retries');
+  }
+
   // H. a non-transient 400 fails fast with NO retry (again counting only the chat POST, not the /models re-warm)
   {
     let calls = 0;
     const bad = async (url) => { if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 }); calls++; return new Response('{"error":{"message":"bad request"}}', { status: 400 }); };
     const p = makeOpenRouterProvider({ fetch: bad, key: 'k' });
-    let threw = false;
-    try { await collect(p, { model: 'm', messages: [] }); } catch (e) { threw = /400/.test(e.message); }
+    let threw = false, caught;
+    try { await collect(p, { model: 'm', messages: [] }); } catch (e) { caught = e; threw = /400/.test(e.message); }
     A.ok(threw && calls === 1, 'a 400 fails fast with no retry');
+    A.eq(caught.preStreamRetriesExhausted, undefined, 'a fail-fast 400 never claims a retry ladder was exhausted');
   }
 
   // I. supportsTools reflects the warmed catalog; unknown -> null (never a false refusal)

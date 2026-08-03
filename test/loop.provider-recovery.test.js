@@ -56,6 +56,21 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
     A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'a timeout error is transient');
   }
 
+  // (2a-adapter-bound) provider adapters own a separate PRE-STREAM retry ladder. Once an adapter marks that
+  //     ladder exhausted, the loop must surface the failure instead of multiplying the adapter's attempts by
+  //     its own five-round stream-recovery ladder. Unmarked mid-stream timeouts above still retry unchanged.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const exhausted = timeoutErr();
+    exhausted.preStreamRetriesExhausted = true;
+    const provider = scriptedProvider(async function* () { attempt++; throw exhausted; yield; });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(attempt, 1, 'an exhausted adapter ladder is not retried again by the loop');
+    A.eq(res.reason, 'error', 'the exhausted pre-stream failure ends honestly');
+    A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'the prompt failure remains classified as transient');
+  }
+
   // (2a-exhausted-chain) an OVERLOADED provider with NO failover chain (every single-provider station,
   //     e.g. ChatGPT-login codex) gets the same-provider retries the A2 comment always promised. This was
   //     the field failure behind "servers overloaded" runs dying at ~2s: retryable+shouldFallback with an
