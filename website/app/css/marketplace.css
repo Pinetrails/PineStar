@@ -390,9 +390,14 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-foot .reg { display: flex; align-items: center; gap: 8px; }
 .mkt-foot .reg .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 7px var(--ok); }
 
-/* the bay reuses the global .bb button; .sm is a compact variant local to the bay */
-.mkt .bb.sm { font-family: inherit; font-size: 11.5px; padding: 5px 10px; letter-spacing: .5px; cursor: pointer;
-  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; }
+/* the bay reuses the global .bb button; .sm is a compact variant local to the bay.
+   METRICS ONLY. It used to re-declare `background: var(--panel2)` + `border-radius: 2px`, which
+   (higher specificity, later sheet) held the bay's ~34 keys flat and square-cornered after the
+   global .bb.sm gained the console's molded-keycap material — one control family wearing two
+   different surfaces in the same product. Dropping those two lines is the whole fix; the padding
+   grew to hold the box height now that the shared rule sets line-height:1. */
+.mkt .bb.sm { font-family: inherit; font-size: 11.5px; padding: 7px 11px; letter-spacing: .5px; cursor: pointer;
+  color: var(--ph); border: 1px solid var(--ph-dim); }
 .mkt .bb.sm:hover { color: var(--ph-bright); border-color: var(--ph); }
 .mkt .bb.sm.danger:hover { color: var(--bad); border-color: var(--bad); }
 .mkt-do-save, .mkt-do-recipe-save, .mkt-do-launch { color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
