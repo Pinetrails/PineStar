@@ -121,6 +121,7 @@ test/t0-clean-install.test.js
 test/desktop-workspace-migration.test.js
 test/t1-signing.test.js
 test/t2-state-safety.test.js
+test/upgrade-085-090.test.js
 test/t3-release-smoke.test.js
 test/t4-update-delivery.test.js
 test/t5-public-distribution.test.js

@@ -8,7 +8,11 @@ const Save = (() => {
   const PRE_MIGRATE_BACKUP_KEY = 'starnet.save.pre-migrate.backup';
   const LEGACY_SCHEMA = 'skynet.save';   // Skynet→StarNet rename: saves written before the rename carry this schema tag (the
   const SCHEMA = 'starnet.save';         // legacymigrate boot pass copies the OLD `skynet.save` localStorage KEY forward; load() still accepts the old TAG inside the value).
-  const CURRENT = 5;
+  // v6 belongs to the 0.9 line. v0.8.5 shipped save v5 and its Workstreams normalizer does not know the
+  // candidate's persisted `titleStrong` provenance bit. Reusing v5 let a manual rollback accept the newer save,
+  // silently strip that bit on persist, and make a re-upgraded session eligible for another automatic rename.
+  // Advancing the envelope makes the already-shipped forward-version guard refuse that destructive downgrade.
+  const CURRENT = 6;
 
   // forward-only migrations: { fromVersion: (doc) => upgradedDoc }
   const migrations = {
@@ -43,6 +47,19 @@ const Save = (() => {
     // to keep save.js decoupled from dossier.js load order.
     4: doc => {
       if (!doc.dossier || typeof doc.dossier !== 'object') doc.dossier = { v: 1, dims: { identity: [], stack: [], goals: [], style: [], standing_orders: [], pain: [], ambition: [] }, seededFrom: {}, updatedAt: 0 };
+      return doc;
+    },
+    // v5 -> v6 (0.9 session-title provenance): make the new persisted bit explicit. A v0.8.5 session has no
+    // proof that its current automatic title was derived from substantive content, so false is the only honest
+    // default. Everything else stays in place; unknown fields remain untouched.
+    5: doc => {
+      if (Array.isArray(doc.workstreams)) {
+        for (const stream of doc.workstreams) {
+          if (stream && typeof stream === 'object' && !Object.prototype.hasOwnProperty.call(stream, 'titleStrong')) {
+            stream.titleStrong = false;
+          }
+        }
+      }
       return doc;
     }
   };
