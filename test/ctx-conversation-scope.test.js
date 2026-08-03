@@ -122,8 +122,8 @@ A.eq(settled.measured, true, 'that settled number is a real measurement of exact
       honest calibration, so that is what the map holds. */
 const overheads = api.overheads();
 const key = 'agent' + String.fromCharCode(0) + 'model-a';
-A.eq(overheads[key], 13200 - CtxGauge.estimateMessages(CHAT_A), 'the overhead comes from a FIRST turn, never a tool-heavy later one');
-A.ok(overheads[key] < 20000, 'the 61k tool-result turn never became the overhead');
+A.eq(overheads[key].overhead, 13200 - CtxGauge.estimateMessages(CHAT_A), 'the overhead comes from a FIRST turn, never a tool-heavy later one');
+A.ok(overheads[key].overhead < 20000, 'the 61k tool-result turn never became the overhead');
 
 /* 7. growth is visible without waiting for a reply: adding to the transcript moves the projection. */
 const grown = CHAT_A.concat([msg('user', 40000)]);            // a big paste
@@ -143,6 +143,25 @@ A.ok(api.contextState('agent', 'ws_A', CHAT_A).used > 1000, 'an internal side-ru
 api.foldContextCost({ agentId: 'agent', runId: 'run-cron', model: 'model-a', tokensIn: 90000 });
 A.ok(api.contextState('agent', 'ws_A', CHAT_A).used < 20000, 'a background run does not repaint the open chat');
 A.eq(api.peek()['agent' + String.fromCharCode(0) + ''].used, 90000, 'it is still recorded, under the streamless bucket');
+
+/* 9b. ⛔ THE SECOND DEFECT, found walking this live on 2026-08-03. A measurement can land BELOW the
+       transcript we sent, because the sidecar folded older turns away before sending (context.js
+       compacts at 0.65 of the window). The first fix here treated that as "char/4 overshoots" and
+       learned a per-model shrink factor from it, which showed ~120k against a real ~30k prompt and
+       would have understated every OTHER chat on that model. A compacted run is a fact about ONE
+       conversation, so it stays inside that conversation. */
+const LONG = [{ role: 'user', content: 'A'.repeat(480000) }];   // char/4 says ~120k; the sidecar compacted to 30k
+api.registerRun('run-rep', 'agent2', 'ws_R', LONG);
+api.foldContextCost({ agentId: 'agent2', runId: 'run-rep', model: 'model-a', tokensIn: 30000 });
+api.endContextRun({ runId: 'run-rep' });
+A.eq(api.contextState('agent2', 'ws_R', LONG).used, 30000,
+  'the compacted chat reads back its MEASURED 30k, not the 120k transcript we handed over');
+const grownAfterCompact = api.contextState('agent2', 'ws_R', LONG.concat([msg('user', 4000)]));
+A.eq(grownAfterCompact.used, 30000 + 1000 + 4, 'it grows from its own baseline — the compacted history is not re-added');
+A.ok(!api.overheads()['agent2' + String.fromCharCode(0) + 'model-a'],
+  'and a compacted run NEVER becomes a per-model overhead that would poison other conversations');
+A.eq(api.contextState('agent2', 'ws_OTHER', CHAT_A).projected, false,
+  'so a different chat by that agent projects nothing rather than inheriting a compaction artefact');
 
 /* 10. the calibration SURVIVES A RELOAD. It is the difference between a gauge that works and one that
        goes blank every refresh until you pay for another turn — which is most of what "it never works"

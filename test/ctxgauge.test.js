@@ -4,7 +4,7 @@
    shows "calibrating" instead of a made-up fill. */
 'use strict';
 const A = require('./_assert.js');
-const { compute, fmtTokens, estimateTokens, estimateMessages, calibrateOverhead, project, WARN, CRIT, MSG_OVERHEAD } = require('../frontend/app/ctxgauge.js');
+const { compute, fmtTokens, estimateTokens, estimateMessages, calibrate, calibrateFromEstimate, projectFrom, projectFromBaseline, WARN, CRIT, MSG_OVERHEAD } = require('../frontend/app/ctxgauge.js');
 const { makeContext } = require('../sidecar/context.js');
 
 // ---- fmtTokens: compact, deterministic human counts ----
@@ -82,13 +82,33 @@ A.eq(estimateMessages([{ role: 'user', content: '' }]), MSG_OVERHEAD, 'an empty 
 A.eq(estimateMessages(null), 0, 'a missing array estimates as 0, never a throw');
 A.ok(estimateMessages(SAMPLE) > 2000, 'tool-call ARGUMENTS are counted (a written file body is the biggest thing on the wire)');
 
-// ---- calibration: overhead = a REAL prompt_tokens minus our estimate of what we sent ----
+/* ---- calibration: a straight line fitted through ONE real prompt_tokens reading ---- */
 const sentEst = estimateMessages(SAMPLE);
-A.eq(calibrateOverhead(sentEst + 12000, SAMPLE), 12000, 'overhead is the measured excess over the dialogue we sent');
-A.eq(calibrateOverhead(5, SAMPLE), 0, 'an estimate above the measurement clamps to 0 — never a negative overhead');
-A.eq(calibrateOverhead(0, SAMPLE), 0, 'no measurement, no calibration');
-A.eq(project(12000, SAMPLE), 12000 + sentEst, 'a projection is the learned overhead plus this transcript');
-A.eq(project(12000, []), 12000, 'an EMPTY chat still costs the harness overhead — that is the honest floor');
+
+// OFFSET case (the usual one): char/4 undershoots because it cannot see the harness's own payload.
+const off = calibrate(sentEst + 12000, SAMPLE);
+A.eq(off.overhead, 12000, 'overhead is the measured excess over the dialogue we sent');
+A.eq(projectFrom(off, SAMPLE), sentEst + 12000, 'the fit reproduces the measurement it was taken from');
+A.eq(projectFrom(off, []), 12000, 'an EMPTY chat still costs the harness overhead — that is the honest floor');
+
+/* ⛔ COMPACTION case — found walking this live on 2026-08-03. A measurement can come in BELOW the
+   transcript we sent, because the sidecar folds older turns away before sending (context.js compacts at
+   0.65 of the window). That says nothing about the MODEL's overhead, so it must not be learned as one:
+   a per-model figure fitted from a compacted run would understate every other chat on that model. */
+A.eq(calibrate(Math.round(sentEst / 4), SAMPLE), null, 'a measurement below the transcript teaches nothing about the model');
+A.eq(calibrateFromEstimate(100, 5000), null, 'the pre-estimated form refuses the same case');
+A.eq(calibrate(0, SAMPLE), null, 'no measurement, no calibration — never a fabricated fit');
+A.eq(projectFrom(null, SAMPLE), 0, 'projecting without a calibration yields nothing, not a guess');
+A.eq(calibrateFromEstimate(sentEst + 12000, sentEst).overhead, 12000, 'the pre-estimated form fits identically');
+
+/* …that compacted conversation is covered by its OWN baseline instead: start from the real reading of
+   this exact transcript and add only what has been said since. It carries this chat's real overhead
+   and whatever was compacted away, so neither gets re-guessed. */
+A.eq(projectFromBaseline(30000, sentEst, SAMPLE), 30000, 'an unchanged transcript projects back to its own measurement');
+A.eq(projectFromBaseline(30000, sentEst, SAMPLE.concat([{ role: 'user', content: 'z'.repeat(4000) }])),
+  30000 + 1000 + MSG_OVERHEAD, 'growth since the measurement is added, and only the growth');
+A.eq(projectFromBaseline(30000, sentEst, []), Math.max(0, 30000 - sentEst), 'a shrunken transcript projects downward');
+A.eq(projectFromBaseline(500, 100000, SAMPLE), 0, 'and can never go negative');
 
 /* ---- projected readings: a fill may be asserted, but it must never pass as a measurement ---- */
 const proj = compute(20000, 200000, { measured: false, projected: true });

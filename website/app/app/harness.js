@@ -55,18 +55,26 @@ const Harness = (() => {
      self-corrects on first use rather than persisting a lie. */
   const LS_OVERHEAD = 'starnet.ctx.overhead';
   const OVERHEAD_MAX = 40;   // bounded: a few models per provider, never an unbounded localStorage row
+  // Each entry is CtxGauge.calibrate's { overhead } fit. A stored entry that is not a usable fit is
+  // DROPPED, not coerced — a half-read calibration would silently bias every projection it feeds.
   let overheadByModel = (() => {
+    const out = Object.create(null);
     try {
       const raw = JSON.parse(localStorage.getItem(LS_OVERHEAD) || '{}');
-      const out = Object.create(null);
       if (raw && typeof raw === 'object') {
-        for (const k in raw) { const v = Number(raw[k]); if (isFinite(v) && v >= 0) out[k] = Math.floor(v); }
+        for (const k in raw) {
+          const v = raw[k];
+          if (!v || typeof v !== 'object') continue;
+          const o = Number(v.overhead);
+          if (isFinite(o) && o >= 0) out[k] = { overhead: Math.floor(o) };
+        }
       }
-      return out;
-    } catch (_) { return Object.create(null); }
+    } catch (_) {}
+    return out;
   })();
-  function rememberOverhead(key, tokens) {
-    overheadByModel[key] = tokens;
+  function rememberOverhead(key, cal) {
+    if (!cal) return;
+    overheadByModel[key] = cal;
     try {
       const keys = Object.keys(overheadByModel);
       if (keys.length > OVERHEAD_MAX) { for (const k of keys.slice(0, keys.length - OVERHEAD_MAX)) delete overheadByModel[k]; }
@@ -113,7 +121,7 @@ const Harness = (() => {
        instead would have inflated the overhead ~4x and every projection with it. */
     const firstOfRun = !!(reg && !reg.seen);
     if (reg) reg.seen = true;
-    if (firstOfRun && m && hasEst()) rememberOverhead(reg.agentId + SEP + m, Math.max(0, payload.tokensIn - reg.sentEstimate));
+    if (firstOfRun && m && hasEst()) rememberOverhead(reg.agentId + SEP + m, CtxGauge.calibrateFromEstimate(payload.tokensIn, reg.sentEstimate));
     const prev = contextByKey[key];
     const baseline = firstOfRun ? payload.tokensIn
       : ((prev && prev.runId === (payload.runId || '')) ? prev.baseline : 0);
@@ -482,16 +490,22 @@ const Harness = (() => {
     if (hasRec && rec.live) return Object.assign(base, { used: rec.used, measured: true, projected: false });
 
     const est = Array.isArray(messages) ? estOf(messages) : null;
-    // 3-before-2: this transcript was itself measured (a run's FIRST turn carried exactly these
-    // messages) and nothing has been added since — an exact reading beats projecting the same thing.
+    // 2. this transcript was itself measured (a run's FIRST turn carried exactly these messages) and
+    //    nothing has been added since — an exact reading beats projecting the same thing.
     if (hasRec && rec.baseline > 0 && est !== null && est === rec.sentEstimate) {
       return Object.assign(base, { used: rec.baseline, measured: true, projected: false });
     }
     if (hasRec && est === null) return Object.assign(base, { used: rec.used, measured: true, projected: false });   // caller passed no transcript
-    // 2. project the NEXT request from a real, measured overhead for this agent+model
-    const overhead = overheadByModel[aid + SEP + model];
-    if (est !== null && typeof overhead === 'number') {
-      return Object.assign(base, { used: overhead + est, measured: false, projected: true });
+    // 3. this conversation HAS a measurement, just not of its current shape: grow from its own
+    //    baseline. Better than the model-level fit because that baseline already contains this chat's
+    //    real overhead AND anything the sidecar compacted away — neither has to be re-guessed.
+    if (hasRec && rec.baseline > 0 && est !== null && hasEst()) {
+      return Object.assign(base, { used: CtxGauge.projectFromBaseline(rec.baseline, rec.sentEstimate, messages), measured: false, projected: true });
+    }
+    // 4. never measured here — fall back to the model's learned overhead plus this transcript
+    const cal = overheadByModel[aid + SEP + model];
+    if (est !== null && cal && hasEst()) {
+      return Object.assign(base, { used: CtxGauge.projectFrom(cal, messages), measured: false, projected: true });
     }
     if (hasRec) return Object.assign(base, { used: rec.used, measured: true, projected: false });
     return Object.assign(base, { used: 0, measured: false, projected: false });

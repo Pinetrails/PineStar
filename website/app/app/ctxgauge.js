@@ -83,29 +83,51 @@
     return t;
   }
 
-  /* CALIBRATION — the one number that makes a projection honest.
+  /* CALIBRATION — what makes a projection honest instead of invented.
 
      A request costs far more than the visible dialogue: the system prompt, every tool schema, and the
      sidecar's own dressing (manual / capabilities / skills / memory) ride along. On this station that
      overhead measured ~13k tokens against a two-line chat, so a browser-side estimate of the dialogue
      alone understates the truth by an order of magnitude and is worse than useless.
 
-     But the overhead is directly observable: it is the real prompt_tokens of a request MINUS our own
-     estimate of the messages we sent in it. Learn it once from a measured turn and every later
-     projection for that model is anchored to a real reading rather than invented.
+     It is directly observable, though: a request's real prompt_tokens MINUS our own estimate of the
+     messages we put in it. That is a genuine per-model constant (the same system prompt and the same
+     tool schemas ride every request), which is what makes it safe to remember and reuse.
 
-     Returns 0 (not a negative) if the estimate somehow exceeded the measurement — a projection must
-     never be able to shrink below the dialogue it already knows about. */
-  function calibrateOverhead(measuredTokensIn, sentMessages) {
+     ⛔ Only fit it when the estimate came in AT OR BELOW the measurement. A measurement smaller than
+     the transcript we sent does NOT mean the model's overhead is small — it means the sidecar folded
+     older turns away before sending (context.js compacts at 0.65 of the window). That is a property of
+     ONE long conversation, not of the model, and baking it into a per-model figure would understate
+     every other chat on that model. Learn nothing from those and keep the last good fit; the
+     conversation that was compacted is covered by its own baseline instead (see projectFromBaseline).
+     Returns null when there is nothing trustworthy to learn. */
+  function calibrate(measuredTokensIn, sentMessages) {
+    return calibrateFromEstimate(measuredTokensIn, estimateMessages(sentMessages));
+  }
+  // Same fit, when the caller already estimated the array it sent (the harness records that estimate at
+  // run.start and no longer holds the messages by the time the provider's usage comes back).
+  function calibrateFromEstimate(measuredTokensIn, sentEstimate) {
     const measured = clampInt(measuredTokensIn);
-    if (measured <= 0) return 0;
-    const est = estimateMessages(sentMessages);
-    return Math.max(0, measured - est);
+    if (measured <= 0) return null;
+    const est = clampInt(sentEstimate);
+    if (est > measured) return null;   // compaction, not a small overhead — see above
+    return { overhead: measured - est };
   }
 
-  /* Project this conversation's occupancy: learned overhead + the dialogue it would send next. */
-  function project(overheadTokens, messages) {
-    return clampInt(overheadTokens) + estimateMessages(messages);
+  /* Project a conversation that has NO measurement of its own (a new session, or one resumed from disk):
+     the model's learned overhead plus this transcript. */
+  function projectFrom(cal, messages) {
+    if (!cal) return 0;
+    return clampInt(cal.overhead) + estimateMessages(messages);
+  }
+
+  /* Project a conversation that HAS been measured: start from that real reading of this exact
+     transcript and add only our estimate of what has been said since. Strictly better than the
+     model-level fit for any chat that has run once — the baseline already contains this conversation's
+     real overhead AND whatever the sidecar compacted away, so neither has to be re-guessed. */
+  function projectFromBaseline(baselineTokens, estimateAtBaseline, messages) {
+    const grown = estimateMessages(messages) - clampInt(estimateAtBaseline);
+    return clampInt(clampInt(baselineTokens) + grown);
   }
 
   // used = this conversation's occupancy; limit = the model's max context.
@@ -138,5 +160,5 @@
     };
   }
 
-  return { compute, fmtTokens, estimateTokens, estimateMessages, calibrateOverhead, project, WARN, CRIT, MSG_OVERHEAD };
+  return { compute, fmtTokens, estimateTokens, estimateMessages, calibrate, calibrateFromEstimate, projectFrom, projectFromBaseline, WARN, CRIT, MSG_OVERHEAD };
 });
