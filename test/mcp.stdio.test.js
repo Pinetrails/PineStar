@@ -98,7 +98,8 @@ function writeServer(dir) {
       const r = await mgr.configure('local', {
         transport: 'stdio',
         command: process.execPath,
-        args: [server],
+        args: [server, '--token', 'synthetic-arg-secret', '--api-key=synthetic-inline-secret', 'https://local.invalid/mcp?password=synthetic-query-secret'],
+        cwd: os.tmpdir(),
         env: { SECRET_TOKEN: 'explicit-secret' },
         label: 'Local'
       });
@@ -109,6 +110,11 @@ function writeServer(dir) {
       A.eq(status.url, undefined, 'stdio status does not pretend to have an HTTP URL');
       A.eq(status.env.SECRET_TOKEN, '<redacted>', 'manager summary redacts stdio env values');
       A.eq(JSON.stringify(status).indexOf('explicit-secret'), -1, 'manager summary never leaks the env secret');
+      A.eq(JSON.stringify(status).indexOf('synthetic-arg-secret'), -1, 'manager summary redacts a following secret argument');
+      A.eq(JSON.stringify(status).indexOf('synthetic-inline-secret'), -1, 'manager summary redacts an inline secret argument');
+      A.eq(JSON.stringify(status).indexOf('synthetic-query-secret'), -1, 'manager summary redacts URL arguments');
+      A.eq(status.hasCwd, true, 'manager summary reports that a custom cwd exists');
+      A.eq('cwd' in status, false, 'manager summary does not expose the workspace path');
       const defs = mgr.toolDefsFor('local');
       A.eq(defs.find(d => d.name === 'mcp__local__create_issue').requiresConsent, true, 'mutating MCP stdio tools still require consent');
       A.eq(defs.find(d => d.name === 'mcp__local__read_note').requiresConsent, true, 'stdio MCP annotations cannot suppress live consent');

@@ -190,7 +190,14 @@
     assertSafeUrl(opts.registrationEndpoint, 'client registration');
     try { return await withDeadline(opts, async signal => {
       const res = await fetchImpl(opts.registrationEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body), redirect: 'manual', signal });
-      if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 160); } catch (_) {} throw new Error('client registration HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
+      if (!res || res.status < 200 || res.status >= 300) {
+        let d = '';
+        try {
+          const j = JSON.parse(await res.text());
+          if (j && typeof j.error === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(j.error)) d = j.error;
+        } catch (_) {}
+        throw new Error('client registration HTTP ' + (res && res.status) + (d ? ' — ' + d : ''));
+      }
       let j; try { j = await res.json(); } catch (e) { throw new Error('client registration returned non-JSON'); }
       if (!j.client_id) throw new Error('client registration response had no client_id');
       return { clientId: String(j.client_id), clientSecret: j.client_secret ? String(j.client_secret) : '', raw: j };
@@ -240,7 +247,16 @@
     assertSafeUrl(tokenEndpoint, label);
     try { return await withDeadline(net, async signal => {
       const res = await fetchImpl(tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: new URLSearchParams(params).toString(), redirect: 'manual', signal });
-      if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error((label || 'token request') + ' HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
+      if (!res || res.status < 200 || res.status >= 300) {
+        // Token endpoints may echo submitted fields in a free-form error body. Keep a bounded OAuth error code
+        // only; descriptions and raw bodies never enter logs, connector status, or model-visible tool results.
+        let d = '';
+        try {
+          const j = JSON.parse(await res.text());
+          if (j && typeof j.error === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(j.error)) d = j.error;
+        } catch (_) {}
+        throw new Error((label || 'token request') + ' HTTP ' + (res && res.status) + (d ? ' — ' + d : ''));
+      }
       try { return await res.json(); } catch (e) { throw new Error((label || 'token request') + ' returned non-JSON'); }
     }, label); }
     catch (e) { throw new Error((label || 'token request') + ' failed: ' + ((e && e.message) || e)); }

@@ -63,6 +63,15 @@
     return out;
   }
 
+  // A remote error body is attacker-controlled and may echo an Authorization header, OAuth code, or arbitrary
+  // prompt-injection text. Preserve only the protocol's short machine-readable error slug; never reflect the
+  // free-form description/body into JSON-RPC errors, logs, connector status, or the model's tool result.
+  function safeErrorDetail(raw) {
+    let value = '';
+    try { const j = JSON.parse(String(raw || '')); value = j && j.error; } catch (_) {}
+    return (typeof value === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(value)) ? value : '';
+  }
+
   function makeHttpTransport(deps) {
     deps = deps || {};
     const u = assertUrl(deps.url);
@@ -107,7 +116,7 @@
       const status = res.status;
       if (status === 202 || status === 204) return;                         // accepted notification / no body
       if (status < 200 || status >= 300) {
-        let detail = ''; try { detail = (await res.text()).slice(0, 200); } catch (e) {}
+        let detail = ''; try { detail = safeErrorDetail(await res.text()); } catch (e) {}
         return failTo(id, 'connector HTTP ' + status + (detail ? ' — ' + detail : ''));
       }
       const ct = ((res.headers && res.headers.get && res.headers.get('content-type')) || '').toLowerCase();
@@ -127,5 +136,5 @@
     return { send, onMessage, close };
   }
 
-  return { makeHttpTransport, _internals: { parseSse, assertUrl, isLoopback } };
+  return { makeHttpTransport, _internals: { parseSse, assertUrl, isLoopback, safeErrorDetail } };
 });

@@ -98,6 +98,30 @@
       for (const k of keys) out[k] = /TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|BEARER|CREDENTIAL|COOKIE/i.test(k) ? '<redacted>' : '<set>';
       return out;
     }
+    const SECRET_ARG = /(?:token|key|secret|password|passwd|auth|bearer|credential|cookie)/i;
+    function safeUrl(raw) {
+      try {
+        const u = new URL(String(raw || ''));
+        if (u.username) u.username = '<redacted>';
+        if (u.password) u.password = '<redacted>';
+        for (const k of Array.from(u.searchParams.keys())) if (SECRET_ARG.test(k)) u.searchParams.set(k, '<redacted>');
+        u.hash = '';
+        return u.href;
+      } catch (_) { return '<configured-url>'; }
+    }
+    function redactArgs(args) {
+      const out = [], src = Array.isArray(args) ? args : [];
+      let redactNext = false;
+      for (const raw of src) {
+        const value = String(raw == null ? '' : raw);
+        if (redactNext) { out.push('<redacted>'); redactNext = false; continue; }
+        const eq = value.match(/^(--?[^=]+)=(.*)$/);
+        if (eq && SECRET_ARG.test(eq[1])) { out.push(eq[1] + '=<redacted>'); continue; }
+        if (/^--?/.test(value) && SECRET_ARG.test(value)) { out.push(value); redactNext = true; continue; }
+        out.push(/^https?:\/\//i.test(value) ? safeUrl(value) : value);
+      }
+      return out;
+    }
 
     function setState(c, state, detail) {
       c.state = state; c.detail = detail || ''; c.ts = clock.now();
@@ -315,12 +339,14 @@
       };
       if (c.transportKind === 'stdio') {
         out.command = c.command;
-        out.args = (c.args || []).slice();
-        out.cwd = c.cwd || '';
+        out.args = redactArgs(c.args);
+        // A full cwd leaks usernames and the location/name of another workspace. The panel only needs to know
+        // whether a custom working directory exists; the raw path remains server-side for process launch.
+        out.hasCwd = !!c.cwd;
         out.env = redactEnv(c.env);
         out.hasEnv = Object.keys(c.env || {}).length > 0;
       } else {
-        out.url = c.url;
+        out.url = safeUrl(c.url);
         out.headers = redactEnv(c.headers);            // header VALUES are never echoed — key + set/redacted only
         out.hasHeaders = Object.keys(c.headers || {}).length > 0;
       }
