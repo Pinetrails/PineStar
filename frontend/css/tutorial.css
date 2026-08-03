@@ -56,6 +56,23 @@
 }
 .tut-coach-ok:hover { filter: brightness(1.12); }
 
+/* the kit-out's WAY OUT (tutorial.js kitBail). Deliberately quieter than .tut-coach-ok — the tour is still
+   the recommended path — but always present, station-painted, never the OS button. */
+.tut-coach-bail {
+  margin-top: 9px;
+  font-family: VT323, monospace;
+  font-size: 15px;
+  letter-spacing: .03em;
+  color: var(--ph-dim);
+  background: rgba(var(--ph-rgb), 0.06);
+  border: 1px solid var(--ph-dim, rgba(255, 170, 51, 0.3));
+  border-radius: 5px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.tut-coach-ok + .tut-coach-bail { margin-left: 8px; }
+.tut-coach-bail:hover { color: var(--ph, #ffaa33); border-color: var(--ph, #ffaa33); }
+
 .tut-ring {
   position: fixed;
   z-index: 98999;

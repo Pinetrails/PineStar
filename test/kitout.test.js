@@ -37,4 +37,32 @@ A.ok(/setTimeout\(/.test(runSeg), 'placements are staggered so each ✓ + chime 
 /* ---------- the tutorial hands off to the quest log (the durable "what next" surface) ---------- */
 A.ok(/⚑ QUESTS/.test(tut), 'the classic close points at the quest log by name');
 
+/* ---------- P0: REFIT's first-run card must never stack on the tour (2026-08-03 audit) ----------
+   The kit-out ALWAYS causes the first REFIT open, so an ungated showGuide() put a full-viewport modal
+   over the ⚇ PROP button the tour's ring was pulsing on — teaching a different lesson underneath. */
+A.ok(/if\s*\(!hasSeen\(\)\s*&&\s*!tutorialCoaching\(\)\)\s*showGuide\(\)/.test(build),
+  'the REFIT first-run card stands down while the tutorial is coaching');
+A.ok(/function tutorialCoaching\(\)[\s\S]{0,200}Tutorial\.isCoaching\(\)/.test(build),
+  'that gate reads Tutorial.isCoaching() (the same coordination dockglow.js uses)');
+A.ok(/markSeen\(\);\s*if \(g\.parentNode\)/.test(build),
+  'markSeen still fires only on DISMISS — so a deferred card is not lost, it shows on the next open');
+A.ok(/g\.className = 'refit-guide refit-firstrun'/.test(build),
+  'the first-run card carries its own refit-firstrun marker (the pickers/editors share .refit-guide)');
+A.ok(/document\.querySelector\('#terms \.term'\) \|\| document\.querySelector\('\.refit-firstrun'\)/.test(tut),
+  'showCoach defers over the first-run card too, so the deferred open does not stack card + coachmark');
+
+/* ---------- P1: the kit-out is opt-IN, so it must be opt-OUT-able at any moment ---------- */
+A.ok(/function kitBail\(\)/.test(tut), 'the kit-out has a bail');
+const bailSeg = tut.slice(tut.indexOf('function kitBail()'), tut.indexOf('function beatFullyEquipped('));
+A.ok(/Build\.isOpen\(\)\s*&&\s*Build\.close\)\s*\{\s*Build\.close\(\);\s*return;/.test(bailSeg),
+  'inside REFIT the bail just closes it — kitTick reads that as the normal exit (no double dialogue)');
+A.ok(/kitClosedDuringPlace\(\)/.test(bailSeg), 'outside REFIT it lands on the same honest wired-vs-dark accounting');
+A.ok(/class = 'tut-coach-bail'|className = 'tut-coach-bail'/.test(tut), 'every kit-out step renders a visible way out');
+A.ok(/e\.key !== 'Escape'[\s\S]{0,140}Build\.isOpen\(\)\) return;\s*kitBail\(\)/.test(tut),
+  'Esc bails only OUTSIDE REFIT — inside, build.js already owns the key');
+
+/* ---------- P1: the tour's two closing surfaces must not cover each other ---------- */
+A.ok(/function dodgeBrief\(/.test(tut), 'the coachmark dodges the FIRST STEPS brief');
+A.ok(/dodgeBrief\(\{ left, top, w: bw, h: bh \}, vw\)/.test(tut), 'placeCoach routes its computed box through the dodge');
+
 A.report('kitout.test');
