@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "30007cf4e25068b383bb73b5f0fc76f2c2d8ea57",
-    "pathSetSha256": "500b8ad7d523d6d288b2c89fc00da5e8734a4216e9fdbc668bfcfb1f17bf6618",
+    "sourceCommit": "bbe907a3d2fc8a69dcdacadb8c3d0101fa30bb8b",
+    "pathSetSha256": "6fb73e36b6547731c1db113af9daedd58a2eeb7a68878691c58496d98206fe32",
     "files": [
       {
         "path": "INSTALL.md",
@@ -117,6 +117,11 @@
         "sha256": "4fd0a8555c9cb2fa814db0e41def198332b1c3e4a7a2d83f49b7048a217aeddb"
       },
       {
+        "path": "frontend/app/beatcard.js",
+        "bytes": 10595,
+        "sha256": "ee95aed1857dd9d8d7841d8af258cc2a14cb49448d21630193ee5d2f4f83d4a2"
+      },
+      {
         "path": "frontend/app/bottlestore.js",
         "bytes": 9538,
         "sha256": "0530140e4c32757099c4a41e33c7d65227570f7981bb7f2cc6364ffaab6b4053"
@@ -133,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 473436,
-        "sha256": "b9ef173b52f214ad38588eb0fc9bf81095e9ab1f8ed13bdffdb6801ba3212ac3"
+        "bytes": 470945,
+        "sha256": "b87d74bcbfd79df0b7ba27f4b66f7ebfe91ee58cebd57189c834198f41e611d9"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -663,8 +668,8 @@
       },
       {
         "path": "frontend/app/study.js",
-        "bytes": 25774,
-        "sha256": "9c58b6d3fa4125ff883eb1d5ad1fcc43150764b38992b52189b106829a44565e"
+        "bytes": 22887,
+        "sha256": "225519cab41c1904896afd067f0228b53fbb1c3e7815a0f483495ca9bccf6df3"
       },
       {
         "path": "frontend/app/studystore.js",
@@ -953,8 +958,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67289,
-        "sha256": "77d2d190e6495052247d19fc338094b79c3485a071fd277550ff9dcb695a07eb"
+        "bytes": 67395,
+        "sha256": "5c1fa5480e3292881bf3b3416a55c2b8f6c208984e5dcdce1eea7dfd43c0bcd2"
       },
       {
         "path": "frontend/js/arcade.js",
