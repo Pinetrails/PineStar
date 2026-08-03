@@ -93,6 +93,23 @@
     quartermaster: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.4 2.2 H15.6 V4.8 H8.4 Z"/><rect x="2.6" y="5" width="18.8" height="15" rx="1.6" fill="currentColor"/><path fill="' + D + '" d="M4.6 7 H19.4 V9.2 H4.6 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.6" stroke-linecap="round"><path d="M5.4 11.4 L18.6 17.4"/><path d="M18.6 11.4 L5.4 17.4"/></g></svg>',
     // anchor: the studio microphone — the briefing spoken, not printed.
     anchor: '<svg viewBox="0 0 24 24"><rect x="8.9" y="2.2" width="6.2" height="11.4" rx="3.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M5.2 11.6 a6.8 6.8 0 0 0 13.6 0"/><path fill="currentColor" d="M11 17.2 H13 V21 H11 Z"/><path fill="currentColor" d="M7.2 20.4 H16.8 V22 H7.2 Z"/><path fill="' + D + '" d="M10.2 4.6 H13.8 V6.1 H10.2 Z"/></svg>',
+    // ---- 2026-08-03 second wave (same matte engraved-coin style: currentColor + deboss only) ----
+    // drafter: the drafting triangle over a marked rule — the fuzzy idea squared up.
+    drafter: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.4 19.6 L12 3 L21.6 19.6 Z"/><path fill="' + D + '" d="M12 7.6 L18 18 H6 Z"/><rect x="2.2" y="19.8" width="19.6" height="2.6" rx=".7" fill="currentColor"/><g fill="none" stroke="' + D + '" stroke-width="1.3" stroke-linecap="round"><path d="M6.4 20.2 V22"/><path d="M9.6 20.2 V22"/><path d="M12.8 20.2 V22"/><path d="M16 20.2 V22"/></g></svg>',
+    // harvester: the filled table with its LAST cell missing — the honest gap that ships with the dataset.
+    harvester: '<svg viewBox="0 0 24 24"><rect x="2.6" y="4" width="18.8" height="16" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="4.6" y="8.4" width="4.6" height="2.6" rx=".3"/><rect x="10.2" y="8.4" width="4.6" height="2.6" rx=".3"/><rect x="15.8" y="8.4" width="3.6" height="2.6" rx=".3"/><rect x="4.6" y="12" width="4.6" height="2.6" rx=".3"/><rect x="10.2" y="12" width="4.6" height="2.6" rx=".3"/><rect x="15.8" y="12" width="3.6" height="2.6" rx=".3"/><rect x="4.6" y="15.6" width="4.6" height="2.6" rx=".3"/><rect x="10.2" y="15.6" width="4.6" height="2.6" rx=".3"/></g></svg>',
+    // sentinel: the radar sweep with one blip — what is already out there about you.
+    sentinel: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="3.2"/><path d="M12 12 L19.2 6.8"/></g><circle cx="16.8" cy="8.2" r="1.8" fill="' + D + '"/></svg>',
+    // registrar: the index card — one person, their face, what they said, and the line you owe them.
+    registrar: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.4 3.2 H17.6 V5.6 H6.4 Z"/><rect x="3" y="6.2" width="18" height="14" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="5.4" y="9.2" width="4.6" height="4.6" rx="2.3"/><rect x="11.6" y="9.6" width="7" height="1.7" rx=".6"/><rect x="11.6" y="12.4" width="5.2" height="1.7" rx=".6"/><rect x="5.4" y="16" width="13.2" height="1.7" rx=".6"/></g></svg>',
+    // provisioner: the pot with its lid on — the week actually cooked, not the week imagined.
+    provisioner: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.4 9.6 H20.6 V16.2 a3.6 3.6 0 0 1 -3.6 3.6 H7 a3.6 3.6 0 0 1 -3.6 -3.6 Z"/><path fill="currentColor" d="M1.8 7.2 H22.2 V9.2 H1.8 Z"/><path fill="currentColor" d="M11 4.2 H13 V6.9 H11 Z"/><rect x="6.2" y="12.2" width="11.6" height="1.7" rx=".6" fill="' + D + '"/><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M20.8 11.8 H22.4"/><path d="M3.2 11.8 H1.6"/></g></svg>',
+    // taskmaster: the stopwatch with the mark struck through it — the promise, and the date it carried.
+    taskmaster: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13.4" r="8.4" fill="currentColor"/><path fill="currentColor" d="M9.6 1.6 H14.4 V4.2 H9.6 Z"/><path fill="currentColor" d="M18.4 4.8 L21 7.4 L19.1 9.3 L16.5 6.7 Z"/><path fill="none" stroke="' + D + '" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" d="M8.4 13.6 L11 16.2 L15.8 10.4"/></svg>',
+    // medic: the cross cut INTO the coin — clerical, not clinical; the record, not the diagnosis.
+    medic: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><path fill="' + D + '" d="M10.4 5.4 H13.6 V10.4 H18.6 V13.6 H13.6 V18.6 H10.4 V13.6 H5.4 V10.4 H10.4 Z"/></svg>',
+    // diplomat: the span holding between two sides — the message that keeps the relationship standing.
+    diplomat: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.4" y="8.8" width="3.2" height="11.4" rx=".6"/><rect x="18.4" y="8.8" width="3.2" height="11.4" rx=".6"/><rect x="1.4" y="19.6" width="21.2" height="2.4" rx=".6"/></g><path fill="none" stroke="currentColor" stroke-width="2.2" d="M4 9.6 a8 8 0 0 1 16 0"/><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10.8 V19.6"/><path d="M12 8.9 V19.6"/><path d="M16 10.8 V19.6"/></g></svg>',
     // herald: a banner/pennant on a staff — the periodic broadcast.
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
@@ -111,7 +128,10 @@
     closer: 'CLO', steward: 'STW', optimizer: 'OPT', opportunist: 'OPP',
     // 2026-08-03 catalog expansion
     pilot: 'PLT', foreman: 'FRM', nightwatch: 'NGT', ghostwriter: 'GHW', paralegal: 'PAR',
-    negotiator: 'NEG', jobhunter: 'JOB', quartermaster: 'QRM', anchor: 'ANC'
+    negotiator: 'NEG', jobhunter: 'JOB', quartermaster: 'QRM', anchor: 'ANC',
+    // 2026-08-03 second wave
+    drafter: 'DRF', harvester: 'HRV', sentinel: 'SNL', registrar: 'REG', provisioner: 'PRV',
+    taskmaster: 'TSK', medic: 'MED', diplomat: 'DPL'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.

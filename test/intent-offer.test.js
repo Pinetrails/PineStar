@@ -57,7 +57,18 @@ const HITS = [
   ['rewrite this so it sounds like me, not like an AI', 'ghostwriter'],
   ['work through this backlog overnight while I sleep', 'nightwatch'],
   ['split this across the crew and run it in parallel', 'foreman'],
-  ['find me monetizable opportunities that fit my skills', 'opportunist']
+  ['find me monetizable opportunities that fit my skills', 'opportunist'],
+  // second-wave classes. These also guard the CORPUS: every class added widens the document-frequency pool and
+  // can silently steal or tie a match that used to work (adding sentinel tied "internet bill" against negotiator
+  // on the word "internet" until its tagline was reworded). If one of these breaks after a catalog change, the
+  // fix is the class COPY — give the class the words its users actually type — never a lowered threshold.
+  ['write a spec for this feature', 'drafter'],
+  ['collect all these listings into one spreadsheet', 'harvester'],
+  ['what can strangers find out about me online', 'sentinel'],
+  ['plan out what I am cooking this week', 'provisioner'],
+  ['hold me to the commitments I made', 'taskmaster'],
+  ['organize my medical records before the appointment', 'medic'],
+  ['draft the difficult message I keep avoiding', 'diplomat']
 ];
 for (const [q, id] of HITS) {
   const m = IO.match(q, C);
@@ -93,6 +104,21 @@ const QUIET = [
   'nice, that worked'
 ];
 for (const q of QUIET) A.eq(IO.match(q, C), null, 'chatter stays silent: "' + q + '"');
+
+/* ---------- 2b. NEVER THE WRONG NEIGHBOUR (the offers that would actively mislead) ----------
+   A miss costs a discovery; a confidently WRONG offer costs trust. These pairs share ordinary vocabulary
+   ("find", "online", "watch", "price") across classes whose jobs are nothing alike — a privacy question must
+   never surface the lead-generation class, and a personal-money question must never surface the sales one. */
+const NEVER = [
+  ['what can strangers find out about me online', 'prospector'],
+  ['find out what is exposed about me on the internet', 'prospector'],
+  ['help me get my internet bill lowered', 'sentinel'],
+  ['organize my medical records before the appointment', 'archivist']
+];
+for (const [q, wrong] of NEVER) {
+  const m = IO.match(q, C);
+  A.ok(!m || m.id !== wrong, 'never offers "' + wrong + '" for: "' + q + '" (got ' + (m ? m.id : 'silence') + ')');
+}
 
 /* ---------- 3. EACH GATE, on its own (so a future tune can't quietly remove one) ---------- */
 // A tiny synthetic corpus makes each gate observable in isolation — the live catalog can't isolate them.

@@ -43,22 +43,22 @@
     {
       name: 'research',
       triggers: ['research', 'news', 'latest', 'source', 'sources', 'web', 'paper', 'papers', 'arxiv', 'scan', 'monitor', 'brief'],
-      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist', 'paralegal', 'jobhunter', 'opportunist']
+      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist', 'paralegal', 'jobhunter', 'opportunist', 'sentinel', 'harvester']
     },
     {
       name: 'engineering',
       triggers: ['code', 'repo', 'bug', 'test', 'build', 'implement', 'fix', 'debug', 'ci'],
-      roles: ['engineer', 'engineering', 'developer', 'coder', 'reviewer']
+      roles: ['engineer', 'engineering', 'developer', 'coder', 'reviewer', 'drafter']
     },
     {
       name: 'writing',
       triggers: ['write', 'draft', 'copy', 'post', 'email', 'newsletter', 'document', 'summary', 'script', 'publish'],
-      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer', 'ghostwriter', 'negotiator', 'anchor']
+      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer', 'ghostwriter', 'negotiator', 'anchor', 'diplomat']
     },
     {
       name: 'ops',
       triggers: ['check', 'remind', 'watch', 'backup', 'sync', 'ops', 'operate', 'admin'],
-      roles: ['operator', 'ops', 'chief', 'treasurer', 'nightwatch', 'quartermaster', 'foreman', 'pilot']
+      roles: ['operator', 'ops', 'chief', 'treasurer', 'nightwatch', 'quartermaster', 'foreman', 'pilot', 'taskmaster', 'registrar', 'provisioner', 'medic']
     },
     {
       name: 'design',
