@@ -61,6 +61,16 @@ node scripts/eval/runner.mjs mark-unavailable --harness starnet --reason <reason
 Provider evaluation homes may copy non-secret roster/state fixtures, but must never copy OAuth token,
 auth, or `.env` files. Bindings prove the executable; they do not authorize credential use.
 
+Before any provider-backed campaign, run the metadata-only preflight. It fails closed unless the
+installed executable exactly matches the bound candidate, the frozen Hermes identity and executable
+still match, all 32 tasks have independent fixtures, three attempts are contracted, and the credential
+envelope modification time is later than the declared rotation boundary. It never reads credential
+contents and never authorizes provider spend:
+
+```powershell
+node scripts/eval/campaign-preflight.mjs --contract scripts/eval/contracts/v0.9.0.json --candidate-manifest <starnet-manifest.json> --reference-manifest <hermes-manifest.json> --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --tasks scripts/eval/packs/parity-v0.9.0.jsonl --installed-executable <installed-desktop-exe> --credential-envelope <tokens.json> --rotation-after <exposure-utc> --output <preflight.json>
+```
+
 Capture the provisional source-harness performance baseline with:
 
 ```powershell
