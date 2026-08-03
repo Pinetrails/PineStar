@@ -12,6 +12,9 @@ function makeRunExecutionState(options) {
   let taintedBy = opts.initialTaint ? String(opts.initialTaint) : null;
   let toolBytes = 0;
   let toolsOk = 0;
+  let toolCallsStarted = 0;
+  const toolTrace = [];
+  const toolTraceById = new Map();
   let checkpointTurn = 0;
   let journalStarted = false;
 
@@ -53,6 +56,34 @@ function makeRunExecutionState(options) {
     return artifacts && typeof artifacts.list === 'function' ? artifacts.list() : [];
   }
 
+  function consumeToolCall(maxCalls) {
+    const cap = Math.floor(Number(maxCalls) || 0);
+    if (cap > 0 && toolCallsStarted >= cap) return false;
+    toolCallsStarted++;
+    return true;
+  }
+
+  function observeToolEvent(name, payload, now) {
+    const at = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    if (name === 'agent.tool_call' && payload && payload.callId && toolTrace.length < 200) {
+      const rec = { callId: String(payload.callId), name: String(payload.name || 'unknown'), startedAt: at };
+      toolTrace.push(rec);
+      toolTraceById.set(rec.callId, rec);
+    } else if (name === 'agent.tool_result' && payload && payload.callId) {
+      const rec = toolTraceById.get(String(payload.callId));
+      if (!rec) return;
+      rec.ok = !!payload.ok;
+      rec.isError = !!payload.isError;
+      rec.ms = Math.max(0, Number(payload.ms) || 0);
+      rec.endedAt = rec.startedAt + rec.ms;
+      rec.summary = String(payload.summary || '').slice(0, 240);
+    }
+  }
+
+  function toolTraceList() {
+    return toolTrace.map(rec => Object.assign({}, rec));
+  }
+
   return {
     taintedBy: () => taintedBy,
     latchTaint,
@@ -62,6 +93,10 @@ function makeRunExecutionState(options) {
     resetToolBytes: () => { toolBytes = 0; },
     toolBytes: () => toolBytes,
     toolsOk: () => toolsOk,
+    consumeToolCall,
+    toolCallsStarted: () => toolCallsStarted,
+    observeToolEvent,
+    toolTraceList,
     checkpointTurn: () => checkpointTurn,
     advanceCheckpoint: () => { checkpointTurn++; return checkpointTurn; },
     journalStarted: () => journalStarted,

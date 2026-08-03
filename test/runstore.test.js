@@ -134,6 +134,26 @@ const clock = { now: () => clk };
   A.eq(s.record({ runId: 'w7', agentId: 'a', reason: 'done' }).toolsOk, 0, 'missing toolsOk defaults to 0 (old rows under-claim, never over)');
   A.eq(s.record({ runId: 'w8', agentId: 'a', toolsOk: 'nope' }).toolsOk, 0, 'non-numeric toolsOk clamps to 0');
 
+  // ---- hierarchical timing telemetry persists as bounded, display-safe facts ----
+  const timed = s.record({
+    runId: 'worker-timed', parentRunId: 'lead-timed', agentId: 'researcher', model: 'gpt-x', reasoningEffort: 'medium',
+    startedAt: 100, endedAt: 355, durationMs: 255, toolTrace: [
+      { callId: 'c1', name: 'web_fetch', ok: false, isError: true, ms: 251, summary: 'domain not found', startedAt: 101, endedAt: 352 }
+    ]
+  });
+  A.eq(timed.parentRunId, 'lead-timed', 'worker parentRunId persists for hierarchy joins');
+  A.eq(timed.reasoningEffort, 'medium', 'actual reasoning effort persists');
+  A.eq(timed.durationMs, 255, 'actual run duration persists');
+  A.eq(timed.toolTrace[0].ms, 251, 'actual per-tool duration persists');
+  A.eq(io.lines.find(x => x.runId === 'worker-timed').toolTrace[0].summary, 'domain not found', 'tool timing survives the append boundary');
+  const reloadedTimed = makeRunStore({ io, clock }).list('researcher').find(x => x.runId === 'worker-timed');
+  A.eq(reloadedTimed.parentRunId, 'lead-timed', 'parent/child join survives a store restart');
+  A.eq(reloadedTimed.toolTrace[0].ms, 251, 'per-tool milliseconds survive a store restart');
+  const cappedTrace = s.record({ runId: 'trace-cap', toolTrace: Array.from({ length: 250 }, (_, i) => ({ callId: 'c' + i, name: 'tool', ms: -1, summary: 'x'.repeat(500) })) });
+  A.eq(cappedTrace.toolTrace.length, 200, 'tool trace is capped at 200 calls');
+  A.eq(cappedTrace.toolTrace[0].ms, 0, 'negative tool durations clamp to zero');
+  A.ok(cappedTrace.toolTrace[0].summary.length <= 240, 'tool summaries are bounded');
+
   // ---- (P1.2 identity-honesty) identityFallback rides the row: honest marker when the agentId missed the roster ----
   A.eq(s.record({ runId: 'w9', agentId: 'a', reason: 'done', identityFallback: true }).identityFallback, true, 'identityFallback:true recorded on a fallback run (was not the named specialist)');
   A.eq(s.record({ runId: 'w10', agentId: 'a', reason: 'done' }).identityFallback, false, 'missing identityFallback defaults to false (old rows / normal runs are not falsely flagged)');

@@ -40,6 +40,20 @@ A.ok(state.journalStarted(), 'journal start latches true');
 state.observeArtifact({ toolName: 'fs.write' });
 A.eq(state.artifactList(), [{ toolName: 'fs.write' }], 'artifact collector is owned by the run state');
 
+A.ok(state.consumeToolCall(2), 'first task-bounded tool call is admitted');
+A.ok(state.consumeToolCall(2), 'second task-bounded tool call is admitted');
+A.ok(!state.consumeToolCall(2), 'task-bounded tool calls stop at the exact cap');
+A.eq(state.toolCallsStarted(), 2, 'tool-call budget counter is owned by the run state');
+state.observeToolEvent('agent.tool_call', { callId: 'call-1', name: 'web_fetch' }, 100);
+state.observeToolEvent('agent.tool_result', { callId: 'call-1', ok: false, isError: true, ms: 25, summary: 'x'.repeat(300) }, 125);
+const trace = state.toolTraceList();
+A.eq(trace[0].name, 'web_fetch', 'tool timing records the actual tool name');
+A.eq(trace[0].ms, 25, 'tool timing records measured milliseconds');
+A.eq(trace[0].endedAt, 125, 'tool timing derives a stable end time from the measured duration');
+A.ok(trace[0].summary.length <= 240, 'tool timing summaries are bounded');
+trace[0].name = 'mutated';
+A.eq(state.toolTraceList()[0].name, 'web_fetch', 'tool timing snapshots cannot mutate run state');
+
 const clean = makeRunExecutionState();
 A.eq(clean.latchTaint('browser.read'), 'browser.read', 'first runtime taint is retained');
 A.eq(clean.artifactList(), [], 'missing artifact collector safely produces an empty list');
