@@ -105,7 +105,9 @@ function makeMediaService(options) {
   const processEnv = o.processEnv || {};
   const redact = typeof o.redact === 'function' ? o.redact : String;
   const logger = o.logger || console;
-  const now = typeof o.now === 'function' ? o.now : Date.now;
+  // The host owns wall time. A missing clock degrades deterministically instead of smuggling ambient time into
+  // backend policy (tests and alternate compositions can then reproduce cache decisions exactly).
+  const now = typeof o.now === 'function' ? o.now : (() => 0);
   const randomUUID = typeof o.randomUUID === 'function' ? o.randomUUID : crypto.randomUUID;
   const voiceCacheDir = path.join(o.workspaces, 'voice-cache');
   const sttModels = String(env('STT_MODELS') || 'google/gemini-3.1-flash-lite-preview,google/gemini-2.5-flash')
