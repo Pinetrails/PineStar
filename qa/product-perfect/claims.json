@@ -1859,8 +1859,8 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "src-tauri/src/main.rs",
-          "needle": "const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
+          "path": "src-tauri/src/credentials.rs",
+          "needle": "pub(crate) const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
         },
         {
           "kind": "contains",
@@ -2090,7 +2090,7 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "src-tauri/src/main.rs",
+          "path": "src-tauri/src/credentials.rs",
           "needle": "keychain_entry_for(provider)"
         },
         {
@@ -2533,8 +2533,8 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "src-tauri/src/main.rs",
-          "needle": "const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
+          "path": "src-tauri/src/credentials.rs",
+          "needle": "pub(crate) const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
         }
       ],
       "refsChecked": [
