@@ -3,6 +3,38 @@
 This is the dependency-free, task-outcome evaluation layer. It complements the existing wiring,
 UI, release, and workload gates; it does not replace them or make a release-readiness claim.
 
+## v0.9 reliability and parity contract
+
+The frozen comparison contract is `contracts/v0.9.0.json`. It binds the comparison to Hermes Agent
+v0.19.1/tag `v2026.7.30`, classifies every advertised StarNet claim, and freezes the release gates.
+Validate it against the live product-perfect claim ledger:
+
+```powershell
+npm run eval:contract
+```
+
+The 10 run-boundary fault scenarios and 32 shared workload scenarios live under `packs/`. They are
+all active: a missing trajectory is a failure, never a pending green. Run captured evidence with:
+
+```powershell
+node scripts/eval/runner.mjs fault --candidate fault-trajectories.jsonl --receipt fault-receipt.json
+node scripts/eval/runner.mjs compare --starnet starnet.jsonl --reference hermes.jsonl --receipt parity-receipt.json
+```
+
+Both commands emit `starnet.eval.receipt.v1`. A source run is truthfully marked
+`candidateBound:false`; installed-candidate proof additionally supplies `--executable <path>` so the
+receipt records its SHA-256. The zero-tolerance invariants are false completion, wrong destination,
+duplicate mutation, and authority escape.
+
+Capture the provisional source-harness performance baseline with:
+
+```powershell
+npm run eval:baseline -- --samples 15 --receipt .dogfood/eval/performance-baseline.json
+```
+
+That baseline covers the deterministic bridge/evaluation rails and process startup. It explicitly
+does not stand in for installed cold boot, first-token/useful-artifact latency, or the 48-hour soak.
+
 Run the deterministic seed pack:
 
 ```powershell

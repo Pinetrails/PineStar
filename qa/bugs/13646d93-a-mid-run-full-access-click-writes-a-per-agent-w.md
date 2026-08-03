@@ -4,10 +4,10 @@ slug: a-mid-run-full-access-click-writes-a-per-agent-w
 title: A mid-run "Full access" click writes a per-agent '*' wildcard with no readout and no revoke anywhere, and the same wildcard is read by that agent's UNATTENDED r
 surface: safecell
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/safecell
-fix: 
+fix: 226cec3c
 ---
 
 # A mid-run "Full access" click writes a per-agent '*' wildcard with no readout and no revoke anywhere, and the same wildcard is read by that agent's UNATTENDED r
@@ -37,4 +37,4 @@ _Found by the `sweep/safecell` lane, 2026-07-28. Finder confidence: medium. Seve
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Fixed: watched Full Access no longer authorizes autonomous runs, is visible in the permissions ledger, and has a revoke path.

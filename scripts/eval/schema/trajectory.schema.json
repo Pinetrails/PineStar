@@ -12,6 +12,9 @@
     "startedAt": { "type": "string" },
     "endedAt": { "type": "string" },
     "finalText": { "type": "string" },
+    "outcome": { "type": "object" },
+    "routing": { "type": "object" },
+    "fault": { "type": "object" },
     "events": {
       "type": "array",
       "items": {

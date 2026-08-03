@@ -4,10 +4,10 @@ slug: credpool-penalize
 title: credPool.penalize() on the run's PRIMARY key is inert — the sole credPool.order() call site (index.js:10580) receives a pool with runKey filtered out
 surface: providers
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/providers
-fix: 
+fix: fdbb12a2
 ---
 
 # credPool.penalize() on the run's PRIMARY key is inert — the sole credPool.order() call site (index.js:10580) receives a pool with runKey filtered out
@@ -34,4 +34,4 @@ _Found by the `sweep/providers` lane, 2026-07-28. Finder confidence: high. Sever
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Fixed: production now consults the primary key cooldown, selects a warm alternate first, and demotes the cooled primary to last resort.

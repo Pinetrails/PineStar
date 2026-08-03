@@ -23,7 +23,7 @@
 const Tutorial = (() => {
   const KEY = 'starnet.tutorial.v1';
   let state = load();
-  let active = false, wired = false, finished = false;
+  let active = false, wired = false, finished = false, replayMode = false;
   let agentName = 'AGENT';
   // one-shot latches so a repeated bus event can never double-narrate a beat
   let sawStart = false, sawPermission = false, sawEnd = false, sawDeny = false;
@@ -131,9 +131,11 @@ const Tutorial = (() => {
   function dsay(text, cps, hold) { return hasDialogue() ? Dialogue.say([seg(text, cps, hold)]) : Promise.resolve(); }
 
   function firstCommand(opts) {
-    if (state.firstCommandDone) return;       // learned once, never again
+    // Automatic onboarding is one-shot. The Field Manual may deliberately replay the same real tour.
+    if (state.firstCommandDone && !(opts && opts.replay)) return;
     if (!hasChat()) return;
     agentName = (opts && opts.name) || agentName;
+    replayMode = !!(opts && opts.replay);
     active = true; finished = false; sawStart = sawPermission = sawEnd = sawDeny = false; cleanRunId = null;   // C1: un-latch finishUp for this fresh run (it's symmetric with the saw-flags; without it a prior agent's completed lesson left finishUp a no-op)
     kitMode = false; kitComplete = false; kitWasOpen = false; kitNeeded = null;
     wireBus();
@@ -592,8 +594,13 @@ const Tutorial = (() => {
     // REAL run drove it (a demo's post-run state is owned by the harness — don't yank it).
     if (!sawStart) { try { if (typeof World !== 'undefined' && World.setActivity) World.setActivity('idle'); } catch (_) {} }
     state.firstCommandDone = true;
-    if (skipped) state.briefDismissed = true;     // opting out of the tour opts out of the nag — reopen in § FIELD MANUAL
+    if (skipped && !replayMode) state.briefDismissed = true;     // replay never rewrites the saved first-steps preference
     save();
+    if (replayMode) {
+      replayMode = false;
+      if (hasChat()) Chat.localLine(skipped ? 'quick tour closed — your progress is unchanged.' : 'quick tour complete — your progress is unchanged.');
+      return;
+    }
     if (skipped) { if (hasChat()) Chat.localLine('right. i’m here when you need me — just type. the field manual’s in the bottom bar when you want it.'); }
     else { sfx('level'); if (!state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 600); }   // hand them the first-steps map
     // THE FLOOR — the tour NEVER ends in silence, the skip path included. Two guaranteed beats, both
@@ -906,10 +913,23 @@ const Tutorial = (() => {
     const render = () => {
       body.innerHTML =
         '<div class="fm-tabs">' + FM_TABS.map(t => '<button class="fm-tab' + (t === curTab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') +
-        '</div><div class="fm-content">' + fmContent(curTab) + '</div>';
+        '</div><div class="fm-content">' + fmContent(curTab)
+        + (curTab === 'FIRST STEPS' ? '<button class="fm-tab fm-replay" type="button">REPLAY QUICK TOUR</button>' : '')
+        + '</div>';
       body.querySelectorAll('.fm-tab').forEach(b => { b.onclick = () => { curTab = b.dataset.t; sfx('click'); render(); }; });
+      const replay = body.querySelector('.fm-replay');
+      if (replay) replay.onclick = () => { sfx('click'); replayFirstCommand(); };
     };
     render();
+  }
+
+  function replayFirstCommand() {
+    if (active) return false;
+    hideBrief(); clearCoach(); clearSpot();
+    // The manual is a real floating window; close it before opening the Dialogue tour so it cannot cover the lesson.
+    try { if (typeof StationUI !== 'undefined' && StationUI.closeTerm) StationUI.closeTerm('manual'); } catch (_) {}
+    firstCommand({ name: agentName, replay: true });
+    return active;
   }
 
   /* lifecycle entry from app.js enterGame: arm the bus ticks (even for skippers/returners) and, for a
@@ -934,7 +954,7 @@ const Tutorial = (() => {
   function isCoaching() { return !!(active || kitMode || coach); }
 
   return {
-    firstCommand, spotlight, seen, markSeen, _state: () => state,
+    firstCommand, replayFirstCommand, spotlight, seen, markSeen, _state: () => state,
     onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach,
     onEnterGame, fillFieldManual, showBrief, tickBrief, teardown, isCoaching
   };

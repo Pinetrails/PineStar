@@ -446,7 +446,7 @@
         <span class="comms-agent-sigil" aria-hidden="true">▸</span>
         <select id="comms-agent-select" class="comms-agent-select" aria-label="Select agent on the line"></select>
       </label>
-      <span id="comms-agent-model" class="comms-agent-model" title="the model this agent runs on" aria-live="polite"></span>
+      <span id="comms-agent-model" class="comms-agent-model" title="the model this agent runs on" data-hint="model" aria-live="polite"></span>
     </div>
     <div id="chat-log" class="scrolly" role="log" aria-live="polite" aria-label="Conversation transcript"></div>
     <!-- TYPE-AHEAD: follow-ups typed while the agent is working queue here as pills, auto-sent in order (chat.js) -->
@@ -521,16 +521,16 @@
          same Recruitment Bay in different modes — now a single #bb-recruit opens the bay once, and
          the class dossier offers BOTH verbs (summon new / deploy to current). -->
     <div class="bb-group" data-group="crew">
-      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Your agents — dossiers, recruitment, and your own Commander file"><span class="bb-gi">☻</span>CREW</button>
+      <button class="bb-grp" data-hint="crew" aria-haspopup="menu" aria-expanded="false" title="Your agents — dossiers, recruitment, and your own Commander file"><span class="bb-gi">☻</span>CREW</button>
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">☻ CREW — the minds on your station</div>
-        <button class="bb" data-term="agents"><span class="bb-i">◉</span><span class="bb-tx"><b>AGENTS</b><small>each crew member's dossier — config, memory, record</small></span></button>
+        <button class="bb" data-term="agents" data-hint="agent"><span class="bb-i">◉</span><span class="bb-tx"><b>AGENTS</b><small>each crew member's dossier — config, memory, record</small></span></button>
         <button class="bb" id="bb-recruit" data-hint="recruit"><span class="bb-i">＋</span><span class="bb-tx"><b>RECRUIT</b><small>grow the crew — summon a class, or re-spec your agent</small></span></button>
-        <button class="bb" data-term="commander"><span class="bb-i">◈</span><span class="bb-tx"><b>COMMANDER</b><small>what the station has learned about you</small></span></button>
+        <button class="bb" data-term="commander" data-hint="commander"><span class="bb-i">◈</span><span class="bb-tx"><b>COMMANDER</b><small>what the station has learned about you</small></span></button>
       </div>
     </div>
     <div class="bb-group" data-group="work">
-      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="The station's work — tasks, recipes, routines, quests"><span class="bb-gi">▤</span>WORK</button>
+      <button class="bb-grp" data-hint="work" aria-haspopup="menu" aria-expanded="false" title="The station's work — tasks, recipes, routines, quests"><span class="bb-gi">▤</span>WORK</button>
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">▤ WORK — what the crew is doing</div>
         <!-- WORK menu, one axis per entry (UX confusion audit 2026-07-15): RECIPES = WHAT to run,
@@ -545,10 +545,10 @@
       </div>
     </div>
     <div class="bb-group" data-group="build">
-      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Shape the station — refit the floor, skills, toolsets, channels"><span class="bb-gi">⚒</span>BUILD</button>
+      <button class="bb-grp" data-hint="build" aria-haspopup="menu" aria-expanded="false" title="Shape the station — refit the floor, skills, toolsets, channels"><span class="bb-gi">⚒</span>BUILD</button>
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">⚒ BUILD — equip &amp; wire the station</div>
-        <button class="bb" id="bb-build"><span class="bb-i">⌂</span><span class="bb-tx"><b>REFIT STATION</b><small>place rooms, corridors &amp; gear</small></span></button>
+        <button class="bb" id="bb-build" data-hint="refit"><span class="bb-i">⌂</span><span class="bb-tx"><b>REFIT STATION</b><small>place rooms, corridors &amp; gear</small></span></button>
         <!-- direction-honest subtitles (audit finding 5): TOOLSETS = the agent's tools OUT (switches + MCP);
              CHANNELS = YOUR way in. SKILLS = the read-only "what can it do" view (switches live in TOOLSETS). -->
         <button class="bb" data-term="skills" data-hint="skill"><span class="bb-i">✦</span><span class="bb-tx"><b>SKILLS</b><small>what agents can do right now (switches: TOOLSETS)</small></span></button>
@@ -557,15 +557,15 @@
       </div>
     </div>
     <div class="bb-group" data-group="system">
-      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Station systems — manual, settings, updates, restore, logs, notifications"><span class="bb-gi">▣</span>SYSTEM<span id="bb-sys-badge" class="bb-grp-badge" aria-label="unread notifications" hidden></span></button>
+      <button class="bb-grp" data-hint="system" aria-haspopup="menu" aria-expanded="false" title="Station systems — manual, settings, updates, restore, logs, notifications"><span class="bb-gi">▣</span>SYSTEM<span id="bb-sys-badge" class="bb-grp-badge" aria-label="unread notifications" hidden></span></button>
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">▣ SYSTEM — the station itself</div>
-        <button class="bb" data-term="manual"><span class="bb-i">§</span><span class="bb-tx"><b>FIELD MANUAL</b><small>every prop &amp; mechanic, explained</small></span></button>
-        <button class="bb" data-term="settings"><span class="bb-i">⚙</span><span class="bb-tx"><b>SETTINGS</b><small>keys, models, voice, data</small></span></button>
-        <button class="bb" data-term="updates"><span class="bb-i">↑</span><span class="bb-tx"><b>UPDATES</b><small>version &amp; release notes</small></span></button>
-        <button class="bb" data-term="rewind"><span class="bb-i">↶</span><span class="bb-tx"><b>RESTORE</b><small>restore an agent's workspace files</small></span></button>
-        <button class="bb" data-term="logbook"><span class="bb-i">▦</span><span class="bb-tx"><b>LOGBOOK</b><small>this agent's run history</small></span></button>
-        <button class="bb" data-term="notifs"><span class="bb-i">▲</span><span class="bb-tx"><b>NOTIFICATIONS</b><small>alerts &amp; unread events</small></span><span id="nf-badge" class="badge"></span></button>
+        <button class="bb" data-term="manual" data-hint="manual"><span class="bb-i">§</span><span class="bb-tx"><b>FIELD MANUAL</b><small>every prop &amp; mechanic, explained</small></span></button>
+        <button class="bb" data-term="settings" data-hint="settings"><span class="bb-i">⚙</span><span class="bb-tx"><b>SETTINGS</b><small>keys, models, voice, data</small></span></button>
+        <button class="bb" data-term="updates" data-hint="update"><span class="bb-i">↑</span><span class="bb-tx"><b>UPDATES</b><small>version &amp; release notes</small></span></button>
+        <button class="bb" data-term="rewind" data-hint="restore"><span class="bb-i">↶</span><span class="bb-tx"><b>RESTORE</b><small>restore an agent's workspace files</small></span></button>
+        <button class="bb" data-term="logbook" data-hint="logbook"><span class="bb-i">▦</span><span class="bb-tx"><b>LOGBOOK</b><small>this agent's run history</small></span></button>
+        <button class="bb" data-term="notifs" data-hint="notification"><span class="bb-i">▲</span><span class="bb-tx"><b>NOTIFICATIONS</b><small>alerts &amp; unread events</small></span><span id="nf-badge" class="badge"></span></button>
       </div>
     </div>
     <!-- WIDGET RAIL (widgets.js) — the bottom bar's dead middle; #term-strip (stationui.js) docks

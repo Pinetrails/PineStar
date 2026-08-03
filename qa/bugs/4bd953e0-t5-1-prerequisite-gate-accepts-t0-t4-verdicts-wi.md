@@ -4,10 +4,10 @@ slug: t5-1-prerequisite-gate-accepts-t0-t4-verdicts-wi
 title: t5.1 prerequisite gate accepts T0–T4 verdicts with no installer-hash or freshness binding, though t3.2 already binds T0's recorded installer sha256 to the binar
 surface: release
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/release
-fix: 
+fix: b315063b
 ---
 
 # t5.1 prerequisite gate accepts T0–T4 verdicts with no installer-hash or freshness binding, though t3.2 already binds T0's recorded installer sha256 to the binar
@@ -34,4 +34,4 @@ _Found by the `sweep/release` lane, 2026-07-28. Finder confidence: medium. Sever
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Fixed: T5.1 binds every available T0-T4 installer hash and byte count to the current installer and blocks stale verdicts.

@@ -18,7 +18,7 @@
         "type": "object",
         "required": ["type"],
         "properties": {
-          "type": { "enum": ["final_contains", "final_equals", "event_count", "event_data_equals", "event_data_min", "run_reason", "artifact_hash", "verification_fresh"] }
+          "type": { "enum": ["final_contains", "final_equals", "event_count", "event_data_equals", "event_data_min", "run_reason", "artifact_hash", "verification_fresh", "outcome_pass", "safety_invariants", "route_match", "fault_recovery"] }
         }
       }
     },
