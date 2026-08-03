@@ -12,7 +12,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const DEFAULT_PRIORITY = ['memory', 'study', 'arc', 'trust', 'thread', 'nudge'];
+  const DEFAULT_PRIORITY = ['memory', 'study', 'arc', 'trust', 'thread', 'rate', 'nudge'];
 
   function makeSlot(priority) {
     const order = (Array.isArray(priority) && priority.length ? priority : DEFAULT_PRIORITY).slice();
@@ -111,6 +111,7 @@
       while (set.size > maxSeen) set.delete(set.values().next().value);
       return true;
     }
+    function hasSeen(kind, runId) { const set = seen.get(kind); return !!(set && set.has(runId)); }
     function enqueue(kind, key, value) {
       if (!kind) return false;
       if (!queues.has(kind)) queues.set(kind, []);
@@ -175,6 +176,7 @@
           if (!isCurrent(record)) return false;
           const ms = Number.isFinite(opts.delay) ? Math.max(0, opts.delay) : 0;
           if (record.finishTimer) cancel(record.finishTimer);
+          if (ms === 0) return close(record, opts.reason || 'decided', opts);
           const expectedGeneration = generation;
           record.finishTimer = later(function () {
             record.finishTimer = null;
@@ -234,7 +236,7 @@
     }
 
     return {
-      slot, once, enqueue, shift, queueSize, clearQueue, claim, expire, scheduleExpire, reset,
+      slot, once, hasSeen, enqueue, shift, queueSize, clearQueue, claim, expire, scheduleExpire, reset,
       reserve(kind, runId) { slot.reserve(kind, runId); },
       releaseReservation(kind, runId) { slot.releaseReservation(kind, runId); },
       canOffer(kind) { return slot.can(kind); },

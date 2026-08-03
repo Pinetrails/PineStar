@@ -66,12 +66,14 @@ A.eq(ctl.canOffer('study'), 'free', 'an empty memory fetch releases the reservat
 
 const oldThread = ctl.claim({ kind: 'thread', runId: 'run-old', node: { id: 'thread-old', isConnected: true } });
 A.eq(oldThread.decide(), true, 'the old async action starts while its card is current');
+let staleFinish = null;
+clock.setTimeout(() => { staleFinish = oldThread.finish({ delay: 0 }); }, 10);   // stand-in for a late fetch completion
 ctl.reset();
 const fresh = ctl.claim({ kind: 'study', runId: 'run-fresh', node: { id: 'study-fresh', isConnected: true } });
 A.ok(fresh, 'a fresh COMMS generation may claim the slot');
 A.eq(oldThread.isCurrent(), false, 'the old async handle is stale after reset');
-A.eq(oldThread.finish({ delay: 0 }), false, 'a stale async completion cannot schedule cleanup');
 clock.tick(100);
+A.eq(staleFinish, false, 'a stale async completion cannot schedule cleanup');
 A.eq(ctl.visibleBeat(), 'study', 'the stale completion cannot release or replace the fresh card');
 A.eq(vanished.indexOf('study-fresh'), -1, 'the fresh card was not touched by stale cleanup');
 
