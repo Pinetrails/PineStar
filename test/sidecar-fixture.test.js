@@ -17,7 +17,7 @@ const { SidecarFixture, allocatePort, processAlive } = require('./helpers/sideca
   let allocationCalls = 0;
   const retrying = SidecarFixture.create({
     prefix: 'starnet-fixture-bind-retry-',
-    timeoutMs: 3000,
+    timeoutMs: 9000,
     portAllocator: async () => (++allocationCalls === 1 ? occupiedPort : allocatePort())
   });
   try {

@@ -26,6 +26,15 @@ function allocatePort() {
   });
 }
 
+function portBindable(port) {
+  return new Promise(resolve => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', () => resolve(false));
+    server.listen(port, HOST, () => server.close(() => resolve(true)));
+  });
+}
+
 function processAlive(pid) {
   if (!pid) return false;
   try { process.kill(pid, 0); return true; } catch (_) { return false; }
@@ -76,6 +85,11 @@ class SidecarFixture {
     if (this.child) throw new Error('sidecar fixture is already running');
     const attempt = Number(bindAttempt) || 0;
     this.port = await this.portAllocator();
+    if (!(await portBindable(this.port))) {
+      if (attempt < this.bindRetries) return this.start(extraEnv, attempt + 1);
+      await this.dispose();
+      throw new Error('sidecar port remained occupied after ' + (attempt + 1) + ' allocation attempts');
+    }
     this.baseUrl = 'http://' + HOST + ':' + this.port;
     this.token = '';
     this._output = '';
@@ -184,4 +198,4 @@ process.once('exit', () => {
   }
 });
 
-module.exports = { SidecarFixture, allocatePort, processAlive };
+module.exports = { SidecarFixture, allocatePort, processAlive, portBindable };

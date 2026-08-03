@@ -9,15 +9,12 @@
    No external network and no provider spend. Part of test:http because it owns child processes and sockets. */
 'use strict';
 const A = require('./_assert.js');
-const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
-const os = require('os');
 const path = require('path');
-const { bootToken } = require('./_httpToken.js');
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
 const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 const PRIMARY = 'anthropic-primary-e2e';
 const BACKUP = 'anthropic-backup-e2e';
 
@@ -94,41 +91,6 @@ function startProvider() {
   });
 }
 
-function boot(port, workspaces, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, {
-        SKYNET_PORT: String(port), SKYNET_WORKSPACES: workspaces,
-        // The request supplies both credentials and the loopback base URL. Clear ambient credentials so no
-        // unrelated background path can escape the fixture.
-        OPENROUTER_KEY: '', OPENROUTER_API_KEY: '', ANTHROPIC_API_KEY: '',
-        SKYNET_BUDGET_PER_RUN: '10', SKYNET_BUDGET_PER_AGENT: '0',
-        SKYNET_BUDGET_PER_DAY: '0.30', SKYNET_BUDGET_GLOBAL: '0',
-        SKYNET_EDGE_TTS: '0', STARNET_EDGE_TTS: '0'
-      }),
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) {
-        settled = true; resolve({ child, port, output: () => out });
-      } else if (!settled && /already in use/i.test(out)) {
-        settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, workspaces, attemptsLeft - 1));
-        else reject(new Error('no free sidecar port'));
-      }
-    };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => {
-      if (settled) return;
-      settled = true; try { child.kill(); } catch (_) {}
-      reject(new Error('sidecar boot timeout:\n' + out));
-    }, 10000);
-  });
-}
-
 async function eventsOf(response) {
   const text = await response.text();
   return text.split('\n').map(line => { try { return JSON.parse(line); } catch (_) { return null; } }).filter(Boolean);
@@ -136,16 +98,27 @@ async function eventsOf(response) {
 
 (async () => {
   const provider = await startProvider();
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-provider-recovery-'));
+  const sidecar = SidecarFixture.create({
+    prefix: 'starnet-provider-recovery-',
+    env: {
+      // The request supplies both credentials and the loopback base URL. Clear ambient credentials so no
+      // unrelated background path can escape the fixture.
+      OPENROUTER_KEY: '', OPENROUTER_API_KEY: '', ANTHROPIC_API_KEY: '',
+      SKYNET_BUDGET_PER_RUN: '10', SKYNET_BUDGET_PER_AGENT: '0',
+      SKYNET_BUDGET_PER_DAY: '0.30', SKYNET_BUDGET_GLOBAL: '0',
+      SKYNET_EDGE_TTS: '0', STARNET_EDGE_TTS: '0'
+    }
+  });
+  const ws = sidecar.workspace;
   const now = Date.now();
   fs.writeFileSync(path.join(ws, 'ledger.jsonl'), [
     { runId: 'subscription', agentId: 'hero', usd: 0.42, tokens: 42000, model: 'grok-4', unmetered: true, ts: now },
     { runId: 'metered', agentId: 'hero', usd: 0.10, tokens: 1000, model: 'paid/model', unmetered: false, ts: now }
   ].map(row => JSON.stringify(row)).join('\n') + '\n');
 
-  const sidecar = await boot(8730 + (process.pid % 100), ws, 20);
-  const base = 'http://' + HOST + ':' + sidecar.port;
-  let token = '';
+  await sidecar.start();
+  const base = sidecar.baseUrl;
+  const token = sidecar.token;
   const api = async (method, route, body) => fetch(base + route, {
     method,
     headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'X-StarNet-Token': token } : {}),
@@ -153,8 +126,6 @@ async function eventsOf(response) {
   });
 
   try {
-    token = await bootToken(base, base);
-
     // Ledger rows remain durable activity, but only the metered $0.10 reaches the budget/cap surface.
     const budget = await (await api('GET', '/api/budget/status')).json();
     A.ok(Math.abs(budget.spentToday - 0.10) < 1e-9, '/api/budget excludes the $0.42 subscription row');
@@ -195,7 +166,7 @@ async function eventsOf(response) {
     A.ok(firstEvents.concat(secondEvents).every(e => !(e.name === 'agent.run.end' && e.payload && e.payload.reason === 'budget')),
       'subscription dollars did not trip the production day governor');
   } finally {
-    try { sidecar.child.kill(); } catch (_) {}
+    await sidecar.dispose();
     await new Promise(resolve => provider.server.close(resolve));
   }
 
