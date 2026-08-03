@@ -475,6 +475,37 @@ async function readNdjson(res) {
     A.eq(again.calls.length, 4, 'the follow-up run made four connector calls');
     A.eq(again.prompts.length, 0, 'a granted agent is not re-asked on its next run either');
 
+    // The wildcard is now part of the REAL permissions authority surface, rather than invisible process state.
+    const afterFullPermissions = await (await fetch(B + '/api/permissions', {
+      headers: { 'X-StarNet-Token': token, Origin: B }
+    })).json();
+    const fullRow = (afterFullPermissions.blanket || []).find(b => b && b.agentId === 'mcp-agent');
+    A.ok(fullRow && fullRow.key === 'blanket:mcp-agent', 'GET /api/permissions exposes the exact agent wildcard');
+    A.eq(fullRow.scope, 'watched sessions, until the app restarts', 'the authority readout truthfully bounds Full Access to watched sessions');
+
+    // ORIGINAL unattended escape: the same agent's ungranted routine must remain unable to call the connector,
+    // even while its watched-session wildcard is live. Consent to a watched card is not cron/Telegram/night-shift consent.
+    const unattendedAfterFull = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: job.id }) });
+    const unattendedAfterFullPanel = await readNdjson(unattendedAfterFull);
+    A.ok(!unattendedAfterFullPanel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'),
+      'a watched Full Access wildcard does NOT authorize the same agent\'s unattended routine');
+
+    // The row's REVOKE door must remove the live process-lifetime authority, not merely repaint the panel.
+    const revokeFullRes = await fetch(B + '/api/permissions/revoke', {
+      method: 'POST', headers, body: JSON.stringify({ key: fullRow.key })
+    });
+    const revokeFull = await revokeFullRes.json();
+    A.ok(revokeFullRes.status === 200 && revokeFull.ok === true && revokeFull.revoked === true,
+      'POST /api/permissions/revoke withdraws the live wildcard');
+    const afterRevokePermissions = await (await fetch(B + '/api/permissions', {
+      headers: { 'X-StarNet-Token': token, Origin: B }
+    })).json();
+    A.ok(!(afterRevokePermissions.blanket || []).some(b => b && b.agentId === 'mcp-agent'),
+      'the next authoritative permissions read no longer lists the revoked wildcard');
+    const afterRevoke = await driveWatched('mcp-agent', 'FOURLOOKUPS after revoke', 'deny');
+    A.ok(afterRevoke.prompts.length >= 1, 'the same watched agent is asked again after REVOKE');
+    A.eq(afterRevoke.results.filter(r => r.ok === true).length, 0, 'a denied post-revoke run performs no connector action');
+
     // A DENY still refuses — the fix records a yes, it never invents one. Fresh agent: no blanket in play.
     const denied = await driveWatched('mcp-agent-deny', 'FOURLOOKUPS deny this one', 'deny');
     A.ok(denied.prompts.length >= 1, 'an ungranted agent is still asked');

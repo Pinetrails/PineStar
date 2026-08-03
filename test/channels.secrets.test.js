@@ -273,19 +273,22 @@ const root = path.resolve(__dirname, '..');
 
 // ---- I. Rust shell wiring (static guard on main.rs) ----
 {
-  const rs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'main.rs'), 'utf8');
-  A.ok(/SIDECAR_CHANNEL_TOKEN_ENVS/.test(rs), 'main.rs declares the channel-token env table');
-  A.ok(/"telegram",\s*"SKYNET_TELEGRAM_TOKEN"/.test(rs) && /"discord",\s*"SKYNET_DISCORD_TOKEN"/.test(rs), 'main.rs maps both channels to their spawn env vars');
-  A.ok(/channel:\{channel\}|channel:\{\}/.test(rs) || /format!\("channel:/.test(rs), 'main.rs uses the channel:<id> keychain account');
-  A.ok(/read_channel_token\(channel\)/.test(rs) && /cmd\.env\(env_name, token\)/.test(rs), 'main.rs injects the keychain token into the sidecar env at spawn');
-  A.ok(/migrate_channel_tokens_from_plaintext/.test(rs), 'main.rs migrates plaintext channel tokens into the keychain');
-  A.ok(/fn harness_store_channel_token/.test(rs) && /fn harness_has_channel_token/.test(rs), 'main.rs exposes the store/has channel-token commands');
-  A.ok(/harness_store_channel_token,\s*\n\s*harness_has_channel_token/.test(rs), 'both channel-token commands are registered in the invoke handler');
+  const mainRs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'main.rs'), 'utf8');
+  const credentialsRs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'credentials.rs'), 'utf8');
+  const nativeRs = mainRs + '\n' + credentialsRs;
+  A.ok(/mod credentials;/.test(mainRs), 'main.rs owns one focused native credential module');
+  A.ok(/SIDECAR_CHANNEL_TOKEN_ENVS/.test(credentialsRs), 'credentials.rs declares the channel-token env table');
+  A.ok(/"telegram",\s*"SKYNET_TELEGRAM_TOKEN"/.test(credentialsRs) && /"discord",\s*"SKYNET_DISCORD_TOKEN"/.test(credentialsRs), 'credentials.rs maps both channels to their spawn env vars');
+  A.ok(/format!\("channel:\{channel\}"\)/.test(credentialsRs), 'credentials.rs uses the channel:<id> keychain account');
+  A.ok(/read_channel_token\(channel\)/.test(nativeRs) && /cmd\.env\(env_name, token\)/.test(mainRs), 'main.rs injects module-owned keychain tokens into the sidecar env at spawn');
+  A.ok(/fn migrate_channel_tokens_from_plaintext/.test(credentialsRs), 'credentials.rs migrates plaintext channel tokens into the keychain');
+  A.ok(/fn harness_store_channel_token/.test(mainRs) && /fn harness_has_channel_token/.test(mainRs), 'main.rs preserves the store/has channel-token commands');
+  A.ok(/harness_store_channel_token,\s*\n\s*harness_has_channel_token/.test(mainRs), 'both channel-token commands are registered in the invoke handler');
   // the store command must write the keychain (set_password/delete) and push, never return the token
-  A.ok(/fn harness_store_channel_token[\s\S]*?set_password[\s\S]*?push_channel_token/.test(rs), 'store command writes the keychain then pushes to the sidecar');
+  A.ok(/fn harness_store_channel_token[\s\S]*?set_password[\s\S]*?push_channel_token/.test(mainRs), 'store command writes the keychain then pushes to the sidecar');
   // DURABILITY (Andrew's invariant): the plaintext-token migration only strips the file token AFTER a keychain
   // read-back confirms the keychain actually holds it — a failed set_password must leave the plaintext copy intact.
-  A.ok(/fn migrate_channel_tokens_from_plaintext[\s\S]*?read_channel_token\(channel\)[\s\S]*?keychain_has_it[\s\S]*?rec\.remove\("token"\)/.test(rs), 'migrate strips the plaintext token only after a keychain read-back confirms it (never destroys the last copy)');
+  A.ok(/fn migrate_channel_tokens_from_plaintext[\s\S]*?read_channel_token\(channel\)[\s\S]*?keychain_has_it[\s\S]*?\.remove\("token"\)/.test(credentialsRs), 'migrate strips the plaintext token only after a keychain read-back confirms it (never destroys the last copy)');
 }
 
 // ---- J. frontend routes the token through the keychain on desktop, POST-body on browser ----

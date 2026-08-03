@@ -207,6 +207,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const priorZoom = document.body.style.zoom || '';
     if (tz === 100) document.body.style.removeProperty('zoom');
     else document.body.style.zoom = String(tz / 100);
+    // ...but the CRT GLASS is screen-space HARDWARE, not content. body's zoom multiplies into every
+    // descendant, and the glass overlay's beam pitch is authored in hard px — so TEXT SIZE was also
+    // stretching the scanlines (3px pitch → 4.35px at HUGE: the tube looked blown up, lines reading
+    // as venetian blinds instead of a beam). Publish the EXACT reciprocal so those layers can cancel
+    // the zoom back to 1:1 (style.css `body::after`, marketplace.css `.mkt-scrim::after`). Removed at
+    // 100% for the same reason `zoom` is: the plain-desktop default leaves no inline style behind.
+    if (tz === 100) document.body.style.removeProperty('--crt-unzoom');
+    else document.body.style.setProperty('--crt-unzoom', String(100 / tz));
     // a zoom change rescales every open window's visual footprint without firing a window resize —
     // re-clamp them into the new local viewport (same pass the resize listener runs) or a window
     // sized/parked at one scale can hang past the frame at another.
@@ -5108,7 +5116,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const blanket = Array.isArray(snap.blanket) ? snap.blanket : [];
         blanket.forEach(b => {
           rows.push('<div class="set-row"><span>⚠ <b>FULL ACCESS</b> — you clicked "Full access" on a permission card for ' +
-            esc(String(b.agentId || 'this agent')) + ', so it may use EVERY capability with no further prompts' +
+            esc(String(b.agentId || 'this agent')) + ', so its watched sessions may reuse allowed danger-class approvals without asking again; host hardlines still apply' +
             (b.scope ? ' <span class="dim">(' + esc(String(b.scope)) + ')</span>' : '') +
             '</span> <button class="bb sm danger" data-perm-revoke="' + esc(String(b.key)) + '">✕ REVOKE</button></div>');
         });

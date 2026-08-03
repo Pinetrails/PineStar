@@ -69,6 +69,76 @@ at least 95% shared-workload success within five points of the frozen reference,
 zero unclassified P2 findings, measured performance/cost, coherent public release surfaces, READY,
 and the required product-perfect wave receipts. No code, merge, push, publication, external message,
 credential, or production-data change is part of this planning lane.
+## 2026-08-03 — CLEANUP PHASES 0–8 (`agent/cleanup-phases-0-8`)
+
+COMPLETE CANDIDATE. Phase 0 closed all seven remaining P2 bug-register records with production-path
+proofs, including release-receipt candidate binding, provider recovery/accounting, channel SSE, tooltip,
+and watched-only Full Access behavior. Phase 1 replaced repeated sidecar process setup with one lifecycle
+fixture and moved the fast/HTTP gates from hand-maintained command chains to ordered manifests. Phase 2
+extracted bounded body reads, file/range response policy, and the full TTS/STT/media subsystem from the
+sidecar composition root; the media move removed 706 lines from `sidecar/index.js` and kept the 200-always
+voice contract. Phase 3 introduced one explicit per-run execution state for taint, loop detection, output
+budgets, checkpoints, journaling, artifacts, and proof-of-work counts. Phase 4 added normalized, versioned,
+read-back-proven domain stores and migrated budget, fallback-chain, and memory settings.
+
+Phase 5 added `QuerySpine` for keyed GET dedupe, TTL/last-good state, invalidation, and subscriber-owned
+polling, then migrated the cron-family frontend consumers. Phase 6 added `BeatCard` and moved memory, study,
+arc, trust, thread, nudge, and rating cards onto one arbitration/expiry/generation lifecycle. Phase 7 moved
+provider abort classification and retry delays into the shared provider runtime, fixing stale abort-listener
+accumulation. Phase 8 extracted native credential/keychain and legacy token migration from Tauri `main.rs`,
+removed 14 unreachable sprite frames, added a 3,656-frame manifest integrity gate, refreshed `BRAIN.md`, and
+re-locked both the release surface and moved credential authority locators.
+
+Verification on the combined candidate: `npm run test:fast` **509/509 GREEN**; `npm run test:http` **56/56
+GREEN**; claims planning authority **PASS** (37 claims / 192 files); website mirror **GREEN**; sprite manifest
+**15,577 assertions GREEN**. A final seeded live sidecar returned `/api/health` = `ok`, served the app and both
+new frontend modules with HTTP 200, and proved `queryspine.js` and `beatcard.js` load before `chat.js`; the
+test port was released. Keyless live TTS and STT each returned their required HTTP-200 fallback envelope.
+`credentials.rs` passes rustfmt and 258 focused native/static assertions. Full Cargo compilation could not be
+completed on this Windows host: both parallel and `-j1` attempts exhausted compiler memory while building the
+upstream `windows` crate (`0xc000012d` / `STATUS_STACK_BUFFER_OVERRUN`), before any StarNet source diagnostic.
+No provider spend, external message/write, credential mutation, push, PR, deploy, tag, or publication occurred.
+
+## 2026-08-03 — PROVIDER P2 REGISTER CLOSURE (`agent/cleanup-p0-providers`)
+
+READY FOR CLEAN-BASE CHERRY-PICK. The three provider P2 records `8d7b0b52`, `cb8dc6c3`, and
+`4007eb1f` were already fixed in production by `fdbb12a2` but remained falsely open in the durable bug
+register. `e5e4e620` adds the missing production-composed proof: one actual sidecar `/api/run` rotates
+off a 429 primary credential, compacts only through the live backup, and completes; a second run inside
+the cooldown starts on that warm backup and never touches the primary. The same boot preloads a $0.42
+unmetered subscription row above a $0.30 day cap plus $0.10 metered spend, proves `/api/budget` exposes
+only $0.10 while counting both runs, and proves the subscription row does not block either live run.
+`775e7893` closes the three records through the official QA register flow and regenerates `qa/BUGS.md`.
+
+Verification: touched JavaScript passes `node --check`; focused provider/ledger/compaction suites are
+green (`provider-recovery.e2e` 15, `credrotate` 29, `ledger` 48, `compaction` 8); the QA bug register is
+valid with the provider backlog cleared; full `test:http` is green, including sidecar 463, browser
+gauntlet 86, route coverage 75, and OpenAI compatibility 36. The first HTTP attempt stopped at the
+browser gauntlet; that suite immediately passed 86/86 alone and the complete rerun passed. `test:fast`
+is NOT green on this worktree's supplied `90df36dd` base: its first 197 steps, including every provider
+and QA-register test, passed, then `qa-product-perfect-claims.test.js` failed nine pre-existing planning-
+authority assertions. The coordinator reset trunk to `9aa72820` while this isolated lane was running,
+so only these lane commits should be cherry-picked and the fast gate re-run there. No external network,
+provider spend, credential, production-data, integration-tree, push, PR, deploy, or publish action occurred.
+
+## 2026-08-03 — PHASE 0 WORLD + SAFECELL P2 RECONCILIATION (`agent/cleanup-p0-world-safe`)
+
+READY FOR CLEAN-TRUNK CHERRY-PICK. Three P2 ledger records were stale: their implementations had
+already landed in `f4d03511` (single-flight channel SSE + pending-tooltip cancellation) and
+`226cec3c` (watched-only Full Access, permissions readout, and revoke), but the records remained open.
+`0b9270fb` re-proves those fixes at the behavioral seams: it executes world.js's production `open()`
+closure through error → pending retry → re-entry → stale callback and ends with exactly one live
+EventSource; extends the real MCP/sidecar flow to prove a watched wildcard is listed, cannot authorize
+the same agent's ungranted routine, revokes real authority, and prompts again; and makes the Full Access
+row explicitly name its watched-session boundary and surviving host hardlines. The existing real-module
+tooltip rig proves pointerout during the 320ms delay cannot create a ghost while a rested anchor still
+shows normally. Focused receipts: channel SSE 75 assertions, tooltip 353, permissions 69, permissions UI
+34, MCP HTTP 87, website mirror 8. A seeded station on `:18761` reached ONLINE; SETTINGS › PERMISSIONS
+rendered its authoritative ledger, the station tooltip self-started/adopted its CINEMA title and hid on
+exit, and the browser warning/error log was empty. The canonical fast gate reached step 198/499, then
+hit the known `qa-product-perfect-claims` authority failure introduced by this lane's obsolete base
+`90df36dd`; integration has already reset to clean `9aa72820`, so the coordinator must re-run `test:fast`
+after cherry-picking the isolated commits there. No sidecar/route code changed in this reconciliation.
 
 ## 2026-08-02 — RECOMMENDATION FABRIC 1–5 (MERGED)
 

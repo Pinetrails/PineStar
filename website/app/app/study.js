@@ -18,10 +18,11 @@
    Fail-open everywhere: a failed / empty / malformed study yields ZERO proposals and never touches the run. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  const beatCard = (typeof module !== 'undefined' && module.exports) ? require('./beatcard.js') : root.BeatCard;
+  const api = factory(beatCard);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.Study = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (BeatCard) {
   'use strict';
 
   // the dossier dimensions the study may tag a proposal with — MUST match dossier.js DIM_KEYS (kept inline so
@@ -333,59 +334,9 @@
      value they read as 'busy' — so the 128 study.test + the goalstore §8 arc assertions hold unchanged.
      canTrust()/trustShown()/trustDone() are the only additions. */
   function makeBeatSlot() {
-    const pendingMemory = new Set();
-    let visible = null;
-    return {
-      memoryProposed(runId) { if (runId) pendingMemory.add(runId); },
-      memoryDeck() { if (visible !== null) return 'queue'; visible = 'memory'; return 'render'; },
-      memoryShown() { visible = 'memory'; },   // idempotent hard-claim for the actual deck render (already arbitrated)
-      memoryDone(runId, more) { if (runId) pendingMemory.delete(runId); visible = more ? 'memory' : null; },
-      memoryEmpty(runId) { if (runId) pendingMemory.delete(runId); },
-      canStudy() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';   // reflection in flight ANYWHERE — memory wins the moment
-        return 'free';
-      },
-      studyShown() { visible = 'study'; },
-      studyDone(more) { visible = more ? 'memory' : null; },
-      // GROWTH Tier 2 — the arc confirm beat cedes to BOTH memory and study: it may only take a wholly free slot.
-      // 'busy' = a beat (memory/study/arc/trust) is visible; 'memory' = reflection in flight (memory wins the moment).
-      canArc() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';
-        return 'free';
-      },
-      arcShown() { visible = 'arc'; },
-      // more=true hands the slot straight to a memory deck that QUEUED behind the visible arc panel (a late
-      // memory.proposed during a minutes-long confirm) — mirrors studyDone(more): the deck renders with no gap
-      // where another beat could steal the moment, and pendingMemory can't strand canStudy/canArc on 'memory'.
-      arcDone(more) { visible = more ? 'memory' : null; },
-      // GROWTH Tier 3 — the earned-autonomy offer beat: the LOWEST priority. It cedes to memory, study AND the arc;
-      // like canArc it may only take a wholly free slot. 'busy' = ANY beat (memory/study/arc/trust) is visible.
-      canTrust() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';
-        return 'free';
-      },
-      trustShown() { visible = 'trust'; },
-      // more=true hands the slot to a memory deck that QUEUED behind the visible trust card (mirrors arcDone/studyDone):
-      // the deck renders with no gap where another beat could steal the moment, and pendingMemory can't strand the lanes.
-      trustDone(more) { visible = more ? 'memory' : null; },
-      // NS-6 (ADDITIVE) — the THREAD turn-in beat: a FIFTH participant, the LOWEST priority (memory > study >
-      // arc > trust > thread — study always wins the moment first, per the turn-in conventions). Like canArc /
-      // canTrust it may only take a WHOLLY FREE slot; 'thread' is just another visible value the other lanes
-      // read as 'busy', so every prior assertion holds unchanged.
-      canThread() {
-        if (visible !== null) return 'busy';
-        if (pendingMemory.size) return 'memory';
-        return 'free';
-      },
-      threadShown() { visible = 'thread'; },
-      // more=true hands the slot to a memory deck that QUEUED behind the visible thread card (mirrors trustDone).
-      threadDone(more) { visible = more ? 'memory' : null; },
-      visibleBeat() { return visible; },
-      _pending() { return pendingMemory.size; }
-    };
+    const shared = BeatCard || (typeof globalThis !== 'undefined' && globalThis.BeatCard);
+    if (!shared || typeof shared.makeSlot !== 'function') throw new Error('BeatCard must load before Study.makeBeatSlot');
+    return shared.makeSlot();
   }
 
   return {

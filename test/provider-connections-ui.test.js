@@ -10,7 +10,9 @@ const app = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.j
 const harness = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'harness.js'), 'utf8');
 const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
 const index = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
-const tauri = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'main.rs'), 'utf8');
+const tauri = ['main.rs', 'credentials.rs']
+  .map(file => fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', file), 'utf8'))
+  .join('\n');
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; };

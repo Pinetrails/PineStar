@@ -16,7 +16,6 @@
   <a class="brand" href="../index.html">STARNET TERMLINK</a>
   <nav class="topnav">
     <a href="../index.html#features">FEATURES</a>
-    <a href="../pricing.html">PRICING</a>
     <a href="../index.html#download">DOWNLOAD</a>
     <a href="index.html">DOCS</a>
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
@@ -72,6 +71,14 @@ network that forces one, the UI and browser sign-ins can look perfectly healthy 
 connects fail with a plain network error. There is no proxy setting yet; you need direct access to the
 provider and platform APIs. <b>COPY DIAGNOSTICS</b> (under any failed turn) shows whether a proxy is
 configured on your machine.</p>
+
+<h2>Live Voice is slow to start the first time</h2>
+<p>Expected, once. Hands-free Live Voice runs on a speech engine inside the app rather than a
+cloud service, so the first session downloads the open Whisper and Kokoro model weights and
+caches them in your user profile — the panel shows that download's progress instead of
+pretending to listen. Every session after that starts immediately and needs no network. If the panel refuses
+before opening your microphone, that's deliberate: it asks the station whether the speech
+packages are actually present rather than going live and failing on the first word.</p>
 
 <h2>Still stuck?</h2>
 <p>Open an issue on <a href="https://github.com/androoAGI/starnet/issues" target="_blank" rel="noopener">GitHub</a> or email

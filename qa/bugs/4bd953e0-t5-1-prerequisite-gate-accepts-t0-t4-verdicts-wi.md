@@ -7,7 +7,7 @@ severity: P2
 status: fixed
 found: 2026-07-28
 lane: sweep/release
-fix: b315063b
+fix: b76e340c
 ---
 
 # t5.1 prerequisite gate accepts T0–T4 verdicts with no installer-hash or freshness binding, though t3.2 already binds T0's recorded installer sha256 to the binar
@@ -34,4 +34,4 @@ _Found by the `sweep/release` lane, 2026-07-28. Finder confidence: medium. Sever
 
 ## Verdict
 
-Fixed: T5.1 binds every available T0-T4 installer hash and byte count to the current installer and blocks stale verdicts.
+Confirmed and closed. T5.1 now requires installer-bearing T0/T1/T3/T4 receipts to record the current installer hash and bytes, and requires every T0-T4 receipt to be generated after the candidate installer; T2 is freshness-bound because it is a repository-level state-safety proof. Hashless, stale, and different-installer receipts fail closed. Focused gate: 35 assertions green.

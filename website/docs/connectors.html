@@ -16,7 +16,6 @@
   <a class="brand" href="../index.html">STARNET TERMLINK</a>
   <nav class="topnav">
     <a href="../index.html#features">FEATURES</a>
-    <a href="../pricing.html">PRICING</a>
     <a href="../index.html#download">DOWNLOAD</a>
     <a href="index.html">DOCS</a>
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
@@ -44,10 +43,33 @@
 <p class="doc-sub">// plug the station into your tools — and into your other harnesses</p>
 
 <h2>Built-in tools</h2>
-<p>Agents ship with a broad real-tool belt: web search and fetching, browser automation,
-files and shell in granted workspaces, notebooks, memory recall, skills, and more — fourteen
-tool families, every one gated by the station's capability model
-(<a href="station.html">object = capability</a>).</p>
+<p>Agents ship with a broad real-tool belt. Everything an agent can reach outside its own
+reasoning belongs to one of <b>eight capability families</b>, and every family is gated by the
+station's capability model (<a href="station.html">object = capability</a>) — you grant it by
+placing the gear, and you can revoke it the same way.</p>
+<table>
+<tr><th>Family</th><th>What it grants</th></tr>
+<tr><td><b>Web &amp; browser</b></td><td>Search the web, fetch pages, and drive a real browser — navigate, read, click, type.</td></tr>
+<tr><td><b>File cabinet</b></td><td>Read, search, and write files in the agent's workspace.</td></tr>
+<tr><td><b>Workbench</b></td><td>Run shell commands, execute verification, and use the computer — the code-execution bench.</td></tr>
+<tr><td><b>Task delegation</b></td><td>Delegate subtasks to summoned crew, summon new agents, and schedule routines.</td></tr>
+<tr><td><b>Comms relay</b></td><td>Send a message out to a connected chat — only chats someone already opened with this station.</td></tr>
+<tr><td><b>Media studio</b></td><td>Generate images from text and analyse images, on the key the agent already uses.</td></tr>
+<tr><td><b>Memory notebook</b></td><td>The agent's private memory, task plans, and saved skills.</td></tr>
+<tr><td><b>Jukebox</b></td><td>Search and control your Spotify — play, pause, queue, "what's playing".</td></tr>
+</table>
+
+<h2>Browsing that actually browses</h2>
+<p>The web family is not just a search box. An agent can run a search, fetch a page, and then
+<b>drive a real browser</b> against it — navigating, reading the rendered page, clicking, and
+typing. When a page is unreachable or throws up a challenge, the agent reports that as the
+result rather than inventing a plausible summary of a page it never loaded; a 403 or a 404 is
+an answer, not a hidden failure.</p>
+<p>When a site genuinely requires a login, the agent can't and won't ask you for the password.
+It asks the station to open a <b>visible browser window</b> and you sign in yourself — your
+password is typed into real Chrome and never passes through the agent or the model. The
+resulting cookies live in the station's browser profile, so later runs stay signed in without
+ever having handled your credentials.</p>
 
 <h2>MCP connectors</h2>
 <p>StarNet speaks <b>Model Context Protocol</b>. A curated connector catalog covers popular
@@ -62,9 +84,20 @@ PLATFORM</a> walks the whole decision end to end — which of the two routes app
 and substituted without the model ever seeing it, unattended use, and what each failure message means.</div>
 
 <h2>Messaging channels</h2>
-<p>Connect <b>Telegram</b> or <b>Discord</b> and your agents can report to you — and take
-tasking from you — where you already are. Scheduled and Night Shift runs can deliver their
-results straight to a channel.</p>
+<p>Connect <b>Telegram</b>, <b>Discord</b>, <b>Slack</b>, <b>Matrix</b>, or <b>Signal</b> and your
+agents can report to you — and take tasking from you — where you already are. Scheduled and
+Night Shift runs can deliver their results straight to a channel. Matrix talks to whatever
+homeserver you point it at, and Signal talks to a signal-cli bridge you run yourself; StarNet
+never picks the server for you.</p>
+<p>Outbound messages are a capability like any other: an agent can only write to a chat someone
+has <b>already opened with this station</b>, never to an arbitrary address it decides on.</p>
+
+<h2>Telegram as a remote control</h2>
+<p>Telegram goes further than notifications. From your phone you can hold a real threaded
+conversation with a specific agent, start and steer runs, answer an approval an agent is
+waiting on, and orchestrate the crew — the same command surface as COMMS, reachable when you're
+nowhere near the machine. The station is still doing the work locally; Telegram is just the
+window you're looking through.</p>
 
 <h2>Harness interop</h2>
 <p>Already run Claude Code, or another agent harness? StarNet exposes an <b>MCP stdio bridge</b>

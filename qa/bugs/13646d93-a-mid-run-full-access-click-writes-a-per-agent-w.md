@@ -37,4 +37,4 @@ _Found by the `sweep/safecell` lane, 2026-07-28. Finder confidence: medium. Seve
 
 ## Verdict
 
-Fixed: watched Full Access no longer authorizes autonomous runs, is visible in the permissions ledger, and has a revoke path.
+Confirmed and fixed in `226cec3c`; the stale open ledger row outlived the implementation. Full Access is now injected only for interactive runs, appears in `/api/permissions` with its agent and process-lifetime watched-session scope, and is withdrawn by the normal revoke route. `0b9270fb` adds production-composed HTTP proof that the same agent's ungranted routine remains denied while the wildcard is live, the row is visible, revoke removes real authority, and the next watched run prompts again. The panel copy also names the watched-session boundary and host hardlines instead of implying unrestricted unattended authority.

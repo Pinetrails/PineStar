@@ -34,4 +34,4 @@ _Found by the `sweep/providers` lane, 2026-07-28. Finder confidence: high. Sever
 
 ## Verdict
 
-Fixed: production now consults the primary key cooldown, selects a warm alternate first, and demotes the cooled primary to last resort.
+Fixed by fdbb12a2: runOnce now consults the primary key's cooldown, starts on a warm alternate, demotes the cooling primary, and passes the actually active key into the loop. The real-sidecar regression in e5e4e620 proves a second run does not touch the cooled primary after backup success.

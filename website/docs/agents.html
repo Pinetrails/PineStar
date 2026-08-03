@@ -16,7 +16,6 @@
   <a class="brand" href="../index.html">STARNET TERMLINK</a>
   <nav class="topnav">
     <a href="../index.html#features">FEATURES</a>
-    <a href="../pricing.html">PRICING</a>
     <a href="../index.html#download">DOWNLOAD</a>
     <a href="index.html">DOCS</a>
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
@@ -68,8 +67,36 @@ agent's model at any time in its dossier.</p>
 
 <h2>Concurrency</h2>
 <p>Each additional bay or specialist you place can run <b>concurrently</b> — genuinely distinct,
-bounded agent runs, not one queue wearing costumes. Teams can spawn sub-workers for a task and
-fold their results back. The conveyor carries real work items between rooms.</p>
+bounded agent runs, not one queue wearing costumes. The conveyor carries real work items
+between rooms.</p>
+
+<h2>Delegation: agents that summon agents</h2>
+<p>An agent holding the <b>task delegation</b> capability can break a large job apart and hand
+the pieces out. Every worker it creates runs its <b>own real agent loop</b> — its own searching,
+reading, file writing and memory — and returns a result the lead folds back into the answer.
+There are three shapes:</p>
+<table>
+<tr><th>Move</th><th>What it does</th></tr>
+<tr><td><b>Dispatch</b></td><td>Hand subtasks to specialists already on your crew.</td></tr>
+<tr><td><b>Spawn</b></td><td>Create ephemeral clones of itself to work subtasks in parallel, then discard them.</td></tr>
+<tr><td><b>Summon</b></td><td>Recruit a genuinely new specialist onto the crew — the same thing you'd do in the Recruitment Bay, done live because the job needed it.</td></tr>
+</table>
+<p>Background workers are inspectable while they run: list them, look at one, <b>interrupt</b>
+one that's going the wrong way, or <b>resume</b> a stalled one — it restarts on the same prompt
+and appends to the same durable record, so nothing is silently lost. You watch the whole tree
+work on the station floor; a lit desk is a live worker, not a decoration.</p>
+
+<h2>Live Voice — talking to the station</h2>
+<p>You can put COMMS down and just talk. Hands-free <b>Live Voice</b> listens, transcribes, runs
+the work, and speaks the answer back, using a speech engine <b>built into the app</b> — Whisper
+for listening, Kokoro for speaking, both on your CPU.</p>
+<p>It deliberately does <b>not</b> use a vendor's realtime voice API, even where one is
+available. A vendor path gave smoother turns but tied the feature to one provider, capped the
+persona behind that vendor's guardrails, and made the station behave differently depending on
+which provider you happened to connect. The built-in engine is a little slower per turn and
+wins everything else: no key, no account, identical on every station, and your recorded audio
+never leaves the machine. The first session downloads the open model weights once; after that it
+runs with no network at all.</p>
 
 <h2>COMMS</h2>
 <p>The COMMS window is command: talk to any agent, stream its work live, approve consequential

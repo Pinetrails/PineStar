@@ -34,4 +34,4 @@ _Found by the `sweep/providers` lane, 2026-07-28. Finder confidence: medium. Sev
 
 ## Verdict
 
-Fixed: compaction now receives the loop's live provider, model, and cost engine after rotation or fallback instead of calling the captured failed provider.
+Fixed by fdbb12a2: maybeCompact passes the loop's live provider/model/cost into the summarizer, and the index closure consumes that state. The real-sidecar regression in e5e4e620 proves compaction after a primary 429 reaches only the backup credential and the run completes.

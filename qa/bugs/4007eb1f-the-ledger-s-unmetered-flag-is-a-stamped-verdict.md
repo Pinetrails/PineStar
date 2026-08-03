@@ -34,4 +34,4 @@ _Found by the `sweep/providers` lane, 2026-07-28. Finder confidence: medium. Sev
 
 ## Verdict
 
-Fixed: ledger USD aggregates exclude unmetered subscription rows while preserving those rows for run and token history.
+Fixed by fdbb12a2: every metered ledger aggregate filters unmetered rows while count/all preserve the activity record. The real-sidecar regression in e5e4e620 proves /api/budget reports only metered dollars and a subscription row above the day cap does not block runs.

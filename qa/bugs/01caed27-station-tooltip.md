@@ -34,4 +34,4 @@ _Found by the `sweep/world` lane, 2026-07-28. Finder confidence: high. Severity 
 
 ## Verdict
 
-Fixed: tooltip pending state is tracked and pointerout cancels the delayed show before a ghost card can appear.
+Confirmed and fixed in `f4d03511`; the stale open ledger row outlived the implementation. The controller now records a pending anchor before the 320ms timer and pointerout clears that pending timer through `hide()`. The real-module delayed-pointer regression proves a flicked-away control never receives `aria-describedby`, while the rested-hover path still shows and hides normally.

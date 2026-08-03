@@ -11,40 +11,19 @@
 'use strict';
 const A = require('./_assert.js');
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
-const { spawn } = require('child_process');
-const { bootToken } = require('./_httpToken.js');
-const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
 // spawn the real sidecar; resolve once it logs its listen URL (capturing stdout+stderr for the boot-log assertion).
 // Retries the next port on EADDRINUSE.
-function boot(port, env, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, env, { SKYNET_PORT: String(port) }), stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port, out: () => out }); }
-      else if (!settled && /already in use/i.test(out)) { settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1)); else reject(new Error('no free port')); }
-    };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout:\n' + out)); } }, 9000);
-  });
-}
-
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
   // ---- Part 1: fresh workspace → stamp is written ---------------------------------------------------------------
   {
-    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-schema-fresh-'));
-    const { child } = await boot(8940 + (process.pid % 40), { SKYNET_WORKSPACES: ws }, 20);
+    const fixture = SidecarFixture.create({ prefix: 'sk-schema-fresh-' });
+    const ws = fixture.workspace;
+    await fixture.start();
     try {
       const stampPath = path.join(ws, '.schema-version.json');
       // the stamp is written synchronously at boot (before listen), so by the time we saw the listen URL it exists.
@@ -53,22 +32,23 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       A.eq(stamp.version, 1, 'stamp envelope version is 1');
       A.eq(stamp.schemaVersion, 1, 'stamp schemaVersion is 1');
       A.ok(typeof stamp.stampedAt === 'number' && stamp.stampedAt > 0, 'stamp carries a numeric stampedAt');
-    } finally { try { child.kill(); } catch (_) {} }
+    } finally { await fixture.dispose(); }
   }
 
   // ---- Part 2: pre-seeded NEWER stamp → DEGRADED (writes refused, reads served) ---------------------------------
   {
-    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-schema-newer-'));
+    const fixture = SidecarFixture.create({ prefix: 'sk-schema-newer-' });
+    const ws = fixture.workspace;
     // A NEWER StarNet already wrote this workspace: schemaVersion 2 > the 1 this sidecar understands.
     fs.writeFileSync(path.join(ws, '.schema-version.json'), JSON.stringify({ version: 1, schemaVersion: 2, stampedAt: Date.now() }));
-    const { child, port, out } = await boot(8985 + (process.pid % 40), { SKYNET_WORKSPACES: ws }, 20);
-    const B = 'http://' + HOST + ':' + port;
+    await fixture.start();
+    const B = fixture.baseUrl;
     try {
       // boot log warned LOUDLY (never silent)
       await wait(150);
-      A.ok(/WORKSPACE WRITTEN BY A NEWER STARNET|DEGRADED/i.test(out()), 'boot logs a loud newer-StarNet / DEGRADED warning');
+      A.ok(/WORKSPACE WRITTEN BY A NEWER STARNET|DEGRADED/i.test(fixture.output()), 'boot logs a loud newer-StarNet / DEGRADED warning');
 
-      const token = await bootToken(B, B);
+      const token = fixture.token;
       A.ok(token.length >= 32, 'got a session API token');
       const hdrs = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
 
@@ -101,7 +81,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       // GET /api/save STILL SERVES (reads are never blocked in degraded mode)
       const readRes = await fetch(B + '/api/save?agent=agent', { headers: { 'X-StarNet-Token': token, Origin: B } });
       A.eq(readRes.status, 200, 'GET /api/save still serves in degraded mode (reads not blocked)');
-    } finally { try { child.kill(); } catch (_) {} }
+    } finally { await fixture.dispose(); }
   }
 
   A.report('schema-stamp.test');

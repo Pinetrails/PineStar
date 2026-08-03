@@ -34,7 +34,6 @@
 const Widgets = (() => {
   const KEY = 'starnet.widgets.v1';
   const POLL_INSIGHTS_MS = 30000;
-  const POLL_CRON_MS = 60000;
   const POLL_FEED_MS = 30000;
   const TICKER_MS = 4000;
   const FEED_RE = /^feed:[a-z0-9][a-z0-9-]{0,23}$/;   // pinned-layout id for an agent-fed record: 'feed:' + its widget.set slug
@@ -50,6 +49,7 @@ const Widgets = (() => {
   let queueSeen = false;      // stays honest: "—" until the first queue.status arrives
   const feed = new Map();     // slug -> agent-fed record (each /api/widgets poll rebuilds it whole)
   let tickerStep = 0;         // shared ticker phase — every list widget cycles in step
+  let stopCron = null;        // subscription ownership; QuerySpine owns the one cron poll timer
 
   // E3: per-source staleness — the honest "this last-good number is no longer live" flag. A silent
   // poll failure used to keep painting the last-good figure with a hardcoded 'live' tag; now the
@@ -504,12 +504,14 @@ const Widgets = (() => {
       .then(st => { if (st) { insights = st; liveRunEnds = 0; pollFail.insights = false; paintAll(); } else { pollFail.insights = true; paintAll(); } })
       .catch(() => { pollFail.insights = true; paintAll(); });   // E3: silent failure now flips the source stale, not a frozen 'live'
   }
-  function pollCron() {
-    if (!gameEntered()) return;
-    fetch('/api/cron', { cache: 'no-store' })
-      .then(r => (r && r.ok) ? r.json() : null)
-      .then(st => { if (st && Array.isArray(st.jobs)) { cron = st; pollFail.cron = false; paintAll(); } else { pollFail.cron = true; paintAll(); } })
-      .catch(() => { pollFail.cron = true; paintAll(); });
+  function foldCron(q) {
+    if (q && q.hasData && q.data && Array.isArray(q.data.jobs)) cron = q.data;
+    pollFail.cron = !!(q && q.error);
+    paintAll();
+  }
+  function startCron() {
+    if (stopCron || !gameEntered() || typeof QuerySpine === 'undefined' || !QuerySpine.subscribe) return;
+    try { stopCron = QuerySpine.subscribe('cron', foldCron); } catch (_) { pollFail.cron = true; paintAll(); }
   }
   function pollFeed() {
     if (!gameEntered()) return;
@@ -555,7 +557,7 @@ const Widgets = (() => {
     // the title screen these are cheap early-returns; the first REAL fetch happens on the catch-up below the
     // moment entry is detected (≤4s), not after a full 30s interval.
     pollInsights(); setInterval(pollInsights, POLL_INSIGHTS_MS);
-    pollCron(); setInterval(pollCron, POLL_CRON_MS);
+    startCron();
     pollFeed(); setInterval(pollFeed, POLL_FEED_MS);
     setInterval(tickTicker, TICKER_MS);
     // E3: repaint on a short cadence so an SSE bridge drop surfaces the stale cue promptly (the QUEUE
@@ -566,7 +568,7 @@ const Widgets = (() => {
     setInterval(() => {
       try {
         const now = gameEntered();
-        if (now && !lastEntered) { pollInsights(); pollCron(); pollFeed(); }
+        if (now && !lastEntered) { pollInsights(); startCron(); pollFeed(); }
         lastEntered = now;
         if (now) paintAll();   // only the live rail needs the stale-cue repaint
       } catch (_) {}

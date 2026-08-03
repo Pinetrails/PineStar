@@ -2,7 +2,23 @@
 (function(){
   'use strict';
 
-  var FALLBACK_VERSION = '0.6.8';
+  var FALLBACK_VERSION = '0.8.5';
+
+  // Pricing page is written but deliberately NOT deployed (Andrew, 2026-08-02). Every link to
+  // it is marked data-pricing-link and hidden while this is false, so the site never offers a
+  // link that silently lands on the homepage. Flip to true in the same commit that ships
+  // pricing.html and the links come back everywhere at once — EXCEPT the docs and legal pages,
+  // which do not load this script (adding it there would break the privacy page's "the download
+  // page makes ONE api.github.com request" disclosure), so their topnav PRICING entry was
+  // deleted outright and has to be re-added by hand: `<a href="../pricing.html">PRICING</a>`.
+  // legal/terms.html also cites the pricing page in the body of clause 2 as forming part of the
+  // terms; that citation is a legal question, not a link-visibility one, and is left in place.
+  var PRICING_LIVE = false;
+  // Mark the whole sentence, not just the <a>, wherever pricing is mentioned mid-paragraph —
+  // hiding a bare link would leave the surrounding prose referring to a page nobody can reach.
+  if(!PRICING_LIVE){
+    document.querySelectorAll('[data-pricing-link]').forEach(function(el){ el.hidden = true; });
+  }
 
   // Community links — paste real URLs here and the DISCORD / X links appear
   // everywhere automatically. Empty string keeps them hidden (no dead links).

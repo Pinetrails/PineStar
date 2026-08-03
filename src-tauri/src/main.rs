@@ -11,6 +11,8 @@
 // restarts the sidecar (which would kill the page the user is on).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod credentials;
+
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -28,44 +30,12 @@ use tauri::{
 };
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
-const KEYCHAIN_ACCOUNT: &str = "openrouter";
-const KEYCHAIN_PROVIDERS: [&str; 13] = [
-    "openrouter",
-    "openai",
-    "anthropic",
-    "gemini",
-    "xai",
-    "groq",
-    "mistral",
-    "deepseek",
-    "together",
-    "fireworks",
-    "perplexity",
-    "cerebras",
-    "custom",
-];
-// Channel bot tokens live in the keychain under account "channel:<id>" and inject into the sidecar env at spawn
-// as SKYNET_<ID>_TOKEN — the SAME posture as provider API keys above. (id, env_name) drives both spawn injection
-// and the store/has commands. Adding a channel is one row here.
-const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2] = [
-    ("telegram", "SKYNET_TELEGRAM_TOKEN"),
-    ("discord", "SKYNET_DISCORD_TOKEN"),
-];
-const SIDECAR_PROVIDER_KEY_ENVS: [(&str, &str); 12] = [
-    ("openai", "SKYNET_OPENAI_API_KEY"),
-    ("anthropic", "SKYNET_ANTHROPIC_API_KEY"),
-    ("gemini", "SKYNET_GEMINI_API_KEY"),
-    ("xai", "SKYNET_XAI_API_KEY"),
-    ("groq", "SKYNET_GROQ_API_KEY"),
-    ("mistral", "SKYNET_MISTRAL_API_KEY"),
-    ("deepseek", "SKYNET_DEEPSEEK_API_KEY"),
-    ("together", "SKYNET_TOGETHER_API_KEY"),
-    ("fireworks", "SKYNET_FIREWORKS_API_KEY"),
-    ("perplexity", "SKYNET_PERPLEXITY_API_KEY"),
-    ("cerebras", "SKYNET_CEREBRAS_API_KEY"),
-    ("custom", "SKYNET_CUSTOM_OPENAI_KEY"),
-];
+use credentials::{
+    channel_keychain_entry, delete_credential_honest, is_known_channel, keychain_entry,
+    keychain_entry_for, keychain_pool_entry_for, migrate_channel_tokens_from_plaintext,
+    normalize_provider, read_channel_token, read_key, read_key_for, read_key_pool_for,
+    KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
+};
 
 /// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
 /// only with the sidecar), the project root, and the live child.
@@ -777,207 +747,6 @@ fn purge_stale_webview_cache_on_build_change(
                     path.display()
                 ),
             );
-        }
-    }
-}
-
-// ---- keychain (OS Credential Manager / Keychain / Secret Service via `keyring`) ----
-
-fn normalize_provider(provider: &str) -> &'static str {
-    match provider.trim().to_ascii_lowercase().as_str() {
-        "codex" | "openai-codex" => "codex",
-        "openai" | "openai-api" => "openai",
-        "anthropic" | "claude" => "anthropic",
-        "gemini" | "google" | "google-ai" | "google-gemini" => "gemini",
-        // 'grok' is now the OAuth (subscription) Grok id; 'xai'/'x-ai' stay the API-key Grok. (Mirrors the JS registry.)
-        "grok" | "grok-oauth" | "xai-oauth" => "grok",
-        "kimi" | "moonshot" | "kimi-code" | "kimi-oauth" => "kimi",
-        "xai" | "x-ai" => "xai",
-        "groq" => "groq",
-        "mistral" | "mistralai" => "mistral",
-        "deepseek" => "deepseek",
-        "together" | "together-ai" => "together",
-        "fireworks" | "fireworks-ai" => "fireworks",
-        "perplexity" | "pplx" | "sonar" => "perplexity",
-        "cerebras" => "cerebras",
-        "ollama" | "ollama-local" => "ollama",
-        "custom" | "openai-compatible" | "local" | "vllm" | "lmstudio" => "custom",
-        _ => "openrouter",
-    }
-}
-
-fn keychain_account_for(provider: &str) -> String {
-    match normalize_provider(provider) {
-        // Preserve the original account name so existing OpenRouter keys keep working.
-        "openrouter" => KEYCHAIN_ACCOUNT.to_string(),
-        id => format!("provider:{id}"),
-    }
-}
-
-fn keychain_entry() -> keyring::Result<keyring::Entry> {
-    keychain_entry_for("openrouter")
-}
-
-fn keychain_entry_for(provider: &str) -> keyring::Result<keyring::Entry> {
-    let account = keychain_account_for(provider);
-    keyring::Entry::new(KEYCHAIN_SERVICE, account.as_str())
-}
-
-fn keychain_pool_entry_for(provider: &str) -> keyring::Result<keyring::Entry> {
-    let account = format!("{}:pool", keychain_account_for(provider));
-    keyring::Entry::new(KEYCHAIN_SERVICE, account.as_str())
-}
-
-/// The stored BYOK key, or None if unset/empty.
-fn read_key() -> Option<String> {
-    read_key_for("openrouter")
-}
-
-fn read_key_for(provider: &str) -> Option<String> {
-    keychain_entry_for(provider)
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .filter(|k| !k.trim().is_empty())
-}
-
-fn read_key_pool_for(provider: &str) -> Vec<String> {
-    keychain_pool_entry_for(provider)
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|k| k.trim().to_string())
-        .filter(|k| !k.is_empty())
-        .take(8)
-        .collect()
-}
-
-// ---- channel bot tokens (keychain account "channel:<id>") ----
-
-/// Only the channels we actually inject (defends the keychain account namespace).
-fn is_known_channel(channel: &str) -> bool {
-    SIDECAR_CHANNEL_TOKEN_ENVS
-        .iter()
-        .any(|(id, _)| *id == channel)
-}
-
-fn channel_keychain_entry(channel: &str) -> keyring::Result<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, format!("channel:{channel}").as_str())
-}
-
-/// Delete a keychain credential, treating "nothing stored" as success. A REAL deletion
-/// failure (locked keychain, OS error) surfaces as Err so callers can stop claiming
-/// "purged" while the secret lives on — truthful telemetry applies to destruction too.
-fn delete_credential_honest(entry: &keyring::Entry) -> Result<(), String> {
-    match entry.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-/// The stored bot token for a channel, or None if unset/empty.
-fn read_channel_token(channel: &str) -> Option<String> {
-    channel_keychain_entry(channel)
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .filter(|t| !t.trim().is_empty())
-}
-
-/// Import any plaintext channel bot tokens from a legacy secrets.json into the keychain, then rewrite the file
-/// WITHOUT the tokens (keeping every non-secret field). One-time migration for a desktop build that upgraded from
-/// a plaintext-token world; a no-op when there are no plaintext tokens. Best-effort — a failure here never blocks
-/// startup (the sidecar's own runtime layer keeps the session honest either way).
-fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {
-    let file = workspaces.join("channels").join("secrets.json");
-    let raw = match std::fs::read_to_string(&file) {
-        Ok(s) => s,
-        Err(_) => return, // no file -> nothing to migrate
-    };
-    let mut json: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return, // corrupt -> leave it for the sidecar's resilient loader/.bak
-    };
-    let mut changed = false;
-    for (channel, _) in SIDECAR_CHANNEL_TOKEN_ENVS {
-        let token = json
-            .get(channel)
-            .and_then(|rec| rec.get("token"))
-            .and_then(|t| t.as_str())
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(str::to_string);
-        if let Some(token) = token {
-            // Store into the keychain if it doesn't already hold this channel's token (idempotent re-runs).
-            if read_channel_token(channel).is_none() {
-                if let Ok(entry) = channel_keychain_entry(channel) {
-                    let _ = entry.set_password(&token);
-                }
-            }
-            // INVARIANT (Andrew): never remove the last copy of a secret without PROOF a durable home holds it.
-            // Only strip the plaintext token once read_channel_token() confirms the keychain actually has it. If the
-            // set_password above failed (locked keychain, permissions, no backend), leave the plaintext token in
-            // place — a token on disk is strictly better than a lost token. Best-effort; never blocks startup. The
-            // sidecar's own boot migration will re-attempt the keychain adoption on a later launch (self-healing).
-            let keychain_has_it = read_channel_token(channel)
-                .map(|t| t == token)
-                .unwrap_or(false);
-            if keychain_has_it {
-                if let Some(rec) = json.get_mut(channel).and_then(|r| r.as_object_mut()) {
-                    rec.remove("token");
-                    changed = true;
-                }
-            }
-        }
-    }
-    if changed {
-        if let Ok(serialized) = serde_json::to_string(&json) {
-            // Atomic rewrite: a crash mid-write of secrets.json must never leave a truncated
-            // file (would corrupt the channel config). Write a sibling temp, then rename over
-            // the target — rename is atomic on the same volume, so readers see all-or-nothing.
-            let _ = atomic_write(&file, serialized.as_bytes());
-        }
-    }
-}
-
-/// Write `bytes` to `path` crash-safely: land them in a sibling temp file, flush, then
-/// atomically rename over `path`. The temp lives in the SAME directory so the rename stays on
-/// one volume (cross-volume renames are not atomic and can fall back to copy+delete). A crash
-/// before the rename leaves the temp (harmless orphan) and the original untouched; a crash
-/// after leaves the fully-written new file. Best-effort — errors bubble to the caller to log/ignore.
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(dir)?;
-    // Unique-ish temp name in the same dir; the pid keeps concurrent writers from colliding.
-    let tmp = dir.join(format!(
-        ".{}.{}.tmp",
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("secrets.json"),
-        std::process::id()
-    ));
-    {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.flush()?;
-        let _ = f.sync_all();
-    }
-    // On Windows, rename fails if the destination exists; remove-then-rename is the pragmatic
-    // path (there is a tiny window with no file, but a crash there still leaves the temp intact
-    // for a manual recover, and the sidecar's own resilient loader tolerates a missing file).
-    #[cfg(windows)]
-    {
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
-            Err(e)
         }
     }
 }

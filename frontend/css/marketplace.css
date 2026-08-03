@@ -17,27 +17,38 @@
    SOURCE OF TRUTH for these stops = style.css `body::after` — retune both together. Respects `no-scan`. */
 .mkt-scrim::after {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 20;
+  /* screen-space glass, same law as `body::after` — TEXT SIZE's body zoom multiplies into every
+     hard px here too, so each stop carries the same --cz reciprocal (stationui's --crt-unzoom).
+     Without it the bay's beam pitch stretched with the text while the rest of the station's did
+     not, which is exactly the "one surface whose glass doesn't match" this layer exists to avoid. */
+  --cz: var(--crt-unzoom, 1);
   background:
     repeating-linear-gradient(0deg,
       rgba(0,0,0,0) 0px,
-      rgba(0,0,0,0) 1px,
-      rgba(0,0,0,0.13) 1.5px,
-      rgba(0,0,0,0.30) 2px,
-      rgba(0,0,0,0.13) 2.5px,
-      rgba(0,0,0,0) 3px),
-    repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1px, rgba(40,180,120,0.02) 1px 2px, rgba(60,120,255,0.03) 2px 3px);
+      rgba(0,0,0,0) calc(1px * var(--cz)),
+      rgba(0,0,0,0.13) calc(1.5px * var(--cz)),
+      rgba(0,0,0,0.30) calc(2px * var(--cz)),
+      rgba(0,0,0,0.13) calc(2.5px * var(--cz)),
+      rgba(0,0,0,0) calc(3px * var(--cz))),
+    repeating-linear-gradient(90deg,
+      rgba(255,80,40,0.03) 0 calc(1px * var(--cz)),
+      rgba(40,180,120,0.02) calc(1px * var(--cz)) calc(2px * var(--cz)),
+      rgba(60,120,255,0.03) calc(2px * var(--cz)) calc(3px * var(--cz)));
 }
 @media (min-resolution: 1.75dppx) {
   .mkt-scrim::after {
     background:
       repeating-linear-gradient(0deg,
         rgba(0,0,0,0) 0px,
-        rgba(0,0,0,0) 1.5px,
-        rgba(0,0,0,0.13) 2.2px,
-        rgba(0,0,0,0.28) 3px,
-        rgba(0,0,0,0.13) 3.8px,
-        rgba(0,0,0,0) 4.5px),
-      repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1.5px, rgba(40,180,120,0.02) 1.5px 3px, rgba(60,120,255,0.03) 3px 4.5px);
+        rgba(0,0,0,0) calc(1.5px * var(--cz)),
+        rgba(0,0,0,0.13) calc(2.2px * var(--cz)),
+        rgba(0,0,0,0.28) calc(3px * var(--cz)),
+        rgba(0,0,0,0.13) calc(3.8px * var(--cz)),
+        rgba(0,0,0,0) calc(4.5px * var(--cz))),
+      repeating-linear-gradient(90deg,
+        rgba(255,80,40,0.03) 0 calc(1.5px * var(--cz)),
+        rgba(40,180,120,0.02) calc(1.5px * var(--cz)) calc(3px * var(--cz)),
+        rgba(60,120,255,0.03) calc(3px * var(--cz)) calc(4.5px * var(--cz)));
   }
 }
 body.no-scan .mkt-scrim::after { display: none; }
