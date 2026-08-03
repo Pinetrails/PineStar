@@ -1,5 +1,35 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 - v0.9.0 WAVE B SOURCE RECOVERY VERDICT (`agent/release-090-parity-plan`)
+
+SOURCE GAUNTLET GREEN; INSTALLED RELEASE GATES STILL BLOCKED. Read-intent recovery now separates explicitly
+read-only unmatched calls from uncertain mutation intents; safe reads are resumable while legacy, unknown, and
+mutating calls remain review-required. Compaction now refuses to fold history unless the exact removed slice is
+durably appended and read-back proven. Its fault adapter kills a child after fsync and before the in-memory fold,
+then restarts and proves the old fact remains searchable. Routine and background-worker completion now commits one
+terminal receipt containing the stable run/finalization ID, bounded result, cost, and original destination before
+publication; restart reconciliation delivers the pending receipt without rerunning paid work.
+
+The executable source fault pack is now 1,000/1,000 across all ten boundaries (100 repeats each), with zero
+false-done, wrong-destination, duplicate-mutation, or authority-escape events. The signed receipt verifies under
+Ed25519 key ID `29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`, but truthfully records
+`candidateBound:false`: these changes are on the source branch and are not present in the installed 0.8.5 binary.
+The canonical source gate is 509/509 green; a provider-free seeded sidecar returned live health and authenticated
+recovery HTTP 200, then stopped with its port released.
+
+All 32 ordinary parity scenarios now have separate immutable setup/prompt/oracle fixtures. The comparison runner
+discards submitted `outcome.passed`, recomputes correctness and all four safety violations from host observations,
+enforces required route/fresh-artifact checks, and binds the fixture-pack and grader hashes into the receipt. A
+forged-pass regression proves model/harness self-report cannot green a failed host observation.
+
+REMAINING BLOCKER: credential rotation has not occurred. The active installed StarNet credential envelope still has
+a July 27 modification timestamp, predating the August 3 exposure and re-auth request. No provider-backed run was
+made. After the Commander disconnects/reconnects ChatGPT in StarNet and completes sign-in, verify only credential
+metadata, build/bind the new installed candidate, capture three attempts for both harnesses through the 32 fixtures,
+run installed cold-start/first-token/useful-artifact measurements, evaluate 100% critical / 95% overall / at-most-
+5-point gates, and only then begin the 48-hour soak. Redacted evidence is indexed in
+[`docs/baselines/v0.9.0-wave-b-source-verdict.json`](baselines/v0.9.0-wave-b-source-verdict.json).
+
 ## 2026-08-03 - v0.9.0 WAVE A EXECUTABLE VERDICT (`agent/release-090-parity-plan`)
 
 GATES NOT MET. The installed StarNet 0.8.5 desktop is now cryptographically bound to executable
