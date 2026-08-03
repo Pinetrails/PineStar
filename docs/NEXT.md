@@ -1,5 +1,27 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 — PROVIDER P2 REGISTER CLOSURE (`agent/cleanup-p0-providers`)
+
+READY FOR CLEAN-BASE CHERRY-PICK. The three provider P2 records `8d7b0b52`, `cb8dc6c3`, and
+`4007eb1f` were already fixed in production by `fdbb12a2` but remained falsely open in the durable bug
+register. `e5e4e620` adds the missing production-composed proof: one actual sidecar `/api/run` rotates
+off a 429 primary credential, compacts only through the live backup, and completes; a second run inside
+the cooldown starts on that warm backup and never touches the primary. The same boot preloads a $0.42
+unmetered subscription row above a $0.30 day cap plus $0.10 metered spend, proves `/api/budget` exposes
+only $0.10 while counting both runs, and proves the subscription row does not block either live run.
+`775e7893` closes the three records through the official QA register flow and regenerates `qa/BUGS.md`.
+
+Verification: touched JavaScript passes `node --check`; focused provider/ledger/compaction suites are
+green (`provider-recovery.e2e` 15, `credrotate` 29, `ledger` 48, `compaction` 8); the QA bug register is
+valid with the provider backlog cleared; full `test:http` is green, including sidecar 463, browser
+gauntlet 86, route coverage 75, and OpenAI compatibility 36. The first HTTP attempt stopped at the
+browser gauntlet; that suite immediately passed 86/86 alone and the complete rerun passed. `test:fast`
+is NOT green on this worktree's supplied `90df36dd` base: its first 197 steps, including every provider
+and QA-register test, passed, then `qa-product-perfect-claims.test.js` failed nine pre-existing planning-
+authority assertions. The coordinator reset trunk to `9aa72820` while this isolated lane was running,
+so only these lane commits should be cherry-picked and the fast gate re-run there. No external network,
+provider spend, credential, production-data, integration-tree, push, PR, deploy, or publish action occurred.
+
 ## 2026-08-03 — PHASE 0 WORLD + SAFECELL P2 RECONCILIATION (`agent/cleanup-p0-world-safe`)
 
 READY FOR CLEAN-TRUNK CHERRY-PICK. Three P2 ledger records were stale: their implementations had
