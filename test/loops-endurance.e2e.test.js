@@ -156,6 +156,13 @@ async function until(fixture, predicate, label, timeoutMs) {
     const resumed = await until(fixture, body => body.loops[0] && body.loops[0].pendingCount === 1,
       'one replacement pass to complete', 12000);
     A.eq(loopCalls(restartObjective), callsAtResume + 1, 'RESUME launches exactly one replacement provider pass');
+    const replacementPrompt = provider.state.calls.filter(call => {
+      const users = call.messages.filter(message => message && message.role === 'user');
+      return users.length && String(users[0].content || '').indexOf(restartObjective) === 0;
+    }).slice(-1)[0];
+    const replacementText = String(replacementPrompt && replacementPrompt.messages.find(message => message.role === 'user').content || '');
+    A.ok(/INTERRUPTED PASSES/.test(replacementText) && /inspect and verify current state/i.test(replacementText),
+      'the replacement prompt carries the durable lost-context/duplicate-effect fence');
     A.eq(resumed.loops[0].recent.filter(row => row.outcome === 'running').length, 0, 'no abandoned RUNNING row survives');
     A.eq(resumed.loops[0].recent.filter(row => row.outcome === 'cancelled').length, 1, 'the interruption stays explicit in history');
     A.eq(resumed.loops[0].recent.filter(row => row.outcome === 'candidate').length, 1, 'only the replacement becomes reviewable');
