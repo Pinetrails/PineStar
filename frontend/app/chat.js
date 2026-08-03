@@ -971,6 +971,7 @@ const Chat = (() => {
     replayChannel();   // re-render an in-flight stream we left running: tool lines / partial reply / pending approval
     syncStatus();      // also paints the Stop control + this stream's queued pills (updateControls)
     maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
+    maybeDeskPrompt();   // …and if this stream's agent still has nowhere to sit, the required next step + its door
     if (activeWs) flushQueued(activeWs.id);   // returned to an idle stream that has a queued follow-up → send it now
     // GOAL LOOP: returned to an idle stream with an ACTIVE standing goal (its moment was blocked / it was
     // backgrounded mid-loop) → continue it. kickGoal no-ops when busy/blocked/paused, so this is always safe.
@@ -1201,6 +1202,31 @@ const Chat = (() => {
     }
     d.appendChild(chips);
     log.appendChild(d);
+  }
+
+  /* THE ONE STEP A HAND-SUMMONED AGENT LEAVES TO THE COMMANDER (2026-08-03).
+     A specialist summoned from the Recruitment Bay arrives with NO desk — deliberately, so the Commander chooses
+     where it sits — and until it has one it cannot take floor work. That required step used to be printed ONCE by
+     summonAgent: a DOM-only line, so the first stream switch or reload erased the only place it was ever stated
+     (load() rebuilds the log from ws.history, and a local line is not history), and any live beat dropped it
+     outright. A brand-new agent's session was then indistinguishable from any other empty stream.
+     It is now a property of the STREAM: every open of a deskless specialist's session states the step and offers
+     the door. The claim is re-derived from the live floor (App.needsWorkstation) on every load, never stored — so
+     it cannot outlive the desk it asks for, and cannot assert a floor state the station can't prove.
+     Anti-nag: it is one system line + the chip row that answers it, in the session that owes the desk, and it is
+     silent while that stream is mid-run (the run owns its own DOM; the prompt returns on the next open). */
+  function maybeDeskPrompt() {
+    if (!log || interview || !activeWs || isBusy()) return;
+    const id = activeWs.agentId || 'agent';
+    if (typeof App === 'undefined' || !App.needsWorkstation || !App.needsWorkstation(id)) return;
+    const who = (App.agentName && App.agentName(id)) || name;
+    localLine(who + ' has nowhere to sit yet — it needs a desk of its own before it can take floor work. want to place one?');
+    // the chip is the whole point: it opens REFIT already armed on the WORKSTATIONS palette, so the next floor
+    // click drops the desk. 'later' just dismisses this view of it — the step is still owed, so the next open
+    // of this session says so again (it stops for good the moment the desk exists).
+    choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
+      if (item && item.value === 'desk' && App.openDeskPlacement) App.openDeskPlacement();
+    });
   }
 
   // opts.live === true marks the streaming reply row, which always pins to the BOTTOM. Every other row (tool
