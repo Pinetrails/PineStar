@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "67edb810963dd7e4ab42c42682571104c6a1ccca",
+    "sourceCommit": "422136bf243ff9e601431f1a535cda54864410f4",
     "pathSetSha256": "6fb73e36b6547731c1db113af9daedd58a2eeb7a68878691c58496d98206fe32",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 308670,
-        "sha256": "2df67b2e57f4c925dfea14dafa2c03db4fe4c45f8c38dc2ad5c80da0c371d872"
+        "bytes": 309433,
+        "sha256": "a64f38f22ba4aea5dc7e994790e01edd2807359e1163711add9042a0f6262242"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -138,13 +138,13 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 473501,
-        "sha256": "fe4ae6123fa54d948d12e9704147356706bd97d4441b7b71e6e5467fe0be9690"
+        "bytes": 477606,
+        "sha256": "9866b24125a6a69791d1f41594225705ea8b466e8bcd0720e3702b7cdeb4fde3"
       },
       {
         "path": "frontend/app/chatresize.js",
-        "bytes": 4069,
-        "sha256": "30ce645c36adde902a8ffc8c58b5bb8b964b01066e0b6caf537af34a917ac057"
+        "bytes": 4313,
+        "sha256": "7454e86678425e97a885bfe43a19ad8b5ad08e1da66a908d674545bb2df16be1"
       },
       {
         "path": "frontend/app/classicons.js",
@@ -373,8 +373,8 @@
       },
       {
         "path": "frontend/app/navdock.js",
-        "bytes": 11353,
-        "sha256": "ef6c92acffbe6769cf9278dc73ea02af670ca99e3caa9da15cedd14d1d0a7e51"
+        "bytes": 11654,
+        "sha256": "79a6d3f48581c17b2295d7e7e4ca21b0fc06c219fa3270e715920e10526dd660"
       },
       {
         "path": "frontend/app/nightnudge.js",
@@ -663,8 +663,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 452407,
-        "sha256": "ab9692c219b1c0a217df8ab005cdeb0a3287fcbe7dceec1dcec67abfb10b79ae"
+        "bytes": 452773,
+        "sha256": "e1d926df6baa629d0673ddcffec8a1f5a094b6c9058b1797b3b632addbb60e57"
       },
       {
         "path": "frontend/app/study.js",
@@ -858,8 +858,8 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 29147,
-        "sha256": "190ed39d277e66d0f63db2e4db6a38ead9f297f0d9f0627fe407dbee3c418361"
+        "bytes": 32349,
+        "sha256": "8cc01c304a3e7bb4d3670070c2be93fc6e6bf112fd4c12115681c45bd01b8747"
       },
       {
         "path": "frontend/app/world.js",
@@ -888,8 +888,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 252296,
-        "sha256": "b94cea10eb81601ed9af3c1833ab76450300fade59e89ab107670e27f71ed053"
+        "bytes": 254930,
+        "sha256": "4d743bb524d0522eb629ff6ee209955105515854c7f383cf35338ba5e1d2a183"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -898,13 +898,13 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 43913,
-        "sha256": "3b1c682375544103354c5ad48218099cb00dc33c3eda2e2e5f7e97eedb9981b5"
+        "bytes": 44363,
+        "sha256": "5a3115fd562afe2fafe7797172ad63ab0c804b1fa056e954555f5b3b1bca26ac"
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 67005,
-        "sha256": "88c90cfd25b813e8dbd2ad9f183200c9015f5d2a8462cadc4d553c5de87b3cce"
+        "bytes": 67003,
+        "sha256": "6969ced20cbf29b74546f29b42297ffc5f6efab998fbd8af3bf65d232bb4a8c9"
       },
       {
         "path": "frontend/css/motion.css",
@@ -928,8 +928,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 91941,
-        "sha256": "ef3fa781f71e24f2022d0c0c77cef600a97d3801c3a406f2bf22871467f2e352"
+        "bytes": 92790,
+        "sha256": "2eee4da6c2bdfe8df7432595b817aa1e6e050d276c32a34ed61dd7ec27579208"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -978,8 +978,8 @@
       },
       {
         "path": "frontend/js/util.js",
-        "bytes": 30104,
-        "sha256": "072014b17516c5ed2158cc4782c7ab41c2cb7b89b96f5c35e70d5c5696741800"
+        "bytes": 31079,
+        "sha256": "c5e152e347f2733b640419b15ef7f96fffcd677900413a02bb69b752e2485b49"
       }
     ]
   },
