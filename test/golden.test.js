@@ -125,6 +125,7 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
 {
   const shoot = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'lib', 'shootRun.mjs'), 'utf8');
   A.ok(/toast-stack/.test(shoot) && /remove\(\)/.test(shoot), 'shared screenshot runner clears transient toasts before each frame');
+  A.ok(/World\.stop/.test(shoot) && /world-frozen/.test(shoot), 'shared screenshot runner freezes the idle world before translucent panel captures');
 }
 
 A.report('golden.test');
