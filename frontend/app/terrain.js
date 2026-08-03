@@ -305,7 +305,11 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          over it. A root has to be BROAD, LONG and LOW-CONTRAST — it is the ground bulging — and
          the twigs on top of it stay thin and sharp. Same distinction the moon needed between a
          wrinkle ridge and a scratch: a buckle is broad or it is a crack. */
-      for (let i = 0; i < 15; i++) {
+      /* ⛔ AND THERE HAVE TO BE FEW OF THEM. At 15 crossing a 512 tile the floor was a NETWORK —
+         pale ropes over everything, the loudest thing in the frame and back to being a pattern.
+         A minority feature spread evenly stops being a feature and becomes the surface, which is
+         the same trap the stones fell into. Eight, and each one submerges as it runs. */
+      for (let i = 0; i < 8; i++) {
         let x = rnd() * P, y = rnd() * P, a = rnd() * TAU;
         const steps = 130 + ((rnd() * 240) | 0), w0 = 2.6 + rnd() * 4.4;
         for (let s = 0; s < steps; s++) {
@@ -324,7 +328,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
               if (face < -0.1 && Math.abs(e) < 2.1) shade(px, py, 0.66);
               continue;
             }
-            put(px, py, dither(LT.ROOT, 0.30 + 0.22 * (1 - e * e) + 0.26 * face, px, py, 37));
+            put(px, py, dither(LT.ROOT, 0.16 + 0.20 * (1 - e * e) + 0.24 * face, px, py, 37));
           }
         }
       }
@@ -413,10 +417,13 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
           shade(Math.round(x + Math.cos(aa) * dd - SUN.x * 1.6), Math.round(y + Math.sin(aa) * dd - SUN.y * 1.6), 0.64);
         }
         for (let b = 0; b < n; b++) {
-          const a = rnd() * TAU, len = Rr * (0.5 + 0.6 * rnd()), bow = (rnd() - 0.5) * 0.7;
+          /* blades leave from a SPREAD of crowns — one origin makes a starburst, and a starburst
+             is a symbol rather than a plant. */
+          const ox = (rnd() - 0.5) * Rr * 0.8, oy = (rnd() - 0.5) * Rr * 0.8;
+          const a = rnd() * TAU, len = Rr * (0.4 + 0.55 * rnd()), bow = (rnd() - 0.5) * 1.2;
           for (let s = 0; s <= len; s += 0.6) {
-            const tt = s / len, aa = a + bow * tt;
-            put(Math.round(x + Math.cos(aa) * s), Math.round(y + Math.sin(aa) * s),
+            const tt = s / len, aa = a + bow * tt * tt;
+            put(Math.round(x + ox + Math.cos(aa) * s), Math.round(y + oy + Math.sin(aa) * s),
               ramp(LT.GRASS, 0.06 + tt * 0.80 + (rnd() - 0.5) * 0.20));
           }
         }
@@ -499,26 +506,46 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          legible is a SPRAY OF SEPARATE BRIGHT MARKS with dark floor between them — that gap
          between the marks is the entire read. */
       const gap = noiseField(11, rnd);
-      for (let i = 0; i < 2600; i++) {
+      for (let i = 0; i < 1500; i++) {
         const x = rnd() * P, y = rnd() * P;
         const open = clamp01((gap(x / P, y / P) - 0.56) * 3.4);
         if (rnd() > open * open * open) continue;
         /* A FLECK'S SHAPE IS THE GAP'S SHAPE, not the sun's — two harmonics on the radius give
            the ragged leaf-bitten outline every real sunfleck has. A circle would read as a dot. */
-        const r0 = 1.3 + Math.pow(rnd(), 2.6) * 7.5 * (0.5 + open);
+        /* ⛔ AND EACH ONE HAS TO BE BIG ENOUGH TO BE A SHAPE. Below about 2px a fleck is a dot,
+           and a spray of dots at three brightness steps overlapping each other is COTTON — a
+           fuzzy pale puff with no edge, which is the soft haze this whole ground keeps trying to
+           become. Raising the floor on the radius and the amplitude costs a little coverage and
+           buys back the hard rim that makes a light pool read as light. */
+        const r0 = 2.2 + Math.pow(rnd(), 2.4) * 8 * (0.5 + open);
         const m1 = 2 + ((rnd() * 3) | 0), m2 = 5 + ((rnd() * 4) | 0);
         const p1 = rnd() * TAU, p2 = rnd() * TAU;
-        const a1 = 0.14 + rnd() * 0.18, a2 = 0.06 + rnd() * 0.12;
-        const amp = 0.52 + 0.48 * open, lim = Math.ceil(r0 * 1.4) + 2;
+        /* ⛔ RAGGEDNESS HAS TO SCALE WITH THE FLECK. A 3px fleck given a full-amplitude 4-lobed
+           outline is not ragged, it is a STAR — a handful of little pale asterisks scattered over
+           the floor, and an asterisk is the most obviously drawn shape there is. Detail can only
+           live where there are pixels to carry it: the big pools get the leaf-bitten edge, the
+           small ones stay simple blobs. Same law that sized crater contrast off crater radius. */
+        const ragged = 0.28 + 0.72 * clamp01((r0 - 2.2) / 7);
+        const a1 = (0.14 + rnd() * 0.18) * ragged, a2 = (0.06 + rnd() * 0.12) * ragged;
+        /* ⛔ VARIABLE BRIGHTNESS ACROSS OVERLAPPING FLECKS IS WHAT MAKES COTTON. Each fleck was
+           individually hard-edged and the cluster still read as a pale smudge, because twenty of
+           them at twenty different amplitudes, resolved by brightest-wins, produce a continuous
+           ramp of values — a gradient assembled out of hard parts. Sunlight through one canopy
+           does not vary in strength from gap to gap: it is ONE brightness, and every fleck is the
+           same disc. Hold the amplitude nearly constant and the overlaps fuse into a single hard
+           irregular POOL, which is what a real sunfleck cluster is. */
+        const amp = 0.90 + 0.10 * open, lim = Math.ceil(r0 * 1.4) + 2;
         for (let dy = -lim; dy <= lim; dy++) {
           for (let dx = -lim; dx <= lim; dx++) {
             const d = Math.sqrt(dx * dx + dy * dy);
             if (d > r0 * 1.4 + 2) continue;
             const th = Math.atan2(dy, dx);
             const k = d / (r0 * (1 + a1 * Math.sin(th * m1 + p1) + a2 * Math.sin(th * m2 + p2)));
-            /* THREE FLAT STEPS: core, penumbra, edge. The penumbra is real, but it is a RING and
-               not a gradient — and a ring is what keeps this pixel art instead of a photograph. */
-            const s = k < 0.62 ? 1 : k < 0.88 ? 0.60 : k < 1.06 ? 0.28 : 0;
+            /* TWO FLAT STEPS: the disc, and one penumbra ring. The penumbra is real — the sun is
+               half a degree wide — but on a 4px fleck three steps IS a gradient, and a gradient
+               is the soft brown haze the first forest died of. Core out to 0.86 keeps the fleck a
+               SHAPE with a rim, which is the whole reason it reads as light rather than as paint. */
+            const s = k < 0.86 ? 1 : k < 1.06 ? 0.48 : 0;
             if (s > 0) lift(x + dx, y + dy, s * amp);
           }
         }
@@ -775,25 +802,89 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         add('sap', cv, cx, cy, R);
       }
 
-      /* FERN CLUMPS — radial fronds with pinnae dots. Bright green, low to the ground, no shadow
-         worth the pixels. These are the undergrowth that makes a floor look inhabited. */
-      for (let v = 0; v < 5; v++) {
-        const R = 6 + Math.round(rnd() * 6);
-        const S = R * 3, cx = S / 2, cy = S / 2;
+      /* FERN CLUMPS — the undergrowth that makes a floor look inhabited.
+         ⛔ A SPINE IS NOT A FROND, and eight bare spines from one point is an ASTERISK. That is
+         what these were: 1.2px strokes of constant width running the full radius, with four
+         pinnae dots stuck on at fixed intervals. Against the old mud floor it passed; against a
+         floor that now has real objects on it, a row of asterisks is the most artificial thing in
+         the frame. A frond is a BLADE — widest a third of the way out, tapering to a tip — and
+         its pinnae are a continuous comb down both edges, not four dots. It also ARCS: fronds
+         bend away from the crown under their own weight, and that curve is most of what says
+         "fern" rather than "star". */
+      for (let v = 0; v < 6; v++) {
+        const R = 6 + Math.round(rnd() * 7);
+        const S = R * 3.2, cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
-        for (let i = 0, n = 6 + ((rnd() * 5) | 0); i < n; i++) {
-          const a = rnd() * TAU, len = R * (0.6 + 0.4 * rnd());
-          const lit = 0.45 + 0.45 * clamp01(0.5 + (Math.cos(a) * SUN.x + Math.sin(a) * SUN.y) * 0.5);
-          c.strokeStyle = rgb(ramp(LT.LEAF, lit)); c.lineWidth = 1.2;
-          c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); c.stroke();
-          for (let k = 1; k <= 4; k++) {                     // pinnae: the tooth that says "fern"
-            const t = k / 5, px = cx + Math.cos(a) * len * t, py = cy + Math.sin(a) * len * t;
-            c.fillStyle = rgb(ramp(LT.LEAF, lit + 0.12));
-            c.fillRect(Math.round(px + Math.cos(a + 1.5) * 1.5), Math.round(py + Math.sin(a + 1.5) * 1.5), 1, 1);
-            c.fillRect(Math.round(px + Math.cos(a - 1.5) * 1.5), Math.round(py + Math.sin(a - 1.5) * 1.5), 1, 1);
+        for (let i = 0, n = 5 + ((rnd() * 5) | 0); i < n; i++) {
+          const a0 = rnd() * TAU, len = R * (0.62 + 0.38 * rnd());
+          const bow = (rnd() < 0.5 ? -1 : 1) * (0.30 + rnd() * 0.45);
+          const lit = 0.34 + 0.44 * clamp01(0.5 + (Math.cos(a0) * SUN.x + Math.sin(a0) * SUN.y) * 0.5);
+          for (let s = 0; s <= len; s += 0.55) {
+            const t = s / len, a = a0 + bow * t * t;
+            const px = cx + Math.cos(a) * s, py = cy + Math.sin(a) * s;
+            /* the blade's own width profile: a fern frond is a lens, not a rod. */
+            const wid = Math.max(0, 1 - Math.abs(t - 0.34) / (t < 0.34 ? 0.40 : 0.70)) * (0.9 + R * 0.10);
+            c.fillStyle = rgb(ramp(LT.LEAF, lit + 0.10 * t));
+            c.fillRect(Math.round(px), Math.round(py), 1, 1);
+            /* PINNAE: a comb down BOTH edges, stepped so the edge is serrated rather than
+               straight — the tooth is the whole identification at 20px. */
+            for (const sgn of [-1, 1]) {
+              const w = wid * (0.55 + 0.45 * ((s * 2) % 2 < 1 ? 1 : 0.5));
+              if (w < 0.7) continue;
+              c.fillStyle = rgb(ramp(LT.LEAF, lit + 0.10 * t + (sgn > 0 ? 0.16 : -0.10)));
+              c.fillRect(Math.round(px + Math.cos(a + sgn * 1.57) * w), Math.round(py + Math.sin(a + sgn * 1.57) * w), 1, 1);
+            }
           }
         }
         add('fern', cv, cx, cy, R);
+      }
+
+      /* GRASS AND SEDGE TUFTS — the floor's own grass is baked into the patch, but the patch is
+         a TEXTURE: it repeats every 512px and it cannot know where the light is. A tuft that
+         grows where the canopy opens has to be a placed object, and it is what fills the middle
+         scale between the patch's 8px blades and a sapling. Andrew named grass first. */
+      for (let v = 0; v < 5; v++) {
+        const R = 5 + Math.round(rnd() * 7);
+        const S = Math.ceil(R * 3), cx = S / 2, cy = S / 2;
+        const cv = mkCv(S, S), c = cv.getContext('2d');
+        for (let i = 0, n = 16 + ((rnd() * 18) | 0); i < n; i++) {
+          /* ⛔ EVERY BLADE FROM ONE POINT IS A STARBURST. That is the same fault the fern had in
+             another costume: a perfect rosette is a machine-made shape and the eye files it as a
+             symbol. A tuft in a wood is several plants that seeded next to each other, so the
+             blades leave from a SPREAD of crowns and the clump has no centre to radiate from. */
+          const ox = (rnd() - 0.5) * R * 0.85, oy = (rnd() - 0.5) * R * 0.85;
+          const a0 = rnd() * TAU, len = R * (0.35 + 0.55 * rnd());
+          const bow = (rnd() - 0.5) * 1.3;                   // grass falls over; it does not stand
+          for (let s = 0; s <= len; s += 0.55) {
+            const t = s / len, a = a0 + bow * t * t;
+            /* dark at the base, bright at the tip: a blade tilts up into the light along its
+               length, and that one gradient is the entire difference between grass and moss. */
+            c.fillStyle = rgb(ramp(LT.GRASS, 0.05 + t * 0.80 + (rnd() - 0.5) * 0.18));
+            c.fillRect(Math.round(cx + ox + Math.cos(a) * s), Math.round(cy + oy + Math.sin(a) * s), 1, 1);
+          }
+        }
+        add('tuft', cv, cx, cy, R);
+      }
+
+      /* DEADFALL — the twigs and shed branches that pile under any old tree. Small, cheap, and
+         the thing that stops open ground between the big objects reading as swept. */
+      for (let v = 0; v < 4; v++) {
+        const R = 7 + Math.round(rnd() * 8);
+        const S = R * 3, cx = S / 2, cy = S / 2;
+        const cv = mkCv(S, S), c = cv.getContext('2d');
+        for (let i = 0, n = 3 + ((rnd() * 4) | 0); i < n; i++) {
+          const a = rnd() * TAU, len = R * (0.7 + 0.7 * rnd());
+          const ox = (rnd() - 0.5) * R * 0.7, oy = (rnd() - 0.5) * R * 0.7;
+          const th = rnd() < 0.4 ? 2 : 1;
+          for (let s = -len / 2; s <= len / 2; s += 0.6) {
+            const px = cx + ox + Math.cos(a) * s, py = cy + oy + Math.sin(a) * s;
+            c.fillStyle = rgb(LT.CAST);                       // its own shadow, down-sun
+            c.fillRect(Math.round(px - SUN.x * 1.6), Math.round(py - SUN.y * 1.6), th, th);
+            c.fillStyle = rgb(ramp(LT.ROOT, 0.25 + rnd() * 0.6));
+            c.fillRect(Math.round(px), Math.round(py), th, th);
+          }
+        }
+        add('deadfall', cv, cx, cy, R);
       }
 
       /* FALLEN LOGS — a horizontal accent in a field of round things, and the clearest read of
@@ -855,18 +946,39 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const cv = mkCv(S, S), c = cv.getContext('2d');
         c.fillStyle = rgb(LT.CAST);
         c.beginPath(); c.ellipse(cx - SUN.x * R * 0.45, cy - SUN.y * R * 0.5, R * 0.95, R * 0.66, 0, 0, TAU); c.fill();
-        c.fillStyle = rgb(LT.STONE);
-        c.beginPath();                                        // faceted, not round: stone has planes
-        for (let i = 0, n = 7; i <= n; i++) {
-          const a = (i / n) * TAU, r = R * (0.78 + 0.30 * h01(i, v, 17));
-          const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        /* ⛔ CONCENTRIC DISCS SHADE AN EGG, NOT A STONE. The outline here was already faceted and
+           the shading then threw two circles at it, offset up-sun — which is exactly how you draw
+           a sphere, and a sphere is what it read as: a smooth grey egg, and the most conspicuous
+           wrong thing in the frame once the floor around it stopped being mud. A rock is PLANES.
+           Shade it by FACET: split the polygon into the wedges between its own vertices and give
+           each wedge one flat value from how its own normal faces the sun. Every value boundary
+           is then a real edge between two planes — the thing that says stone. */
+        const NF = 7, vr = [];
+        for (let i = 0; i < NF; i++) vr.push(R * (0.78 + 0.30 * h01(i, v, 17)));
+        for (let i = 0; i < NF; i++) {
+          const a0 = (i / NF) * TAU, a1 = ((i + 1) / NF) * TAU;
+          const am = (a0 + a1) / 2;
+          /* the facet's outward normal is its own bearing; it faces the light when that bearing
+             runs along SUN — the same one convention the whole ground now shares. */
+          const face = Math.cos(am) * SUN.x + Math.sin(am) * SUN.y;
+          const tone = clamp01(0.30 + 0.52 * face + (h01(i, v, 23) - 0.5) * 0.16);
+          c.fillStyle = rgb(mix([34, 35, 33], [104, 104, 96], tone));
+          c.beginPath();
+          c.moveTo(cx + Math.cos(am) * R * 0.12, cy + Math.sin(am) * R * 0.12);   // a shared crest, off-centre
+          c.lineTo(cx + Math.cos(a0) * vr[i], cy + Math.sin(a0) * vr[i]);
+          c.lineTo(cx + Math.cos(a1) * vr[(i + 1) % NF], cy + Math.sin(a1) * vr[(i + 1) % NF]);
+          c.closePath(); c.fill();
+        }
+        /* the top plane: a small flat cap catching the sky, which is what stops the wedges
+           converging into a cone. */
+        c.fillStyle = rgb(mix([34, 35, 33], [104, 104, 96], 0.72));
+        c.beginPath();
+        for (let i = 0; i < NF; i++) {
+          const a = (i / NF) * TAU, r = vr[i] * 0.34;
+          const x = cx + SUN.x * R * 0.16 + Math.cos(a) * r, y = cy + SUN.y * R * 0.16 + Math.sin(a) * r;
           i ? c.lineTo(x, y) : c.moveTo(x, y);
         }
         c.closePath(); c.fill();
-        c.fillStyle = rgb([60, 61, 57]);
-        c.beginPath(); c.arc(cx + SUN.x * R * 0.28, cy + SUN.y * R * 0.30, R * 0.52, 0, TAU); c.fill();
-        c.fillStyle = rgb([78, 79, 74]);
-        c.beginPath(); c.arc(cx + SUN.x * R * 0.42, cy + SUN.y * R * 0.44, R * 0.24, 0, TAU); c.fill();
         for (let i = 0, n = Math.round(R * R * 0.35); i < n; i++) {   // moss cap + grain
           const a = rnd() * TAU, d = R * Math.pow(rnd(), 0.7);
           const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
@@ -887,9 +999,15 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       const C = FOREST.CELL;
       const cx0 = Math.floor(x0 / C), cx1 = Math.ceil(x1 / C);
       const cy0 = Math.floor(y0 / C), cy1 = Math.ceil(y1 / C);
-      /* LOD: undergrowth is sub-pixel when zoomed out, so below 0.9x it is not drawn at all. This
-         is what keeps a zoomed-out frame from queueing ten thousand one-pixel blits. */
-      const clutter = scale >= 0.9;
+      /* LOD. ⛔ THE SMALL END IS THE WRONG THING TO CULL — the moon lane learned this the
+         expensive way. Holding undergrowth back until 0.9x meant that at the one zoom where you
+         can see the wood AS A PLACE, every small object had vanished and all that remained were
+         crowns, whose sizes overlap: every object on screen within a factor of two of every
+         other, which is the definition of a texture rather than a landscape. A size distribution
+         is a power law and its whole character lives in the small end. Ferns and tufts survive to
+         0.55x now; a far view queues a few thousand extra blits, which is a rounding error next
+         to the canopy scatter already running beside it. */
+      const clutter = scale >= 0.55;
 
       for (let cy = cy0; cy <= cy1; cy++) {
         for (let cx = cx0; cx <= cx1; cx++) {
@@ -930,13 +1048,15 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
              glades and the clearing's edge — because that is both true of forests and the only way
              they stay visible instead of being buried under crowns. */
           const open = clamp01(1 - dens * 1.5) + edgeBoost * 1.1;
-          const nSmall = inClearing ? 0 : Math.round(open * 2.2 * (0.35 + h01(cx, cy, 5)));
+          const nSmall = inClearing ? 0 : Math.round(open * 2.8 * (0.35 + h01(cx, cy, 5)));
           for (let k = 0; k < nSmall; k++) {
             const wx = wx0 + h01(cx, cy, 60 + k) * C, wy = wy0 + h01(cx, cy, 70 + k) * C;
             if (clr && wx > clr.x && wx < clr.x + clr.w && wy > clr.y && wy < clr.y + clr.h) continue;
             const pick = h01(cx, cy, 80 + k);
-            const pool = pick < 0.46 ? 'fern' : pick < 0.68 ? 'sap' : pick < 0.86 ? 'log'
-              : pick < 0.95 ? 'rock' : 'stump';
+            /* the cheap green things dominate, because that is what undergrowth IS; logs, rocks
+               and stumps stay rare enough that finding one is still an event. */
+            const pool = pick < 0.25 ? 'fern' : pick < 0.47 ? 'tuft' : pick < 0.61 ? 'deadfall'
+              : pick < 0.73 ? 'sap' : pick < 0.87 ? 'log' : pick < 0.95 ? 'rock' : 'stump';
             const arr = pools[pool];
             if (!arr || !arr.length) continue;
             push(arr[(h01(cx, cy, 90 + k) * arr.length) | 0], wx, wy);
