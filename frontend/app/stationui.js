@@ -5119,7 +5119,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const blanket = Array.isArray(snap.blanket) ? snap.blanket : [];
         blanket.forEach(b => {
           rows.push('<div class="set-row"><span>⚠ <b>FULL ACCESS</b> — you clicked "Full access" on a permission card for ' +
-            esc(String(b.agentId || 'this agent')) + ', so it may use EVERY capability with no further prompts' +
+            esc(String(b.agentId || 'this agent')) + ', so its watched sessions may reuse allowed danger-class approvals without asking again; host hardlines still apply' +
             (b.scope ? ' <span class="dim">(' + esc(String(b.scope)) + ')</span>' : '') +
             '</span> <button class="bb sm danger" data-perm-revoke="' + esc(String(b.key)) + '">✕ REVOKE</button></div>');
         });

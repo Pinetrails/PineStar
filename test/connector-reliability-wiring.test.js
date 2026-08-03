@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const A = require('./_assert.js');
 const read = p => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
-const rust = read('src-tauri/src/main.rs');
+const rust = read('src-tauri/src/main.rs') + '\n' + read('src-tauri/src/credentials.rs');
 const host = read('sidecar/index.js');
 const harness = read('frontend/app/harness.js');
 const settings = read('frontend/app/stationui.js');

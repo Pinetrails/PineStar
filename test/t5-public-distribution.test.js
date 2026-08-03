@@ -44,6 +44,9 @@ function hashFile(file) {
 function status(verdict, key, ready, extra) {
   return Object.assign({ verdict, [key]: ready }, extra || {});
 }
+function artifactsOf(hash, bytes) {
+  return { results: [{ artifacts: { installer: { sha256: hash, bytes } } }] };
+}
 function proof(hash, bytes, version, overrides) {
   const doc = {
     schema: 'starnet.t5-public-distribution-proof.v1',
@@ -100,11 +103,13 @@ try {
   const t2 = path.join(tmp, 't2.json');
   const t3 = path.join(tmp, 't3.json');
   const t4 = path.join(tmp, 't4.json');
-  writeJson(t0, status('green', 'cleanInstallProofReady', true));
-  writeJson(t1, status('green', 'publicReleaseReady', true));
-  writeJson(t2, status('green', 'stateSafetyReady', true));
-  writeJson(t3, status('green', 'releaseSmokeReady', true));
-  writeJson(t4, status('green', 'updateDeliveryReady', true));
+  const currentGateStamp = new Date().toISOString();
+  const currentInstaller = artifactsOf(hash, bytes);
+  writeJson(t0, status('green', 'cleanInstallProofReady', true, Object.assign({ generatedAt: currentGateStamp }, currentInstaller)));
+  writeJson(t1, status('green', 'publicReleaseReady', true, Object.assign({ generatedAt: currentGateStamp }, currentInstaller)));
+  writeJson(t2, status('green', 'stateSafetyReady', true, { generatedAt: currentGateStamp }));
+  writeJson(t3, status('green', 'releaseSmokeReady', true, Object.assign({ generatedAt: currentGateStamp }, currentInstaller)));
+  writeJson(t4, status('green', 'updateDeliveryReady', true, Object.assign({ generatedAt: currentGateStamp }, currentInstaller)));
   const baseEnv = {
     STARNET_T5_INSTALLER_EXE: installer,
     STARNET_T5_MANIFEST: manifest,
@@ -161,7 +166,7 @@ try {
     const got = JSON.parse(fs.readFileSync(path.join(out, 't5-public-distribution-status.json'), 'utf8'));
     assert.equal(got.verdict, 'blocked');
     assert.equal(got.nextAction.id, 't5.1-prerequisite-gates');
-    writeJson(t1, status('green', 'publicReleaseReady', true));
+    writeJson(t1, status('green', 'publicReleaseReady', true, Object.assign({ generatedAt: currentGateStamp }, currentInstaller)));
   }
 
   {
@@ -211,14 +216,14 @@ try {
   {
     // the prereq statuses now record which installer they were about — here, a DIFFERENT one
     const staleHash = 'a'.repeat(64);
-    const artifactsOf = (h, b) => ({ results: [{ artifacts: { installer: { sha256: h, bytes: b == null ? 4242 : b } } }] });
+    const staleStamp = new Date().toISOString();
     const s0 = path.join(tmp, 'stale-t0.json'), s1 = path.join(tmp, 'stale-t1.json');
     const s2 = path.join(tmp, 'stale-t2.json'), s3 = path.join(tmp, 'stale-t3.json'), s4 = path.join(tmp, 'stale-t4.json');
-    writeJson(s0, Object.assign(status('green', 'cleanInstallProofReady', true), artifactsOf(staleHash)));
-    writeJson(s1, Object.assign(status('green', 'publicReleaseReady', true), artifactsOf(staleHash)));
-    writeJson(s2, Object.assign(status('green', 'stateSafetyReady', true), artifactsOf(staleHash)));
-    writeJson(s3, Object.assign(status('green', 'releaseSmokeReady', true), artifactsOf(staleHash)));
-    writeJson(s4, Object.assign(status('green', 'updateDeliveryReady', true), artifactsOf(staleHash)));
+    writeJson(s0, Object.assign(status('green', 'cleanInstallProofReady', true, { generatedAt: staleStamp }), artifactsOf(staleHash, 4242)));
+    writeJson(s1, Object.assign(status('green', 'publicReleaseReady', true, { generatedAt: staleStamp }), artifactsOf(staleHash, 4242)));
+    writeJson(s2, status('green', 'stateSafetyReady', true, { generatedAt: staleStamp }));
+    writeJson(s3, Object.assign(status('green', 'releaseSmokeReady', true, { generatedAt: staleStamp }), artifactsOf(staleHash, 4242)));
+    writeJson(s4, Object.assign(status('green', 'updateDeliveryReady', true, { generatedAt: staleStamp }), artifactsOf(staleHash, 4242)));
     const out = path.join(tmp, 'stale-prereq-out');
     const res = run(['--distribution-evidence', path.join(tmp, 'good-proof-for-stale-sig.json')], Object.assign({}, baseEnv, {
       STARNET_T5_T0_STATUS: s0, STARNET_T5_T1_STATUS: s1, STARNET_T5_T2_STATUS: s2,
@@ -239,7 +244,7 @@ try {
     // ...and with the prereqs recorded against THIS installer it passes again
     const cur = hashFile(installer);
     const g0 = path.join(tmp, 'good-t0.json');
-    writeJson(g0, Object.assign(status('green', 'cleanInstallProofReady', true), artifactsOf(cur, fs.statSync(installer).size)));
+    writeJson(g0, Object.assign(status('green', 'cleanInstallProofReady', true, { generatedAt: new Date().toISOString() }), artifactsOf(cur, fs.statSync(installer).size)));
     const out2 = path.join(tmp, 'fresh-prereq-out');
     run(['--distribution-evidence', path.join(tmp, 'good-proof-for-stale-sig.json')], Object.assign({}, baseEnv, {
       STARNET_T5_T0_STATUS: g0,
@@ -249,11 +254,41 @@ try {
     const got2 = JSON.parse(fs.readFileSync(path.join(out2, 't5-public-distribution-status.json'), 'utf8'));
     const pre2 = got2.results.find(r => r.id === 't5.1-prerequisite-gates');
     assert.equal(pre2.status, 'pass', 'a prereq recorded for THIS installer passes: ' + pre2.reason);
-    // a rung that records no installer at all (older status shape) is not punished for it
-    assert.equal(pre2.gates.t2.installer, null, 'a status with no recorded installer is reported as unbound, not stale');
+    assert.equal(pre2.gates.t2.installer, null, 'T2 is freshness-bound because its repository state proof has no installer artifact');
+    assert.equal(pre2.gates.t2.freshForInstaller, true, 'T2 was rerun after the current installer was built');
+  }
+
+  {
+    const unboundT1 = path.join(tmp, 'unbound-t1.json');
+    writeJson(unboundT1, status('green', 'publicReleaseReady', true, { generatedAt: new Date().toISOString() }));
+    const out = path.join(tmp, 'unbound-prereq-out');
+    run(['--distribution-evidence', path.join(tmp, 'good-proof-for-stale-sig.json')], Object.assign({}, baseEnv, {
+      STARNET_T5_T1_STATUS: unboundT1,
+      STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out,
+      STARNET_T5_PUBLIC_DISTRIBUTION_LATEST_DIR: path.join(tmp, 'unbound-prereq-latest')
+    }));
+    const got = JSON.parse(fs.readFileSync(path.join(out, 't5-public-distribution-status.json'), 'utf8'));
+    const pre = got.results.find(r => r.id === 't5.1-prerequisite-gates');
+    assert.equal(pre.status, 'blocked', 'an installer-bearing rung without installer identity fails closed');
+    assert.match(pre.reason, /does not record which installer it tested/);
+  }
+
+  {
+    const oldT2 = path.join(tmp, 'old-t2.json');
+    writeJson(oldT2, status('green', 'stateSafetyReady', true, { generatedAt: '2000-01-01T00:00:00.000Z' }));
+    const out = path.join(tmp, 'old-prereq-out');
+    run(['--distribution-evidence', path.join(tmp, 'good-proof-for-stale-sig.json')], Object.assign({}, baseEnv, {
+      STARNET_T5_T2_STATUS: oldT2,
+      STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out,
+      STARNET_T5_PUBLIC_DISTRIBUTION_LATEST_DIR: path.join(tmp, 'old-prereq-latest')
+    }));
+    const got = JSON.parse(fs.readFileSync(path.join(out, 't5-public-distribution-status.json'), 'utf8'));
+    const pre = got.results.find(r => r.id === 't5.1-prerequisite-gates');
+    assert.equal(pre.status, 'blocked', 'a repository state proof older than this installer fails closed');
+    assert.match(pre.reason, /OLDER than the current installer/);
   }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log('t5-public-distribution.test: OK (29 assertions)');
+console.log('t5-public-distribution.test: OK (35 assertions)');

@@ -101,7 +101,7 @@ const fc = require('../sidecar/fallbackchain.js');
   const idx = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
   A.ok(/\/api\/fallback\/chain/.test(idx) && /handleFallbackChain/.test(idx) && /handleFallbackStatus/.test(idx), 'GET+POST /api/fallback/chain routes + handlers present');
   A.ok(/require\('\.\/fallbackchain\.js'\)/.test(idx), 'host uses the pure fallbackchain helper (single source of logic)');
-  A.ok(/saveResilient\(FALLBACK_FILE/.test(idx) && /loadResilient\(FALLBACK_FILE/.test(idx), 'chain persists via the resilient store (durable + .bak)');
+  A.ok(/const fallbackStore = makeDomainStore/.test(idx) && /fallbackStore\.load\(\)\.value/.test(idx) && /fallbackStore\.save\(fallbackSaved\)/.test(idx), 'chain persists via the normalized domain store (durable + .bak + read-back proof)');
   // the RUN HOST actually consumes the persisted chain: request list > saved-or-env (live, per-run read — no restart)
   A.ok(/Array\.isArray\(o\.fallbackModels\) \? o\.fallbackModels : effectiveFallbackChain\(\)/.test(idx), 'runOnce resolves: explicit per-run list, else the persisted-or-env chain');
   A.ok(/fallbackChain\.resolveChain\(ENV_FALLBACK, fallbackSaved\)/.test(idx), 'effective chain = pure resolve(env, saved)');

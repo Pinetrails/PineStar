@@ -10,20 +10,12 @@
 
   const classifyApiError = errorClass.classifyApiError;
   const timeouts = provider.timeouts;
+  const isAbort = provider.runtime.isAbort;
+  const delay = provider.runtime.abortableDelay;
   const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
   const RETRY_DELAYS = [400, 1200];
   const REWARM_MIN_MS = 5 * 60 * 1000;
 
-  function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
-  function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
-  function delay(ms, signal) {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(resolve, ms);
-      if (signal && typeof signal.addEventListener === 'function') {
-        signal.addEventListener('abort', () => { clearTimeout(t); reject(abortError()); }, { once: true });
-      }
-    });
-  }
   function cleanBaseUrl(value) {
     return String(value || DEFAULT_BASE).trim().replace(/\/+$/, '');
   }

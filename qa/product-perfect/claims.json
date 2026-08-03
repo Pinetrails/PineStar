@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "296268eaa0570964054c8ff3796cb68f37b5bd33",
-    "pathSetSha256": "c4cc0a9c48bcf1060206d6d297b0786809c68b82aca6cd9666101439b67f376b",
+    "sourceCommit": "bbe907a3d2fc8a69dcdacadb8c3d0101fa30bb8b",
+    "pathSetSha256": "6fb73e36b6547731c1db113af9daedd58a2eeb7a68878691c58496d98206fe32",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 307778,
-        "sha256": "17e39ecb7a53defc1046be84f3d6569e1f4cc5f4157db5c7364386d2ff8e2df3"
+        "bytes": 308033,
+        "sha256": "3024b7588fcbaff10d1434ab80538f1c60f3755b6044996b52a0fb7e38d76782"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -83,8 +83,8 @@
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 18147,
-        "sha256": "2f5d39d135ff6c1290dffb4f64d673c1b22925be6389c4cbe8f5271dba8b23ca"
+        "bytes": 18081,
+        "sha256": "c5cb98fd10e702931a130b1bac1794ca90fbe848bcc074ee975d6649582c5fde"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -117,6 +117,11 @@
         "sha256": "4fd0a8555c9cb2fa814db0e41def198332b1c3e4a7a2d83f49b7048a217aeddb"
       },
       {
+        "path": "frontend/app/beatcard.js",
+        "bytes": 10595,
+        "sha256": "ee95aed1857dd9d8d7841d8af258cc2a14cb49448d21630193ee5d2f4f83d4a2"
+      },
+      {
         "path": "frontend/app/bottlestore.js",
         "bytes": 9538,
         "sha256": "0530140e4c32757099c4a41e33c7d65227570f7981bb7f2cc6364ffaab6b4053"
@@ -133,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 473436,
-        "sha256": "b9ef173b52f214ad38588eb0fc9bf81095e9ab1f8ed13bdffdb6801ba3212ac3"
+        "bytes": 470945,
+        "sha256": "b87d74bcbfd79df0b7ba27f4b66f7ebfe91ee58cebd57189c834198f41e611d9"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -472,6 +477,11 @@
         "sha256": "56a0a193d52a246f912f0e1626ee2bccc3aa66a78f0a81fa6a7f47d6c0b4fa28"
       },
       {
+        "path": "frontend/app/queryspine.js",
+        "bytes": 6238,
+        "sha256": "9baaad93538243679a13c623e3208b40944bcd831a43d8e4dc9cb86e85b59052"
+      },
+      {
         "path": "frontend/app/questledgerstore.js",
         "bytes": 12163,
         "sha256": "5046b42dd7d019410a8bb599191f0e025515bdce2484d00378d4d4ef2a4967bb"
@@ -563,13 +573,13 @@
       },
       {
         "path": "frontend/app/returnstore.js",
-        "bytes": 10740,
-        "sha256": "82a2ffbab63d7307388b51033d2b9bf2353e9c86819fc30c57d1a25c153b6121"
+        "bytes": 10784,
+        "sha256": "6a9f0e922d3a735c9f16636e0a7be6269b7eebaa229f75036ed2d5fee7df5ef3"
       },
       {
         "path": "frontend/app/routinenudgestore.js",
-        "bytes": 7123,
-        "sha256": "3f123fb0121ce7cda15d6c204c350c49948672b5ec261b4c9bd389b0aa2b665b"
+        "bytes": 7252,
+        "sha256": "35d59a6f0315bb070a747bc1509a32c25cd990c804c05b14270823cfb5f83add"
       },
       {
         "path": "frontend/app/safety.js",
@@ -653,13 +663,13 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 449480,
-        "sha256": "ee1a8b2b11e5cb867ea8e53b24235dbaf9fdbf19d307b82b07ed4d3c60d5e7fb"
+        "bytes": 449327,
+        "sha256": "0fda3858095a339e8dcdaa04d170d630d2059760e43ac711041817a415f17363"
       },
       {
         "path": "frontend/app/study.js",
-        "bytes": 25774,
-        "sha256": "9c58b6d3fa4125ff883eb1d5ad1fcc43150764b38992b52189b106829a44565e"
+        "bytes": 22887,
+        "sha256": "225519cab41c1904896afd067f0228b53fbb1c3e7815a0f483495ca9bccf6df3"
       },
       {
         "path": "frontend/app/studystore.js",
@@ -753,8 +763,8 @@
       },
       {
         "path": "frontend/app/voice-live.js",
-        "bytes": 81439,
-        "sha256": "ae457ab09a50d62c3b6b93ebb79a394252d4598145cf7ca44c48b1cf205374ef"
+        "bytes": 81447,
+        "sha256": "d877671e3227fc20d6bccce9243904a85cbfab23e4fce6cee2d3dd752c0ccba4"
       },
       {
         "path": "frontend/app/voice.js",
@@ -778,8 +788,8 @@
       },
       {
         "path": "frontend/app/widgets.js",
-        "bytes": 29694,
-        "sha256": "062af23cfcc47d682a314131b0e6bc4f311aea3f86c32363c864b647a7561642"
+        "bytes": 29771,
+        "sha256": "25cf6fdc9e78f090b661ce92c902e131bf3a678eb4ca85753461901eefa9d6a8"
       },
       {
         "path": "frontend/app/windows/connectors.js",
@@ -948,8 +958,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67158,
-        "sha256": "f6eef38bd77f026602c7452422057bc6d3fa55105a2999ba25b0a10058f71722"
+        "bytes": 67395,
+        "sha256": "5c1fa5480e3292881bf3b3416a55c2b8f6c208984e5dcdce1eea7dfd43c0bcd2"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -958,18 +968,13 @@
       },
       {
         "path": "frontend/js/assets.js",
-        "bytes": 30073,
-        "sha256": "8be1efcb64d1fac1f4feec8af49af9b051ccc877c9986e50fa2ded90f16f3a81"
+        "bytes": 29069,
+        "sha256": "1e7f6237222127dfe78c87b898d449676912cd4171a43432525344ffb6fcab62"
       },
       {
         "path": "frontend/js/audio.js",
         "bytes": 3747,
         "sha256": "7b91d2482fc98adb5e009765a121d5d7c4e84a36a71c27203e307b31e99dafb6"
-      },
-      {
-        "path": "frontend/js/sprite-load-plan.js",
-        "bytes": 1314,
-        "sha256": "a28a41dfb7b9dd19f24b0b59ade9d983c4eaf0f0c93b368c9f7b9d3af367a4d7"
       },
       {
         "path": "frontend/js/util.js",
@@ -1854,8 +1859,8 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "src-tauri/src/main.rs",
-          "needle": "const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
+          "path": "src-tauri/src/credentials.rs",
+          "needle": "pub(crate) const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
         },
         {
           "kind": "contains",
@@ -2085,7 +2090,7 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "src-tauri/src/main.rs",
+          "path": "src-tauri/src/credentials.rs",
           "needle": "keychain_entry_for(provider)"
         },
         {
@@ -2528,8 +2533,8 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "src-tauri/src/main.rs",
-          "needle": "const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
+          "path": "src-tauri/src/credentials.rs",
+          "needle": "pub(crate) const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
         }
       ],
       "refsChecked": [

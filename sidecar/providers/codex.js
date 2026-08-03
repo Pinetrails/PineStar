@@ -26,6 +26,8 @@
   const normalizeFinish = provider.normalizeFinish;
   const classifyApiError = errorClass.classifyApiError;
   const timeouts = provider.timeouts;
+  const isAbort = provider.runtime.isAbort;
+  const delay = provider.runtime.abortableDelay;
   const BASE = 'https://chatgpt.com/backend-api/codex';
 
   // The ChatGPT-account Codex backend exposes its OWN model list (DIFFERENT from the public OpenAI API
@@ -48,16 +50,6 @@
   const DEFAULT_MODEL = 'gpt-5.5';
 
   const RETRY_DELAYS = [400, 1200];   // up to 2 pre-stream retries (no jitter -> determinism)
-  function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
-  function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
-  function delay(ms, signal) {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(resolve, ms);
-      if (signal && typeof signal.addEventListener === 'function') {
-        signal.addEventListener('abort', () => { clearTimeout(t); reject(abortError()); }, { once: true });
-      }
-    });
-  }
 
   // ---- request building: chat messages -> Responses input items --------------------------------------
 

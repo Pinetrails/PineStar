@@ -1,7 +1,7 @@
 /* node test/loopguard.dispatch.test.js — the runOnce dispatch-level loop guard (sidecar/index.js).
 
-   The guard is embedded in the runOnce closure (not exported), so this test extracts the two REAL
-   decision lines from the source and evaluates them, proving the two properties the fix guarantees:
+   The signature remains at the run host boundary while the repeat bookkeeping lives in the exported
+   RunExecutionState. This test checks that wiring and exercises the real state object, proving:
      1. the signature keys on a sha1 of the FULL argsRaw — two DIFFERENT long payloads that share a
         400-char prefix get DIFFERENT signatures (the old `.slice(0,400)` collided them -> false block).
      2. only FAILING results advance a signature's streak; any success RESETS it (matches loop.js) — so
@@ -11,6 +11,7 @@ const A = require('./_assert.js');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('node:crypto');
+const { makeRunExecutionState } = require('../sidecar/run-execution-state.js');
 
 // pull the REAL signature + counting lines out of sidecar/index.js so we test the shipped formula.
 const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
@@ -18,21 +19,25 @@ A.ok(/const sig = c\.name \+ '\|' \+ crypto\.createHash\('sha1'\)\.update\(Strin
   'the shipped signature hashes the FULL argsRaw with sha1 (no 400-char slice)');
 A.ok(!/\.slice\(0, 400\)/.test(src.slice(src.indexOf('const dispatch = async'), src.indexOf('const dispatch = async') + 1200)),
   'the old 400-char truncation is gone from the dispatch guard');
-A.ok(/if \(r && r\.isError\) seen\.set\(sig, \(seen\.get\(sig\) \|\| 0\) \+ 1\);\s*\n\s*else seen\.delete\(sig\);/.test(src),
-  'the shipped guard increments only on error and resets (delete) on success');
+A.ok(/execution\.recordResult\(sig, r, internalBriefControl\);/.test(src),
+  'the shipped dispatch records every result through the per-run execution state');
 
 // a faithful model of the shipped guard (same two lines) to exercise the behavior.
 const CAPS = { maxRepeat: 3 };
 function makeGuard() {
-  const seen = new Map();
+  const state = makeRunExecutionState();
   return {
     // returns { blocked } for a call BEFORE running; call record(sig, isError) after.
     check(name, argsRaw) {
       const sig = name + '|' + crypto.createHash('sha1').update(String(argsRaw || '')).digest('hex');
-      return { sig, blocked: (seen.get(sig) || 0) > CAPS.maxRepeat };
+      return { sig, blocked: state.repeated(sig, CAPS.maxRepeat) };
     },
-    record(sig, isError) { if (isError) seen.set(sig, (seen.get(sig) || 0) + 1); else seen.delete(sig); },
-    count(sig) { return seen.get(sig) || 0; }
+    record(sig, isError) { state.recordResult(sig, { isError }, true); },
+    count(sig) {
+      let n = 0;
+      while (state.repeated(sig, n)) n++;
+      return n;
+    }
   };
 }
 

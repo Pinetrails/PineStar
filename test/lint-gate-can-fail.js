@@ -8,7 +8,7 @@
    None happened to be failing, so nothing was concealed at the time; the point is that none of them COULD
    have caught a future regression. A gate step that cannot fail is worse than no step: it reports safety.
 
-   This lint enumerates the REAL gate (test/fast.list + the test:http:raw chain in package.json), keeps the
+   This lint enumerates the REAL gates (test/fast.list + test/http.list), keeps the
    steps that use the _assert.js helpers, and requires each to end its run by calling report() (or to own its
    exit explicitly via process.exit / fails()). It reads the SAME sources the runners read, so a step added to
    either gate is covered automatically — there is no second list to drift. */
@@ -23,10 +23,7 @@ function fastSteps() {
   return read('test/fast.list').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
 }
 function httpSteps() {
-  const chain = (JSON.parse(read('package.json')).scripts || {})['test:http:raw'] || '';
-  return chain.split('&&').map(s => s.trim()).filter(Boolean)
-    .map(s => s.replace(/^node\s+/, '').trim())
-    .filter(s => /\.(?:js|mjs)$/.test(s));
+  return read('test/http.list').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
 }
 
 const steps = [...new Set([...fastSteps(), ...httpSteps()])];

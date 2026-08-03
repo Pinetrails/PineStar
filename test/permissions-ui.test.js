@@ -39,6 +39,10 @@ ok(/emptyApprovals|No standing approvals yet/.test(src), 'teaching empty state (
 ok(/\[data-perm-revoke\]'\)\.forEach\(b => ArmConfirm\.wire\(b/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
 ok(/held\.filter\(k => curated\.indexOf\(k\) < 0\)/.test(src), 'NON-curated standing grants are listed too (nothing hidden/irrevocable)');
 ok(/pre-approve a capability|pre-bless/i.test(src), 'the curated GRANT offer is kept separate from the active-approvals ledger');
+ok(/FULL ACCESS<\/b>/.test(src), 'the process-lifetime Full Access wildcard has its own visible row');
+ok(/watched sessions may reuse allowed danger-class approvals without asking again/.test(src),
+  'the wildcard row names its watched-session boundary instead of implying unattended authority');
+ok(/host hardlines still apply/.test(src), 'the wildcard row does not overstate authority beyond host hardlines');
 
 // the store hooks
 ok(/PermissionsStore\.setLevel\(/.test(src), 'level click drives PermissionsStore.setLevel');

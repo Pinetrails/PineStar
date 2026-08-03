@@ -14,44 +14,16 @@
    Part of test:http (child-process boot tests don't gate the fast lane). */
 'use strict';
 const A = require('./_assert.js');
-const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { bootToken } = require('./_httpToken.js');
-
-const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
-
-function boot(port, workspaces, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, {
-        SKYNET_PORT: String(port),
-        SKYNET_WORKSPACES: workspaces,
-        OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: ''
-      }),
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port, output: () => out }); }
-      if (!settled && /already in use/i.test(out)) {
-        settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, workspaces, attemptsLeft - 1));
-        else reject(new Error('no free port'));
-      }
-    };
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout; output:\n' + out)); } }, 9000);
-  });
-}
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
 (async () => {
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-scout-'));
+  const fixture = SidecarFixture.create({
+    prefix: 'sk-scout-',
+    env: { OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '' }
+  });
+  const ws = fixture.workspace;
   const now = Date.now();
 
   // PRE-SEED: a warm interest (fresh lastAt so decay hasn't eaten it) with its evidence, and one staged
@@ -78,9 +50,8 @@ function boot(port, workspaces, attemptsLeft) {
     }
   }));
 
-  const booted = await boot(8880 + (process.pid % 40), ws, 20);
-  const { child, port } = booted;
-  const B = 'http://' + HOST + ':' + port;
+  await fixture.start();
+  const B = fixture.baseUrl;
   let apiToken = '';
   const j = async (m, p, body) => {
     const headers = { 'Content-Type': 'application/json' };
@@ -95,7 +66,7 @@ function boot(port, workspaces, attemptsLeft) {
     const noTok = await fetch(B + '/api/scout');
     A.eq(noTok.status, 403, 'GET /api/scout without a token -> 403');
 
-    apiToken = await bootToken(B, B);
+    apiToken = fixture.token;
 
     // hydration across a restart: the pre-seeded state IS the response (the client-session-bound bug this lane kills).
     const g1 = await j('GET', '/api/scout');
@@ -133,7 +104,7 @@ function boot(port, workspaces, attemptsLeft) {
 
     console.log('scout.http.test: OK');
   } finally {
-    try { child.kill(); } catch (_) {}
+    await fixture.dispose();
   }
   // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
   // without this a failed assertion still exits 0 and the gate scores it green.

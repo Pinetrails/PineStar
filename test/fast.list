@@ -27,9 +27,14 @@ test/settings-p1-backend.test.js
 test/concurrency.test.js
 test/workspace-lease.test.js
 test/durable-store.test.js
+test/domain-store.test.js
+test/provider-runtime.test.js
+test/run-execution-state.test.js
 test/todo.durability.test.js
 test/halt.test.js
 test/readbody.test.js
+test/file-response.test.js
+test/test-list-runner.test.js
 test/runroute.test.js
 test/checkpoint.test.js
 test/module-scope-shadowing.test.js
@@ -42,6 +47,7 @@ test/provider.openai-compatible.test.js
 test/realtime-voice.test.js
 test/native-stt.test.js
 test/local-voice.test.js
+test/media-service.test.js
 test/desktop-voice-bundle.test.js
 test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
@@ -131,6 +137,7 @@ test/capgate.test.js
 test/capdrift.test.js
 test/capsummary.test.js
 test/boot-security.test.js
+test/sidecar-fixture.test.js
 test/sidecar.security.test.js
 test/tauri.hardening.test.js
 test/manual.test.js
@@ -280,6 +287,7 @@ test/pitch.test.js
 test/pitchstore.test.js
 test/suggeststore.test.js
 test/beat-coordination.test.js
+test/beatcard.test.js
 test/quests.test.js
 test/queststore.test.js
 test/queststate.test.js
@@ -474,10 +482,13 @@ test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
 test/crt-glass-screen-space.test.js
+test/personalization-authority-wiring.test.js
 test/sprite-loading.test.js
 test/mobile-control-reachability.test.js
 test/station-tooltip.test.js
 test/channels.discord-wire.test.js
+test/queryspine.test.js
+test/queryspine-wiring.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
 test/terminal-resize.test.js
@@ -492,6 +503,7 @@ test/release-train-macos-trust.test.js
 test/release-train-windows-trust.test.js
 test/website-deploy-staging.test.js
 test/website-app-sync.test.js
+test/sprite-assets.test.js
 test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js
