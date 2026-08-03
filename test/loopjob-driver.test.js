@@ -442,5 +442,53 @@ function world(opts) {
     A.eq(stops2, ["done"], "meeting the objective announces as done");
   }
 
+  /* ---- 16. ENDURANCE: E-STOP is a durable terminal even when the run host ignores AbortSignal ---------
+     A provider/tool can wedge after receiving abort. Cancellation authority belongs to the host, so the
+     loop must release its claim and truthful RUNNING telemetry immediately; a late provider resolution must
+     not harvest or rewrite the already-cancelled iteration. */
+  {
+    let harvests = 0;
+    const tracked = new Map();
+    const w = world({
+      harvest: () => { harvests++; return { text: 'late work', title: 'late work' }; },
+      trackRun: (runId, agentId, ac) => tracked.set(runId, { agentId, ac }),
+      untrackRun: (runId) => tracked.delete(runId)
+    });
+    w.seed({});
+    w.tick(T0);
+    A.eq(w.drv.abortAllLeases(), 1, 'E-STOP reaches the hung iteration');
+    A.eq(w.loop().iterations[0].outcome, 'cancelled', 'E-STOP durably settles immediately even while the provider promise is still hung');
+    A.eq(w.loop().fireClaim, null, 'the durable claim is released immediately on E-STOP');
+    A.eq(w.drv.leases.size, 0, 'the in-memory lease is released immediately on E-STOP');
+    A.eq(tracked.size, 0, 'host RUNNING telemetry clears immediately on E-STOP');
+
+    await w.finish({ text: 'provider ignored abort and returned late' });
+    A.eq(w.loop().iterations[0].outcome, 'cancelled', 'a late provider resolution cannot rewrite the cancelled outcome');
+    A.eq(harvests, 0, 'late work is never harvested after cancellation');
+  }
+
+  /* ---- 17. ENDURANCE: a pre-restart running pass never auto-replays uncertain side effects ------------
+     The durable fire claim proves that a pass existed, not whether its last tool effect happened. On a new
+     driver there is no live lease that can own that claim. The first tick must reconcile it into an explicit
+     recovery pause; only the Commander's existing RESUME action may start a fresh pass. */
+  {
+    let loops = S.createLoop([], { id: 'l1', objective: 'multi-step work', queueCap: 5 }, { now: T0 });
+    loops = S.startIteration(S.claimFire(loops, 'l1', { now: T0 }), 'l1', { runId: 'pre-restart', now: T0 });
+    const restarted = world({ loops, maxRunMs: 10 * MIN });
+
+    const first = restarted.tick(T0 + 30 * MIN);
+    A.eq(first.fired, 0, 'restart reconciliation never auto-replays a pass with an unknown side-effect boundary');
+    A.eq(restarted.calls.length, 0, 'no provider/tool work is duplicated during restart reconciliation');
+    A.eq(restarted.loop().iterations[0].outcome, 'cancelled', 'the abandoned ledger row no longer lies RUNNING');
+    A.eq(restarted.loop().state, 'paused', 'the loop pauses for explicit recovery review');
+    A.ok(/restart|interrupted/i.test(restarted.loop().stopReason || ''), 'the pause names the restart interruption');
+
+    const resumedLoops = S.resumeLoop(restarted.loops, 'l1', { now: T0 + 31 * MIN });
+    const resumed = world({ loops: resumedLoops, maxRunMs: 10 * MIN });
+    A.eq(resumed.tick(T0 + 31 * MIN).fired, 1, 'the existing explicit RESUME action starts exactly one fresh pass');
+    A.eq(resumed.calls.length, 1, 'resume produces one replacement run, not a replay storm');
+    A.eq(resumed.loop().iterations.filter(it => it.outcome === 'running').length, 1, 'only the replacement pass is RUNNING');
+  }
+
   A.report('loopjob-driver (LOOP tick driver)');
 })().catch(e => { console.log('FAIL: unexpected throw — ' + (e && e.stack || e)); process.exit(1); });

@@ -482,6 +482,45 @@
     });
   }
 
+  /* recoverInterruptedIteration — reconcile a RUNNING row that survived its host process.
+
+     A durable fire claim proves only that the pass started; it cannot prove whether a tool effect immediately
+     before the crash happened. Automatically re-firing that pass can therefore duplicate a committed effect,
+     while leaving the row `running` asserts liveness no process can prove. Record the abandoned pass as
+     cancelled and park the loop for the existing explicit RESUME action. Cancellation is neutral (no failure
+     or convergence streak), and the full ledger stays available for recovery review. */
+  function recoverInterruptedIteration(loops, id, reason, ctx) {
+    ctx = ctx || {};
+    const loop = getLoop(loops, id);
+    if (!loop) return loops || [];
+    const running = (loop.iterations || []).slice().reverse().find(it => it && it.outcome === 'running');
+    if (!running) {
+      // A claim with no persisted iteration can only be the claim->start crash window. No work was launched
+      // before startIteration persisted, so clearing this orphan claim is safe and idempotent.
+      return mapLoop(loops, id, cur => Object.assign({}, cur, {
+        fireClaim: null, heartbeatAt: null,
+        state: cur.state === 'running' ? 'paused' : cur.state,
+        enabled: cur.state === 'running' ? false : cur.enabled,
+        stopReason: cur.state === 'running' ? str(reason, NOTE_CAP) : cur.stopReason,
+        updatedAt: iso(ctx.now || 0)
+      }));
+    }
+    const settled = settleIteration(loops, id, {
+      runId: running.runId,
+      status: 'error',
+      cancelled: true,
+      error: reason || 'interrupted by sidecar restart'
+    }, ctx);
+    return mapLoop(settled, id, cur => Object.assign({}, cur, {
+      enabled: false,
+      state: 'paused',
+      stopReason: str(reason || 'interrupted by sidecar restart — review recovery evidence, then resume explicitly', NOTE_CAP),
+      fireClaim: null,
+      heartbeatAt: null,
+      updatedAt: iso(ctx.now || 0)
+    }));
+  }
+
   /* recordVerdict — the review gate. verdict is 'approved' or 'rejected'.
 
      APPROVED: this iteration's work is accepted. (The HOST performs the actual git merge / file promotion
@@ -585,6 +624,7 @@
     renewHeartbeat: renewHeartbeat,
     startIteration: startIteration,
     settleIteration: settleIteration,
+    recoverInterruptedIteration: recoverInterruptedIteration,
     recordVerdict: recordVerdict,
     loadEnvelope: loadEnvelope,
     toEnvelope: toEnvelope,

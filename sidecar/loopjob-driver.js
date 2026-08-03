@@ -152,6 +152,7 @@
     // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
     // which is what survives a restart. Both are consulted by the gate.
     const leases = new Map();
+    let bootReconciled = false;
 
     function personaOf() {
       const p = deps.persona;
@@ -219,6 +220,34 @@
         if (onStopped && after && NEEDS_YOU[after.state] && after.state !== prevState) onStopped(after, prevState || null);
       } catch (_) { /* a notification must never break a settlement */ }
       return next;
+    }
+
+    /* reconcileBoot — a fresh driver cannot own a RUNNING row loaded from disk: it has no matching in-memory
+       lease or AbortController. That row is proof of an interrupted prior process, not proof that work is still
+       alive. Reconcile once, before the first gate pass, and persist the recovery pause before allowing any new
+       launch. The existing RESUME action is the only authority that re-arms it. */
+    function reconcileBoot(nowMs) {
+      if (bootReconciled) return;
+      bootReconciled = true;
+      for (const loop of getLoops()) {
+        if (!loop || leases.has(loop.id)) continue;
+        const hasRunning = (loop.iterations || []).some(it => it && it.outcome === 'running');
+        if (!hasRunning) continue;
+        const reason = 'interrupted by sidecar restart — review recovery evidence, then resume explicitly';
+        const next = store.recoverInterruptedIteration(getLoops(), loop.id, reason, { now: nowMs });
+        if (setLoops(next)) {
+          const recovered = store.getLoop(next, loop.id) || loop;
+          note('decline', recovered, {
+            runId: loop.lastRunId || '', reason: 'restart-interrupted', binding: 'recovery',
+            detail: { iteration: loop.iterationCount || 0 }
+          });
+        } else {
+          // A failed recovery write must not fall through to the stale-claim re-fire path in this process.
+          // Keep a synthetic lease as a fail-closed block; a later explicit restart/recovery can try again.
+          leases.set(loop.id, { runId: String(loop.lastRunId || ''), abort: null, startedAt: nowMs, recoveryBlocked: true });
+          note('defer', loop, { reason: 'recovery-persist-failed', binding: 'persist' });
+        }
+      }
     }
 
     /* fireLoop — launch ONE iteration. Returns true if a run was actually launched.
@@ -324,6 +353,8 @@
       return true;
 
       function launch(snapshotText) {
+      const currentLease = leases.get(loop.id);
+      if (!currentLease || currentLease.runId !== runId || (ac.signal && ac.signal.aborted)) return false;
       const opts = {
         key: key,
         model: fresh.model || ident.model || deps.defaultModel,
@@ -357,6 +388,10 @@
       Promise.resolve(p)
         .then(
           (res) => {
+            // E-STOP settles cancellation at the host boundary immediately. A provider/tool that ignores the
+            // AbortSignal may still resolve later; generation-fence that stale completion before check/harvest.
+            const live = leases.get(loop.id);
+            if (!live || live.runId !== runId || (ac.signal && ac.signal.aborted)) return null;
             // runOnce RESOLVES on a failed run — the failure arrives through the sink (state.errMsg) or as an
             // end reason. Trusting the promise alone would park a broken iteration as a review candidate and
             // ask the Commander to approve work that never happened.
@@ -397,11 +432,15 @@
               (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })
             )));
           },
-          (e) => settle(loop.id, runId, {
-            status: 'error',
-            cancelled: !!(e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')))),
-            error: (e && e.message) || 'run failed'
-          })
+          (e) => {
+            const live = leases.get(loop.id);
+            if (!live || live.runId !== runId) return null;
+            return settle(loop.id, runId, {
+              status: 'error',
+              cancelled: !!(e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')))),
+              error: (e && e.message) || 'run failed'
+            });
+          }
         )
         .catch((e) => {
           try { leases.delete(loop.id); } catch (_) {}
@@ -413,6 +452,7 @@
 
     /* applyTick — one pass over every loop. */
     function applyTick(nowMs) {
+      reconcileBoot(nowMs);
       const halted = isHalted();
       let fired = 0, skipped = 0, deferred = 0, planned = 0;
 
@@ -476,8 +516,12 @@
        Must never throw: an E-STOP that fails halfway is worse than no E-STOP. */
     function abortAllLeases() {
       let n = 0;
-      for (const lease of leases.values()) {
+      // settle() mutates the lease map, so iterate a stable snapshot. The host owns cancellation: once E-STOP
+      // is accepted the loop is durably terminal even if a provider or tool never acknowledges AbortSignal.
+      for (const [loopId, lease] of Array.from(leases.entries())) {
+        if (lease && lease.recoveryBlocked) continue;
         try { if (lease && lease.abort && isFn(lease.abort.abort)) lease.abort.abort(); } catch (_) {}
+        try { settle(loopId, lease && lease.runId, { status: 'error', cancelled: true, error: 'cancelled by E-STOP' }); } catch (_) {}
         n++;
       }
       return n;
@@ -487,7 +531,7 @@
       applyTick: applyTick,
       abortAllLeases: abortAllLeases,
       leases: leases,
-      _internals: { fireLoop: fireLoop, settle: settle, buildMessages: buildMessages, defaultHarvest: defaultHarvest }
+      _internals: { fireLoop: fireLoop, settle: settle, reconcileBoot: reconcileBoot, buildMessages: buildMessages, defaultHarvest: defaultHarvest }
     };
   }
 
