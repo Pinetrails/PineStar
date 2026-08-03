@@ -4,10 +4,10 @@ slug: the-ledger-s-unmetered-flag-is-a-stamped-verdict
 title: The ledger's `unmetered` flag is a stamped verdict with zero readers — every ledger USD aggregate (/api/budget, day/global caps) counts subscription dollars tha
 surface: providers
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/providers
-fix: 
+fix: fdbb12a2
 ---
 
 # The ledger's `unmetered` flag is a stamped verdict with zero readers — every ledger USD aggregate (/api/budget, day/global caps) counts subscription dollars tha
@@ -34,4 +34,4 @@ _Found by the `sweep/providers` lane, 2026-07-28. Finder confidence: medium. Sev
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Fixed by fdbb12a2: every metered ledger aggregate filters unmetered rows while count/all preserve the activity record. The real-sidecar regression in e5e4e620 proves /api/budget reports only metered dollars and a subscription row above the day cap does not block runs.

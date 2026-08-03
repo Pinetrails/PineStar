@@ -36,8 +36,8 @@ const ReturnStore = (() => {
     const rows = Returns.unattended(state, runs, sinceMs);
     if (!rows.length) return rows;
     try {
-      const r = await fetch('/api/cron', { cache: 'no-store' });
-      if (r.ok) Returns.matchRoutines(rows, ((await r.json()) || {}).jobs || []);
+      const q = (typeof QuerySpine !== 'undefined' && QuerySpine.get) ? await QuerySpine.get('cron') : null;
+      if (q && q.hasData) Returns.matchRoutines(rows, (q.data || {}).jobs || []);
     } catch (_) { /* routine names are cosmetic — rows stand on their honest titles */ }
     // G3a seed callout: a row whose unattended run genuinely reuses a Commander-saved seed (seedborn custom
     // recipe — matched by routine name or by its task template) gets .seed = the seed's name; the digest

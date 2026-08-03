@@ -4,10 +4,10 @@ slug: the-index-js-summarize-closure-captures-the-pre
 title: The index.js summarize closure captures the pre-failover provider/model — after a credential rotation or provider fallback, two failed summaries flip compaction
 surface: providers
 severity: P2
-status: open
+status: fixed
 found: 2026-07-28
 lane: sweep/providers
-fix: 
+fix: fdbb12a2
 ---
 
 # The index.js summarize closure captures the pre-failover provider/model — after a credential rotation or provider fallback, two failed summaries flip compaction
@@ -34,4 +34,4 @@ _Found by the `sweep/providers` lane, 2026-07-28. Finder confidence: medium. Sev
 
 ## Verdict
 
-_Filled in when the bug leaves the backlog: what was true, and why it is closed._
+Fixed by fdbb12a2: maybeCompact passes the loop's live provider/model/cost into the summarizer, and the index closure consumes that state. The real-sidecar regression in e5e4e620 proves compaction after a primary 429 reaches only the backup credential and the run completes.

@@ -617,6 +617,7 @@
 <script src="app/skinstage.js"></script>
 <script src="js/assets.js"></script>
 <script src="app/harness.js"></script>
+<script src="app/queryspine.js"></script><!-- keyed Harness.api GET state: in-flight dedupe, last-good truth, TTL + subscriber-owned polling; MUST load before cron consumers -->
 <script src="app/updatecore.js"></script>
 <script src="app/updates.js"></script>
 <script src="app/quitguard.js"></script><!-- GB-4 quit half: close-requested guard when agents are live (Tauri only; preview no-op) -->
@@ -637,6 +638,7 @@
 <script src="app/understanding.js"></script><!-- NORTH STAR: pure "how well the station understands its Commander" read-model over the dossier (per-dim + overall confidence, weakest = the VOI question target) -->
 <script src="app/fork.js"></script><!-- R1 MID-TASK FORK: pure engine for the earned preference-fork (directive + FORK-marker parser + confidence gate); self-retiring once style is well-grounded -->
 <script src="app/study.js"></script><!-- GROWTH Tier 1: pure STUDY engine (dossier Phase B) — parse/salience/dedup for work→belief proposals + ratings-taste + archetype classifier -->
+<script src="app/beatcard.js"></script><!-- shared COMMS post-run lifecycle; MUST load before chat.js -->
 <script src="app/interview.js"></script>
 <script src="app/curiosity.js"></script>
 <script src="app/pitch.js"></script>

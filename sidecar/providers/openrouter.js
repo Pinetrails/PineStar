@@ -37,21 +37,15 @@
   function isAbort(e, signal) {
     // ONLY a real cancellation — never a loose message match, which would mask a genuine provider
     // error (whose text happens to contain "abort") as a clean, empty, "successful" turn.
-    return !!((signal && signal.aborted) || (e && e.name === 'AbortError'));
+    return provider.runtime.isAbort(e, signal);
   }
 
   const RETRY_DELAYS = [400, 1200];   // up to 2 retries (no jitter -> determinism); retryability comes from classifyApiError
   const OPENROUTER_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   const REASONING_EFFORT_ORDER = OPENROUTER_REASONING_EFFORTS;
   const OFF_ONLY_EFFORTS = ['none'];
-  function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
   function delay(ms, signal) {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(resolve, ms);
-      if (signal && typeof signal.addEventListener === 'function') {
-        signal.addEventListener('abort', () => { clearTimeout(t); reject(abortError()); }, { once: true });
-      }
-    });
+    return provider.runtime.abortableDelay(ms, signal);
   }
 
   // ---- prompt caching: mark the byte-stable system prefix as cacheable for providers that honor explicit

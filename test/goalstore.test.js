@@ -306,7 +306,7 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   const iArc = chatSrc.indexOf('async function offerArc');
   A.ok(iArc > 0, 'chat.js defines offerArc');
   const arcBody = chatSrc.slice(iArc, iArc + 4200);
-  A.ok(/slotArcDone\(turninQueue\.length > 0\)/.test(arcBody), 'offerArc hands the slot to a queued deck on resolve (fix 1: arcDone(more))');
+  A.ok(/handoff:\s*\(\) => turninQueue\.length > 0 \? 'memory' : null/.test(arcBody), 'offerArc hands the shared slot to a queued memory deck on resolve');
   A.ok(/if \(turninQueue\.length && !activeTurnin\) showNextTurnin\(\);/.test(arcBody), 'offerArc DRAINS the queued memory deck in its finally (fix 1: never a stranded invisible deck)');
   A.ok(/Goals\.resolveConfirmChoice/.test(arcBody), 'offerArc routes the choice through the PURE resolver (fix 3 lives in tested code)');
   A.ok(/q\.isNext && !q\.inFlight/.test(uiSrc), 'stationui renders Accept only for a NOT-in-flight front step (fix 2 render state)');

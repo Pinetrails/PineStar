@@ -6,13 +6,8 @@
 'use strict';
 const A = require('./_assert.js');
 const http = require('http');
-const path = require('path');
-const os = require('os');
-const { bootToken } = require('./_httpToken.js');
-const fs = require('fs');
-const { spawn } = require('child_process');
+const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 const HOST = '127.0.0.1';
-const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 
 // a 1x1 png — real bytes, so we can assert the exact base64 round-trips upload -> disk -> expansion -> provider.
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -44,34 +39,15 @@ function startMockOpenRouter() {
   });
 }
 
-function boot(port, env, attemptsLeft) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, env, { SKYNET_PORT: String(port) }), stdio: ['ignore', 'pipe', 'pipe']
-    });
-    let out = '', settled = false;
-    const onData = d => {
-      out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
-      else if (!settled && /already in use/i.test(out)) { settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1)); else reject(new Error('no free port')); }
-    };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
-    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout:\n' + out)); } }, 9000);
-  });
-}
-
 async function drain(res) { const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '', events = []; while (true) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let nl; while ((nl = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1); if (line) { try { events.push(JSON.parse(line)); } catch (_) {} } } } return events; }
 
 (async () => {
   const mock = await startMockOpenRouter();
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-attach-e2e-'));
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base };
-  const { child, port } = await boot(8890 + (process.pid % 40), env, 20);
-  const B = 'http://' + HOST + ':' + port;
+  const fixture = SidecarFixture.create({ prefix: 'sk-attach-e2e-', env: { SKYNET_OPENROUTER_BASE: mock.base } });
+  await fixture.start();
+  const B = fixture.baseUrl;
   try {
-    const token = await bootToken(B, B);
+    const token = fixture.token;
     const H = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
 
     // 1. UPLOAD a photo -> a lightweight reference; the bytes land in the agent's workspace.
@@ -148,7 +124,7 @@ async function drain(res) { const rd = res.body.getReader(); const dec = new Tex
     const after = await fetch(B + '/api/file?agent=e2e&path=' + encodeURIComponent(ref.path) + '&token=' + encodeURIComponent(token), { headers: { Origin: B } });
     A.eq(after.status, 404, 'the deleted attachment is gone (404)');
   } finally {
-    try { child.kill(); } catch (_) {}
+    await fixture.dispose();
     try { mock.server.close(); } catch (_) {}
   }
   A.report('e2e.attachments.test');

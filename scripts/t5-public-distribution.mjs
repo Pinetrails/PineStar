@@ -131,10 +131,10 @@ function checkPlan(loop) {
   const missing = required.filter(term => text.indexOf(term.toLowerCase()) < 0);
   return step('t5.0-loop-spec', 'T5.0', 'T5 public distribution loop is documented', existsSync(file) && !missing.length ? 'pass' : 'fail', missing.length ? 'Missing terms: ' + missing.join(', ') : 'T5 public distribution spec exists.', { loop, evidenceFile: file });
 }
-/* The installer sha256/bytes a prereq rung actually TESTED, dug out of its own status document. Every rung
-   records `results[].artifacts.installer` — t3.2 already pulls T0's out and refuses unless it matches the
-   installer on disk. Returns null when a rung records no installer at all (an older status shape), which is
-   treated as "cannot bind" rather than a failure. */
+/* The installer sha256/bytes a prereq rung actually TESTED, dug out of its own status document. The
+   installer-bearing rungs record `results[].artifacts.installer`; T2 is a repository state-safety proof and
+   is instead bound by its generatedAt timestamp being newer than the installer. An older status shape that
+   cannot prove either binding must fail closed at the final public-distribution gate. */
 function gateInstallerHash(status) {
   const results = (status && status.results) || [];
   for (const r of results) {
@@ -170,8 +170,23 @@ function checkPrereqs(loop, installerInfo) {
   const bound = {};
   for (const [k, g] of Object.entries(gates)) {
     const h = gateInstallerHash(g.status);
-    bound[k] = h;
-    if (!g.status || !installerInfo || !h) continue;      // nothing to compare — reported below as unbound
+    const generatedAt = String(g.status && g.status.generatedAt || '').trim();
+    const generatedAtMs = Date.parse(generatedAt);
+    const freshForInstaller = !!installerInfo && Number.isFinite(generatedAtMs) && generatedAtMs >= installerInfo.mtimeMs;
+    bound[k] = { installer: h, generatedAt, freshForInstaller };
+    if (!g.status || !installerInfo) continue;
+    if (!Number.isFinite(generatedAtMs)) {
+      stale.push(k.toUpperCase() + ' has no valid generatedAt timestamp — re-run it against this build');
+    } else if (!freshForInstaller) {
+      stale.push(k.toUpperCase() + ' evidence is OLDER than the current installer — re-run it against this build');
+    }
+    // T2 proves repository-level migration/state behavior and has no installer artifact. Every other rung
+    // directly inspects the packaged binary, so accepting a hashless status would recreate the false green.
+    if (k !== 't2' && !h) {
+      stale.push(k.toUpperCase() + ' does not record which installer it tested — re-run it against this build');
+      continue;
+    }
+    if (!h) continue;
     const hashSame = sameHash(h.sha256, installerInfo.sha256);
     const bytesSame = !h.bytes || h.bytes === installerInfo.bytes;
     if (!hashSame) stale.push(k.toUpperCase() + ' is green for a DIFFERENT installer (sha256 ' + h.sha256.slice(0, 12) + '… vs ' + String(installerInfo.sha256 || '').slice(0, 12) + '…) — re-run it against this build');
@@ -186,7 +201,9 @@ function checkPrereqs(loop, installerInfo) {
       verdict: g.status && g.status.verdict || '',
       ready: g.status && (g.status.cleanInstallProofReady ?? g.status.publicReleaseReady ?? g.status.stateSafetyReady ?? g.status.releaseSmokeReady ?? g.status.updateDeliveryReady),
       // the binary that verdict was actually about — null when the rung recorded none (cannot bind)
-      installer: bound[k]
+      installer: bound[k] && bound[k].installer,
+      generatedAt: bound[k] && bound[k].generatedAt,
+      freshForInstaller: !!(bound[k] && bound[k].freshForInstaller)
     }]))
   });
 }

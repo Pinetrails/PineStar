@@ -30,7 +30,7 @@ const R = RoutineNudgeStore;
 function clearFakes() { chat.nudges = []; opened = []; }
 
 /* ---------- fail-closed: unknown cron state → the store stands down entirely ---------- */
-R.reset(); R.init();   // init fires refreshCron, but the test fetch seam is unset → cache stays UNKNOWN
+R.reset(); R.init();   // the browser query spine is absent under Node → cache stays UNKNOWN
 launchCounts = { 'morning-brief': { n: 5, lastAt: 1 } };
 A.eq(R.willPropose(), false, 'cron state unknown → stand down (fail-closed, never a duplicate-routine offer)');
 

@@ -22,8 +22,9 @@ const RoutineNudgeStore = (() => {
   let sessionProposed = 0;
   let cronCache = null;      // null = UNKNOWN (stand down); an array = the live jobs list (may be empty)
 
-  // fetch seam (injectable for node tests; absent fetch → cache stays unknown → the store never fires).
-  let doFetch = (typeof fetch !== 'undefined') ? fetch.bind(typeof globalThis !== 'undefined' ? globalThis : this) : null;
+  // Shared query seam. Absent spine → cache stays unknown → the store never fires.
+  let query = (typeof QuerySpine !== 'undefined') ? QuerySpine : null;
+  let stopCron = null;
 
   /* ---- the durable anti-nag ledger: { offers: { recipeId: { n, lastAt, dismissed } } } ---- */
   function readOffers() {
@@ -50,14 +51,13 @@ const RoutineNudgeStore = (() => {
   }
 
   /* ---- the read-only cron cache (the no-duplicate-routine gate) ---- */
+  function foldCron(s) {
+    const jobs = s && s.hasData && s.data && Array.isArray(s.data.jobs) ? s.data.jobs : null;
+    if (jobs) cronCache = jobs;       // failed reads retain last-good cache; unknown stays unknown
+  }
   function refreshCron() {
-    if (!doFetch) return;
-    try {
-      doFetch('/api/cron').then(r => (r && r.ok) ? r.json() : null).then(d => {
-        const jobs = d && (Array.isArray(d.jobs) ? d.jobs : (Array.isArray(d) ? d : null));
-        if (jobs) cronCache = jobs;   // a bad/failed read leaves the cache as-is (unknown stays unknown)
-      }).catch(() => {});
-    } catch (_) {}
+    if (!query || !query.refresh) return;
+    try { query.refresh('cron').then(foldCron).catch(() => {}); } catch (_) {}
   }
   function scheduledRecipeIds() {
     const out = {};
@@ -68,7 +68,13 @@ const RoutineNudgeStore = (() => {
     return out;
   }
 
-  function init() { sessionProposed = 0; refreshCron(); }
+  function init() {
+    sessionProposed = 0;
+    if (stopCron) { try { stopCron(); } catch (_) {} stopCron = null; }
+    if (query && query.subscribe) {
+      try { stopCron = query.subscribe('cron', foldCron); } catch (_) { stopCron = null; }
+    }
+  }
   function reset() { sessionProposed = 0; try { if (typeof localStorage !== 'undefined') localStorage.removeItem(KEY); } catch (_) {} }
   function onRunEnd() { refreshCron(); }   // keep the duplicate gate fresh off the same signal that opens the beat slot
 
@@ -122,7 +128,7 @@ const RoutineNudgeStore = (() => {
 
   return { init, reset, onRunEnd, willPropose, propose,
     LAUNCH_FLOOR, OFFER_MAX, KEY,
-    _pick: pick, _setFetchForTest: f => { doFetch = f; }, _setCronForTest: c => { cronCache = c; } };
+    _pick: pick, _setQueryForTest: q => { query = q; }, _setCronForTest: c => { cronCache = c; } };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { RoutineNudgeStore };
