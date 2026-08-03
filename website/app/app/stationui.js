@@ -3929,10 +3929,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (manage) manage.addEventListener('click', () => { sfx('click'); openExternal(j.manageUrl || j.purchaseUrl); });
     const ref = host.querySelector('#credits-refresh');
     if (ref) ref.addEventListener('click', () => { sfx('click'); wireCredits(body); });
+    // UNLINK gives up a money-spending credential, so it is destructive → the house two-step
+    // arm/confirm, same idiom as key remove and permission revoke. It used to raise a native
+    // window.confirm, which the OS paints: a grey system dialog over the CRT, and the one thing
+    // this station never does. ArmConfirm keeps the decision inside the world.
     const unlink = host.querySelector('#credits-unlink');
-    if (unlink) unlink.addEventListener('click', () => {
-      sfx('click');
-      if (typeof window !== 'undefined' && window.confirm && !window.confirm('Unlink this station from your StarNet account? You can relink anytime.')) return;
+    const doUnlink = () => {
       unlink.disabled = true;
       // BOTH halves have to go: the sidecar owns the file, only the shell can reach the keychain.
       // Clearing the keychain first means a failure there is visible before we report "unlinked" —
@@ -3949,7 +3951,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         .then(() => (H() && H().refreshCreditsConfigured) ? H().refreshCreditsConfigured() : null)
         .then(() => { refreshCreditsProvider().catch(() => {}); wireCredits(body); })
         .catch(() => wireCredits(body));
-    });
+    };
+    if (unlink) {
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+        // No restLabel: the helper restores whatever text the button already had.
+        ArmConfirm.wire(unlink, {
+          armedLabel: '✕ CONFIRM UNLINK', timeoutMs: 4000,
+          onArm: () => sfx('bad'),
+          onConfirm: () => { sfx('bad'); doUnlink(); }
+        });
+      } else {
+        // ArmConfirm absent from this build: unlinking one press early is recoverable (relink mints a
+        // new token), and a dead UNLINK button is not — a station you cannot detach is worse.
+        unlink.addEventListener('click', () => { sfx('click'); doUnlink(); });
+      }
+    }
   }
 
   // Ask the desktop shell to move the device token from .secrets/credits.json into the OS keychain.
