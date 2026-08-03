@@ -112,6 +112,7 @@ const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
 const { runRouteFailure } = require('./runroute.js');   // a failure escaping handleRun must never read as an empty 200
 const { json: respondJson, readJsonBody, isAgentId } = require('./respond.js');   // canonical json()/body/agent-id helpers — adopt incrementally, don't mass-migrate
+const { readBody, readBodyBuffer } = require('./http-body.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
@@ -14873,28 +14874,6 @@ async function ttsElevenLabs(res, body, text, fallback) {
   if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
 }
 
-// read a raw binary request body into a single Buffer (readBody concatenates as a string, which mangles
-// non-UTF8 audio bytes). Capped like readBody so a hostile client can't OOM the host.
-function readBodyBuffer(req, max, res) {
-  return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0; let over = false;
-    req.on('data', c => {
-      if (over) return;
-      n += c.length;
-      if (n > max) {
-        over = true;
-        // Answer 413 CLEANLY (when a res is available) BEFORE tearing the socket down, so the client reads a
-        // real "payload too large" instead of a bare ECONNRESET. Then destroy to stop consuming the oversized body.
-        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
-        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
-        reject(e); try { req.destroy(); } catch (_) {}
-      } else chunks.push(c);
-    });
-    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks)); });
-    req.on('error', (e) => { if (!over) reject(e); });
-  });
-}
-
 /* POST /api/stt — speech-to-text for the DESKTOP voice path (WebView2 has no SpeechRecognition, so the
    frontend records mic audio and posts it here). Accepts the audio two ways, whichever the client finds
    simplest:
@@ -15112,29 +15091,6 @@ async function handleStt(req, res) {
   // valid "no speech heard" result and is delivered as-is, never treated as a failure.
   const r = await transcribeAudioBuffer(Buffer.from(audioB64, 'base64'), format, key);
   return r.ok ? ok(r.text) : degrade(r.reason);
-}
-
-function readBody(req, max, res) {
-  // Accumulate raw Buffers and decode ONCE at the end. The old `b += c` did a per-chunk toString(), which
-  // mangles a multi-byte UTF-8 char (emoji, CJK, accented) that happens to be SPLIT across two TCP chunks —
-  // each half decodes to replacement chars. Byte-counting for the cap stays correct (Buffer.length is bytes).
-  // Over-limit: answer 413 cleanly (when a res is passed) BEFORE destroying, so the client sees "too large"
-  // rather than a mid-request connection reset. Backward compatible — callers that omit res keep old behavior.
-  return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0; let over = false;
-    req.on('data', c => {
-      if (over) return;
-      n += c.length;
-      if (n > max) {
-        over = true;
-        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
-        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
-        reject(e); try { req.destroy(); } catch (_) {}
-      } else chunks.push(c);
-    });
-    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks).toString('utf8')); });
-    req.on('error', (e) => { if (!over) reject(e); });
-  });
 }
 
 function throttleSearch(registry) {
