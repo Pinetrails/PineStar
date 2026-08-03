@@ -6333,21 +6333,24 @@ const Chat = (() => {
 
   /* QUIET TITLE SUMMARY — one tiny internal model call (no tools, suppressed from the floor + telemetry exactly
      like the pitch/suggest self-talk: internal:true drops its run.start/run.end so it never counts as a delivered
-     task, walks a sprite, or earns XP) that turns a new stream's first message into a 3-6 word title. Best-effort:
+     task, walks a sprite, or earns XP) that turns a stream's substantive messages into a 3-6 word title. Best-effort:
      any failure or an unparseable reply silently leaves the instant first-sentence placeholder in place. The tiny
      usage delta is folded into THIS stream's per-conversation cost so the telemetry stays truthful. */
   async function maybeRetitle(ws, userText, replyText) {
     if (typeof Harness === 'undefined' || typeof Workstreams === 'undefined' || !ws) return;
     const cur = Workstreams.get(ws.id);
     if (!cur || cur.titleAuto === false || ws.id === Workstreams.generalId()) return;   // never stomp a manual rename / title General
-    const sys = 'You generate a terse title for a work session. Reply with ONLY a 3 to 6 word title that summarizes'
-      + ' what the user wants done. Use Title Case. No surrounding quotes, no trailing punctuation, no preamble —'
-      + ' output the title and nothing else.';
-    // summarize the session's FOUNDING directive (its first user message), not whatever turn happened to
-    // trigger a late upgrade retry — the title says what the session is ABOUT. Falls back to this turn's text.
-    let baseText = userText;
-    try { const f = (cur.history || []).find(m => m && m.role === 'user' && typeof m.content === 'string'); if (f) baseText = f.content; } catch (_) {}
-    const prompt = String(baseText || '').replace(/\s+/g, ' ').slice(0, 500)
+    const sys = 'You generate a terse title for a work session. Reply with ONLY a 3 to 6 word title that names'
+      + ' the concrete task or topic in the messages — never the greetings around it. Use Title Case. No'
+      + ' surrounding quotes, no trailing punctuation, no preamble — output the title and nothing else.';
+    // summarize what the session actually IS: a digest of its SUBSTANTIVE user messages (founding directive
+    // + latest turns; small-talk filler skipped). null = the session holds no substance yet — spend NO model
+    // call and keep the honest placeholder ("hey") instead of minting a "Casual Greeting Exchange" that a
+    // session opened with small talk would otherwise wear forever. needsModelTitle keeps such a stream
+    // eligible, so the upgrade simply waits for the first turn with real content.
+    const basis = (Workstreams.titleBasis ? Workstreams.titleBasis(ws.id, userText) : null);
+    if (basis == null) return;
+    const prompt = basis
       + (replyText ? ('\n\nAssistant reply (context only): ' + String(replyText).replace(/\s+/g, ' ').slice(0, 200)) : '');
     if (!prompt.trim()) return;
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton)
@@ -6359,7 +6362,8 @@ const Chat = (() => {
     try { const a = Harness.totals(); Workstreams.addCost(ws.id, { tokens: a.tokens - before.tokens, usd: a.cost - before.cost, calls: a.calls - before.calls }); } catch (_) {}
     if (!res || res.error) return;
     const t = cleanTitle(res.text);
-    if (t && Workstreams.retitle(ws.id, t)) {
+    // strong: this title was written from substantive content — the auto-title ladder ends here
+    if (t && Workstreams.retitle(ws.id, t, true)) {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       if (onTurn) onTurn();   // persist the upgraded title
     }
