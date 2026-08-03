@@ -126,6 +126,8 @@
     const advanceChain = typeof d.advanceChain === 'function' ? d.advanceChain : null;
     const contextFor = typeof d.contextFor === 'function' ? d.contextFor : function () { return ''; };
     const deliverResult = typeof d.deliverResult === 'function' ? d.deliverResult : null;
+    // Fault-injection seam: false models a process stop after the final receipt is durable, before delivery.
+    const afterFinalizationCommitted = typeof d.afterFinalizationCommitted === 'function' ? d.afterFinalizationCommitted : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
@@ -142,6 +144,34 @@
     // (jobId, nextRunAt) window: once the job's due instant changes (re-enabled+re-armed, edited) or the job
     // goes away, the key changes / is pruned and a fresh disabled window can report again. Keyed jobId->dueKey.
     const disabledNotified = new Map();
+
+    async function deliverFinalization(job) {
+      const f = job && job.finalization;
+      if (!f || f.state !== 'pending') return false;
+      if (!deliverResult) {
+        setJobs(cronStore.markDelivery(getJobs(), job.id, { ok: true, runId: f.runId }, { now: now() }));
+        return true;
+      }
+      // Use the destination snapshot committed with the result, not an edited job's newer routing fields.
+      const deliveryJob = Object.assign({}, job, { deliver: f.deliver, origin: f.origin });
+      let out;
+      try { out = await deliverResult(deliveryJob, { runId: f.runId, outcome: f.outcome, text: f.result || '', error: f.error || null }); }
+      catch (e) { out = { ok: false, error: (e && e.message) || String(e) }; }
+      const live = cronStore.getJob(getJobs(), job.id);
+      const deliveryOk = !out || out.ok !== false;
+      if (live && live.finalization && live.finalization.state === 'pending' && live.finalization.runId === f.runId) {
+        setJobs(cronStore.markDelivery(getJobs(), job.id, { ok: deliveryOk, error: out && out.error, runId: f.runId }, { now: now() }));
+      }
+      return deliveryOk;
+    }
+
+    async function recoverFinalizations() {
+      let count = 0;
+      for (const job of getJobs().slice()) if (job && job.finalization && job.finalization.state === 'pending') {
+        if (await deliverFinalization(job)) count++;
+      }
+      return count;
+    }
 
     /* renewLease — NS-0: a run proved it is alive (a progress event arrived), so bump its lease heartbeat to
        `now`. For a ONE-SHOT run, ALSO refresh the DURABLE per-job heartbeat (so a fresh liveness signal
@@ -176,23 +206,25 @@
       // 'stale-lease') so its outcome is observable, but the STORE belongs to the current lease holder.
       const lease = leases.get(jobId);
       const owned = !!(lease && lease.runId === runId);
+      let committed = false;
       if (owned) {
         try {
           const next = cronStore.markRun(getJobs(), jobId, {
             runId: runId, status: ok ? 'ok' : 'error',
             reason: state.reason || (ok ? 'done' : 'error'),
-            error: errMsg || undefined, transient: transient, output: ok ? reply : undefined
+            error: errMsg || undefined, transient: transient, output: ok ? reply : undefined, usd: state.usd || 0
           }, { now: at });
-          setJobs(next);
+          committed = setJobs(next) !== false;
         } catch (_) { /* a persist/markRun failure must never crash a settling run */ }
       }
       // job-level outcome: a FAILED run always reports (never silent); SILENT only on a clean, exactly-"[SILENT]" reply.
       const outcome = !ok ? 'failed' : (reply === SILENT_MARKER ? 'silent' : 'ok');
       const baseReason = state.reason || (errMsg ? 'error' : 'done');
-      try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: owned ? baseReason : (baseReason + ' (stale-lease)') }); } catch (_) {}
-      if (owned && deliverResult) {
+      if (!owned || committed) try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: owned ? baseReason : (baseReason + ' (stale-lease)') }); } catch (_) {}
+      const continueAfterCommit = !(owned && committed && afterFinalizationCommitted && afterFinalizationCommitted(cronStore.getJob(getJobs(), jobId)) === false);
+      if (owned && committed && continueAfterCommit) {
         const liveJob = cronStore.getJob(getJobs(), jobId) || { id: jobId };
-        Promise.resolve(deliverResult(liveJob, { runId: runId, outcome: outcome, text: reply, error: errMsg || null }))
+        Promise.resolve(deliverFinalization(liveJob))
           .catch(function (e) { warn('[cron] result delivery failed for ' + jobId + ': ' + ((e && e.message) || e)); });
       }
       if (owned) leases.delete(jobId);   // a stale-lock sweep may have reclaimed+replaced it — never delete a successor's lease
@@ -270,7 +302,7 @@
       // redaction so an unattended run is observable live in the SAME redacted shape a routed channel run ships
       // (tool_call name-only, tool_result outcome-only, metadata events whole; token deltas dropped to stay quiet,
       // and any event runTeeView maps to null — e.g. the noisy inner streams — is dropped rather than leaked raw).
-      const state = { buf: '', errMsg: null, reason: null, transient: false };
+      const state = { buf: '', errMsg: null, reason: null, transient: false, usd: 0 };
       const sink = function (name, payload) {
         const p = payload || {};
         // NS-0 HEARTBEAT: every run-progress event proves this run is still alive → renew the in-RAM lease
@@ -281,7 +313,7 @@
         if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // token stream never leaves the driver
         if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
         else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
-        else if (name === 'agent.run.end') state.reason = p.reason;
+        else if (name === 'agent.run.end') { state.reason = p.reason; if (typeof p.usd === 'number' && isFinite(p.usd)) state.usd = p.usd; }
         // forward only what the shared egress policy permits, in its redacted shape (B4). null -> not teed.
         const view = runTeeView(name, p);
         if (view) { try { emit(name, view); } catch (_) {} }
@@ -342,7 +374,7 @@
             unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
             onHop: function () { renewLease(job.id, runId); }
           })).then(
-            function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; finishFire(job.id, runId, state, null); },
+            function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; if (line && typeof line.usd === 'number' && isFinite(line.usd)) state.usd += line.usd; finishFire(job.id, runId, state, null); },
             // A CHAIN FAILURE NEVER CHANGES THE ROUTINE'S OUTCOME: stage one really did run and really did
             // produce work. Same law the channel path holds — the line is never a gate on the answer.
             // It is still SAID OUT LOUD: a silently swallowed chain error is indistinguishable from a floor
@@ -529,7 +561,8 @@
       return n;
     }
 
-    return { applyTick: applyTick, leases: leases, abortAllLeases: abortAllLeases, _internals: { fireJob: fireJob, finishFire: finishFire } };
+    return { applyTick: applyTick, leases: leases, abortAllLeases: abortAllLeases, recoverFinalizations: recoverFinalizations,
+      _internals: { fireJob: fireJob, finishFire: finishFire, deliverFinalization: deliverFinalization } };
   }
 
   return { makeCronDriver: makeCronDriver, SILENT_MARKER: SILENT_MARKER };

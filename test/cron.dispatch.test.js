@@ -41,11 +41,12 @@ function setup(jobs, opts) {
     persona: 'PERSONA',
     contextFor: opts.contextFor,
     deliverResult: opts.deliverResult,
+    afterFinalizationCommitted: opts.afterFinalizationCommitted,
     maxRunMs: 480000
   });
   return {
     driver, clock, events, runs,
-    getJob: (id) => cronStore.getJob(store, id),
+    getJob: (id) => cronStore.getJob(store, id), getStore: () => store.slice(),
     setStore: (fn) => { store = fn(store); },
     setFailPersist: (v) => { failPersist = v; }
   };
@@ -149,6 +150,28 @@ function intervalJob(id, everyStr) {
     A.eq(s.getJob('d1').lastOutput, 'final answer', 'final reply is persisted for downstream context');
     A.eq(delivered.length, 1, 'completion delivery hook runs exactly once');
     A.eq(delivered[0].result.text, 'final answer', 'delivery receives the actual final result text');
+  }
+
+  // ---- 5. FINALIZATION RESTART: receipt commits before delivery and replays without rerunning work. ----
+  {
+    const j = intervalJob('r1', 'every 1m');
+    j.deliver = 'origin'; j.origin = { target: 'telegram:original', channel: 'telegram', chatId: 'original' };
+    const first = setup([j], { afterFinalizationCommitted: () => false, deliverResult: () => { throw new Error('must not deliver before crash'); } });
+    first.clock.set(T0 + 60000); first.driver.applyTick(first.clock.now());
+    first.runs[0].opts.emit('agent.token', { delta: 'restart-safe answer' });
+    first.runs[0].opts.emit('agent.run.end', { reason: 'done', usd: 0.41 });
+    first.runs[0].resolve(); await flush(); await flush();
+    const pending = first.getJob('r1');
+    A.eq(pending.finalization.state, 'pending', 'result receipt is durable before destination delivery');
+    const delivered = [];
+    const second = setup(first.getStore(), { deliverResult: (job, result) => { delivered.push({ job, result }); return { ok: true }; } });
+    const recovered = await second.driver.recoverFinalizations();
+    A.eq(recovered, 1, 'restart reconciles one pending routine receipt');
+    A.eq(second.runs.length, 0, 'recovery does not rerun the paid routine');
+    A.eq(delivered.length, 1, 'recovery delivers one logical result');
+    A.eq({ text: delivered[0].result.text, usd: second.getJob('r1').lastUsd, destination: delivered[0].job.origin.target },
+      { text: 'restart-safe answer', usd: 0.41, destination: 'telegram:original' }, 'result, one cost record, and original destination survive together');
+    A.eq(second.getJob('r1').finalization.state, 'delivered', 'successful recovery durably closes the receipt');
   }
 
   A.report('cron.dispatch');

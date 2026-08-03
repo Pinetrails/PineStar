@@ -62,6 +62,23 @@ function tick() { return new Promise(resolve => setImmediate(resolve)); }
     A.eq(after.status, 'done', 'resumed runner can complete');
     A.eq(after.result, 'resumed', 'resume stores new result');
     A.ok(after.attempts >= 2, 'resume increments attempts');
+
+    // Crash after durable finalization but before destination publication: restart replays the same logical receipt.
+    const crashMgr = makeSubagentManager({ fs, pathMod: path, file, clock, emit: () => {}, newId: ids,
+      afterFinalizationCommitted: () => false });
+    const crash = crashMgr.start({ leadId: 'lead', agentId: 'worker', prompt: 'survive finalization', destination: 'lead:lead', runId: 'run_final' },
+      async () => ({ status: 'done', reason: 'done', result: 'durable answer', usd: 0.33 }));
+    await tick(); await tick();
+    const pending = crashMgr.get(crash.id);
+    A.eq(pending.finalization.state, 'pending', 'completion receipt is durable before publication');
+    const recoveredEvents = [];
+    const recoveredMgr = makeSubagentManager({ fs, pathMod: path, file, clock, emit: (name, p) => recoveredEvents.push({ name, p }), newId: ids });
+    const recovered = recoveredMgr.get(crash.id);
+    A.eq(recovered.finalization.state, 'delivered', 'restart reconciles a pending finalization');
+    A.eq({ result: recovered.result, usd: recovered.usd, destination: recovered.finalization.destination },
+      { result: 'durable answer', usd: 0.33, destination: 'lead:lead' }, 'result, one cost record, and original destination survive together');
+    A.eq(recoveredEvents.filter(e => e.name === 'task' && e.p.id === crash.id && e.p.status === 'done').length, 1,
+      'recovery publishes one idempotent terminal task receipt');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }

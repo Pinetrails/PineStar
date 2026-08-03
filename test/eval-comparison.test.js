@@ -65,11 +65,10 @@ const { tmpdir } = require('node:os');
     'an ambiguous mutation boundary fails closed');
 
   const observedFaultRows = await faultAdapters.runFaultAdapters({ tasks: faultTasks, repeats: 2 });
-  A.eq(observedFaultRows.filter(row => row.outcome.passed).length, 18,
-    'the production-module fault adapters currently prove nine of ten boundaries on every attempt');
-  A.eq(Array.from(new Set(observedFaultRows.filter(row => !row.outcome.passed).map(row => row.taskId))), [
-    'fault-routine-subagent-finalization'
-  ], 'the adapter receipt names the one still-unproved recovery boundary exactly');
+  A.eq(observedFaultRows.filter(row => row.outcome.passed).length, 20,
+    'the production-module fault adapters prove all ten boundaries on every attempt');
+  A.eq(Array.from(new Set(observedFaultRows.filter(row => !row.outcome.passed).map(row => row.taskId))), [],
+    'the adapter receipt leaves no recovery boundary unproved');
 
   const sourceReceipt = cmp.makeReceipt({ kind: 'parity', contract, subject: { commit: 'b'.repeat(40), sourceTree: { algorithm: 'git-tree', value: 'tree' } }, result: parity });
   A.ok(!sourceReceipt.candidateBound && sourceReceipt.limitations.some(x => /not installed-candidate proof/.test(x)),

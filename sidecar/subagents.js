@@ -45,6 +45,8 @@
     // OPTIONAL hook spine (sidecar/hooks.js) — fires subagent_stop when a delegated worker settles. Absent =
     // byte-identical to before, which is every test and every caller that does not wire it.
     const hooks = (deps.hooks && typeof deps.hooks.invoke === 'function') ? deps.hooks : null;
+    // Test-only crash seam: false means the process stopped after the receipt was durable and before publish.
+    const afterFinalizationCommitted = typeof deps.afterFinalizationCommitted === 'function' ? deps.afterFinalizationCommitted : null;
     const keep = deps.keep || 200;
     let seq = 0;
     const newId = typeof deps.newId === 'function' ? deps.newId : function () { return 'sub_' + (++seq); };
@@ -68,7 +70,7 @@
       });
       if (changed) save();
     }
-    function save() {
+    function save(strict) {
       try {
         const dir = P.dirname(file);
         fs.mkdirSync(dir, { recursive: true });
@@ -77,7 +79,12 @@
         // failure is now surfaced (loud warn) instead of silently swallowed — the registry drives resume/stale
         // marking, so a write we can't complete is worth knowing about.
         writeFileDurable({ fs: fs, path: P }, file, JSON.stringify(body));
-      } catch (e) { try { console.warn('[subagents] registry save failed:', (e && e.message) || e); } catch (_) {} }
+        return true;
+      } catch (e) {
+        if (strict) throw e;
+        try { console.warn('[subagents] registry save failed:', (e && e.message) || e); } catch (_) {}
+        return false;
+      }
     }
     function findIndex(id) { return records.findIndex(r => r && r.id === id); }
     function get(id) {
@@ -87,7 +94,7 @@
     function view(r) {
       if (!r) return null;
       return {
-        id: r.id, leadId: r.leadId, agentId: r.agentId, runId: r.runId, status: r.status,
+        id: r.id, leadId: r.leadId, agentId: r.agentId, runId: r.runId, status: r.status, destination: r.destination || '',
         prompt: r.prompt, result: r.result || '', reason: r.reason || '', usd: r.usd || 0,
         attempts: r.attempts || 0, startedAt: r.startedAt || 0, updatedAt: r.updatedAt || 0,
         completedAt: r.completedAt || 0, canInterrupt: !!controllers.get(r.id), canResume: !!r.canResume,
@@ -103,11 +110,12 @@
         return true;
       }).map(view);
     }
-    function patch(id, fields) {
+    function patch(id, fields, strict) {
       const i = findIndex(id);
       if (i < 0) return null;
+      const before = records[i];
       records[i] = Object.assign({}, records[i], fields || {}, { updatedAt: now() });
-      save();
+      try { save(!!strict); } catch (e) { records[i] = before; throw e; }
       return records[i];
     }
     function appendEvent(id, name, payload) {
@@ -122,6 +130,28 @@
     }
     function publishTask(r, status) {
       try { emit('task', { id: r.id, agentId: r.agentId, status: status, kind: 'subagent', title: clip(r.prompt, 80) }); } catch (_) {}
+    }
+    function destinationOf(r) { return String((r && r.destination) || ('lead:' + String((r && r.leadId) || 'agent'))); }
+    function publishFinalization(r) {
+      if (!r || !r.finalization || r.finalization.state !== 'pending') return false;
+      publishTask(r, r.status === 'done' ? 'done' : 'failed');
+      if (hooks && typeof hooks.invoke === 'function') {
+        try { hooks.invoke('subagent_stop', { session_id: r.runId || '', extra: {
+          finalization_id: r.finalization.id, destination: r.finalization.destination,
+          child_session_id: r.runId || '', subagent_id: r.id || '', child_agent_id: r.agentId || '',
+          child_status: r.status, child_reason: r.reason || '', prompt: String(r.prompt || '').slice(0, 500),
+          child_summary: String(r.result || '').slice(0, 2000), usd: r.usd || 0, parent_agent_id: r.leadId || ''
+        } }); } catch (_) {}
+      }
+      patch(r.id, { finalization: Object.assign({}, r.finalization, { state: 'delivered', deliveredAt: now() }) }, true);
+      return true;
+    }
+    function reconcileFinalizations() {
+      let count = 0;
+      for (const r of records.slice()) if (r && r.finalization && r.finalization.state === 'pending') {
+        try { if (publishFinalization(r)) count++; } catch (_) { /* pending remains retryable */ }
+      }
+      return count;
     }
     function upsertStart(meta) {
       const id = meta.id ? safeId(meta.id, 'subagent id') : safeId(newId(), 'subagent id');
@@ -143,7 +173,9 @@
         startedAt: (old && old.startedAt) || meta.startedAt || t,
         updatedAt: t,
         completedAt: 0,
-        canResume: false
+        canResume: false,
+        destination: String(meta.destination || (old && old.destination) || ('lead:' + safeId(meta.leadId || 'agent', 'leadId'))),
+        finalization: null
       };
       const i = oldIndex;
       if (i >= 0) records[i] = Object.assign({}, records[i], rec);
@@ -198,18 +230,21 @@
           completedAt: now(),
           canResume: status !== 'done'
         };
-        const done = patch(rec.id, fields);
-        publishTask(done || rec, status === 'done' ? 'done' : 'failed');
-        fireSubagentStop(done || rec, fields.status, fields.reason, fields.result, fields.usd);
+        fields.finalization = { id: rec.runId + ':final', state: 'pending', destination: destinationOf(rec),
+          result: fields.result, usd: fields.usd, committedAt: now() };
+        const done = patch(rec.id, fields, true);
+        if (afterFinalizationCommitted && afterFinalizationCommitted(clone(done)) === false) return;
+        try { publishFinalization(done || rec); } catch (_) { /* the pending receipt is replayed at restart */ }
       }, function (e) {
         controllers.delete(rec.id);
         const cur = get(rec.id);
         if (cur && cur.status === 'interrupted') return;
         const msg = 'worker run failed: ' + ((e && e.message) || e);
-        const done = patch(rec.id, { status: 'error', reason: 'error', result: msg, completedAt: now(), canResume: true });
-        publishTask(done || rec, 'failed');
-        // A worker that DIED is exactly the case a "tell me when delegation finishes" hook exists for.
-        fireSubagentStop(done || rec, 'error', 'error', msg, 0);
+        const fields = { status: 'error', reason: 'error', result: msg, usd: 0, completedAt: now(), canResume: true,
+          finalization: { id: rec.runId + ':final', state: 'pending', destination: destinationOf(rec), result: msg, usd: 0, committedAt: now() } };
+        const done = patch(rec.id, fields, true);
+        if (afterFinalizationCommitted && afterFinalizationCommitted(clone(done)) === false) return;
+        try { publishFinalization(done || rec); } catch (_) { /* the pending receipt is replayed at restart */ }
       });
       return view(rec);
     }
@@ -250,7 +285,10 @@
     }
 
     load();
-    return { list: list, get: get, start: start, interrupt: interrupt, interruptAll: interruptAll, resume: resume, _internals: { records: function () { return records; }, controllers: controllers, load: load, save: save, appendEvent: appendEvent } };
+    reconcileFinalizations();
+    return { list: list, get: get, start: start, interrupt: interrupt, interruptAll: interruptAll, resume: resume,
+      reconcileFinalizations: reconcileFinalizations,
+      _internals: { records: function () { return records; }, controllers: controllers, load: load, save: save, appendEvent: appendEvent, publishFinalization: publishFinalization } };
   }
 
   return { makeSubagentManager: makeSubagentManager };

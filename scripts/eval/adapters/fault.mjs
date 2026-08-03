@@ -10,6 +10,10 @@ const { makeRunJournal } = require('../../../sidecar/run-journal.js');
 const { makeTranscriptStore } = require('../../../sidecar/transcriptstore.js');
 const { makeChannelStore } = require('../../../sidecar/channels/store.js');
 const { makeChannelHub } = require('../../../sidecar/channels/hub.js');
+const { makeSubagentManager } = require('../../../sidecar/subagents.js');
+const cronStore = require('../../../sidecar/cron-store.js');
+const { makeCronDriver } = require('../../../sidecar/cron-driver.js');
+const fsMod = require('node:fs');
 const pathMod = require('node:path');
 
 function memoryJournal() {
@@ -96,8 +100,46 @@ async function observe(taskId, attempt) {
     } finally { rmSync(temp, { recursive: true, force: true }); }
   }
   if (taskId === 'fault-routine-subagent-finalization') {
-    return trajectory(taskId, attempt, 'unproven-no-finalization-crash-adapter', false,
-      { limitation: 'background and routine completion are tested, but no restart boundary proves result/cost/destination exactly once' });
+    const temp = mkdtempSync(join(tmpdir(), 'starnet-fault-finalization-'));
+    try {
+      const subFile = join(temp, 'subagents.json');
+      const subRunId = `sub-final-${attempt}`;
+      const first = makeSubagentManager({ fs: fsMod, pathMod, file: subFile, clock: { now: () => attempt },
+        emit() {}, newId: () => `sub-${attempt}`, afterFinalizationCommitted: () => false });
+      const handle = first.start({ id: `worker-${attempt}`, runId: subRunId, leadId: 'lead', agentId: 'worker',
+        destination: 'lead:lead', prompt: 'finalize safely' }, async () => ({ status: 'done', reason: 'done', result: 'worker-result', usd: 0.25 }));
+      await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
+      const subEvents = [];
+      const restarted = makeSubagentManager({ fs: fsMod, pathMod, file: subFile, clock: { now: () => attempt + 1 },
+        emit: (name, payload) => subEvents.push({ name, payload }), newId: () => `sub-restart-${attempt}` });
+      const sub = restarted.get(handle.id);
+
+      const routineId = `routine-${attempt}`;
+      const routine = cronStore.makeJob({ id: routineId, prompt: 'routine work', agentId: 'worker', deliver: 'origin',
+        origin: { target: 'telegram:original', channel: 'telegram', chatId: 'original' },
+        schedule: { kind: 'interval', minutes: 1, display: 'every 1m' } }, { id: routineId, now: 1 });
+      let jobs = cronStore.markRun([routine], routineId,
+        { runId: `routine-run-${attempt}`, status: 'ok', reason: 'done', output: 'routine-result', usd: 0.5 }, { now: 2 });
+      const deliveries = [];
+      const driver = makeCronDriver({ getJobs: () => jobs, setJobs: next => { jobs = next; return true; }, runOnce: async () => {},
+        emit() {}, newId: () => `routine-new-${attempt}`, newAbort: () => new AbortController(), now: () => 3,
+        getKey: () => 'test', defaultModel: 'test/model', persona: 'test',
+        deliverResult: async (job, result) => { deliveries.push({ job, result }); return { ok: true }; } });
+      await driver.recoverFinalizations();
+      const recoveredRoutine = cronStore.getJob(jobs, routineId);
+      const subTerminal = subEvents.filter(e => e.name === 'task' && e.payload.id === handle.id && e.payload.status === 'done').length;
+      const passed = !!sub && sub.result === 'worker-result' && sub.usd === 0.25 && sub.finalization.state === 'delivered' &&
+        sub.finalization.destination === 'lead:lead' && subTerminal === 1 && deliveries.length === 1 &&
+        deliveries[0].result.text === 'routine-result' && deliveries[0].job.origin.target === 'telegram:original' &&
+        recoveredRoutine.lastUsd === 0.5 && recoveredRoutine.finalization.state === 'delivered';
+      return trajectory(taskId, attempt, passed ? EXPECTED[taskId][1] : 'finalization-recovery-mismatch', passed,
+        { workerReceipts: sub ? 1 : 0, workerTerminalPublishes: subTerminal, routineDeliveries: deliveries.length,
+          workerCost: sub && sub.usd, routineCost: recoveredRoutine && recoveredRoutine.lastUsd,
+          workerDestination: sub && sub.finalization.destination,
+          routineDestination: deliveries[0] && deliveries[0].job.origin && deliveries[0].job.origin.target });
+    } catch (error) {
+      return trajectory(taskId, attempt, 'finalization-adapter-error', false, { error: String(error && error.message || error).slice(0, 240) });
+    } finally { rmSync(temp, { recursive: true, force: true }); }
   }
 
   const { journal } = memoryJournal();

@@ -3528,13 +3528,13 @@ async function deliverCronResult(job, result) {
   if (mode === 'origin' && job.origin && job.origin.target) targets.push(String(job.origin.target));
   else if (mode === 'origin' && job.origin && job.origin.channel && job.origin.chatId) targets.push('@origin');
   else if (mode === 'all') { // legacy/hand-edited dynamic fanout is not authority; new writes snapshot targets
-    await withCronWrite(jobs => cronStore.markDelivery(jobs, job.id, { ok: false, error: 'all-target delivery must be re-saved to snapshot approved chats' }, { now: Date.now() }));
+    await withCronWrite(jobs => cronStore.markDelivery(jobs, job.id, { ok: false, error: 'all-target delivery must be re-saved to snapshot approved chats', runId: result.runId }, { now: Date.now() }));
     return { ok: false, error: 'all-target delivery needs an approved target snapshot' };
   }
   else if (mode.indexOf('targets:') === 0) targets.push(...mode.slice(8).split(',').map(s => s.trim()).filter(Boolean));
   else if (mode === 'local' && job.attachToSession && job.origin && (job.origin.sessionId || job.origin.streamId)) {
     const out = await stationBridge.request('station.deliver', { sessionId: job.origin.sessionId || job.origin.streamId, sessionTitle: job.origin.sessionTitle || '', text: redact(text), prompt: job.prompt, runId: result.runId, agentId: job.agentId, ts: Date.now() });
-    await withCronWrite(jobs => cronStore.markDelivery(jobs, job.id, { ok: !!out.ok, error: out.error }, { now: Date.now() }));
+    await withCronWrite(jobs => cronStore.markDelivery(jobs, job.id, { ok: !!out.ok, error: out.error, runId: result.runId }, { now: Date.now() }));
     return out;
   }
   if (!targets.length) return { ok: true, skipped: true };
@@ -3553,7 +3553,7 @@ async function deliverCronResult(job, result) {
       }
     } catch (e) { failed++; firstError = firstError || ((e && e.message) || String(e)); }
   }
-  await withCronWrite(jobs => cronStore.markDelivery(jobs, job.id, { ok: failed === 0, error: firstError }, { now: Date.now() }));
+  await withCronWrite(jobs => cronStore.markDelivery(jobs, job.id, { ok: failed === 0, error: firstError, runId: result.runId }, { now: Date.now() }));
   return { ok: failed === 0, error: firstError || null };
 }
 
@@ -3663,6 +3663,10 @@ const cronDriver = makeCronDriver({
     }
   })
 });
+// A crash can land after markRun durably commits the result/cost/route receipt but before the destination send.
+// Reconcile those pending receipts at boot with the original run id; delivery remains idempotent at local sinks
+// and external transports receive the stable id for their durable outbox/audit trail.
+Promise.resolve(cronDriver.recoverFinalizations()).catch(e => console.warn('[cron] finalization recovery failed:', (e && e.message) || e));
 let cronTimer = null;
 // TICKER HEALTH (2026-07-15 reliability audit): "armed" only proves a timer EXISTS — not that ticks are
 // completing. Track every tick attempt so GET /api/cron can report scheduler health honestly (truthful
