@@ -456,10 +456,16 @@ const Tutorial = (() => {
     document.body.appendChild(bubble);
     let ring = null;
     if (target) { ring = document.createElement('div'); ring.className = 'tut-ring' + (reduceMotion() ? ' no-anim' : ''); document.body.appendChild(ring); }
-    // Esc bails too — but only OUTSIDE REFIT, where nothing else claims the key. Inside REFIT, build.js's own
-    // Esc closes the builder, and kitTick reads that close as the very same exit (double-handling it here
-    // would fire kitClosedDuringPlace twice and stack two dialogue nodes).
-    const onKey = e => { if (e.key !== 'Escape') return; if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) return; kitBail(); };
+    // Esc bails too — but only when nothing else claims the key, matching briefKey's guard below. Inside
+    // REFIT, build.js's own Esc closes the builder and kitTick reads that close as the very same exit
+    // (double-handling would fire kitClosedDuringPlace twice and stack two dialogue nodes); over an open
+    // station panel, Esc belongs to the panel — the bottom bar stays live under the scrim, so a Commander
+    // really can open one mid-kit-out, and one keypress must not both close it and end the tour.
+    const onKey = e => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('.refit-overlay') || document.querySelector('#terms .term')) return;
+      kitBail();
+    };
     window.addEventListener('keydown', onKey);
     coach = { bubble, ring, anchor: target, raf: 0, onKey, kit: true };
     placeCoach();
