@@ -3104,6 +3104,23 @@ const connectors = makeConnectorManager({
    returned by /api/connectors. The access token lives ONLY here — an oauth connector's persisted config carries
    `oauth:true` but no token, so a stale/expired token is never persisted or reused. ---- */
 const CONNECTOR_OAUTH_REDIRECT = 'http://127.0.0.1:' + PORT + '/api/connectors/oauth/callback';
+// Persist the connector-OAuth store (DCR clientId cache + per-connector access/refresh tokens). Returns true ONLY
+// when a READ-BACK proves the write reached disk. `verifyId`, when given, additionally confirms that connector's
+// token bundle is on disk — so the sign-in callback can prove the tokens it just exchanged are durable before it
+// reports success (a silent write failure otherwise leaves the connector unsigned + the DCR clientId orphaned on
+// the NEXT boot, while the popup lied "connected"). Retries once. Never throws.
+function saveConnectorOauth(verifyId) {
+  const intended = String((verifyId && connectorOauth.byId[verifyId] && connectorOauth.byId[verifyId].accessToken) || '');
+  const next = connectorStateMod.envelope(connectorConfigs, connectorOauth);
+  if (!persistConnectorState(next.configs, next.oauth)) return false;
+  if (verifyId) {
+    let raw = null; try { raw = loadResilient(CONNECTORS_STATE_FILE, 'connector-state'); } catch (_) {}
+    const got = raw && raw.oauth && raw.oauth.byId && raw.oauth.byId[verifyId];
+    if (!got || String(got.accessToken || '') !== intended) return false;
+  }
+  adoptConnectorState(next);
+  return true;
+}
 // drop the cached dynamically-registered client for an authorization server (when the AS reports it invalid), so the
 // next sign-in RE-REGISTERS a fresh one instead of wedging forever on a pruned/rotated client id.
 function forgetOauthClient(authServer) {
@@ -3915,19 +3932,33 @@ function recordNightshiftDraft(entry) {
   try { saveResilient(NIGHTSHIFT_DRAFTS_FILE, { v: 1, drafts: nightshiftDrafts }); } catch (e) { console.warn('[nightshift] drafts persist failed:', (e && e.message) || e); }
 }
 
-/* ---- NS-3 compatibility: pre-ledger installs stored per-archetype verdict tallies here. Preserve that history as
-   fallback input for unseen kinds; the shared recommendation ledger is the only live writer and authority. */
+/* ---- NS-3: the LEARN store — per-archetype { up, down } tallies the Commander's approve/deny verdicts feed, so
+   scoreAndSelect biases toward the archetypes THIS Commander actually keeps (the uncopyable compounding moat NS-1
+   left with empty server weights). Persisted durably (sibling of the drafts; survives restart). The pure math is
+   in autopilot.js (learnFold / learnWeightsFrom) — one definition shared with the frontend AutopilotStore.rate. */
 const NIGHTSHIFT_LEARN_FILE = path.join(WORKSPACES, 'nightshift.learn.json');
 function loadNightshiftLearn() { try { const o = loadResilient(NIGHTSHIFT_LEARN_FILE, 'nightshift-learn'); return (o && o.learn && typeof o.learn === 'object') ? o.learn : {}; } catch (_) { return {}; } }
 let nightshiftLearn = loadNightshiftLearn();
-function nightshiftPreferenceWeights() {
-  let enabled = false;
-  try { enabled = personalizationStore.read().enabled === true; } catch (_) { return {}; }
-  if (!enabled) return {};
-  let legacy = {}, model = {};
-  try { legacy = Autopilot.learnWeightsFrom(nightshiftLearn); } catch (_) {}
-  try { model = recommendationLedger.summary(); } catch (_) {}
-  return Recommendation.effectivePreferenceWeights(model, legacy, true);
+function nightshiftLearnWeights() {
+  let out = {};
+  try { out = Object.assign({}, Autopilot.learnWeightsFrom(nightshiftLearn)); } catch (_) {}
+  try {
+    if (!personalizationStore.read().enabled) return out;
+    const kinds = recommendationLedger.summary().kinds || {};
+    for (const key of Object.keys(kinds)) {
+      if (!Number.isFinite(kinds[key].weight)) continue;
+      out[key] = (Number(out[key]) || 0) + kinds[key].weight;
+    }
+  } catch (_) {}
+  return out;
+}
+// record ONE verdict: approve (useful:true) up-weights the archetype, deny (useful:false) down-weights it. Best-effort
+// persist — a learn-write hiccup must never fail the decide route that calls it.
+function recordNightshiftVerdict(archetype, useful) {
+  const key = String(archetype || '').trim();
+  if (!key) return;
+  try { nightshiftLearn = Autopilot.learnFold(nightshiftLearn, key, !!useful); saveResilient(NIGHTSHIFT_LEARN_FILE, { v: 1, learn: nightshiftLearn }); }
+  catch (e) { console.warn('[nightshift] learn persist failed:', (e && e.message) || e); }
 }
 
 /* ---- NS-3: a small runId → archetype map so a return-card verdict (keep=approve / discard=deny in
@@ -4297,7 +4328,7 @@ function personalizationInventory() {
   try { scoutDrafts = (scoutState.staged || []).length; } catch (_) {}
   try { recommendations = recommendationLedger.read().entries.length; } catch (_) {}
   try { for (const v of studyDeclinedByAgent.values()) studyDeclines += Array.isArray(v) ? v.length : 0; } catch (_) {}
-  try { nightTraits = Object.keys(nightshiftPreferenceWeights()).length; } catch (_) {}
+  try { nightTraits = Object.keys(nightshiftLearn || {}).length; } catch (_) {}
   return { topics, scoutDrafts, recommendations, studyDeclines, nightTraits };
 }
 async function handlePersonalization(req, res) {
@@ -4326,8 +4357,10 @@ async function handlePersonalization(req, res) {
   return json(405, { ok: false, error: 'method not allowed' });
 }
 
-/* The return-card verdict updates the shared recommendation ledger, the sole live preference authority, and writes
-   a separate autonomy audit trail. A plain workshop-shift build (no archetype mapping) is a clean no-op. */
+/* the return-card verdict → LEARN + LEDGER bridge (NS-3). A night-shift act's runId maps to an archetype; a keep
+   (approve) UP-weights it, a discard (deny) DOWN-weights it, so scoreAndSelect's per-archetype bias actually learns
+   from the Commander's verdicts (the compounding moat). Also records the verdict in the autonomy ledger as an
+   honest decision trail. A plain workshop-shift build (no archetype mapping) is a clean no-op. Best-effort. */
 function nightshiftDecideLearn(agentId, runId, useful) {
   const learning = personalizationStore.read().enabled;
   const rec = nightshiftActs[String(runId || '')];
@@ -4341,6 +4374,7 @@ function nightshiftDecideLearn(agentId, runId, useful) {
   }
   if (!arch) return;   // not a night-shift act (or already reaped) → nothing to learn
   if (learning) {
+    recordNightshiftVerdict(arch, useful);
     recommendationLedger.verdict('nightshift:' + String(runId || ''), useful ? 'completed' : 'declined', useful ? 'completed' : 'bad_quality', Date.now()).catch(() => {});
   }
   try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: String(runId || ''), reason: useful ? 'approved' : 'denied', detail: { phase: 'verdict', archetype: arch, useful: !!useful } }); } catch (_) {}
@@ -4398,7 +4432,7 @@ function nightshiftContextPack() {
     }
   } catch (_) { landed = []; }
   const beliefs = nightshiftBeliefMap();
-  const learn = Recommendation.preferenceTallies(nightshiftPreferenceWeights());
+  const learn = (nightshiftLearn && typeof nightshiftLearn === 'object') ? nightshiftLearn : {};
   const pack = contextpack.assemble({ runs, briefs, chats, goal, landed, beliefs, learn, redact }, { now });
   // the count of recent USER-INITIATED runs the pack recognized — the ACTIVITY-as-grounding evidence for readiness.
   pack.userRunCount = (pack.counts && pack.counts.runs) || 0;
@@ -4536,7 +4570,7 @@ async function runNightshiftBeat(opts) {
   if (cRes.error) return { delivered: false, reason: cRes.error };
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
-  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
+  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   const draftRecId = 'nightshift-draft:' + String(opts.runId || crypto.randomUUID());
   recommendationLedger.record({ id: draftRecId, surface: 'nightshift', kind: sel.selected.archetype || 'draft', title: sel.selected.title,
@@ -4642,7 +4676,7 @@ async function runNightshiftActShift(opts) {
   // honest evidence to ground in. Bounded already (projectscan caps it).
   const vetoActivity = projectSnapshot ? activity.concat(projectSnapshot.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) : activity;
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity: vetoActivity, threads });
-  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
+  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // NS-6 writeback: a build grounded on an open thread marks it PICKED now; a later keep/discard verdict (return
   // card → nightshiftDecideLearn) moves it to delivered/declined.
@@ -5126,9 +5160,9 @@ async function loopHarvest(loop, res, iterN, ctx) {
   // the exact paths THIS pass introduced. Uncapped by the review card's 40 — a file we decline to commit is a
   // file a rejection cannot undo, so the commit set must be the whole delta, not the readable slice of it.
   const after = await loopChangedFiles(root);
-  const delta = loopgit.harvestDelta(ctx && ctx.before, after);
-  if (!delta.ok) throw new Error(delta.reason + ' in ' + root + '; refusing to guess which files belong to the loop');
-  const paths = delta.paths;
+  if (!after.gitProven) throw new Error('git could not report what changed in ' + root);
+  const beforeSet = new Set(((ctx && ctx.before && ctx.before.files) || []));
+  const paths = loopgit.commitPaths(after.files.filter(f => !beforeSet.has(f)));
   if (!paths.length) return base;                  // the pass changed no file — a real outcome, not a failure.
 
   if (target.create) {

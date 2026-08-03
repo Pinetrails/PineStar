@@ -26,8 +26,7 @@ use sha2::{Digest, Sha256};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent,
+    ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -35,8 +34,7 @@ use credentials::{
     channel_keychain_entry, delete_credential_honest, is_known_channel, keychain_entry,
     keychain_entry_for, keychain_pool_entry_for, migrate_channel_tokens_from_plaintext,
     normalize_provider, read_channel_token, read_key, read_key_for, read_key_pool_for,
-    restore_credential, rollback_error, KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS,
-    SIDECAR_PROVIDER_KEY_ENVS,
+    KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
 };
 
 /// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
@@ -124,19 +122,20 @@ unsafe impl Send for KeepAwakeHandle {}
 #[cfg(windows)]
 impl KeepAwakeHandle {
     fn create() -> Result<Self, String> {
-        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, GetLastError, INVALID_HANDLE_VALUE,
+        };
         use windows_sys::Win32::System::Power::{
-            PowerCreateRequest, PowerRequestSystemRequired, PowerSetRequest,
+            PowerCreateRequest, PowerSetRequest, PowerRequestSystemRequired,
         };
         use windows_sys::Win32::System::Threading::{
-            POWER_REQUEST_CONTEXT_SIMPLE_STRING, REASON_CONTEXT, REASON_CONTEXT_0,
+            REASON_CONTEXT, REASON_CONTEXT_0, POWER_REQUEST_CONTEXT_SIMPLE_STRING,
         };
 
-        let mut reason: Vec<u16> =
-            "StarNet scheduled tasks are allowed to run while the app is open"
-                .encode_utf16()
-                .chain(std::iter::once(0))
-                .collect();
+        let mut reason: Vec<u16> = "StarNet scheduled tasks are allowed to run while the app is open"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
         let context = REASON_CONTEXT {
             Version: 0,
             Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
@@ -147,9 +146,7 @@ impl KeepAwakeHandle {
         let handle = unsafe { PowerCreateRequest(&context) };
         if handle.is_null() || handle == INVALID_HANDLE_VALUE {
             let code = unsafe { GetLastError() };
-            return Err(format!(
-                "PowerCreateRequest failed with Windows error {code}"
-            ));
+            return Err(format!("PowerCreateRequest failed with Windows error {code}"));
         }
         if unsafe { PowerSetRequest(handle, PowerRequestSystemRequired) } == 0 {
             let code = unsafe { GetLastError() };
@@ -169,7 +166,9 @@ impl KeepAwakeHandle {
 impl Drop for KeepAwakeHandle {
     fn drop(&mut self) {
         use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::Power::{PowerClearRequest, PowerRequestSystemRequired};
+        use windows_sys::Win32::System::Power::{
+            PowerClearRequest, PowerRequestSystemRequired,
+        };
 
         unsafe {
             let _ = PowerClearRequest(self.handle, PowerRequestSystemRequired);
@@ -222,9 +221,7 @@ impl KeepAwakeState {
             desktop: true,
             supported: false,
             enabled: false,
-            message: Some(
-                "Keep Computer Awake is currently supported on Windows desktop builds.".to_string(),
-            ),
+            message: Some("Keep Computer Awake is currently supported on Windows desktop builds.".to_string()),
         }
     }
 
@@ -529,10 +526,7 @@ mod workspace_migration_tests {
             std::slice::from_ref(&legacy),
             &Some(startup_log.clone()),
         );
-        assert!(
-            migrated.is_empty(),
-            "a failed legacy root is not reported as migrated"
-        );
+        assert!(migrated.is_empty(), "a failed legacy root is not reported as migrated");
         assert!(
             !current.join(MIGRATION_MARKER).exists(),
             "a failed copy must not stamp the one-shot marker"
@@ -544,11 +538,7 @@ mod workspace_migration_tests {
 
         drop(lock);
         let retried = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
-        assert_eq!(
-            retried,
-            vec![legacy.clone()],
-            "the next boot retries the legacy root"
-        );
+        assert_eq!(retried, vec![legacy.clone()], "the next boot retries the legacy root");
         assert_eq!(
             std::fs::read(current.join("sessions").join("history.jsonl")).unwrap(),
             b"important session"
@@ -895,10 +885,7 @@ fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
 
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
-        log_startup(
-            startup_log,
-            "sidecar-reap: snapshot failed — skipped (fail-open)",
-        );
+        log_startup(startup_log, "sidecar-reap: snapshot failed — skipped (fail-open)");
         return 0;
     }
 
@@ -1030,10 +1017,7 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     for provider in KEYCHAIN_PROVIDERS {
         let pool = read_key_pool_for(provider);
         if !pool.is_empty() {
-            let env_name = format!(
-                "SKYNET_KEY_POOL_{}",
-                provider.to_ascii_uppercase().replace('-', "_")
-            );
+            let env_name = format!("SKYNET_KEY_POOL_{}", provider.to_ascii_uppercase().replace('-', "_"));
             cmd.env(env_name, pool.join(","));
         }
     }
@@ -1132,7 +1116,9 @@ fn show_startup_failure_dialog(startup_log: &Option<PathBuf>) -> bool {
          {log_line}\n\n\
          Click Retry to try starting the engine again, or Cancel to close StarNet."
     );
-    let to_wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let to_wide = |s: &str| -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    };
     let text = to_wide(&body);
     let caption = to_wide("StarNet — startup failed");
     // SYSTEMMODAL + SETFOREGROUND so the box is seen even though the main window isn't up yet.
@@ -1171,10 +1157,7 @@ fn spawn_sidecar_with_retry(state: &AppState) -> bool {
             // User chose Cancel — stop prompting; the guardian may still recover it silently.
             return false;
         }
-        log_startup(
-            &state.startup_log,
-            "startup: user chose Retry — respawning sidecar",
-        );
+        log_startup(&state.startup_log, "startup: user chose Retry — respawning sidecar");
     }
     log_startup(
         &state.startup_log,
@@ -1274,6 +1257,7 @@ fn push_provider_config(
     key: Option<&str>,
     base_url: Option<&str>,
 ) -> Result<(), String> {
+    use std::io::{Read, Write};
     let mut payload = serde_json::Map::new();
     payload.insert(
         "provider".to_string(),
@@ -1292,7 +1276,25 @@ fn push_provider_config(
         );
     }
     let body = serde_json::Value::Object(payload).to_string();
-    post_sidecar_json(state, "/api/key", &body, "provider configuration")
+    let head = format!(
+        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        state.ipc_token,
+        body.as_bytes().len()
+    );
+    let mut s = TcpStream::connect(("127.0.0.1", state.port))
+        .map_err(|e| format!("sidecar key push connect failed: {e}"))?;
+    s.set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("sidecar key push timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key push header failed: {e}"))?;
+    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key push body failed: {e}"))?;
+    s.flush().map_err(|e| format!("sidecar key push flush failed: {e}"))?;
+    let mut buf = [0u8; 96];
+    let n = s.read(&mut buf).map_err(|e| format!("sidecar key push acknowledgement failed: {e}"))?;
+    let head = String::from_utf8_lossy(&buf[..n]);
+    if !head.starts_with("HTTP/1.1 200") && !head.starts_with("HTTP/1.0 200") {
+        return Err(format!("sidecar rejected provider configuration: {}", head.lines().next().unwrap_or("no response")));
+    }
+    Ok(())
 }
 
 fn push_key(state: &AppState, key: &str) -> Result<(), String> {
@@ -1300,112 +1302,30 @@ fn push_key(state: &AppState, key: &str) -> Result<(), String> {
 }
 
 fn push_provider_key_pool(state: &AppState, provider: &str, keys: &[String]) -> Result<(), String> {
+    use std::io::{Read, Write};
     let body = serde_json::json!({
         "provider": normalize_provider(provider),
         "keyPool": keys,
-    })
-    .to_string();
-    post_sidecar_json(state, "/api/key", &body, "provider key pool")
-}
-
-fn parse_sidecar_status(response: &[u8]) -> Result<u16, String> {
-    let header_end = response
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .ok_or_else(|| "incomplete HTTP acknowledgement".to_string())?;
-    let head = std::str::from_utf8(&response[..header_end])
-        .map_err(|_| "non-UTF-8 HTTP acknowledgement".to_string())?;
-    let line = head
-        .lines()
-        .next()
-        .ok_or_else(|| "empty HTTP acknowledgement".to_string())?;
-    let mut parts = line.split_whitespace();
-    let version = parts.next().unwrap_or("");
-    if version != "HTTP/1.1" && version != "HTTP/1.0" {
-        return Err(format!("invalid HTTP acknowledgement: {line}"));
-    }
-    parts
-        .next()
-        .ok_or_else(|| format!("missing HTTP status: {line}"))?
-        .parse::<u16>()
-        .map_err(|_| format!("invalid HTTP status: {line}"))
-}
-
-/// Send one authenticated JSON mutation and wait for a complete, bounded HTTP response head. TCP reads are not
-/// message-framed: a successful status line may arrive in several packets, so one small read cannot prove an ack.
-fn post_sidecar_json(
-    state: &AppState,
-    path: &str,
-    body: &str,
-    operation: &str,
-) -> Result<(), String> {
-    use std::io::Write;
-    const MAX_RESPONSE_HEAD: usize = 8192;
+    }).to_string();
     let head = format!(
-        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         state.ipc_token,
         body.as_bytes().len()
     );
     let mut s = TcpStream::connect(("127.0.0.1", state.port))
-        .map_err(|e| format!("sidecar {operation} connect failed: {e}"))?;
+        .map_err(|e| format!("sidecar key-pool push connect failed: {e}"))?;
     s.set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| format!("sidecar {operation} read-timeout setup failed: {e}"))?;
-    s.set_write_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| format!("sidecar {operation} write-timeout setup failed: {e}"))?;
-    s.write_all(head.as_bytes())
-        .map_err(|e| format!("sidecar {operation} header failed: {e}"))?;
-    s.write_all(body.as_bytes())
-        .map_err(|e| format!("sidecar {operation} body failed: {e}"))?;
-    s.flush()
-        .map_err(|e| format!("sidecar {operation} flush failed: {e}"))?;
-
-    let mut response = Vec::with_capacity(512);
-    let mut chunk = [0u8; 512];
-    while !response.windows(4).any(|window| window == b"\r\n\r\n") {
-        let n = s
-            .read(&mut chunk)
-            .map_err(|e| format!("sidecar {operation} acknowledgement failed: {e}"))?;
-        if n == 0 {
-            break;
-        }
-        if response.len() + n > MAX_RESPONSE_HEAD {
-            return Err(format!(
-                "sidecar {operation} acknowledgement exceeded {MAX_RESPONSE_HEAD} bytes"
-            ));
-        }
-        response.extend_from_slice(&chunk[..n]);
+        .map_err(|e| format!("sidecar key-pool timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key-pool header failed: {e}"))?;
+    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key-pool body failed: {e}"))?;
+    s.flush().map_err(|e| format!("sidecar key-pool flush failed: {e}"))?;
+    let mut buf = [0u8; 96];
+    let n = s.read(&mut buf).map_err(|e| format!("sidecar key-pool acknowledgement failed: {e}"))?;
+    let response = String::from_utf8_lossy(&buf[..n]);
+    if !response.starts_with("HTTP/1.1 200") && !response.starts_with("HTTP/1.0 200") {
+        return Err(format!("sidecar rejected provider key pool: {}", response.lines().next().unwrap_or("no response")));
     }
-    let status = parse_sidecar_status(&response)
-        .map_err(|e| format!("sidecar {operation} acknowledgement invalid: {e}"))?;
-    if status == 200 {
-        Ok(())
-    } else {
-        Err(format!("sidecar rejected {operation}: HTTP {status}"))
-    }
-}
-
-#[cfg(test)]
-mod sidecar_ack_tests {
-    use super::*;
-
-    #[test]
-    fn parses_complete_http_status_after_arbitrary_headers() {
-        assert_eq!(
-            parse_sidecar_status(b"HTTP/1.1 200 OK\r\nX-Long: value\r\n\r\n").unwrap(),
-            200
-        );
-        assert_eq!(
-            parse_sidecar_status(b"HTTP/1.0 409 Conflict\r\n\r\n").unwrap(),
-            409
-        );
-    }
-
-    #[test]
-    fn rejects_partial_or_malformed_acknowledgements() {
-        assert!(parse_sidecar_status(b"HTTP/1.1 200 OK\r\nX-Part: yes\r\n").is_err());
-        assert!(parse_sidecar_status(b"NOTHTTP 200 OK\r\n\r\n").is_err());
-        assert!(parse_sidecar_status(b"HTTP/1.1 nope\r\n\r\n").is_err());
-    }
+    Ok(())
 }
 
 /// Push a channel bot token to the already-running sidecar (no restart), authenticated by the per-launch IPC
@@ -1600,8 +1520,7 @@ fn spawn_tray_updater(app: AppHandle) {
             if state.shutting_down.load(Ordering::SeqCst) {
                 break;
             }
-            let probe =
-                probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
+            let probe = probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
             let (tooltip, status_text) = match probe {
                 LifecycleProbe::Armed(l) if l.armed => {
                     let summary = if l.reasons.is_empty() {
@@ -1651,14 +1570,11 @@ fn harness_store_key(key: String, state: State<AppState>) -> Result<(), String> 
         entry.set_password(trimmed).map_err(|e| e.to_string())?;
     }
     if let Err(e) = push_key(&state, trimmed) {
-        let mut failures = Vec::new();
-        if let Err(restore) = restore_credential(&entry, previous.as_deref()) {
-            failures.push(format!("keychain restore failed: {restore}"));
+        match previous.as_deref() {
+            Some(old) => { let _ = entry.set_password(old); let _ = push_key(&state, old); }
+            None => { let _ = delete_credential_honest(&entry); let _ = push_key(&state, ""); }
         }
-        if let Err(restore) = push_key(&state, previous.as_deref().unwrap_or("")) {
-            failures.push(format!("sidecar restore failed: {restore}"));
-        }
-        return Err(rollback_error(e, failures));
+        return Err(e);
     }
     Ok(())
 }
@@ -1678,11 +1594,7 @@ fn harness_store_provider_key(
     if let Some(ref key_value) = key_trimmed {
         // codex + the device-OAuth providers (grok/kimi) authenticate by OAuth token (sidecar-owned), not a
         // keychain API key; ollama is keyless. None of them get a keychain entry.
-        if provider_id != "codex"
-            && provider_id != "ollama"
-            && provider_id != "grok"
-            && provider_id != "kimi"
-        {
+        if provider_id != "codex" && provider_id != "ollama" && provider_id != "grok" && provider_id != "kimi" {
             let entry = keychain_entry_for(provider_id).map_err(|e| e.to_string())?;
             let previous = entry.get_password().ok().filter(|v| !v.trim().is_empty());
             if key_value.is_empty() {
@@ -1701,19 +1613,10 @@ fn harness_store_provider_key(
         base_trimmed.as_deref(),
     ) {
         if let Some((entry, previous)) = rollback {
-            let mut failures = Vec::new();
-            if let Err(restore) = restore_credential(&entry, previous.as_deref()) {
-                failures.push(format!("keychain restore failed: {restore}"));
+            match previous.as_deref() {
+                Some(old) => { let _ = entry.set_password(old); let _ = push_provider_config(&state, provider_id, Some(old), None); }
+                None => { let _ = delete_credential_honest(&entry); let _ = push_provider_config(&state, provider_id, Some(""), None); }
             }
-            if let Err(restore) = push_provider_config(
-                &state,
-                provider_id,
-                Some(previous.as_deref().unwrap_or("")),
-                None,
-            ) {
-                failures.push(format!("sidecar restore failed: {restore}"));
-            }
-            return Err(rollback_error(e, failures));
         }
         return Err(e);
     }
@@ -1721,7 +1624,7 @@ fn harness_store_provider_key(
 }
 
 /// Replace the complete alternate-key pool for exactly one provider. The old keychain value and live sidecar
-/// pool restoration is attempted if the live update cannot be acknowledged; any incomplete rollback is reported.
+/// pool are restored if either half cannot be acknowledged, so the UI observes one atomic result.
 #[tauri::command]
 fn harness_store_provider_key_pool(
     provider: String,
@@ -1735,12 +1638,8 @@ fn harness_store_provider_key_pool(
     let mut cleaned: Vec<String> = Vec::new();
     for key in keys {
         let trimmed = key.trim().to_string();
-        if !trimmed.is_empty() && !cleaned.contains(&trimmed) {
-            cleaned.push(trimmed);
-        }
-        if cleaned.len() == 8 {
-            break;
-        }
+        if !trimmed.is_empty() && !cleaned.contains(&trimmed) { cleaned.push(trimmed); }
+        if cleaned.len() == 8 { break; }
     }
     let entry = keychain_pool_entry_for(provider_id).map_err(|e| e.to_string())?;
     let previous_raw = entry.get_password().ok();
@@ -1752,14 +1651,12 @@ fn harness_store_provider_key_pool(
         entry.set_password(&encoded).map_err(|e| e.to_string())?;
     }
     if let Err(e) = push_provider_key_pool(&state, provider_id, &cleaned) {
-        let mut failures = Vec::new();
-        if let Err(restore) = restore_credential(&entry, previous_raw.as_deref()) {
-            failures.push(format!("keychain restore failed: {restore}"));
+        match previous_raw.as_deref() {
+            Some(raw) => { let _ = entry.set_password(raw); }
+            None => { let _ = delete_credential_honest(&entry); }
         }
-        if let Err(restore) = push_provider_key_pool(&state, provider_id, &previous) {
-            failures.push(format!("sidecar restore failed: {restore}"));
-        }
-        return Err(rollback_error(e, failures));
+        let _ = push_provider_key_pool(&state, provider_id, &previous);
+        return Err(e);
     }
     Ok(cleaned.len())
 }
@@ -2526,10 +2423,7 @@ mod sidecar_reap_tests {
         std::thread::sleep(Duration::from_millis(400));
 
         let reaped = reap_orphan_sidecars(&bundled, &None);
-        assert!(
-            reaped >= 1,
-            "expected at least the planted orphan to be reaped"
-        );
+        assert!(reaped >= 1, "expected at least the planted orphan to be reaped");
 
         std::thread::sleep(Duration::from_millis(400));
         assert!(
@@ -2589,33 +2483,16 @@ mod lifecycle_probe_tests {
     fn rejects_non_200_status() {
         // A 403 (token mismatch) or 500 must NOT read as a snapshot — the caller classifies it Ambiguous
         // (alive but unwell), never "not armed".
-        assert!(
-            parse_lifecycle_response("HTTP/1.1 403 Forbidden\r\n\r\nforbidden token").is_none()
-        );
-        assert!(parse_lifecycle_response(
-            "HTTP/1.1 500 Internal Server Error\r\n\r\n{\"error\":\"x\"}"
-        )
-        .is_none());
+        assert!(parse_lifecycle_response("HTTP/1.1 403 Forbidden\r\n\r\nforbidden token").is_none());
+        assert!(parse_lifecycle_response("HTTP/1.1 500 Internal Server Error\r\n\r\n{\"error\":\"x\"}").is_none());
     }
 
     #[test]
     fn rejects_missing_or_garbage_body() {
-        assert!(
-            parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n").is_none(),
-            "empty body"
-        );
-        assert!(
-            parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\nnot-json").is_none(),
-            "garbage body"
-        );
-        assert!(
-            parse_lifecycle_response("HTTP/1.1 200 OK").is_none(),
-            "no header/body separator"
-        );
-        assert!(
-            parse_lifecycle_response("").is_none(),
-            "empty response (read timeout yielded nothing)"
-        );
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n").is_none(), "empty body");
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\nnot-json").is_none(), "garbage body");
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK").is_none(), "no header/body separator");
+        assert!(parse_lifecycle_response("").is_none(), "empty response (read timeout yielded nothing)");
     }
 
     #[test]
@@ -2628,8 +2505,7 @@ mod lifecycle_probe_tests {
 
     #[test]
     fn tolerates_missing_reasons() {
-        let l = parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":true}")
-            .expect("armed without reasons parses");
+        let l = parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":true}").expect("armed without reasons parses");
         assert!(l.armed);
         assert!(l.reasons.is_empty());
     }

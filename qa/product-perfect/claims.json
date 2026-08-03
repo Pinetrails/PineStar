@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1419b69606de123cb109af4557f381abc14ca0e7",
-    "pathSetSha256": "1fb276f07550e4b1e1c42d1e7c8f88c61b5d46d7c66f780488f247b9caedad2b",
+    "sourceCommit": "3e7f3a7077720905ba1e0409551df4c816e3247d",
+    "pathSetSha256": "6fb73e36b6547731c1db113af9daedd58a2eeb7a68878691c58496d98206fe32",
     "files": [
       {
         "path": "INSTALL.md",
@@ -663,8 +663,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 453448,
-        "sha256": "c651bcaa35ad8eaed0e969938d5548593a36027d758e970e3cf4a0587a081dbb"
+        "bytes": 453236,
+        "sha256": "7f59d42da22b1fa9c2a1df1fe306a0cdc0783fcd885126f792a6db88965068d1"
       },
       {
         "path": "frontend/app/study.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/voice-live.js",
-        "bytes": 81439,
-        "sha256": "ae457ab09a50d62c3b6b93ebb79a394252d4598145cf7ca44c48b1cf205374ef"
+        "bytes": 81447,
+        "sha256": "d877671e3227fc20d6bccce9243904a85cbfab23e4fce6cee2d3dd752c0ccba4"
       },
       {
         "path": "frontend/app/voice.js",
@@ -958,8 +958,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67442,
-        "sha256": "0de03cc6e3fd2dbbc5b33150be02a07db29a9c20db722ff4386496189f976fe9"
+        "bytes": 67395,
+        "sha256": "5c1fa5480e3292881bf3b3416a55c2b8f6c208984e5dcdce1eea7dfd43c0bcd2"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -968,18 +968,13 @@
       },
       {
         "path": "frontend/js/assets.js",
-        "bytes": 30139,
-        "sha256": "1f9252ab9d37cc7087e0daf7e21bf227e83e622e073f9de9ec33b10568b8604a"
+        "bytes": 29069,
+        "sha256": "1e7f6237222127dfe78c87b898d449676912cd4171a43432525344ffb6fcab62"
       },
       {
         "path": "frontend/js/audio.js",
         "bytes": 3747,
         "sha256": "7b91d2482fc98adb5e009765a121d5d7c4e84a36a71c27203e307b31e99dafb6"
-      },
-      {
-        "path": "frontend/js/sprite-load-plan.js",
-        "bytes": 1314,
-        "sha256": "a28a41dfb7b9dd19f24b0b59ade9d983c4eaf0f0c93b368c9f7b9d3af367a4d7"
       },
       {
         "path": "frontend/js/util.js",
