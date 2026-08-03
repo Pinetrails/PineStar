@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f11480039ec4467aad9dd0daedb230aa3e08d2ac",
+    "sourceCommit": "6be3a2c2f583c75ebd0372ea5c32d2cb9e503c93",
     "pathSetSha256": "6fb73e36b6547731c1db113af9daedd58a2eeb7a68878691c58496d98206fe32",
     "files": [
       {
@@ -188,8 +188,8 @@
       },
       {
         "path": "frontend/app/ctxgauge.js",
-        "bytes": 7046,
-        "sha256": "a28b2065928916beaa9ef9c415f4642a6649922263c1a9df90af3d83f35325f8"
+        "bytes": 8720,
+        "sha256": "28b896637d8436685ede73806a5ee2a502cf72363b5e038e241dfe98211381c7"
       },
       {
         "path": "frontend/app/curiosity.js",
@@ -278,8 +278,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 68937,
-        "sha256": "f5c6bc9157e858ad20f895688eae720b5506951a253c0ecaf842270989285812"
+        "bytes": 69793,
+        "sha256": "2fee8067c76762d0a75e1e7d43eb6e71f54dc2af7ef31b684ddb06f27a392874"
       },
       {
         "path": "frontend/app/hint.js",
