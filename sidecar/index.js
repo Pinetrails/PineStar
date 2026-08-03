@@ -3918,33 +3918,19 @@ function recordNightshiftDraft(entry) {
   try { saveResilient(NIGHTSHIFT_DRAFTS_FILE, { v: 1, drafts: nightshiftDrafts }); } catch (e) { console.warn('[nightshift] drafts persist failed:', (e && e.message) || e); }
 }
 
-/* ---- NS-3: the LEARN store — per-archetype { up, down } tallies the Commander's approve/deny verdicts feed, so
-   scoreAndSelect biases toward the archetypes THIS Commander actually keeps (the uncopyable compounding moat NS-1
-   left with empty server weights). Persisted durably (sibling of the drafts; survives restart). The pure math is
-   in autopilot.js (learnFold / learnWeightsFrom) — one definition shared with the frontend AutopilotStore.rate. */
+/* ---- NS-3 compatibility: pre-ledger installs stored per-archetype verdict tallies here. Preserve that history as
+   fallback input for unseen kinds; the shared recommendation ledger is the only live writer and authority. */
 const NIGHTSHIFT_LEARN_FILE = path.join(WORKSPACES, 'nightshift.learn.json');
 function loadNightshiftLearn() { try { const o = loadResilient(NIGHTSHIFT_LEARN_FILE, 'nightshift-learn'); return (o && o.learn && typeof o.learn === 'object') ? o.learn : {}; } catch (_) { return {}; } }
 let nightshiftLearn = loadNightshiftLearn();
 function nightshiftLearnWeights() {
-  let out = {};
-  try { out = Object.assign({}, Autopilot.learnWeightsFrom(nightshiftLearn)); } catch (_) {}
-  try {
-    if (!personalizationStore.read().enabled) return out;
-    const kinds = recommendationLedger.summary().kinds || {};
-    for (const key of Object.keys(kinds)) {
-      if (!Number.isFinite(kinds[key].weight)) continue;
-      out[key] = (Number(out[key]) || 0) + kinds[key].weight;
-    }
-  } catch (_) {}
-  return out;
-}
-// record ONE verdict: approve (useful:true) up-weights the archetype, deny (useful:false) down-weights it. Best-effort
-// persist — a learn-write hiccup must never fail the decide route that calls it.
-function recordNightshiftVerdict(archetype, useful) {
-  const key = String(archetype || '').trim();
-  if (!key) return;
-  try { nightshiftLearn = Autopilot.learnFold(nightshiftLearn, key, !!useful); saveResilient(NIGHTSHIFT_LEARN_FILE, { v: 1, learn: nightshiftLearn }); }
-  catch (e) { console.warn('[nightshift] learn persist failed:', (e && e.message) || e); }
+  let enabled = false;
+  try { enabled = personalizationStore.read().enabled === true; } catch (_) { return {}; }
+  if (!enabled) return {};
+  let legacy = {}, model = {};
+  try { legacy = Autopilot.learnWeightsFrom(nightshiftLearn); } catch (_) {}
+  try { model = recommendationLedger.summary(); } catch (_) {}
+  return Recommendation.effectivePreferenceWeights(model, legacy, true);
 }
 
 /* ---- NS-3: a small runId → archetype map so a return-card verdict (keep=approve / discard=deny in
@@ -4314,7 +4300,7 @@ function personalizationInventory() {
   try { scoutDrafts = (scoutState.staged || []).length; } catch (_) {}
   try { recommendations = recommendationLedger.read().entries.length; } catch (_) {}
   try { for (const v of studyDeclinedByAgent.values()) studyDeclines += Array.isArray(v) ? v.length : 0; } catch (_) {}
-  try { nightTraits = Object.keys(nightshiftLearn || {}).length; } catch (_) {}
+  try { nightTraits = Object.keys(nightshiftLearnWeights()).length; } catch (_) {}
   return { topics, scoutDrafts, recommendations, studyDeclines, nightTraits };
 }
 async function handlePersonalization(req, res) {
@@ -4343,10 +4329,8 @@ async function handlePersonalization(req, res) {
   return json(405, { ok: false, error: 'method not allowed' });
 }
 
-/* the return-card verdict → LEARN + LEDGER bridge (NS-3). A night-shift act's runId maps to an archetype; a keep
-   (approve) UP-weights it, a discard (deny) DOWN-weights it, so scoreAndSelect's per-archetype bias actually learns
-   from the Commander's verdicts (the compounding moat). Also records the verdict in the autonomy ledger as an
-   honest decision trail. A plain workshop-shift build (no archetype mapping) is a clean no-op. Best-effort. */
+/* The return-card verdict updates the shared recommendation ledger, the sole live preference authority, and writes
+   a separate autonomy audit trail. A plain workshop-shift build (no archetype mapping) is a clean no-op. */
 function nightshiftDecideLearn(agentId, runId, useful) {
   const learning = personalizationStore.read().enabled;
   const rec = nightshiftActs[String(runId || '')];
@@ -4360,7 +4344,6 @@ function nightshiftDecideLearn(agentId, runId, useful) {
   }
   if (!arch) return;   // not a night-shift act (or already reaped) → nothing to learn
   if (learning) {
-    recordNightshiftVerdict(arch, useful);
     recommendationLedger.verdict('nightshift:' + String(runId || ''), useful ? 'completed' : 'declined', useful ? 'completed' : 'bad_quality', Date.now()).catch(() => {});
   }
   try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: String(runId || ''), reason: useful ? 'approved' : 'denied', detail: { phase: 'verdict', archetype: arch, useful: !!useful } }); } catch (_) {}
@@ -4418,7 +4401,7 @@ function nightshiftContextPack() {
     }
   } catch (_) { landed = []; }
   const beliefs = nightshiftBeliefMap();
-  const learn = (nightshiftLearn && typeof nightshiftLearn === 'object') ? nightshiftLearn : {};
+  const learn = Recommendation.preferenceTallies(nightshiftLearnWeights());
   const pack = contextpack.assemble({ runs, briefs, chats, goal, landed, beliefs, learn, redact }, { now });
   // the count of recent USER-INITIATED runs the pack recognized — the ACTIVITY-as-grounding evidence for readiness.
   pack.userRunCount = (pack.counts && pack.counts.runs) || 0;

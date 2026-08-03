@@ -31,6 +31,13 @@ const shifted = R.replay(cycles);
 A.ok(shifted.kinds.research.weight > shifted.kinds.writing.weight, 'ten-cycle replay shifts toward work the Commander kept');
 A.ok(shifted.kinds.research.weight <= 0.75 && shifted.kinds.writing.weight >= -0.75, 'preference shifts stay bounded');
 
+const effective = R.effectivePreferenceWeights({ kinds: { research: { weight: 0.4 }, writing: { weight: 0 } } },
+  { research: -0.25, writing: 0.3, planning: 0.2 }, true);
+A.eq(effective, { research: 0.4, writing: 0, planning: 0.2 }, 'shared evidence replaces legacy weight per kind while untouched legacy kinds remain compatible');
+A.eq(R.effectivePreferenceWeights({ kinds: { research: { weight: 0.4 } } }, { planning: 0.2 }, false), {}, 'pause suppresses shared and legacy personalization weights');
+A.eq(R.preferenceTallies({ research: 0.4, writing: -0.2, planning: 0 }),
+  { research: { up: 0.4, down: 0 }, writing: { up: 0, down: 0.2 } }, 'context-pack preference directions derive from the effective model');
+
 (async () => {
   // The durable writer retains every materially distinct transition instead of overwriting the prior verdict.
   const files = new Map();

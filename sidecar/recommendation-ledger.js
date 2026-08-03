@@ -134,6 +134,35 @@ function preferenceFor(model, candidate) {
   return n ? Math.max(-0.75, Math.min(0.75, sum / n)) : 0;
 }
 
+/* The recommendation ledger is the live preference authority. Older installs may still have night-shift
+   archetype weights in nightshift.learn.json, so retain those only as a per-kind fallback until the shared ledger
+   has evidence for that kind. Pausing personalization must suppress both sources. */
+function effectivePreferenceWeights(model, legacyWeights, enabled) {
+  if (enabled === false) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(legacyWeights && typeof legacyWeights === 'object' ? legacyWeights : {})) {
+    const n = Number(value);
+    if (key && Number.isFinite(n)) out[key] = Math.max(-0.75, Math.min(0.75, n));
+  }
+  const kinds = model && model.kinds && typeof model.kinds === 'object' ? model.kinds : {};
+  for (const [key, value] of Object.entries(kinds)) {
+    const n = Number(value && value.weight);
+    if (key && Number.isFinite(n)) out[key] = Math.max(-0.75, Math.min(0.75, n));
+  }
+  return out;
+}
+
+// contextpack only needs the direction of each learned preference; derive that view from the same effective model.
+function preferenceTallies(weights) {
+  const out = {};
+  for (const [key, value] of Object.entries(weights && typeof weights === 'object' ? weights : {})) {
+    const n = Number(value);
+    if (!key || !Number.isFinite(n) || n === 0) continue;
+    out[key] = n > 0 ? { up: n, down: 0 } : { up: 0, down: -n };
+  }
+  return out;
+}
+
 /* One outcome-aware utility function for every recommendation family. Policy/eligibility remains a caller concern;
    this ranks only candidates the surface is allowed to show or execute. All terms are normalized 0..1. */
 function rankCandidates(candidates, model, opts) {
@@ -216,4 +245,5 @@ function makeRecommendationLedger(deps) {
   return { read, list, record, verdict, verdictTarget, outcome, clear, declinedTexts, summary, _durable: durable };
 }
 
-module.exports = { makeRecommendationLedger, normalize, normalizeEntry, replay, fingerprint, preferenceFor, rankCandidates, STATES, REASONS, NEXT, TERMINAL };
+module.exports = { makeRecommendationLedger, normalize, normalizeEntry, replay, fingerprint, preferenceFor,
+  effectivePreferenceWeights, preferenceTallies, rankCandidates, STATES, REASONS, NEXT, TERMINAL };
