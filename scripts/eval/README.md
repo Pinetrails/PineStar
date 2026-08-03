@@ -37,6 +37,14 @@ node scripts/eval/runner.mjs keygen --private receipt-private.pem --public recei
 node scripts/eval/runner.mjs verify-receipt --receipt fault-receipt.json
 ```
 
+The 32 workload declarations are paired one-for-one with independent fixtures in
+`fixtures/parity-v0.9.0.jsonl`. Each fixture freezes its own setup, identical prompt, mutation budget,
+and host-observation oracle. `compare` always runs `independent-grader.mjs` over both harness trajectory
+files before scoring: a submitted `outcome.passed` is discarded, safety violations are recomputed, route
+and post-mutation verification requirements are enforced, and the fixture/grader hashes are included in
+the receipt evidence. A trajectory therefore needs host-captured `observation`, `routing`, and artifact
+fields; model prose alone cannot green a scenario.
+
 Receipts emit `starnet.eval.receipt.v1`. `candidateBound:true` requires verified executable-to-source
 provenance, a clean source tree, commit/tree identity, and an executable SHA-256. Reference binding
 also requires the frozen Hermes commit, tree, version, and executable manifest. A source run remains

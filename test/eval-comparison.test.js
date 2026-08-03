@@ -11,9 +11,11 @@ const { tmpdir } = require('node:os');
   const core = await import('../scripts/eval/core.mjs');
   const cmp = await import('../scripts/eval/comparison.mjs');
   const faultAdapters = await import('../scripts/eval/adapters/fault.mjs');
+  const independent = await import('../scripts/eval/independent-grader.mjs');
   const contract = JSON.parse(readFileSync(join(root, 'scripts/eval/contracts/v0.9.0.json'), 'utf8'));
   const claims = JSON.parse(readFileSync(join(root, 'qa/product-perfect/claims.json'), 'utf8'));
   const parityTasks = core.readJsonl(join(root, 'scripts/eval/packs/parity-v0.9.0.jsonl'));
+  const parityFixtures = core.readJsonl(join(root, 'scripts/eval/fixtures/parity-v0.9.0.jsonl'));
   const faultTasks = core.readJsonl(join(root, 'scripts/eval/packs/fault-v0.9.0.jsonl'));
 
   const checked = cmp.validateComparisonContract(contract, claims);
@@ -29,6 +31,8 @@ const { tmpdir } = require('node:os');
     'coding-file': 6, 'research-browser': 4, 'document-data': 4, 'memory-history': 4,
     orchestration: 6, 'routine-channel': 4, 'recovery-security': 4
   } }).ok, 'the shared workload pack is frozen at 32 scenarios in the declared category split');
+  const fixtureCheck = independent.validateParityFixtures(parityTasks, parityFixtures);
+  A.ok(fixtureCheck.ok && fixtureCheck.fixtures === 32, 'all 32 parity scenarios have one independent executable fixture and oracle');
   A.ok(cmp.validateScenarioPack(faultTasks, { expectedCount: 10, categories: { 'run-boundary': 10 } }).ok,
     'the crash gauntlet freezes all ten run boundaries as active critical scenarios');
 
@@ -44,7 +48,19 @@ const { tmpdir } = require('node:os');
     fault: fault ? { injectedAt: task.graders.find(row => row.type === 'fault_recovery').injectedAt,
       observedRecovery: task.graders.find(row => row.type === 'fault_recovery').value, ambiguous: false } : undefined
   });
-  const parityRows = parityTasks.flatMap(task => [1, 2, 3].map(attempt => trajectory(task, false, attempt)));
+  const fixtureByTask = new Map(parityFixtures.map(fixture => [fixture.taskId, fixture]));
+  const parityRows = parityTasks.flatMap(task => [1, 2, 3].map(attempt => {
+    const row = trajectory(task, false, attempt), passing = independent.makePassingObservation(fixtureByTask.get(task.id));
+    row.finalText = passing.finalText; row.observation = passing.observation;
+    return row;
+  }));
+  const independentlyGraded = independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: parityRows });
+  A.eq(independentlyGraded.filter(row => row.outcome.passed).length, 96, 'the independent grader derives all 96 ordinary attempts from host observations');
+  const forged = JSON.parse(JSON.stringify(parityRows));
+  forged[0].outcome.passed = true; forged[0].observation.seam = 'forged:1'; forged[0].observation.claimedDone = true;
+  const refusedForge = independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: forged });
+  A.ok(!refusedForge[0].outcome.passed && refusedForge[0].outcome.violations.falseDone === 1,
+    'a harness-provided pass cannot override a failed host observation');
   const parity = cmp.compareHarnesses({ tasks: parityTasks, starnetRows: parityRows, referenceRows: parityRows, contract });
   A.ok(parity.pass, 'a fully evidenced equal comparison passes all parity gates');
   A.eq(parity.summary.starnetPassRatePct, 100, 'StarNet pass rate is calculated from active scenarios');

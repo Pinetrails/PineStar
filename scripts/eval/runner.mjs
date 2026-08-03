@@ -8,6 +8,7 @@ import { evaluate, readJsonl, recordTrajectory, writeJsonl } from './core.mjs';
 import { compareHarnesses, evaluateFaultGauntlet, makeReceipt, validateComparisonContract, validateScenarioPack } from './comparison.mjs';
 import { bindHermes, bindStarNet, manifestEvidence, validateManifest } from './bind.mjs';
 import { generateReceiptKeyPair, signReceipt, verifyReceiptSignature } from './receipt-signing.mjs';
+import { applyIndependentParityGrades, validateParityFixtures } from './independent-grader.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULTS = {
@@ -17,7 +18,8 @@ const DEFAULTS = {
   contract: join(HERE, 'contracts', 'v0.9.0.json'),
   claims: resolve(HERE, '..', '..', 'qa', 'product-perfect', 'claims.json'),
   faultPack: join(HERE, 'packs', 'fault-v0.9.0.jsonl'),
-  parityPack: join(HERE, 'packs', 'parity-v0.9.0.jsonl')
+  parityPack: join(HERE, 'packs', 'parity-v0.9.0.jsonl'),
+  parityFixtures: join(HERE, 'fixtures', 'parity-v0.9.0.jsonl')
 };
 
 function argsOf(argv) {
@@ -162,8 +164,14 @@ function compare(opts) {
     orchestration: 6, 'routine-channel': 4, 'recovery-security': 4
   } });
   if (!pack.ok) throw new Error('parity pack is invalid: ' + pack.errors.join('; '));
-  const result = compareHarnesses({ tasks, starnetRows: readJsonl(resolve(opts.starnet)), referenceRows: readJsonl(resolve(opts.reference)), contract });
-  const evidence = { tasks: fileEvidence(opts.tasks || DEFAULTS.parityPack), starnet: fileEvidence(opts.starnet), reference: fileEvidence(opts.reference) };
+  const fixtureFile = resolve(opts.fixtures || DEFAULTS.parityFixtures), fixtures = readJsonl(fixtureFile);
+  const fixtureCheck = validateParityFixtures(tasks, fixtures);
+  if (!fixtureCheck.ok) throw new Error('parity fixtures are invalid: ' + fixtureCheck.errors.join('; '));
+  const starnetRows = applyIndependentParityGrades({ tasks, fixtures, rows: readJsonl(resolve(opts.starnet)) });
+  const referenceRows = applyIndependentParityGrades({ tasks, fixtures, rows: readJsonl(resolve(opts.reference)) });
+  const result = compareHarnesses({ tasks, starnetRows, referenceRows, contract });
+  const evidence = { tasks: fileEvidence(opts.tasks || DEFAULTS.parityPack), fixtures: fileEvidence(fixtureFile),
+    independentGrader: fileEvidence(join(HERE, 'independent-grader.mjs')), starnet: fileEvidence(opts.starnet), reference: fileEvidence(opts.reference) };
   if (opts['subject-manifest']) evidence.subjectManifest = manifestEvidence(opts['subject-manifest']);
   if (opts['reference-manifest']) evidence.referenceManifest = manifestEvidence(opts['reference-manifest']);
   const receipt = makeReceipt({ kind: 'parity', contract, subject: subjectMeta(opts), reference: referenceMeta(opts, contract), result, evidence });
