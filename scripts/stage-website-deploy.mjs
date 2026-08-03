@@ -13,10 +13,15 @@
  * directory also means a file deleted from website/ actually disappears from the upload rather
  * than lingering from a previous deploy.
  *
- * TO PUBLISH PRICING: delete it from HELD_BACK below, in the same commit that flips PRICING_LIVE
- * in website/site.js (that flag controls the links; this list controls the file). The two must
- * move together — a live page with hidden links, or visible links to an unpublished page, are
- * both worse than either state alone.
+ * TO PUBLISH PRICING: flip PRICING_LIVE in website/site.js. That is the whole change — this script
+ * READS that flag and holds nothing back once it is true.
+ *
+ * It used to be two edits kept in step by a comment ("delete it from HELD_BACK, in the same commit
+ * that flips PRICING_LIVE"), and the failure that comment describes is real: a live page with hidden
+ * links, or visible links to an unpublished page, are both worse than either state alone. But two
+ * things a human keeps in step are two things a human can forget, and this one is only ever touched
+ * on launch day by someone doing nine other things. So the flag is now the single source of truth and
+ * disagreement is structurally impossible rather than merely discouraged.
  *
  * Usage:
  *   node scripts/stage-website-deploy.mjs          # stage, then print the deploy command
@@ -31,10 +36,32 @@ const SRC = join(ROOT, 'website');
 const OUT = join(ROOT, 'website-deploy');
 const CHECK = process.argv.includes('--check');
 
+/* Is the paid tier announced? website/site.js is the one place that decides, because it is the file
+   that decides whether a visitor can SEE a link to pricing. Read it rather than keeping a second
+   copy of the answer here.
+   Parsed, not imported: site.js is browser code that runs against a live DOM the moment it loads.
+   A missing or unreadable flag is a HARD failure — defaulting either way picks a side of exactly the
+   mismatch this file exists to prevent. */
+function pricingIsLive() {
+  const siteJs = join(SRC, 'site.js');
+  let src;
+  try { src = readFileSync(siteJs, 'utf8'); }
+  catch { console.error('cannot read website/site.js — it decides what gets published here'); process.exit(1); }
+  const m = /\bPRICING_LIVE\s*=\s*(true|false)\b/.exec(src);
+  if (!m) {
+    console.error('website/site.js no longer declares PRICING_LIVE — this script reads that flag to');
+    console.error('decide whether pricing.html publishes. Restore it, or rewrite this guard on purpose.');
+    process.exit(1);
+  }
+  return m[1] === 'true';
+}
+const PRICING_LIVE = pricingIsLive();
+
 // Paths (relative to website/, POSIX separators) that exist in the repo but must NOT be published.
+// The no-credits legal variants are sources for SUBSTITUTIONS, never pages of their own, so they stay
+// held back in BOTH states — publishing them once pricing is live would just be two dead URLs.
 const HELD_BACK = new Set([
-  'pricing.html',
-  // The no-credits legal variants below are sources for SUBSTITUTIONS, never pages of their own.
+  ...(PRICING_LIVE ? [] : ['pricing.html']),
   'legal/_terms.nocredits.html',
   'legal/_privacy.nocredits.html'
 ]);
@@ -45,8 +72,8 @@ const HELD_BACK = new Set([
    can read the price of, via a citation that resolves to the homepage.
    So the staged copies swap in variants carrying the wording ALREADY PUBLISHED on starnetos.com —
    no legal language invented for the hold. The repo keeps the full Credits versions, and the day
-   pricing ships you delete these three entries and the real files publish untouched. */
-const SUBSTITUTIONS = {
+   pricing goes live the substitution simply stops applying and the real files publish untouched. */
+const SUBSTITUTIONS = PRICING_LIVE ? {} : {
   'legal/terms.html': 'legal/_terms.nocredits.html',
   'legal/privacy.html': 'legal/_privacy.nocredits.html'
 };
@@ -78,9 +105,17 @@ if (missing.length) {
   process.exit(1);
 }
 
+/* State the mode on every run, in both directions. The dangerous version of this script is the one
+   that quietly does the right thing — you cannot tell a correct hold from a broken one by reading a
+   file count, and "did pricing publish?" is the question you are actually asking. */
+console.log(PRICING_LIVE
+  ? 'PRICING_LIVE=true in website/site.js — pricing.html and the full Credits legal pages WILL publish.'
+  : 'PRICING_LIVE=false in website/site.js — holding pricing back and substituting the no-credits legal pages.');
+
 if (CHECK) {
   console.log('would publish ' + shipping.length + ' files; holding back ' + held.length + ':');
   for (const f of held) console.log('  - ' + f);
+  for (const [target, source] of Object.entries(SUBSTITUTIONS)) console.log('  ~ ' + target + ' <- ' + source);
   process.exit(0);
 }
 
