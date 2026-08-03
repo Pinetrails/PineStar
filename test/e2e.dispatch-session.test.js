@@ -218,6 +218,15 @@ await run('targeted',
     A.eq(workerRun.deliveryPrompt, 'summarise the moons of Mars', label + ': the delegated instruction is durable');
     A.eq(workerRun.deliveryText, WORKER_TEXT, label + ': the finished answer is durable when no page can receive it');
 
+    // The lead lookup now returns its durable child runs, so COMMS can show the work hierarchy instead of
+    // presenting the lead's one dispatch call as if it were the whole job.
+    const leadEnd = ends.find(e => e.payload && e.payload.agentId === 'agent');
+    const leadRuns = await (await fetch(B + '/api/runs?agent=agent&runId=' + encodeURIComponent(leadEnd.payload.runId), { headers: H })).json();
+    const leadRun = (leadRuns.runs || [])[0];
+    A.ok(leadRun && Array.isArray(leadRun.children), label + ': lead run API carries a child-run hierarchy');
+    A.ok(leadRun.children.some(r => r.runId === workerRun.runId && r.parentRunId === leadRun.runId), label + ': the worker is joined to the exact lead that dispatched it');
+    A.ok(leadRun.children.some(r => r.model === 'test/model' && typeof r.durationMs === 'number'), label + ': child hierarchy carries worker model and elapsed time');
+
     // 5) and its dialogue persisted under that stream, so a reload still finds the work there
     const tr = await (await fetch(B + '/api/transcript?agent=researcher&stream=ws_r1&limit=50', { headers: H })).json();
     const turns = tr.turns || [];

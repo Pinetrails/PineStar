@@ -21,7 +21,7 @@ const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
   const manager = makeLspManager({
     spawn, fs, fsp, pathMod: path, env, ledger,
     servers: [{ id: 'fake', command: process.execPath, args: [fixture], extensions: ['.fake'], languageIds: { '.fake': 'fake' } }],
-    limits: { requestTimeoutMs: 2000, diagnosticTimeoutMs: 1000, idleMs: 1000 }
+    limits: { requestTimeoutMs: 2000, diagnosticTimeoutMs: 1000, idleMs: 500 }
   });
   const tools = makeFsTools({ fsp, pathMod: path, root, editDiagnostics: manager });
   const events = [];
@@ -41,6 +41,14 @@ const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
     const versionless = probe.waitForDiagnostics(uri, null, () => {}, 3);
     probe.onMessage({ method: 'textDocument/publishDiagnostics', params: { uri, diagnostics: [{ message: 'versionless' }] } });
     A.eq((await versionless).confirmed, true, 'a genuinely versionless server remains supported');
+
+    const delayedUri = 'file:///delayed.fake';
+    const delayed = probe.waitForDiagnostics(delayedUri, null, () => {}, 1);
+    probe.touch();
+    await new Promise(resolve => setTimeout(resolve, 650));
+    A.eq(probe.dead, false, 'idle reaping cannot close a server while diagnostics are in flight');
+    probe.onMessage({ method: 'textDocument/publishDiagnostics', params: { uri: delayedUri, version: 1, diagnostics: [] } });
+    A.eq((await delayed).confirmed, true, 'a delayed diagnostic still confirms before its own timeout');
 
     const source = path.join(workspace, 'main.fake');
     fs.writeFileSync(source, 'OLD\nclean\n', 'utf8');

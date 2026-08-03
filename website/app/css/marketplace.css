@@ -18,10 +18,10 @@
 .mkt-scrim::after {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 20;
   /* screen-space glass, same law as `body::after` — TEXT SIZE's body zoom multiplies into every
-     hard px here too, so each stop carries the same --cz reciprocal (stationui's --crt-unzoom).
+     hard px here too, so each stop carries the same --cz reciprocal (stationui's --sn-unzoom).
      Without it the bay's beam pitch stretched with the text while the rest of the station's did
      not, which is exactly the "one surface whose glass doesn't match" this layer exists to avoid. */
-  --cz: var(--crt-unzoom, 1);
+  --cz: var(--sn-unzoom, 1);
   background:
     repeating-linear-gradient(0deg,
       rgba(0,0,0,0) 0px,

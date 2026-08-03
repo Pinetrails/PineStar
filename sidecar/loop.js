@@ -199,6 +199,7 @@
   async function executeCalls(calls, dispatch, capCtx, emit, meta) {
     const results = [];
     let finalControl = null;
+    let stopToolsControl = null;
 
     /* CONCURRENT PATH. The EMIT STREAM STAYS IN CALL ORDER even though the work does not: the loop advertises
        "identical calls -> identical emits", the war-room renders off that stream, and a shuffled order would
@@ -236,6 +237,18 @@
       }
       const hidden = meta.hiddenTools && meta.hiddenTools.has(c.name);
       if (!hidden) emit('agent.tool_call', { agentId: meta.agentId, runId: meta.runId, callId: c.id, name: c.name || 'unknown', argsSummary: summarize(c.argsRaw) });
+      // A host-proven terminal result (for example NXDOMAIN on the exact host the Commander asked to
+      // inspect) stops the REST of this already-issued sequential batch too. Every requested call still gets
+      // its paired result and telemetry, but no second network request executes after the proof landed.
+      if (stopToolsControl) {
+        const why = stopToolsControl.reason || 'terminal evidence already resolved this request';
+        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: ' + why, control: null });
+        if (!hidden) emit('agent.tool_result', {
+          agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: false,
+          ms: 0, summary: 'skipped — terminal evidence', isError: true
+        });
+        continue;
+      }
       const t0 = meta.clock ? meta.clock.now() : 0;
       let r;
       try { r = await dispatch(c, capCtx); }
@@ -244,6 +257,7 @@
       const t1 = meta.clock ? meta.clock.now() : 0;
       results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });
       if (r.control && r.control.final) finalControl = r.control;
+      if (r.control && r.control.stopTools) stopToolsControl = r.control;
       if (!hidden) emit('agent.tool_result', {
         agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: !!r.ok,
         ms: Math.max(0, t1 - t0), summary: r.summary || (r.isError ? 'error' : 'ok'), isError: !!r.isError
@@ -1020,6 +1034,17 @@
           deferredDefs.delete(key);
           tools.push(def);
         }
+      }
+
+      /* TERMINAL TOOL EVIDENCE. A tool may prove that the exact requested subject cannot be reached (the
+         direct-domain policy is the first producer). The result is already in the transcript; now remove every
+         advertised/revealable tool and buy exactly one tool-free synthesis turn. This is host enforcement, not
+         model advice: even an over-eager model cannot launch a WHOIS/archive/search cascade after the proof. */
+      const stopTools = results.map(r => r && r.control).find(c => c && c.stopTools);
+      if (stopTools) {
+        tools.splice(0, tools.length);
+        deferredDefs.clear();
+        messages.push({ role: 'system', content: String(stopTools.prompt || '<terminal_evidence>The requested subject is unavailable. Use the tool result above and answer now without more tools.</terminal_evidence>') });
       }
 
       const finalControl = results.map(r => r.control).find(c => c && c.final);

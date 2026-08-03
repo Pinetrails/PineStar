@@ -116,6 +116,21 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(ro.calls[0].maxIters, 6, 'deps.workerMaxIters overrides the default worker loop cap');
 }
 
+// ---- a narrow one-host check gets task-specific turn/tool/time budgets even if a lead delegates it ----
+{
+  const ro = fakeRunOnce(() => ({ reason: 'done', messages: [{ role: 'assistant', content: 'missing' }], usd: 0, model: 'm', reasoningEffort: 'medium', toolsOk: 1, durationMs: 12 }));
+  const roster = new Map([['researcher', { system: 'R' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), workerMaxIters: 16 });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'Check starnessos.com and read its docs.' }] }, { agentId: 'lead', runId: 'lead-run', emit: () => {} });
+  A.eq(ro.calls[0].maxIters, 3, 'direct-domain worker gets a three-turn cap');
+  A.eq(ro.calls[0].maxToolCalls, 3, 'direct-domain worker gets a three-tool cap');
+  A.eq(ro.calls[0].parentRunId, 'lead-run', 'child records its durable parent run id');
+  const row = JSON.parse(out.content)[0];
+  A.eq(row.model, 'm', 'dispatch result exposes the actual worker model');
+  A.eq(row.reasoningEffort, 'medium', 'dispatch result exposes worker reasoning effort');
+  A.eq(row.durationMs, 12, 'dispatch result exposes worker elapsed time');
+}
+
 // ---- child emit forwarding: ONLY lifecycle/cost reach the lead bus (no token/COMMS pollution) ----
 {
   const ro = fakeRunOnce(async (o) => {

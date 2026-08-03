@@ -306,6 +306,15 @@
 .run-fold { margin: 0 0 2px 11px; }
 .run-fold[hidden] { display: none; }
 .run-fold .tool-rail { margin-left: 0; }
+.run-telemetry {
+  margin: 4px 0 7px; padding: 6px 9px;
+  border-left: 1px solid color-mix(in srgb, var(--ph-dim) 55%, transparent);
+  color: var(--ph-dim); font-size: 11px; letter-spacing: .45px;
+}
+.rt-run + .rt-run { margin-top: 7px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--ph-dim) 20%, transparent); }
+.rt-run-head { color: var(--ph); }
+.rt-tool { margin: 2px 0 0 10px; opacity: .82; }
+.rt-tool.err { color: var(--bad); }
 
 /* ============================================================
    4 · JUMP-TO-LATEST PILL — while scrolled up: a dim, persistent

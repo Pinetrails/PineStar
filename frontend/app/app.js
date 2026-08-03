@@ -115,17 +115,28 @@ const App = (() => {
   // the hoisted brand mark (#logo — fixed above the CRT glass, see style.css) tracks the seat
   // #logo-anchor reserves in the topbar: the anchor takes the logo's natural width so the gauge
   // cluster never slides under it, and the logo takes the anchor's on-screen spot.
+  /* The EFFECTIVE zoom #logo renders at. The mark is CABINET — app.css counter-zooms it back to
+     1:1 while <body> stays zoomed by TEXT SIZE — so U.uiZoom() is the wrong divisor for it; see
+     the U.elZoom note in js/util.js. */
+  function logoZoom(logo) {
+    if (typeof U !== 'undefined' && U.elZoom) return U.elZoom(logo);
+    return (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+  }
   function positionLogo() {
     const logo = el('logo'), anchor = el('logo-anchor'), bar = el('topbar');
     if (!logo || !anchor || !bar) return;
     const game = el('screen-game');
     if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
     anchor.style.width = logo.offsetWidth + 'px';
-    // TEXT SIZE coordinate law (stationui.js uiZoom): rects are VISUAL px, but #logo lives inside
-    // the zoomed body so its style.left/top are ZOOMED-space px — divide, or on any station where
-    // AUTO resolves ≠100% the logo lands off by the zoom factor (worst in windowed mode, where the
-    // titlebar strip makes b.top large; the 2026-07-20 misaligned-logo report on other hardware).
-    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    // TEXT SIZE coordinate law (stationui.js uiZoom): rects are VISUAL px, but #logo's style.left/
+    // top are its OWN layout px — divide by whatever zoom it actually renders at, or on any station
+    // where AUTO resolves ≠100% the mark lands off by that factor (worst in windowed mode, where
+    // the titlebar strip makes b.top large; the 2026-07-20 misaligned-logo report on other
+    // hardware). That factor is no longer just U.uiZoom(): the mark is CABINET, so app.css
+    // counter-zooms it back to 1:1 while <body> stays zoomed. Measure the ratio off the element
+    // instead of assuming either one — rect/offsetWidth is the engine's own answer, so this stays
+    // correct whether or not the counter-zoom applied.
+    const z = logoZoom(logo);
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
     logo.style.left = (a.left / z) + 'px';
     logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
@@ -143,8 +154,9 @@ const App = (() => {
     const logo = el('logo'), host = el('terms');
     if (!logo || typeof LogoClip === 'undefined') return;
     const box = logo.getBoundingClientRect();
-    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px.
-    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px —
+    // and the mark is cabinet, so it renders at its own counter-zoomed scale (see logoZoom).
+    const z = logoZoom(logo);
     const rects = host ? Array.prototype.map.call(host.querySelectorAll('.term'), w => w.getBoundingClientRect()) : [];
     logo.style.clipPath = LogoClip.clipFor(box, rects, z);
   }

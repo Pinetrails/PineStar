@@ -19,7 +19,10 @@
   /* The four triggers wrap onto different rows on phone-width stations, so a fixed
      left:0 popover cannot be made viewport-safe with one CSS alignment. Clamp the open
      menu in its group's local frame. getBoundingClientRect/innerWidth are VISUAL px;
-     style.left is a uiZoom-scaled CSS px, hence the one deliberate division. */
+     style.left is a zoom-scaled CSS px, hence the one deliberate division. The divisor is
+     U.elZoom(menu), NOT U.uiZoom(): this popover lives inside #bottombar, which TEXT SIZE
+     counter-zooms back to 1:1 as cabinet, so the dock's local frame is visual px even while
+     <body> is zoomed. elZoom composes what the engine actually applied, so it is right either way. */
   function clampMenu(g) {
     const menu = g && g.querySelector('.bb-menu');
     if (!menu || !g.classList.contains('open')) return;
@@ -31,7 +34,7 @@
     }
     const edge = 8;
     let zoom = 1;
-    try { zoom = (typeof U === 'object' && U && typeof U.uiZoom === 'function') ? Number(U.uiZoom()) || 1 : 1; } catch (_) {}
+    try { zoom = (typeof U === 'object' && U && typeof U.elZoom === 'function') ? Number(U.elZoom(menu)) || 1 : 1; } catch (_) {}
     // vw is resolved before StarNet's uiZoom transform; cap the menu in the visual frame too.
     const cssWidth = Math.max(0, window.innerWidth - edge * 2) / zoom;
     menu.style.width = cssWidth + 'px';
