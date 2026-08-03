@@ -346,6 +346,21 @@ const Tutorial = (() => {
     });
   }
 
+  /* THE BAIL — the kit-out is opt-IN, so it must be opt-OUT-able at any moment (sandbox law: never a mode the
+     Commander can't leave). Before this, the only exits were "place all four" or "open REFIT then close it":
+     a Commander who accepted the tour and changed their mind at the very first step — the BUILD-dock glow,
+     OUTSIDE REFIT — had no dismiss button and no Esc, just a permanent half-dimmed station.
+     Inside REFIT we simply close it and let the tick take the normal exit (REFIT owns Esc there); outside, we
+     run the same accounting directly. Either way the Commander lands on kitClosedDuringPlace's honest
+     "here's what's wired, here's what's still dark — keep going or stop here" choice, never a dead end. */
+  function kitBail() {
+    if (!active || !kitMode) return;
+    sfx('click');
+    if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen() && Build.close) { Build.close(); return; }   // kitTick sees the close → kitClosedDuringPlace
+    kitWasOpen = false;
+    kitClosedDuringPlace();
+  }
+
   // FULLY EQUIPPED — the completion beat. Every capability prop is placed; the agent is whole. Offer the
   // optional "watch me actually use it" demo, then hand the Commander the free station. This is where the
   // tutorial ENDS (the user's bar: end the tour when full capability is placed).
@@ -433,10 +448,20 @@ const Tutorial = (() => {
       act.onclick = () => { sfx('click'); try { if (opts.action.onClick) opts.action.onClick(); } catch (_) {} };
       bubble.appendChild(act);
     }
+    // THE VISIBLE WAY OUT (see kitBail). Every kit-out step carries it, because the coach is the only UI the
+    // Commander can reach over the scrim — without it, accepting the tour was a one-way door.
+    const bail = document.createElement('button'); bail.className = 'tut-coach-bail'; bail.type = 'button'; bail.textContent = '✕ not now';
+    bail.onclick = kitBail;
+    bubble.appendChild(bail);
     document.body.appendChild(bubble);
     let ring = null;
     if (target) { ring = document.createElement('div'); ring.className = 'tut-ring' + (reduceMotion() ? ' no-anim' : ''); document.body.appendChild(ring); }
-    coach = { bubble, ring, anchor: target, raf: 0, onKey: null, kit: true };
+    // Esc bails too — but only OUTSIDE REFIT, where nothing else claims the key. Inside REFIT, build.js's own
+    // Esc closes the builder, and kitTick reads that close as the very same exit (double-handling it here
+    // would fire kitClosedDuringPlace twice and stack two dialogue nodes).
+    const onKey = e => { if (e.key !== 'Escape') return; if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) return; kitBail(); };
+    window.addEventListener('keydown', onKey);
+    coach = { bubble, ring, anchor: target, raf: 0, onKey, kit: true };
     placeCoach();
     sfx('open');
   }
@@ -635,6 +660,22 @@ const Tutorial = (() => {
     if (coach.bubble) coach.bubble.remove();
     coach = null;
   }
+  /* DON'T BURY THE MAP. finishUp() spawns BOTH the FIRST STEPS brief and the ⚑ QUESTS coachmark, and both
+     want the bottom-left: the brief clamps against #left/#chat-panel, the coach clamps against the viewport,
+     and neither knew the other existed — so at 1280×720 the coach (z 99000) landed square on the checklist
+     (z 1300) the tour had just handed over. The brief is the DURABLE surface, so the coach dodges: slide
+     clear to its right when there's room, otherwise stack above it. No-ops whenever no brief is showing. */
+  function dodgeBrief(box, vw) {
+    if (!briefEl || !document.contains(briefEl)) return box;
+    const z = overlayScale(), r0 = briefEl.getBoundingClientRect();
+    if (!r0.width || !r0.height) return box;
+    const r = { left: r0.left / z, top: r0.top / z, right: r0.right / z, bottom: r0.bottom / z };
+    const clear = box.left + box.w <= r.left || box.left >= r.right || box.top + box.h <= r.top || box.top >= r.bottom;
+    if (clear) return box;
+    if (r.right + 12 + box.w <= vw - 8) box.left = r.right + 12;   // room to its right — keep the vertical tie to the anchor
+    else box.top = Math.max(8, r.top - box.h - 12);                // narrow window — stack above it instead
+    return box;
+  }
   // glue the bubble (and ring) to the anchor every frame — survives camera/layout shifts and self-clears
   // the moment the surface is gone (e.g. REFIT closed out from under a REFIT coach).
   function placeCoach() {
@@ -667,7 +708,8 @@ const Tutorial = (() => {
       const left = Math.max(8, Math.min(r.left, vw - bw - 8));               // clamp-min last: never below 8, even in a narrow window
       let top = r.bottom + gap;
       if (top + bh > vh - 8) top = Math.max(8, r.top - bh - gap);            // flip above if it would clip the bottom
-      b.style.left = left + 'px'; b.style.top = top + 'px';
+      const box = dodgeBrief({ left, top, w: bw, h: bh }, vw);
+      b.style.left = box.left + 'px'; b.style.top = box.top + 'px';
     }
     coach.raf = requestAnimationFrame(placeCoach);
   }
@@ -676,7 +718,12 @@ const Tutorial = (() => {
     if (active || seen(key)) return;     // never during the First Command; once ever
     // don't paint over an open panel (e.g. the Field Manual) — defer (not marked seen) until it's closed.
     // EXCEPT a one-shot whose trigger never re-fires (level-up): show it over the panel rather than lose it forever.
-    if (!opts.overTerms && document.querySelector('#terms .term')) return;
+    // Same rule for REFIT's first-run card (.refit-firstrun): it now waits for the tour to finish, so the very
+    // open that finally shows it is also the one that fires the 'build' coachmark — defer rather than stack.
+    // (.refit-firstrun, not .refit-guide: the bay/workstation/flow/junction/connector editors share that class,
+    // and the WORKFLOW coaches fire from commitPropStamp BEFORE openPropEditor runs — suppressing on the bare
+    // class would silently kill the whole belt-teach chain.)
+    if (!opts.overTerms && (document.querySelector('#terms .term') || document.querySelector('.refit-firstrun'))) return;
     markSeen(key);                       // mark on SHOW so an ignored hint still never repeats
     clearCoach();
     const anchor = anchorSel ? (typeof anchorSel === 'string' ? document.querySelector(anchorSel) : anchorSel) : null;

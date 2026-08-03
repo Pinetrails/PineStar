@@ -89,7 +89,7 @@ const Build = (() => {
     resize();
     fitCamera();
     updateUndoRedo();
-    if (!hasSeen()) showGuide();
+    if (!hasSeen() && !tutorialCoaching()) showGuide();   // never stack this modal on the tutorial's own coaching (see tutorialCoaching)
     running = true;
     if (typeof SFX !== 'undefined') SFX.open();
     raf = requestAnimationFrame(frame);
@@ -671,10 +671,17 @@ const Build = (() => {
   /* ---------- first-use guide ---------- */
   function hasSeen() { try { return !!localStorage.getItem(SEEN_KEY); } catch (e) { return false; } }
   function markSeen() { try { localStorage.setItem(SEEN_KEY, '1'); } catch (e) {} }
+  /* TUTORIAL WINS (same coordination dockglow.js uses). The kit-out tour ALWAYS causes the first REFIT open,
+     so this first-run card used to land on top of it every single time: a full-viewport modal that BLOCKS the
+     ⚇ PROP button the tour's ring is pulsing on, while teaching a different lesson (rooms/BAYs/belts) than the
+     coach bubble floating above it (gear placement). Deferring costs nothing — markSeen() only fires on
+     dismiss, so hasSeen() stays false and the card shows on the next REFIT open, once the tour is out of the
+     way and the Commander is actually building. #refit-help re-opens it on demand either way. */
+  function tutorialCoaching() { try { return !!(typeof Tutorial !== 'undefined' && Tutorial.isCoaching && Tutorial.isCoaching()); } catch (e) { return false; } }
   function showGuide() {
     if (!root || root.querySelector('.refit-guide')) return;
     const g = document.createElement('div');
-    g.className = 'refit-guide';
+    g.className = 'refit-guide refit-firstrun';   // refit-firstrun marks THIS card (not the pickers/editors that share .refit-guide) so tutorial.js can avoid painting a coachmark over it
     // Three beats, not a wall — place a room, place+assign a BAY, wire it with a BELT. The full reference (every prop
     // & mechanic) lives in the FIELD MANUAL, so we point there instead of front-loading it all here.
     g.innerHTML = `
