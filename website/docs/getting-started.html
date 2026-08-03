@@ -16,7 +16,6 @@
   <a class="brand" href="../index.html">STARNET TERMLINK</a>
   <nav class="topnav">
     <a href="../index.html#features">FEATURES</a>
-    <a href="../pricing.html">PRICING</a>
     <a href="../index.html#download">DOWNLOAD</a>
     <a href="index.html">DOCS</a>
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
@@ -92,6 +91,13 @@ code-signing. You never need to re-download installers for routine updates.</p>
 cd starnet
 node sidecar/index.js
 # open http://localhost:8787</code></pre>
+<p>One exception: <b>hands-free Live Voice</b> needs the two offline speech packages
+(<code>@huggingface/transformers</code> and <code>kokoro-js</code>). The desktop installers ship them, so
+downloaded builds need nothing extra — but a from-source checkout has to install them before
+Live Voice will start:</p>
+<pre><code>npm install</code></pre>
+<p>Without them the station runs normally and the Live Voice panel refuses honestly before it
+opens your microphone, rather than starting a session that can't hear you.</p>
 
 <div class="doc-next"><span></span><a href="providers.html">NEXT: PROVIDERS &amp; KEYS &rarr;</a></div>
   </main>
