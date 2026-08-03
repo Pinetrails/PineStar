@@ -197,10 +197,11 @@
         if (lease && lease.runId === runId && !lease.settlement) {
           lease.settlement = { at: at, result: Object.assign({}, result) };
         }
+        note('defer', prev, { runId: runId, reason: 'settlement-persist-failed', binding: 'persist' });
         return false;
       }
       leases.delete(loopId);
-      if (untrackRun) { try { untrackRun(runId); } catch (_) {} }   // the desk goes quiet only when the pass really ends
+      if (untrackRun && !(lease && lease.untracked)) { try { untrackRun(runId); } catch (_) {} }   // the desk goes quiet only when the pass really ends
       const loop = store.getLoop(next, loopId);
       const it = loop && (loop.iterations || []).slice().reverse().find(x => String(x.runId) === String(runId));
       note(result.status === 'ok' ? 'act' : 'decline', loop, {
@@ -458,10 +459,12 @@
 
       // Retry completed-but-not-yet-durable iteration receipts before considering any new fire. A pending
       // settlement is not a live process and must never be reclaimed/re-executed as a stale run.
+      const settledThisTick = new Set();
       for (const entry of Array.from(leases.entries())) {
         const loopId = entry[0], lease = entry[1];
         if (!lease || !lease.settlement) continue;
         settle(loopId, lease.runId, lease.settlement.result);
+        if (!leases.has(loopId)) settledThisTick.add(loopId);
       }
 
       // roll every loop's daily budget bucket first, persisting once if any changed. Done before the gate so a
@@ -471,6 +474,7 @@
 
       for (const loop of getLoops()) {
         if (!loop) continue;
+        if (settledThisTick.has(loop.id)) { skipped++; continue; }
 
         // a loop whose agent was deleted must STOP — never fire under a ghost, never silently keep spending.
         if (agentExists && loop.enabled !== false && !agentExists(loop.agentId)) {
@@ -516,7 +520,7 @@
        Must never throw: an E-STOP that fails halfway is worse than no E-STOP. */
     function abortLease(loopId, reason) {
       const lease = leases.get(loopId);
-      if (!lease || lease.recoveryBlocked) return false;
+      if (!lease || lease.recoveryBlocked || lease.settlement) return false;
       try { if (lease.abort && isFn(lease.abort.abort)) lease.abort.abort(); } catch (_) {}
       try {
         settle(loopId, lease.runId, {

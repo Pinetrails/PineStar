@@ -131,6 +131,28 @@ function world(opts) {
     A.eq(w.tick(T0 + MIN).fired, 1, 'once the store recovers, the loop fires normally');
   }
 
+  // ---- 2b. a failed SETTLEMENT persist stays fenced and retries without repeating the run ----------------
+  {
+    let failing = false;
+    const w = world({ persistFails: () => failing });
+    w.seed({});
+    w.tick(T0);
+    A.eq(w.calls.length, 1, 'the persistence-boundary fixture launches one real iteration');
+
+    failing = true;
+    await w.finish({ text: 'completed before the disk write failed', usd: 0.01 });
+    A.eq(w.loop().iterations[0].outcome, 'running', 'a rejected settlement write never pretends the outcome persisted');
+    A.eq(w.drv.leases.size, 1, 'the lease remains as a duplicate-execution fence while settlement is pending');
+    A.ok(w.ledger.some(e => e.kind === 'defer' && e.reason === 'settlement-persist-failed'),
+      'the persistence failure is visible in the autonomy ledger');
+
+    failing = false;
+    A.eq(w.tick(T0 + MIN).fired, 0, 'the recovery tick persists the pending result without starting another run');
+    A.eq(w.calls.length, 1, 'settlement recovery never repeats the provider/tool side effects');
+    A.eq(w.loop().iterations[0].outcome, 'candidate', 'the originally completed result becomes durable after recovery');
+    A.eq(w.drv.leases.size, 0, 'the duplicate fence releases only after the settlement write succeeds');
+  }
+
   // ---- 3. INVARIANT: the VERDICT is the trigger ----------------------------------------------------------
   {
     const w = world(); w.seed({ queueCap: 1 });
