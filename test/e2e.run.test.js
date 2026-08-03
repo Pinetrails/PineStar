@@ -35,6 +35,18 @@ function startMockOpenRouter() {
             return;
           }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          // DOMAINSTOP sentinel: one exact-host fetch; terminal evidence leaves only a final report turn.
+          if (body.indexOf('DOMAINSTOP') >= 0) {
+            const hasToolResult = !!(parsed && (parsed.messages || []).some(m => m && m.role === 'tool'));
+            if (!hasToolResult) {
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'domain_fetch', type: 'function', function: { name: 'web_fetch', arguments: JSON.stringify({ url: 'https://starnessos.invalid/docs' }) } }] } }] }) + '\n\n');
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 8, completion_tokens: 8, total_tokens: 16 } }) + '\n\n');
+            } else {
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'The exact host does not resolve; please send the corrected URL.' } }] }) + '\n\n');
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 } }) + '\n\n');
+            }
+            res.write('data: [DONE]\n\n'); res.end(); return;
+          }
           // CODEMODE sentinel: actual tool call on turn one, final answer after its result on turn two.
           if (body.indexOf('CODEMODE') >= 0) {
             const hasToolResult = !!(parsed && (parsed.messages || []).some(m => m && m.role === 'tool'));
@@ -172,6 +184,32 @@ function boot(port, env, attemptsLeft) {
       const outerResult = continuation && (continuation.messages || []).find(m => m && m.role === 'tool' && m.tool_call_id === 'code_outer');
       A.ok(outerResult && /^\{"nestedBytes":\d+\}$/.test(String(outerResult.content)), 'provider saw only the child final aggregation');
       A.ok(String(outerResult && outerResult.content).indexOf('browser.screenshot') < 0, 'intermediate tool.search output stayed out of model context');
+    }
+
+    // LIVE INCIDENT PROOF: a misspelled one-host docs request is local, one-fetch, terminal, and timed.
+    {
+      const before = mock.requests.length;
+      const r = await fetch(B + '/api/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', reasoningEffort: 'medium', agentId: 'e2e-domain', isTask: true, placed: ['dish'], messages: [{ role: 'user', content: 'DOMAINSTOP Check starnessos.invalid and read its docs.' }] })
+      });
+      const raw = await r.text();
+      const evs = raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+      const calls = evs.filter(e => e.name === 'agent.tool_call');
+      A.eq(calls.map(e => e.payload.name), ['web_fetch'], 'direct-domain live run executes exactly one local fetch (no delegation/search cascade)');
+      A.ok(evs.some(e => e.name === 'agent.tool_result' && e.payload.callId === 'domain_fetch'), 'real web_fetch returned terminal domain evidence');
+      const domainMain = mock.requests.slice(before).filter(q => JSON.stringify((q && q.messages) || []).indexOf('[DIRECT DOMAIN CHECK') >= 0);
+      A.eq(domainMain.length, 2, 'terminal domain evidence permits exactly one tool-free synthesis turn');
+      A.ok(!domainMain[1].tools || domainMain[1].tools.length === 0, 'the synthesis request exposes zero tools');
+      const firstDomainReq = domainMain[0];
+      const offered = ((firstDomainReq && firstDomainReq.tools) || []).map(t => t && t.function && t.function.name);
+      A.ok(offered.indexOf('team_dispatch') < 0 && offered.indexOf('web_search') < 0, 'lead is not offered delegation or expansive search for a single-host check');
+      const runId = ((evs.find(e => e.name === 'agent.run.start') || {}).payload || {}).runId;
+      const runs = await (await fetch(B + '/api/runs?agent=e2e-domain&runId=' + encodeURIComponent(runId), { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      const row = (runs.runs || [])[0];
+      A.ok(row && row.model === 'test/model' && row.reasoningEffort === 'medium', 'run row persists actual model + reasoning effort');
+      A.ok(row && row.durationMs > 0 && Array.isArray(row.toolTrace) && row.toolTrace.length === 1, 'run row persists elapsed time and one tool trace');
+      A.ok(row.toolTrace[0].ms >= 0 && row.toolTrace[0].name === 'web_fetch', 'per-tool elapsed milliseconds survive the API persistence boundary');
     }
 
     // H1.1: the run's full dialogue was persisted to the durable transcript (not just title+final) — fetch it back.

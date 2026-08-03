@@ -14,6 +14,7 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 
 const { runAgentLoop } = require('./loop.js');
+const DomainTask = require('./domain-task.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
@@ -10907,6 +10908,7 @@ function latestUserText(list) {
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
   const { key, system: rawSystem, messages = [], agentId = 'agent', signal, runId } = o;
+  const runStartedAt = Date.now();
   let system = rawSystem;
   if (o.workdir) {
     const cronRoot = cronCanonicalWorkdir(o.workdir); // re-check at every fire; revocation is immediate
@@ -10921,6 +10923,9 @@ async function runOnce(o) {
   if (!isTask && o.taskKey) {
     try { const pending = taskBriefStore.active(String(o.taskKey)); if (pending && pending.status === 'clarifying') isTask = true; } catch (_) {}
   }
+  // A single explicit host inspection is a bounded lookup, not an autonomous research brief. Classifying once
+  // at admission lets the prompt, advertised tools, dispatch guard, and terminal-evidence stop share one truth.
+  const directDomainTask = isTask ? DomainTask.classify(latestUserText(messages)) : null;
   // P1-6 per-agent model/provider OVERRIDE: when a run carries NO explicit model/provider (headless hub, delegated
   // worker, or any caller that didn't pass one), fall back to THIS AGENT's pinned identity in the roster before the
   // station default. An explicit per-run o.model/o.provider still wins (the interactive dock path is unchanged), so
@@ -11931,8 +11936,9 @@ async function runOnce(o) {
   // advertises everything, exactly as before this feature — the escape hatch for an operator whose model is
   // one of those, and the A/B control for measuring whether deferral (rather than the model) caused a miss.
   const deferralOff = String((process.env && process.env.SKYNET_TOOL_SEARCH) || '').trim() === '0';
-  const deferredNames = new Set(deferralOff ? [] : (resolved.deferred || []));
-  const coreNames = resolved.tools.filter(n => !deferredNames.has(n));
+  const directDomainWithheld = (name) => !!directDomainTask && (/^team\./.test(name) || /^browser\./.test(name) || name === 'web_search' || name === 'web_request');
+  const deferredNames = new Set((deferralOff ? [] : (resolved.deferred || [])).filter(n => !directDomainWithheld(n)));
+  const coreNames = resolved.tools.filter(n => !deferredNames.has(n) && !directDomainWithheld(n));
   const toolDefs = isTask ? registry.wireFormat(registry.list(new Set(coreNames))) : [];
   const deferredToolDefs = isTask ? registry.wireFormat(registry.list(deferredNames)) : [];
   const fromWire = new Map();
@@ -11964,6 +11970,9 @@ async function runOnce(o) {
   const parallelSafe = (wireName) => {
     const n = String(wireName || '');
     const real = fromWire.has(n) ? fromWire.get(n) : (allWire.get(n) || n);
+    // The exact-host fetch must complete before any sibling in the same model-issued batch. That lets proven
+    // NXDOMAIN cancel the remainder instead of racing an archive/search request beside it.
+    if (directDomainTask && real === 'web_fetch') return false;
     const t = registry.get(real);
     if (!t || !grantedSet.has(real)) return false;
     if (t.scope !== 'read' || t.requiresConsent) return false;
@@ -11974,6 +11983,9 @@ async function runOnce(o) {
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
   let toolsOk = 0;     // crate-honesty: successful tool results this run — "did it actually WORK, or just talk?"
+  let toolCallsStarted = 0;   // delegated callers may impose a small task-specific external-call ceiling
+  const toolTrace = [];       // exact per-call elapsed time, persisted at run end (bounded by runstore too)
+  const toolTraceById = new Map();
   let cpTurn = 0;      // per-run checkpoint sequence (a pseudo-turn for the snapshot index/lineage)
   // WORK VISIBILITY (slice 1): fold every successful tool call into this run's artifacts ledger — what the
   // run PRODUCED (files/images/channel sends) — recorded onto the runStore row at run end and served over
@@ -12013,6 +12025,12 @@ async function runOnce(o) {
       };
     }
     const liveTool = registry.get(c.name);
+    if (directDomainTask && directDomainWithheld(c.name)) {
+      return { ok: false, isError: true, summary: 'direct-domain-local', content: 'This is a bounded check of the exact host ' + directDomainTask.host + '. Do not delegate, search, browse, or call archives; fetch that host directly with web_fetch.' };
+    }
+    if (directDomainTask && c.name === 'web_fetch' && !DomainTask.isTargetFetch(c, directDomainTask)) {
+      return { ok: false, isError: true, summary: 'direct-domain-target-only', content: 'Fetch only the exact requested host ' + directDomainTask.host + '. Do not try spelling variants or alternate domains unless the Commander asks.' };
+    }
     // TAINT ENFORCEMENT — see `taintedBy`. Runs before consent/dispatch so a revoked power never executes, and
     // returns an honest refusal naming the source rather than a silent failure, so the agent can report what it
     // could not finish instead of pretending. The tool STAYS in the wire list on purpose: consent-not-absence.
@@ -12030,6 +12048,10 @@ async function runOnce(o) {
       };
     }
     const internalBriefControl = internalBriefTools.indexOf(c.name) >= 0;
+    if (!internalBriefControl && Number(o.maxToolCalls) > 0) {
+      if (toolCallsStarted >= Math.floor(Number(o.maxToolCalls))) return { ok: false, isError: true, summary: 'tool-budget', content: 'This worker reached its task-specific tool-call budget. Finish now with the evidence already collected.' };
+      toolCallsStarted++;
+    }
     if (taskBriefState && !internalBriefControl) {
       const gate = TaskBriefPolicy.canMutate(taskBriefState.brief, liveTool);
       if (!gate.ok) return { ok: false, isError: true, content: 'Task Brief gate: ' + gate.reason, summary: 'task-brief-gate' };
@@ -12076,6 +12098,9 @@ async function runOnce(o) {
       mutating: !!(liveTool && liveTool.scope !== 'read')
     });
     let r = await registry.dispatch(c, dctx);
+    if (DomainTask.isTargetFetch(c, directDomainTask) && DomainTask.isDomainMissing(r)) {
+      r = Object.assign({}, r, { control: Object.assign({}, r && r.control, DomainTask.stopControl(directDomainTask)) });
+    }
     // Persist the full model-visible result before the loop advances to another call/turn. A journal write failure
     // throws here, leaving the intent unmatched and therefore review-required after restart.
     if (journalStarted) runJournal.toolResult(runId, {
@@ -12439,9 +12464,10 @@ async function runOnce(o) {
   // operator manual / capability summary / skill catalog here buried "reply with ONLY a 3-6 word title" under
   // pages of station doctrine and made models answer as a chatty station agent — the parser then rejected the
   // reply, so e.g. session titles silently stayed on their first-words placeholder.
+  const directDomainBlock = directDomainTask ? '\n\n' + DomainTask.prompt(directDomainTask) : '';
   const sys = internal
     ? String(system || '')
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -12529,6 +12555,17 @@ async function runOnce(o) {
     // Freeing the budget at the moment the context is freed keeps the two in sync; erring generous here is the
     // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
     if (name === 'agent.compact') toolBytes = 0;
+    if (name === 'agent.tool_call' && payload && payload.callId && toolTrace.length < 200) {
+      const rec = { callId: String(payload.callId), name: String(payload.name || 'unknown'), startedAt: Date.now() };
+      toolTrace.push(rec); toolTraceById.set(rec.callId, rec);
+    } else if (name === 'agent.tool_result' && payload && payload.callId) {
+      const rec = toolTraceById.get(String(payload.callId));
+      if (rec) {
+        rec.ok = !!payload.ok; rec.isError = !!payload.isError;
+        rec.ms = Math.max(0, Number(payload.ms) || 0); rec.endedAt = rec.startedAt + rec.ms;
+        rec.summary = String(payload.summary || '').slice(0, 240);
+      }
+    }
     if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
@@ -12665,7 +12702,8 @@ async function runOnce(o) {
           }
         }
       }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
+      const runEndedAt = Date.now();
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, toolTrace, startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback });   // H3.2/H3.3/G6 + hierarchical timing/work visibility + P1.2 identity-honesty
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
@@ -12811,7 +12849,17 @@ async function runOnce(o) {
   // WORK VISIBILITY: hand the caller this run's PROVEN outputs (the same ledger runStore just recorded).
   // team.dispatch/team.spawn stamp these with the worker's agentId so the LEAD knows what its workers
   // actually saved and in WHOSE workspace (the ghost-file fix). Additive — existing callers ignore it.
-  if (result && !result.artifacts) { try { result.artifacts = artifactLedger.list(); } catch (_) {} }
+  if (result) {
+    if (!result.artifacts) { try { result.artifacts = artifactLedger.list(); } catch (_) {} }
+    result.model = result.model || model;
+    result.reasoningEffort = reasoningEffort;
+    result.toolsOk = toolsOk;
+    result.toolTrace = toolTrace.map(t => Object.assign({}, t));
+    result.startedAt = runStartedAt;
+    result.endedAt = Date.now();
+    result.durationMs = result.endedAt - runStartedAt;
+    result.parentRunId = o.parentRunId || '';
+  }
   return result;
 
   } finally {
@@ -15408,6 +15456,13 @@ async function handleSaveWrite(req, res) {
 // agent can neither read nor rewrite its own history. G2.2 (additive): agent=* returns EVERY agent's runs (the
 // while-away digest covers crew routines too), and a since=<ms> filter keeps the answer to runs that finished
 // after the caller's last-attended stamp.
+function withRunChildren(row, allRows) {
+  const out = Object.assign({}, row);
+  out.children = (Array.isArray(allRows) ? allRows : [])
+    .filter(r => r && r.parentRunId && r.parentRunId === row.runId)
+    .map(r => Object.assign({}, r));
+  return out;
+}
 function serveRuns(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
@@ -15415,7 +15470,11 @@ function serveRuns(req, res) {
     const agent = u.searchParams.get('agent') || 'agent';
     if (agent !== '*' && !isAgentId(agent)) return json(403, { error: 'forbidden' });
     const runId = u.searchParams.get('runId') || '';
-    if (runId) return json(200, { runs: runStore.list(agent === '*' ? null : agent, { limit: 1000 }).filter(r => r.runId === runId) });
+    if (runId) {
+      const allRows = runStore.all();
+      const rows = allRows.filter(r => r.runId === runId).filter(r => agent === '*' || r.agentId === agent);
+      return json(200, { runs: rows.map(r => withRunChildren(r, allRows)) });
+    }
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
     let rows = runStore.list(agent === '*' ? null : agent, { limit });

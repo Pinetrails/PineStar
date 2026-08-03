@@ -260,6 +260,20 @@ const Chat = (() => {
   function presenceToolResult(ws) { presenceCurTool = null; if (isActiveWs(ws)) renderPresence(); }
   // remove any live presence card without a summary (used when switching away / re-rendering a stream)
   function clearPresence() { const c = log && log.querySelector('#comms-presence'); if (c) { if (c.classList.contains('resolved')) c.removeAttribute('id'); else c.remove(); } presenceCurTool = null; }   // a resolved summary is history — keep it, only live cards are torn down
+  function bindPresenceFold(card, fold) {
+    if (!card || !fold) return;
+    card.classList.add('has-fold');
+    card.setAttribute('role', 'button'); card.tabIndex = 0; card.setAttribute('aria-expanded', 'false');
+    if (card.dataset.foldBound === '1') return;
+    card.dataset.foldBound = '1';
+    const toggle = () => {
+      const open = card.classList.toggle('open');
+      fold.hidden = !open;
+      card.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    card.addEventListener('click', toggle);
+    card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+  }
   // resolve the live card into a compact one-line summary that STAYS in the transcript. opts: { error, raw,
   // stopped, endReason, steps, cost }. Truthful: steps/cost only appear when a real number is supplied.
   function resolvePresence(ws, opts) {
@@ -270,6 +284,8 @@ const Chat = (() => {
     const dur = started ? fmtElapsed(Channels.elapsedOf(ws.id, Date.now())) : '';   // machine time only — approval pauses excluded
     const card = log && log.querySelector('#comms-presence');
     if (!card) return;
+    const presenceRunId = (typeof Channels !== 'undefined') ? Channels.runIdOf(ws.id) : '';
+    if (presenceRunId) card.dataset.runId = presenceRunId;
     card.classList.remove('cp-live');
     presenceCurTool = null;
     const isErr = !!opts.error, isStop = !!opts.stopped || (opts.endReason && opts.endReason !== 'done') || !!opts.cutShort;
@@ -296,15 +312,7 @@ const Chat = (() => {
       const fold = document.createElement('div'); fold.className = 'run-fold'; fold.hidden = true;
       rails.forEach(r => fold.appendChild(r));
       card.parentNode.insertBefore(fold, card.nextSibling);
-      card.classList.add('has-fold');
-      card.setAttribute('role', 'button'); card.tabIndex = 0; card.setAttribute('aria-expanded', 'false');
-      const toggle = () => {
-        const open = card.classList.toggle('open');
-        fold.hidden = !open;
-        card.setAttribute('aria-expanded', open ? 'true' : 'false');
-      };
-      card.addEventListener('click', toggle);
-      card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+      bindPresenceFold(card, fold);
       // A FAILED run keeps its fold CLOSED like any other (2026-07-31). The old rule auto-expanded
       // every chip "for honesty" — but the failure's evidence is already IN the transcript (the ⚠ error
       // row, its raw .err-detail line, the diagnostics chip), and dumping the whole rail open painted a
@@ -320,6 +328,7 @@ const Chat = (() => {
   function foldPresenceIntoRecap() {
     const card = log && log.querySelector('#comms-presence.resolved');
     if (!card) return;
+    if (card.dataset.telemetry === '1') return;   // persisted hierarchy owns these non-duplicate lead/worker facts
     const tgt = card.querySelector('.cp-sum') || card;   // metrics live in the summary span (the fold chevron survives)
     const label = String(tgt.textContent || '').split(' · ')[0];
     if (label && tgt.textContent !== label) tgt.textContent = label;
@@ -1810,6 +1819,59 @@ const Chat = (() => {
     autoscroll();
   }
 
+  function runCallCount(entry) {
+    return Array.isArray(entry && entry.toolTrace) ? entry.toolTrace.length : Math.max(0, Number(entry && entry.toolsOk) || 0);
+  }
+  function telemetryRun(entry, role) {
+    const wrap = document.createElement('div'); wrap.className = 'rt-run';
+    const calls = runCallCount(entry);
+    const head = document.createElement('div'); head.className = 'rt-run-head';
+    head.textContent = [role, entry.agentId || '', entry.model && entry.model !== '(unknown)' ? entry.model : '', entry.reasoningEffort || '', Number(entry.durationMs) > 0 ? fmtMs(Number(entry.durationMs)) : '', calls + (calls === 1 ? ' call' : ' calls')].filter(Boolean).join(' · ');
+    wrap.appendChild(head);
+    for (const t of (Array.isArray(entry.toolTrace) ? entry.toolTrace : [])) {
+      const line = document.createElement('div'); line.className = 'rt-tool' + (t.isError ? ' err' : '');
+      line.textContent = '↳ ' + String(t.name || 'unknown') + ' · ' + fmtMs(Math.max(0, Number(t.ms) || 0)) + ' · ' + (t.isError ? 'failed' : 'ok');
+      if (t.summary) line.title = String(t.summary);
+      wrap.appendChild(line);
+    }
+    return wrap;
+  }
+  function hydrateRunTelemetry(ws, entry, runId) {
+    if (!isActiveWs(ws) || !log) return;
+    const card = Array.from(log.querySelectorAll('.comms-presence.resolved[data-run-id]')).find(c => c.dataset.runId === runId);
+    if (!card) return;
+    const children = Array.isArray(entry.children) ? entry.children : [];
+    const leadCalls = runCallCount(entry);
+    const workerCalls = children.reduce((n, child) => n + runCallCount(child), 0);
+    const sum = card.querySelector('.cp-sum');
+    if (sum) {
+      const label = String(sum.textContent || '').split(' · ')[0];
+      const bits = [];
+      if (Number(entry.durationMs) > 0) bits.push(fmtMs(Number(entry.durationMs)));
+      bits.push(leadCalls + ' lead ' + (leadCalls === 1 ? 'call' : 'calls'));
+      if (children.length) bits.push(workerCalls + ' worker ' + (workerCalls === 1 ? 'call' : 'calls'));
+      const identity = [entry.model && entry.model !== '(unknown)' ? entry.model : '', entry.reasoningEffort || ''].filter(Boolean).join(' ');
+      if (identity) bits.push(identity);
+      sum.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
+    }
+    let fold = card.nextElementSibling;
+    if (!fold || !fold.classList.contains('run-fold')) {
+      fold = document.createElement('div'); fold.className = 'run-fold'; fold.hidden = true;
+      card.parentNode.insertBefore(fold, card.nextSibling);
+    }
+    const old = fold.querySelector('.run-telemetry'); if (old) old.remove();
+    const detail = document.createElement('div'); detail.className = 'run-telemetry';
+    detail.appendChild(telemetryRun(entry, 'lead'));
+    children.forEach(child => detail.appendChild(telemetryRun(child, 'worker')));
+    fold.appendChild(detail);
+    if (!card.querySelector('.cp-chev')) {
+      const chev = document.createElement('span'); chev.className = 'cp-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸'; card.appendChild(chev);
+    }
+    bindPresenceFold(card, fold);
+    card.dataset.telemetry = '1';
+    autoscroll();
+  }
+
   async function renderRunRecap(ws, runId, durMs) {
     try {
       const agentId = ws.agentId || 'agent';
@@ -1818,6 +1880,7 @@ const Chat = (() => {
       const j = await res.json();
       const entry = (j && Array.isArray(j.runs)) ? j.runs.find(x => x && x.runId === runId) : null;
       if (!entry) return;                                              // truthful: no recorded entry, no recap
+      hydrateRunTelemetry(ws, entry, runId);                            // clean runs still expose persisted lead + worker facts
       const arts = Array.isArray(entry.artifacts) ? entry.artifacts : [];   // a legacy row fails open to []
       if (!arts.length && (entry.reason || 'done') === 'done') return;      // quiet clean finish — leave the flow untouched
       if (!isActiveWs(ws)) return;   // the work-log register renders on the on-screen stream only, same as tool lines

@@ -1,5 +1,30 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-02 — BOUNDED DOMAIN CHECKS + HIERARCHICAL RUN TELEMETRY (`agent/dns-stop-telemetry`)
+
+READY TO MERGE. A single explicit-host inspect/read request is now classified as a bounded local lookup.
+The lead is not offered delegation, browser, search, request, or spelling-variant routes for that narrow
+shape; it fetches the named host directly. A proven ENOTFOUND/NXDOMAIN result is terminal host evidence:
+the loop skips any remaining calls already issued in the same sequential batch, removes every tool, and
+allows exactly one final synthesis turn asking for the corrected URL. If such a job reaches a worker through
+another caller, the worker is capped to three turns, three tools, and 45 seconds; ordinary workers keep the
+existing configured ceiling.
+
+Run history now persists `parentRunId`, actual model/reasoning effort, run start/end/duration, and a bounded
+per-call trace with measured milliseconds. `GET /api/runs?...&runId=` joins child rows onto the lead. COMMS
+hydrates the resolved run line from that durable row, shows lead and aggregate worker call counts plus the
+lead model/effort, and folds a lead/worker breakdown with each tool's elapsed time under the line. The website
+mirror is synchronized.
+
+Verification: `node --check` and focused domain/loop/orchestration/runstore/COMMS tests green; canonical
+`test:fast` is 498/498 green; full `test:http` is green (sidecar 463 assertions and every listed e2e). The
+real-sidecar incident replay then passed 45 assertions: exactly one `web_fetch`, one zero-tool synthesis turn,
+no delegated/search cascade, and persisted model/effort/run/tool timings. The real delegation e2e passed 31
+assertions and proved `/api/runs` joins the worker to its exact lead with model and elapsed time; runstore reload
+proved the join and tool milliseconds survive restart. A seeded station on `:18879` rendered ONLINE with no
+browser console errors, then the tab and seed process were closed. No provider spend, external message/write,
+push, PR, deploy, publish, credential, production-data change, or integration-tree edit was performed.
+
 ## 2026-08-02 — RECOMMENDATION FABRIC 1–5 (MERGED)
 
 MERGED to `feat/harness-backend` at `68cc7af7`; the release surface was re-locked at `c8397e1f`.

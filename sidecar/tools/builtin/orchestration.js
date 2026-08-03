@@ -20,10 +20,12 @@
    transcript) to stay under the per-run tool-output cap. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  const api = factory(
+    typeof require === 'function' ? require('../../domain-task.js') : (root.SK && root.SK.domainTask)
+  );
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.SK = root.SK || {}; root.SK.tools = root.SK.tools || {}; (root.SK.tools.builtin = root.SK.tools.builtin || {}).orchestration = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (domainTask) {
   'use strict';
 
   const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -38,6 +40,10 @@
   // the WORKBENCH (terminal). Paired with the SHARED lead consent broker, shell/writes follow the lead's APPROVAL
   // posture — so a worker has the same reach as the orchestrator, gated by the same approvals.
   const WORKER_KIT = [{ instanceId: 'wb_worker', objectType: 'workbench' }];
+  const boundedDomainTask = (text) => {
+    try { return domainTask && typeof domainTask.classify === 'function' ? domainTask.classify(text) : null; }
+    catch (_) { return null; }
+  };
 
   // abort without ever throwing out of a timer callback (AbortController.abort(reason) is not universal).
   function abort(ac) { try { ac.abort(new Error('worker wall clock')); } catch (_) { try { ac.abort(); } catch (_) {} } }
@@ -317,10 +323,17 @@
           // straggler is stopped ALONE and comes back as one honest `timeout` row while its siblings' work survives.
           // Background workers pass no wallMs — outliving the tool call is the whole point of background:true.
           const parentSignal = o2.signal || (ctx && ctx.signal);
+          const bounded = boundedDomainTask(job.prompt);
           // minted up front (not inline in the runOnce call) so the row can carry the SAME id the run was filed
           // under — the page's delivery uses it to append the run to the session and to stay idempotent.
           const workerRunId = o2.runId || newId();
-          const wallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
+          const allottedWallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
+          // A one-host inspection is never a ten-minute autonomous research job. Even if a lead explicitly
+          // delegates one (non-interactive callers can still do so), bind all three dimensions: turns, tools,
+          // and wall clock. The worker still gets a final synthesis turn after its direct fetch.
+          const wallMs = bounded
+            ? Math.min(allottedWallMs || bounded.workerMaxMs, bounded.workerMaxMs)
+            : allottedWallMs;
           const ac = wallMs ? childAbort(parentSignal) : null;
           let timedOut = false, timer = null;
           if (ac) timer = setTimeout(() => { timedOut = true; abort(ac); }, wallMs);
@@ -350,6 +363,7 @@
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
               signal: ac ? ac.signal : parentSignal,   // own controller when this worker has a wall clock (see above)
               runId: workerRunId, trigger: 'directive', surface: 'autonomous',
+              parentRunId: ctx && ctx.runId,
               // SESSION TARGETING: the run host files a run under its streamId (runStore.record + the durable
               // transcript) and scopes its working memory to that stream. Absent -> undefined, byte-identical to
               // the pre-2026-07-30 call. This is the DURABLE half; deliverToSession is the visible one.
@@ -366,7 +380,8 @@
               consent: ctx && ctx.consent,
               extraObjects: WORKER_KIT,
               maxCostUsd: perWorker,           // a runaway worker can't blow the lead's per-run ceiling
-              maxIters: workerMaxIters         // a runaway worker can't burn the lead's full iteration budget
+              maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+              maxToolCalls: bounded ? bounded.workerMaxTools : undefined
             });
           } catch (e) {
             noteSessionActivity('station.dispatch_end', job, workerRunId);
@@ -383,7 +398,12 @@
             reason: result.reason || 'done',
             result: lastAssistant(result.messages) || '(the worker returned no text)',
             usd: result.usd || 0,
-            runId: workerRunId
+            runId: workerRunId,
+            model: result.model || wire.model,
+            reasoningEffort: result.reasoningEffort || ((job.ident && job.ident.reasoningEffort) || reasoningEffort),
+            toolsOk: Number(result.toolsOk) || 0,
+            durationMs: Number(result.durationMs) || 0,
+            tokens: Number(result.tokens) || 0
           };
           if (wire.note) row.note = wire.note;   // honest credential-fallback disclosure (never silent)
           /* Show it where the Commander asked for it. Only a COMPLETED worker delivers: every other outcome
@@ -526,6 +546,7 @@
           const runner = async (h) => {
             if (!prompt.trim()) { const r = { label, agentId: ephemeralId, reason: 'error', result: 'empty subtask prompt', usd: 0 }; settle(r); return { status: 'error', reason: 'error', result: r.result, usd: 0 }; }
             let result;
+            const bounded = boundedDomainTask(prompt);
             try {
               result = await runOnce({
                 key, provider, baseUrl, reasoningEffort, model,      // the lead's OWN model - a clone of self
@@ -535,12 +556,14 @@
                 agentId: ephemeralId, isTask: true,
                 emit: (n, p) => { try { h.emit(n, p); } catch (_) {} childEmit(n, p); },   // durable record + lead stream
                 signal: h.signal, runId: h.runId,
+                parentRunId: ctx && ctx.runId,
                 trigger: 'directive', surface: 'autonomous',
                 consent: ctx && ctx.consent,                // same approval posture as the orchestrator
                 extraObjects: WORKER_KIT,                   // WORKBENCH only — NO 'lead' → no orchestrator object →
                                                             // team.spawn never exposed to it → FLAT DEPTH (no re-spawn)
                 maxCostUsd: perWorker,                       // a runaway clone can't blow the lead's per-run ceiling
-                maxIters: workerMaxIters                     // a runaway clone can't burn the lead's full iteration budget
+                maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+                maxToolCalls: bounded ? bounded.workerMaxTools : undefined
               });
             } catch (e) {
               const r = { label, agentId: ephemeralId, reason: 'error', result: 'subagent run failed: ' + ((e && e.message) || e), usd: 0 };
@@ -654,6 +677,7 @@
         if (!ident) return { status: 'error', reason: 'error', result: 'worker is no longer in the live roster', usd: 0 };
         const wire = workerWire(ident);   // same cross-provider resolution as a fresh dispatch
         let result;
+        const bounded = boundedDomainTask(rec.prompt || '');
         try {
           result = await runOnce({
             key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
@@ -663,11 +687,13 @@
             messages: [{ role: 'user', content: rec.prompt || '' }],
             agentId: rec.agentId, isTask: true,
             emit: h.emit, signal: h.signal, runId: h.runId,
+            parentRunId: ctx && ctx.runId,
             trigger: 'directive', surface: 'autonomous',
             consent: ctx && ctx.consent,
             extraObjects: WORKER_KIT,
             maxCostUsd: perWorker,
-            maxIters: workerMaxIters
+            maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+            maxToolCalls: bounded ? bounded.workerMaxTools : undefined
           });
         } catch (e) {
           return { status: 'error', reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };

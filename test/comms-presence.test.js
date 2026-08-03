@@ -87,4 +87,11 @@ A.ok(/if\s*\(error\)[\s\S]{0,2200}persistPartial\(ws,\s*acc\)[\s\S]{0,900}error:
 A.ok(/catch\s*\(e\)[\s\S]{0,1500}persistPartial\(ws,\s*acc\)[\s\S]{0,900}error:\s*true/.test(src),
   'a thrown stream disconnect stores partial text before its durable failure marker');
 
+/* ---------- 7. persisted hierarchy replaces the lead-only tool illusion ---------- */
+A.ok(/card\.dataset\.runId\s*=\s*presenceRunId/.test(src), 'resolved presence is joined to its durable run row by runId');
+A.ok(/function\s+hydrateRunTelemetry[\s\S]{0,2200}entry\.children/.test(src), 'run completion hydrates lead + worker hierarchy from persisted rows');
+A.ok(/workerCalls[\s\S]{0,800}reasoningEffort/.test(src), 'summary exposes worker call count plus actual model/effort');
+A.ok(/function\s+telemetryRun[\s\S]{0,1300}t\.ms/.test(src), 'expanded hierarchy renders each persisted per-tool duration');
+A.ok(/hydrateRunTelemetry\(ws,\s*entry,\s*runId\)[\s\S]{0,300}if\s*\(!arts\.length/.test(src), 'clean artifact-less runs still hydrate telemetry before the quiet recap return');
+
 A.report('comms-presence.test');
