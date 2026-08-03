@@ -498,6 +498,7 @@ test/poweruser-shell-repairs.test.js
 test/release-bump.test.js
 test/release-cut.test.js
 test/opensource-readiness.test.js
+test/source-release-mirror.test.js
 test/release-train-provenance.test.js
 test/desktop-build-macos-notarization.test.js
 test/release-train-macos-trust.test.js
