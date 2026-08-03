@@ -105,6 +105,51 @@ W.rename(nm2.id, W.deriveTitle('plan a weekend trip to portland with a food focu
 A.eq(W.needsModelTitle(nm2.id), false, 'a MANUAL rename to the exact placeholder text still locks it (titleAuto wins)');
 A.eq(W.needsModelTitle('ws_no_such'), false, 'unknown id is simply not eligible');
 
+/* ---------- isLowSignal + titleBasis: small talk never becomes a title ---------- */
+A.eq(W.isLowSignal('hey'), true, 'a bare greeting is low-signal');
+A.eq(W.isLowSignal('  Hi!!  '), true, 'punctuation/case around a greeting does not add signal');
+A.eq(W.isLowSignal('good morning, how are you doing'), true, 'a whole sentence of pleasantries is still low-signal');
+A.eq(W.isLowSignal('heyyy'), true, 'stretched greetings ("heyyy") are still greetings');
+A.eq(W.isLowSignal('ok thanks'), true, 'pure acks are low-signal');
+A.eq(W.isLowSignal('hey go do research on business ideas'), false, 'one content word flips the message substantive');
+A.eq(W.isLowSignal('summarize the news'), false, 'a terse directive is substantive');
+A.eq(W.isLowSignal(''), true, 'empty is low-signal');
+A.eq(W.isLowSignal('???'), true, 'punctuation-only is low-signal');
+
+W.reset();
+const tb = W.create(null);
+tb.history.push({ role: 'user', content: 'hey', ts: 1 });
+A.eq(W.titleBasis(tb.id), null, 'an all-small-talk session has NO title basis (no model call to make)');
+A.eq(W.titleBasis(tb.id, 'hi there'), null, 'a low-signal fallback text does not manufacture a basis');
+A.eq(W.titleBasis(tb.id, 'check why starnessos.com does not resolve'), 'check why starnessos.com does not resolve',
+  'a substantive fallback (this turn, not yet in history) becomes the basis');
+tb.history.push({ role: 'user', content: 'check why starnessos.com does not resolve', ts: 2 });
+tb.history.push({ role: 'user', content: 'thanks', ts: 3 });
+tb.history.push({ role: 'user', content: 'now check the www subdomain too', ts: 4 });
+const basis = W.titleBasis(tb.id);
+A.ok(basis.indexOf('starnessos.com') >= 0 && basis.indexOf('www subdomain') >= 0, 'basis = founding directive + latest substantive turns');
+A.ok(basis.indexOf('hey') !== 0 && basis.indexOf('thanks\n') < 0, 'small-talk turns are skipped from the basis');
+
+/* ---------- healing: a weak model title (minted from a small-talk opener) upgrades ONCE real work appears ---------- */
+W.reset();
+const hw = W.create(null);
+hw.history.push({ role: 'user', content: 'hey', ts: 1 });
+W.autoTitle(hw.id, 'hey');
+A.eq(W.needsModelTitle(hw.id), true, 'the machine placeholder is always upgrade-eligible');
+W.retitle(hw.id, 'Casual Greeting Exchange');   // what a pre-upgrade build minted from "hey"
+A.eq(W.needsModelTitle(hw.id), false, 'a greeting-only session does NOT churn retries on its weak title');
+hw.history.push({ role: 'user', content: 'research the best budget mechanical keyboards', ts: 2 });
+A.eq(W.needsModelTitle(hw.id), true, 'once real work lands, the weak small-talk title earns a healing upgrade');
+A.ok(W.retitle(hw.id, 'Budget Keyboard Research', true) === true, 'the healing upgrade applies (strong)');
+A.eq(hw.titleStrong, true, 'a strong retitle marks the terminal rung');
+A.eq(W.needsModelTitle(hw.id), false, 'a strong title never re-enters the upgrade ladder');
+hw.history.push({ role: 'user', content: 'also compare switch types in depth', ts: 3 });
+A.eq(W.needsModelTitle(hw.id), false, 'later substantive turns do not churn a strong title');
+const dumpedStrong = JSON.parse(JSON.stringify(W.serialize()));
+W.init(dumpedStrong);
+A.eq(W.get(hw.id).titleStrong, true, 'titleStrong survives a save/load round-trip');
+A.eq(W.needsModelTitle(hw.id), false, 'the strong lock still holds after reload');
+
 /* ---------- hybrid-honest lanes: a real run auto-advances todo->active ---------- */
 W.reset();
 const c = W.create('write a report');
