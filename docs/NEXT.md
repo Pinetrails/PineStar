@@ -1,31 +1,53 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-08-03 - v0.9.0 WAVE A PROOF RAILS (`agent/release-090-parity-plan`)
+## 2026-08-03 - v0.9.0 WAVE A EXECUTABLE VERDICT (`agent/release-090-parity-plan`)
 
-READY TO MERGE. `fc7f594c` freezes Hermes Agent v0.19.1/tag `v2026.7.30` at commit
-`d25e2dbdbc40b49808c0a0e9cfed21cc90cffab3`, classifies all 37 advertised StarNet claim
-families, and adds one redacted `starnet.eval.receipt.v1` format for source and installed-candidate
-evidence. The 10 run-boundary fault pack and 32 shared workload pack are active and fail closed on
-missing trajectories. Their gates enforce 100% critical success, at least 95% overall, a maximum
-five-point reference gap, and zero false-done, wrong-destination, duplicate-mutation, or authority
-escape events. `npm run eval:contract`, `eval:fault`, `eval:parity`, and `eval:baseline` are the
-operator commands.
+GATES NOT MET. The installed StarNet 0.8.5 desktop is now cryptographically bound to executable
+SHA-256 `26c94a802e81a317fa385b63168ccbe44ca7722615884d97a9159cfafc158f85`, embedded commit
+`865d87fbb9c2f91e5e47ca0368a90c7bee2552ec`, tree
+`a2f58d289ba282088d294a3a3089bf0cce4cbe6f`, live health describe
+`snapshot/preupdate-beginner-20260802-0837-3-g865d87fb`, and 4,212 byte-matching shipped runtime
+files. The frozen Hermes v0.19.1 comparator is an isolated clean checkout and environment with Python
+SHA-256 `a026b3c1ea6da6fd570355f92bcee990dd400f51ec497e5499e6abaf05cf150d`. The prior handoff
+mistook annotated tag object `d25e2dbdbc40b49808c0a0e9cfed21cc90cffab3` for a commit; the actual
+peeled commit is `cc4cab2f592e60a197e796506de9168f74baf3ea`, tree
+`fcdc6093750ed0a3a556e20927799d7245ba65e4`. Both executable identities were Authenticode
+unsigned, so these are hash/provenance bindings, not publisher-signature claims.
 
-All seven previously open P2 bugs were stale against fixes already on trunk; the register now binds
-them to `fdbb12a2`, `b315063b`, `226cec3c`, and `f4d03511` with mechanism verdicts and reports
-0 P0 / 0 P1 / 0 P2 open. The Field Manual now exposes REPLAY QUICK TOUR, closes itself before the
-real Dialogue lesson starts, and preserves first-step progress. Glossary coverage adds everyday
-harness terms and a gate requiring every literal `data-hint` in the shipped UI to resolve.
+The signed installed-candidate fault receipt is red: 700/1,000 attempts passed, with zero false-done,
+wrong-destination, duplicate-mutation, or authority-escape events. Seven boundaries passed 100/100.
+Three failed 100/100: unmatched read intent is currently classified `needs_review` instead of
+resume-once; compaction rotation lacks a kill-at-rotation adapter; routine/subagent finalization lacks
+a restart-boundary proof of exactly one result, cost charge, and original-destination delivery. This
+fails the frozen 100% critical gate. Receipt signatures use Ed25519 key ID
+`29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`.
 
-Verification: focused eval, onboarding, mirror, P2 regression, register, JSON, and syntax gates are
-green; `test:fast` is 497/497; full `test:http` is green. A seeded returning station proved the
-manual replay control, preserved visible checklist progress, manual-to-Dialogue handoff, live UPLINK,
-and zero browser console errors. The clean 15-sample v0.8.5 source receipt is bound to `fc7f594c`
-with `dirty:false`: bridge pack median 5439.7 ms, evaluator median 0.37 ms, and Node startup median
-60.822 ms. It is deliberately `candidateBound:false`: installed cold boot, first token/tool/useful
-artifact, 48-hour resource behavior, 100x fault trajectories, three-run shared workloads, and the
-real Hermes comparison remain the next proof wave. No provider run, external message, push, PR,
-merge, deploy, publish, credential, or production-data change was performed.
+The same-model preflight reached `openai-codex/gpt-5.6-sol` in both exact harnesses. Hermes returned
+the requested probe successfully (first output 15,859.1 ms; total 24,051.1 ms). StarNet's installed
+sidecar booted in 4,712.9 ms but its provider run returned an empty HTTP 200/error outcome with no
+first token and zero tokens. This single failed preflight is not a comparative performance baseline;
+desktop cold boot, useful-artifact latency, and the 48-hour soak remain unmeasured.
+
+SECURITY ACTION REQUIRED before any provider rerun: a diagnostic command rendered an isolated copy
+of the StarNet OAuth token file into local task output. The isolated StarNet/Hermes credential copies
+were deleted and their absence verified; the original user credential stores were not modified. The
+StarNet ChatGPT connection must be revoked/re-authenticated because the exposed refresh token must be
+treated as compromised. The preparation script now refuses to copy token, auth, or `.env` files.
+
+The signed parity receipt is also red and records 96 not-executed failures per harness. Its displayed
+0%/0%/0-point figures are availability sentinels, not harness scores: credential rotation is required,
+and the 32 frozen task declarations still lack concrete executable fixtures and host-grounded graders.
+Therefore neither the 95% overall nor the at-most-five-point parity gate has been evaluated successfully.
+Next: rotate/re-authenticate; implement the 32 scenario adapters/fixtures and independent graders; close
+or explicitly re-contract the three fault boundaries; then rerun three attempts per harness on the same
+model and immutable binaries, followed by installed cold-start/useful-artifact measurements and the 48-hour
+soak. Redacted evidence indexes are in `docs/baselines/v0.8.5-wave-a-executable-verdict.json`.
+
+The earlier Wave A work remains valid: all seven registered P2 findings are closed against trunk, the
+Field Manual replay/onboarding handoff and glossary coverage are strengthened, and the source-level test
+and performance rails are green. The executable-receipt comparison suite is green at 28 assertions,
+claims planning authority is PASS at 37 claims / 190 locked files, the evidence-secret scanner is green,
+and `test:fast` is 497/497. Those facts do not override this executable gate failure.
 
 ## 2026-08-02 - v0.9.0 RELIABILITY PROOF PLAN (`agent/release-090-parity-plan`)
 
