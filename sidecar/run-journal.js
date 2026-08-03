@@ -252,6 +252,13 @@ function makeRunJournal(opts) {
     toolIntent(runId, payload) { return record(runId, 'tool_intent', payload); },
     toolResult(runId, payload) { return record(runId, 'tool_result', payload); },
     finish(runId, payload) { return record(runId, 'finish', payload); },
+    finishAndRetire(runId, payload) {
+      record(runId, 'finish', payload);
+      const state = inspect(runId);
+      if (state.status !== 'finished') return { retired: false, state };
+      const retired = this.remove(runId);
+      return { retired: !!retired, state };
+    },
     // Retirement is a safety boundary, not a raw unlink. A terminal record does not settle an unmatched tool
     // intent: that journal is the only durable evidence that a side effect may have happened, so ordinary host
     // teardown must retain it for review. Corrupt/unreadable journals also fail closed and remain recoverable.

@@ -18,6 +18,7 @@ function makeRunExecutionState(options) {
   const toolTraceById = new Map();
   let checkpointTurn = 0;
   let journalStarted = false;
+  let journalFailure = null;
 
   function latchTaint(source) {
     if (!taintedBy && source) taintedBy = String(source);
@@ -85,6 +86,21 @@ function makeRunExecutionState(options) {
     return toolTrace.map(rec => Object.assign({}, rec));
   }
 
+  function failJournal(error) {
+    if (!journalFailure) journalFailure = String((error && error.message) || error || 'unknown journal failure').slice(0, 500);
+    return {
+      ok: false,
+      isError: true,
+      summary: 'recovery-journal-failed',
+      content: 'The tool returned, but its durable recovery result could not be recorded. The outcome requires review; do not repeat the action or claim completion.',
+      control: {
+        final: true,
+        reason: 'error',
+        text: 'I stopped because the durable recovery boundary failed after a tool call. That tool outcome requires review, so I cannot safely claim the task completed.'
+      }
+    };
+  }
+
   return {
     taintedBy: () => taintedBy,
     latchTaint,
@@ -102,6 +118,9 @@ function makeRunExecutionState(options) {
     advanceCheckpoint: () => { checkpointTurn++; return checkpointTurn; },
     journalStarted: () => journalStarted,
     startJournal: () => { journalStarted = true; },
+    journalFailed: () => !!journalFailure,
+    journalFailure: () => journalFailure,
+    failJournal,
     observeArtifact,
     artifactList
   };

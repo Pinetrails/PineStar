@@ -37,6 +37,11 @@ A.eq(state.advanceCheckpoint(), 1, 'checkpoint sequence advances explicitly');
 A.ok(!state.journalStarted(), 'journal starts false');
 state.startJournal();
 A.ok(state.journalStarted(), 'journal start latches true');
+const journalStop = state.failJournal(new Error('disk full after tool execution'));
+A.ok(state.journalFailed(), 'a journal boundary failure latches for the rest of the run');
+A.ok(journalStop.isError && journalStop.control && journalStop.control.final && journalStop.control.reason === 'error',
+  'journal failure returns a host-terminal error result instead of allowing a done synthesis');
+A.ok(/requires review/i.test(journalStop.content), 'the model-visible result names the uncertain outcome');
 state.observeArtifact({ toolName: 'fs.write' });
 A.eq(state.artifactList(), [{ toolName: 'fs.write' }], 'artifact collector is owned by the run state');
 

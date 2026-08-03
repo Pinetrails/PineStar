@@ -13341,16 +13341,12 @@ async function runOnce(o) {
         // that acknowledgement, then (and only then) is the recovery copy removed. A throw leaves it discoverable.
         if (title) transcriptStore.appendStrict({ streamId: o.streamId, agentId, role: 'user', content: title, sourceRunId: runId });
         if (result && Array.isArray(result.messages)) transcriptStore.appendNewStrict(o.streamId, agentId, result.messages, { sourceRunId: runId });
-        runJournal.finish(runId, {
+        const retirement = runJournal.finishAndRetire(runId, {
           reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd,
           transcriptAck: true
         });
-        const retired = runJournal.remove(runId);
-        if (!retired) {
-          // Make the retained uncertainty visible immediately, not only after the next process restart.
-          const recovery = runJournal.inspect(runId);
-          recoveredRunJournals = recoveredRunJournals.filter(r => r && r.runId !== runId).concat([recovery]);
-          console.warn('[run-journal] retained unsettled run for review:', runId, recovery.status);
+        if (!retirement.retired) {
+          console.warn('[run-journal] retained unsettled run for review:', runId, retirement.state && retirement.state.status);
         }
       } else {
         if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });

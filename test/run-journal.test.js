@@ -54,10 +54,19 @@ const unknownIo = memoryIo();
 const unknown = J.makeRunJournal({ io: unknownIo, clock: { now: () => 2 } });
 unknown.begin({ runId: 'unknown', messages: [] });
 unknown.toolIntent('unknown', { callId: 'side-effect', name: 'shell.exec', mutating: true });
-unknown.finish('unknown', { reason: 'error' });
-A.eq(unknown.inspect('unknown').status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
-unknown.remove('unknown');
-A.eq(unknownIo.files.has('unknown'), true, 'ordinary retirement cannot erase an unknown side-effect outcome');
+const uncertainRetirement = unknown.finishAndRetire('unknown', { reason: 'error', transcriptAck: true });
+A.eq(uncertainRetirement.retired, false, 'an unmatched side-effect intent is never retired');
+A.eq(uncertainRetirement.state.status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
+A.ok(unknownIo.files.has('unknown'), 'the review-required journal remains durable and discoverable');
+
+const retiredIo = memoryIo();
+const retired = J.makeRunJournal({ io: retiredIo, clock: { now: () => 2 } });
+retired.begin({ runId: 'retired', messages: [] });
+retired.toolIntent('retired', { callId: 'read', name: 'station.inspect', mutating: false });
+retired.toolResult('retired', { callId: 'read', ok: true, content: 'ok' });
+const cleanRetirement = retired.finishAndRetire('retired', { reason: 'done', transcriptAck: true });
+A.eq(cleanRetirement.retired, true, 'a fully paired, transcript-acknowledged journal retires');
+A.eq(retiredIo.files.has('retired'), false, 'clean retirement removes the redundant journal');
 
 const readIo = memoryIo();
 const read = J.makeRunJournal({ io: readIo, clock: { now: () => 2 } });
