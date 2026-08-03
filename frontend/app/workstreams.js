@@ -84,6 +84,10 @@
       // stream's first run. A manual rename() flips it false so the upgrade (and any future auto-title) can
       // never stomp a title the human chose. Defaults true; preserved verbatim through init()'s re-normalize.
       titleAuto: opts.titleAuto != null ? !!opts.titleAuto : true,
+      // true = the current auto title was model-written FROM substantive content — the terminal state of
+      // the auto-title ladder (needsModelTitle stops here). False/absent (incl. every pre-upgrade save)
+      // leaves a small-talk-born title eligible for ONE healing upgrade once the session does real work.
+      titleStrong: !!opts.titleStrong,
       // /goal AUTONOMOUS LOOP state (chat.js owns the shape via GoalLoop.normalize) — carried through verbatim so a
       // standing goal survives a reload/switch exactly like the thread history. Undefined for a stream with no loop.
       goalLoop: (opts.goalLoop && typeof opts.goalLoop === 'object') ? opts.goalLoop : undefined,
@@ -273,6 +277,32 @@
     if (sp > 0) cut = cut.slice(0, sp);             // never cut mid-word
     return cut.replace(/[\s,.;:!?-]+$/, '') + '…';
   }
+  // SMALL-TALK DETECTOR: true when every word of the message is greeting/ack filler ("hey", "good
+  // morning", "how are you", "ok thanks") — i.e. there is nothing here a title could be made OF.
+  // One content word ("hey, research keyboards") flips the message substantive.
+  const FILLER_WORD = /^(?:h+e+y+a*|h+i+y*a*|he+l+o+|yo+|su+p+|howdy|hola|greetings|gm|gn|good|morning|afternoon|evening|night|day|there|and|or|so|well|just|whats|what's|up|new|how|hows|how's|are|is|it|its|it's|going|goes|you|ya|u|r|doing|been|wyd|hbu|wbu|test|testing|ping|ok+|o+k+a+y+|k+|cool|nice|great|awesome|sweet|wow|lol|lmao|ha+|he+h+e*|hm+|mm+|um+|uh+|yes|yea+h*|yep|yup|no+|nah|nope|sure|thanks|thank|thx|ty|tysm|please|pls|plz|dude|bro|man|buddy|friend|wassup|anyone|anybody|home)$/;
+  function isLowSignal(text) {
+    const t = String(text == null ? '' : text).toLowerCase().replace(/[^a-z0-9\s']/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t) return true;
+    return t.split(' ').every(w => FILLER_WORD.test(w));
+  }
+
+  // What a model title should be written FROM: a compact digest of the session's SUBSTANTIVE user
+  // messages (small-talk filler skipped) — the founding directive plus the latest turns, so the title
+  // names what the session became, not whatever pleasantry happened to open it. Returns null when the
+  // session holds no substance yet: the caller must NOT spend a model call — the instant placeholder
+  // stays (an honest "hey" beats a minted "Casual Greeting Exchange" that locks in forever).
+  function titleBasis(id, fallbackText) {
+    const w = find(id);
+    const msgs = w ? (w.history || []).filter(m => m && m.role === 'user' && typeof m.content === 'string').map(m => m.content) : [];
+    let subs = msgs.filter(t => !isLowSignal(t));
+    if (!subs.length && fallbackText != null && !isLowSignal(fallbackText)) subs = [String(fallbackText)];
+    if (!subs.length) return null;
+    const pick = [];
+    for (const t of [subs[0]].concat(subs.slice(-2))) if (pick.indexOf(t) < 0) pick.push(t);
+    return pick.map(t => t.replace(/\s+/g, ' ').trim().slice(0, 300)).join('\n');
+  }
+
   // name an untitled, non-General stream from its first user message (no-op otherwise). This is the INSTANT
   // placeholder (first-sentence truncation); retitle() later upgrades it to a model-written summary.
   function autoTitle(id, text) {
@@ -290,20 +320,28 @@
   function needsModelTitle(id) {
     const w = find(id);
     if (!w || w.id === generalId || w.titleAuto === false || w.title == null) return false;
+    if (w.titleStrong) return false;   // already model-titled from real content — the ladder's terminal rung
     const first = (w.history || []).find(m => m && m.role === 'user' && typeof m.content === 'string');
     if (!first) return false;
-    return w.title === deriveTitle(first.content);
+    if (w.title === deriveTitle(first.content)) return true;
+    // HEAL a weak model title: a session OPENED with small talk wears whatever the model made of "hey"
+    // (pre-upgrade builds minted "Casual Greeting Exchange"-style titles from it). Once the session
+    // holds a substantive user message, it earns one upgrade pass — which lands strong and stops here.
+    return isLowSignal(first.content)
+      && (w.history || []).some(m => m && m.role === 'user' && typeof m.content === 'string' && !isLowSignal(m.content));
   }
   // UPGRADE an auto-derived placeholder to a concise model-written summary (chat.js fires this once, after a
   // new stream's first run, passing a 3-6 word LLM title). Honors the human: a stream whose title was MANUALLY
   // renamed (titleAuto === false) is never stomped, and General is never titled. Returns false (no change) when
   // locked / General / the summary is empty — so a model hiccup just leaves the instant placeholder in place.
-  function retitle(id, title) {
+  function retitle(id, title, strong) {
     const w = find(id);
     if (!w || w.id === generalId || w.titleAuto === false) return false;
     const tt = clamp(String(title == null ? '' : title).trim().replace(/\s+/g, ' '), 80);
     if (!tt) return false;
-    w.title = tt; w.titleAuto = true; return true;
+    w.title = tt; w.titleAuto = true;
+    if (strong) w.titleStrong = true;   // written from substantive content — no further auto passes
+    return true;
   }
 
   // ---------- runs · deliverables · cost (filed onto the stream that spawned them) ----------
@@ -490,7 +528,7 @@
     previewArchive, archivePreview, canUndo, undoLast,
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markUnread, markRead, unread: isUnread,
-    autoTitle, retitle, deriveTitle, needsModelTitle,
+    autoTitle, retitle, deriveTitle, needsModelTitle, isLowSignal, titleBasis,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
     LANES
