@@ -40,24 +40,79 @@ const field = [
 A.eq(Recommend.pick(field).kind, 'study', 'the best candidate speaks regardless of list order');
 A.eq(Recommend.pick(field.slice().reverse()).kind, 'study', 'the pick is order-independent');
 
-/* ── 4. tier stability: no modifier may leapfrog a priority tier ── */
-const hotCuriosity = { kind: 'curiosity', why: 'x', dim: 'goals', streak: 99 };
-const coldTrust = { kind: 'trust', why: 'y', declines: 99 };
+/* ── 4. BAND STABILITY: no stack of modifiers may leapfrog a BAND ──
+   The bands are the part of priority that is a LAW. Inside a band, priority is only a tie-bias (§4b). */
 const uRead = { dims: { goals: { weight: 1, conf: 0 }, style: { weight: 0.2, conf: 0.9 } } };
+A.eq(Recommend.BANDS.length, 4, 'four bands: memory · the turn-ins · rate · the gentle asides');
+A.eq(Recommend.BANDS[0], ['memory'], 'the reflection deck stands alone at the top');
+A.eq(Recommend.BANDS[1], ['study', 'arc', 'trust', 'thread'], 'the turn-ins share one band');
+A.eq(Recommend.BANDS[2], ['rate'], 'the rating of work just done has its own band');
+A.eq(Recommend.BANDS[3], ['suggest', 'seed', 'routine', 'recruit', 'curiosity'], 'the five gentle channels share the bottom band');
+A.eq(Recommend.PRIORITY, ['memory', 'study', 'arc', 'trust', 'thread', 'rate', 'suggest', 'seed', 'routine', 'recruit', 'curiosity'],
+  'the flattened band table IS the old priority order (banding changed the arithmetic, never the pecking order)');
+A.eq(Recommend.bandOf('curiosity'), 3, 'bandOf reports a kind’s band');
+A.eq(Recommend.bandOf('mystery'), -1, 'an unknown kind belongs to no band');
+A.eq(Recommend.sameBand('suggest', 'curiosity'), true, 'two gentle channels share a band');
+A.eq(Recommend.sameBand('arc', 'curiosity'), false, 'a turn-in and a nudge never do');
+A.ok(Recommend.MOD_CAP * 2 < Recommend.BAND_GAP_MIN,
+  'the TOTAL modifier budget is strictly under the smallest gap between adjacent bands (' + Recommend.MOD_CAP + '×2 < ' + Recommend.BAND_GAP_MIN + ')');
+const hotCuriosity = { kind: 'curiosity', why: 'x', dim: 'goals', streak: 99, strength: 1, quality: Recommend.QUALITY_CAP };
+const coldTrust = { kind: 'trust', why: 'y', declines: 99, strength: 0, quality: Recommend.QUALITY_FLOOR };
 A.eq(Recommend.pick([hotCuriosity, coldTrust], uRead).kind, 'trust',
-  'a maxed-out low-priority candidate still loses to a penalized higher-priority one');
-A.ok(Recommend.VOI_MAX < Recommend.BASE_STEP, 'the VOI term is bounded below one priority tier');
+  'a maxed-out gentle candidate still loses to a bottomed-out turn-in');
+/* EXHAUSTIVE: every kind, at every extreme of every modifier, against every other kind. A cross-band inversion
+   at ANY corner of the modifier space is a broken law, not a tuning miss — so the corners are enumerated. */
+const EXT = { streak: [0, 99], declines: [0, 99], strength: [null, 0, 1], quality: [null, Recommend.QUALITY_FLOOR, Recommend.QUALITY_CAP], dim: [null, 'goals'] };
+const corners = [];
+for (const streak of EXT.streak) for (const declines of EXT.declines) for (const strength of EXT.strength)
+  for (const quality of EXT.quality) for (const dim of EXT.dim) corners.push({ streak, declines, strength, quality, dim });
+let crossBandInversions = 0, sameBandSwaps = 0, compared = 0;
+for (const hi of Recommend.PRIORITY) for (const lo of Recommend.PRIORITY) {
+  if (Recommend.PRIORITY.indexOf(hi) >= Recommend.PRIORITY.indexOf(lo)) continue;
+  for (const a of corners) for (const b of corners) {
+    const ca = Object.assign({ kind: hi, why: 'a' }, a), cb = Object.assign({ kind: lo, why: 'b' }, b);
+    const won = Recommend.pick([ca, cb], uRead);
+    compared++;
+    if (won === cb) { if (Recommend.sameBand(hi, lo)) sameBandSwaps++; else crossBandInversions++; }
+  }
+}
+A.eq(crossBandInversions, 0, 'across ' + compared + ' modifier corners, a lower BAND never once outranked a higher one');
+A.ok(sameBandSwaps > 0, 'and within a band the modifiers really do reorder (' + sameBandSwaps + ' swaps) — the scorer is not inert');
+A.ok(Recommend.VOI_MAX < Recommend.BAND_GAP_MIN, 'the VOI term is bounded below one band gap');
 
-/* ── 5. the VOI term orders WITHIN a tier, reusing weight × (1 − conf) ── */
+/* ── 4b. THE SCORER IS NOT DECORATION: same-band reordering, reachable by the REAL pass ──
+   The pass emits at most ONE candidate per kind, so the only reorder that can ever happen live is between two
+   DIFFERENT kinds of the same band. These are exactly those cases. */
+// a dud-channel suggestion loses its default lead to a routine nudge whose accepted offers really produced work.
+const dudSuggest = { kind: 'suggest', why: 'you’ve told me about your goals', quality: Recommend.QUALITY_FLOOR };
+const goodRoutine = { kind: 'routine', why: 'you’ve launched the digest 4 times by hand', quality: Recommend.QUALITY_CAP };
+A.eq(Recommend.pick([dudSuggest, goodRoutine]).kind, 'routine',
+  'a channel with a real record of duds loses its rank lead to one with a real record of hits');
+A.eq(Recommend.pick([{ kind: 'suggest', why: 'a' }, { kind: 'routine', why: 'b' }]).kind, 'suggest',
+  '…and with NOTHING known about either, the rank order is the tie-bias (a cold station is unchanged)');
+// thin evidence speaks later than well-corroborated evidence in the same band
+A.eq(Recommend.pick([{ kind: 'seed', why: 'a', strength: 0.05 }, { kind: 'routine', why: 'b', strength: 1 }]).kind, 'routine',
+  'a one-off seed shape loses to a well-grounded routine nudge in the same band');
+// THE SPINE-ERA VOI PROMOTION, locked for real this time: a blank high-weight dimension makes the get-to-know-you
+// question the most valuable thing the station can say, and it beats a recruit pitch it normally sits below.
+const voiRead = { dims: { goals: { weight: 1, conf: 0 } } };
+A.eq(Recommend.pick([{ kind: 'recruit', why: 'your crew has no researcher' }, { kind: 'curiosity', why: 'i still don’t know your goals', dim: 'goals' }], voiRead).kind,
+  'curiosity', 'a maximum-VOI question outranks the recruit pitch above it (the promotion the clamp had silently killed)');
+A.eq(Recommend.pick([{ kind: 'recruit', why: 'your crew has no researcher' }, { kind: 'curiosity', why: 'i still don’t know your style', dim: 'style' }], uRead).kind,
+  'recruit', '…and a LOW-value question does not — the promotion is earned by the gap, not granted by the kind');
+
+/* ── 5. the VOI term orders WITHIN a band, reusing weight × (1 − conf) ── */
 const wide = { kind: 'curiosity', why: 'a', dim: 'goals' };
 const narrow = { kind: 'curiosity', why: 'b', dim: 'style' };
 A.ok(Recommend.score(wide, uRead) > Recommend.score(narrow, uRead),
   'the dimension with the larger weight × (1 − conf) gap scores higher');
-A.eq(Recommend.pick([narrow, wide], uRead).why, 'a', 'the higher-VOI question wins its own tier');
+A.eq(Recommend.pick([narrow, wide], uRead).why, 'a', 'the higher-VOI question wins its own band');
 A.eq(Recommend.score(wide, null), Recommend.score({ kind: 'curiosity', why: 'a' }, null),
   'no understanding read → no VOI bonus (fail-open, never fabricated)');
 A.eq(Recommend.score({ kind: 'curiosity', why: 'a', dim: 'nope' }, uRead), Recommend.score({ kind: 'curiosity', why: 'a' }, uRead),
   'an unknown dimension contributes nothing');
+A.eq(Recommend.score({ kind: 'curiosity', why: 'a', dim: 'goals' }, { dims: { goals: { weight: null, conf: null } } }),
+  Recommend.score({ kind: 'curiosity', why: 'a' }), 'an UNREADABLE dimension contributes nothing either (null is not zero)');
 
 /* ── 6. streak and decline hooks are bounded ── */
 const plain = { kind: 'trust', why: 'w' };

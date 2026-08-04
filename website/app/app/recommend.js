@@ -28,12 +28,21 @@
                   accepted offers really produced. Neutral 1, floored at 0.5 so quality alone can never silence
                   a channel — a dud channel gets quieter, never mute.
 
-   Scoring is deterministic and TIER-STABLE ON PURPOSE. The per-kind base tier is BASE_STEP apart and the SUM of
-   every modifier is clamped to ±BASE_STEP/2 (MOD_CAP) — so the best a tier can score is exactly the worst the
-   tier above it can score, and pick()'s rank tie-break hands that tie to the higher priority. Strength and
-   quality therefore reorder candidates WITHIN a priority band and can never move one across a band: priority
-   order stays the spine's law. (Clamping the SUM is what makes that claim true — bounding each modifier
-   individually, as this scorer originally did, still let two stacked modifiers cross a tier.) */
+   SCORING IS BANDED (redesigned 2026-08-04, after the scorer was proved INERT). It used to give every KIND its
+   own 100-wide tier and clamp the whole modifier sum to ±50 — which, since the pass emits at most one candidate
+   per kind and pick() breaks a dead tie by rank, meant no modifier could ever change the winner. Exhaustively
+   proved: 0 of 20000 random fields ranked differently from pure priority order. Strength, quality, VOI, streaks
+   and declines were decoration. The structure now has two levels:
+
+     BANDS  — memory alone, then the turn-ins [study arc trust thread], then rate, then the five gentle channels.
+              Bands are BAND_STEP apart and the whole modifier budget (MOD_CAP, ±) is strictly under half the
+              smallest gap between adjacent bands, so NO stack of modifiers can ever move a candidate across a
+              band. That is the part of the old law worth keeping: a gentle nudge can never outrank a turn-in.
+     RANK   — inside a band, kinds sit RANK_STEP apart. That step is a TIE-BIAS, not a wall: it decides who
+              speaks when the station knows nothing about either channel, and the modifiers are deliberately
+              large enough to overturn it. Same-band reordering is the POINT — a fresh, high-value curiosity
+              question may beat a stale recruit pitch, and a dud-channel suggestion may lose to a routine nudge
+              whose accepted offers really produced work. Priority is the default, not the verdict. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -46,7 +55,13 @@
      thread > rate > nudge); its tail expands the single 'nudge' slot family into the five gentle channels
      in the EXACT precedence the old wireCuriosity if/return ladder used (suggestion → seed → routine →
      recruitment → curiosity), so consolidating the ladder changes who can speak, never the pecking order. */
-  const PRIORITY = ['memory', 'study', 'arc', 'trust', 'thread', 'rate', 'suggest', 'seed', 'routine', 'recruit', 'curiosity'];
+  const BANDS = [
+    ['memory'],                                                 // the run reporting back — never an interruption
+    ['study', 'arc', 'trust', 'thread'],                        // the turn-ins: real evidence the run just produced
+    ['rate'],                                                   // the control the Commander is asking FOR
+    ['suggest', 'seed', 'routine', 'recruit', 'curiosity']      // the gentle asides, one shared slot
+  ];
+  const PRIORITY = BANDS.reduce((a, b) => a.concat(b), []);
 
   // channel id → the beat-slot kind beatcard.js arbitrates on. The five gentle channels all render through
   // chat.js's shared nudge() aside, so they share the one 'nudge' slot family.
@@ -68,13 +83,28 @@
   const ASK_EXEMPT = { memory: true, rate: true };
   function asksBudget(kind) { return !Object.prototype.hasOwnProperty.call(ASK_EXEMPT, String(kind || '')); }
 
-  const BASE_STEP = 100;   // one full priority tier
-  const VOI_MAX = 60;      // value-of-information term ceiling (< BASE_STEP: never flips a tier)
+  const BAND_STEP = 1000;  // the distance between two BANDS — a wall no modifier may climb
+  const RANK_STEP = 10;    // the distance between two kinds INSIDE a band — a tie-bias modifiers may overturn
+  const VOI_MAX = 60;      // value-of-information term ceiling
   const STREAK_STEP = 5;   // per corroborating signal…
   const STREAK_MAX = 20;   // …bounded
   const DECLINE_STEP = 15; // per recent decline…
   const DECLINE_MAX = 45;  // …bounded
-  const MOD_CAP = BASE_STEP / 2;   // the TOTAL modifier budget, ± — see the tier-stability note in the header
+  const MOD_CAP = 240;     // the TOTAL modifier budget, ± — see BAND_GAP_MIN below
+
+  // the base score of every kind, derived from the band table. Higher band + earlier inside it = higher base.
+  const BASE = {};
+  for (let b = 0; b < BANDS.length; b++) {
+    for (let i = 0; i < BANDS[b].length; i++) BASE[BANDS[b][i]] = (BANDS.length - b) * BAND_STEP + (BANDS[b].length - i) * RANK_STEP;
+  }
+  /* THE BAND WALL, computed rather than asserted: the smallest distance between the WEAKEST member of a band and
+     the STRONGEST member of the band below it. 2 × MOD_CAP must stay strictly under it — then a maxed-out
+     candidate in a lower band still cannot reach a bottomed-out candidate in a higher one, and priority survives
+     as the spine's law exactly where it matters. (Inside a band there is no wall, on purpose.) */
+  const BAND_GAP_MIN = BANDS.slice(1).reduce((min, band, i) => {
+    const upper = BANDS[i];
+    return Math.min(min, BASE[upper[upper.length - 1]] - BASE[band[0]]);
+  }, Infinity);
 
   /* THE TWO DAMPED MULTIPLIERS (quality loop, Q1/Q2). Both are read as multipliers in the [floor..1(..cap)]
      range and converted into a bounded WITHIN-TIER term: `MAX × (multiplier − 1)`. That shape is deliberate —
@@ -82,23 +112,31 @@
          spine. Absent state is never a penalty and never a bonus (fail-open, truthful telemetry);
        · a WEAK reading only ever SUBTRACTS. The station does not promote an offer for having strong evidence;
          it declines to shout about one whose evidence is thin. */
-  const STRENGTH_MAX = 30;      // the within-tier swing thin evidence may cost a candidate
-  const STRENGTH_FLOOR = 0.5;   // strength 0 → ×0.5 → −STRENGTH_MAX/2. Half a tier's modifier budget, no more.
-  const QUALITY_MAX = 30;       // the within-tier swing a channel's real outcome history may move it
+  const STRENGTH_MAX = 30;      // the within-BAND swing thin evidence may cost a candidate (3 rank steps)
+  const STRENGTH_FLOOR = 0.5;   // strength 0 → ×0.5 → −STRENGTH_MAX/2.
+  const QUALITY_MAX = 30;       // the within-BAND swing a channel's real outcome history may move it
   const QUALITY_FLOOR = 0.5;    // matches recquality.js Q_FLOOR — a dud channel is quieter, NEVER silent
   const QUALITY_CAP = 1.25;     // matches recquality.js Q_CAP — a proven channel earns a small, bounded edge
 
+  /* A READING THE STATION CANNOT PARSE IS NO READING AT ALL (fail-open, explicit). `Number('')`, `Number(false)`
+     and `Number(null)` are all a perfectly finite 0 — which used to hand an empty string or a `false` the FULL
+     thin-evidence penalty, i.e. the station punished a channel for a field it had failed to read. Anything that
+     is not a real, finite number reads NEUTRAL here, exactly like an absent field. */
+  function reading(v) {
+    if (v == null || v === '' || typeof v === 'boolean') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
   // an unreadable / absent multiplier is NEUTRAL (1) — the station never invents a reading it does not have.
   function damp(v, floor, cap) {
-    const n = Number(v);
-    if (v == null || !Number.isFinite(n)) return 1;
+    const n = reading(v);
+    if (n == null) return 1;
     return n < floor ? floor : n > cap ? cap : n;
   }
   // strength arrives 0..1 (recquality.js) and maps onto the [STRENGTH_FLOOR..1] multiplier band.
   function strengthDamp(candidate) {
-    const v = candidate && candidate.strength;
-    const n = Number(v);
-    if (v == null || !Number.isFinite(n)) return 1;
+    const n = reading(candidate && candidate.strength);
+    if (n == null) return 1;
     return STRENGTH_FLOOR + (1 - STRENGTH_FLOOR) * (n < 0 ? 0 : n > 1 ? 1 : n);
   }
   function qualityDamp(candidate) { return damp(candidate && candidate.quality, QUALITY_FLOOR, QUALITY_CAP); }
@@ -107,6 +145,14 @@
     const i = PRIORITY.indexOf(String(kind || ''));
     return i < 0 ? PRIORITY.length : i;
   }
+  // which BAND a kind sits in (-1 = unknown). Two candidates in the same band may be reordered by evidence; two
+  // in different bands never may.
+  function bandOf(kind) {
+    const k = String(kind || '');
+    for (let b = 0; b < BANDS.length; b++) if (BANDS[b].indexOf(k) >= 0) return b;
+    return -1;
+  }
+  function sameBand(a, b) { const x = bandOf(a); return x >= 0 && x === bandOf(b); }
   function slotKindOf(kind) {
     const k = String(kind || '');
     return Object.prototype.hasOwnProperty.call(SLOT_KIND, k) ? SLOT_KIND[k] : k;
@@ -131,22 +177,25 @@
     const dims = uRead && uRead.dims;
     const d = dims && dims[candidate.dim];
     if (!d) return 0;
-    const gap = Math.max(0, Math.min(1, num(d.weight) * (1 - num(d.conf))));
+    const w = reading(d.weight), c = reading(d.conf);
+    if (w == null || c == null) return 0;      // an unreadable dimension is no reading, never a fabricated gap
+    const gap = Math.max(0, Math.min(1, w * (1 - c)));
     return gap * VOI_MAX;
   }
 
   /* score(candidate, uRead) → number. Higher speaks first. Deterministic: no clock, no randomness. */
   function score(candidate, uRead) {
     if (!candidate) return 0;
-    const base = Number.isFinite(Number(candidate.base))
-      ? Number(candidate.base)
-      : (PRIORITY.length - rank(candidate.kind)) * BASE_STEP;
+    const explicit = reading(candidate.base);
+    const base = explicit != null ? explicit
+      : (Object.prototype.hasOwnProperty.call(BASE, String(candidate.kind || '')) ? BASE[String(candidate.kind)] : RANK_STEP);
     const streak = Math.min(STREAK_MAX, Math.max(0, num(candidate.streak)) * STREAK_STEP);
     const declines = Math.min(DECLINE_MAX, Math.max(0, num(candidate.declines)) * DECLINE_STEP);
     const mod = voi(candidate, uRead) + streak - declines
       + STRENGTH_MAX * (strengthDamp(candidate) - 1)
       + QUALITY_MAX * (qualityDamp(candidate) - 1);
-    // the whole modifier budget is clamped to half a tier, so no stack of modifiers can cross a priority band.
+    // the whole modifier budget is clamped well inside one BAND gap, so no stack of modifiers can cross a band.
+    // Inside a band it is deliberately larger than the rank step: that is what makes the modifiers mean anything.
     return base + Math.max(-MOD_CAP, Math.min(MOD_CAP, mod));
   }
 
@@ -192,7 +241,9 @@
 
   return {
     score, pick, whyLine, citable, rank, slotKindOf, asksBudget, strengthDamp, qualityDamp,
+    bandOf, sameBand,
     PRIORITY: PRIORITY.slice(), SLOT_KIND: Object.assign({}, SLOT_KIND),
-    BASE_STEP, VOI_MAX, SESSION_ASK_MAX, MOD_CAP, STRENGTH_MAX, STRENGTH_FLOOR, QUALITY_MAX, QUALITY_FLOOR, QUALITY_CAP
+    BANDS: BANDS.map(b => b.slice()), BASE: Object.assign({}, BASE), BAND_STEP, RANK_STEP, BAND_GAP_MIN,
+    VOI_MAX, SESSION_ASK_MAX, MOD_CAP, STRENGTH_MAX, STRENGTH_FLOOR, QUALITY_MAX, QUALITY_FLOOR, QUALITY_CAP
   };
 });

@@ -54,13 +54,16 @@ A.eq(Recommend.score({ kind: 'seed', why: 'x', strength: null }), Recommend.scor
   'an explicit null strength is neutral (fail-open: a cold store never penalizes)');
 A.ok(Recommend.score({ kind: 'seed', why: 'x', strength: 0 }) < Recommend.score({ kind: 'seed', why: 'x' }),
   'strength zero DISCOUNTS, and only discounts');
-// the tier law, now true of the SUM of every modifier and not merely of each one
+// the BAND law, true of the SUM of every modifier and not merely of each one
 const strongLow = { kind: 'curiosity', why: 'a', dim: 'goals', strength: 1, quality: Recommend.QUALITY_CAP, streak: 99 };
 const weakHigh = { kind: 'trust', why: 'b', strength: 0, quality: Recommend.QUALITY_FLOOR, declines: 99 };
 A.ok(Recommend.score(weakHigh) >= Recommend.score(strongLow),
-  'a maxed-out low-priority candidate can never outscore a minimum-scoring higher-priority one');
-A.eq(Recommend.pick([strongLow, weakHigh]).kind, 'trust', 'so priority still decides who speaks');
-A.ok(Recommend.MOD_CAP * 2 <= Recommend.BASE_STEP, 'the TOTAL modifier budget is bounded by one priority tier');
+  'a maxed-out gentle candidate can never outscore a minimum-scoring turn-in');
+A.eq(Recommend.pick([strongLow, weakHigh]).kind, 'trust', 'so the BAND still decides who speaks');
+A.ok(Recommend.MOD_CAP * 2 < Recommend.BAND_GAP_MIN, 'the TOTAL modifier budget is bounded inside one band gap');
+// …and INSIDE a band the same modifiers are decisive: strength alone reorders two gentle kinds
+A.eq(Recommend.pick([{ kind: 'seed', why: 'a', strength: 0 }, { kind: 'routine', why: 'b', strength: 1 }]).kind, 'routine',
+  'evidence strength reorders two channels of the same band (the whole point of measuring it)');
 
 /* ── 5. THE OUTCOME LOOP’S ARITHMETIC (Q2) ── */
 A.eq(RQ.Q_START, 1, 'a channel starts NEUTRAL — never presumed good or bad');
