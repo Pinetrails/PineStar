@@ -909,7 +909,10 @@ const Onboarding = (() => {
         try {
           const ids = (typeof World !== 'undefined' && World.heroCaps) ? (World.heroCaps('agent') || []) : [];
           const L = (typeof WorldModel !== 'undefined' && WorldModel.CAP_LABEL) ? WorldModel.CAP_LABEL : {};
-          return ids.map(c => ({ id: String(c), label: L[c] || String(c) }));
+          return ids.map(c => {
+            const id = (c && typeof c === 'object') ? c.objectType : c;
+            return id ? { id: String(id), label: L[id] || String(id) } : null;
+          }).filter(Boolean);
         } catch (_) { return []; }
       })();
       const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, projects: projT, bench: benchT, lost: lostT, year: yearT, dream: dreamT, capabilities: liveCaps, name: NAME };

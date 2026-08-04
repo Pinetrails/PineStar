@@ -11,6 +11,7 @@
 const A = require('./_assert.js');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const D = require('../frontend/app/dossier.js');
 
 const src = fs.readFileSync(path.join(__dirname, '../frontend/app/onboarding.js'), 'utf8');
@@ -171,6 +172,19 @@ A.ok(/let lostT = '';\s*\n\s*if \(!loose\) \{/.test(src.replace(/\r/g, '')),
 A.ok(/llmCall\(WakeMind\.buildMirror\(/.test(src), 'the mirror offers are generated, never canned');
 A.ok(/World\.heroCaps\('agent'\)/.test(src) && /capabilities:\s*liveCaps/.test(src),
   'the mirror sees the agent\'s REAL placed caps, not a hardcoded empty list');
+{
+  const start = src.indexOf('const liveCaps = (() => {');
+  const exprStart = src.indexOf('(() => {', start);
+  const exprEnd = src.indexOf('})();', exprStart);
+  A.ok(start >= 0 && exprStart >= 0 && exprEnd >= 0, 'the live capability projection remains executable as one bounded expression');
+  const expr = src.slice(exprStart, exprEnd + 4);
+  const caps = vm.runInNewContext(expr, {
+    World: { heroCaps: () => [{ objectType: 'dish' }, 'cabinet', null] },
+    WorldModel: { CAP_LABEL: { dish: 'WEB', cabinet: 'FILES' } }
+  });
+  A.eq(caps, [{ id: 'dish', label: 'WEB' }, { id: 'cabinet', label: 'FILES' }],
+    'the mirror unwraps World.heroCaps {objectType} records before resolving their power labels');
+}
 A.ok(/stack:\s*stackT/.test(src), 'the stated stack rides into the mirror/year/synthesis contexts');
 A.ok(/PitchStore\.armFirstMove\(grabbedMove\)/.test(src),
   'a grabbed offer arms the post-tour first move (the one below-gate starter allowed)');
