@@ -12,48 +12,70 @@ const A = require('./_assert.js');
 const fs = require('fs');
 const path = require('path');
 
-/* ---------- 1. source guard: cede to a due suggestion BEFORE curiosity, then return ---------- */
+/* ---------- 1. source guard: ONE collection pass, ONE arbiter, ONE winner ----------
+   The five old agent.run.end offer listeners plus the wireCuriosity if/return ladder are gone: every
+   proactive channel now stages a CANDIDATE and the pure spine (recommend.js) decides who speaks. The
+   precedence this suite has always protected (suggestion > seed > routine > recruitment > curiosity, one
+   beat per task) survives as Recommend.PRIORITY — locked behaviorally in recommend.test.js and asserted
+   against the live chat.js wiring here. */
 const chatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
-// V3 §7 note: CuriosityStore.consider() now ALSO appears earlier in the file (the session-opener hunt chip
-// + startHuntAsk) — this suite locks the POST-RUN slot's ordering, so the curiosity anchor is the first
-// occurrence INSIDE wireCuriosity, not in the whole file.
+const Recommend = require('../frontend/app/recommend.js');
+const iPass = chatSrc.indexOf('async function recommendPass');
+A.ok(iPass > 0, 'chat.js drives ONE post-run collection pass (the recommendation spine)');
 const iWireAnchor = chatSrc.indexOf('function wireCuriosity');
-A.ok(iWireAnchor > 0, 'chat.js still defines wireCuriosity (the post-run beat slot)');
-const iSuggest = chatSrc.indexOf('SuggestStore.willSuggest()');
-const iCuriosity = chatSrc.indexOf('CuriosityStore.consider()', iWireAnchor);
-A.ok(iSuggest > 0, 'chat.js consults SuggestStore.willSuggest() in the post-run beat slot');
-A.ok(iCuriosity > 0, 'chat.js still consults CuriosityStore.consider()');
-A.ok(iSuggest < iCuriosity, 'a due suggestion is checked BEFORE curiosity (it takes the one beat; curiosity stands down)');
-A.ok(/SuggestStore\.fire\(\);\s*return;/.test(chatSrc.slice(iSuggest, iCuriosity)), 'a due suggestion fires and RETURNS, so curiosity never also runs that task');
-// Slice 5: a seed offer sits BETWEEN suggestion and curiosity, with the same early-return discipline.
-const iSeed = chatSrc.indexOf('SeedStore.willPropose()');
-A.ok(iSeed > 0, 'chat.js consults SeedStore.willPropose() in the post-run beat slot');
-A.ok(iSuggest < iSeed, 'a seed offer is checked AFTER suggestion (suggestion keeps priority)');
-A.ok(iSeed < iCuriosity, 'a seed offer is checked BEFORE curiosity (seed takes the one beat over a get-to-know-you ask)');
-A.ok(/SeedStore\.propose\(\);\s*return;/.test(chatSrc.slice(iSeed, iCuriosity)), 'a seed offer fires and RETURNS, so curiosity never also runs that task');
-// lane D: the routine nudge sits BETWEEN seed and recruitment/curiosity, with the same early-return discipline.
-const iRoutineNudge = chatSrc.indexOf('RoutineNudgeStore.willPropose()');
-const iRecruit = chatSrc.indexOf('if (maybeRecruit()) return;');
-A.ok(iRoutineNudge > 0, 'chat.js consults RoutineNudgeStore.willPropose() in the post-run beat slot');
-A.ok(iSeed < iRoutineNudge, 'the routine nudge is checked AFTER the seed offer (rarer, more specific asks keep priority)');
-A.ok(iRecruit > 0 && iRoutineNudge < iRecruit, 'the routine nudge is checked BEFORE adaptive recruitment');
-A.ok(iRoutineNudge < iCuriosity, 'the routine nudge is checked BEFORE curiosity');
-A.ok(/RoutineNudgeStore\.propose\(\);\s*return;/.test(chatSrc.slice(iRoutineNudge, iCuriosity)), 'a routine nudge fires and RETURNS, so nothing stacks on that task');
-// the whole gentle-nudge slot stands down when a focused Dialogue panel (First Pitch / awakening / tutorial) is open.
-const iWire = chatSrc.indexOf('function wireCuriosity');
-A.ok(iWire > 0 && chatSrc.slice(iWire, iSuggest).indexOf('Dialogue.isOpen') >= 0, 'wireCuriosity stands down when a focused Dialogue panel is open (guard before any gentle nudge)');
-// Slice 8 minors (chat.js is DOM-flow, not node-loadable — locked at the source like the guards above):
-// the GENTLE-NUDGE half of the post-run slot fires ONLY for the HERO's runs — a summoned worker's clean run must
-// not trigger a hero nudge. S1 moved this gate DOWN (it used to be the handler's first line, which also starved
-// every specialist of the rate beat); the invariant it protects is unchanged and re-locked here by ORDER.
-const iHeroGate = chatSrc.indexOf('if (!isHeroRun) return;', iWire);
-const iArmRate = chatSrc.indexOf('armRateFallback(p.agentId', iWire);
-const iRateAttempt = chatSrc.indexOf("maybeStandaloneRate(p.agentId || 'agent', runId) === 'fired'", iWire);
-A.ok(iHeroGate > 0, 'wireCuriosity still gates the gentle-nudge slot on a hero run (a summoned worker run fires no hero nudge)');
-A.ok(iHeroGate < iSuggest, 'the hero gate precedes EVERY gentle nudge (suggestion/seed/curiosity/recruitment stay hero-only)');
-// S1 rate-starve fix: both halves of the rating path must be reachable for a NON-hero run, so they precede the gate.
-A.ok(iArmRate > 0 && iArmRate < iHeroGate, 'armRateFallback is armed BEFORE the hero gate (a specialist run is never starved of its retry)');
-A.ok(iRateAttempt > 0 && iRateAttempt < iHeroGate, 'the rate-the-work attempt precedes the hero gate (a specialist run can still be rated)');
+A.ok(iWireAnchor > iPass, 'chat.js still defines wireCuriosity (the single arm point for the pass)');
+const passBody = chatSrc.slice(iPass, iWireAnchor);
+A.ok(/setTimeout\(\(\) => \{ recommendPass\(p\); \}, BEAT_ARM_MS\)/.test(chatSrc.slice(iWireAnchor, iWireAnchor + 900)),
+  'a clean run end arms the pass ONCE (no per-channel arm delays left to race)');
+
+// the pass asks the PURE spine who speaks, and exactly one candidate ever fires
+A.ok(/const winner = Recommend\.pick\(cands, recUnderstanding\(\)\);/.test(passBody),
+  'the pass ranks every candidate through Recommend.pick (one voice, best-first, or silence)');
+A.eq((passBody.match(/winner\.fire\(\)/g) || []).length, 1, 'exactly ONE candidate fires per pass (never two beats)');
+A.ok(/if \(!winner\) return;/.test(passBody), 'no citable candidate means SILENCE, not a fallback beat');
+
+// every gentle channel is still consulted, and their old ladder order IS the spine's priority order
+A.ok(chatSrc.indexOf('SuggestStore.willSuggest()') > 0, 'chat.js consults SuggestStore.willSuggest()');
+A.ok(chatSrc.indexOf('SeedStore.willPropose()') > 0, 'chat.js consults SeedStore.willPropose()');
+A.ok(chatSrc.indexOf('RoutineNudgeStore.willPropose()') > 0, 'chat.js consults RoutineNudgeStore.willPropose()');
+A.ok(chatSrc.indexOf('RecruiterStore.topPick()') > 0, 'chat.js consults RecruiterStore.topPick()');
+A.ok(chatSrc.indexOf('CuriosityStore.consider()') > 0, 'chat.js still consults CuriosityStore.consider()');
+const ladder = ['suggest', 'seed', 'routine', 'recruit', 'curiosity'].map(k => Recommend.PRIORITY.indexOf(k));
+A.ok(ladder.every(i => i >= 0), 'every gentle channel has a place in the one priority order');
+A.eq(ladder, ladder.slice().sort((a, b) => a - b),
+  'suggestion > seed > routine > recruitment > curiosity — the ladder precedence survives as PRIORITY');
+A.ok(Recommend.PRIORITY.indexOf('suggest') < Recommend.PRIORITY.indexOf('curiosity'),
+  'a due suggestion outranks a get-to-know-you question (and only ONE of them can fire)');
+// the gentle channels share ONE beat-slot family, so the arbiter itself makes them mutually exclusive
+for (const k of ['suggest', 'seed', 'routine', 'recruit', 'curiosity']) {
+  A.eq(Recommend.slotKindOf(k), 'nudge', k + ' renders through the one gentle-aside slot');
+}
+
+// EVIDENCE OR SILENCE: every candidate builder must cite real state or return null
+for (const fn of ['arcCandidate', 'trustCandidate', 'rateCandidate', 'suggestCandidate', 'seedCandidate',
+                  'routineCandidate', 'recruitCandidate', 'curiosityCandidate', 'studyCandidate', 'threadCandidate']) {
+  const i = chatSrc.indexOf('function ' + fn);
+  A.ok(i > 0, 'chat.js defines ' + fn);
+  A.ok(/why:/.test(chatSrc.slice(i, i + 1800)), fn + ' carries a why — a channel that cannot cite stays silent');
+}
+
+// the whole pass stands down behind a focused panel / onboarding / intake / an unanswered task question
+const iMoment = chatSrc.indexOf('function momentBlocked');
+A.ok(iMoment > 0 && /studyBlocked\(\) \|\| taskQuestionLive\(\)/.test(chatSrc.slice(iMoment, iMoment + 260)),
+  'momentBlocked is the ONE stand-down set (the old study/arc guards + the live-question rule)');
+A.ok(/if \(momentBlocked\(\)\) return;/.test(passBody), 'the pass stands down on a blocked moment');
+const iBlocked0 = chatSrc.indexOf('function studyBlocked');
+A.ok(iBlocked0 > 0 && /Dialogue\.isOpen/.test(chatSrc.slice(iBlocked0, iBlocked0 + 700)),
+  'the shared stand-down set includes a focused Dialogue panel (First Pitch / awakening / tutorial)');
+
+// the gentle half stays HERO-ONLY; the rating does not (S1 specialist rate-starve fix, re-locked by order)
+A.ok(/if \(gentleOk && isHeroRun\) \{/.test(passBody), 'the gentle-nudge half of the pass is hero-only');
+const iArmInPass = passBody.indexOf('armRateFallback(agentId, runId)');
+A.ok(iArmInPass > 0 && iArmInPass < passBody.indexOf('if (momentBlocked()) return;'),
+  'armRateFallback is armed BEFORE every stand-down guard (a blocked moment cannot skip arming)');
+A.ok(passBody.indexOf('rateCandidate(agentId, runId)') > 0
+  && passBody.indexOf('rateCandidate(agentId, runId)') < passBody.indexOf('if (gentleOk && isHeroRun)'),
+  'the rate candidate is staged before the hero gate (a specialist run can still be rated)');
 // a new gentle beat retires any prior unanswered one (no cross-run nudge stacking), and clearNudge is exported
 // so the First Pitch can retire a live nudge before its focused panel opens over it.
 const iCurNudge = chatSrc.indexOf('function curiosityNudge');
@@ -151,9 +173,10 @@ const iArm = chatSrc.indexOf('function armRateFallback');
 A.ok(iArm > 0, 'chat.js defines the armRateFallback retry loop');
 A.ok(/'blocked'\s*&&\s*left > 0\)\s*attempt\(left - 1\)/.test(chatSrc.slice(iArm, iArm + 800)),
   'the fallback re-attempts while transiently blocked (a tutorial panel delays, never starves, the rating)');
-const iRunEnd = chatSrc.indexOf('armRateFallback(p.agentId');
-const iBusyGuard = chatSrc.indexOf('if (isBusy() || interview) return;', iWire);
-A.ok(iRunEnd > iWire && iBusyGuard > 0 && iRunEnd < iBusyGuard,
+// (the arm-before-guards ORDER inside the pass is locked in section 1; here we only re-assert it exists)
+const iRunEnd = chatSrc.indexOf('armRateFallback(agentId, runId)');
+const iBusyGuard = chatSrc.indexOf('if (momentBlocked()) return;');
+A.ok(iRunEnd > 0 && iBusyGuard > 0 && iRunEnd < iBusyGuard,
   'the fallback is armed BEFORE the post-run slot\'s stand-down guards (a blocked moment cannot skip arming)');
 // hole 1: proposed-but-empty batch (no deck AND no receipts) — the no-deck branch of routeProposalBatch must
 // release any reserved slot and STILL rate (the silent-save UX split receipts from the deck; the RATE guarantee
