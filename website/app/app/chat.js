@@ -4301,12 +4301,29 @@ const Chat = (() => {
      Fail-open at every step: no module / no store / nothing to read → null → NO adjustment at all, and the
      station ranks exactly as it did before the quality loop existed.
 
-     Two deliberate non-users:
-       · CURIOSITY carries no strength. It ASKS about a dimension rather than asserting one, so a blank dim is a
-         high-VALUE question, not weak evidence — that is precisely what the spine's VOI term already scores.
-       · STUDY carries no strength. Its evidence is the verbatim directive of the run that JUST ended (fresh by
-         construction), and a RETIRE proposal is most valuable exactly when the belief it targets is oldest —
-         discounting it by age would suppress the one offer that cleans stale memory up. */
+     WHO REPORTS, AND WHY THAT MATTERS. Strength only ever SUBTRACTS, so a channel that reports one is the only
+     kind that can be down-ranked by it — silence is a relative advantage. Every channel with honest data to read
+     therefore reads it:
+       · ARC     — its cited goal belief's freshness × the goals dimension's corroboration.
+       · SEED / ROUTINE — the real repeat / hand-launch counter behind the citation.
+       · STUDY   — the CONFIDENCE of the dimension the proposal targets. (Deliberately not the belief's AGE: a
+                   RETIRE proposal is most valuable exactly when the belief it targets is oldest, and its
+                   directive citation is fresh by construction — this is the dimension read, not a freshness one.)
+       · TRUST   — the offer's own provenance confidence, the real satisfaction percentage it cites, 0..100 → 0..1.
+     And the ones that genuinely have nothing to read, stated rather than left implicit:
+       · CURIOSITY asks ABOUT a dimension rather than asserting one, so a blank dim is a high-VALUE question, not
+         weak evidence — precisely what the spine's VOI term already scores. A strength read here would double-count
+         the same blankness with the opposite sign.
+       · THREAD has no dim at all (a mined idea is not aimed at a dossier dimension) and its quote is located in
+         the run that just ended, so there is no age and no confidence to read. Neutral is the honest reading.
+       · The RE-CONFIRM ask carries none by design: strength discounts a weak ASSERTION, and an ask asserts nothing.
+     The residual tradeoff is real and is not papered over: suggest / recruit / thread / curiosity and the
+     re-confirm ask cannot be discounted for thin evidence, so within a band they hold a small structural edge over
+     the reporters at their weakest. That is the price of never fabricating a reading, and it is bounded by
+     STRENGTH_MAX (recommend.js) — never a band crossing.
+
+     Fail-open at every step: no module / no store / nothing to read → null → NO adjustment at all, and the
+     station ranks exactly as it did before the quality loop existed. */
   function recStrengthOfBelief(belief, dim) {
     try {
       if (typeof RecQuality !== 'undefined' && RecQuality.beliefStrength) return RecQuality.beliefStrength(belief, Date.now(), recUnderstanding(), dim);
@@ -4316,6 +4333,19 @@ const Chat = (() => {
   function recStrengthOfCount(n) {
     try { if (typeof RecQuality !== 'undefined' && RecQuality.countStrength) return RecQuality.countStrength(n); } catch (_) {}
     return null;
+  }
+  // the confidence the understanding engine already holds for a dimension — the right reading for an offer that
+  // ASSERTS something about it (study). Absent dim / absent read → null → neutral.
+  function recStrengthOfDim(dim) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.dimStrength) return RecQuality.dimStrength(recUnderstanding(), dim); } catch (_) {}
+    return null;
+  }
+  // a 0..100 PERCENTAGE the station already computed (trust's provenance confidence) as a 0..1 strength. A
+  // non-numeric / absent percentage is no reading at all — never 0, which would be the full thin-evidence penalty.
+  function recStrengthOfPercent(pct) {
+    const n = Number(pct);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n > 100 ? 1 : n / 100;
   }
   /* ── THE OUTCOME LOOP (quality loop, Q2) ─────────────────────────────────────────────────────────────
      The station's own suggestions are held to the standard everything else here is: what did they actually
@@ -4589,7 +4619,10 @@ const Chat = (() => {
       : (runs ? (runs + ' tasks at ' + (Number(pv.confidence) || 0) + '% satisfaction') : '');
     if (!why) return null;                                   // no provable track record → no offer
     if (!runId || !beatCards || beatCards.hasSeen('trust', runId)) return null;   // one offer per run — READ only
-    return { kind: 'trust', why: why, streak: streak,
+    // STRENGTH: the offer's OWN provenance confidence — the same satisfaction percentage the citation quotes,
+    // read as 0..1. An offer computed from a 60%-satisfaction record is a thinner thing to propose autonomy on
+    // than one computed from 95%, and now says so. Absent/unreadable → null → neutral (never a fabricated 0).
+    return { kind: 'trust', why: why, streak: streak, strength: recStrengthOfPercent(pv.confidence),
              fire: () => { if (beatCards.once('trust', runId)) trustCard(offer, runId); } };
   }
 
@@ -4683,7 +4716,10 @@ const Chat = (() => {
     const why = prop.evidence ? recCite(prop.evidence, prop.evidenceRef && prop.evidenceRef.kind)
       : (prop.kind === 'retire' ? String(prop.text || '').trim() : '');
     if (!why) return null;
-    return { kind: 'study', dim: prop.dim, why: why,
+    // STRENGTH: the CONFIDENCE the understanding engine already holds for the dimension this proposal targets —
+    // an assertion aimed at a dimension the station barely understands is a thinner thing to raise. Not a
+    // freshness read: a RETIRE proposal is most valuable exactly when its belief is oldest.
+    return { kind: 'study', dim: prop.dim, why: why, strength: recStrengthOfDim(prop.dim),
              fire: () => { if (beatCards.once('study', runId)) studyCard(prop, agentId, runId); } };
   }
 
@@ -4698,6 +4734,10 @@ const Chat = (() => {
     if (!prop) return null;
     const why = recCite(prop.spec, threadCiteKind(prop));
     if (!why) return null;
+    // NO STRENGTH, and not for a convenient reason: a mined idea targets no dossier dimension (no dim → no
+    // confidence to read) and its quote comes from the run that just ended (no age to read). There is nothing
+    // here the station holds, and inventing a reading would be worse than the small structural edge neutrality
+    // buys it — see the strength block above, which states that residual tradeoff rather than hiding it.
     return { kind: 'thread', why: why,
              fire: () => { if (beatCards.once('thread', runId)) threadCard(prop, agentId, batch.runId || runId); } };
   }

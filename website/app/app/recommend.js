@@ -109,11 +109,17 @@
   /* THE TWO DAMPED MULTIPLIERS (quality loop, Q1/Q2). Both are read as multipliers in the [floor..1(..cap)]
      range and converted into a bounded WITHIN-TIER term: `MAX × (multiplier − 1)`. That shape is deliberate —
        · a NEUTRAL reading (1) contributes exactly 0, so a cold station scores identically to the pre-quality
-         spine. Absent state is never a penalty and never a bonus (fail-open, truthful telemetry);
+         spine (fail-open, truthful telemetry);
        · a WEAK reading only ever SUBTRACTS. The station does not promote an offer for having strong evidence;
-         it declines to shout about one whose evidence is thin. */
+         it declines to shout about one whose evidence is thin.
+     THE HONEST CONSEQUENCE, stated rather than glossed: because the term is one-sided, ABSENT strength is not
+     neutral in effect — it is a small RELATIVE ADVANTAGE over a channel that reports one honestly and reports it
+     low. Every channel with real data to read now reads it (chat.js: arc, study, trust, seed, routine); the ones
+     that abstain do so because there is genuinely nothing to read (curiosity asks rather than asserts, thread has
+     no dim and no age, the re-confirm ask asserts nothing). The residual edge is bounded by STRENGTH_MAX/2 —
+     under two rank steps, never a band — and fabricating a reading to erase it would cost more than it buys. */
   const STRENGTH_MAX = 30;      // the within-BAND swing thin evidence may cost a candidate (3 rank steps)
-  const STRENGTH_FLOOR = 0.5;   // strength 0 → ×0.5 → −STRENGTH_MAX/2.
+  const STRENGTH_FLOOR = 0.5;   // strength 0 → ×0.5 → −STRENGTH_MAX/2 = −15.
   /* QUALITY OUTRANKS RANK, NOT EVERYTHING (measured live 2026-08-04). Its swing comfortably clears a RANK_STEP,
      so a channel's real outcome record reorders it against its band siblings — which is the whole point. It does
      NOT clear a maximum-VOI promotion: forty real declines still leave a blank high-weight dimension the most

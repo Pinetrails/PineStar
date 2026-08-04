@@ -119,6 +119,33 @@ A.ok(RQ.beliefFingerprint('goals', old) !== RQ.beliefFingerprint('goals', { id: 
 A.ok(RQ.beliefFingerprint('goals', old) !== RQ.beliefFingerprint('pain', old), 'the dimension is part of the identity');
 A.eq(RQ.beliefFingerprint('goals', null), '', 'no belief, no fingerprint');
 
+/* ── 6b. ABSENT STRENGTH IS A RELATIVE ADVANTAGE, SO EVERY CHANNEL WITH DATA MUST REPORT ONE (S5, 2026-08-04) ──
+   The strength term is ONE-SIDED (it only subtracts), which means abstaining from it is not neutral in effect —
+   a silent channel simply cannot be down-ranked for thin evidence. That is fine only if the abstainers genuinely
+   have nothing to read. study (its dim's confidence) and trust (its offer's real satisfaction percentage) both
+   did, and were staying quiet. */
+{
+  const chatSrcQ = require('fs').readFileSync(require('path').join(__dirname, '..', 'frontend', 'app', 'chat.js'), 'utf8');
+  const A_ = A;
+  A_.ok(Recommend.score({ kind: 'seed', why: 'x' }) > Recommend.score({ kind: 'seed', why: 'x', strength: 0.2 }),
+    'a channel that reports thin evidence ranks BELOW one that reports none — silence is the relative advantage');
+  A_.ok(/strength: recStrengthOfDim\(prop\.dim\)/.test(A_.fnBody(chatSrcQ, 'async function studyCandidate(')),
+    'STUDY now reports the confidence of the dimension its proposal asserts about');
+  A_.ok(/strength: recStrengthOfPercent\(pv\.confidence\)/.test(A_.fnBody(chatSrcQ, 'function trustCandidate(')),
+    'TRUST now reports its offer’s own provenance confidence (the satisfaction % it already cites)');
+  A_.eq(/strength:/.test(A_.fnBody(chatSrcQ, 'async function threadCandidate(')), false,
+    'THREAD abstains — no dim to read a confidence from and no age to read a freshness from');
+  A_.eq(/strength:/.test(A_.fnBody(chatSrcQ, 'function curiosityCandidate(')), false,
+    'CURIOSITY abstains — a blank dim is a high-VALUE question, which the VOI term already scores');
+  // the two new readers fail open exactly like their siblings: no reading is NEVER strength zero
+  A_.eq(RQ.dimStrength(null, 'goals'), null, 'no understanding read → no dim strength (never a fabricated 0)');
+  A_.eq(RQ.dimStrength(uRead, 'nosuchdim'), null, 'and an unknown dimension reads nothing either');
+  const pctBody = A_.fnBody(chatSrcQ, 'function recStrengthOfPercent(');
+  A_.ok(/if \(!Number\.isFinite\(n\) \|\| n <= 0\) return null;/.test(pctBody),
+    'an absent/unreadable satisfaction percentage is NO reading — not the full thin-evidence penalty');
+  A_.ok(/n > 100 \? 1 : n \/ 100/.test(pctBody), 'and a 0..100 percentage maps onto the 0..1 strength band, clamped');
+}
+
 /* ── 7. the module is pure ── */
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'frontend', 'app', 'recquality.js'), 'utf8');
 A.eq(/\bdocument\b/.test(src), false, 'recquality.js touches no DOM');
