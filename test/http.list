@@ -19,6 +19,7 @@ test/e2e.subagent-background.test.js
 test/e2e.mcp-connector.test.js
 test/cron.api.test.js
 test/cron.run-now.e2e.test.js
+test/routing.chain-seam.e2e.test.js
 test/routine-manage.e2e.test.js
 test/comms-send.e2e.test.js
 test/acp.e2e.test.js
@@ -40,6 +41,7 @@ test/threads.e2e.test.js
 test/cron.session-transcript.e2e.test.js
 test/channels.telegram.e2e.test.js
 test/channels.telegram.multibot.e2e.test.js
+test/channels.telegram.botchain.e2e.test.js
 test/channels.telegram.buttons.e2e.test.js
 test/cron.arm.test.js
 test/lifecycle-armed.http.test.js
