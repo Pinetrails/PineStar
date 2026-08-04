@@ -25,10 +25,11 @@ A.ok(/const k = b\.dataset\.term, def = BUILDERS\[k\];[\s\S]{0,80}toggleTerm\(k,
   'the dock-button click opens the window keyed by data-term via BUILDERS[k] → toggleTerm');
 
 // (2) + (3) per-term chain: the button exists in the dock, the BUILDERS entry names the right window + builder,
-// and the builder function is defined. Table-driven so QUESTS and UPDATES each fail by their own name.
+// and the builder function is defined. Table-driven so each term fails by its own name.
+// NAV CONDENSE 2 (2026-08-04): UPDATES is no longer a dock window — it is a SETTINGS section, reached
+// by the same dock chain via data-term="settings"; its own chain is locked separately below.
 const TERMS = [
-  { key: 'quests', title: 'QUEST LOG', builder: 'buildQuests' },
-  { key: 'updates', title: 'UPDATE CENTER', builder: 'buildUpdates' }
+  { key: 'quests', title: 'QUEST LOG', builder: 'buildQuests' }
 ];
 for (const t of TERMS) {
   A.ok(new RegExp('<button class="bb" data-term="' + t.key + '"').test(html),
@@ -42,7 +43,17 @@ for (const t of TERMS) {
 
 // (4) openTerm (the deep-link door the mission board / quest-review rows use to reach the SAME window) also
 // routes through BUILDERS, so a beginner reaches the QUEST LOG from either the dock OR a projection click.
-A.ok(/function openTerm\(key, section\)[\s\S]{0,200}const def = BUILDERS\[key\]/.test(sui),
+A.ok(/function openTerm\(key, section\)[\s\S]{0,300}const def = BUILDERS\[key\]/.test(sui),
   'openTerm(key) resolves the SAME BUILDERS map (dock button + projection deep-links share one open path)');
+
+// (5) the UPDATE CENTER's new chain (NAV CONDENSE 2): the SETTINGS dock button exists, the SETTINGS
+// console declares an 'updates' section built by buildUpdates, and the retired 'updates' term aliases
+// into it — so every old deep link (and the dock) still lands on a real update surface.
+A.ok(/<button class="bb" data-term="settings"/.test(html), 'index.html has the SETTINGS dock button');
+A.ok(/id: 'updates', label: 'UPDATES'[\s\S]{0,120}buildUpdates\(/.test(sui),
+  "SETTINGS declares the UPDATES section and builds it with buildUpdates");
+A.ok(/function buildUpdates\b/.test(sui), 'buildUpdates is still a defined builder (Updates.render host)');
+A.ok(/updates:\s*\{\s*term: 'settings',\s*section: 'updates'/.test(sui),
+  "TERM_ALIAS routes the retired 'updates' key to SETTINGS ▸ UPDATES");
 
 A.report('dock-terms-open.test');
