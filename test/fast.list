@@ -445,6 +445,7 @@ test/estop-persistence-ui.test.js
 test/channels.adapter.test.js
 test/channels.proxy-fetch.test.js
 test/channels.owner-pairing.test.js
+test/channels.telegram.pairing-ux.test.js
 test/channels.telegram.test.js
 test/channels.telegram.format.test.js
 test/channels.telegram.context.test.js

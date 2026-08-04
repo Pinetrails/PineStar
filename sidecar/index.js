@@ -2509,7 +2509,19 @@ function telegramOwnerAdmission(record, message) {
 }
 function ownerPairingStatus(record) {
   const state = record && record.ownerPairing;
-  return { active: telegramOwnerPairing.active(state, Date.now()), expiresAt: telegramOwnerPairing.active(state, Date.now()) ? Number(state.expiresAt) : 0 };
+  const active = telegramOwnerPairing.active(state, Date.now());
+  return { active, expiresAt: active ? Number(state.expiresAt) : 0 };
+}
+// Mint + durably save one Telegram owner challenge. The raw code is returned only to the authenticated local
+// caller; channelSecrets receives the salted verifier. Shared by first connect (so setup cannot stop at a deaf
+// but healthy poller) and the explicit PAIR OWNER recovery button (which rotates a lost/expired code).
+function issueTelegramOwnerPairing(record) {
+  const issued = telegramOwnerPairing.issue({ now: Date.now() });
+  const next = Object.assign({}, record || {}, { ownerPairing: issued.state });
+  channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
+  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+  if (!persisted) return { ok: false, error: 'could not save the pairing challenge; no code was issued' };
+  return { ok: true, code: issued.code, expiresAt: issued.state.expiresAt, persisted: true };
 }
 // Resolve the effective bot token for a channel: an explicit value (a fresh paste) wins; else the keychain-
 // injected/live-pushed runtime token; else — bare sidecar only — the token saved in the plaintext record.
@@ -13678,10 +13690,25 @@ async function handleChannelConnect(req, res) {
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   let started; try { started = startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  // Poll health is not DM readiness. A fresh bot rejects every ordinary DM until the authenticated local app
+  // pairs an owner, so return a new one-time command as part of connect instead of ending on a deaf false-green.
+  const live = (channelSecrets && channelSecrets.telegram) || {};
+  const pairingRequired = !live.ownerId;
+  const pairing = pairingRequired ? issueTelegramOwnerPairing(live) : { ok: true, persisted: !!(started && started.secretsPersisted) };
   // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status once
   // the transport proves the round-trip. Never assert connected here. `persisted` is the read-back-proven
   // config-write bit: false = live this session but may not survive a restart (never a false "saved").
-  json(200, { connected: !!telegramStatus.connected, state: telegramStatus.state, persisted: !!(started && started.secretsPersisted) });
+  const out = {
+    connected: !!telegramStatus.connected,
+    state: telegramStatus.state,
+    persisted: pairingRequired ? !!pairing.persisted : !!(started && started.secretsPersisted),
+    pairingRequired
+  };
+  if (pairingRequired && pairing.ok) {
+    out.pairingCode = pairing.code;
+    out.pairingExpiresAt = pairing.expiresAt;
+  } else if (pairingRequired) out.pairingError = pairing.error || 'could not issue an owner pairing code';
+  json(200, out);
 }
 
 // POST /api/channels/telegram/sync { agentId?, system?, model?, key?, provider?, agentName? } — refresh the agent identity
@@ -13736,8 +13763,10 @@ function handleChannelStatus(req, res) {
   // disk, not in the keychain) — which the durability fix prevents, but truthful telemetry must be able to say it.
   const durable = configured && (isChannelTokenDurable('telegram') || !!t.token);
   const pairing = ownerPairingStatus(t);
+  const ownerLocked = !!t.ownerId;
+  const acceptingDms = !!telegramStatus.connected && ownerLocked;
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', delivery: telegramStatus.delivery || { state: 'unknown', detail: '', at: 0 }, warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!t.ownerId, ownerPairingActive: pairing.active, ownerPairingExpiresAt: pairing.expiresAt, bots: telegramBotsStatusList() }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', delivery: telegramStatus.delivery || { state: 'unknown', detail: '', at: 0 }, warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked, acceptingDms, ownerPairingActive: pairing.active, ownerPairingExpiresAt: pairing.expiresAt, bots: telegramBotsStatusList() }));
 }
 
 // POST /api/channels/telegram/owner/pair -- mint a fresh local enrollment code. The raw code is in this one
@@ -13747,12 +13776,9 @@ async function handleTelegramOwnerPair(req, res) {
   const cur = (channelSecrets && channelSecrets.telegram) || {};
   if (!channelToken('telegram', '', cur)) return json(409, { error: 'connect the Telegram bot before pairing an owner' });
   if (cur.ownerId) return json(409, { error: 'an owner is already paired; revoke it locally before pairing a different account' });
-  const issued = telegramOwnerPairing.issue({ now: Date.now() });
-  const next = Object.assign({}, cur, { ownerPairing: issued.state });
-  channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
-  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
-  if (!persisted) return json(500, { error: 'could not save the pairing challenge; no code was issued' });
-  json(200, { code: issued.code, expiresAt: issued.state.expiresAt, persisted: true });
+  const pairing = issueTelegramOwnerPairing(cur);
+  if (!pairing.ok) return json(500, { error: pairing.error });
+  json(200, { code: pairing.code, expiresAt: pairing.expiresAt, persisted: true });
 }
 
 function restartTelegramAfterOwnerRevoke(rec) {
@@ -13967,10 +13993,12 @@ function telegramBotsStatusList() {
     const r = bots[bid] || {};
     const live = telegramBots.get(bid);
     const st = (live && live.status) || { connected: false, state: 'down', detail: '' };
+    const ownerLocked = !!r.ownerId;
+    const acceptingDms = !!st.connected && ownerLocked;
     return {
       botId: bid, username: String(r.username || ''), agentId: String(r.agentId || ''), agentName: String(r.name || ''),
       connected: !!st.connected, state: st.state || 'down', detail: st.detail || '', delivery: st.delivery || { state: 'unknown', detail: '', at: 0 },
-      configured: !!r.token, enabled: r.enabled !== false, ownerLocked: !!r.ownerId,
+      configured: !!r.token, enabled: r.enabled !== false, ownerLocked, acceptingDms,
       ownerPairingActive: ownerPairingStatus(r).active
     };
   });
@@ -13991,10 +14019,12 @@ function channelStatusPayload(id) {
   // A standing warning (e.g. a failed owner-binding persist) SELF-HEALS here: while it stands, each status poll
   // re-attempts the save and clears the warning the moment the disk agrees — so the line is never stale-pessimistic.
   if (channelWarn[id]) { try { if (saveChannelSecrets(channelSecrets)) channelWarn[id] = ''; } catch (_) {} }
+  const ownerLocked = !!rec.ownerId;
+  const acceptingDms = id === 'telegram' ? (!!st.connected && ownerLocked) : !!st.connected;
   const out = {
     id: id, connected: !!st.connected, configured: configured, durable: durable,
     state: st.state || 'down', detail: st.detail || '', delivery: id === 'telegram' ? (st.delivery || { state: 'unknown', detail: '', at: 0 }) : undefined, warning: String(channelWarn[id] || ''),
-    notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId,
+    notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked, acceptingDms,
     ownerPairingActive: id === 'telegram' && ownerPairingStatus(rec).active,
     ownerPairingExpiresAt: id === 'telegram' ? ownerPairingStatus(rec).expiresAt : 0,
     // the agent NAME the channel answers as (never a secret) — the panel renders "ANSWERS AS: <name>" so the
