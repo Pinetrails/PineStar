@@ -146,6 +146,30 @@ for (let i = 0; i < 40; i++) { now += 16; cvsd.tick(16, now, bp); }   // let it 
 A.eq(dropped.filter(id => id === 'S1').length, 0, 'a dropped (superseded) box NEVER fires onDeliver');
 A.ok(!cvsd.dropWorkitem('S1'), 'dropWorkitem on an already-gone work-item is a no-op');
 
+// PENDING PURGE (the supersede-races-spawn seam, conveyor.js dropWorkitem's first loop): a work-item
+// whose crate has NOT been born yet — still waiting in `pending` for a clear source tile — must be
+// purged by dropWorkitem, or the aborted run gets a ghost crate that rides and DELIVERS later.
+const ghost = [];
+const cvpp = Conveyor.create({ onDeliver: bx => ghost.push(bx.payload.workitemId) });
+// (1) queued, zero ticks — dropped before it was ever born
+cvpp.enqueueAt(0, 0, { workitemId: 'P1' });
+A.eq(cvpp.boxCount(), 0, 'P1 is queued, not yet born');
+cvpp.dropWorkitem('P1');
+now = 0; for (let i = 0; i < 40; i++) { now += 16; cvpp.tick(16, now, bp); }
+A.ok(!cvpp.peekBoxes().some(b => b.payload && b.payload.workitemId === 'P1'), 'a purged pending item is never born');
+// (2) the race: a burst holds P3 in the queue behind P2 (same source tile, MIN_GAP not yet open);
+// drop P3 while it WAITS — P2 must still ride, P3 must never spawn.
+cvpp.enqueueAt(0, 0, { workitemId: 'P2' });
+cvpp.enqueueAt(0, 0, { workitemId: 'P3' });
+now += 16; cvpp.tick(16, now, bp);                       // P2 born; P3 waiting on the occupied source tile
+A.ok(cvpp.peekBoxes().some(b => b.payload && b.payload.workitemId === 'P2'), 'P2 was born from the burst');
+A.ok(!cvpp.peekBoxes().some(b => b.payload && b.payload.workitemId === 'P3'), 'P3 still waits in pending');
+cvpp.dropWorkitem('P3');                                  // supersede lands while P3 has no box yet
+for (let i = 0; i < 250; i++) { now += 16; cvpp.tick(16, now, bp); }   // enough for the full 5-tile ride + sink
+A.ok(!cvpp.peekBoxes().some(b => b.payload && b.payload.workitemId === 'P3'), 'the purged waiter never spawns after the tile clears');
+A.eq(ghost.filter(id => id === 'P1' || id === 'P3').length, 0, 'neither purged pending item ever fires onDeliver');
+A.ok(ghost.indexOf('P2') >= 0, 'the untouched burst-mate still rides to delivery');
+
 /* ---------- Stage 4: splitter junction (round-robin fan-out = real parallelism) ---------- */
 // source (0,0)→E into a SPLITTER at (1,0); two out-lanes — E to (2,0)+ and S to (1,1)+.
 const sbelts = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' },
