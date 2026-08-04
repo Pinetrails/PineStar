@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f084219ec80559734aeda38008e7d0fa5b6ee9c2",
-    "pathSetSha256": "23c6ea3d6950a17ce0ac3cc7dfe5ade4493bc1d7f81e6b3d5f069c26ed79d3db",
+    "sourceCommit": "f67dfee73cbceb829665523b5acd74729a45dea0",
+    "pathSetSha256": "3c76d976b6571a75b7071f817196faa721d37cce0d9639716ba23587d1560b15",
     "files": [
       {
         "path": "INSTALL.md",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 221868,
-        "sha256": "890972e8d4eac9dd7350d4c3e9ef4e06f09ecdc118465e7f81a59f09904e4b13"
+        "bytes": 234007,
+        "sha256": "71b606a1082a05576832a5f16909c68d1e5200b2908242b0ad6b100f35aeb577"
       },
       {
         "path": "frontend/app/mint.js",
@@ -517,39 +517,64 @@
         "sha256": "782c518fa3e2923451ca9de686595593036181d52b6c6cc34e760b0f836e1866"
       },
       {
+        "path": "frontend/app/recipe-catalog/business.js",
+        "bytes": 23994,
+        "sha256": "1cc7c326d5785c9e9a3d24661ebd98c165bc0bee407b8c0e528667dd1651cd58"
+      },
+      {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 16208,
-        "sha256": "11c3d4b622ad9e42d87befa2ed9d70d5f5c2f4c12be1617d345b4312e1e7a1fe"
+        "bytes": 20722,
+        "sha256": "0e6175c86af3884956fe4f07c43b7eac94b95744062b5148d5f10cc526f3ac13"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
-        "bytes": 13423,
-        "sha256": "57ed4b133df743f76d3ce2da0d072899bbdc8e1f0f083aca1851111151ee1c7d"
+        "bytes": 21873,
+        "sha256": "3463ad25a43ffbcdd2149ecf5e8a8ff9a32c97ab0a3f89cc0b2339c51e42e012"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/data.js",
+        "bytes": 23893,
+        "sha256": "441b9e04f3305d9ba17dae9eeda7da42697e7311c705995330be163bd08e86cf"
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
-        "bytes": 13326,
-        "sha256": "9ebe130bd9802b6b1eed6f9006229158e5227034feb77dbeec8cdb67bcff0a15"
+        "bytes": 18773,
+        "sha256": "a231961b83069f5d3aee58b8f5c93295d0e961534ec233ad95de0e4da3489441"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/general.js",
+        "bytes": 20273,
+        "sha256": "9965a77111dd87cd37fdd33453186bc31b5aff152edd6039744a54d39eba7b0f"
       },
       {
         "path": "frontend/app/recipe-catalog/index.js",
-        "bytes": 2286,
-        "sha256": "a87d2769a8416ef81ae9fc49ac7fa015321d9ce38fdd5d71ae91fc661b7ec7cf"
+        "bytes": 2771,
+        "sha256": "fe4ea394d7bb3887a6b4a16b0dd7143eb0ddce4e80147463fdf485330e544557"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/money.js",
+        "bytes": 18403,
+        "sha256": "e80d19d90b984aa897ea6ee9fbd03c629d3c3db6481ba71c15c2a3d95ada0e55"
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
-        "bytes": 13655,
-        "sha256": "caf4bea0648eedf9386d47a8999900aef4580fe25433b0b3f2b2abfc76380186"
+        "bytes": 14611,
+        "sha256": "2a243dfa997bfc20a59633512f1b6c47b344d46adca9f60ec8e7ef93a1645821"
       },
       {
         "path": "frontend/app/recipe-catalog/research.js",
         "bytes": 13890,
-        "sha256": "c3d2ec8f5457fc2a4ec8cdb2cb917c9818e5272ab14ad5e8363f671ed98612df"
+        "sha256": "bd52fbce239888af115686344d2d866f80088cd17ec3a8b8979b7427aded689a"
+      },
+      {
+        "path": "frontend/app/recipefit.js",
+        "bytes": 17992,
+        "sha256": "dade125e6ee8e73e5c49b4a91fa958b602c9092a131112053816b6394dbcc230"
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 57222,
-        "sha256": "d9f79519f035db29f63c21a79e8f51b0e52b7905eb8dc78acab26e69e9f3a5e7"
+        "bytes": 60701,
+        "sha256": "88c361a4cbdc677794996df9f83527c2f7329ec227316da5a00f38c9cb479f75"
       },
       {
         "path": "frontend/app/recommend.js",
@@ -913,8 +938,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 67420,
-        "sha256": "263d197d2c852b2114719cb534b17d1ada2b5b580cc89dcc909650f9c834f85d"
+        "bytes": 71434,
+        "sha256": "5ceccbbfe42c79e7638cf31e4f0f2443e14d94099ae6d18f626c8793853b75bd"
       },
       {
         "path": "frontend/css/motion.css",
@@ -968,8 +993,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67686,
-        "sha256": "ca0ff784208ed4f36c6fcc733bfad347a24c234273426996e75929b4323a30fa"
+        "bytes": 68124,
+        "sha256": "8942b3f8272212fa0c918186afca3b247d6ff057a87bc59356bfb0bb4d095e6f"
       },
       {
         "path": "frontend/js/arcade.js",
