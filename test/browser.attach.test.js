@@ -67,6 +67,61 @@ function fakeDriver() {
     A.eq(detach.requiresConsent, false, 'LETTING GO costs no prompt — a gated release is a release that does not happen');
   }
 
+  // ---- 1b. ATTACH STARTS ON CHROME'S ACTUALLY ACTIVE TAB -------------------------------------
+  // Browser-level auto-attach does not promise page-event order. The first event below is a background
+  // inbox; the second is the visible Commander tab. Treating the first event as tab 0 makes the very first
+  // snapshot/read/click land in the wrong signed-in page even though Chrome itself is showing CURRENT.
+  {
+    const sent = [];
+    class MultiTabWS {
+      constructor() { this.handlers = {}; setTimeout(() => this.fire('open', {}), 0); }
+      addEventListener(name, fn) { (this.handlers[name] = this.handlers[name] || []).push(fn); }
+      fire(name, value) { for (const fn of this.handlers[name] || []) fn(value); }
+      event(method, params) { this.fire('message', { data: JSON.stringify({ method, params }) }); }
+      send(raw) {
+        const m = JSON.parse(raw); sent.push(m);
+        if (m.method === 'Target.setAutoAttach' && !m.sessionId) {
+          setTimeout(() => {
+            this.event('Target.attachedToTarget', { sessionId: 'background-session', targetInfo: { type: 'page', targetId: 'BACKGROUND' } });
+            this.event('Target.attachedToTarget', { sessionId: 'current-session', targetInfo: { type: 'page', targetId: 'CURRENT' } });
+          }, 0);
+        }
+        const expr = String((m.params && m.params.expression) || '');
+        let result = {};
+        if (m.method === 'Target.getTargets') {
+          result = { targetInfos: [
+            { type: 'page', targetId: 'BACKGROUND' },
+            { type: 'page', targetId: 'CURRENT' }
+          ] };
+        } else if (m.method === 'Runtime.evaluate' && /visibilityState/.test(expr)) {
+          result = { result: { value: m.sessionId === 'current-session'
+            ? { visibility: 'visible', focused: true }
+            : { visibility: 'hidden', focused: false } } };
+        } else if (m.method === 'Runtime.evaluate' && /location\.href, title/.test(expr)) {
+          result = { result: { value: m.sessionId === 'current-session'
+            ? { url: 'https://current.test/', title: 'CURRENT' }
+            : { url: 'https://background.test/', title: 'BACKGROUND' } } };
+        } else if (m.method === 'Page.getFrameTree') {
+          result = { frameTree: { frame: { id: 'top' } } };
+        } else if (m.method === 'Runtime.evaluate') {
+          result = { result: { value: null } };
+        }
+        setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+      }
+      close() {}
+    }
+    const driver = T.makeCdpDriver({
+      attachPort: 9222, headed: true, syntheticInputOnly: true, timeoutMs: 500,
+      fetchImpl: async () => ({ json: async () => ({ webSocketDebuggerUrl: 'ws://127.0.0.1:9222/devtools/browser/multi' }) }),
+      WebSocketImpl: MultiTabWS
+    });
+    const tabs = await driver.tabs();
+    A.eq(tabs[0].title, 'CURRENT', 'tab 0 is the page Chrome is actually showing, not the first auto-attach event');
+    A.eq(tabs[0].active, true, 'the visible Commander tab is the initial action target');
+    A.eq(tabs[1].title, 'BACKGROUND', 'other already-open tabs remain available without stealing focus');
+    await driver.close();
+  }
+
   // ---- 2. PORT VALIDATION, before anything is touched ----
   {
     const S = T.makeBrowserSession({ driver: fakeDriver(), fetchImpl: devtoolsFetch() });

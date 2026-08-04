@@ -717,16 +717,58 @@
        target exists. So we connect to the browser endpoint; if that fails we fall back to the page
        endpoint with popups BLOCKED, which is the old behaviour. openerSession is the original tab -
        under browser-level auto-attach every command is session-scoped, including tab 0's. */
-    let popupsAdopted = false, openerSession = null, resolveOpenerAttach;
+    let popupsAdopted = false, openerSession = null, openerTargetId = null, resolveOpenerAttach;
     const openerAttach = new Promise(resolve => { resolveOpenerAttach = resolve; });
-    function adoptOpenerSession(sessionId) {
+    function adoptOpenerSession(sessionId, targetId) {
       if (openerSession !== null) return false;
       openerSession = sessionId;
+      openerTargetId = targetId || null;
       if (resolveOpenerAttach) {
         resolveOpenerAttach(sessionId);
         resolveOpenerAttach = null;
       }
       return true;
+    }
+    function prepareAdoptedPage(sessionId, targetId, allowPopups) {
+      installStationIdentity(sessionId).catch(() => {});
+      installStationMetrics(sessionId).catch(() => {});
+      cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: syntheticInputSource(allowPopups, inputMarker) }, sessionId).catch(() => {});
+      cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: settleBootstrap }, sessionId).catch(() => {});
+      pageSessions.set(sessionId, targetId);
+      wakeTabWaiters();
+      cdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(() => {
+        pageSessions.delete(sessionId);
+        wakeTabWaiters();
+        if (cdp && targetId) cdp.send('Target.closeTarget', { targetId }).catch(() => {});
+      });
+    }
+    async function preferVisibleAttachedPage() {
+      if (attachPort === null || !openerSession || !pageSessions.size) return;
+      const candidates = [openerSession].concat(Array.from(pageSessions.keys()));
+      const states = await Promise.all(candidates.map(async sid => {
+        try {
+          const r = await cdp.send('Runtime.evaluate', {
+            expression: '({ visibility: document.visibilityState, focused: document.hasFocus() })',
+            returnByValue: true
+          }, sid);
+          return { sid, state: r && r.result && r.result.value };
+        } catch (_) { return { sid, state: null }; }
+      }));
+      // A focused document wins across multiple Chrome windows. If Chrome itself is not foreground,
+      // visibility still distinguishes the selected tab in each non-minimized window.
+      const chosen = states.find(x => x.state && x.state.focused)
+        || states.find(x => x.state && x.state.visibility === 'visible');
+      const visible = chosen && chosen.sid;
+      if (!visible || visible === openerSession) return;
+      const currentTargetId = pageSessions.get(visible) || null;
+      const backgroundSession = openerSession;
+      const backgroundTargetId = openerTargetId;
+      pageSessions.delete(visible);
+      openerSession = visible;
+      openerTargetId = currentTargetId;
+      // The first protocol event was held paused for main-page setup. Once a different, actually visible
+      // tab becomes tab 0, prepare and resume that first event as an ordinary background tab instead.
+      prepareAdoptedPage(backgroundSession, backgroundTargetId, true);
     }
     async function deriveStationIdentity(sessionId) {
       if (attachPort !== null) return null;
@@ -856,7 +898,7 @@
                   if (viaBrowser && openerSession === null) {
                     // The original tab. Its setup is finished by connect() below, which needs to
                     // await it; recording the session is all that happens here.
-                    adoptOpenerSession(sid);
+                    adoptOpenerSession(sid, info.targetId);
                     return;
                   }
                   /* ADOPT, don't kill. A target=_blank link or a popup used to be closed outright
@@ -884,17 +926,9 @@
                      them to apply to the document the popup is about to load - nothing needs awaiting.
                      about:blank is deliberately not shimmed: it has no content to protect, and reaching
                      for it is what made this path block. */
-                  installStationIdentity(sid).catch(() => {});
-                  installStationMetrics(sid).catch(() => {});
-                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: syntheticInputSource(popupsAdopted, inputMarker) }, sid).catch(() => {});
-                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: settleBootstrap }, sid).catch(() => {});
-                  pageSessions.set(sid, info.targetId);
-                  wakeTabWaiters();
-                  cdp.send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {
-                    pageSessions.delete(sid);
-                    wakeTabWaiters();
-                    if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
-                  });
+                   // Receiving this event from the browser endpoint is itself proof that popup adoption
+                   // is armed, even while setAutoAttach's acknowledgement is still in flight.
+                   prepareAdoptedPage(sid, info.targetId, viaBrowser);
                   return;
                 }
                 if (info.type !== 'iframe') {
@@ -938,6 +972,13 @@
               // A closed tab must never leave the driver pointed at a dead session.
               if (activeSession === p.sessionId) activeSession = null;
             });
+              let initialPageCount = 1;
+              if (viaBrowser && attachPort !== null) {
+                try {
+                  const initial = await cdp.send('Target.getTargets');
+                  initialPageCount = Math.max(1, (initial && initial.targetInfos || []).filter(t => t && t.type === 'page').length);
+                } catch (_) {}
+              }
               await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
               if (viaBrowser) {
                 // Auto-attach on the browser connection also attaches the EXISTING tab. Wait on that
@@ -946,6 +987,13 @@
                 // permanent for the page. The ordinary CDP timeout keeps this proof bounded and fail-closed.
                 await Promise.race([openerAttach, sleep(timeoutMs)]);
                 popupsAdopted = openerSession !== null;
+                if (popupsAdopted && attachPort !== null) {
+                  // Existing Commander tabs arrive as the same attachedToTarget event as future popups,
+                  // and protocol order is not UI-focus order. Wait for the initial set, then make the
+                  // actually visible/focused page tab 0 before any snapshot or action can run.
+                  if (initialPageCount > 1) await waitForTabCount(initialPageCount, timeoutMs);
+                  await preferVisibleAttachedPage();
+                }
               }
             }
             // Popups are only unblocked once adoption is proven armed. Anything else - no browser
