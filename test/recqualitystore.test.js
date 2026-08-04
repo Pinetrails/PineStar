@@ -103,6 +103,27 @@ S.reset();
 A.eq(mem[S.KEY], undefined, 'reset() clears the key — a new hero inherits no channel history');
 A.eq(S.weightFor('routine'), NEUTRAL, 'and reads neutral again');
 
+/* ── 8a. THE SHARED DIMENSION BAG IS A TILT, NOT HALF THE READING (2026-08-04) ──
+   Several channels target the same dimension, so a dimension's weight carries OTHER channels' outcomes into this
+   one. That sharing is deliberate — a dimension nobody wants to be asked about should quieten every ask aimed at
+   it — but it is not evidence about THIS channel, and a straight average let one channel's declines drag an
+   unrelated one down by half. With banding live, that leak really moves a winner. */
+S.reset(); S.init({});
+for (let i = 0; i < 20; i++) S.noteDecline({ channel: 'curiosity', dim: 'goals' }, false);   // one channel, one dim
+for (let i = 0; i < 6; i++) S.noteAccept({ channel: 'seed', spawnsWork: false });            // a DIFFERENT channel's own record
+const own = S.weightFor('seed');
+const dimOnly = S.weightFor('nobody', 'goals');
+const blended = S.weightFor('seed', 'goals');
+A.ok(dimOnly < NEUTRAL, 'the dimension itself carries the declines aimed at it');
+A.ok(blended < own, 'a dimension nobody wants asked about still quietens another channel aimed at it (the sharing is deliberate)');
+A.eq(Math.round(blended * 1e6), Math.round((own * 0.75 + dimOnly * 0.25) * 1e6),
+  'but only as a TILT: the channel’s own record is three quarters of the reading, the shared dimension the last quarter');
+A.ok(blended > (own + dimOnly) / 2, 'a straight 50/50 average would have dragged it twice as far ('
+  + blended.toFixed(3) + ' vs ' + ((own + dimOnly) / 2).toFixed(3) + ')');
+A.eq(S.weightFor('seed'), own, 'and asked WITHOUT a dimension, the channel reads its own record alone');
+A.eq(S.weightFor('nobody'), NEUTRAL, 'a channel with no record of its own and no dimension is still neutral');
+S.reset();
+
 /* ── 8b. THE RE-CONFIRM DENIAL SET (Q3): a question answered "no" is never asked again ── */
 S.reset(); S.init({});
 const RQfp = RQ.beliefFingerprint('goals', { id: 'b1', text: 'ship the billing rewrite' });
