@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "45ba7d19ba690bad9a8b5703559a5bf68e00b882",
+    "sourceCommit": "bcee279769a684f9c90992ea6f602e7cd8f4943b",
     "pathSetSha256": "599a9df05085f4720882937c780957fc774a500100b2eb3ebb6702f04ce9a3a9",
     "files": [
       {
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 231741,
-        "sha256": "4fdb6b5127069c7807b70b1e73c43e243ffa3c05ff224a2adfd5688ba359319b"
+        "bytes": 232448,
+        "sha256": "5fbc3f6d86f21fd832467f9a5eec79740eddbf83a1a60173280772de2e523662"
       },
       {
         "path": "frontend/app/mint.js",
@@ -568,13 +568,13 @@
       },
       {
         "path": "frontend/app/recipefit.js",
-        "bytes": 17430,
-        "sha256": "67ec33df040b241fef51c26daf55506b5d75e6febcd21f6d15b2fc9a94128c8d"
+        "bytes": 17992,
+        "sha256": "dade125e6ee8e73e5c49b4a91fa958b602c9092a131112053816b6394dbcc230"
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 60409,
-        "sha256": "f0f4ad46d1f23a946f70de08e466c0bf04a56efe3352946277865f25442bf295"
+        "bytes": 60698,
+        "sha256": "29607ce1622b5e4ea8142937170dfeb88244464f364f44335c7f315822def234"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -928,8 +928,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 69322,
-        "sha256": "9c246181777147db6f5c60600bd242d7b1d980b3b8265cf47b6c4462bfcd0ed4"
+        "bytes": 69561,
+        "sha256": "29050f1dae22f92d44ce1f2ba6d19059fabf66b7cf0f2e4f353d11595804abb4"
       },
       {
         "path": "frontend/css/motion.css",
