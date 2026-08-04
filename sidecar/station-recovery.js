@@ -114,14 +114,22 @@ function sanitizeObject(value, pathParts, redacted) {
 
 function sanitizeManagedJson(rel, raw) {
   const p = slash(rel).toLowerCase();
-  if (!/^connectors\/(?:state|connectors|oauth|servicekeys)\.json$/.test(p) && p !== 'channels/secrets.json') return null;
+  if (!/^connectors\/(?:state|connectors|oauth|servicekeys)\.json$/.test(p) && p !== 'channels/secrets.json' && p !== 'permissions.allow.json') return null;
   let doc;
   try { doc = JSON.parse(raw.toString('utf8')); }
   catch (e) { throw new Error('credential-bearing state is not valid JSON: ' + rel); }
   const redacted = [];
   let value;
   const reauthentication = [];
-  if (p === 'connectors/state.json') {
+  if (p === 'permissions.allow.json') {
+    const allow = Array.isArray(doc.allow) ? doc.allow.filter(x => typeof x === 'string') : [];
+    const machinePaths = allow.filter(x => x.indexOf('path:') === 0);
+    const meta = isObj(doc.meta) ? doc.meta : {};
+    const keptMeta = {};
+    for (const [key, row] of Object.entries(meta)) if (machinePaths.indexOf(key) < 0) keptMeta[key] = row;
+    value = Object.assign({}, doc, { allow: allow.filter(x => x.indexOf('path:') !== 0), meta: keptMeta });
+    for (const key of machinePaths) reauthentication.push({ kind: 'project-path', id: key.slice(5), reason: 'Machine-specific path authority is not transferable; restore or relocate the project, then re-authorize it.', fields: ['permissions.allow'] });
+  } else if (p === 'connectors/state.json') {
     const configs = Array.isArray(doc.configs) ? doc.configs.map((cfg, i) => {
       const fields = [];
       const clean = sanitizeObject(cfg, ['configs', String(i)], fields);
@@ -168,7 +176,7 @@ function classifyPolicy(rel, st) {
   if (SYSTEM_SECRET_TOP.has(top)) return { action: 'skip', reason: 'system-managed credential material is intentionally excluded', reauth: { kind: top === 'codex' ? 'provider' : 'credential-store', id: top, reason: 'Reauthentication required on the restored profile.' } };
   if (EPHEMERAL_FILES.has(p.toLowerCase()) || /(?:^|\/)\.owner\.lock$/.test(p.toLowerCase()) || /\.tmp(?:$|\.)/.test(p.toLowerCase())) return { action: 'skip', reason: 'ephemeral lock/process/temp state' };
   if (/\.bak$/.test(p.toLowerCase()) || /\.corrupt-\d+$/.test(p.toLowerCase())) return { action: 'skip', reason: 'superseded recovery/forensic generation; bundle versioning is authoritative' };
-  if (/^connectors\/(?:state|connectors|oauth|servicekeys)\.json$/i.test(p) || /^channels\/secrets\.json$/i.test(p)) return { action: 'sanitize' };
+  if (/^connectors\/(?:state|connectors|oauth|servicekeys)\.json$/i.test(p) || /^channels\/secrets\.json$/i.test(p) || /^permissions\.allow\.json$/i.test(p)) return { action: 'sanitize' };
   return { action: 'include' };
 }
 

@@ -13,6 +13,7 @@ const path = require('path');
 const crypto = require('crypto');
 const A = require('./_assert.js');
 const R = require('../sidecar/station-recovery.js');
+const Save = require('../frontend/app/save.js');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-disaster-recovery-'));
 const source = path.join(tmp, 'source-profile', 'workspaces');
@@ -28,7 +29,7 @@ function hashFile(file) { return crypto.createHash('sha256').update(fs.readFileS
 function seedCompleteStation() {
   fs.mkdirSync(source, { recursive: true });
   write('agent.roster.json', { version: 1, agents: [{ agentId: 'agent', name: 'NOVA', provider: 'openrouter', model: 'test/model' }, { agentId: 'scribe', name: 'SCRIBE', provider: 'openai', model: 'test/other' }] });
-  write('agent.save.json', { version: 1, agentId: 'agent', updatedAt: 100, savedAt: 100, doc: { schema: 'starnet.save', version: 6, updatedAt: 100, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: [{ id: 'command' }], props: [{ id: 'terminal-1', roomId: 'command' }] }, workstreams: [{ id: 'general', title: 'General', messages: [{ role: 'user', content: 'preserve this conversation' }] }] } });
+  write('agent.save.json', { version: 1, agentId: 'agent', updatedAt: 100, savedAt: 100, doc: { schema: 'starnet.save', version: Save.CURRENT, updatedAt: 100, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: [{ id: 'command' }], props: [{ id: 'terminal-1', roomId: 'command' }] }, workstreams: [{ id: 'general', title: 'General', messages: [{ role: 'user', content: 'preserve this conversation' }] }] } });
   write('transcript.jsonl', JSON.stringify({ workstreamId: 'general', role: 'assistant', content: 'conversation survives', ts: 1 }) + '\n');
   write('channels/agent.history.json', { version: 1, messages: [{ role: 'user', content: 'telegram conversation', ts: 2 }] });
   write('agent.notebook.json', { entries: [{ id: 'memory-1', title: 'Remember', body: 'the station' }] });
@@ -40,7 +41,7 @@ function seedCompleteStation() {
   write('projects.json', { version: 1, projects: [{ id: 'project-1', root: 'C:/Projects/demo', blessed: true }] });
   write('agent.deliverables.json', { version: 1, records: [{ id: 'deliverable-1', path: 'agent/workshop/run-1/report.md', state: 'kept' }] });
   write('agent/workshop/run-1/report.md', '# Recovery report\nUser-created deliverable bytes survive.\n');
-  write('permissions.allow.json', { version: 1, allow: ['fs.write:workspace', 'shell.exec:*'] });
+  write('permissions.allow.json', { version: 1, allow: ['fs.write:workspace', 'shell.exec:*', 'path:C:/Projects/demo'], meta: { 'path:C:/Projects/demo': { grantedAt: 1 }, 'fs.write:workspace': { grantedAt: 2 } } });
   write('connectors/state.json', { version: 2, configs: [{ id: 'notion', transport: 'http', url: 'https://mcp.example/api?token=URL_SECRET', headers: { Authorization: 'Bearer MCP_SECRET', 'X-Safe': 'kept' }, oauth: true }], oauth: { byId: { notion: { accessToken: 'ACCESS_SECRET', refreshToken: 'REFRESH_SECRET', clientId: 'client-id', tokenEndpoint: 'https://auth.example/token' } }, clients: { 'https://auth.example': { clientId: 'dynamic-client', clientSecret: 'CLIENT_SECRET' } } } });
   write('channels/secrets.json', { telegram: { enabled: true, botName: 'station-bot', token: 'TELEGRAM_SECRET', key: 'PROVIDER_SECRET' }, notifyAutonomous: true });
   write('connectors/servicekeys.json', { version: 1, keys: [{ id: 'weather', name: 'Weather', env: 'WEATHER_API_KEY', key: 'SERVICE_SECRET', enabled: true }] });
@@ -53,7 +54,7 @@ function seedCompleteStation() {
 
 seedCompleteStation();
 const browserV1 = {
-  'starnet.save': JSON.stringify({ schema: 'starnet.save', version: 6, updatedAt: 100, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: [{ id: 'command' }], props: [{ id: 'terminal-1' }] } }),
+  'starnet.save': JSON.stringify({ schema: 'starnet.save', version: Save.CURRENT, updatedAt: 100, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: [{ id: 'command' }], props: [{ id: 'terminal-1' }] } }),
   'starnet.station.v1': JSON.stringify({ selectedRoom: 'command', camera: { x: 5, y: 7 } }),
   'starnet.queststate.v1': JSON.stringify({ seen: ['quest-1'] }),
   'starnet.byok.model': 'test/model',
@@ -76,6 +77,7 @@ for (const secret of ['URL_SECRET', 'MCP_SECRET', 'ACCESS_SECRET', 'REFRESH_SECR
 A.ok(v1.report.reauthentication.some(x => x.kind === 'connector' && x.id === 'notion'), 'connector reference survives with OAuth reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'channel' && x.id === 'telegram'), 'channel reference survives with token reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'service-key' && x.id === 'weather'), 'service key reference survives with reauthentication receipt');
+A.ok(v1.report.reauthentication.some(x => x.kind === 'project-path' && x.id === 'C:/Projects/demo'), 'machine-specific project authority requires explicit reauthorization');
 A.ok(v1.report.skipped.some(x => x.path === '.browser-profile/Cookies'), 'browser cookie profile is explicitly skipped');
 A.ok(v1.report.skipped.some(x => x.path === 'proc-ledger.json'), 'ephemeral process ownership is explicitly skipped');
 A.eq(R.validate(v1).ok, true, 'fresh bundle validates');
@@ -95,6 +97,8 @@ A.eq(restoredV1.rollback, null, 'clean restore needs no rollback generation');
 A.eq(cleanBrowser['starnet.station.v1'], browserV1['starnet.station.v1'], 'browser-owned station layout state restores');
 A.eq(cleanBrowser['starnet.byok.key'], undefined, 'browser credential is not restored');
 A.ok(read(cleanTarget, 'agent/workshop/run-1/report.md').includes('User-created deliverable bytes survive'), 'deliverable bytes restore');
+A.ok(!JSON.parse(read(cleanTarget, 'permissions.allow.json')).allow.includes('path:C:/Projects/demo'), 'clean profile never inherits machine-specific path authority');
+A.ok(JSON.parse(read(cleanTarget, 'permissions.allow.json')).allow.includes('fs.write:workspace'), 'portable non-path permissions are preserved');
 const recaptured = R.capture({ workspaceRoot: cleanTarget, browserStore: cleanBrowser, now: 1001, appVersion: '0.9.0-test', lastCompletedMutation: 100 });
 A.eq(JSON.stringify(R.semanticFingerprint(recaptured)), JSON.stringify(R.semanticFingerprint(v1)), 'clean-profile semantic fingerprint exactly matches the recovery point');
 

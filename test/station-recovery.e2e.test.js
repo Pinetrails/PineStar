@@ -10,6 +10,7 @@ const path = require('path');
 const A = require('./_assert.js');
 const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 const Recovery = require('../sidecar/station-recovery.js');
+const Save = require('../frontend/app/save.js');
 
 function write(root, rel, value) {
   const file = path.join(root, ...rel.split('/'));
@@ -33,7 +34,7 @@ function quietEnv() {
     const ws = source.workspace;
     const projectRoot = path.join(ws, 'agent', 'project');
     fs.mkdirSync(projectRoot, { recursive: true });
-    const saveDoc = { schema: 'starnet.save', version: 6, updatedAt: 1000, agent: { id: 'agent', name: 'NOVA', model: 'test/replay', provider: 'replay' }, station: { rooms: [{ id: 'command' }, { id: 'lab' }], props: [{ id: 'terminal', roomId: 'command' }] }, workstreams: [{ id: 'general', title: 'General', messages: [{ role: 'user', content: 'live recovery proof' }] }], activeId: 'general', generalId: 'general' };
+    const saveDoc = { schema: 'starnet.save', version: Save.CURRENT, updatedAt: 1000, agent: { id: 'agent', name: 'NOVA', model: 'test/replay', provider: 'replay' }, station: { rooms: [{ id: 'command' }, { id: 'lab' }], props: [{ id: 'terminal', roomId: 'command' }] }, workstreams: [{ id: 'general', title: 'General', messages: [{ role: 'user', content: 'live recovery proof' }] }], activeId: 'general', generalId: 'general' };
     write(ws, 'agent.save.json', { version: 1, agentId: 'agent', updatedAt: 1000, savedAt: 1000, doc: saveDoc });
     write(ws, 'agent.roster.json', { version: 1, updatedAt: 1000, agents: [{ agentId: 'agent', name: 'NOVA', model: 'test/replay', provider: 'replay', system: 'recovery test' }] });
     write(ws, 'transcript.jsonl', JSON.stringify({ workstreamId: 'general', role: 'assistant', content: 'durable transcript', ts: 1 }) + '\n');
@@ -50,6 +51,8 @@ function quietEnv() {
     A.eq(routine.status, 200, 'source sidecar creates a real durable routine: ' + JSON.stringify(routine.body));
     const loop = await source.json('POST', '/api/loops', { name: 'Recovery loop', objective: 'continue recovery verification', agentId: 'agent' });
     A.eq(loop.status, 200, 'source sidecar creates a real durable loop: ' + JSON.stringify(loop.body));
+    const grant = await source.json('POST', '/api/permissions/grant', { key: 'cabinet:write' });
+    A.eq(grant.status, 200, 'source sidecar creates a portable standing capability grant');
     const memory = await source.json('POST', '/api/notebook/restore', { agent: 'agent', notes: [{ id: 'memory-live', title: 'Recovery memory', body: 'survive the machine loss', ts: 1 }] });
     A.eq(memory.status, 200, 'source sidecar creates real durable memory');
     const srcCron = await source.json('GET', '/api/cron');
@@ -89,10 +92,12 @@ function quietEnv() {
       A.ok(save.body.save.station.rooms.some(x => x.id === 'lab') && save.body.save.station.props.some(x => x.id === 'terminal'), 'restored rooms and props are authoritative');
       A.ok(cron.body.jobs.some(x => x.name === 'Recovery routine'), 'restored routine is live after boot');
       A.ok(loops.body.loops.some(x => x.name === 'Recovery loop'), 'restored loop is live after boot');
-      A.ok(permissions.body.grants.includes('path:' + projectRoot), 'restored permission grant is live after boot');
-      A.ok(projects.body.projects.some(x => x.root === projectRoot && x.blessed === true), 'restored project reference and authority are live after boot');
+      A.ok(permissions.body.grants.includes('cabinet:write'), 'portable standing capability grant is live after boot');
+      A.ok(!permissions.body.grants.includes('path:' + projectRoot), 'machine-specific project authority is not silently transferred');
+      A.ok(projects.body.projects.some(x => x.root === projectRoot && x.blessed === false), 'restored project reference is visible but truthfully revoked');
       A.ok(Array.isArray(connectors.body.connectors) && connectors.body.connectors.some(x => x.id === 'local-reference'), 'restored connector reference is listed');
       A.ok(receipt.reauthentication.some(x => x.kind === 'connector' && x.id === 'local-reference'), 'restore reports connector reauthentication');
+      A.ok(receipt.reauthentication.some(x => x.kind === 'project-path' && x.id === projectRoot), 'restore reports project-path reauthorization');
       A.eq(fs.readFileSync(path.join(restoredRoot, 'agent', 'project', 'result.md'), 'utf8'), '# live deliverable\n', 'restored deliverable bytes survive the second sidecar boot');
     } finally {
       rollbackDir = boot2.workspace;

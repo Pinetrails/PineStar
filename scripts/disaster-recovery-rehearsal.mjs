@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const Recovery = require('../sidecar/station-recovery.js');
+const Save = require('../frontend/app/save.js');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -36,8 +37,7 @@ function assert(v, m) { if (!v) throw new Error(m); }
 function seed(root, mutation, taskDone = false) {
   ensure(root);
   write(root, 'agent.roster.json', { version: 1, agents: [{ agentId: 'agent', name: 'NOVA' }, { agentId: 'scribe', name: 'SCRIBE' }] });
-  write(root, 'agent.save.json', { version: 1, agentId: 'agent', updatedAt: mutation, savedAt: mutation, doc: { schema: 'starnet.save', version: 6, updatedAt: mutation, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: [{ id: 'command' }, { id: 'lab' }], props: [{ id: 'terminal', roomId: 'command' }, { id: 'bench', roomId: 'lab' }] }, workstreams: [{ id: 'general', title: 'General', messages: [{ role: 'user', content: 'complete station rehearsal' }] }] } });
-  write(root, 'transcript.jsonl', JSON.stringify({ id: 'turn-1', workstreamId: 'general', role: 'assistant', content: 'preserved conversation', ts: mutation }) + '\n');
+  write(root, 'agent.save.json', { version: 1, agentId: 'agent', updatedAt: mutation, savedAt: mutation, doc: { schema: 'starnet.save', version: Save.CURRENT, updatedAt: mutation, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: [{ id: 'command' }, { id: 'lab' }], props: [{ id: 'terminal', roomId: 'command' }, { id: 'bench', roomId: 'lab' }] }, workstreams: [{ id: 'general', title: 'General', messages: [{ role: 'user', content: 'complete station rehearsal' }] }] } });
   write(root, 'channels/agent.history.json', { version: 1, messages: [{ role: 'user', content: 'preserved channel conversation', ts: mutation }] });
   write(root, 'agent.notebook.json', { entries: [{ id: 'memory-1', title: 'Memory', body: 'preserve me' }] });
   write(root, '_commander.dossier.json', { block: 'Commander memory and preferences' });
@@ -48,7 +48,10 @@ function seed(root, mutation, taskDone = false) {
   write(root, 'projects.json', { projects: [{ id: 'project-1', root: 'C:/Projects/demo', blessed: true }] });
   write(root, 'agent.deliverables.json', { records: [{ id: 'deliverable-1', path: 'agent/workshop/run-1/report.md', state: 'kept' }] });
   write(root, 'agent/workshop/run-1/report.md', '# Verified deliverable\nmutation=' + mutation + '\n');
-  write(root, 'permissions.allow.json', { allow: ['fs.write:workspace', 'shell.exec:*'] });
+  write(root, 'permissions.allow.json', {
+    allow: ['fs.write:workspace', 'shell.exec:*', 'path:C:/Projects/demo'],
+    meta: { 'path:C:/Projects/demo': { grantedAt: mutation, source: 'rehearsal' } },
+  });
   write(root, 'connectors/state.json', { version: 2, configs: [{ id: 'notion', transport: 'http', url: 'https://mcp.example/api?token=DO_NOT_EXPORT', headers: { Authorization: 'Bearer DO_NOT_EXPORT', 'X-Safe': 'yes' }, oauth: true }], oauth: { byId: { notion: { accessToken: 'DO_NOT_EXPORT', refreshToken: 'DO_NOT_EXPORT' } }, clients: {} } });
   write(root, 'channels/secrets.json', { telegram: { enabled: true, botName: 'station-bot', token: 'DO_NOT_EXPORT' } });
   write(root, '.secrets/spotify.json', { accessToken: 'DO_NOT_EXPORT' });
@@ -58,12 +61,12 @@ function seed(root, mutation, taskDone = false) {
 
 ensure(out); ensure(backupDir); seed(source, 100, false);
 const browser100 = {
-  'starnet.save': JSON.stringify({ schema: 'starnet.save', version: 6, updatedAt: 100, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: ['command', 'lab'], props: ['terminal', 'bench'] } }),
+  'starnet.save': JSON.stringify({ schema: 'starnet.save', version: Save.CURRENT, updatedAt: 100, agent: { id: 'agent', name: 'NOVA' }, station: { rooms: ['command', 'lab'], props: ['terminal', 'bench'] } }),
   'starnet.station.v1': JSON.stringify({ selectedRoom: 'command', camera: { x: 3, y: 4 } }),
   'starnet.queststate.v1': JSON.stringify({ seen: ['quest-1'] }),
   'starnet.byok.key': 'DO_NOT_EXPORT'
 };
-let bundle100, backup100, cleanReceipt, cleanFingerprint;
+let bundle100, backup100, cleanReceipt, cleanFingerprint, cleanTarget, cleanBrowser;
 
 record('dr.1-capture', 'Capture complete quiescent station', () => {
   bundle100 = Recovery.capture({ workspaceRoot: source, browserStore: browser100, now: 1000, appVersion: '0.9.0-rehearsal', lastCompletedMutation: 100 });
@@ -75,14 +78,14 @@ record('dr.1-capture', 'Capture complete quiescent station', () => {
 });
 
 record('dr.2-clean-profile', 'Restore complete station onto clean machine/profile', () => {
-  const target = path.join(scratch, 'clean-machine', 'workspaces');
-  const browser = {};
-  cleanReceipt = Recovery.restore({ bundle: Recovery.readBundle(backup100), targetRoot: target, browserSink: browser, nonce: 'clean' });
-  const recaptured = Recovery.capture({ workspaceRoot: target, browserStore: browser, now: 1001, appVersion: '0.9.0-rehearsal', lastCompletedMutation: 100 });
+  cleanTarget = path.join(scratch, 'clean-machine', 'workspaces');
+  cleanBrowser = {};
+  cleanReceipt = Recovery.restore({ bundle: Recovery.readBundle(backup100), targetRoot: cleanTarget, browserSink: cleanBrowser, nonce: 'clean' });
+  const recaptured = Recovery.capture({ workspaceRoot: cleanTarget, browserStore: cleanBrowser, now: 1001, appVersion: '0.9.0-rehearsal', lastCompletedMutation: 100 });
   cleanFingerprint = Recovery.semanticFingerprint(recaptured);
   assert(JSON.stringify(cleanFingerprint) === JSON.stringify(Recovery.semanticFingerprint(bundle100)), 'semantic fingerprint changed after restore');
-  assert(read(target, 'agent/workshop/run-1/report.md').includes('mutation=100'), 'deliverable missing after restore');
-  return { target, semanticFingerprint: cleanFingerprint, restored: cleanReceipt.restored, skipped: cleanReceipt.skipped, reauthentication: cleanReceipt.reauthentication, browserKeysRestored: cleanReceipt.browserKeysRestored };
+  assert(read(cleanTarget, 'agent/workshop/run-1/report.md').includes('mutation=100'), 'deliverable missing after restore');
+  return { target: cleanTarget, semanticFingerprint: cleanFingerprint, restored: cleanReceipt.restored, skipped: cleanReceipt.skipped, reauthentication: cleanReceipt.reauthentication, browserKeysRestored: cleanReceipt.browserKeysRestored };
 });
 
 record('dr.3-corrupt-bundle', 'Reject corrupt backup before destination mutation', () => {
@@ -187,6 +190,14 @@ const md = [
   '', '## Known limits', '', ...status.limitations.map(x => '- ' + x), ''
 ].join('\n');
 fs.writeFileSync(path.join(out, 'summary.md'), md);
+if (cleanTarget && fs.existsSync(cleanTarget)) {
+  fs.cpSync(cleanTarget, path.join(out, 'restored-profile'), { recursive: true });
+  fs.writeFileSync(path.join(out, 'starnet-browser-restore.json'), JSON.stringify({
+    schema: 'starnet.backup', version: 1, app: 'starnet', exportedAt: bundle100.createdAt,
+    agentName: 'NOVA', secretsIncluded: false, secretPolicy: 'credentials-excluded',
+    store: cleanBrowser || {}, notebook: null
+  }, null, 2) + '\n');
+}
 fs.rmSync(latest, { recursive: true, force: true });
 fs.cpSync(out, latest, { recursive: true });
 fs.rmSync(scratch, { recursive: true, force: true });
