@@ -38,7 +38,11 @@ function makeRouter(o) {
   function setStation(stationDoc) {
     const v = stationStore.validateStationDoc(stationDoc);
     if (!v.ok) return { ok: false, error: v.error };
-    if (!v.routingOk && stationPlan) {
+    // a non-deployable station (cycle/orphan/dead bay) is refused UNCONDITIONALLY. The old guard
+    // (`!v.routingOk && stationPlan`) made validation order-dependent: a FIRST install of a cyclic
+    // station slipped through and claimed ok while arming no routing — the same doc refused a moment
+    // later if any station was already installed. Refusal must not depend on install order (2026-08-04).
+    if (!v.routingOk) {
       return {
         ok: false,
         error: 'station routing plan has blocking errors',
