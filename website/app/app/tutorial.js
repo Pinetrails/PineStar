@@ -20,6 +20,33 @@
    P2 = just-in-time coachmarks (seen()/markSeen()); P3 = the Field Manual codex + Station Briefing. */
 'use strict';
 
+/* DON'T BURY THE MAP — pure geometry, hoisted out of the IIFE so the gate can actually exercise it
+   (test/coach-dodge.test.js), the same shape stationui.js uses for clampTerminalSize.
+
+   finishUp() spawns BOTH the FIRST STEPS brief and the ⚑ QUESTS coachmark, and both want the bottom-left:
+   the brief clamps against #left/#chat-panel, the coach clamps against the viewport, and neither knew the
+   other existed — so at 1280×720 the coach (z 99000) landed square on the checklist (z 1300) the tour had
+   just handed over. The brief is the DURABLE surface, so the COACH dodges.
+
+   Four candidates in preference order, and one is only taken if it BOTH clears the brief and fits on
+   screen — a fallback that merely "probably" clears is how a short viewport ends up overlapping anyway.
+   ABOVE comes first: it keeps the bubble in the same column as the ring it belongs to (these fire on
+   bottom-bar anchors) and off COMMS. If nothing clean fits, leave the box where the anchor put it rather
+   than fling it somewhere worse. `box` is mutated and returned; `brief` is a visual-px rect. */
+function dodgeRect(box, brief, vw, vh) {
+  const clears = b => b.left + box.w <= brief.left || b.left >= brief.right || b.top + box.h <= brief.top || b.top >= brief.bottom;
+  const fits = b => b.left >= 8 && b.left + box.w <= vw - 8 && b.top >= 8 && b.top + box.h <= vh - 8;
+  if (clears(box)) return box;
+  const tries = [
+    { left: box.left,                top: brief.top - box.h - 12 },   // above — same column as the anchor, clear of COMMS
+    { left: brief.right + 12,        top: box.top },                  // right of it
+    { left: box.left,                top: brief.bottom + 12 },        // below
+    { left: brief.left - box.w - 12, top: box.top }                   // left of it
+  ];
+  for (const c of tries) if (clears(c) && fits(c)) { box.left = c.left; box.top = c.top; return box; }
+  return box;
+}
+
 const Tutorial = (() => {
   const KEY = 'starnet.tutorial.v1';
   let state = load();
@@ -666,21 +693,12 @@ const Tutorial = (() => {
     if (coach.bubble) coach.bubble.remove();
     coach = null;
   }
-  /* DON'T BURY THE MAP. finishUp() spawns BOTH the FIRST STEPS brief and the ⚑ QUESTS coachmark, and both
-     want the bottom-left: the brief clamps against #left/#chat-panel, the coach clamps against the viewport,
-     and neither knew the other existed — so at 1280×720 the coach (z 99000) landed square on the checklist
-     (z 1300) the tour had just handed over. The brief is the DURABLE surface, so the coach dodges: slide
-     clear to its right when there's room, otherwise stack above it. No-ops whenever no brief is showing. */
-  function dodgeBrief(box, vw) {
+  // measure the live brief and hand the geometry to the pure dodgeRect above. No-op when no brief is showing.
+  function dodgeBrief(box, vw, vh) {
     if (!briefEl || !document.contains(briefEl)) return box;
     const z = overlayScale(), r0 = briefEl.getBoundingClientRect();
     if (!r0.width || !r0.height) return box;
-    const r = { left: r0.left / z, top: r0.top / z, right: r0.right / z, bottom: r0.bottom / z };
-    const clear = box.left + box.w <= r.left || box.left >= r.right || box.top + box.h <= r.top || box.top >= r.bottom;
-    if (clear) return box;
-    if (r.right + 12 + box.w <= vw - 8) box.left = r.right + 12;   // room to its right — keep the vertical tie to the anchor
-    else box.top = Math.max(8, r.top - box.h - 12);                // narrow window — stack above it instead
-    return box;
+    return dodgeRect(box, { left: r0.left / z, top: r0.top / z, right: r0.right / z, bottom: r0.bottom / z }, vw, vh);
   }
   // glue the bubble (and ring) to the anchor every frame — survives camera/layout shifts and self-clears
   // the moment the surface is gone (e.g. REFIT closed out from under a REFIT coach).
@@ -714,7 +732,7 @@ const Tutorial = (() => {
       const left = Math.max(8, Math.min(r.left, vw - bw - 8));               // clamp-min last: never below 8, even in a narrow window
       let top = r.bottom + gap;
       if (top + bh > vh - 8) top = Math.max(8, r.top - bh - gap);            // flip above if it would clip the bottom
-      const box = dodgeBrief({ left, top, w: bw, h: bh }, vw);
+      const box = dodgeBrief({ left, top, w: bw, h: bh }, vw, vh);
       b.style.left = box.left + 'px'; b.style.top = box.top + 'px';
     }
     coach.raf = requestAnimationFrame(placeCoach);
@@ -992,3 +1010,6 @@ const Tutorial = (() => {
     onEnterGame, fillFieldManual, showBrief, tickBrief, teardown, isCoaching
   };
 })();
+
+// browser-safe node shim (guarded exactly like stationui.js) so the gate can unit-test the pure geometry
+if (typeof module !== 'undefined' && module.exports) module.exports = { dodgeRect };
