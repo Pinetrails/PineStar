@@ -41,6 +41,11 @@
       'source_run_id: ' + escYaml(skill.sourceRunId || ''),
       'pinned: ' + (!!skill.pinned ? 'true' : 'false')
     ];
+    if (skill.sourceUrl) lines.push('source_url: ' + escYaml(skill.sourceUrl));
+    if (skill.sourceDigest) lines.push('source_digest: ' + escYaml(skill.sourceDigest));
+    if (skill.sourceVersion) lines.push('source_version: ' + escYaml(skill.sourceVersion));
+    if (skill.sourceAuthor) lines.push('source_author: ' + escYaml(skill.sourceAuthor));
+    if (skill.sourceLicense) lines.push('source_license: ' + escYaml(skill.sourceLicense));
     // Consolidation lineage: an archived package says which live skill absorbed it, so the merge is
     // readable on disk and not just in the JSONL log.
     if (skill.absorbedInto) lines.push('absorbed_into: ' + escYaml(skill.absorbedInto));

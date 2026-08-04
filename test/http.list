@@ -50,6 +50,7 @@ test/browser.gauntlet.e2e.test.js
 test/servicekeys.http.test.js
 test/servicekeys.shell.e2e.test.js
 test/skills.gate.http.test.js
+test/skill-exchange.http.test.js
 test/skills.gate.prompt.e2e.test.js
 test/roster-track.e2e.test.js
 test/routes-coverage.http.test.js
