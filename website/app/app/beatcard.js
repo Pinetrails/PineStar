@@ -31,11 +31,22 @@
       if (key) set.delete(key); else set.clear();
       if (!set.size) pending.delete(kind);
     }
-    function can(kind) {
+    /* can(kind, selfKey) — may `kind` take the one slot right now?
+       'busy' (a card is visible) · the blocking kind (a higher-ranked reservation is in flight) · 'free'.
+
+       SELF-RESERVATION (the thread-channel deadlock, fixed 2026-08-04). The collection pass reserves BOTH of its
+       fetch-backed kinds ('study' and 'thread', under its own runId) so nothing lower can steal the slot across the
+       await — and then asked this predicate whether thread could speak. Its own 'study' reservation outranks
+       'thread', so the answer was always 'study': threadCandidate returned null on EVERY run, queueThread was never
+       reached and offerThread was dead code. A reservation held under `selfKey` is therefore INVISIBLE to a caller
+       that identifies itself with that key: a pass can never veto its own candidate collection. Another run's
+       reservation under the same kind still blocks, because its key differs. */
+    function can(kind, selfKey) {
       if (visible !== null) return 'busy';
       const ownRank = rank(kind);
       for (const [pendingKind, keys] of pending) {
-        if (keys.size && rank(pendingKind) < ownRank) return pendingKind;
+        const others = keys.size - ((selfKey && keys.has(selfKey)) ? 1 : 0);
+        if (others > 0 && rank(pendingKind) < ownRank) return pendingKind;
       }
       return 'free';
     }
@@ -69,16 +80,18 @@
       memoryShown() { show('memory'); },
       memoryDone(runId, more) { releaseReservation('memory', runId); done('memory', more ? 'memory' : null); },
       memoryEmpty(runId) { releaseReservation('memory', runId); },
-      canStudy() { return can('study'); },
+      // every canX takes the OPTIONAL self-key: the collection pass passes its runId so its own in-flight
+      // reservations don't veto its own candidates (see can()).
+      canStudy(selfKey) { return can('study', selfKey); },
       studyShown() { show('study'); },
       studyDone(more) { done('study', more ? 'memory' : null); },
-      canArc() { return can('arc'); },
+      canArc(selfKey) { return can('arc', selfKey); },
       arcShown() { show('arc'); },
       arcDone(more) { done('arc', more ? 'memory' : null); },
-      canTrust() { return can('trust'); },
+      canTrust(selfKey) { return can('trust', selfKey); },
       trustShown() { show('trust'); },
       trustDone(more) { done('trust', more ? 'memory' : null); },
-      canThread() { return can('thread'); },
+      canThread(selfKey) { return can('thread', selfKey); },
       threadShown() { show('thread'); },
       threadDone(more) { done('thread', more ? 'memory' : null); },
       _pending() { return this.pendingCount('memory'); }
@@ -94,6 +107,12 @@
       ? options.vanish
       : function (node, done) { if (node && typeof node.remove === 'function') node.remove(); if (done) done(); };
     const maxSeen = Number.isFinite(options.maxSeen) ? Math.max(1, options.maxSeen) : 200;
+    /* MINIMUM VISIBLE AGE. Leaving a card undecided is read as an IGNORE, and two ignores permanently silence a
+       belief/offer — so an "ignore" may only be tallied against a card the Commander actually had a chance to see.
+       A card retired before this age closes as 'unseen': the slot is freed exactly the same way, but no feature
+       ignore hook fires. Tunable; 1.2s is comfortably longer than any render+scroll and far shorter than the
+       run-to-run gap a real card lives across. */
+    const minVisible = Number.isFinite(options.minVisible) ? Math.max(0, options.minVisible) : 1200;
     const slot = makeSlot(options.priority);
     const seen = new Map();
     const queues = new Map();
@@ -143,6 +162,9 @@
       if (!isCurrent(record) || record.closing) return false;
       record.closing = true;
       clearExpiry(record.kind);
+      if (record.seenTimer) { cancel(record.seenTimer); record.seenTimer = null; }
+      // an expiry that lands before the card was visible long enough is NOT a verdict — see minVisible.
+      if (reason === 'expired' && !record.seen) reason = 'unseen';
       if (reason === 'expired' && typeof record.onExpire === 'function') {
         try { record.onExpire(record); } catch (_) {}
       }
@@ -205,20 +227,50 @@
         kind: kind, runId: spec.runId || null, data: spec.data,
         node: spec.node || null, decided: false, closing: false, closed: false,
         generation: generation, token: ++sequence, finishTimer: null,
+        seen: minVisible === 0, seenTimer: null,
         handoff: spec.handoff, onExpire: spec.onExpire,
         onRelease: spec.onRelease, onGone: spec.onGone
       };
       active = record;
+      if (minVisible > 0) {
+        const expectedGeneration = generation;
+        record.seenTimer = later(function () {
+          record.seenTimer = null;
+          if (generation === expectedGeneration) record.seen = true;
+        }, minVisible);
+      }
       record.handle = makeHandle(record);
       return record.handle;
     }
     function expire(kind) { if (!active || (kind && active.kind !== kind)) return false; return active.handle.expire(); }
+    /* THE STARVE FIX (recommendation spine, S2). A scheduled sweep is armed at a NEW task end to retire the
+       PREVIOUS moment's undecided card. It used to expire only when the holder's kind matched the sweep's
+       kind — so an unanswered gentle nudge (or any other family) kept the one slot until the next reset()
+       and starved every higher-value offer queued behind it. The sweep now retires whichever UNDECIDED card
+       is holding the slot. Nothing about a decision is weakened: handle.expire() still refuses a decided
+       card, so a verdict can never be miscounted as an "ignore", and each record fires its OWN onExpire
+       hook — the right feature tallies the ignore, never the sweeper's. */
+    /* sweepExpire(armedToken) — retire the card this sweep was ARMED AGAINST.
+
+       THE RACING-SWEEP BUG (fixed 2026-08-04). Three sweeps arm at every hero run end (the study, trust and
+       thread lifecycle wires each call scheduleExpire(kind, 900)), and the queue drain that runs in the SAME
+       timer batch can render a brand-new card between them. The next sweep in that batch then retired the
+       FRESH card — the Commander never saw a frame of it — and its onExpire tallied an "ignore" against a
+       belief that was never actually shown. Two of those permanently silence it, and the session cap was
+       already spent by markShown. A sweep is now bound to the record that was holding the slot when it ARMED:
+       if the slot turned over in between (or was empty at arm time), the sweep is a no-op. */
+    function sweepExpire(armedToken) {
+      if (!active) return false;
+      if (arguments.length && active.token !== armedToken) return false;
+      return active.handle.expire();
+    }
     function scheduleExpire(kind, delay) {
       clearExpiry(kind);
       const expectedGeneration = generation;
+      const armedToken = active ? active.token : 0;   // WHICH card this sweep is allowed to retire
       const id = later(function () {
         expiryTimers.delete(kind);
-        if (generation === expectedGeneration) expire(kind);
+        if (generation === expectedGeneration) sweepExpire(armedToken);
       }, Math.max(0, Number(delay) || 0));
       expiryTimers.set(kind, id);
       return id;
@@ -229,6 +281,7 @@
       for (const id of expiryTimers.values()) cancel(id);
       expiryTimers.clear();
       if (active && active.finishTimer) cancel(active.finishTimer);
+      if (active && active.seenTimer) cancel(active.seenTimer);
       active = null;
       slot.reset();
       if (opts.seen !== false) seen.clear();
@@ -236,10 +289,10 @@
     }
 
     return {
-      slot, once, hasSeen, enqueue, shift, queueSize, clearQueue, claim, expire, scheduleExpire, reset,
+      slot, once, hasSeen, enqueue, shift, queueSize, clearQueue, claim, expire, sweepExpire, scheduleExpire, reset,
       reserve(kind, runId) { slot.reserve(kind, runId); },
       releaseReservation(kind, runId) { slot.releaseReservation(kind, runId); },
-      canOffer(kind) { return slot.can(kind); },
+      canOffer(kind, selfKey) { return slot.can(kind, selfKey); },
       busy(kind) { return !!(active && (!kind || active.kind === kind)); },
       active(kind) { return active && (!kind || active.kind === kind) ? active.handle : null; },
       visibleBeat() { return slot.visibleBeat(); },

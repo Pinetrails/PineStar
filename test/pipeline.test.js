@@ -194,14 +194,33 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.eq(picks.length, 0, 'walking through a merger never consults the splitter round-robin picker');
 }
 
-/* ---- FILTER_NO_DEFAULT ---- */
+/* ---- FILTER_NO_DEFAULT is a WARN, not a blocker (2026-08-04): a def-less filter never drops work —
+        engine and resolveTarget share the routed -> def -> FIRST-lane fallback, so it can neither loop
+        nor void a crate, which is the bar a blocking error must meet ---- */
 {
   const plan = P.compileRoutingPlan(geo(
     [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
-     { id: 'f1', t: 'filter', x: 1, y: 0, w: 1, h: 1, routes: { code: 'E' } }],   // no def
-    [belt(1, 0, 'E'), belt(2, 0, 'E')]
+     { id: 'f1', t: 'filter', x: 1, y: 0, w: 1, h: 1, routes: { code: 'E' } },   // no def
+     { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'coder' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E')]
   ));
-  A.ok(plan.errors.some(e => e.code === 'FILTER_NO_DEFAULT'), 'a filter with no default lane -> FILTER_NO_DEFAULT');
+  A.ok(plan.errors.some(e => e.code === 'FILTER_NO_DEFAULT' && e.warn), 'a filter with no default lane -> FILTER_NO_DEFAULT (warn)');
+  A.ok(P.ok(plan), 'a def-less filter is a nag, never a deploy blocker (fallback lane means work is never dropped)');
+  A.eq(P.resolveTarget(plan, { tag: 'misc' }), 'coder', 'unrouted work still resolves via the first-lane fallback');
+}
+
+/* ---- ORPHAN_JUNCTION: a junction touching NO belt was silently inert — now it nags (warn) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'coder' },
+     { id: 'f1', t: 'filter', x: 9, y: 9, w: 1, h: 1, routes: { code: 'E' }, def: 'E' }],   // nowhere near a belt
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E')]
+  ));
+  A.ok(plan.errors.some(e => e.code === 'ORPHAN_JUNCTION' && e.propId === 'f1' && e.warn), 'a beltless junction -> ORPHAN_JUNCTION (warn), never silence');
+  A.ok(P.ok(plan), 'an inert junction cannot loop or void work — the floor still deploys');
+  A.eq(Object.keys(plan.junctions).length, 0, 'the orphan compiles to NO junction (still inert, just no longer silent)');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'coder', 'the working line is untouched');
 }
 
 /* ---- resolveTarget null fallback + replay-stable hash ---- */
@@ -351,6 +370,48 @@ const belt = (x, y, dir) => ({ x, y, dir });
     [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 0, 'E')]
   ));
   A.eq(P.sourceFor(plan, 'second'), { x: 1, y: 0 }, "an addressed item reaches 'second' RIDING THROUGH 'first's dock hookup");
+}
+
+/* ---- MULTI-LANE INTAKE (open since 2026-07-26, closed 2026-08-04): an intake records EVERY ring belt
+        tile (mirroring the bay/outbox multi-hookup rule), and every source walker fans out from all of
+        them. The exact prior-audit failure: the reaching lane starts on the SECOND-scanned ring tile —
+        the first-scanned mouth dead-ends — and the bay was invisible to reach/resolve/live/sourceFor. ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 1, y: 1, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 5, y: 1, w: 2, h: 2, agentId: 'nova' }],
+    [belt(1, 0, 'N'),                                        // mouth 1 (first-scanned): dead-ends immediately
+     belt(2, 2, 'E'), belt(3, 2, 'E'), belt(4, 2, 'E')]      // mouth 2 (later ring tile): the reaching lane
+  ));
+  A.eq(plan.sources.length, 1, 'one intake, one source');
+  A.eq(plan.sources[0].tile, { x: 1, y: 0 }, '`tile` stays the FIRST ring hit (backward compat)');
+  A.eq(JSON.stringify(plan.sources[0].tiles), JSON.stringify([{ x: 1, y: 0 }, { x: 2, y: 2 }]), '`tiles` records EVERY ring belt tile, in ring-scan order');
+  A.eq(plan.reach.nova, true, 'the bay is REACHABLE via the second-scanned mouth (was false)');
+  A.eq(plan.errors.length, 0, 'no BAY_NOT_FED ghost on a genuinely fed bay');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'nova', 'resolveTarget walks past the dead first mouth to the reaching lane (was null)');
+  A.eq(P.sourceFor(plan, 'nova'), { x: 2, y: 2 }, 'sourceFor answers the mouth whose lane actually leads home');
+  const live = P.liveTiles(plan);
+  A.ok(live['2,2'] && live['3,2'] && live['4,2'], 'the reaching lane is energized end to end (was cold)');
+  A.ok(!live['1,0'], 'the dead-end mouth stays cold (no false glow)');
+}
+
+/* ---- an intake feeding TWO lanes to two bays: both energize, dispatch takes the first mouth's lane,
+        addressed work still enters through the lane that leads home ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 1, y: 1, w: 1, h: 1 },
+     { id: 'ba', t: 'bay', x: 5, y: 0, w: 1, h: 1, agentId: 'alpha' },     // fed by the (2,0) mouth
+     { id: 'bb', t: 'bay', x: 5, y: 2, w: 1, h: 1, agentId: 'beta' }],     // fed by the (2,2) mouth
+    [belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'),
+     belt(2, 2, 'E'), belt(3, 2, 'E'), belt(4, 2, 'E')]
+  ));
+  A.eq(plan.reach.alpha, true, 'lane one reaches alpha');
+  A.eq(plan.reach.beta, true, 'lane two reaches beta (was: only the first-recorded mouth existed)');
+  const live = P.liveTiles(plan);
+  A.ok(live['2,0'] && live['4,0'] && live['2,2'] && live['4,2'], 'BOTH lanes energize');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'alpha', 'unaddressed dispatch takes the first mouth in ring-scan order (deterministic)');
+  A.eq(P.sourceFor(plan, 'beta'), { x: 2, y: 2 }, "an item addressed to beta enters through beta's lane, never alpha's");
+  A.eq(P.resolveTarget(plan, { boundAgentId: 'beta' }), 'beta', 'addressed work resolves to its addressee');
 }
 
 /* ---- resolveTarget: a SECOND source feeding the only bay is found (sources[0] alone was the old blind spot) ---- */

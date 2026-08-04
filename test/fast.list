@@ -289,6 +289,7 @@ test/pitchstore.test.js
 test/suggeststore.test.js
 test/beat-coordination.test.js
 test/beatcard.test.js
+test/recommend.test.js
 test/quests.test.js
 test/queststore.test.js
 test/queststate.test.js
@@ -431,6 +432,7 @@ test/stationbake.materials.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/routing.b5.test.js
+test/plan-poster.test.js
 test/chain.test.js
 test/propanchor.test.js
 test/prop-mount.test.js
@@ -517,3 +519,5 @@ test/station-bridge.test.js
 test/station-commands.test.js
 test/station-tools.test.js
 test/code-mode.test.js
+test/station-recovery.test.js
+test/station-recovery-cli.test.js

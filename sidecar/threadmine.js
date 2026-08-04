@@ -68,6 +68,14 @@
     }
     let body = turns.join('\n');
     if (body.length > cap) body = body.slice(body.length - cap);   // keep the most recent exchange
+    // the Commander's OWN turns, separately — a mined quote is located in the whole exchange (which includes the
+    // AGENT's words), so the turn-in card may only claim "you said" when the quote is found in THIS blob.
+    const userTurns = [];
+    for (const msg of (Array.isArray(messages) ? messages : [])) {
+      if (!msg || msg.role !== 'user') continue;
+      const c = typeof msg.content === 'string' ? msg.content.replace(RECALL_FENCE, '') : '';
+      if (c) userTurns.push(c);
+    }
     const prompt =
       'Read this conversation. Find CONCRETE WORK the Commander explicitly wanted but that was never acted on ' +
       'here — a "thread" a colleague could genuinely pick up later (a tool they asked for, a project they ' +
@@ -84,7 +92,7 @@
       'DO: <the concrete first deliverable someone could produce for it>\n' +
       'CONFIDENCE: <high | medium | low — that the Commander would genuinely want this picked up>\n' +
       'List at most 2, best first. Most conversations contain NO real threads — when in doubt, reply NONE.\n\n' + body;
-    return { prompt: prompt, conversation: body };
+    return { prompt: prompt, conversation: body, userText: userTurns.join('\n') };
   }
 
   // parse the model reply into { title, quote, starter, confidence } candidates. A THREAD line opens a block; the
@@ -129,6 +137,7 @@
 
     const built = buildPrompt(run.messages, PROMPT_CAP);
     const convo = normText(built.conversation);   // the haystack for the verbatim-quote veto
+    const spoken = normText(built.userText || '');   // the Commander's OWN words (the "you said" bar)
     let raw;
     try { raw = await propose(built.prompt); } catch (_) { return { proposals: [], prompt: built.prompt }; }
 
@@ -161,6 +170,9 @@
       proposals.push({
         id: 'thread_' + (proposals.length + 1),
         title: title, spec: quote, starter: starter, fingerprint: fp,
+        // WHO said it: 'user' only when the quote is located in the Commander's own turns. The turn-in card cites
+        // anything else as "from the conversation" rather than putting the agent's words in the Commander's mouth.
+        speaker: (nq && spoken.indexOf(nq) >= 0) ? 'user' : 'other',
         sourceRef: { streamId: run.streamId || null, runId: run.runId || null, date: now },
         sourceRunId: run.runId || null, createdAt: now
       });

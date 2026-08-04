@@ -205,7 +205,13 @@
       // New-format proposals must ground their quote in the real run. Old-format replies remain compatible and
       // fall back to the directive receipt while providers roll onto the stricter prompt.
       if (evidence && (evidence.length < 6 || evidenceBlob.indexOf(normEvidence(evidence)) < 0)) continue;
-      if (!evidence) evidence = (typeof run.directive === 'string' && run.directive) ? String(run.directive).slice(0, 140) : '';
+      // FALLBACK GROUNDING: no located quote → cite the run's DIRECTIVE instead, stamped kind:'directive' below so
+      // the card never presents a (possibly machine-composed) task as the Commander's own speech. A cut directive
+      // ends in an ellipsis so the quote can never read as a complete sentence the Commander never finished.
+      if (!evidence) {
+        const dir = (typeof run.directive === 'string' && run.directive) ? String(run.directive) : '';
+        evidence = dir.length > 140 ? (dir.slice(0, 139) + '…') : dir;
+      }
       if (lowValue(text)) continue;                       // trivia / run-narration floor
       const key = cand.dim + '::' + text.toLowerCase();
       if (seen[key]) continue;
@@ -300,39 +306,27 @@
     return false;
   }
 
-  /* ---- THE BEAT SLOT (pure, node-testable): the one-post-run-beat arbiter chat.js drives. ----
-     Exists because the memory turn-in and the study card arrive on DIFFERENT clocks — memory.proposed lands only
-     after reflection's LLM round-trip (seconds after agent.run.end) — so "check the DOM at offer time" produces
-     false negatives and can put TWO consent beats on screen. This state machine is the single source of truth
-     for who holds the visible post-run beat; BOTH sides route their render/queue decisions through it, so the
-     "never two beats" invariant is enforced in ONE tested place instead of scattered DOM checks. MEMORY WINS:
-     while any reflection is proposed-but-unresolved, study cedes; a memory deck arriving over a visible study
-     card QUEUES (never stacks) and renders the moment the study card resolves.
+  /* ---- THE BEAT SLOT — a COMPATIBILITY SHIM. The real arbiter lives elsewhere now. ----
 
-     visible ∈ { null, 'memory', 'study', 'arc' }; pendingMemory = runIds whose memory.proposed arrived but whose
-     deck hasn't resolved yet (covers the whole LLM→fetch→deck window, incl. the 350ms fetch gap). Contract:
-       memoryProposed(runId)     — reflection announced proposals: reserve memory's claim (call BEFORE the fetch).
-       memoryDeck()              — a fetched deck wants to render: 'render' (slot was free) | 'queue' (a beat is up).
-       memoryDone(runId, more)   — the visible deck resolved; more=true keeps the slot held for the queued next deck.
-       memoryEmpty(runId)        — the fetch came back empty / notify-only: release the claim (deck never rendered).
-       canStudy()                — 'free' | 'busy' (a beat is visible) | 'memory' (reflection in flight — memory wins).
-       studyShown()/studyDone(more) — the study card opened / resolved; more=true hands the slot to a queued memory deck.
-       visibleBeat()             — 'memory' | 'study' | 'arc' | null. THE tested invariant: never two at once.
+     WHERE THE TRUTH IS (as of the recommendation spine, 2026-08-03):
+       • frontend/app/recommend.js — THE RELEVANCE BAR. Pure scorer + one-voice arbiter over every proactive
+         channel (memory > study > arc > trust > thread > rate > suggest > seed > routine > recruit >
+         curiosity). It also enforces evidence-or-silence: a candidate that cannot cite real state is dropped.
+       • frontend/app/beatcard.js — THE SLOT MACHINERY. One visible beat, reservations, run dedupe, FIFO
+         deferral, expiry/vanish, and the generation tokens that make late async completions inert.
+       • frontend/app/chat.js — recommendPass(): ONE agent.run.end listener, ONE arm point. Every channel
+         offers a candidate built from its own sync predicate; the spine picks one; that channel's existing
+         render path fires. Nothing else arms a proactive beat.
 
-     GROWTH Tier 2 (ADDITIVE): the GOAL-ARC confirm beat is a THIRD, LOWEST-priority participant — memory turn-in
-     and study proposals both win the moment before it, so an arc confirm only fires on a genuinely free slot
-     (canArc() === 'free'). It cannot preempt anything and nothing preempts a VISIBLE arc panel (a focused Dialogue
-     confirm, like the First Pitch, owns the screen until the Commander answers). The pre-Tier-2 surface is
-     untouched: memory/study behavior is byte-identical (canStudy still sees only visible + pendingMemory), so the
-     128 study.test assertions hold unchanged. canArc()/arcShown()/arcDone() are the only additions.
+     This function is kept ONLY so older callers and the focused study.test slot suite keep exercising the
+     shared arbiter: it returns beatcard.js's makeSlot() unchanged. The 4-kind state machine this comment
+     used to describe (visible ∈ {null,'memory','study','arc'} + a hand-rolled pendingMemory set) no longer
+     exists here — it was absorbed into beatcard.js's generic priority slot. MEMORY STILL WINS: reflection
+     reserves 'memory' the moment memory.proposed arrives (before its fetch), and every lower-priority
+     candidate stands down while that reservation is held.
 
-     GROWTH Tier 3 (ADDITIVE): the EARNED-AUTONOMY offer beat is a FOURTH, EVEN-LOWER-priority participant — memory
-     turn-in, study proposals, AND the arc confirm all win the moment before it (priority: memory > study > arc >
-     trust). A trust offer may only take a WHOLLY FREE slot (canTrust() === 'free'); it cannot preempt anything, and
-     nothing preempts a VISIBLE trust card until the Commander answers Accept / Not-yet. The Tier-1/Tier-2 surface is
-     byte-identical: canStudy()/canArc() still see only visible + pendingMemory, and 'trust' is just another visible
-     value they read as 'busy' — so the 128 study.test + the goalstore §8 arc assertions hold unchanged.
-     canTrust()/trustShown()/trustDone() are the only additions. */
+     DO NOT re-add arbitration logic to this file. study.js is a PURE ENGINE (parse / salience / dedup /
+     ratings-taste / archetype); who speaks is not its job. */
   function makeBeatSlot() {
     const shared = BeatCard || (typeof globalThis !== 'undefined' && globalThis.BeatCard);
     if (!shared || typeof shared.makeSlot !== 'function') throw new Error('BeatCard must load before Study.makeBeatSlot');

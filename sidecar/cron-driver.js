@@ -336,10 +336,19 @@
           Promise.resolve(advanceChain({
             agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''),
             signal: ac.signal, streamId: 'cron-' + runId, key: key, model: model, provider: provider,
+            // skills/workdir/toolsets are the ROUTINE's configuration, deliberately kept on downstream hops for
+            // now so multi-stage routines keep working (flagged 2026-08-04: applying a foreign agent's workdir/
+            // toolsets to a hop is a misdirection risk — revisit under the narrower-fallback law).
             preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [], requiredPreloads: true, workdir: job.workdir || null,
             enabledToolsets: Array.isArray(job.enabledToolsets) ? job.enabledToolsets.slice() : null,
             initialTaint: !!(job.contextFrom && job.contextFrom.length),
-            unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
+            /* GRANTS NEVER FLOW DOWN A LINE (2026-08-04). The unattended terminal/verify grant the Commander
+               recorded is an approval of ONE agent — this routine's own dock, which already ran above with
+               job.unattendedGrants. A belt drawn to another dock must not silently extend that approval to a
+               different agent (capability may never silently widen; the fallback direction is NARROWER). A
+               downstream hop that needed a grant fails honestly under the existing chain law: last good
+               output + stop note. */
+            unattendedGrants: [],
             onHop: function () { renewLease(job.id, runId); }
           })).then(
             function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; finishFire(job.id, runId, state, null); },
