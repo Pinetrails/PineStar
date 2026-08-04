@@ -84,6 +84,20 @@ A.eq(Recommend.whyLine({ why: 'because the last 3 runs hit this wall' }), 'becau
 A.eq(Recommend.whyLine({ why: 'Since you keep hand-launching it' }), 'because you keep hand-launching it', 'other connectives normalize too');
 A.eq(Recommend.whyLine({ why: 'You mentioned Sundays.' }), 'because you mentioned Sundays', 'a leading capital joins mid-sentence; trailing punctuation goes');
 A.eq(Recommend.whyLine({ why: 'MCP connectors keep timing out' }), 'because MCP connectors keep timing out', 'an acronym keeps its case');
+/* THE SPINE NEVER REWRITES THE COMMANDER'S WORDS. Lower-casing "a plain leading capital" mangled the evidence
+   itself — proper nouns, languages, products and people's names all got de-capitalized inside their own quote. */
+A.eq(Recommend.whyLine({ why: 'Python is the stack you work in' }), 'because Python is the stack you work in',
+  'a proper noun is NOT de-capitalized (it is the Commander’s word, not the spine’s framing)');
+A.eq(Recommend.whyLine({ why: 'Andrew ships on Fridays' }), 'because Andrew ships on Fridays', 'nor is a person’s name');
+A.eq(Recommend.whyLine({ why: 'you said “Python is my stack”' }), 'because you said “Python is my stack”',
+  'a quoted citation passes through verbatim');
+A.eq(Recommend.whyLine({ why: 'from the task you gave me: “Ship the billing rewrite”' }),
+  'from the task you gave me: “Ship the billing rewrite”',
+  'a citation that carries its OWN preposition is a complete phrase — "because from …" is not English');
+A.eq(Recommend.whyLine({ why: 'from the conversation: “a price watcher for GPUs”' }),
+  'from the conversation: “a price watcher for GPUs”', 'the softened thread citation reads as written');
+A.eq(Recommend.whyLine({ why: 'It matches your goal: “invoices”' }), 'because It matches your goal: “invoices”',
+  'a quote-carrying line is never touched at all');
 A.eq(Recommend.whyLine({ why: '  you   said   this  ' }), 'because you said this', 'whitespace is collapsed');
 A.eq(Recommend.whyLine({ why: '' }), '', 'nothing to cite renders nothing');
 A.eq(Recommend.whyLine(null), '', 'a null candidate renders nothing');
@@ -105,6 +119,9 @@ const iRecCard = chatSrc.indexOf('function recCard(spec)');
 A.ok(iRecCard > 0, 'chat.js defines the ONE offer-card renderer');
 const recBody = chatSrc.slice(iRecCard, iRecCard + 2600);
 A.ok(/rec-eyebrow/.test(recBody) && /rec-glyph/.test(recBody), 'the card leads with the eyebrow, glyph boxed on its own');
+// the eyebrow NAMES the noticer — every caller passes none, so a bare 'NOTICED' dropped the agent's identity
+A.ok(/name \? String\(name\)\.toUpperCase\(\) \+ ' NOTICED' : 'NOTICED'/.test(recBody),
+  'the eyebrow reads “◈ <AGENT> NOTICED” — the station has a name, and the card says it');
 A.ok(recBody.indexOf('rec-evidence') < recBody.indexOf("className = 'turnin-text'"),
   'the EVIDENCE line is rendered BEFORE the proposal (noticed → because → propose)');
 A.ok(recBody.indexOf("className = 'turnin-text'") < recBody.indexOf("className = 'consent-btns'"),
@@ -117,8 +134,24 @@ for (const fn of ['studyCard', 'trustCard', 'threadCard']) {
   A.ok(i > 0 && /recCard\(\{/.test(chatSrc.slice(i, i + 2400)), fn + ' renders through the shared offer card');
 }
 // the why-string grammar is shared with the FOR YOU shelf
-A.ok(/Recommend\.whyLine\(\{ why: raw \}\)/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'marketplace.js'), 'utf8')),
-  'the FOR YOU shelf speaks the same "because …" grammar as the COMMS cards');
+const mktSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'marketplace.js'), 'utf8');
+A.ok(/function whyGrammar\(raw\)[\s\S]{0,300}Recommend\.whyLine\(\{ why: t \}\)/.test(mktSrc),
+  'the bay routes every shelf reason through ONE grammar helper, the same whyLine the COMMS cards use');
+A.ok(/return whyGrammar\(raw\);/.test(mktSrc), 'the FOR YOU shelf speaks it');
+A.ok(/const why = whyGrammar\(/.test(mktSrc) && /why: whyGrammar\('it covers the '/.test(mktSrc),
+  'and so does the specialists shelf (the two shelves can never disagree)');
+/* Every composed reason must read as English AFTER the framing. "because matches your goal" was not a sentence;
+   the leading "it" is what makes it one. Locked on the real strings both shelves emit. */
+const Recipes = require('../frontend/app/recipes.js');
+const reasonOf = (opts) => Recipes.forYouReason({ id: 'r1', name: 'Invoice sweep', tagline: 'clears the invoice pile', tags: {} }, opts);
+A.eq(Recommend.whyLine({ why: reasonOf({ goalText: 'ship the invoice rewrite' }) }),
+  'because it matches your goal: “invoice”', 'a goal match reads as a sentence');
+A.eq(Recommend.whyLine({ why: reasonOf({ launches: { r1: 3 } }) }), 'because you have launched this 3×', 'a launch count already read fine');
+A.eq(Recommend.whyLine({ why: reasonOf({ launches: { r1: { n: 3, rated: { great: 2 } } } }) }),
+  'because you rated this work great 2×', 'so did a verdict count');
+for (const v of ['it matches your focus on code', 'it matches your focus on research', 'it fits your day-to-day ops']) {
+  A.ok(mktSrc.indexOf("'" + v + "'") > 0, 'the affinity copy reads as a sentence after the framing: ' + v);
+}
 /* ── 11b. THE CARD NEVER PUTS WORDS IN THE COMMANDER'S MOUTH (truthful telemetry, 2026-08-04) ──
    `because you said "…"` was rendered for EVERY citation the card had. But study.js falls back to the run's
    DIRECTIVE when the model returns no QUOTE line (evidenceRef.kind = 'directive'), and a directive is very often

@@ -74,6 +74,9 @@
     const k = String(kind || '');
     return Object.prototype.hasOwnProperty.call(SLOT_KIND, k) ? SLOT_KIND[k] : k;
   }
+  // the only leading words whyLine may de-capitalize: sentence-starter pronouns/determiners that carry no
+  // identity of their own. Never a proper noun, a language, a product, or a person's name.
+  const STARTER = /^(You|It|This|That|These|Those|We|They|There|I)\b/;
   function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
   function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
 
@@ -133,9 +136,16 @@
     s = s.replace(/^(?:because|since|as)\b\s*/i, '');
     s = s.replace(/[.…]+$/, '');
     if (!s) return '';
-    // lower-case a plain leading capital so it joins mid-sentence — but leave acronyms/proper-ish tokens
-    // (two leading capitals, or a quote/symbol opener) exactly as the source wrote them.
-    if (/^[A-Z][a-z]/.test(s)) s = s.charAt(0).toLowerCase() + s.slice(1);
+    // a citation that already opens with its own preposition is a complete phrase ("from the task you gave me:
+    // …") — "because from …" is not English. Return it as written; the framing is already there.
+    if (/^(?:from|after)\b/i.test(s)) return s;
+    /* THE SPINE NEVER REWRITES THE COMMANDER'S WORDS (fixed 2026-08-04). This used to lower-case any plain
+       leading capital so the clause joined mid-sentence — which quietly mangled the evidence itself: a belief
+       citing "Python is your stack" rendered "because python…", and a RETIRE citation naming a person renamed
+       them. The evidence is quoted material; only the FRAMING word the spine itself adds may be adjusted. So we
+       de-capitalize exactly one thing: a leading sentence-starter pronoun in an UNQUOTED citation. Any citation
+       carrying a quote is passed through untouched, and every proper noun survives. */
+    if (STARTER.test(s) && s.indexOf('“') < 0 && s.indexOf('"') < 0) s = s.charAt(0).toLowerCase() + s.slice(1);
     return 'because ' + s;
   }
 

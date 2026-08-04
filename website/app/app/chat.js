@@ -3481,7 +3481,11 @@ const Chat = (() => {
     const title = document.createElement('span'); title.className = 'turnin-title rec-eyebrow';
     const glyph = document.createElement('span'); glyph.className = 'rec-glyph'; glyph.textContent = '◈';
     title.appendChild(glyph);
-    title.appendChild(document.createTextNode(String(spec.eyebrow || 'NOTICED')));
+    // the eyebrow NAMES THE NOTICER. Every caller passes no eyebrow, so all seven cards read a flat "◈ NOTICED"
+    // — the agent's own name (which the old per-channel card titles carried) had been dropped on the floor. It is
+    // derived exactly as the rest of the card's copy derives it: the live hero name, upper-cased.
+    const who = String(spec.eyebrow || (name ? String(name).toUpperCase() + ' NOTICED' : 'NOTICED'));
+    title.appendChild(document.createTextNode(who));
     const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
     r.body.appendChild(title); r.body.appendChild(slotEl);
     const item = document.createElement('div'); item.className = 'turnin-item rec-item';
