@@ -31,7 +31,8 @@
 const RecQualityStore = (() => {
   const KEY = 'starnet.recquality.v1';
   const STAMP_CAP = 60;      // in-memory run→stamp memory, FIFO, mirroring chat.js's RUN_META ledger size
-  let state = null;          // { v:1, ch:{ channel: weight }, dim:{ dim: weight } }
+  const DENY_CAP = 100;      // re-confirm denial memory (FIFO) — bounded exactly like goalstore's offered set
+  let state = null;          // { v:1, ch:{ channel: weight }, dim:{ dim: weight }, denied:{ fp:1 }, deniedOrder:[fp] }
   let deps = {};
   let pending = null;        // { channel, dim, id } — an accept waiting for the run it spawns to start
   let stamps = new Map();    // runId → { channel, dim, id }  (in-memory: a reload honestly forgets, like RUN_META)
@@ -45,7 +46,7 @@ const RecQualityStore = (() => {
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
 
   function hydrate(raw) {
-    const s = { v: 1, ch: {}, dim: {} };
+    const s = { v: 1, ch: {}, dim: {}, denied: {}, deniedOrder: [] };
     const rq = engine();
     for (const bag of ['ch', 'dim']) {
       const src = raw && raw[bag];
@@ -57,7 +58,32 @@ const RecQualityStore = (() => {
         if (w !== (rq ? rq.Q_START : 1)) s[bag][String(k).slice(0, 40)] = w;   // neutral needs no storage
       }
     }
+    // the re-confirm denials, rebuilt from their FIFO order (bounded, like goalstore's offered set).
+    const order = raw && Array.isArray(raw.deniedOrder) ? raw.deniedOrder
+      : (raw && raw.denied && typeof raw.denied === 'object') ? Object.keys(raw.denied) : [];
+    for (const fp of order.slice(-DENY_CAP)) {
+      const k = String(fp || '').slice(0, 200);
+      if (k && !s.denied[k]) { s.denied[k] = 1; s.deniedOrder.push(k); }
+    }
     return s;
+  }
+
+  /* ── THE RE-CONFIRM DENIAL SET (Q3) ─────────────────────────────────────────────────────────────────────
+     "Still true that X?" — answered NO. That question must never be asked again until the belief itself
+     CHANGES, which is exactly what the fingerprint encodes (recquality.js beliefFingerprint: the dimension +
+     the belief id + its significant tokens). Same discipline, and the same bounded FIFO, as goalstore.js's
+     offered set. It is a memory of a QUESTION already answered — never a record of the belief itself. */
+  function denyBelief(fp) {
+    const k = String(fp || '').slice(0, 200);
+    if (!ready() || !k || state.denied[k]) return false;
+    state.denied[k] = 1; state.deniedOrder.push(k);
+    while (state.deniedOrder.length > DENY_CAP) { const old = state.deniedOrder.shift(); delete state.denied[old]; }
+    save();
+    return true;
+  }
+  function isBeliefDenied(fp) {
+    const k = String(fp || '');
+    return !!(ready() && k && state.denied[k]);
   }
 
   /* ---------- the read the spine scores against ---------- */
@@ -163,10 +189,10 @@ const RecQualityStore = (() => {
     bind();
   }
   // a brand-new hero starts with NO inherited channel history (own key; mirrors the sibling growth stores).
-  function reset() { state = { v: 1, ch: {}, dim: {} }; pending = null; stamps = new Map(); settled = new Set(); try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = { v: 1, ch: {}, dim: {}, denied: {}, deniedOrder: [] }; pending = null; stamps = new Map(); settled = new Set(); try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
-  return { init, reset, weightFor, noteOutcome, noteAccept, noteDecline, claimForRun, stampFor, noteVerdict, onRunEnd,
+  return { init, reset, weightFor, noteOutcome, noteAccept, noteDecline, claimForRun, stampFor, noteVerdict, onRunEnd, denyBelief, isBeliefDenied,
     KEY, _state: () => state, _pending: () => pending, _deps: () => deps };
 })();
 

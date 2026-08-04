@@ -102,6 +102,23 @@ S.reset();
 A.eq(mem[S.KEY], undefined, 'reset() clears the key — a new hero inherits no channel history');
 A.eq(S.weightFor('routine'), NEUTRAL, 'and reads neutral again');
 
+/* ── 8b. THE RE-CONFIRM DENIAL SET (Q3): a question answered "no" is never asked again ── */
+S.reset(); S.init({});
+const RQfp = RQ.beliefFingerprint('goals', { id: 'b1', text: 'ship the billing rewrite' });
+A.eq(S.isBeliefDenied(RQfp), false, 'nothing is denied on a cold store');
+A.eq(S.denyBelief(RQfp), true, 'a denied re-confirm is remembered');
+A.eq(S.isBeliefDenied(RQfp), true, 'and the question is not asked again');
+A.eq(S.denyBelief(RQfp), false, 'denying twice is a no-op');
+A.eq(S.isBeliefDenied(RQ.beliefFingerprint('goals', { id: 'b1', text: 'ship the invoicing rewrite' })), false,
+  'an EDITED belief is a NEW question — the denial does not silence it forever');
+A.eq(S.isBeliefDenied(''), false, 'an unfingerprintable belief is never treated as denied');
+S.init({});
+A.eq(S.isBeliefDenied(RQfp), true, 'the denial survives a reload (it is a durable answer, not a session mood)');
+for (let i = 0; i < 140; i++) S.denyBelief('fp-' + i);
+A.ok(JSON.parse(mem[S.KEY]).deniedOrder.length <= 100, 'the denial memory is FIFO-bounded (never unbounded storage growth)');
+A.eq(S.isBeliefDenied(RQfp), false, 'and the oldest denials age out rather than accumulating forever');
+S.reset();
+
 /* ── 9. the store is a READ-ONLY citizen of the event spine ── */
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'frontend', 'app', 'recqualitystore.js'), 'utf8');
 A.eq(/U\.bus\.emit|bus\.emit/.test(src), false, 'recqualitystore.js NEVER emits on the frozen event contract');
@@ -138,5 +155,32 @@ A.ok(/RecQualityStore\.init\(/.test(fs.readFileSync(path.join(__dirname, '..', '
 A.ok(/app\/recqualitystore\.js/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8'))
   && /app\/recquality\.js/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8')),
   'both halves are actually loaded by the page (a module wired only under node is dead in the browser)');
+
+/* ── 11. THE STALENESS GUARD IS WIRED (Q3, source-lock) ──
+   A stale belief must ASK, never ASSERT — and the ask must ride the SAME slot and the SAME card grammar, or
+   this becomes a new surface, which the spine's contract forbids. */
+const iArc = chatSrc.indexOf('function arcCandidate');
+const arcBody = chatSrc.slice(iArc, iArc + 2600);
+A.ok(/const stale = recStale\(belief, 'goals'\)/.test(arcBody), 'the arc consults staleness BEFORE citing its belief');
+A.ok(arcBody.indexOf('recStale(belief') < arcBody.indexOf("why: recQuote(text), strength:"),
+  'the stale branch is taken INSTEAD of the assertion, not after it');
+A.ok(/if \(recReconfirmDenied\(fp\)\) return null;/.test(arcBody), 'a re-confirm answered "no" is never re-asked (silence, not a nag)');
+A.ok(/reconfirm: true/.test(arcBody) && !/strength:[^\n]*\n[^\n]*reconfirm/.test(arcBody),
+  'the ask carries NO strength reading — strength discounts a weak assertion, and an ask asserts nothing');
+const iCard = chatSrc.indexOf('function reconfirmCard');
+A.ok(iCard > 0, 'chat.js renders the re-confirm through its own card function');
+const cardBody = chatSrc.slice(iCard, iCard + 3800);
+A.ok(/recCard\(\{/.test(cardBody), 'the re-confirm rides the SHARED offer-card grammar — no new surface');
+A.ok(/kind: 'arc'/.test(cardBody) && /beatCards && beatCards\.claim\(\{/.test(cardBody),
+  'and the SAME beat slot family, so it is bounded by the same one-voice arbiter');
+A.ok(/proposal: 'is that still where you’re heading\?'/.test(cardBody), 'the proposal is phrased as a QUESTION');
+A.ok(/DossierStore\.upsert\(dim, \{ id: belief\.id, text: text \}\)/.test(cardBody),
+  'CONFIRM re-stamps the belief through the store’s own upsert path (freshness is what it measures)');
+A.ok(/UnderstandingStore\.noteEvidence\(dim, \+1\)/.test(cardBody) && /UnderstandingStore\.noteEvidence\(dim, -1\)/.test(cardBody),
+  'both answers write real signed evidence onto the dimension');
+A.ok(/DossierStore\.forget\(dim, belief\.id\)/.test(cardBody), 'DENY retires the belief through the store’s own forget path');
+A.ok(/RecQualityStore\.denyBelief\(fp\)/.test(cardBody), 'and fingerprints the question so it is never asked again');
+A.ok(/nothing has confirmed it in about ' \+ weeks/.test(cardBody),
+  'the card says WHY it is asking with a real measured age — never a vague "a while back"');
 
 A.report('recqualitystore.test');

@@ -91,10 +91,10 @@ for (const [fn, probe] of [['arcCandidate', /if \(arcSeen\(runId\)\) return null
                            ['studyCandidate', /beatCards\.hasSeen\('study', runId\)\) return null;/],
                            ['threadCandidate', /beatCards\.hasSeen\('thread', runId\)\) return null;/]]) {
   const i = chatSrc.indexOf('function ' + fn);
-  A.ok(probe.test(chatSrc.slice(i, i + 1800)), fn + ' only READS its per-run token (collection is side-effect-free)');
+  A.ok(probe.test(chatSrc.slice(i, i + 2600)), fn + ' only READS its per-run token (collection is side-effect-free)');
 }
 const iArcCand = chatSrc.indexOf('function arcCandidate');
-A.ok(/fire: \(\) => \{ if \(arcOnce\(runId\)\) offerArc\(runId\); \}/.test(chatSrc.slice(iArcCand, iArcCand + 1200)),
+A.ok(/fire: \(\) => \{ if \(arcOnce\(runId\)\) offerArc\(runId\); \}/.test(chatSrc.slice(iArcCand, iArcCand + 2600)),
   'the arc spends its token when it FIRES');
 for (const [k, fn] of [['trust', 'function trustCandidate'], ['study', 'async function studyCandidate'], ['thread', 'async function threadCandidate']]) {
   const i = chatSrc.indexOf(fn);
@@ -113,7 +113,7 @@ for (const fn of ['arcCandidate', 'trustCandidate', 'rateCandidate', 'suggestCan
                   'routineCandidate', 'recruitCandidate', 'curiosityCandidate', 'studyCandidate', 'threadCandidate']) {
   const i = chatSrc.indexOf('function ' + fn);
   A.ok(i > 0, 'chat.js defines ' + fn);
-  A.ok(/why:/.test(chatSrc.slice(i, i + 1800)), fn + ' carries a why — a channel that cannot cite stays silent');
+  A.ok(/why:/.test(chatSrc.slice(i, i + 2600)), fn + ' carries a why — a channel that cannot cite stays silent');
 }
 
 // the whole pass stands down behind a focused panel / onboarding / intake / an unanswered task question

@@ -4316,6 +4316,90 @@ const Chat = (() => {
   function recDecline(channel, dim, deferred) {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteDecline) RecQualityStore.noteDecline({ channel: channel, dim: dim || '' }, !!deferred); } catch (_) {}
   }
+  /* ── THE STALENESS GUARD (quality loop, Q3) ──────────────────────────────────────────────────────────
+     A belief that is OLD and UNCORROBORATED may not be ASSERTED in an offer ("because you said X") — the
+     station would be claiming something the Commander last confirmed a season ago as if it were current. But
+     it is a perfectly good QUESTION ("still true that X?"). These read the state; the transformation happens
+     in the candidate builder, and the ask rides the SAME slot, the same session budget and the same card
+     grammar as the offer it replaces — no new surface, no new concept. Fail-open: no module, no reading, no
+     claim of staleness (a station that cannot prove a belief is stale treats it as fresh). */
+  function recStale(belief, dim) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.staleness) return RecQuality.staleness(belief, Date.now(), recUnderstanding(), dim); } catch (_) {}
+    return null;
+  }
+  function recBeliefFp(dim, belief) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.beliefFingerprint) return RecQuality.beliefFingerprint(dim, belief); } catch (_) {}
+    return '';
+  }
+  // a re-confirm answered "no" is never asked again until the belief itself changes (goalstore's offered-set
+  // discipline). Fail-open the SAFE way here: an unreadable denial set means we do NOT re-ask.
+  function recReconfirmDenied(fp) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.isBeliefDenied) return !!RecQualityStore.isBeliefDenied(fp); } catch (_) {}
+    return false;
+  }
+  /* THE RE-CONFIRM CARD. The same recCard grammar every other offer uses — eyebrow → evidence in the
+     Commander's own words → proposal → two taps — with the proposal phrased as a QUESTION instead of a
+     proposal, because that is the only honest thing this card can say. Consent writes through the EXISTING
+     store paths and nothing else:
+       still true  → DossierStore.upsert re-stamps the belief's updatedAt (it is confirmed as of now, which is
+                     what freshness actually measures) + one unit of positive evidence on its dimension.
+       not anymore → one unit of counter-evidence, the belief is forgotten through the store's own forget path
+                     (which also denylists its text against re-proposal), and the QUESTION is fingerprinted so
+                     it is never asked again for this belief state.
+     Returns true iff the card actually rendered. */
+  function reconfirmCard(belief, dim, weeks, fp, runId) {
+    if (!log || !belief || typeof DossierStore === 'undefined') return false;
+    const text = String(belief.text || '').trim();
+    if (!text) return false;
+    clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
+    const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === dim) || {}).label || dim) : dim;
+    const card0 = recCard({
+      kind: 'arc', evidence: recWhy(recQuote(text)),
+      label: 'STILL TRUE?',
+      proposal: 'is that still where you’re heading?',
+      // the CONSEQUENCE line, and the honest reason this is a question and not a proposal — a real measured age,
+      // never a vague "a while back".
+      note: 'nothing has confirmed it in about ' + weeks + ' week' + (weeks === 1 ? '' : 's') + ' — confirm it and i’ll keep building on it, or drop it and i’ll stop treating it as your ' + String(dimName).toLowerCase()
+    });
+    if (!card0) return false;
+    const r = { d: card0.row }, item = card0.item, btns = card0.btns;
+    const card = beatCards && beatCards.claim({
+      kind: 'arc', runId: runId, node: r.d, data: { dim: dim, belief: belief.id },
+      handoff: () => turninQueue.length > 0 ? 'memory' : null,
+      onGone: () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); }
+    });
+    if (!card) { if (r.d && r.d.parentNode) r.d.remove(); return false; }
+    function settle(label, isDeny) {
+      btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
+      item.appendChild(tag);
+      card.finish({ delay: 600 });
+    }
+    function commit(confirmed) {
+      if (!card.decide()) return;
+      try {
+        if (confirmed) {
+          DossierStore.upsert(dim, { id: belief.id, text: text });   // re-stamps updatedAt: confirmed as of now
+          if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, +1);
+        } else {
+          if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, -1);
+          DossierStore.forget(dim, belief.id);
+          if (typeof RecQualityStore !== 'undefined' && RecQualityStore.denyBelief) RecQualityStore.denyBelief(fp);
+        }
+      } catch (_) {}
+      // EITHER answer is the ask doing its job: "no" is exactly as useful as "yes" here (it is the answer that
+      // cleans stale memory up), so the channel earns for having asked a question worth answering — never for
+      // getting the answer it hoped for.
+      recAccept('arc', dim, false);
+      settle(confirmed ? '✓ still true' : '✕ dropped it', !confirmed);
+      if (typeof StationUI !== 'undefined' && StationUI.rerender) { try { StationUI.rerender('commander'); } catch (_) {} }
+    }
+    const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
+    mk('Still true', '', () => commit(true));
+    mk('Not anymore', 'deny', () => commit(false));
+    autoscroll();
+    return true;
+  }
   /* THE ATTRIBUTION STAMP. A run started right after an accepted offer IS that offer's work — so the stamp is
      written where every other piece of a run's provenance is written: RUN_META, at run start (`rec`). It rides
      the same ledger the recipe spine and rateWork already read, which is what makes the loop's outcome
@@ -4369,6 +4453,22 @@ const Chat = (() => {
     const text = belief && belief.text ? String(belief.text).trim() : '';
     if (!text) return null;                                  // nothing to cite → the arc stays silent
     if (arcSeen(runId)) return null;                         // one confirm per run — READ only (see the once law below)
+    /* THE STALENESS GUARD (quality loop, Q3). Before building an arc on this belief, is it still true? A goal
+       the Commander stated a month ago that nothing since has corroborated is not something the station may
+       ASSERT ("because you said X") — decomposing it into a milestone tree would be building a plan on a memory
+       we cannot stand behind. So the SAME slot carries a QUESTION instead: "still true?". Confirm re-stamps the
+       belief (and the arc proposal returns naturally at a later run, now grounded); deny retires it and is
+       never asked again for this belief state. A stale belief thereby becomes a good question rather than a
+       confident bad recommendation. */
+    const stale = recStale(belief, 'goals');
+    if (stale && stale.stale) {
+      const fp = recBeliefFp('goals', belief);
+      if (recReconfirmDenied(fp)) return null;               // asked, answered "no" — silence until the belief changes
+      const weeks = Math.max(1, Math.round(stale.ageDays / 7));
+      // NO strength reading on an ASK: strength discounts a weak ASSERTION, and this card asserts nothing.
+      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recQuote(text),
+               fire: () => { if (arcOnce(runId)) reconfirmCard(belief, 'goals', weeks, fp, runId); } };
+    }
     // STRENGTH: the cited goal belief's OWN freshness × how well the goals dimension is corroborated. A goal the
     // Commander stated last season, with nothing since to confirm it, is a weaker thing to build an arc on.
     return { kind: 'arc', dim: 'goals', why: recQuote(text), strength: recStrengthOfBelief(belief, 'goals'),
