@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "496f84886ac9fcde7317806bd2e460d0415a45b8",
+    "sourceCommit": "4fe861e9c3ea8279ab5264c55ce0a29c724ef281",
     "pathSetSha256": "67b3f0df0ace2d6e273f3018ed6d520ec8f1858fe011dfc43b615afff886d695",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 518539,
-        "sha256": "697a0a924af6324e83aa6db7fb87626fde44863aabf42cb491ad5c9d3937a0a4"
+        "bytes": 522554,
+        "sha256": "aaa1dfd8e4c880b585c8a8a28e6b234e0912c2e79af5035c8bcf55471048f158"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -228,8 +228,8 @@
       },
       {
         "path": "frontend/app/dossier.js",
-        "bytes": 16603,
-        "sha256": "eb270a267a794d775fe977b2709f816296c72eb04b015b08f5e0f965007f6cbb"
+        "bytes": 17489,
+        "sha256": "c7ba8f423dd2c6c41a0e835c4fa27e1d270fc7849c67e940d04dee2f506faf8a"
       },
       {
         "path": "frontend/app/dossierstore.js",
