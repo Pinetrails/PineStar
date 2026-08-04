@@ -25,6 +25,7 @@ const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
 const { makeWorkspaceOwner } = require('./workspace-owner.js');
 const { classifyWorkspace } = require('./workspace-safety.js');
+const { makeUpdatePreparation } = require('./update-preparation.js');
 const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
@@ -185,7 +186,17 @@ const RecipeCatalogAll = require('../frontend/app/recipe-catalog/index.js'); // 
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
 const harnessImport = require('./harness-import.js'); // IMPORT-AN-AGENT: read-only OpenClaw/Hermes home -> normalized preview (pure; index does the fs)
-const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
+const { writeFileDurable: writeFileDurableRaw } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
+const stationRecovery = require('./station-recovery.js');
+
+// Every protected JSON store is composed through this writer. The update transaction flips the shared flag
+// after final browser drains and before quiescence, preventing timer/channel/background saves from advancing
+// disk behind the recovery receipt. The receipt itself uses writeFileDurableRaw outside WORKSPACES.
+let updateWritesFrozen = false;
+function writeFileDurable(deps, file, data) {
+  if (updateWritesFrozen) throw Object.assign(new Error('durable writes are frozen for update'), { code: 'UPDATE_MUTATIONS_FROZEN' });
+  return writeFileDurableRaw(deps, file, data);
+}
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeDomainStore } = require('./domain-store.js'); // normalized/versioned policy for ordinary non-secret singleton state
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
@@ -6746,8 +6757,17 @@ function stopGenericChannel(id) {
    see that token. It refuses to enable without a strong key (>=16 chars) and applies the same loopback Host pin.
    Every run rides the SAME runOnce autonomous seam the channel hub uses (surface:'autonomous', broadcast:true),
    so an external harness's run is visible on the station floor and its transcript lands in the channel store. */
+let updatePreparation = null;
 const openaiCompat = makeOpenAiCompat({
-  runOnce: runOnce,
+  // External /v1 runs do not use the browser route's run registry, so explicitly count their whole async
+  // lifetime as a mutation. This closes the last in-flight path the pre-update quiescence receipt must cover.
+  runOnce: async (opts) => {
+    const ticket = updatePreparation
+      ? updatePreparation.beginRequest('POST', '/v1/chat/completions')
+      : { ok: true, release: function () {} };
+    if (!ticket.ok) throw Object.assign(new Error('StarNet is frozen at a verified pre-update recovery point.'), { code: ticket.code });
+    try { return await runOnce(opts); } finally { ticket.release(); }
+  },
   apiKey: () => String(ENV('API_KEY') || ENV('V1_KEY') || '').trim(),   // env STARNET_API_KEY / STARNET_V1_KEY (SKYNET_* alias too)
   resolveProviderKey: (provider) => providerRuntimeKey(normalizeProvider(provider), ''),
   resolveBaseUrl: (provider) => providerRuntimeBaseUrl(normalizeProvider(provider), ''),
@@ -6761,6 +6781,19 @@ const openaiCompat = makeOpenAiCompat({
   newId: () => crypto.randomUUID(), now: () => Date.now(),
   readBody: (req, max) => readBody(req, max), redact: redact,
   logBoot: (line) => { try { console.log(line); } catch (_) {} }
+});
+
+// UPDATE TRANSACTION: one barrier owns every HTTP mutation during the pre-installer snapshot. The request
+// counter covers mutations already in flight; the run registry covers long-lived browser/channel/cron work.
+// A successful prepare keeps the barrier frozen until the installer kills us. If the native install fails,
+// the frontend calls /api/update/cancel and normal writes resume against the same live process.
+updatePreparation = makeUpdatePreparation({
+  fs: fs, path: path, recovery: stationRecovery, workspaceRoot: WORKSPACES,
+  writeDurable: writeFileDurableRaw, now: () => Date.now(), newId: () => crypto.randomUUID(),
+  onFreeze: () => { updateWritesFrozen = true; }, onThaw: () => { updateWritesFrozen = false; },
+  liveRuns: () => runs.size,
+  abortRuns: () => { for (const ac of runs.values()) { try { ac.abort(); } catch (_) {} } },
+  appVersion: () => { try { return computeVersionSurface().appVersion || computeVersionSurface().harness || 'unknown'; } catch (_) { return 'unknown'; } }
 });
 
 const server = http.createServer((req, res) => {
@@ -6779,6 +6812,12 @@ const server = http.createServer((req, res) => {
     res.writeHead(204); return res.end();
   }
   if (isApi && rejectBadApiToken(req, res)) return;
+  const mutationTicket = updatePreparation.beginRequest(req.method, req.url);
+  if (!mutationTicket.ok) {
+    res.writeHead(423, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ok: false, frozen: true, code: mutationTicket.code,
+      error: 'StarNet is frozen at a verified pre-update recovery point.' }));
+  }
   // Central async-route guard: EVERY handler below is dispatched through Promise.resolve(...).catch so a throw
   // AFTER the body is parsed (a store error, a bad-await) can never leave the socket hanging forever. A sync
   // handler that returns a non-promise passes through untouched; only a returned rejected promise reaches the
@@ -6786,7 +6825,9 @@ const server = http.createServer((req, res) => {
   // (/api/run NDJSON, the SSE bridge) stay correct — they hold the response open by DESIGN and only trip this
   // catch on an actual thrown rejection, which is still the right thing to surface. This replaces the ad-hoc
   // `.catch(()=>res.end())` guards that used to turn a failure into an EMPTY 200 the browser read as success.
-  return Promise.resolve(dispatchRoute(req, res)).catch((e) => routeFailure(res, e));
+  return Promise.resolve(dispatchRoute(req, res))
+    .catch((e) => routeFailure(res, e))
+    .finally(() => mutationTicket.release());
 });
 
 // routeFailure — the central fail path for the async-route guard. Headers not yet sent → a 500 JSON envelope
@@ -6854,6 +6895,9 @@ const TG_BOT_RX = {
   owner: /^\/api\/channels\/telegram\/bots\/(\d+)\/owner\/(pair|revoke)$/
 };
 const ROUTES = [
+  { m: 'POST', exact: '/api/update/prepare', h: handleUpdatePrepare },
+  { m: 'POST', exact: '/api/update/cancel', h: handleUpdateCancel },
+  { m: 'GET', exact: '/api/update/status', h: handleUpdateStatus },
   { m: 'POST', exact: '/api/session', h: handleApiSession },
   // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
   { m: 'POST', exact: '/api/station/ack', h: handleStationAck },
@@ -7133,6 +7177,29 @@ function dispatchRoute(req, res) {
     return r.errorPolicy ? out.catch((e) => r.errorPolicy(res, e)) : out;
   }
   return serveStatic(req, res);
+}
+
+async function handleUpdatePrepare(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 16 << 20, res)) || {}; }
+  catch (_) { if (!res.headersSent) json(400, { ok: false, code: 'UPDATE_PREPARE_BAD_JSON', error: 'bad json' }); return; }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { ok: false, code: 'UPDATE_PREPARE_BAD_BODY' });
+  const browserStore = body.browserStore && typeof body.browserStore === 'object' && !Array.isArray(body.browserStore)
+    ? body.browserStore : {};
+  const result = await updatePreparation.prepare({
+    targetVersion: String(body.targetVersion || ''), force: body.force === true,
+    browserStore: browserStore, timeoutMs: 8000
+  });
+  return json(result.ok ? 200 : 409, result);
+}
+function handleUpdateCancel(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(updatePreparation.cancel()));
+}
+function handleUpdateStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(Object.assign({ ok: true }, updatePreparation.status())));
 }
 
 // Prefix routes are route families, not arbitrary string aliases. A route whose declared prefix already
@@ -10869,6 +10936,9 @@ function latestUserText(list) {
    reply-assembler for the hub), the run lifecycle/cleanup, AND the consent SURFACE — 'interactive' + a live
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
+  if (updatePreparation.isFrozen()) {
+    throw Object.assign(new Error('StarNet is frozen at a verified pre-update recovery point.'), { code: 'UPDATE_MUTATIONS_FROZEN' });
+  }
   const { key, system: rawSystem, messages = [], agentId = 'agent', signal, runId } = o;
   const runStartedAt = Date.now();
   let system = rawSystem;
