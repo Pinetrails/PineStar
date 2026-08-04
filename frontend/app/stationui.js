@@ -4168,7 +4168,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const msgEl = body.querySelector('#bk-msg');
     const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
     const exportBtn = body.querySelector('#bk-export');
-    const recoveryExportBtn = body.querySelector('#bk-recovery-export');
     const importBtn = body.querySelector('#bk-import');
     const fileIn = body.querySelector('#bk-file');
     // gather the browser-owned slices the sidecar can't see (localStorage).
@@ -4182,16 +4181,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
       return out;
     };
-    if (recoveryExportBtn) recoveryExportBtn.addEventListener('click', () => {
-      if (typeof Backup === 'undefined' || !Backup.exportAll) { setMsg('recovery export unavailable'); sfx('bad'); return; }
-      recoveryExportBtn.disabled = true; setMsg('building recovery state…');
-      Backup.exportAll().then(r => {
-        recoveryExportBtn.disabled = false;
-        if (!r || !r.ok) { setMsg('recovery export failed'); sfx('bad'); return; }
-        setMsg('✓ saved ' + r.file + ' — ' + r.records + ' browser record' + (r.records === 1 ? '' : 's') + '; credentials excluded', true);
-        sfx('sale');
-      }).catch(() => { recoveryExportBtn.disabled = false; setMsg('recovery export failed'); sfx('bad'); });
-    });
     if (exportBtn) exportBtn.addEventListener('click', () => {
       setMsg('building export…');
       Harness.api.post('/api/config/export', { sections: browserSections() })
@@ -4504,10 +4493,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-save">' +
         '<button class="bb sm" id="bk-export">EXPORT STATION</button>' +
         '<button class="bb sm" id="bk-import">IMPORT STATION…</button>' +
-        '<button class="bb sm" id="bk-recovery-export">EXPORT RECOVERY STATE</button>' +
         '<input type="file" id="bk-file" accept="application/json,.json" style="display:none">' +
       '</div>' +
-      '<p class="set-about dim">Complete disaster recovery: export recovery state first, quit StarNet, then pair that file with the offline WORKSPACES recovery bundle. Credentials remain excluded.</p>' +
       '<div id="bk-msg" class="msg"></div>' +
       ((typeof Updates !== 'undefined' && Updates.settingsHtml) ? Updates.settingsHtml() : '') +
       // DIAGNOSTICS (T3.9) — one click copies a paste-ready, SECRET-FREE report to email in a bug report. The sidecar

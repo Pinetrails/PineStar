@@ -27,7 +27,6 @@ ok(/setAgentModelPin[\s\S]{0,1500}pushRoster\(\)/.test(appjs), 'P1-6: the pin pu
 // ---- P1-7 station backup export/import/reset ----
 ok(/STATION BACKUP/.test(ui), 'P1-7: SETTINGS has a STATION BACKUP card');
 ok(/function wireBackup\(/.test(ui), 'P1-7: wireBackup is wired');
-ok(/id="bk-recovery-export"/.test(ui) && /Backup\.exportAll\(\)/.test(ui), 'P1-7: complete-recovery browser state is exportable from SETTINGS');
 ok(/\/api\/config\/export/.test(ui), 'P1-7: export hits /api/config/export');
 ok(/\/api\/config\/import/.test(ui), 'P1-7: import hits /api/config/import');
 ok(/secretsNeeded/.test(ui), 'P1-7: import surfaces re-enter-your-key states from secretsNeeded');

@@ -10,7 +10,7 @@ Credentials and machine authority are deliberately not portable. The bundle pres
 
 ## Create a recovery point
 
-1. In **SYSTEM → SETTINGS → STATION BACKUP**, choose **EXPORT RECOVERY STATE** to download the browser-owned `starnet.*` state. Keep this file beside the station recovery bundle. This step is optional only when browser-local state is not needed; the durable sidecar save is still captured from `WORKSPACES`.
+1. On StarNet's RESUME/reconnect screen, choose **EXPORT AGENT** to download the browser-owned `starnet.*` state. Keep this file beside the station recovery bundle. This step is optional only when browser-local state is not needed; the durable sidecar save is still captured from `WORKSPACES`.
 2. Quit StarNet completely. On the desktop build, confirm the tray process has exited. Do not capture while the sidecar is accepting mutations.
 3. Locate the active `WORKSPACES` directory. A source/dev launch defaults to `%LOCALAPPDATA%\StarNet\workspaces` on Windows and `$XDG_DATA_HOME/StarNet/workspaces` (or `~/.local/share/StarNet/workspaces`) on other sidecar platforms. A packaged desktop launch prints the exact path on its `startup ... workspaces=...` diagnostic line. A legacy install may still use its existing `Skynet/workspaces` directory in place.
 4. From a StarNet source checkout, create and inspect the bundle:
