@@ -56,6 +56,11 @@ const { tmpdir } = require('node:os');
   }));
   const independentlyGraded = independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: parityRows });
   A.eq(independentlyGraded.filter(row => row.outcome.passed).length, 96, 'the independent grader derives all 96 ordinary attempts from host observations');
+  const realDottedArtifact = JSON.parse(JSON.stringify(parityRows.find(row => row.taskId === 'parity-code-verified-artifact')));
+  realDottedArtifact.observation.artifacts = { 'dist/release.txt': { fresh: true, hashMatch: true } };
+  realDottedArtifact.observation.files = { 'dist/release.txt': 'VERIFIED-ARTIFACT-731' };
+  A.ok(independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: [realDottedArtifact] })[0].outcome.passed,
+    'nested receipt fields resolve beneath a dotted artifact filename');
   const forged = JSON.parse(JSON.stringify(parityRows));
   forged[0].outcome.passed = true; forged[0].observation.seam = 'forged:1'; forged[0].observation.claimedDone = true;
   const refusedForge = independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: forged });

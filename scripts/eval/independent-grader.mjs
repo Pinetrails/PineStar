@@ -12,9 +12,13 @@ function valueAt(value, path) {
   function walk(current, index) {
     if (index >= parts.length) return current;
     if (current == null || typeof current !== 'object') return undefined;
-    const remaining = parts.slice(index).join('.');
-    if (Object.prototype.hasOwnProperty.call(current, remaining)) return current[remaining];
-    return walk(current[parts[index]], index + 1);
+    // Prefer the longest concrete key at this level. This handles a dotted filename
+    // followed by nested receipt fields, e.g. artifacts["report.pdf"].fresh.
+    for (let end = parts.length; end > index; end--) {
+      const key = parts.slice(index, end).join('.');
+      if (Object.prototype.hasOwnProperty.call(current, key)) return walk(current[key], end);
+    }
+    return undefined;
   }
   return walk(value, 0);
 }
