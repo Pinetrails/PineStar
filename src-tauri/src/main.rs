@@ -13,6 +13,7 @@
 
 mod credentials;
 
+use std::ffi::OsStr;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -971,14 +972,24 @@ fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
     0
 }
 
+/// The sidecar's compatibility reader deliberately prefers STARNET_* and falls back to
+/// SKYNET_*. A desktop process can inherit either spelling from its launcher, so every value
+/// owned by this shell must replace BOTH aliases before spawn. Otherwise a stale canonical
+/// variable can override the shell's random port or per-launch token and split the WebView from
+/// its own sidecar.
+fn set_sidecar_branded_env<V: AsRef<OsStr>>(cmd: &mut Command, legacy_name: &str, value: V) {
+    let value = value.as_ref();
+    cmd.env(legacy_name, value);
+    if let Some(suffix) = legacy_name.strip_prefix("SKYNET_") {
+        cmd.env(format!("STARNET_{suffix}"), value);
+    } else if let Some(suffix) = legacy_name.strip_prefix("STARNET_") {
+        cmd.env(format!("SKYNET_{suffix}"), value);
+    }
+}
+
 fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     let mut cmd = Command::new(node);
     cmd.arg(entry)
-        .env("SKYNET_PORT", state.port.to_string())
-        .env("SKYNET_IPC_TOKEN", &state.ipc_token)
-        .env("SKYNET_API_TOKEN", &state.api_token)
-        .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
-        .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
         // The sidecar can load the native Windows desktop driver, but that alone grants nothing:
         // only a locally paired Telegram owner receives the per-run remote-owner lease. Ordinary
         // agent runs remain synthetic/headless by policy in the sidecar.
@@ -1006,25 +1017,32 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         )
         .env("STARNET_BUILD_DIRTY", env!("STARNET_BUILD_DIRTY"))
         .current_dir(&state.root);
+    set_sidecar_branded_env(&mut cmd, "SKYNET_PORT", state.port.to_string());
+    set_sidecar_branded_env(&mut cmd, "SKYNET_IPC_TOKEN", &state.ipc_token);
+    set_sidecar_branded_env(&mut cmd, "SKYNET_API_TOKEN", &state.api_token);
+    set_sidecar_branded_env(&mut cmd, "SKYNET_WORKSPACES", state.workspaces.as_os_str());
     if let Some(key) = read_key() {
-        cmd.env("SKYNET_OPENROUTER_KEY", key);
+        set_sidecar_branded_env(&mut cmd, "SKYNET_OPENROUTER_KEY", key);
     }
     for (provider, env_name) in SIDECAR_PROVIDER_KEY_ENVS {
         if let Some(key) = read_key_for(provider) {
-            cmd.env(env_name, key);
+            set_sidecar_branded_env(&mut cmd, env_name, key);
         }
     }
     for provider in KEYCHAIN_PROVIDERS {
         let pool = read_key_pool_for(provider);
         if !pool.is_empty() {
-            let env_name = format!("SKYNET_KEY_POOL_{}", provider.to_ascii_uppercase().replace('-', "_"));
-            cmd.env(env_name, pool.join(","));
+            let env_name = format!(
+                "SKYNET_KEY_POOL_{}",
+                provider.to_ascii_uppercase().replace('-', "_")
+            );
+            set_sidecar_branded_env(&mut cmd, &env_name, pool.join(","));
         }
     }
     // Channel bot tokens (Telegram/Discord) inject the same way — keychain -> env -> sidecar runtime layer.
     for (channel, env_name) in SIDECAR_CHANNEL_TOKEN_ENVS {
         if let Some(token) = read_channel_token(channel) {
-            cmd.env(env_name, token);
+            set_sidecar_branded_env(&mut cmd, env_name, token);
         }
     }
     #[cfg(windows)]
@@ -2364,6 +2382,34 @@ fn main() {
 #[cfg(test)]
 mod sidecar_reap_tests {
     use super::*;
+
+    #[test]
+    fn desktop_owned_env_replaces_poisoned_brand_aliases() {
+        fn explicit_env(command: &Command, name: &str) -> Option<String> {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new(name))
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        }
+
+        let mut command = Command::new("node");
+        command.env("STARNET_PORT", "poisoned-parent-value");
+        set_sidecar_branded_env(&mut command, "SKYNET_PORT", "60874");
+        assert_eq!(explicit_env(&command, "SKYNET_PORT").as_deref(), Some("60874"));
+        assert_eq!(explicit_env(&command, "STARNET_PORT").as_deref(), Some("60874"));
+
+        command.env("SKYNET_API_TOKEN", "stale-legacy-value");
+        set_sidecar_branded_env(&mut command, "STARNET_API_TOKEN", "fresh-launch-token");
+        assert_eq!(
+            explicit_env(&command, "SKYNET_API_TOKEN").as_deref(),
+            Some("fresh-launch-token")
+        );
+        assert_eq!(
+            explicit_env(&command, "STARNET_API_TOKEN").as_deref(),
+            Some("fresh-launch-token")
+        );
+    }
 
     #[test]
     fn dev_path_fallback_is_never_reapable() {
