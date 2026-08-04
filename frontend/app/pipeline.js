@@ -242,8 +242,10 @@
 
      A DOCK NEVER EATS ITS OWN OUTPUT. A handoff crate leaves its producer's dock and rides THROUGH every other
      hookup tile of that same bay (a lane running along a dock's edge touches several ring tiles) — it is consumed
-     only by a FOREIGN bound bay. The engine enforces the identical rule (`fromAgentId === stopOwner` rides on),
-     which is what makes a self-loop structurally impossible rather than merely unlikely. */
+     only by a FOREIGN bound bay. The engine enforces the identical rule since 2026-08-04: world.js stamps the
+     producer on the crate (`payload.fromAgentId`) and conveyor.js's dock-delivery check rides a crate past any
+     stop whose owner IS its producer — physics, which is what makes a self-loop structurally impossible rather
+     than merely unlikely. */
 
   // walk the flow from `starts`, fanning ALL junction lanes: which foreign docks / outboxes can this reach?
   function chainWalk(plan, agentId, starts) {

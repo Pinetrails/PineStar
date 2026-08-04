@@ -82,7 +82,11 @@ function makeChainRunner(o) {
 
       visited[target] = true;
       const workitemId = newId(), t0 = now();
-      say('workitem.placed', { workitemId, queueId: target, agentId: target, kind: 'chain', preview: preview(out.text), ts: t0 });
+      // `from` = the PRODUCER dock (additive, 2026-08-04): the frontend used to GUESS the upstream dock
+      // (alphabetically-first dock whose chain reaches the target) and drew handoff crates leaving the wrong
+      // bay on any floor where two lines feed one dock. obj() stanzas carry no additionalProperties:false,
+      // so the extra field validates against the frozen workitem.placed contract; old consumers ignore it.
+      say('workitem.placed', { workitemId, queueId: target, agentId: target, kind: 'chain', from: cur, preview: preview(out.text), ts: t0 });
 
       let r = null;
       try { r = await runAgent({ agentId: target, text: handoffText(originalText, cur, out.text, hop), hop, from: cur, signal: s.signal, workitemId }); }

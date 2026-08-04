@@ -383,9 +383,13 @@ const Conveyor = (() => {
         while (bx.prog >= 1 && guard++ < 8) {
           // DOCK DELIVERY: an inbound crate whose tile is a qualifying stop is consumed HERE — it never
           // rides past its dock. (Outbound crates skip this — they were born ON a dock tile and ship out —
-          // and no crate is ever consumed on its own birth tile.)
+          // and no crate is ever consumed on its own birth tile. A DOCK NEVER EATS ITS OWN OUTPUT:
+          // payload.fromAgentId names the PRODUCER, so a handoff crate rides past every OTHER ring tile of
+          // the bay that made it — physics, not just an emitter convention; the spawn-tile check alone only
+          // covered the birth tile of a multi-tile hookup.)
           const stopOwner = stops && stops[key(bx.x, bx.y)];
           if (stopOwner && bx.payload && !bx.payload.outbound && bx.spawnTile !== key(bx.x, bx.y) &&
+              bx.payload.fromAgentId !== stopOwner &&
               (!bx.payload.agentId || bx.payload.agentId === stopOwner)) {
             if (onDeliver && !bx.delivered) { bx.delivered = true; onDeliver(bx, bx.x, bx.y); }
             bx.prog = 1; bx.sink = 1; break;

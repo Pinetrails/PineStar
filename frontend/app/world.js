@@ -5226,13 +5226,18 @@ const World = (() => {
     //  • no reaching line → the work lands directly at the agent's BAY dock (a lone bay is a complete build).
     /* A HANDOFF DOES NOT ENTER THROUGH THE FRONT DOOR. A `chain` work-item is stage N of a work line: it was
        produced at the UPSTREAM dock and rides that dock's lane to this one. Spawning it at an INTAKE would
-       draw a lie — the station never received anything, one of its own agents did. The upstream dock is
-       derived from the compiled plan (the dock whose chain names this agent), so no event field is invented
-       for it; the crate is PRODUCT, not ore, because that is exactly what it is. */
+       draw a lie — the station never received anything, one of its own agents did. The upstream dock is the
+       event's `from` (the PRODUCER — the chain runner names it since 2026-08-04); an old event without it
+       falls back to the plan heuristic (alphabetically-first dock whose chain reaches this agent). The crate
+       is PRODUCT, not ore, because that is exactly what it is; `fromAgentId` rides the payload so the
+       conveyor's dock-delivery physics can refuse to eat a dock's own output (a dock never consumes what it
+       produced — see conveyor.js tick / pipeline.js chain layer). */
     if (p.kind === 'chain' && routingPlan && routingPlan.chains) {
       p.box = 'product';
-      const ups = Object.keys(routingPlan.chains).filter(a => (routingPlan.chains[a].next || []).indexOf(p.agentId) >= 0).sort();
-      const from = ups.length ? routingPlan.chains[ups[0]] : null;
+      const upAid = (p.from && routingPlan.chains[p.from]) ? p.from
+        : Object.keys(routingPlan.chains).filter(a => (routingPlan.chains[a].next || []).indexOf(p.agentId) >= 0).sort()[0];
+      const from = upAid ? routingPlan.chains[upAid] : null;
+      if (upAid) p.fromAgentId = upAid;
       if (from && from.tile) { convey.enqueueAt(from.tile.x, from.tile.y, p); return; }
       dockArrival(p); return;                                       // no drawn lane between them — land it at the dock
     }
