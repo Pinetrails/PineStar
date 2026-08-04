@@ -13,7 +13,7 @@
         streak count, a real targeted gap). No citable evidence means the channel stays quiet.
 
    A candidate is a plain object:
-     { kind, why, dim?, base?, streak?, declines? }
+     { kind, why, dim?, base?, streak?, declines?, strength?, quality? }
        kind     — the channel id (see PRIORITY). Its beat-slot family is slotKindOf(kind).
        why      — the evidence string, derived from REAL state by the channel adapter. Required.
        dim      — optional dossier dimension this offer targets (enables the value-of-information term).
@@ -21,10 +21,19 @@
        streak   — optional non-negative run of corroborating signal (trust's approval streak).
        declines — optional count of recent declines on this channel (a soft penalty, never a hard block;
                   the per-channel session caps/denylists remain the real floor and live in their stores).
+       strength — optional 0..1 EVIDENCE STRENGTH (recquality.js): how well-grounded this candidate's citation
+                  actually is — dim confidence, belief freshness, a real repeat counter. Weak evidence is
+                  DISCOUNTED within its tier; it never fabricates a bonus, and an absent reading is NEUTRAL.
+       quality  — optional CHANNEL QUALITY WEIGHT (recqualitystore.js): the EWMA of the outcomes this channel's
+                  accepted offers really produced. Neutral 1, floored at 0.5 so quality alone can never silence
+                  a channel — a dud channel gets quieter, never mute.
 
-   Scoring is deterministic and tier-stable ON PURPOSE: the per-kind base tier is BASE_STEP apart and every
-   modifier is bounded strictly below BASE_STEP, so a lower-priority kind can never leapfrog a higher one.
-   The modifiers only order candidates WITHIN a tier and make the numbers meaningful for future tuning. */
+   Scoring is deterministic and TIER-STABLE ON PURPOSE. The per-kind base tier is BASE_STEP apart and the SUM of
+   every modifier is clamped to ±BASE_STEP/2 (MOD_CAP) — so the best a tier can score is exactly the worst the
+   tier above it can score, and pick()'s rank tie-break hands that tie to the higher priority. Strength and
+   quality therefore reorder candidates WITHIN a priority band and can never move one across a band: priority
+   order stays the spine's law. (Clamping the SUM is what makes that claim true — bounding each modifier
+   individually, as this scorer originally did, still let two stacked modifiers cross a tier.) */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -65,6 +74,34 @@
   const STREAK_MAX = 20;   // …bounded
   const DECLINE_STEP = 15; // per recent decline…
   const DECLINE_MAX = 45;  // …bounded
+  const MOD_CAP = BASE_STEP / 2;   // the TOTAL modifier budget, ± — see the tier-stability note in the header
+
+  /* THE TWO DAMPED MULTIPLIERS (quality loop, Q1/Q2). Both are read as multipliers in the [floor..1(..cap)]
+     range and converted into a bounded WITHIN-TIER term: `MAX × (multiplier − 1)`. That shape is deliberate —
+       · a NEUTRAL reading (1) contributes exactly 0, so a cold station scores identically to the pre-quality
+         spine. Absent state is never a penalty and never a bonus (fail-open, truthful telemetry);
+       · a WEAK reading only ever SUBTRACTS. The station does not promote an offer for having strong evidence;
+         it declines to shout about one whose evidence is thin. */
+  const STRENGTH_MAX = 30;      // the within-tier swing thin evidence may cost a candidate
+  const STRENGTH_FLOOR = 0.5;   // strength 0 → ×0.5 → −STRENGTH_MAX/2. Half a tier's modifier budget, no more.
+  const QUALITY_MAX = 30;       // the within-tier swing a channel's real outcome history may move it
+  const QUALITY_FLOOR = 0.5;    // matches recquality.js Q_FLOOR — a dud channel is quieter, NEVER silent
+  const QUALITY_CAP = 1.25;     // matches recquality.js Q_CAP — a proven channel earns a small, bounded edge
+
+  // an unreadable / absent multiplier is NEUTRAL (1) — the station never invents a reading it does not have.
+  function damp(v, floor, cap) {
+    const n = Number(v);
+    if (v == null || !Number.isFinite(n)) return 1;
+    return n < floor ? floor : n > cap ? cap : n;
+  }
+  // strength arrives 0..1 (recquality.js) and maps onto the [STRENGTH_FLOOR..1] multiplier band.
+  function strengthDamp(candidate) {
+    const v = candidate && candidate.strength;
+    const n = Number(v);
+    if (v == null || !Number.isFinite(n)) return 1;
+    return STRENGTH_FLOOR + (1 - STRENGTH_FLOOR) * (n < 0 ? 0 : n > 1 ? 1 : n);
+  }
+  function qualityDamp(candidate) { return damp(candidate && candidate.quality, QUALITY_FLOOR, QUALITY_CAP); }
 
   function rank(kind) {
     const i = PRIORITY.indexOf(String(kind || ''));
@@ -106,7 +143,11 @@
       : (PRIORITY.length - rank(candidate.kind)) * BASE_STEP;
     const streak = Math.min(STREAK_MAX, Math.max(0, num(candidate.streak)) * STREAK_STEP);
     const declines = Math.min(DECLINE_MAX, Math.max(0, num(candidate.declines)) * DECLINE_STEP);
-    return base + voi(candidate, uRead) + streak - declines;
+    const mod = voi(candidate, uRead) + streak - declines
+      + STRENGTH_MAX * (strengthDamp(candidate) - 1)
+      + QUALITY_MAX * (qualityDamp(candidate) - 1);
+    // the whole modifier budget is clamped to half a tier, so no stack of modifiers can cross a priority band.
+    return base + Math.max(-MOD_CAP, Math.min(MOD_CAP, mod));
   }
 
   /* pick(candidates, uRead) → the one candidate that may speak, or null.
@@ -150,8 +191,8 @@
   }
 
   return {
-    score, pick, whyLine, citable, rank, slotKindOf, asksBudget,
+    score, pick, whyLine, citable, rank, slotKindOf, asksBudget, strengthDamp, qualityDamp,
     PRIORITY: PRIORITY.slice(), SLOT_KIND: Object.assign({}, SLOT_KIND),
-    BASE_STEP, VOI_MAX, SESSION_ASK_MAX
+    BASE_STEP, VOI_MAX, SESSION_ASK_MAX, MOD_CAP, STRENGTH_MAX, STRENGTH_FLOOR, QUALITY_MAX, QUALITY_FLOOR, QUALITY_CAP
   };
 });

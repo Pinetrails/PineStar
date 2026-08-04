@@ -4264,6 +4264,31 @@ const Chat = (() => {
     try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) return UnderstandingStore.read(); } catch (_) {}
     return null;
   }
+  /* ── EVIDENCE STRENGTH (quality loop, Q1) ────────────────────────────────────────────────────────────
+     The spine asks "can this candidate cite?". These ask "how STRONG is that citation?" — read from state the
+     station already holds (recquality.js: dimension confidence, belief freshness, a real repeat counter), never
+     computed fresh and never fabricated. recommend.js turns the reading into a bounded WITHIN-TIER discount, so
+     thin evidence speaks later — it can never move a candidate across a priority band.
+
+     Fail-open at every step: no module / no store / nothing to read → null → NO adjustment at all, and the
+     station ranks exactly as it did before the quality loop existed.
+
+     Two deliberate non-users:
+       · CURIOSITY carries no strength. It ASKS about a dimension rather than asserting one, so a blank dim is a
+         high-VALUE question, not weak evidence — that is precisely what the spine's VOI term already scores.
+       · STUDY carries no strength. Its evidence is the verbatim directive of the run that JUST ended (fresh by
+         construction), and a RETIRE proposal is most valuable exactly when the belief it targets is oldest —
+         discounting it by age would suppress the one offer that cleans stale memory up. */
+  function recStrengthOfBelief(belief, dim) {
+    try {
+      if (typeof RecQuality !== 'undefined' && RecQuality.beliefStrength) return RecQuality.beliefStrength(belief, Date.now(), recUnderstanding(), dim);
+    } catch (_) {}
+    return null;
+  }
+  function recStrengthOfCount(n) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.countStrength) return RecQuality.countStrength(n); } catch (_) {}
+    return null;
+  }
   /* ONE citation grammar, DISCRIMINATED BY WHERE THE WORDS CAME FROM (truthful telemetry, 2026-08-04).
      The card used to say `because you said "…"` about every citation it had. But a study proposal falls back to
      the run's DIRECTIVE when the model returns no QUOTE line (study.js stamps evidenceRef.kind='directive'), and a
@@ -4309,7 +4334,10 @@ const Chat = (() => {
     const text = belief && belief.text ? String(belief.text).trim() : '';
     if (!text) return null;                                  // nothing to cite → the arc stays silent
     if (arcSeen(runId)) return null;                         // one confirm per run — READ only (see the once law below)
-    return { kind: 'arc', dim: 'goals', why: recQuote(text), fire: () => { if (arcOnce(runId)) offerArc(runId); } };
+    // STRENGTH: the cited goal belief's OWN freshness × how well the goals dimension is corroborated. A goal the
+    // Commander stated last season, with nothing since to confirm it, is a weaker thing to build an arc on.
+    return { kind: 'arc', dim: 'goals', why: recQuote(text), strength: recStrengthOfBelief(belief, 'goals'),
+             fire: () => { if (arcOnce(runId)) offerArc(runId); } };
   }
 
   // TRUST — the earned-autonomy offer. Cited by the REAL track record the offer was computed from.
@@ -4365,8 +4393,10 @@ const Chat = (() => {
     const title = (s && s.title) ? String(s.title).trim() : '';
     if (!title) return null;
     const n = Math.max(0, Math.floor(Number(s.count) || 0));
+    // STRENGTH: the REAL repeat count behind the shape — a shape asked for four times is corroborated; one seen
+    // once is real but thin, and says so by speaking later rather than by claiming less.
     return { kind: 'seed', why: 'you keep asking me to “' + title.toLowerCase() + '”' + (n > 1 ? ' (' + n + '×)' : ''),
-             fire: () => { SeedStore.propose(); } };
+             strength: recStrengthOfCount(n), fire: () => { SeedStore.propose(); } };
   }
 
   // ROUTINE NUDGE — cited by the real hand-launch count.
@@ -4377,8 +4407,9 @@ const Chat = (() => {
     const nm = (c && c.name) ? String(c.name).trim() : '';
     const n = Math.max(0, Math.floor(Number(c && c.n) || 0));
     if (!nm || n < 1) return null;
+    // STRENGTH: the same real hand-launch count the citation quotes (corroboration, saturating).
     return { kind: 'routine', why: 'you’ve launched ' + nm + ' ' + n + ' times by hand',
-             fire: () => { RoutineNudgeStore.propose(); } };
+             strength: recStrengthOfCount(n), fire: () => { RoutineNudgeStore.propose(); } };
   }
 
   // ADAPTIVE RECRUITMENT — cited by the recruiter's own counter-derived why (the SAME string the bay's
