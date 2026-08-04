@@ -24,6 +24,7 @@ const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
 const { makeWorkspaceOwner } = require('./workspace-owner.js');
+const { classifyWorkspace } = require('./workspace-safety.js');
 const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
@@ -337,6 +338,21 @@ function defaultWorkspaces() {
   return neu;
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
+
+// DEV/QA must be destructive only inside an explicit scratch profile. A forgotten WORKSPACES override used
+// to make a headless audit inherit the Commander's canonical app-data root; that can produce a reset-looking
+// last-writer-wins rollback even when no bytes are erased. Block every current + legacy production root here,
+// before the owner file or any durable user state is opened. The packaged desktop never enables DEV_MODE.
+const devWorkspaceSafety = DEV_MODE
+  ? classifyWorkspace(WORKSPACES, { path: path, env: process.env, platform: process.platform, homedir: () => os.homedir() })
+  : { protected: false };
+if (devWorkspaceSafety.protected) {
+  console.error('✗ StarNet refused to run DEV/QA against a canonical user workspace.');
+  console.error('  workspace: ' + WORKSPACES);
+  console.error('  safety code: DEV_WORKSPACE_PROTECTED');
+  console.error('  Set STARNET_WORKSPACES to a dedicated scratch directory and retry.');
+  process.exit(74);
+}
 
 // DATA-SAFETY INVARIANT: every durable store below assumes exactly one sidecar owns WORKSPACES.
 // Claim that root BEFORE pricing cache, runtime knobs, roster, station save, or any other persisted state
