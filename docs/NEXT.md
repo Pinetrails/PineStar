@@ -35,8 +35,13 @@ moved only the sidecar while Tauri's WebView retained its own random address. Th
 diagnostics correctly reported that local engine unreachable, invalidating that soak and the earlier performance
 receipt. Both evaluators now read Tauri's new startup-log record, wait for `listening=true`, and use that exact
 per-launch port without overriding the desktop. The qualifying runner owns the installed desktop lifecycle,
-observes its exact build health, and closes it gracefully. The fresh 48-hour run started at
-`2026-08-04T06:30:09.549Z`, is due at `2026-08-06T06:30:09.549Z`, and began with green health/provider
+observes its exact build health, and closes it gracefully. A subsequent run was invalidated after 659 health and
+11 green provider checks when host-wide memory pressure made one synchronous executable-hash allocation fail;
+the same sample's health endpoint remained 200, later samples and a direct re-hash matched the manifest, and the
+observer's PowerShell child simultaneously reported CLR startup failure. The frozen zero-failure gate was not
+weakened. Executable hashes now use bounded 64 KiB streams and host telemetry retries three times; focused tests
+are green. The replacement 48-hour run started at `2026-08-04T17:30:17.070Z`, is due at
+`2026-08-06T17:30:17.070Z`, and began with green health/provider/identity/observer
 checks. It re-hashes the installed executable every minute and the 4,578-file runtime fingerprint with each
 hourly provider probe. An hourly task heartbeat monitors the durable report and will verify the signed receipt,
 run the final clean `test:fast`, and finish this handoff only after the actual 48 hours. The last full fast run
