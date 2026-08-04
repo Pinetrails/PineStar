@@ -48,12 +48,18 @@
   const GEAR_TYPES = ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'computer', 'connector'];
   // the SUGGESTED-cadence ids a recipe may carry (mirrors autojobs.js CADENCES). null = one-shot by nature.
   const CADENCES = ['morning', 'weekly', 'sixhourly', 'hourly'];
-  // browse buckets for the marketplace category rail (R6 discovery front: developer / research / creator / ops /
-  // general). The R4 persona catalog (dev.js / creator.js / ops.js) authors 'developer'/'creator'/'ops' — they
-  // MUST be known buckets or normCategory collapses them to 'general' and the rail can't group them. 'code',
-  // 'writing' and 'planning' stay valid legacy aliases (older customs) that the rail maps into developer/general.
+  // browse buckets for the marketplace category rail (the R6 discovery front). A persona catalog module authors
+  // one of these — it MUST be a known bucket or normCategory collapses it to 'general' and the rail can't group
+  // it. 'code' and 'planning' stay valid legacy aliases (older customs) that the rail folds into developer/ops.
   // 'general' is the catch-all fallback. Additive only — no bucket is ever renamed or removed.
-  const CATEGORIES = ['developer', 'research', 'creator', 'ops', 'general', 'code', 'writing', 'planning'];
+  //
+  // LIFE-DOMAIN BUCKETS (2026-08-03): the catalog's job is to be a USE-CASE DICTIONARY for someone who cannot
+  // yet name their own use case, so the buckets must be the areas a person actually HAS — not just the five
+  // professional personas the R4 catalog shipped with. A reader scans this rail for themselves; a bucket they
+  // don't see is a use case they never discover. Each new bucket ships with a real shelf of recipes behind it
+  // (an empty bucket is worse than no bucket) — see recipe-catalog/<bucket>.js.
+  const CATEGORIES = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money', 'career',
+    'learn', 'life', 'data', 'general', 'code', 'planning'];
   // provenance: where a recipe came from. 'builtin' = curated; 'custom' = hand-authored; 'fork' = tweaked from another.
   const SOURCES = ['builtin', 'custom', 'fork'];
 
