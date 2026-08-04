@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "26c5583879bb1769520f92df38c2e2ce752d0341",
+    "sourceCommit": "60d340e93650580c5876e5b97bfe15aac74575ef",
     "pathSetSha256": "89e6003e522968bcad962342da9a8f804428421941c53bee645ea14476601001",
     "files": [
       {
@@ -118,8 +118,8 @@
       },
       {
         "path": "frontend/app/beatcard.js",
-        "bytes": 11411,
-        "sha256": "87add8a82a7899d11ea762e6bb55c76b8c68ed15ac2ee111e35bc441aceae389"
+        "bytes": 14984,
+        "sha256": "9521a865cf38c2e55f33588661f6aeceba1648e51af1e0f0e0c015b63d6bf4e2"
       },
       {
         "path": "frontend/app/bottlestore.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 491003,
-        "sha256": "4a107d35098c9c3b4755f13b5e9a2afb458f586d411cf9e41d16551ceb0dea18"
+        "bytes": 499317,
+        "sha256": "c065cab71a155a8dcb3a929f05db173cef588535488095142c48283934d7dec6"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 23440,
-        "sha256": "5e9f2a6b1bbf23d60e8d91a1ef96127c6fa5fc523126d76c9485109ec6480e41"
+        "bytes": 24712,
+        "sha256": "112e17ba92a8395891559b634b11c603e989927ba7aa7a382bcdd51917f06b53"
       },
       {
         "path": "frontend/app/harness.js",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 220960,
-        "sha256": "f57409c1bd266aa3dd71ff5ff03e77e6fe4d8f196ef1bfe78371433e4d15b0a0"
+        "bytes": 221545,
+        "sha256": "27d1bc166a9cdc366385c0ad7b691083ac6c2efcf74f55a043fc5cc4d577f49d"
       },
       {
         "path": "frontend/app/mint.js",
@@ -548,13 +548,13 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 57219,
-        "sha256": "5b399d7f9a1f51af85495a81d094495027e6a39b314eb475f3ff30205a3ceaa2"
+        "bytes": 57222,
+        "sha256": "d9f79519f035db29f63c21a79e8f51b0e52b7905eb8dc78acab26e69e9f3a5e7"
       },
       {
         "path": "frontend/app/recommend.js",
-        "bytes": 7539,
-        "sha256": "7d37191d1c5e0ac8fadbfb82dcbb85f7b79a404f33b2f69394afa1a72bc0ac85"
+        "bytes": 9673,
+        "sha256": "c2c16256707e31dbf1355b0a4327932b842426f78113f8ae96e4235fb8920a11"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -673,8 +673,8 @@
       },
       {
         "path": "frontend/app/study.js",
-        "bytes": 21284,
-        "sha256": "51f3e1e63ea9b926c4fc6dcb5f11708ce9220960c7709f879460b885942f0196"
+        "bytes": 21705,
+        "sha256": "1c5681529eaef1e59b73db85d98adf819fd1f9a303f059894c512c72beec40bd"
       },
       {
         "path": "frontend/app/studystore.js",
