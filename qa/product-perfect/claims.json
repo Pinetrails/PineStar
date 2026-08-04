@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1419b69606de123cb109af4557f381abc14ca0e7",
+    "sourceCommit": "38c5460d5775cd265275ec0195be0932bea74b61",
     "pathSetSha256": "1fb276f07550e4b1e1c42d1e7c8f88c61b5d46d7c66f780488f247b9caedad2b",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 127312,
-        "sha256": "f1dd64c8834530c29a0194572e7f77f371b23b48829b5784ff2af7ed999d8fbc"
+        "bytes": 128384,
+        "sha256": "8a519bc6f7e71d1a4fa1b135de74eb793efe8cafa7f3f3472acdf258ceeb0f29"
       },
       {
         "path": "frontend/app/channels.js",
@@ -738,8 +738,8 @@
       },
       {
         "path": "frontend/app/tutorial.js",
-        "bytes": 67007,
-        "sha256": "910561a198b8dbf618ce46cf07b5d5fac4dbb23219efdbca7e3609ccb121f683"
+        "bytes": 72422,
+        "sha256": "cbdb34ca84d28d7e1aec228afdf04642287793deda09202a28a6fef287878322"
       },
       {
         "path": "frontend/app/understanding.js",
@@ -943,8 +943,8 @@
       },
       {
         "path": "frontend/css/tutorial.css",
-        "bytes": 8258,
-        "sha256": "97ff3ce72478422f4ce558ebab4cf989c82a498c778ff585bee6b97eb4684f18"
+        "bytes": 8902,
+        "sha256": "16a97720e12f2d7e9178b2b809e2c6a4fa20d65197ab32bbb593e76689f330cd"
       },
       {
         "path": "frontend/css/warroom.css",
