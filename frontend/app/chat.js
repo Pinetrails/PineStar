@@ -6509,13 +6509,12 @@ const Chat = (() => {
         // Flag this stream so that WHEN the sidecar is provably back (health probe on reconnect) we tell the
         // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
         if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
-        // the run DIED in flight — settle the stream's outcome so the task board's chip can never claim
-        // "DONE — REVIEW & SHIP" over a dead run (truthful telemetry). Guarded on thisRunId: no run ever
-        // started (e.g. a preflight failure) → nothing was filed, nothing to settle.
-        if (thisRunId && typeof Workstreams !== 'undefined' && Workstreams.noteRunEnd) Workstreams.noteRunEnd(ws.id, thisRunId, false);
         persistPartial(ws, acc);
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // so the failure survives a switch-back, not just a transient notify
+        // the run DIED in flight — settle its outcome (task-board truth: a dead run can never wear the DONE
+        // chip). Guarded on thisRunId: no run started → nothing was filed, nothing to settle.
+        if (thisRunId && typeof Workstreams !== 'undefined' && Workstreams.noteRunEnd) Workstreams.noteRunEnd(ws.id, thisRunId, false);
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
         if (isActiveWs(ws)) resolvePresence(ws, { error: true });   // COMMS-PREMIUM: presence card resolves red
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
