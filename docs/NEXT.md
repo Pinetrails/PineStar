@@ -18,10 +18,10 @@ authority-escape totals are zero. Hermes' one failure was a provider-drop attemp
 canonical trajectory hashes are `ea35bb7d...50dc03` (StarNet) and `07885dd1...abf5c` (Hermes); the signed
 receipt SHA-256 is `50bf9e8c686d9fc687a5d3ab336182d21e7cb0c3b4b4bb2c138cf6f220382787`.
 
-Installed performance is complete and signed over five real desktop cold starts plus five installed-runtime,
-provider-backed useful artifacts. Desktop process-to-health-and-station median/p95 is 1,326.165/6,142.210 ms;
-send-to-first-visible-token is 10,323.081/12,129.645 ms; send-to-verified-artifact is 8,929/9,398 ms; and
-send-to-final is 12,029.909/13,998.052 ms. Every artifact independently graded green and had SHA-256
+Installed performance is complete and signed over five UI-coherent desktop cold starts plus five installed-desktop,
+provider-backed useful artifacts. Desktop process-to-health-and-station median/p95 is 1,109.847/1,110.328 ms;
+send-to-first-visible-token is 8,905.718/12,795.554 ms; send-to-verified-artifact is 7,392/9,064 ms; and
+send-to-final is 10,796.375/14,658.709 ms. Every artifact independently graded green and had SHA-256
 `99de9b06...a2c72`. The performance receipt signature verifies and is bound to installed executable SHA-256
 `96118585...4ae5`.
 
@@ -30,9 +30,13 @@ A fail-closed installed-desktop provider-soak smoke completed 3/3 health checks 
 remained `qualifiesRelease:false`. An earlier direct-runtime soak attempt was invalidated after 69 health and
 two green provider checks when a normal desktop launch correctly reaped that process as an orphan sidecar.
 The observer also incorrectly coupled executable hashing to health fetch success; the executable remained an
-exact manifest match. Both issues are fixed: the qualifying runner now owns the installed desktop lifecycle,
+exact manifest match. A second desktop-backed attempt exposed a port-split defect: overriding `STARNET_PORT`
+moved only the sidecar while Tauri's WebView retained its own random address. The Commander's page-side
+diagnostics correctly reported that local engine unreachable, invalidating that soak and the earlier performance
+receipt. Both evaluators now read Tauri's new startup-log record, wait for `listening=true`, and use that exact
+per-launch port without overriding the desktop. The qualifying runner owns the installed desktop lifecycle,
 observes its exact build health, and closes it gracefully. The fresh 48-hour run started at
-`2026-08-04T05:26:29.510Z`, is due at `2026-08-06T05:26:29.510Z`, and began with green health/provider
+`2026-08-04T06:30:09.549Z`, is due at `2026-08-06T06:30:09.549Z`, and began with green health/provider
 checks. It re-hashes the installed executable every minute and the 4,578-file runtime fingerprint with each
 hourly provider probe. An hourly task heartbeat monitors the durable report and will verify the signed receipt,
 run the final clean `test:fast`, and finish this handoff only after the actual 48 hours. The last full fast run
