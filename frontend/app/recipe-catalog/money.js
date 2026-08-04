@@ -132,32 +132,6 @@
       source: 'builtin', forkedFrom: null
     },
     {
-      id: 'debt-payoff', name: 'Debt Payoff Plan', emoji: '◓', tagline: 'The order to pay, on real numbers',
-      accent: '#cf8a7d',
-      blurb: 'Runs the arithmetic on payoff orders — the cheapest order and the one you are likeliest to finish.',
-      tags: { general: 1 },
-      params: [
-        { key: 'debts', label: 'What you owe', placeholder: 'each balance with its interest rate and minimum payment' },
-        { key: 'spare', label: 'Spare per month', placeholder: 'what you can put above the minimums', required: false, default: 'what you tell me you can spare' }
-      ],
-      task: 'Work out a payoff plan for {debts} with {spare} above the minimums. Do the actual arithmetic on two orders: highest-rate-first (which costs the least in total interest) and smallest-balance-first (which clears an entire line soonest). Show me both — total interest paid, and the month each line disappears — because the cheaper plan is worthless if it is the one I quit in month four, and the difference between them is often smaller than people expect. Say which one I should probably take and why, in one honest paragraph. Flag anything where the rate is high enough that it dominates every other decision, and anything with a rate that will change on a known date. Give me the first three months as concrete payment amounts per line. Note plainly that this is arithmetic on the numbers I gave you, not financial advice, and that a debt with unusual terms is worth a professional look.',
-      category: 'money', gear: ['notebook'], skills: ['decision-1-3-1'], cadence: null,
-      source: 'builtin', forkedFrom: null
-    },
-    {
-      id: 'savings-goal', name: 'Savings Goal', emoji: '◔', tagline: 'What it really takes per month',
-      accent: '#7bc88a',
-      blurb: 'Turns a goal into an honest monthly number — and says when the timeline is the thing that has to give.',
-      tags: { general: 1 },
-      params: [
-        { key: 'goal', label: 'The goal', placeholder: 'e.g. 6 months of runway, a 20k deposit by next spring' },
-        { key: 'position', label: 'Where you are now', placeholder: 'what you have saved and can add monthly', required: false, default: 'what you tell me when I ask' }
-      ],
-      task: 'Work out what {goal} actually requires, from {position}. Give me the monthly number, plainly, before any encouragement. Then check it against reality: if that number is a large share of what I have spare, say so directly and show me the three levers — a later date, a smaller target, or a bigger monthly amount — with the arithmetic for each so I can choose rather than just feel bad. Break the goal into milestones close enough together that I can tell early whether I am on track, and name the checkpoint where the plan should be reconsidered rather than pushed. Call out the risk that eats savings goals: the unplanned expense with no buffer behind it. This is arithmetic on my numbers, not financial advice — say so and stop short of telling me where to put the money. Save the plan so a later run can compare progress against it.',
-      category: 'money', gear: ['notebook'], skills: ['plan'], cadence: null,
-      source: 'builtin', forkedFrom: null
-    },
-    {
       id: 'insurance-review', name: 'Insurance Review', emoji: '⊚', tagline: 'What you are covered for — and the gaps',
       accent: '#88b6c4',
       blurb: 'Reads the policy you never read, in plain language — what is covered, what is excluded, where you are exposed.',

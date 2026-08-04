@@ -89,9 +89,9 @@
       accent: '#cf8a7d',
       blurb: 'Keep / downgrade / cancel with the yearly cost of each — and the total the cancel pile would save.',
       tags: { general: 1 },
-      params: [{ key: 'charges', label: 'Subscriptions / statement', placeholder: 'paste your recurring charges' }],
-      task: 'Audit these subscriptions:\n\n{charges}\n\nFor each: keep, downgrade, or cancel — with a one-line reason and the cost stated per month AND per year, because the yearly number is the one that stings. Lead with the biggest easy savings. Flag duplicates, overlapping services doing the same job, and anything that looks like a forgotten free-trial rollover. Total what the cancel pile saves per year, and note which cancellations are known to be deliberately annoying so I budget the patience. I decide; you make it obvious.',
-      category: 'ops', gear: [], skills: ['ledger-upkeep'], cadence: null,
+      params: [{ key: 'charges', label: 'Statements', type: 'file', placeholder: 'a statement / card export — or paste the recurring charges' }],
+      task: 'Audit the recurring charges in {charges}. Read the real statement rather than a list I typed from memory — the ones I forget to mention are precisely the ones worth finding. Compare against your record from the last run: a price that CREPT UP is invisible in any single statement and is the most valuable thing this can tell me, so lead with anything that changed since last time. For each: keep, downgrade, or cancel — with a one-line reason and the cost stated per month AND per year, because the yearly number is the one that stings. Lead with the biggest easy savings. Flag duplicates, overlapping services doing the same job, and anything that looks like a forgotten free-trial rollover. Total what the cancel pile saves per year, and note which cancellations are known to be deliberately annoying so I budget the patience. I decide; you make it obvious.',
+      category: 'ops', gear: ['cabinet', 'notebook'], skills: ['ledger-upkeep'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     },
     {
@@ -99,12 +99,15 @@
       accent: '#b790c0',
       blurb: 'Options with honest trade-offs — "do nothing" included — then a real position, not a hedge.',
       tags: { general: 1 },
-      params: [{ key: 'decision', label: 'The decision', placeholder: 'the choice you are weighing' }],
+      params: [
+        { key: 'decision', label: 'The decision', placeholder: 'the choice you are weighing' },
+        { key: 'material', label: 'The material', type: 'folder', placeholder: 'the docs / data behind it', required: false, default: 'whatever you already know about this' }
+      ],
       intake: [
         { dimension: 'audience', question: 'Who reads the memo?', options: ['just me', 'team / stakeholders'], recommended: 'just me', reason: 'a stakeholder memo needs context a self-memo can skip' }
       ],
-      task: 'Write a one-page decision memo for: {decision}. State the actual question — often not the one asked — then the viable options with honest trade-offs, including "do nothing", which is always an option and usually the incumbent. Name the few facts that would change the answer and the cheapest way to get them. Then decide: a clear recommendation, the reasoning, your confidence, and the early signal that would tell us we chose wrong. Take a position — hedged memos decide nothing.',
-      category: 'ops', gear: [], skills: ['decision-1-3-1'], cadence: null,
+      task: 'Write a one-page decision memo for {decision}, working from {material} and from the live web where a fact is checkable. Ground it first: read what actually exists rather than reasoning from my summary, and check your memory for decisions I have made before that rhyme with this one and how they turned out — my own track record is the best available evidence about how I decide badly. State the actual question — often not the one asked — then the viable options with honest trade-offs, including "do nothing", which is always an option and usually the incumbent. Name the few facts that would change the answer and the cheapest way to get them. Then decide: a clear recommendation, the reasoning, your confidence, and the early signal that would tell us we chose wrong. Take a position — hedged memos decide nothing.',
+      category: 'ops', gear: ['cabinet', 'dish', 'notebook'], skills: ['decision-1-3-1'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
