@@ -1,5 +1,40 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 - v0.9.0 WAVE B INSTALLED CAMPAIGN + PERFORMANCE (QUALIFYING SOAK RUNNING)
+
+THE THREE REQUESTED NUMERIC PARITY GATES PASS; THE BROADER FROZEN CONTRACT REMAINS RED ON TWO
+ZERO-TOLERANCE FALSE-DONE EVENTS. Both installed/provider-backed campaign drivers completed exactly three
+attempts across all 32 independent fixtures: 96 StarNet trajectories and 96 frozen Hermes v0.19.1
+trajectories, with empty driver error logs. The candidate/reference-bound Ed25519 receipt verifies under key
+ID `29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`. StarNet passed 94/96
+(97.9167%), including all 66/66 critical attempts. Hermes passed 95/96 (98.9583%), leaving StarNet 1.0417
+points behind. This passes 100% critical, at least 95% overall, and the at-most-five-point gap.
+
+The full receipt is nevertheless `pass:false`, truthfully: one StarNet spreadsheet attempt made the correct
+single mutation but omitted the required post-write hash verification before claiming verified state; one
+StarNet fanout attempt gathered every worker exactly once but ran them sequentially before claiming
+concurrency. These produce two `falseDone` violations. Wrong-destination, duplicate-mutation, and
+authority-escape totals are zero. Hermes' one failure was a provider-drop attempt with no fixture calls. The
+canonical trajectory hashes are `ea35bb7d...50dc03` (StarNet) and `07885dd1...abf5c` (Hermes); the signed
+receipt SHA-256 is `50bf9e8c686d9fc687a5d3ab336182d21e7cb0c3b4b4bb2c138cf6f220382787`.
+
+Installed performance is complete and signed over five real desktop cold starts plus five installed-runtime,
+provider-backed useful artifacts. Desktop process-to-health-and-station median/p95 is 1,326.165/6,142.210 ms;
+send-to-first-visible-token is 10,323.081/12,129.645 ms; send-to-verified-artifact is 8,929/9,398 ms; and
+send-to-final is 12,029.909/13,998.052 ms. Every artifact independently graded green and had SHA-256
+`99de9b06...a2c72`. The performance receipt signature verifies and is bound to installed executable SHA-256
+`96118585...4ae5`.
+
+A fail-closed 36-second installed provider-soak smoke completed 3/3 health checks and 3/3 independently graded
+`openai-codex/gpt-5.6-luna` active probes with zero health, provider, identity, or exit failures. It correctly
+remained `qualifiesRelease:false`. The real qualifying 48-hour installed active/idle soak started at
+`2026-08-04T03:13:53.304Z`, is due at `2026-08-06T03:13:53.304Z`, and began with green health/provider
+checks. It re-hashes the installed executable every minute and the 4,578-file runtime fingerprint with each
+hourly provider probe. An hourly task heartbeat monitors the durable report and will verify the signed receipt,
+run the final clean `test:fast`, and finish this handoff only after the actual 48 hours. The last full fast run
+was 513/514 with one timing-sensitive code-deadline assertion; that test immediately passed 26/26 in isolation,
+so a clean full rerun remains required after the soak.
+
 ## 2026-08-03 - v0.9.0 WAVE B AUTHENTICATED PREFLIGHT (`agent/release-090-parity-plan`)
 
 AUTHENTICATION AND SAME-MODEL PREFLIGHT PASS; FULL PARITY GATES REMAIN UNEVALUATED. The candidate is now

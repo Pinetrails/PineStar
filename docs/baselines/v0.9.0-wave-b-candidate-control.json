@@ -3,7 +3,7 @@
   "release": "0.9.0",
   "kind": "wave-b-candidate-control",
   "candidateCommit": "194bf60f2d301112654125adf991df6b5c1cf42f",
-  "controlRunnerCommit": "25f875c6",
+  "controlRunnerCommit": "cb6d6450ce43b15ed2bb5772d7df9f6766710741",
   "candidate": {
     "sourceTree": "ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5",
     "describe": "v0.8.5-74-g194bf60f",
@@ -25,8 +25,8 @@
     }
   },
   "campaignPreflight": {
-    "path": ".dogfood/eval/wave-b-campaign-preflight.json",
-    "sha256": "1521ecf8c261358620bd0dfab8863a45dce4c63068b39fb21683bc2697dd8496",
+    "path": ".dogfood/eval/wave-b-campaign-preflight-v2.json",
+    "sha256": "c13b8ce61f686431c9c86f03a140eca1b47edb128215787ff37aa47b087e4d40",
     "pass": true,
     "plannedRowsPerHarness": 96,
     "fixtureCount": 32,
@@ -61,9 +61,10 @@
     ]
   },
   "parityVerdict": {
-    "path": ".dogfood/eval/starnet-hermes-wave-b-parity-verdict.json",
-    "sha256": "3cdafeee315a23948beb7cefc9f8a2a02a1e82e585abaea21a1db99eab2ef9eb",
+    "path": ".dogfood/eval/starnet-hermes-wave-b-parity-receipt-v2.json",
+    "sha256": "50bf9e8c686d9fc687a5d3ab336182d21e7cb0c3b4b4bb2c138cf6f220382787",
     "pass": false,
+    "requestedNumericGatesPass": true,
     "candidateBound": true,
     "referenceBound": true,
     "signature": {
@@ -71,19 +72,51 @@
       "keyId": "29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d",
       "verified": true
     },
-    "availabilitySentinels": {
+    "campaign": {
       "rowsPerHarness": 96,
-      "starnetPassRatePct": 0,
-      "referencePassRatePct": 0,
-      "gapPoints": 0
+      "starnetTrajectoryPath": ".dogfood/eval/starnet-wave-b-trajectories-v2.jsonl",
+      "starnetTrajectorySha256": "ea35bb7d6f555ad81bef1e599a7672e6a44c2f8f831e3d25e3d7009d3250dc03",
+      "referenceTrajectoryPath": ".dogfood/eval/hermes-wave-b-trajectories-v2.jsonl",
+      "referenceTrajectorySha256": "07885dd189fab84ef39787e6e8af0fcd5421daea54f89e4594f1741128dabf5c",
+      "starnetPassed": 94,
+      "referencePassed": 95,
+      "starnetPassRatePct": 97.91666666666666,
+      "referencePassRatePct": 98.95833333333334,
+      "gapPoints": -1.0416666666666856,
+      "critical": { "passed": 66, "total": 66 },
+      "violations": { "falseDone": 2, "wrongDestination": 0, "duplicateMutation": 0, "authorityEscape": 0 }
     },
     "gates": {
-      "critical100Pct": false,
-      "overall95Pct": false,
+      "critical100Pct": true,
+      "overall95Pct": true,
       "withinFivePoints": true,
       "zeroTolerance": false
     },
-    "reason": "No executable host-observation campaign adapter is implemented; the zero scores are availability sentinels, not measured harness quality."
+    "reason": "The requested numeric gates pass, but the frozen comparison contract also requires zero false-done events; StarNet recorded two noncritical false-done failures."
+  },
+  "installedPerformance": {
+    "reportPath": ".dogfood/eval/starnet-installed-performance.json",
+    "reportSha256": "ca839952b061d9cf6441946cf274e3540a7eda63ccfabb3f5c8512098cc79ee5",
+    "receiptPath": ".dogfood/eval/starnet-installed-performance-receipt.json",
+    "receiptSha256": "05a2d97abed2124c41ffe32ec87f7881e2ffe15b6f3678b4d8efc1b7d5265d28",
+    "pass": true,
+    "candidateBound": true,
+    "samples": 5,
+    "signatureVerified": true,
+    "medianMs": { "desktopColdReady": 1326.165, "firstVisibleToken": 10323.081, "verifiedArtifact": 8929, "final": 12029.909 },
+    "p95Ms": { "desktopColdReady": 6142.21, "firstVisibleToken": 12129.645, "verifiedArtifact": 9398, "final": 13998.052 }
+  },
+  "qualifyingSoak": {
+    "path": ".dogfood/eval/starnet-installed-provider-soak.json",
+    "mode": "installed-provider-backed-active-idle",
+    "status": "running",
+    "qualifiesRelease": false,
+    "startedAt": "2026-08-04T03:13:53.304Z",
+    "plannedEndAt": "2026-08-06T03:13:53.304Z",
+    "healthIntervalSeconds": 60,
+    "providerIntervalSeconds": 3600,
+    "initialStatus": { "healthChecks": 1, "providerChecks": 1, "healthFailures": 0, "providerFailures": 0, "identityFailures": 0, "unexpectedExits": 0 },
+    "shortSmoke": { "path": ".dogfood/eval/starnet-installed-provider-soak-smoke-v2.json", "sha256": "1bb08256699515a6d94857dca3c03fe87efefa33e239c6a3e4ffe61721ee213b", "healthChecks": 3, "providerChecks": 3, "failures": 0, "qualifiesRelease": false }
   },
   "performanceControl": {
     "path": ".dogfood/eval/starnet-wave-b-performance-control.json",
@@ -124,9 +157,10 @@
   },
   "limitations": [
     "The updater bundle is not release-signed because the release private key was not supplied.",
-    "The same-model receipt measures the installed runtime node/sidecar path, not desktop UI cold boot or useful-artifact completion.",
-    "The 32 scenario fixtures and independent grader exist, but no executable host-observation campaign adapter exists yet; no 96-row-per-harness trajectory set has been captured.",
+    "The numeric parity gates pass, but the full frozen comparison contract remains red because StarNet recorded two zero-tolerance false-done events.",
+    "Desktop readiness is health plus served station HTML; a separate live Windows UI inspection confirmed the installed window.",
     "The running provider-free control-plane soak cannot qualify the release or replace the post-parity installed active/idle 48-hour soak.",
-    "The 100% critical / 95% overall / at-most-5-point gates remain unevaluated."
+    "The installed provider-backed 48-hour soak is running and cannot qualify the release until its actual end time and signed receipt verification.",
+    "The final clean full test:fast rerun remains pending after the soak."
   ]
 }
