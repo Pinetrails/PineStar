@@ -3640,7 +3640,10 @@ const cronDriver = makeCronDriver({
           surface: 'autonomous', trigger: 'schedule', reflect: true,
           station: router.stationFor(h.agentId) || undefined,
           preloadSkills: o.preloadSkills, requiredPreloads: o.requiredPreloads, workdir: o.workdir, enabledToolsets: o.enabledToolsets,
-          initialTaint: o.initialTaint, unattendedGrants: o.unattendedGrants
+          // GRANTS NEVER FLOW DOWN A LINE (2026-08-04): every runAgent call here is a DOWNSTREAM hop (stage one
+          // ran in the driver, with the job's own grants). Whatever the caller passes, a hop runs ungranted —
+          // an unattended approval names ONE agent and a belt must not silently extend it to another.
+          initialTaint: o.initialTaint, unattendedGrants: []
         });
       } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
       return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
@@ -8832,7 +8835,12 @@ async function handleCronRun(req, res) {
                 emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
                 surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,
                 station: router.stationFor(h.agentId) || undefined,
-                unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
+                /* GRANTS NEVER FLOW DOWN A LINE (2026-08-04): the unattended grant was approved for the
+                   routine's OWN agent (stage one, above) — a downstream hop is a DIFFERENT agent, and a drawn
+                   belt must not silently widen its authority. Mirrors the scheduled fire (cron-driver.js). */
+                unattendedGrants: [],
+                // skills/workdir/toolsets stay on hops deliberately (routine config; multi-stage routines rely
+                // on them) — flagged 2026-08-04 as a widening risk to revisit, same note as cron-driver.js.
                 preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [], requiredPreloads: true, workdir: job.workdir || null,
                 enabledToolsets: Array.isArray(job.enabledToolsets) ? job.enabledToolsets.slice() : null,
                 initialTaint: !!(job.contextFrom && job.contextFrom.length)
