@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "d369d59f77ef7335634541561b38b2bc864c7da9",
+    "sourceCommit": "45ba7d19ba690bad9a8b5703559a5bf68e00b882",
     "pathSetSha256": "599a9df05085f4720882937c780957fc774a500100b2eb3ebb6702f04ce9a3a9",
     "files": [
       {
@@ -518,28 +518,28 @@
       },
       {
         "path": "frontend/app/recipe-catalog/business.js",
-        "bytes": 23596,
-        "sha256": "3c2273b7aa9fe3e923f536fff07e52a0e5ede51ed0424e467fb41cfd599a4510"
+        "bytes": 23994,
+        "sha256": "1cc7c326d5785c9e9a3d24661ebd98c165bc0bee407b8c0e528667dd1651cd58"
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 17643,
-        "sha256": "685ead5f0d0c4e0f46ab91aa230fe20cb3ce42065139ad24b6e0fab75bcfb7e0"
+        "bytes": 20722,
+        "sha256": "0e6175c86af3884956fe4f07c43b7eac94b95744062b5148d5f10cc526f3ac13"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
-        "bytes": 13423,
-        "sha256": "57ed4b133df743f76d3ce2da0d072899bbdc8e1f0f083aca1851111151ee1c7d"
+        "bytes": 21873,
+        "sha256": "3463ad25a43ffbcdd2149ecf5e8a8ff9a32c97ab0a3f89cc0b2339c51e42e012"
       },
       {
         "path": "frontend/app/recipe-catalog/data.js",
-        "bytes": 23460,
-        "sha256": "df782cb1ffce224c7b3df17edb1cfc630c445b3a4a2f1cd09b5d9e96a07113d0"
+        "bytes": 23893,
+        "sha256": "441b9e04f3305d9ba17dae9eeda7da42697e7311c705995330be163bd08e86cf"
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
-        "bytes": 13326,
-        "sha256": "9ebe130bd9802b6b1eed6f9006229158e5227034feb77dbeec8cdb67bcff0a15"
+        "bytes": 18773,
+        "sha256": "a231961b83069f5d3aee58b8f5c93295d0e961534ec233ad95de0e4da3489441"
       },
       {
         "path": "frontend/app/recipe-catalog/general.js",
@@ -553,13 +553,13 @@
       },
       {
         "path": "frontend/app/recipe-catalog/money.js",
-        "bytes": 21619,
-        "sha256": "ddf7377f9ab73f82294e55dd53a90fdb8e16a690eeefcb988719e43c14f70b7d"
+        "bytes": 18403,
+        "sha256": "e80d19d90b984aa897ea6ee9fbd03c629d3c3db6481ba71c15c2a3d95ada0e55"
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
-        "bytes": 13655,
-        "sha256": "caf4bea0648eedf9386d47a8999900aef4580fe25433b0b3f2b2abfc76380186"
+        "bytes": 14611,
+        "sha256": "2a243dfa997bfc20a59633512f1b6c47b344d46adca9f60ec8e7ef93a1645821"
       },
       {
         "path": "frontend/app/recipe-catalog/research.js",
@@ -928,8 +928,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 68959,
-        "sha256": "762b9e87ffc2a1dc42ae3887c0c1b9dbd68408d1c7e53b3303551c4a66335df9"
+        "bytes": 69322,
+        "sha256": "9c246181777147db6f5c60600bd242d7b1d980b3b8265cf47b6c4462bfcd0ed4"
       },
       {
         "path": "frontend/css/motion.css",
