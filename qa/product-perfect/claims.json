@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "74ce986f7ee203a04d8244ff0073fc49f3a6c004",
+    "sourceCommit": "eae2011a38d98979dd6702c11a439fb2c93959a1",
     "pathSetSha256": "67b3f0df0ace2d6e273f3018ed6d520ec8f1858fe011dfc43b615afff886d695",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 505759,
-        "sha256": "3defb63fe0872e492261a1a5056f7577b92fc5c34594b9b6a43675f7b6591439"
+        "bytes": 512961,
+        "sha256": "6247e4184cb85f4da7a5f144e8fba6d6e1bc11670d6348fadc3e659e6f0e2a50"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -558,13 +558,13 @@
       },
       {
         "path": "frontend/app/recquality.js",
-        "bytes": 10701,
-        "sha256": "0cbe367810fd024ff332bfeb1884f258297fd7a6d97de94df76d2d5fe856f833"
+        "bytes": 11150,
+        "sha256": "159d1252d37518f5f625a79cbe2a6116c310371e6ab164a271227a648f75fee1"
       },
       {
         "path": "frontend/app/recqualitystore.js",
-        "bytes": 10359,
-        "sha256": "bda2468c6e5acb8879ebe299ce1d40bd722bd81853bb2b936bba74e18795c10e"
+        "bytes": 12171,
+        "sha256": "c345c0094499751a5661fe22f5a73900b9e7c4d636a8e3e46dcf00247b2b3ba8"
       },
       {
         "path": "frontend/app/recruiter.js",
