@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f172ab067e803feaf2d1fcd0b63c6cedc56da7c5",
-    "pathSetSha256": "1fb276f07550e4b1e1c42d1e7c8f88c61b5d46d7c66f780488f247b9caedad2b",
+    "sourceCommit": "2014ce6c165b2a5909ef1ae684ae8f81388f4b70",
+    "pathSetSha256": "89e6003e522968bcad962342da9a8f804428421941c53bee645ea14476601001",
     "files": [
       {
         "path": "INSTALL.md",
@@ -118,8 +118,8 @@
       },
       {
         "path": "frontend/app/beatcard.js",
-        "bytes": 10595,
-        "sha256": "ee95aed1857dd9d8d7841d8af258cc2a14cb49448d21630193ee5d2f4f83d4a2"
+        "bytes": 11411,
+        "sha256": "87add8a82a7899d11ea762e6bb55c76b8c68ed15ac2ee111e35bc441aceae389"
       },
       {
         "path": "frontend/app/bottlestore.js",
@@ -552,6 +552,11 @@
         "sha256": "5b399d7f9a1f51af85495a81d094495027e6a39b314eb475f3ff30205a3ceaa2"
       },
       {
+        "path": "frontend/app/recommend.js",
+        "bytes": 7539,
+        "sha256": "7d37191d1c5e0ac8fadbfb82dcbb85f7b79a404f33b2f69394afa1a72bc0ac85"
+      },
+      {
         "path": "frontend/app/recruiter.js",
         "bytes": 15996,
         "sha256": "e071ea9b862866c7e35274e8f9dd26f3a61dee06c80c520536cc7052b6b1da9a"
@@ -958,8 +963,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67442,
-        "sha256": "0de03cc6e3fd2dbbc5b33150be02a07db29a9c20db722ff4386496189f976fe9"
+        "bytes": 67617,
+        "sha256": "f729d57469c970c7f02ede744af9982369337fd5bab044e8a5b8ae6fd6a47004"
       },
       {
         "path": "frontend/js/arcade.js",
