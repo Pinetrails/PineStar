@@ -24,7 +24,8 @@ const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
 const { makeWorkspaceOwner } = require('./workspace-owner.js');
-const { classifyWorkspace } = require('./workspace-safety.js');
+const { classifyWorkspace, workspaceCandidates } = require('./workspace-safety.js');
+const { inspectWorkspaceLineage } = require('./workspace-lineage.js');
 const { makeUpdatePreparation } = require('./update-preparation.js');
 const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
@@ -385,6 +386,15 @@ if (!workspaceOwnerClaim.ok) {
 // Synchronous and idempotent: covers ordinary returns and every process.exit path. SIGKILL/TerminateProcess
 // cannot run handlers, so their valid PID-stamped claim is recovered by the next boot instead.
 process.once('exit', () => { try { workspaceOwner.release(); } catch (_) {} });
+
+// Capture lineage before this process stamps schema/cache/runtime files. It is bounded metadata only: names and
+// counts, never file contents. In packaged mode we also inspect known legacy roots and verified update snapshots;
+// isolated DEV/QA roots deliberately do not look sideways into the Commander's production profile.
+const workspaceLineage = inspectWorkspaceLineage({
+  fs: fs, path: path, platform: process.platform, workspaceRoot: WORKSPACES,
+  candidateRoots: DEV_MODE ? [] : workspaceCandidates({ path: path, env: process.env, homedir: () => os.homedir() })
+    .concat([path.resolve(__dirname, 'workspaces'), path.resolve(__dirname, '..', 'workspaces')])
+});
 
 /* ---- LIVE MODEL PRICING (2026-07-31, Hermes-parity pass): wire the models.dev aggregate into the
    price snapshot so a newly-released model gets its real published rate instead of a stale family
@@ -6907,6 +6917,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/update/prepare', h: handleUpdatePrepare },
   { m: 'POST', exact: '/api/update/cancel', h: handleUpdateCancel },
   { m: 'GET', exact: '/api/update/status', h: handleUpdateStatus },
+  { m: 'GET', exact: '/api/lineage', h: serveWorkspaceLineage },
   { m: 'POST', exact: '/api/session', h: handleApiSession },
   // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
   { m: 'POST', exact: '/api/station/ack', h: handleStationAck },
@@ -7209,6 +7220,10 @@ function handleUpdateCancel(req, res) {
 function handleUpdateStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(Object.assign({ ok: true }, updatePreparation.status())));
+}
+function serveWorkspaceLineage(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, lineage: workspaceLineage }));
 }
 
 // Prefix routes are route families, not arbitrary string aliases. A route whose declared prefix already
@@ -14778,8 +14793,8 @@ function serveSaveLoad(req, res) {
     // path can disclose a damaged/restored save instead of silently presenting the pristine first-run ceremony.
     // EL-11 FIX 1 (GB-9): also surface workspaceDegraded at boot-read time, not only on the first refused write.
     const recovery = (typeof saveStore.recoveryNotice === 'function') ? (saveStore.recoveryNotice(agent) || null) : null;
-    json(200, { save: doc || null, recovery: recovery, degraded: workspaceDegraded ? true : undefined });
-  } catch (e) { json(200, { save: null, recovery: null }); }
+    json(200, { save: doc || null, recovery: recovery, lineage: workspaceLineage, degraded: workspaceDegraded ? true : undefined });
+  } catch (e) { json(200, { save: null, recovery: null, lineage: workspaceLineage }); }
 }
 // POST /api/save/recovery-ack { agent? } — the frontend has SHOWN the honest quarantine/recovery notice; clear
 // the marker so it appears exactly once. Never touches the save itself (the quarantined copy stays on disk).

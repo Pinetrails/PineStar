@@ -8,6 +8,22 @@ function normalize(value, path, platform) {
   return platform === 'win32' ? out.toLowerCase() : out;
 }
 
+function workspaceCandidates(deps) {
+  const d = deps || {};
+  const path = d.path;
+  const env = d.env || {};
+  const homedir = typeof d.homedir === 'function' ? d.homedir : function () { return ''; };
+  if (!path || typeof path.join !== 'function') throw new Error('workspace-safety: an injected path is required');
+  const bases = [env.LOCALAPPDATA, env.APPDATA, env.XDG_DATA_HOME];
+  const home = String(homedir() || '');
+  if (home) bases.push(path.join(home, '.local', 'share'));
+  const out = [];
+  for (const base of bases.filter(Boolean)) {
+    for (const app of ['StarNet', 'Skynet', 'ai.skynet.harness']) out.push(path.join(String(base), app, 'workspaces'));
+  }
+  return out;
+}
+
 function classifyWorkspace(root, deps) {
   const d = deps || {};
   const path = d.path;
@@ -17,15 +33,7 @@ function classifyWorkspace(root, deps) {
   if (!path || typeof path.resolve !== 'function' || typeof path.join !== 'function') {
     throw new Error('workspace-safety: an injected path is required');
   }
-  const bases = [env.LOCALAPPDATA, env.APPDATA, env.XDG_DATA_HOME];
-  const home = String(homedir() || '');
-  if (home) bases.push(path.join(home, '.local', 'share'));
-  const candidates = [];
-  for (const base of bases.filter(Boolean)) {
-    for (const app of ['StarNet', 'Skynet', 'ai.skynet.harness']) {
-      candidates.push(path.join(String(base), app, 'workspaces'));
-    }
-  }
+  const candidates = workspaceCandidates({ path: path, env: env, homedir: homedir });
   const actual = normalize(root, path, platform);
   for (const candidate of candidates) {
     if (actual === normalize(candidate, path, platform)) {
@@ -35,4 +43,4 @@ function classifyWorkspace(root, deps) {
   return { protected: false, root: path.resolve(String(root)), matched: '' };
 }
 
-module.exports = { classifyWorkspace: classifyWorkspace };
+module.exports = { classifyWorkspace: classifyWorkspace, workspaceCandidates: workspaceCandidates };

@@ -362,6 +362,38 @@
   </div>
 </section>
 
+<!-- ============ PRIOR-INSTALL RECOVERY MODE ============ -->
+<!-- Raised only when both live save sources are empty but the sidecar proves older workspace files, a pending
+     migration, or a verified pre-update snapshot exists. There is intentionally NO create/fresh-station action:
+     onboarding would overwrite the user's mental model while prior state remains recoverable. -->
+<section id="screen-lineage" class="screen">
+  <div class="panel connect-panel ov-panel">
+    <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
+    <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
+    <header class="cc-console-head ov-head">
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">RECOVERY MODE</span><span class="cc-tb-rec">● READ ONLY</span></div>
+      <div class="cc-title-row ov-title-row">
+        <h2>▮ PRIOR STATION DATA FOUND</h2>
+        <span class="ov-sub">new-station onboarding is paused</span>
+      </div>
+      <div class="ov-recovery" role="alert">
+        StarNet did not find a readable active save, but it <b>did find evidence of an earlier station</b>.
+        Nothing has been erased. Recovery Mode prevents a new station from being created over that evidence.
+        <div id="lineage-evidence" style="margin-top:12px;word-break:break-word"></div>
+      </div>
+    </header>
+    <div class="ov-foot">
+      <div class="ov-foot-data">
+        <span class="ov-foot-cap" id="lineage-status">＋ inspect or restore the prior state; writes remain paused here</span>
+      </div>
+      <div class="connect-actions ov-actions">
+        <button id="btn-lineage-restore" class="btn">⭱ RESTORE BACKUP</button>
+        <button id="btn-lineage-retry" class="btn-xl">⟳ RETRY STATE RECOVERY</button>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ GAME ============ -->
 <!-- BRAND MARK — deliberately OUTSIDE the .screen sections: it must paint ABOVE the CRT glass
      overlays (body::before/::after at z 940/950) so the amber wordmark stays crisp instead of
