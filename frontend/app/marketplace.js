@@ -1392,7 +1392,11 @@ const Marketplace = (() => {
     const reasonFor = (r) => {
       let why = '';
       try { why = Recipes.forYouReason ? (Recipes.forYouReason(r, { topics: topics, goalText: gt, launches: launches }) || '') : ''; } catch (_) { why = ''; }
-      return why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
+      const raw = why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
+      // ONE grammar for every recommendation the station makes: the shelf speaks the same "because …" line
+      // the COMMS offer cards do (recommend.js whyLine). Fail-open — the raw reason if the spine isn't loaded.
+      if (!raw) return '';
+      return (typeof Recommend !== 'undefined' && Recommend.whyLine) ? (Recommend.whyLine({ why: raw }) || raw) : raw;
     };
     const head = ready ? '◈ FOR YOU' : '◈ STARTING POINTS — a varied lineup while the station gets to know you';
     items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));

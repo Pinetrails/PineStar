@@ -95,4 +95,41 @@ A.eq(/\bdocument\b/.test(src), false, 'recommend.js touches no DOM');
 A.eq(/\bfetch\s*\(/.test(src), false, 'recommend.js performs no I/O');
 A.eq(/\bsetTimeout\b|Date\.now|Math\.random/.test(src), false, 'recommend.js is clock-free and deterministic');
 
+/* ── 11. THE ONE CARD GRAMMAR (source-lock — chat.js is DOM-flow, not node-loadable) ──
+   Every proactive consent offer renders through ONE renderer, in one order:
+   eyebrow → evidence (the Commander's words) → proposal → consent buttons. */
+const fs = require('fs'), path = require('path');
+const chatSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'chat.js'), 'utf8');
+const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'css', 'app.css'), 'utf8');
+const iRecCard = chatSrc.indexOf('function recCard(spec)');
+A.ok(iRecCard > 0, 'chat.js defines the ONE offer-card renderer');
+const recBody = chatSrc.slice(iRecCard, iRecCard + 2600);
+A.ok(/rec-eyebrow/.test(recBody) && /rec-glyph/.test(recBody), 'the card leads with the eyebrow, glyph boxed on its own');
+A.ok(recBody.indexOf('rec-evidence') < recBody.indexOf("className = 'turnin-text'"),
+  'the EVIDENCE line is rendered BEFORE the proposal (noticed → because → propose)');
+A.ok(recBody.indexOf("className = 'turnin-text'") < recBody.indexOf("className = 'consent-btns'"),
+  'the proposal precedes the consent buttons');
+A.ok(/classList\.add\('turnin'\)/.test(recBody), 'the card extends the established .turnin family, not a new visual language');
+A.ok(/textContent/.test(recBody) && !/innerHTML/.test(recBody), 'every dynamic string is set via textContent');
+// all three consent channels route their presentation through it (one shape, not seven)
+for (const fn of ['studyCard', 'trustCard', 'threadCard']) {
+  const i = chatSrc.indexOf('function ' + fn);
+  A.ok(i > 0 && /recCard\(\{/.test(chatSrc.slice(i, i + 2400)), fn + ' renders through the shared offer card');
+}
+// the why-string grammar is shared with the FOR YOU shelf
+A.ok(/Recommend\.whyLine\(\{ why: raw \}\)/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'marketplace.js'), 'utf8')),
+  'the FOR YOU shelf speaks the same "because …" grammar as the COMMS cards');
+const iRecWhy = chatSrc.indexOf('function recWhy');
+A.ok(iRecWhy > 0 && /Recommend\.whyLine/.test(chatSrc.slice(iRecWhy, iRecWhy + 420)), 'the cards route their citation through whyLine');
+// styling: matte, dark-only, no gloss, no white control, entrance mirrors the vanish timing
+A.ok(/\.cmsg\.turnin\.rec\b/.test(cssSrc), 'app.css styles the offer card inside the .turnin family');
+A.ok(/@keyframes rec-card-in/.test(cssSrc) && /animation: rec-card-in \.26s/.test(cssSrc),
+  'the entrance mirrors the .beat-vanish timing (.26s) — one motion vocabulary');
+A.ok(/prefers-reduced-motion[\s\S]{0,80}rec\b/.test(cssSrc) || /rec-card-in[\s\S]*prefers-reduced-motion/.test(cssSrc),
+  'the entrance collapses under prefers-reduced-motion');
+const recCss = cssSrc.slice(cssSrc.indexOf('THE OFFER CARD (recommendation spine)'), cssSrc.indexOf('THE OFFER CARD (recommendation spine)') + 2600);
+A.eq(/#fff|#ffffff|white/i.test(recCss), false, 'no white controls or white paint anywhere in the card');
+A.eq(/gradient|blur\(|backdrop-filter/i.test(recCss), false, 'matte, not glossy — no gradients or glass on the card');
+A.ok(/\.rec-glyph[\s\S]{0,220}width: 11px/.test(recCss), 'the ◈ symbol glyph is BOX-sized, never padded from font-size');
+
 A.report('recommend.test');
