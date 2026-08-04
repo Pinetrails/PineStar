@@ -20,7 +20,7 @@ function setup(opts) {
   opts = opts || {};
   const clock = makeClock(T0);
   const schedule = cron.parseSchedule('every 1m', T0);
-  let store = [cronStore.makeJob({ id: 'j1', prompt: 'research the thing', agentId: 'researcher', schedule }, { id: 'j1', now: T0 })];
+  let store = [cronStore.makeJob({ id: 'j1', prompt: 'research the thing', agentId: 'researcher', schedule, unattendedGrants: opts.grants }, { id: 'j1', now: T0 })];
   const events = [], runs = [], chainCalls = [];
   let idN = 0;
   const driver = makeCronDriver({
@@ -82,6 +82,18 @@ async function fireAndSettle(s, reply) {
     const s = setup({ advanceChain: async () => ({ text: '   ', hops: [], stopped: 'x' }) });
     await fireAndSettle(s, 'stage one output');
     A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'an empty line never blanks the routine');
+  }
+
+  /* ---- GRANTS NEVER FLOW DOWN A LINE (2026-08-04): the unattended grant the Commander recorded names ONE
+     agent — the routine's own dock. Stage one runs with it; every downstream hop runs UNGRANTED, so drawing
+     a belt to another dock can never silently extend terminal/verify authority onto a different agent. ---- */
+  {
+    const s = setup({ grants: ['workbench'], advanceChain: async () => ({ text: 'line done', hops: [{ agentId: 'writer' }], stopped: null }) });
+    await fireAndSettle(s, 'stage one output');
+    A.eq(s.runs[0].opts.unattendedGrants, ['workbench'], "stage one (the routine's own agent) keeps the recorded grant");
+    A.eq(s.chainCalls.length, 1, 'the line still advanced');
+    A.eq(s.chainCalls[0].unattendedGrants, [], 'the advanceChain seam is handed an EMPTY grants list — hops never inherit authority');
+    A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'and the routine still settles ok');
   }
 
   /* ---- NO advanceChain injected = today's single-run routine, untouched ---- */
