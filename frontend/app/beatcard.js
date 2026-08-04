@@ -107,6 +107,12 @@
       ? options.vanish
       : function (node, done) { if (node && typeof node.remove === 'function') node.remove(); if (done) done(); };
     const maxSeen = Number.isFinite(options.maxSeen) ? Math.max(1, options.maxSeen) : 200;
+    /* MINIMUM VISIBLE AGE. Leaving a card undecided is read as an IGNORE, and two ignores permanently silence a
+       belief/offer — so an "ignore" may only be tallied against a card the Commander actually had a chance to see.
+       A card retired before this age closes as 'unseen': the slot is freed exactly the same way, but no feature
+       ignore hook fires. Tunable; 1.2s is comfortably longer than any render+scroll and far shorter than the
+       run-to-run gap a real card lives across. */
+    const minVisible = Number.isFinite(options.minVisible) ? Math.max(0, options.minVisible) : 1200;
     const slot = makeSlot(options.priority);
     const seen = new Map();
     const queues = new Map();
@@ -156,6 +162,9 @@
       if (!isCurrent(record) || record.closing) return false;
       record.closing = true;
       clearExpiry(record.kind);
+      if (record.seenTimer) { cancel(record.seenTimer); record.seenTimer = null; }
+      // an expiry that lands before the card was visible long enough is NOT a verdict — see minVisible.
+      if (reason === 'expired' && !record.seen) reason = 'unseen';
       if (reason === 'expired' && typeof record.onExpire === 'function') {
         try { record.onExpire(record); } catch (_) {}
       }
@@ -218,10 +227,18 @@
         kind: kind, runId: spec.runId || null, data: spec.data,
         node: spec.node || null, decided: false, closing: false, closed: false,
         generation: generation, token: ++sequence, finishTimer: null,
+        seen: minVisible === 0, seenTimer: null,
         handoff: spec.handoff, onExpire: spec.onExpire,
         onRelease: spec.onRelease, onGone: spec.onGone
       };
       active = record;
+      if (minVisible > 0) {
+        const expectedGeneration = generation;
+        record.seenTimer = later(function () {
+          record.seenTimer = null;
+          if (generation === expectedGeneration) record.seen = true;
+        }, minVisible);
+      }
       record.handle = makeHandle(record);
       return record.handle;
     }
@@ -233,13 +250,27 @@
        is holding the slot. Nothing about a decision is weakened: handle.expire() still refuses a decided
        card, so a verdict can never be miscounted as an "ignore", and each record fires its OWN onExpire
        hook — the right feature tallies the ignore, never the sweeper's. */
-    function sweepExpire() { return active ? active.handle.expire() : false; }
+    /* sweepExpire(armedToken) — retire the card this sweep was ARMED AGAINST.
+
+       THE RACING-SWEEP BUG (fixed 2026-08-04). Three sweeps arm at every hero run end (the study, trust and
+       thread lifecycle wires each call scheduleExpire(kind, 900)), and the queue drain that runs in the SAME
+       timer batch can render a brand-new card between them. The next sweep in that batch then retired the
+       FRESH card — the Commander never saw a frame of it — and its onExpire tallied an "ignore" against a
+       belief that was never actually shown. Two of those permanently silence it, and the session cap was
+       already spent by markShown. A sweep is now bound to the record that was holding the slot when it ARMED:
+       if the slot turned over in between (or was empty at arm time), the sweep is a no-op. */
+    function sweepExpire(armedToken) {
+      if (!active) return false;
+      if (arguments.length && active.token !== armedToken) return false;
+      return active.handle.expire();
+    }
     function scheduleExpire(kind, delay) {
       clearExpiry(kind);
       const expectedGeneration = generation;
+      const armedToken = active ? active.token : 0;   // WHICH card this sweep is allowed to retire
       const id = later(function () {
         expiryTimers.delete(kind);
-        if (generation === expectedGeneration) sweepExpire();
+        if (generation === expectedGeneration) sweepExpire(armedToken);
       }, Math.max(0, Number(delay) || 0));
       expiryTimers.set(kind, id);
       return id;
@@ -250,6 +281,7 @@
       for (const id of expiryTimers.values()) cancel(id);
       expiryTimers.clear();
       if (active && active.finishTimer) cancel(active.finishTimer);
+      if (active && active.seenTimer) cancel(active.seenTimer);
       active = null;
       slot.reset();
       if (opts.seen !== false) seen.clear();

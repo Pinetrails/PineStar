@@ -26,6 +26,7 @@ const clock = fakeClock();
 const vanished = [];
 const ctl = BeatCard.create({
   timers: clock,
+  minVisible: 20,   // the MINIMUM VISIBLE AGE, shrunk for the fake clock (production default is 1200ms)
   vanish(node, done) { vanished.push(node && node.id); if (node) node.isConnected = false; if (done) done(); }
 });
 
@@ -121,5 +122,70 @@ ctl.scheduleExpire('thread', 20);
 clock.tick(20);
 A.eq(answeredIgnored, 0, 'a decided card is never swept as ignored');
 A.eq(ctl.sweepExpire(), false, 'a direct sweep also refuses a decided card');
+
+/* ══ THE RACING SWEEPS (regression, 2026-08-04) ══════════════════════════════════════════════════════
+   Every hero run end arms THREE sweeps at the same delay (the study, trust and thread lifecycle wires each
+   call scheduleExpire(kind, 900)) and the queue drain fires in that same timer batch. The drain rendered a
+   FRESH card between two sweeps; the later sweep then retired it — the Commander saw zero frames — and its
+   onExpire tallied an "ignore" against a belief that was never shown. Two of those permanently silence it,
+   and markShown had already spent the session cap. A sweep may only retire the card that was holding the
+   slot when THAT sweep armed. */
+{
+  const clk = fakeClock();
+  const gone = [];
+  const c = BeatCard.create({
+    timers: clk, minVisible: 20,
+    vanish(node, done) { gone.push(node && node.id); if (node) node.isConnected = false; if (done) done(); }
+  });
+  let staleIgnored = 0, freshIgnored = 0;
+  // the PREVIOUS moment's undecided card, already long visible
+  const stale = c.claim({ kind: 'study', runId: 'run-1', node: { id: 'study-stale', isConnected: true } });
+  stale.ifCurrent(rec => { rec.onExpire = () => { staleIgnored += 1; }; });
+  clk.tick(5000);
+  // a new run ends: all three lifecycle wires arm their sweep, and the queue drain is armed alongside them
+  c.scheduleExpire('study', 900);
+  c.scheduleExpire('trust', 900);
+  c.scheduleExpire('thread', 900);
+  let fresh = null;
+  clk.setTimeout(() => {                                   // stand-in for flushStudyPending's taste path
+    fresh = c.claim({ kind: 'study', runId: 'run-2', node: { id: 'study-fresh', isConnected: true } });
+    if (fresh) fresh.ifCurrent(rec => { rec.onExpire = () => { freshIgnored += 1; }; });
+  }, 900);
+  clk.tick(1000);                                          // the whole batch drains in one tick
+  A.eq(staleIgnored, 1, 'the card the sweeps ARMED against is retired exactly once (its ignore is real)');
+  A.eq(gone.indexOf('study-stale') >= 0, true, 'the stale card vanished');
+  A.ok(fresh && fresh.isCurrent(), 'THE FIX: the freshly rendered card survives the other two sweeps in the batch');
+  A.eq(freshIgnored, 0, 'a card the Commander never saw a frame of can never tally an ignore');
+  A.eq(c.visibleBeat(), 'study', 'the fresh card still owns the one slot');
+  A.eq(gone.indexOf('study-fresh'), -1, 'and it was never vanished out from under the Commander');
+
+  // ── S4 IGNORE-TALLY FAIRNESS: even a sweep correctly aimed at a card frees the slot but does NOT tally an
+  //    ignore until that card has been visible for the minimum age.
+  c.reset();
+  let blinkIgnored = 0;
+  const blink = c.claim({ kind: 'trust', runId: 'run-3', node: { id: 'trust-blink', isConnected: true } });
+  blink.ifCurrent(rec => { rec.onExpire = () => { blinkIgnored += 1; }; });
+  c.scheduleExpire('trust', 5);                            // aimed at THIS card, but fires under the visible age
+  clk.tick(5);
+  A.eq(blinkIgnored, 0, 'a card retired before the minimum visible age is not counted as ignored');
+  A.eq(c.visibleBeat(), null, 'the slot is still freed (the queue can never starve behind it)');
+  A.eq(c.busy(), false, 'the blink card is gone');
+
+  // …and a card that DID live past the minimum age still tallies its ignore exactly as before.
+  let heldIgnored = 0;
+  const held = c.claim({ kind: 'thread', runId: 'run-4', node: { id: 'thread-held', isConnected: true } });
+  held.ifCurrent(rec => { rec.onExpire = () => { heldIgnored += 1; }; });
+  clk.tick(50);
+  c.scheduleExpire('thread', 5);
+  clk.tick(5);
+  A.eq(heldIgnored, 1, 'a card the Commander really did leave undecided still tallies its ignore');
+
+  // a sweep armed while NOTHING held the slot may never retire whatever arrives later
+  c.reset();
+  c.scheduleExpire('study', 30);
+  const later = c.claim({ kind: 'study', runId: 'run-5', node: { id: 'study-later', isConnected: true } });
+  clk.tick(60);
+  A.ok(later.isCurrent(), 'a sweep armed against an EMPTY slot retires nothing');
+}
 
 A.report('beatcard.test');
