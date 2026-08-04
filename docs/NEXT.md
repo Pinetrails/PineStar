@@ -2398,3 +2398,15 @@ The local bundle is a certification candidate, not a public signed release artif
 the updater-signing step correctly failed closed because `TAURI_SIGNING_PRIVATE_KEY` is unavailable in this
 worktree. Public distribution still goes through the signed release train; this does not weaken the local
 installed-app reliability verdict or the merge gate.
+# READY TO MERGE 2026-08-03 — MACOS MICROPHONE PRIVACY DECLARATION (`agent/mac-mic-permission`)
+
+Commit `14d26d46` adds the macOS `NSMicrophoneUsageDescription` bundle metadata required before
+WKWebView may open the microphone for push-to-talk or Local Live. The purpose string lives in
+`src-tauri/Info.plist`, which Tauri merges into the generated application bundle; a fast-gate
+contract keeps the declaration coupled to the packaged offline voice runtime.
+
+Evidence on the isolated branch: the plist parses as XML, the touched JavaScript passes
+`node --check`, the focused desktop voice bundle test is green, and `npm run test:fast` is
+517/517 green. A macOS artifact build and a real allow/deny/reset microphone round-trip remain
+unverified on this Windows host; the next macOS release candidate must prove the generated
+`StarNet.app/Contents/Info.plist` contains the key and exercise the prompt on real hardware.

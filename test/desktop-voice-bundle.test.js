@@ -8,6 +8,7 @@ const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const pkg = JSON.parse(read('package.json'));
 const tauri = JSON.parse(read('src-tauri/tauri.conf.json'));
+const infoPlist = read('src-tauri/Info.plist');
 const stage = read('scripts/stage-voice-deps.mjs');
 const buildRs = read('src-tauri/build.rs');
 const desktopCi = read('.github/workflows/desktop-build.yml');
@@ -25,6 +26,16 @@ assert.equal(
   'the staged runtime lands beside sidecar/ so ordinary Node resolution finds it'
 );
 assert.match(buildRs, /"voice-deps\/node_modules"/, 'Cargo treats the staged voice runtime as a shipped build input');
+
+// WKWebView getUserMedia reaches the macOS microphone privacy boundary. Tauri merges
+// src-tauri/Info.plist into the generated application bundle, and macOS refuses capture
+// when this purpose string is absent. Keep the permission declaration coupled to the
+// offline voice runtime so a packaged Mac build cannot silently ship a dead microphone.
+assert.match(
+  infoPlist,
+  /<key>NSMicrophoneUsageDescription<\/key>\s*<string>[^<]*(?:microphone|voice)[^<]*<\/string>/i,
+  'the macOS app bundle declares why StarNet requests microphone access'
+);
 
 for (const [name, source] of [['desktop CI', desktopCi], ['release CI', releaseCi]]) {
   assert.match(
