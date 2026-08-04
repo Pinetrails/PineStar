@@ -6303,6 +6303,12 @@ function startTelegramBot(botId) {
     // it, so /talk bindings and floor routing can never quietly change who @ThisBot is. No roster/setModel
     // surface: /agents and /model answer their honest "not available here" fallback.
     resolveAgent: () => (recOf().agentId || null),
+    // WORK-LINE PARITY (2026-08-04): the SAME chain executor every other surface gets (station hub, cron,
+    // COMMS). The hard-lock above still names stage ONE — a bound bot IS its agent — but the belts drawn PAST
+    // that agent's bay run here too; without this seam the same floor did less work depending on which bot
+    // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
