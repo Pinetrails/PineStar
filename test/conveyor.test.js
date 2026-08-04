@@ -201,6 +201,10 @@ A.eq(filterLane({ workitemId: 'f4' }, fj), 'E', 'a FILTER treats a tagless box a
 // never-drop: a route pointing at a NON-EXISTENT lane falls back to the default (work is never lost at a filter)
 const fjBad = new Map([['1,0', { kind: 'filter', routes: { code: 'N' }, def: 'E' }]]);
 A.eq(filterLane({ workitemId: 'f5', tag: 'code' }, fjBad), 'E', 'a FILTER route to a missing lane falls back to default (never dropped)');
+// the LAST rung of the never-drop ladder: no matching route AND no default -> the FIRST lane (LANE_ORDER),
+// the exact fallback that makes FILTER_NO_DEFAULT a warn rather than a blocker (a def-less filter never drops work)
+const fjNoDef = new Map([['1,0', { kind: 'filter', routes: { code: 'N' } }]]);
+A.eq(filterLane({ workitemId: 'f7', tag: 'code' }, fjNoDef), 'E', 'no routable lane and NO default -> the first out-lane carries the box (never dropped)');
 // replay-stable: identical input -> identical lane
 A.eq(filterLane({ workitemId: 'f6', tag: 'code' }, fj), filterLane({ workitemId: 'f6', tag: 'code' }, fj), 'FILTER routing is replay-stable');
 

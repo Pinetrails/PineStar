@@ -35,6 +35,9 @@
         if (map[key(xx, yy)]) return { x: xx, y: yy };
     return null;
   }
+  // every feed mouth of an INTAKE source: `tiles` when compiled by this version, `tile` alone when the plan
+  // was persisted by an older compile (the sidecar restores plans from disk — never assume the new shape).
+  const srcTiles = s => (s.tiles && s.tiles.length) ? s.tiles : (s.tile ? [s.tile] : []);
   // small deterministic FNV-1a hash of the plan topology (frontend<->sidecar agree they hold the same plan)
   function hashStr(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 0x01000193) >>> 0; } return ('0000000' + h.toString(16)).slice(-8); }
 
@@ -86,16 +89,31 @@
         // refuses wholesale — taking per-bay capability isolation down with it (see router.stationFor).
         // Same standing as its neighbours ORPHAN_BAY / BAY_NOT_FED: the floor still nags, it just isn't fatal.
         if (!t) { errors.push({ code: 'ORPHAN_SOURCE', propId: p.id, warn: true }); continue; }
-        sources.push({ propId: p.id, tile: t });
+        // EVERY ring belt tile is a feed mouth (2026-08-04 audit — same multi-hookup rule bays and outboxes
+        // already follow): a single recorded tile left an intake's SECOND lane dark and unroutable whenever
+        // the reaching lane started on a later-scanned ring tile. `tile` stays = first hit (back compat:
+        // persisted plans and older callers read it); every walker fans out from `tiles`.
+        const iw = p.w || 1, ih = p.h || 1, tiles = [];
+        for (let yy = p.y - 1; yy <= p.y + ih; yy++)
+          for (let xx = p.x - 1; xx <= p.x + iw; xx++)
+            if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
+        sources.push({ propId: p.id, tile: t, tiles });
       } else if (p.t === 'splitter' || p.t === 'filter' || p.t === 'merger') {
         const t = map[key(p.x, p.y)] ? { x: p.x, y: p.y } : beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
-        if (!t) continue;   // a junction on no belt is inert
+        // a junction touching NO belt routes nothing — it silently compiled to nothing, which after a MOVE
+        // one tile too far read as "my filter stopped working" with zero feedback. Warn (not a blocker: an
+        // unattached junction can neither loop nor void work) so REFIT can nag it back onto the line.
+        if (!t) { errors.push({ code: 'ORPHAN_JUNCTION', propId: p.id, warn: true }); continue; }
         const kind = p.t === 'splitter' ? 'split' : p.t === 'merger' ? 'merge' : 'filter';
         const cfg = { kind };
         if (kind === 'filter') {
           cfg.routes = (p.routes && typeof p.routes === 'object') ? p.routes : {};   // {tag -> out-lane dir}
           cfg.def = p.def || null;                                                    // default out-lane dir
-          if (!cfg.def) errors.push({ code: 'FILTER_NO_DEFAULT', propId: p.id });
+          // WARN, never a blocker (2026-08-04 audit): a def-less filter never drops or loops work — the
+          // engine and resolveTarget share the same fallback (routed lane -> def -> FIRST lane), so every
+          // crate still lands somewhere deterministic. That fails the bar a blocking error must meet
+          // ("genuinely able to loop or void work"); the floor nags the missing default, it isn't fatal.
+          if (!cfg.def) errors.push({ code: 'FILTER_NO_DEFAULT', propId: p.id, warn: true });
         }
         // a MERGE carries no config: it is a LANE FUNNEL (several lanes converge, every crate rides on).
         // The old `bufferSize` K described a hold-K-then-combine barrier the harness never performed —
@@ -165,7 +183,7 @@
     for (const b of bays) reach[b.agentId] = false;
     if (!cyc) {
       const seen = {}, q = [];
-      for (const s of sources) { const sk = key(s.tile.x, s.tile.y); if (!seen[sk]) { seen[sk] = true; q.push(s.tile); } }
+      for (const s of sources) for (const st of srcTiles(s)) { const sk = key(st.x, st.y); if (!seen[sk]) { seen[sk] = true; q.push(st); } }
       while (q.length) {
         const t = q.shift(), k = key(t.x, t.y);
         if (bayTileToAgent[k]) { reach[bayTileToAgent[k]] = true; continue; }
@@ -364,7 +382,11 @@
     // inbound: intake sources -> bound-bay hookups
     const bayTiles = [];
     for (const k in bayAt) { const p = k.split(','); bayTiles.push({ x: +p[0], y: +p[1] }); }
-    if (plan.sources && plan.sources.length && bayTiles.length) segment(plan.sources.map(s => s.tile), true, bayTiles);
+    if (plan.sources && plan.sources.length && bayTiles.length) {
+      const starts = [];   // EVERY feed mouth of every source — a second lane off a later ring tile is just as live
+      for (const s of plan.sources) for (const st of srcTiles(s)) starts.push(st);
+      segment(starts, true, bayTiles);
+    }
     // outbound: bound-bay hookups -> outbox hookups
     const outTiles = (plan.outs || []).map(o => o.tile);
     if (bayTiles.length && outTiles.length) segment(bayTiles, false, outTiles);
@@ -459,16 +481,21 @@
     if (!plan || !plan.sources || !plan.sources.length || !agentId) return null;
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
     for (const s of plan.sources) {
-      const seen = {}, q = [s.tile];
-      seen[key(s.tile.x, s.tile.y)] = true;
-      let hit = false;
-      while (q.length && !hit) {
-        const t = q.shift(), k = key(t.x, t.y);
-        if (bayAt[k] === agentId) { hit = true; break; }
-        // a FOREIGN dock hookup does not consume an addressed crate — keep riding
-        for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+      // walk each feed mouth SEPARATELY (ring-scan order): the tile returned is the mouth whose lane
+      // actually leads home, so an addressed crate spawns on the reaching lane — not on a first-recorded
+      // mouth that feeds a different lane entirely (the 2026-08-04 multi-lane-intake fix).
+      for (const st of srcTiles(s)) {
+        const seen = {}, q = [st];
+        seen[key(st.x, st.y)] = true;
+        let hit = false;
+        while (q.length && !hit) {
+          const t = q.shift(), k = key(t.x, t.y);
+          if (bayAt[k] === agentId) { hit = true; break; }
+          // a FOREIGN dock hookup does not consume an addressed crate — keep riding
+          for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+        }
+        if (hit) return st;
       }
-      if (hit) return s.tile;
     }
     return null;
   }
@@ -490,10 +517,12 @@
     if (!plan.sources || !plan.sources.length) return null;
     const tag = (ctx && ctx.tag) || 'general';
     const map = plan.belts, junctions = plan.junctions, bayAt = plan.bayTileToAgent;
-    // walk EVERY source in plan order (not just sources[0] — a second room's network was invisible);
-    // the first lane that lands on a bound bay wins. Deterministic: plan order + lane rules are fixed.
-    for (const s of plan.sources) {
-      let t = s.tile, guard = 0; const seen = {};
+    // walk EVERY source in plan order (not just sources[0] — a second room's network was invisible), and
+    // EVERY feed mouth of each source in ring-scan order (not just the first — an intake touching two lanes
+    // could only ever dispatch down the first-recorded one). The first lane that lands on a bound bay wins.
+    // Deterministic: plan order + ring-scan order + lane rules are all fixed.
+    for (const s of plan.sources) for (const st of srcTiles(s)) {
+      let t = st, guard = 0; const seen = {};
       let hitAgent = null;
       while (t && guard++ < 4096) {
         const k = key(t.x, t.y);

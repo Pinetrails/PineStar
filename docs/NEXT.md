@@ -1,5 +1,39 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-04 — COMPLETE STATION DISASTER RECOVERY P0 (`agent/disaster-recovery-p0`)
+
+READY TO MERGE. StarNet now has a versioned, offline complete-station recovery bundle and operator CLI.
+Capture inventories every non-ephemeral `WORKSPACES` file plus supplied browser-owned `starnet.*` state,
+binds every payload and the manifest with SHA-256, and refuses to publish a recovery point unless agents,
+rooms/props, conversations, memories, routines, loops, tasks, projects, deliverables, permissions, and
+connector references are all represented. Backups commit through temporary-file write, fsync, and rename.
+Restore verifies into a sibling staging directory before activation; corrupt/incomplete input cannot mutate
+the target, and `--replace-existing` retains the replaced generation as a rollback directory.
+
+Credential and machine authority handling is explicit. Connector/channel/project references return, while
+provider credentials, OAuth/token/key material, cookies, and absolute-path grants are excluded and listed
+under `reauthentication`. Portable non-path permission grants survive. A restored project is truthfully
+`REVOKED` until its path is reauthorized. The CLI and machine-readable rehearsal evidence enumerate exact
+`restored`, `skipped`, and `reauthentication` rows; `docs/DISASTER_RECOVERY.md` records the stopped-station
+backup, clean-profile restore, browser import, and previous-version rollback procedures.
+
+Verification: the deterministic destructive rehearsal is **8/8 GREEN** for complete capture, clean-profile
+restore, corrupt bundle, interrupted backup, missing required store, disk-full failure, previous-version
+rollback, and a measured recovery point. Unit recovery is 54 assertions, offline CLI is 14, and the real
+source-sidecar → clean-profile restore → restored-sidecar E2E is 23. `npm run test:fast` is **519/519 GREEN**;
+`npm run test:http` is **57/57 GREEN**. An attended real sidecar/frontend boot of the restored disposable
+profile rendered ONLINE with NOVA, the General conversation, task board, loop, and project reference; the
+project rendered `REVOKED`, and browser warnings/errors were empty. The temporary sidecar and browser tab
+were stopped/finalized. Latest local evidence is under `.dogfood/disaster-recovery-latest/`.
+
+Recovery-point truth: a successful quiescent snapshot loses zero completed mutations through its barrier;
+the rehearsal then completed exactly one mutation after that point and measured exactly one mutation lost
+after damage/restore. This satisfies the one-mutation objective for explicit recovery points. Automatic
+continuous backup is not implemented and no continuous RPO is claimed. A disposable real clean profile is
+proven; a separate attended clean-OS packaged Windows/macOS exercise remains useful release validation, not
+authority for this recovery primitive. No provider spend, external message/write, credential mutation,
+integration-tree edit, push, PR, deploy, tag, publication, or production-data change occurred.
+
 ## 2026-08-03 — CLEANUP PHASES 0–8 (`agent/cleanup-phases-0-8`)
 
 COMPLETE CANDIDATE. Phase 0 closed all seven remaining P2 bug-register records with production-path
