@@ -56,7 +56,6 @@ const Chat = (() => {
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   let studyWired = false;       // the agent.run.end STUDY (dossier Phase B) listener is registered exactly once
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
-  let arcWired = false;         // GROWTH Tier 2: the agent.run.end goal-arc confirm-beat listener (registers once)
   let arcRunsSeen = new Set();  // GROWTH Tier 2: runIds already arc-offered (agent.run.end can re-fire; offer once per run)
   let skillAsideWired = false;  // the deliverable(kind:skill) background-review aside listener is registered exactly once
   let skillDelivSeen = new Set();   // deliverable ids already asided → the background review re-firing never double-asides
@@ -553,7 +552,6 @@ const Chat = (() => {
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
     wireBriefRead();   // TASTE EXTRACTION: the announce-and-act READ card (taskbrief.settled → correctable assumptions; registers once)
-    wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
     wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
     wireThreads();     // NS-6: after a mined task run, offer ONE thread turn-in (Keep/Edit/Discard) at the lowest beat priority — study wins the moment first (registers once)
     wireCrewCapture(); // P3.2: record each dispatched worker's forwarded run-end spend so a 👍 on a crew run splits XP honestly (registers once)
@@ -2252,6 +2250,15 @@ const Chat = (() => {
   //               review deck or another rate control is on screen — worth retrying later
   //   'never'   — PERMANENT: rated already, not the hero, or no real work — stop asking
   function maybeStandaloneRate(agentId, runId) {
+    const status = rateStatus(agentId, runId);
+    if (status !== 'ready') return status;
+    return workRateBeat(agentId || 'agent', runId) ? 'fired' : 'blocked';
+  }
+  /* the SYNC, side-effect-free half of the rate beat, split out so the recommendation pass can offer rating
+     as a scored candidate instead of racing it in on an arm delay. Same three verdicts as
+     maybeStandaloneRate, except the free moment answers 'ready' instead of rendering — every gate below is
+     byte-identical to the pre-spine ladder. */
+  function rateStatus(agentId, runId) {
     if (!log || !runId || workRatedRuns.has(runId)) return 'never';
     // S1 SPECIALIST RATE-STARVE FIX. This was hero-only, which starved every summoned specialist of the PRIMARY
     // leveling beat: an interactive run in a specialist-bound workstream could only ever be rated if it happened
@@ -2275,7 +2282,7 @@ const Chat = (() => {
     if (beatCards && beatCards.visibleBeat() && beatCards.visibleBeat() !== 'nudge') return 'blocked';
     if (activeTurnin && activeTurnin.node && activeTurnin.node.isConnected) return 'blocked';   // a review deck is up (it carries its own control)
     if (log.querySelector('.cmsg.work-rate') || log.querySelector('.turnin-rate')) return 'blocked';   // a rate control is already live somewhere (one ask at a time)
-    return workRateBeat(agentId || 'agent', runId) ? 'fired' : 'blocked';
+    return 'ready';
   }
   // the self-retrying fallback: armed once per completed task run at run end, it keeps re-attempting
   // (5s cadence, bounded ~5min) until the beat fires or the run is permanently ineligible — so a
@@ -3401,8 +3408,6 @@ const Chat = (() => {
      PURE beat-slot arbiter (Study.makeBeatSlot — behaviorally tested in study.test.js). MEMORY WINS: while any
      reflection is proposed-but-unresolved study cedes; a memory deck arriving over a visible study card QUEUES
      and renders the moment the card resolves; a deferred study re-offers at the next task end. */
-  const STUDY_ARM_MS = 12000;        // arm the study offer WELL after run end so reflection's memory.proposed (an LLM
-                                     // round-trip away) claims the moment first; the beat-slot closes the residual race.
   let beatCards = null;              // shared lifecycle: one slot, dedupe, expiry/vanish, stale-async guard
   let beatSlot = null;               // compatibility view used by the arc lane while it migrates
   function studyBusy() { return !!(beatCards && beatCards.busy('study')); }
@@ -3410,16 +3415,20 @@ const Chat = (() => {
   function slotMemoryProposed(runId) { if (beatSlot) beatSlot.memoryProposed(runId); }
   function slotMemoryDeck() { return beatSlot ? beatSlot.memoryDeck() : 'render'; }
   function slotMemoryEmpty(runId) { if (beatSlot) beatSlot.memoryEmpty(runId); }
-  function slotCanStudy() { return beatSlot ? beatSlot.canStudy() : 'busy'; }   // no arbiter -> study stands down
+  /* Every slot predicate takes an OPTIONAL self-key (the collection pass's runId). A pass that RESERVES its own
+     fetch-backed kinds across an await must not then be told by its own reservation that it may not speak — that
+     self-veto is what killed the thread channel outright (beatcard.js can(), 2026-08-04). Called with no key
+     (every non-pass caller) the behavior is byte-identical to before. */
+  function slotCanStudy(selfKey) { return beatSlot ? beatSlot.canStudy(selfKey) : 'busy'; }   // no arbiter -> study stands down
   // GROWTH Tier 2 — the goal-arc confirm beat: the LOWEST-priority participant (memory turn-in + study both win
   // first). null arbiter OR an older bundle without canArc -> arc stands down (byte-identical pre-Tier-2 behavior).
-  function slotCanArc() { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc() : 'busy'; }
+  function slotCanArc(selfKey) { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc(selfKey) : 'busy'; }
   // GROWTH Tier 3 — the earned-autonomy offer beat: the LOWEST-priority participant (memory + study + arc all win
   // first). null arbiter OR an older bundle without canTrust -> trust stands down (byte-identical pre-Tier-3 behavior).
-  function slotCanTrust() { return (beatSlot && beatSlot.canTrust) ? beatSlot.canTrust() : 'busy'; }
+  function slotCanTrust(selfKey) { return (beatSlot && beatSlot.canTrust) ? beatSlot.canTrust(selfKey) : 'busy'; }
   // NS-6 — the THREAD turn-in beat: the LOWEST-priority participant (memory > study > arc > trust > thread —
   // study always wins the moment first). null arbiter OR an older bundle without canThread -> thread stands down.
-  function slotCanThread() { return (beatSlot && beatSlot.canThread) ? beatSlot.canThread() : 'busy'; }
+  function slotCanThread(selfKey) { return (beatSlot && beatSlot.canThread) ? beatSlot.canThread(selfKey) : 'busy'; }
   // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
   // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
   function studyBlocked() {
@@ -3429,10 +3438,80 @@ const Chat = (() => {
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
     return false;
   }
+  /* THE ONE STAND-DOWN SET (recommendation spine, S3). The five old post-run listeners each carried a
+     near-duplicate guard set (studyBlocked / arcBlocked / the wireCuriosity ladder's preamble). This is
+     their union and the single gate the recommendation pass consults: the study/arc/trust/thread guards
+     verbatim, PLUS the unanswered-task-question rule the gentle beats already honored inside nudge() /
+     curiosityNudge() — a proactive card must never steal a live question's answer chips. */
+  function momentBlocked() { return studyBlocked() || taskQuestionLive(); }
+  /* the EXTRA floor the gentle + rate half has always carried (and the turn-in beats never did): this run
+     produced a memory turn-in, or a real turn-in deck is still sitting in the feed. Scoped to REAL decks —
+     the away-digest reuses .turnin-item for styling and must not suppress a fresh run's ask (G2.4). */
+  function turninOwnsMoment(runId) {
+    if (runId && beatCards && beatCards.hasSeen('memory', runId)) return true;
+    return !!(log && log.querySelector('.cmsg.turnin:not(.away-digest) .turnin-item'));
+  }
   // defer a study offer for a later moment — SINGLE queue path, FIFO, deduped by runId (no double-queue).
   function queueStudy(runId, agentId) {
     if (!runId || !beatCards) return;
     beatCards.enqueue('study', runId, { runId: runId, agentId: agentId });
+  }
+  /* ══ THE ONE OFFER CARD (recommendation spine, S4) ═══════════════════════════════════════════════════
+     Seven proactive channels grew seven card shapes. Every proactive CONSENT offer now reads the same way,
+     in this order, so the Commander learns the grammar once:
+
+        ◈ NOTICED               the eyebrow — the station SAW something; it is not making this up
+        because you said “…”    the EVIDENCE, in the Commander's own words (Recommend.whyLine — the exact
+                                grammar the FOR YOU shelf speaks, so COMMS and the shelf never disagree)
+        <the proposal>          what it wants to do about it, tagged with its KIND
+        [ do it ]  [ no ]       one tap either way
+
+     Presentation ONLY: the caller keeps its own consent handlers, its own store writes and its own
+     beat-slot claim. Extends the established .turnin gold-inset family (no new visual language) — the
+     named friction Andrew called out was the seven inconsistent SHAPES, not the material.
+     Returns { row, item, kind, text, btns } or null when COMMS isn't up. */
+  function recCard(spec) {
+    spec = spec || {};
+    if (!log) return null;
+    const r = row('agent');
+    r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('rec');
+    if (spec.kind) r.d.classList.add(spec.kind);
+    // VT323 has no ◈ — it renders from the fallback font, so it is BOX-centred in its own span and never
+    // sized off the label's font metrics (the symbol-glyph law).
+    const title = document.createElement('span'); title.className = 'turnin-title rec-eyebrow';
+    const glyph = document.createElement('span'); glyph.className = 'rec-glyph'; glyph.textContent = '◈';
+    title.appendChild(glyph);
+    // the eyebrow NAMES THE NOTICER. Every caller passes no eyebrow, so all seven cards read a flat "◈ NOTICED"
+    // — the agent's own name (which the old per-channel card titles carried) had been dropped on the floor. It is
+    // derived exactly as the rest of the card's copy derives it: the live hero name, upper-cased.
+    const who = String(spec.eyebrow || (name ? String(name).toUpperCase() + ' NOTICED' : 'NOTICED'));
+    title.appendChild(document.createTextNode(who));
+    const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
+    r.body.appendChild(title); r.body.appendChild(slotEl);
+    const item = document.createElement('div'); item.className = 'turnin-item rec-item';
+    const ev = String(spec.evidence == null ? '' : spec.evidence).trim();
+    if (ev) { const e = document.createElement('div'); e.className = 'rec-evidence'; e.textContent = ev; item.appendChild(e); }
+    const kind = document.createElement('span'); kind.className = 'turnin-kind';
+    kind.textContent = String(spec.label == null ? '' : spec.label).toUpperCase();
+    const text = document.createElement('span'); text.className = 'turnin-text';
+    text.textContent = String(spec.proposal == null ? '' : spec.proposal);
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(kind); item.appendChild(text);
+    // the note is CONSEQUENCE, not evidence ("raises the dial to FREE") — a dim aside between the
+    // proposal and the buttons, so the card still ENDS on the two taps.
+    const note = String(spec.note == null ? '' : spec.note).trim();
+    if (note) { const n = document.createElement('div'); n.className = 'turnin-evidence'; n.textContent = '↳ ' + note; item.appendChild(n); }
+    item.appendChild(btns);
+    slotEl.appendChild(item);
+    return { row: r.d, item: item, kind: kind, text: text, btns: btns };
+  }
+  // the ONE "because …" grammar, shared with the FOR YOU shelf. Falls back to the raw citation if the pure
+  // spine isn't loaded (never invents text, never renders an empty evidence line).
+  function recWhy(why) {
+    const raw = String(why == null ? '' : why).trim();
+    if (!raw) return '';
+    if (typeof Recommend !== 'undefined' && Recommend.whyLine) return Recommend.whyLine({ why: raw });
+    return raw;
   }
   // FINDING-4 lifecycle: an undecided study card from a PRIOR task end EXPIRES when a new task ends — that is the
   // "ignored" verdict (2× = stop proposing that belief) — and releases the slot so queued beats can't starve.
@@ -3450,27 +3529,23 @@ const Chat = (() => {
     }
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
     if (typeof StudyStore.markShown === 'function') StudyStore.markShown(prop, agentId);   // spend one session-cap slot + record the shown recommendation
-    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('study');
     const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === prop.dim) || {}).label || prop.dim) : prop.dim;
-    const verb = prop.kind === 'retire' ? 'thinks one of your beliefs no longer holds' : 'learned something about your ' + String(dimName).toLowerCase();
-    const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ ' + name + ' ' + verb + ' — keep it?';
-    const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
-    r.body.appendChild(title); r.body.appendChild(slotEl);
-    const item = document.createElement('div'); item.className = 'turnin-item';
-    const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = prop.kind === 'retire' ? 'RETIRE' : String(dimName).toUpperCase();
+    // the EVIDENCE is the Commander's own words — the verbatim directive this belief was observed from. A
+    // retire's grounding is the model's reasoning about the stored belief instead.
+    const evLine = prop.evidence ? recWhy(recCite(prop.evidence, prop.evidenceRef && prop.evidenceRef.kind))
+      : (prop.kind === 'retire' ? recWhy(prop.text) : '');
     // the card's main text is what will actually happen: the belief to be ADDED, or (retire) the EXACT stored
     // belief that would be deleted — never just the model's paraphrase of it.
-    const text = document.createElement('span'); text.className = 'turnin-text';
-    text.textContent = prop.kind === 'retire' ? target.text : prop.text;
-    const btns = document.createElement('span'); btns.className = 'consent-btns';
-    item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
-    // provenance line: the model's reasoning (for a retire) + the directive this was observed from.
-    const why = [];
-    if (prop.kind === 'retire') why.push(prop.text);
-    if (prop.evidence) why.push('from “' + prop.evidence + '”');
-    if (why.length) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
-    slotEl.appendChild(item);
+    const card0 = recCard({
+      kind: 'study', evidence: evLine,
+      label: prop.kind === 'retire' ? 'RETIRE' : String(dimName),
+      proposal: prop.kind === 'retire' ? target.text : prop.text,
+      note: prop.kind === 'retire' ? 'this belief would be removed from every agent’s briefing'
+        : (name + ' would remember this about your ' + String(dimName).toLowerCase())
+    });
+    if (!card0) return false;
+    const r = { d: card0.row };
+    const item = card0.item, text = card0.text, btns = card0.btns;
     const card = beatCards && beatCards.claim({
       kind: 'study', runId: runId, node: r.d, data: prop,
       handoff: () => turninQueue.length > 0 ? 'memory' : null,
@@ -3538,36 +3613,35 @@ const Chat = (() => {
     if (!prop) return;
     // re-check the moment after the async fetch — reflection's memory.proposed may have claimed it meanwhile.
     if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked()) { queueStudy(runId, agentId); return; }
+    if (beatCards && !beatCards.once('study', runId)) return;   // this run already got its one study card
     studyCard(prop, agentId, runId);
   }
+  /* THE STUDY LANE'S LIFECYCLE (recommendation spine, S3): this listener no longer ARMS an offer — the one
+     collection pass (recommendPass, below) does that for every channel at once, so the study card wins the
+     moment on PRIORITY instead of on a 12s head start. What stays here is the finding-4 lifecycle the study
+     lane owns: a new task end expires the PREVIOUS task's undecided card (the "ignored" verdict) and then
+     drains ONE deferred beat, so a queued offer can never starve behind an unanswered one. */
   function wireStudy() {
     if (studyWired || typeof U === 'undefined' || !U.bus) return;
     studyWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;                       // only after a clean run
       if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never study-nudges)
-      const runId = p.runId || p.id;
-      // a new task ended: the PREVIOUS task's undecided study card expires as an "ignore" (finding-4 lifecycle),
+      // a new task ended: the PREVIOUS task's undecided card expires as an "ignore" (finding-4 lifecycle),
       // then one deferred beat may take the freed moment (anti-starve). Short delay = after the reply renders.
       if (beatCards) beatCards.scheduleExpire('study', 900);
       setTimeout(flushStudyPending, 900);
-      // THIS run's own study offer arms much later (STUDY_ARM_MS): reflection's memory.proposed is a whole LLM
-      // round-trip away, and MEMORY WINS the moment — by then the beat-slot knows whether reflection claimed it.
-      setTimeout(() => {
-        if (!runId || !beatCards || !beatCards.once('study', runId)) return;
-        offerStudy(runId, p.agentId || 'agent');
-      }, STUDY_ARM_MS);
     });
   }
 
   /* GROWTH Tier 2 — THE GOAL-ARC CONFIRM BEAT (understanding → direction). When a goals-dim belief exists with no
      goal tree, the station proposes a decomposition (3-5 milestones) and asks the Commander to Confirm / Edit /
-     Not-now — a focused Dialogue panel, exactly like the First Pitch. It is the LOWEST post-run priority: it arms
-     AFTER the study offer (ARC_ARM_MS > STUDY_ARM_MS) and only takes a WHOLLY FREE beat slot (slotCanArc() ===
-     'free' — memory turn-in + study both win first), obeying the SAME stand-down guards as the study/curiosity
-     beats (studyBlocked). Confirm persists the tree (GoalStore.confirm); Not-now re-offers only when the belief
+     Not-now — a focused Dialogue panel, exactly like the First Pitch. It is staged as an 'arc' CANDIDATE by the
+     one collection pass (recommendPass) and speaks only if the spine ranks it first (memory > study > arc), and
+     only into a WHOLLY FREE beat slot (slotCanArc() === 'free'), obeying the SAME stand-down guards as the
+     study/curiosity beats (studyBlocked). Its citation is the Commander's OWN goal belief, read synchronously —
+     the paid decomposition call happens only after the arc has actually won the moment. Confirm persists the tree (GoalStore.confirm); Not-now re-offers only when the belief
      changes (GoalStore.declineDecomposition). One confirm per task end, never stacked (the shared arbiter). */
-  const ARC_ARM_MS = 14000;   // later than STUDY_ARM_MS (12000): the arc yields the moment to memory AND study
   function arcBlocked() {
     // the SAME stand-down set the study beat honors (a confirm panel must never render mid-awakening/interview/
     // tutorial-panel or while the next run streams). Reuses studyBlocked for one home for the guard set.
@@ -3636,32 +3710,25 @@ const Chat = (() => {
       GoalStore.setFiring && GoalStore.setFiring(false);
     }
   }
-  function wireArc() {
-    if (arcWired || typeof U === 'undefined' || !U.bus) return;
-    arcWired = true;
-    U.bus.on('agent.run.end', p => {
-      if (!p || p.reason !== 'done') return;                       // only after a clean run
-      if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only
-      const runId = p.runId || p.id;
-      // arms LAST (ARC_ARM_MS): memory turn-in + the study offer both claim the moment first; only a wholly free
-      // slot at this point lets the confirm panel open (slotCanArc gate inside offerArc).
-      setTimeout(() => {
-        if (runId && arcRunsSeen.has(runId)) return;
-        if (runId) { arcRunsSeen.add(runId); if (arcRunsSeen.size > 200) arcRunsSeen.delete(arcRunsSeen.values().next().value); }
-        offerArc(runId);
-      }, ARC_ARM_MS);
-    });
+  // one arc confirm per run: the collection pass consults this before staging the arc candidate (the offer
+  // itself, including the paid decomposition call, only happens if the arc actually WINS the moment).
+  function arcSeen(runId) { return !!runId && arcRunsSeen.has(runId); }
+  function arcOnce(runId) {
+    if (!runId) return true;
+    if (arcRunsSeen.has(runId)) return false;
+    arcRunsSeen.add(runId);
+    if (arcRunsSeen.size > 200) arcRunsSeen.delete(arcRunsSeen.values().next().value);
+    return true;
   }
 
   /* GROWTH Tier 3 — THE EARNED-AUTONOMY OFFER BEAT (track record → trust). After a clean run, if the demonstrated
      track record has crossed the thresholds (TrustStore/trust.js), the station offers to raise the autonomy dial
-     ONE rung (or pre-bless a GRANTABLE capability) — a one-tap consent card, NEVER a silent escalation. It is the
-     LOWEST post-run priority: it arms AFTER the arc (TRUST_ARM_MS > ARC_ARM_MS) and only takes a WHOLLY FREE beat
-     slot (slotCanTrust() === 'free' — memory turn-in, study, AND the arc all win first), obeying the SAME stand-down
-     guards as the other beats (studyBlocked). Accept applies the earned rung with provenance (TrustStore.accept →
+     ONE rung (or pre-bless a GRANTABLE capability) — a one-tap consent card, NEVER a silent escalation. It is staged
+     as a 'trust' CANDIDATE by the one collection pass (recommendPass), cited by the REAL track record, and takes
+     only a WHOLLY FREE beat slot (slotCanTrust() === 'free' — memory, study and the arc all outrank it), obeying
+     the SAME stand-down guards as the other beats (studyBlocked). Accept applies the earned rung with provenance (TrustStore.accept →
      the existing AutonomyStore/permgrants plumbing); Not-yet declines (stop offering that rung this level band);
      leaving it undecided tallies an ignore (2× in a band = stop). One trust offer per session (TrustStore cap). */
-  const TRUST_ARM_MS = 16000;   // later than ARC_ARM_MS (14000): the trust offer yields the moment to memory, study AND the arc
   function trustBusy() { return !!(beatCards && beatCards.busy('trust')); }
   // an undecided trust card from a PRIOR task end EXPIRES when a new task ends — that's the "ignored" verdict
   // (2× in a band = stop) — and releases the slot so queued beats can't starve (mirrors expireActiveStudy).
@@ -3672,27 +3739,25 @@ const Chat = (() => {
     if (!log || !offer || typeof TrustStore === 'undefined') return false;
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
     if (typeof TrustStore.markShown === 'function') TrustStore.markShown();   // spend the one session-cap slot
-    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('trust');
-    const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ ' + name + ' has earned your trust';
-    const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
-    r.body.appendChild(title); r.body.appendChild(slotEl);
-    const item = document.createElement('div'); item.className = 'turnin-item';
-    const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = offer.kind === 'grant' ? 'GRANT' : 'AUTONOMY';
     // the ask, composed from the REAL track record (task count + satisfaction %) — never fabricated.
     const pv = offer.provenance || {};
     const ask = offer.kind === 'grant'
-      ? (pv.runs || 0) + ' tasks, ' + (pv.confidence || 0) + '% satisfaction — trust me to write files on my own?'
-      : (pv.runs || 0) + ' tasks, ' + (pv.confidence || 0) + '% satisfaction — grant me free rein on small jobs?';
-    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = ask;
-    const btns = document.createElement('span'); btns.className = 'consent-btns';
-    item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
-    // provenance line: the honest track record behind the offer (streak + what it raises to).
-    const why = [];
-    if (pv.streak) why.push(pv.streak + ' approvals in a row');
-    why.push(offer.kind === 'grant' ? 'writes stay jailed + reversible' : 'raises the dial to ' + String(offer.to).toUpperCase());
-    { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
-    slotEl.appendChild(item);
+      ? 'trust me to write files on my own?'
+      : 'grant me free rein on small jobs?';
+    // the EVIDENCE is the honest track record the offer was computed from — a streak if there is one, else
+    // the raw task/satisfaction counters. Never a claim the harness can't prove.
+    const evLine = recWhy(pv.streak
+      ? (pv.streak + ' approvals in a row')
+      : ((pv.runs || 0) + ' tasks at ' + (pv.confidence || 0) + '% satisfaction'));
+    const card0 = recCard({
+      kind: 'trust', evidence: evLine,
+      label: offer.kind === 'grant' ? 'GRANT' : 'AUTONOMY',
+      proposal: ask,
+      note: offer.kind === 'grant' ? 'writes stay jailed + reversible' : 'raises the dial to ' + String(offer.to).toUpperCase()
+    });
+    if (!card0) return false;
+    const r = { d: card0.row };
+    const item = card0.item, btns = card0.btns;
     const card = beatCards && beatCards.claim({
       kind: 'trust', runId: runId, node: r.d, data: offer,
       handoff: () => turninQueue.length > 0 ? 'memory' : null,
@@ -3744,21 +3809,15 @@ const Chat = (() => {
     if (!offer) return;
     trustCard(offer, runId);
   }
+  // the trust lane's lifecycle only (spine S3 — the offer itself is staged by the one collection pass): a new
+  // task end expires the PREVIOUS task's undecided trust card as an "ignore" and frees the slot.
   function wireTrust() {
     if (trustWired || typeof U === 'undefined' || !U.bus) return;
     trustWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;                       // only after a clean run
       if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never trust-offers)
-      const runId = p.runId || p.id;
-      // a new task ended: the PREVIOUS task's undecided trust card expires as an "ignore", freeing the slot.
       if (beatCards) beatCards.scheduleExpire('trust', 900);
-      // THIS run's own offer arms LAST (TRUST_ARM_MS): memory turn-in + study + the arc all claim the moment first;
-      // only a wholly free slot at this point lets the offer open (slotCanTrust gate inside offerTrust).
-      setTimeout(() => {
-        if (!runId || !beatCards || !beatCards.once('trust', runId)) return;
-        offerTrust(runId);
-      }, TRUST_ARM_MS);
     });
   }
   /* NS-6 — THE THREAD TURN-IN BEAT (mined ideas → the durable thread ledger). After a salient task run the
@@ -3766,12 +3825,11 @@ const Chat = (() => {
      and STASHES the candidates (/api/threads/proposals; never auto-commits). Here we fetch them on agent.run.end
      and offer ONE for Keep / Edit / Discard: the click IS the consent — keep/edit commits an OPEN thread on the
      ledger (POST /api/threads/turnin; the night shift's propose step draws open threads FIRST), discard
-     PERMANENTLY denylists the idea's fingerprint. It is the LOWEST post-run priority: it arms after the trust
-     offer (THREAD_ARM_MS > TRUST_ARM_MS — memory, study, arc and trust all win the moment first, so study & thread
-     proposals take turns, study first) and only takes a WHOLLY FREE beat slot through the SAME arbiter
-     (slotCanThread), obeying the SAME stand-down guards (studyBlocked). Blocked moments QUEUE (FIFO, deduped) —
+     PERMANENTLY denylists the idea's fingerprint. It is staged as a 'thread' CANDIDATE by the one collection pass
+     (recommendPass) — cited by that verbatim quote — and it is the LOWEST-ranked turn-in (memory, study, arc and
+     trust all outrank it, so study & thread proposals take turns, study first). It takes only a WHOLLY FREE beat
+     slot through the SAME arbiter (slotCanThread), obeying the SAME stand-down guards (studyBlocked). Blocked moments QUEUE (FIFO, deduped) —
      deferred, never starved, never stacked. Leaving a card undecided tallies an ignore (2× = stop offering). */
-  const THREAD_ARM_MS = 18000;   // later than TRUST_ARM_MS (16000): the thread turn-in yields the moment to every other beat
   function threadBusy() { return !!(beatCards && beatCards.busy('thread')); }
   // defer a thread offer for a later moment — SINGLE queue path, FIFO, deduped by runId (mirrors queueStudy).
   function queueThread(runId, agentId) {
@@ -3787,19 +3845,15 @@ const Chat = (() => {
     if (!log || !prop || typeof ThreadStore === 'undefined') return false;
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
     if (typeof ThreadStore.markShown === 'function') ThreadStore.markShown();   // spend the one session-cap slot
-    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('thread');
-    const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ ' + name + ' caught an idea you floated but never picked up — keep the thread?';
-    const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
-    r.body.appendChild(title); r.body.appendChild(slotEl);
-    const item = document.createElement('div'); item.className = 'turnin-item';
-    const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = 'THREAD';
-    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = prop.title;
-    const btns = document.createElement('span'); btns.className = 'consent-btns';
-    item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
-    // provenance line: the VERBATIM quote the mine grounded this idea in (the evidence, never a paraphrase).
-    if (prop.spec) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ you said “' + prop.spec + '” · kept threads feed the night shift'; item.insertBefore(ev, btns); }
-    slotEl.appendChild(item);
+    // the EVIDENCE is the VERBATIM quote the mine grounded this idea in — never a paraphrase.
+    const card0 = recCard({
+      kind: 'thread', evidence: prop.spec ? recWhy(recCite(prop.spec, threadCiteKind(prop))) : '',
+      label: 'THREAD', proposal: prop.title,
+      note: 'kept threads feed the night shift'
+    });
+    if (!card0) return false;
+    const r = { d: card0.row };
+    const item = card0.item, text = card0.text, btns = card0.btns;
     const card = beatCards && beatCards.claim({
       kind: 'thread', runId: batchRunId, node: r.d, data: prop,
       handoff: () => turninQueue.length > 0 ? 'memory' : null,
@@ -3887,6 +3941,7 @@ const Chat = (() => {
     if (!prop) return;
     // re-check the moment after the async fetch — a higher-priority beat may have claimed it meanwhile.
     if (threadBusy() || slotCanThread() !== 'free' || studyBlocked()) { queueThread(runId, agentId); return; }
+    if (beatCards && !beatCards.once('thread', runId)) return;   // this run already got its one thread card
     threadCard(prop, agentId, batch.runId || runId);
   }
   function wireThreads() {
@@ -3895,17 +3950,11 @@ const Chat = (() => {
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;                       // only after a clean run
       if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never turns in threads)
-      const runId = p.runId || p.id;
       // a new task ended: the PREVIOUS task's undecided thread card expires as an "ignore", then one deferred
-      // offer may take the freed moment (anti-starve). Short delay = after the reply renders.
+      // offer may take the freed moment (anti-starve). Short delay = after the reply renders. The offer itself
+      // is staged by the one collection pass (spine S3), not by an arm delay of its own.
       if (beatCards) beatCards.scheduleExpire('thread', 900);
       setTimeout(flushThreadPending, 900);
-      // THIS run's own offer arms LAST (THREAD_ARM_MS): memory turn-in, study, arc and trust all claim the moment
-      // first — the mine itself is an aux LLM round-trip away, so by now the stash is populated if it fired.
-      setTimeout(() => {
-        if (!runId || !beatCards || !beatCards.once('thread', runId)) return;
-        offerThread(runId, p.agentId || 'agent');
-      }, THREAD_ARM_MS);
     });
   }
 
@@ -4157,79 +4206,341 @@ const Chat = (() => {
       } catch (_) {}
     });
   }
+  /* ══ THE RECOMMENDATION PASS — one listener, one arm point, one arbiter (spine S3) ═══════════════════
+     Every proactive channel used to own an `agent.run.end` listener and win the single post-run beat by
+     ARMING EARLIEST (nudge/rate 650ms, study 12s, arc 14s, trust 16s, thread 18s), so the priority order
+     baked into beatcard.js was inert and the least valuable ask usually spoke. Now every channel offers a
+     CANDIDATE built from its existing SYNC predicate, the pure spine (recommend.js) ranks them, and exactly
+     ONE fires through its existing render path.
+
+     A candidate must carry two things or it does not exist:
+       • kind — its place in the one priority order (Recommend.PRIORITY).
+       • why  — its evidence, derived from REAL state: the Commander's own words, a real persisted counter,
+                or the dimension actually being targeted. Recommend.pick() DROPS anything that can't cite.
+                A channel that cannot say WHY stays silent — truthful telemetry, applied to recommendations.
+
+     Nothing about the per-channel floors moved: every session cap, denylist, dedup and stand-down still
+     lives in that channel's own store and is spent by its own fire path. The spine only decides WHO speaks.
+     A channel that LOSES the moment is not consumed — study/thread go back on their FIFO queues, and every
+     other channel's predicate simply reads true again at the next task end. */
+  /* ── TWO ARMS, ONE ARBITER ──────────────────────────────────────────────────────────────────────────
+     A single 1.6s arm was WRONG for half the channels, in a way that silently broke two of them:
+
+       · MEMORY WINS was a fiction. memory.proposed is emitted only after the sidecar's reflection aux call
+         returns — SECONDS after the run ends. At 1.6s the slot was still free, a turn-in claimed it, and the
+         consent deck the Commander actually cares about queued behind a lower-value card, invisible.
+       · THE STUDY STASH WASN'T WRITTEN YET. /api/study/proposals falls back to the agent's PREVIOUS batch
+         when this run's isn't stashed, so at 1.6s every study card offered the LAST run's belief and each
+         run's own batch never got offered at its own moment. Same for the thread mine.
+
+     So the pass runs TWICE per run end, and each channel collects at the arm where its evidence is real:
+
+       FAST (1.6s) — the RATE beat only. It needs nothing but the run's own work counters, which are already
+         on hand, and it is the beat the Commander is waiting for; this also restores the precedence the old
+         650ms ladder gave it, without letting it win by being early (it is still ranked, not raced).
+       SLOW (12s)  — everything the run must first PRODUCE: the fetch-backed turn-ins (study, thread), the
+         arc and trust offers, and the gentle channels. 12s is the old STUDY_ARM_MS reality — by then
+         reflection has landed (or reserved the slot) and both stashes are written. The arc gets its focused
+         Dialogue at this arm too, rather than popping 1.6s after the reply.
+
+     memory is unchanged and needs no arm: memory.proposed RESERVES the slot the instant it fires, so a turn-in
+     that hasn't rendered yet stands down, and one that HAS already rendered is queued behind — never replaced. */
+  const BEAT_ARM_MS = 1600;          // FAST arm — the rate beat (nothing to wait for)
+  const BEAT_SLOW_ARM_MS = 12000;    // SLOW arm — reflection has landed and both stashes are written
+
+  /* the SESSION ASK BUDGET (Recommend.SESSION_ASK_MAX): the spine-level ceiling on proactive CONSENT cards for
+     this browser session. Per-channel caps remain the second floor; this bounds their SUM, because five
+     channels each spending their own one-per-session cap is still five interruptions. memory and rate are
+     exempt (Recommend.asksBudget) — the run itself earns those. */
+  let sessionAsks = 0;
+  function askBudgetSpent() {
+    const cap = (typeof Recommend !== 'undefined' && Number.isFinite(Recommend.SESSION_ASK_MAX)) ? Recommend.SESSION_ASK_MAX : 4;
+    return sessionAsks >= cap;
+  }
+
+  // the understanding read the spine scores value-of-information against. Fail-open: a cold/absent store
+  // means no VOI bonus at all (pure priority order) — never a fabricated one.
+  function recUnderstanding() {
+    try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) return UnderstandingStore.read(); } catch (_) {}
+    return null;
+  }
+  /* ONE citation grammar, DISCRIMINATED BY WHERE THE WORDS CAME FROM (truthful telemetry, 2026-08-04).
+     The card used to say `because you said "…"` about every citation it had. But a study proposal falls back to
+     the run's DIRECTIVE when the model returns no QUOTE line (study.js stamps evidenceRef.kind='directive'), and a
+     directive is very often machine-composed — a routine, a recipe, a scheduled brief. Presenting that as the
+     Commander's own speech is the app asserting something the harness cannot prove. So each source gets its own
+     honest phrasing, and anything unlabelled falls back to a neutral quote that claims nothing about who spoke.
+       verbatim     — words the Commander really typed (a located, grounded quote)
+       directive    — the task text that drove the run; it may have been composed for them
+       conversation — somewhere in the exchange, speaker not established */
+  function recCite(text, kind) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return '';
+    if (kind === 'verbatim') return 'you said “' + t + '”';
+    if (kind === 'directive') return 'from the task you gave me: “' + t + '”';
+    if (kind === 'conversation') return 'from the conversation: “' + t + '”';
+    return 'from “' + t + '”';
+  }
+  function recQuote(s) { return recCite(s, 'verbatim'); }
+  // a mined thread's quote is located in the whole exchange, which includes the AGENT's turns — threadmine
+  // stamps speaker:'user' only when it also matched the Commander's own turns. Anything else is softened.
+  function threadCiteKind(prop) { return (prop && prop.speaker === 'user') ? 'verbatim' : 'conversation'; }
+
+  /* ── the candidate builders. Each is side-effect-free — it may only READ its store. The two fetch-backed
+        turn-ins additionally GET a stash the sidecar already wrote during the run (a local read, no spend).
+
+        THE ONCE LAW (fixed 2026-08-04). Every per-run token — arcOnce, and beatCards.once() for trust /
+        study / thread — used to be SPENT here, at collection. A candidate that lost the moment (or a pass
+        that stood down after building it) therefore burned the run's only chance to offer that channel,
+        and a re-fired agent.run.end — which really does happen — found every token spent with nothing ever
+        shown. Collection now only ASKS (hasSeen / arcSeen); the token is consumed inside fire(), so it
+        means exactly one thing: "a card for this run was actually rendered." The deferred queue paths
+        (offerStudy / offerThread) consume the SAME token before rendering, so a run can never be offered
+        twice by the queue and the pass racing each other. ── */
+
+  // ARC — the goal-arc confirm. Cited by the Commander's OWN goal belief, read synchronously; the paid
+  // decomposition call inside offerArc happens only if the arc actually wins the moment.
+  function arcCandidate(runId) {
+    if (typeof GoalStore === 'undefined' || typeof Dialogue === 'undefined') return null;
+    if (!GoalStore.willOfferDecomposition || !GoalStore.willOfferDecomposition()) return null;
+    if (slotCanArc(runId) !== 'free') return null;
+    let belief = null;
+    try { belief = GoalStore.pendingDecomposition ? GoalStore.pendingDecomposition() : null; } catch (_) {}
+    const text = belief && belief.text ? String(belief.text).trim() : '';
+    if (!text) return null;                                  // nothing to cite → the arc stays silent
+    if (arcSeen(runId)) return null;                         // one confirm per run — READ only (see the once law below)
+    return { kind: 'arc', dim: 'goals', why: recQuote(text), fire: () => { if (arcOnce(runId)) offerArc(runId); } };
+  }
+
+  // TRUST — the earned-autonomy offer. Cited by the REAL track record the offer was computed from.
+  function trustCandidate(runId) {
+    if (typeof TrustStore === 'undefined') return null;
+    if (trustBusy() || slotCanTrust(runId) !== 'free') return null;
+    if (!TrustStore.canShow || !TrustStore.canShow()) return null;          // session cap spent
+    const offer = TrustStore.currentOffer ? TrustStore.currentOffer() : null;
+    if (!offer) return null;
+    const pv = offer.provenance || {};
+    const streak = Math.max(0, Number(pv.streak) || 0);
+    const runs = Math.max(0, Number(pv.runs) || 0);
+    const why = streak ? (streak + ' approvals in a row')
+      : (runs ? (runs + ' tasks at ' + (Number(pv.confidence) || 0) + '% satisfaction') : '');
+    if (!why) return null;                                   // no provable track record → no offer
+    if (!runId || !beatCards || beatCards.hasSeen('trust', runId)) return null;   // one offer per run — READ only
+    return { kind: 'trust', why: why, streak: streak,
+             fire: () => { if (beatCards.once('trust', runId)) trustCard(offer, runId); } };
+  }
+
+  // RATE THE WORK — the primary leveling beat. Cited by the run's OWN recorded work (never fabricated: the
+  // counters come from the live run stash, which is also what gates it).
+  function rateCandidate(agentId, runId) {
+    if (!runId || rateStatus(agentId, runId) !== 'ready') return null;
+    const w = runWork.get(runId) || {};
+    const tools = Math.max(0, Number(w.toolsOk) || 0), made = Math.max(0, Number(w.delivered) || 0);
+    const bits = [];
+    if (tools > 0) bits.push(tools + ' tool step' + (tools === 1 ? '' : 's'));
+    if (made > 0) bits.push(made + ' deliverable' + (made === 1 ? '' : 's'));
+    if (!bits.length) return null;
+    return { kind: 'rate', why: 'this run did real work — ' + bits.join(' and ') + ' — and you haven’t rated it',
+             fire: () => { maybeStandaloneRate(agentId, runId); } };
+  }
+
+  // ONGOING SUGGESTION — cited by what the Commander has actually told the station about themselves. An
+  // idea with nothing learned behind it cannot cite, so it stays quiet.
+  function suggestCandidate() {
+    if (typeof SuggestStore === 'undefined' || !SuggestStore.willSuggest || !SuggestStore.fire) return null;
+    if (!SuggestStore.willSuggest()) return null;
+    const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
+    const known = (sum && Array.isArray(sum.known)) ? sum.known.slice(-2) : [];
+    if (!known.length) return null;
+    const labels = known.map(k => String(dimLabel(k)).toLowerCase());
+    return { kind: 'suggest', why: 'you’ve told me about your ' + labels.join(' and '),
+             fire: () => { SuggestStore.fire(); } };
+  }
+
+  // SELF-GROWING SEED — cited by the real repeat counter behind the shape.
+  function seedCandidate() {
+    if (typeof SeedStore === 'undefined' || !SeedStore.willPropose || !SeedStore.propose) return null;
+    if (!SeedStore.willPropose()) return null;
+    let s = null; try { s = SeedStore._pick ? SeedStore._pick() : null; } catch (_) {}
+    const title = (s && s.title) ? String(s.title).trim() : '';
+    if (!title) return null;
+    const n = Math.max(0, Math.floor(Number(s.count) || 0));
+    return { kind: 'seed', why: 'you keep asking me to “' + title.toLowerCase() + '”' + (n > 1 ? ' (' + n + '×)' : ''),
+             fire: () => { SeedStore.propose(); } };
+  }
+
+  // ROUTINE NUDGE — cited by the real hand-launch count.
+  function routineCandidate() {
+    if (typeof RoutineNudgeStore === 'undefined' || !RoutineNudgeStore.willPropose || !RoutineNudgeStore.propose) return null;
+    if (!RoutineNudgeStore.willPropose()) return null;
+    let c = null; try { c = RoutineNudgeStore._pick ? RoutineNudgeStore._pick() : null; } catch (_) {}
+    const nm = (c && c.name) ? String(c.name).trim() : '';
+    const n = Math.max(0, Math.floor(Number(c && c.n) || 0));
+    if (!nm || n < 1) return null;
+    return { kind: 'routine', why: 'you’ve launched ' + nm + ' ' + n + ' times by hand',
+             fire: () => { RoutineNudgeStore.propose(); } };
+  }
+
+  // ADAPTIVE RECRUITMENT — cited by the recruiter's own counter-derived why (the SAME string the bay's
+  // curated shelf shows, so the beat and the shelf can never disagree).
+  function recruitCandidate() {
+    if (recruitShown) return null;                                          // one recruit offer per session
+    if (typeof RecruiterStore === 'undefined' || !RecruiterStore.topPick) return null;
+    if (typeof App === 'undefined' || !App.openSummonBay) return null;      // no deep-link target → don't offer
+    let pick = null; try { pick = RecruiterStore.topPick(); } catch (_) { return null; }
+    const why = (pick && pick.spec) ? String(pick.why || '').trim() : '';
+    if (!why) return null;                                                  // cold/thin signal → silence
+    return { kind: 'recruit', why: why, fire: () => { maybeRecruit(); } };
+  }
+
+  // JUST-IN-TIME CURIOSITY — cited by the dimension it is actually targeting, phrased plainly.
+  function curiosityCandidate() {
+    if (typeof CuriosityStore === 'undefined') return null;
+    const dim = CuriosityStore.consider();
+    if (!dim) return null;
+    return { kind: 'curiosity', dim: dim, why: 'i still don’t know your ' + String(dimLabel(dim)).toLowerCase(),
+             fire: () => { CuriosityStore.markShown(dim); curiosityNudge(dim); } };
+  }
+
+  // STUDY — the belief turn-in. Its evidence is the VERBATIM directive the belief was observed from, which
+  // only arrives with the proposal, so the stash (already written by the sidecar during the run — a local
+  // read, no model spend) is fetched before the spine decides. A proposal with no verbatim grounding is
+  // dropped here rather than surfaced with an empty provenance line.
+  async function studyCandidate(runId, agentId) {
+    if (typeof StudyStore === 'undefined') return null;
+    if (studyBusy() || slotCanStudy(runId) !== 'free') return null;   // runId = the SELF-KEY: the pass's own reservation must not veto it
+    if (!runId || !beatCards || beatCards.hasSeen('study', runId)) return null;   // one offer per run — READ only
+    if (!StudyStore.canShow || !StudyStore.canShow()) return null;          // session cap (per-session, not deferrable)
+    const proposals = await StudyStore.fetchProposals(runId, agentId);
+    const prop = StudyStore.nextLive(proposals);   // drops resolved/declined/ignored + unmatchable retires
+    if (!prop) return null;
+    const why = prop.evidence ? recCite(prop.evidence, prop.evidenceRef && prop.evidenceRef.kind)
+      : (prop.kind === 'retire' ? String(prop.text || '').trim() : '');
+    if (!why) return null;
+    return { kind: 'study', dim: prop.dim, why: why,
+             fire: () => { if (beatCards.once('study', runId)) studyCard(prop, agentId, runId); } };
+  }
+
+  // THREAD — the mined-idea turn-in. Its evidence is the verbatim quote the mine grounded the idea in.
+  async function threadCandidate(runId, agentId) {
+    if (typeof ThreadStore === 'undefined') return null;
+    if (threadBusy() || slotCanThread(runId) !== 'free') return null;  // runId = the SELF-KEY (see slotCanStudy)
+    if (!runId || !beatCards || beatCards.hasSeen('thread', runId)) return null;  // one offer per run — READ only
+    if (!ThreadStore.canShow || !ThreadStore.canShow()) return null;        // session cap
+    const batch = await ThreadStore.fetchProposals(runId, agentId);
+    const prop = ThreadStore.nextLive(batch.proposals);   // drops resolved/ignored candidates
+    if (!prop) return null;
+    const why = recCite(prop.spec, threadCiteKind(prop));
+    if (!why) return null;
+    return { kind: 'thread', why: why,
+             fire: () => { if (beatCards.once('thread', runId)) threadCard(prop, agentId, batch.runId || runId); } };
+  }
+
+  /* THE PASS. Runs TWICE per clean run end — once at the FAST arm (phase !== 'slow': the rate beat, which
+     needs nothing the run has yet to produce) and once at the SLOW arm ('slow': every channel whose evidence
+     the run must first WRITE). Both phases share the one arbiter and fire at most one candidate between them. */
+  async function recommendPass(p, phase) {
+    const slow = phase === 'slow';
+    const agentId = (p && p.agentId) || 'agent';
+    const isHeroRun = agentId === 'agent';
+    const runId = (p && (p.runId || p.id)) || null;
+    // G2.4: arm the self-retrying rate fallback FIRST, before any stand-down guard — a focused tutorial
+    // panel / busy stream / open deck may block THIS moment, but the rating for a run that did real work
+    // must eventually fire (permanent ineligibility stops it inside). Armed once, on the fast arm.
+    if (!slow && runId) armRateFallback(agentId, runId);
+    if (momentBlocked()) {
+      /* A BLOCKED MOMENT MUST NOT DROP THE RUN'S TURN-INS. Returning here discarded this run's study and
+         thread offers FOREVER (the pre-spine listeners queued them). Enqueue the markers instead — the
+         existing FIFO flush paths re-fetch and re-offer them at a later, free moment. */
+      if (slow && isHeroRun && runId) { queueStudy(runId, agentId); queueThread(runId, agentId); }
+      return;
+    }
+    if (typeof Recommend === 'undefined' || !Recommend.pick) return;        // no spine → no proactive beat
+    const lifecycle = beatCards, gen = lifecycle ? lifecycle.generation() : 0;
+    const stale = () => !lifecycle || beatCards !== lifecycle || lifecycle.generation() !== gen;
+
+    const cands = [];
+    let study = null, thread = null;
+    /* ── THE FAST ARM: the rating, and only the rating. It carries one floor the turn-ins never did: this
+          run's memory turn-in owns the moment, and a real turn-in deck still sitting in the feed suppresses
+          a fresh ask (the visible dogpile). Standing down cannot STARVE it — armRateFallback ran above. ── */
+    if (!slow) {
+      if (turninOwnsMoment(runId)) return;
+      const rate = rateCandidate(agentId, runId); if (rate) cands.push(rate);
+    } else if (askBudgetSpent()) {
+      return;   // the session's proactive-ask budget is spent: the station stays quiet for every consent channel
+    } else {
+      // ── the TURN-IN half: hero-only, gated by the shared arbiter + the stand-down guards ──
+      if (isHeroRun) {
+        const arc = arcCandidate(runId); if (arc) cands.push(arc);
+        const trust = trustCandidate(runId); if (trust) cands.push(trust);
+      }
+      // the GENTLE half — same visible-dogpile floor the rating honors, and HERO-ONLY: a summoned worker's
+      // clean run must never fire a suggestion / seed / routine / recruitment / curiosity ask against the
+      // hero's dossier.
+      if (!turninOwnsMoment(runId) && isHeroRun) {
+        // FIRE ON SALIENCE: a basic conversational turn (not a task) earns NO gentle beat — mirrors the
+        // server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
+        const meta = runId ? runMeta(runId) : null;
+        if (!meta || meta.isTask) {
+          // WORK-EARNED ASK FLOOR: a real task-run banks toward the session's ask budget, and no gentle
+          // unsolicited beat fires until the station has completed Curiosity.MIN_WORK task-runs this session.
+          if (typeof CuriosityStore !== 'undefined' && CuriosityStore.noteWork) CuriosityStore.noteWork();
+          const earned = !(typeof CuriosityStore !== 'undefined' && CuriosityStore.earned && !CuriosityStore.earned());
+          if (earned) {
+            const s = suggestCandidate(); if (s) cands.push(s);                 // SuggestStore.willSuggest()
+            const sd = seedCandidate(); if (sd) cands.push(sd);                 // SeedStore.willPropose()
+            if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.onRunEnd) { try { RoutineNudgeStore.onRunEnd(); } catch (_) {} }
+            const rt = routineCandidate(); if (rt) cands.push(rt);              // RoutineNudgeStore.willPropose()
+            const rc = recruitCandidate(); if (rc) cands.push(rc);              // RecruiterStore.topPick()
+            const cu = curiosityCandidate(); if (cu) cands.push(cu);            // CuriosityStore.consider()
+          }
+        }
+      }
+
+      /* ── the FETCH-BACKED turn-ins. They outrank everything below memory, so their REAL evidence has to be
+            on the table before the spine decides. Both are local reads of a stash the sidecar wrote during the
+            run (no model spend) — and at THIS arm that stash is the run's OWN batch, not the previous run's.
+            Their kinds are RESERVED across the await so nothing lower can take the slot mid-fetch; the pass
+            passes its own runId as the self-key everywhere so those reservations never veto its own
+            candidates (beatcard.js can()), and they are released the moment the fetch resolves. ── */
+      if (isHeroRun && runId && !stale()) {
+        lifecycle.reserve('study', runId); lifecycle.reserve('thread', runId);
+        try {
+          const both = await Promise.all([studyCandidate(runId, agentId), threadCandidate(runId, agentId)]);
+          study = both[0]; thread = both[1];
+        } catch (_) {}
+        if (!stale()) { lifecycle.releaseReservation('study', runId); lifecycle.releaseReservation('thread', runId); }
+      }
+      if (stale()) return;                  // the COMMS generation turned over mid-fetch (stream switch / new session)
+      if (study) cands.push(study);
+      if (thread) cands.push(thread);
+      // re-check the moment after the awaits — reflection's memory deck may have claimed it meanwhile.
+      if (momentBlocked()) { queueStudy(runId, agentId); queueThread(runId, agentId); return; }
+    }
+
+    const winner = Recommend.pick(cands, recUnderstanding());
+    // DEFERRED, NEVER STARVED: a fetched turn-in that lost the moment goes back on its FIFO queue and
+    // re-offers at the next task end (the pre-spine queue path, unchanged).
+    if (study && winner !== study) queueStudy(runId, agentId);
+    if (thread && winner !== thread) queueThread(runId, agentId);
+    if (!winner) return;                    // evidence or silence
+    // the shared slot still has the last word: a deferred beat drained at the sweep may already hold it.
+    if (lifecycle.canOffer(Recommend.slotKindOf(winner.kind)) !== 'free') return;
+    try { winner.fire(); } catch (_) {}
+    // spend one unit of the session ask budget — but only for a card the station CHOSE to raise.
+    if (Recommend.asksBudget && Recommend.asksBudget(winner.kind)) sessionAsks += 1;
+  }
+
   function wireCuriosity() {
     if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
     curiosityWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
-      // S1: the hero gate used to sit HERE, which meant a specialist's clean run never even ARMED the rate
-      // fallback — the second half of the rate-starve. It now sits just below the rate attempt (search
-      // `isHeroRun`): every gentle nudge (suggestion / seed / curiosity / recruitment) stays hero-only exactly
-      // as before, but RATE THE WORK — which is about the run itself, not an unsolicited ask — reaches the
-      // agent that actually did the work.
-      const isHeroRun = (p.agentId || 'agent') === 'agent';
-      const runId = p.runId || p.id;
-      setTimeout(() => {
-        // G2.4: arm the self-retrying rate fallback FIRST, before any stand-down guard — a focused
-        // tutorial panel / busy stream / open deck may block THIS moment, but the rating for a run
-        // that did real work must eventually fire (permanent ineligibility stops it inside).
-        if (runId) armRateFallback(p.agentId || 'agent', runId);
-        if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
-        if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return;
-        if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return;
-        if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return;   // a focused panel is up (First Pitch graduation / awakening / tutorial) — never slot a gentle nudge behind it
-        // ONE post-run beat per run: if this run produced a memory turn-in (or a card is still open in the
-        // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible
-        // dogpile). Standing down can no longer STARVE the rating: the armRateFallback armed above (plus
-        // the wireProposals empty/off-stream hooks and the finishBatch hand-off) keeps re-attempting the
-        // standalone beat until it fires or the run is permanently ineligible.
-        if (runId && beatCards && beatCards.hasSeen('memory', runId)) return;
-        // (scoped to REAL turn-in decks: the away-digest reuses .turnin-item for styling, but a
-        // session-open digest sitting in the feed must not suppress a fresh run's rate beat — G2.4)
-        if (log && log.querySelector('.cmsg.turnin:not(.away-digest) .turnin-item')) return;
-        // RATE THE WORK (the primary leveling beat): if this run actually did real work and isn't rated yet,
-        // it takes the one post-run slot (the same attempt the armed fallback retries — real-work-gated, so
-        // a pure chat reply is never rate-prompted; 'blocked'/'never' fall through to the gentler beats).
-        if (runId && maybeStandaloneRate(p.agentId || 'agent', runId) === 'fired') return;
-        // S1: from here down is the GENTLE-NUDGE slot, and it stays HERO-ONLY — a summoned worker's clean run
-        // must never fire a curiosity / suggestion / seed / recruitment ask against the hero's dossier.
-        if (!isHeroRun) return;
-        // FIRE ON SALIENCE, not after every run: a basic conversational turn (not a task) earns NO proactive beat —
-        // the station only reaches for a suggestion / seed / get-to-know-you question after it did real WORK. This
-        // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
-        const meta = runId ? runMeta(runId) : null;
-        if (meta && !meta.isTask) return;
-        // WORK-EARNED ASK FLOOR (beat-fat trim, 2026-07-03): a real task-run banks toward the session's ask
-        // budget, and NO gentle unsolicited beat (suggestion / seed / curiosity) fires until the station has
-        // completed Curiosity.MIN_WORK task-runs this session. The first thing a fresh session shows the
-        // Commander must be WORK, never an idea/question that reads as pre-generated. Rate-the-work above is
-        // exempt (it's about the run itself, not an unsolicited ask); study/arc/trust have their own arbiter.
-        if (typeof CuriosityStore !== 'undefined' && CuriosityStore.noteWork) CuriosityStore.noteWork();
-        if (typeof CuriosityStore !== 'undefined' && CuriosityStore.earned && !CuriosityStore.earned()) return;
-        // ONGOING SUGGESTION (Slice 3): if the station has learned something new and an idea is due, it takes this
-        // ONE post-run beat — gently — and curiosity stands down for the run (the agent never stacks an idea AND a
-        // question on the same task). Shares this slot's guards (busy/interview/onboarding/intake/turn-in) for free.
-        if (typeof SuggestStore !== 'undefined' && SuggestStore.willSuggest && SuggestStore.fire && SuggestStore.willSuggest()) { SuggestStore.fire(); return; }
-        // SELF-GROWING SEED (Slice 5): if a recurring pattern is ripe, the agent offers to author it as a one-tap
-        // seed — takes this one beat (after a suggestion, before curiosity) so it never stacks two asks on a task.
-        if (typeof SeedStore !== 'undefined' && SeedStore.willPropose && SeedStore.propose && SeedStore.willPropose()) { SeedStore.propose(); return; }
-        // ROUTINE NUDGE (recipe lane D): a naturally-recurring recipe the Commander keeps hand-launching earns ONE
-        // offer to put it on a schedule — after suggestion/seed (rarer, more specific asks), before recruitment.
-        // Accepting deep-links into the SCHEDULE IT form (propose-and-confirm; never a silent cron write).
-        if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.onRunEnd) { try { RoutineNudgeStore.onRunEnd(); } catch (_) {} }
-        if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.willPropose && RoutineNudgeStore.propose && RoutineNudgeStore.willPropose()) { RoutineNudgeStore.propose(); return; }
-        // ADAPTIVE RECRUITMENT: once the station has a WARM read of the Commander's real workflow and it points to a
-        // NEW teammate the crew doesn't have, offer ONCE — through THIS single post-run beat, sharing every guard
-        // above (work-earned floor, busy/interview/turn-in, one-beat-at-a-time). Never a parallel nag channel: it
-        // competes for the same slot and only takes it when the suggestion/seed didn't. Accepting deep-links into
-        // the recruitment bay's summon flow. At most once per session.
-        if (maybeRecruit()) return;
-        if (typeof CuriosityStore === 'undefined') return;
-        const dim = CuriosityStore.consider();
-        if (!dim) return;
-        CuriosityStore.markShown(dim);         // spend the session nudge AND durably tally this dim's ask (ignored asks stop it for good)
-        curiosityNudge(dim);
-      }, 650);   // let the reply finish rendering before the nudge slots in below it
+      // TWO arms, ONE arbiter (see BEAT_ARM_MS / BEAT_SLOW_ARM_MS): the rating collects the moment the reply
+      // has rendered; every channel whose evidence the run must first WRITE collects once it exists.
+      setTimeout(() => { recommendPass(p, 'fast'); }, BEAT_ARM_MS);
+      setTimeout(() => { recommendPass(p, 'slow'); }, BEAT_SLOW_ARM_MS);
     });
   }
   // IDLE-DRIVEN curiosity (the autopilot EARN-CONTEXT branch, autonomy Slice A): the SAME gentle get-to-know-you

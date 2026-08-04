@@ -50,10 +50,14 @@ A.eq(C.pick({ blank: [], dismissed: {}, count: 0, cap: 1, work: 5 }), null, 'ear
   A.ok(/work:\s*workCount/.test(storeSrc), 'CuriosityStore.consider passes the live work counter into pick()');
   A.ok(/function earned/.test(storeSrc), 'CuriosityStore.earned exposes the floor to the beat chain');
   const chatSrcW = fsw.readFileSync(pathw.join(__dirname, '../frontend/app/chat.js'), 'utf8');
-  const iGate = chatSrcW.indexOf('CuriosityStore.earned && !CuriosityStore.earned()');
-  const iSuggestW = chatSrcW.indexOf('SuggestStore.willSuggest()');
+  // RECOMMENDATION SPINE: the gentle chain is now staged as candidates inside ONE collection pass, so the
+  // earned-work floor is asserted where it lives — before any gentle candidate is built at all.
+  const iPassW = chatSrcW.indexOf('async function recommendPass');
+  const iGate = chatSrcW.indexOf('CuriosityStore.earned && !CuriosityStore.earned()', iPassW);
+  const iSuggestW = chatSrcW.indexOf('suggestCandidate()', iPassW);
+  A.ok(iPassW > 0, 'chat.js drives ONE post-run collection pass');
   A.ok(iGate > 0, 'chat.js gates the gentle post-run chain on the earned-work floor');
-  A.ok(iSuggestW > iGate, 'the earn gate sits BEFORE the suggestion beat — no unsolicited idea until work earned it');
+  A.ok(iSuggestW > iGate, 'the earn gate sits BEFORE any gentle candidate — no unsolicited idea until work earned it');
   A.ok(chatSrcW.indexOf('CuriosityStore.noteWork()') > 0 && chatSrcW.indexOf('CuriosityStore.noteWork()') < iGate, 'a task-run banks work before the gate reads it');
 }
 

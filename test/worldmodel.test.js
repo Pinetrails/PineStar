@@ -410,10 +410,15 @@ const fcoder = fp.addProp({ t: 'bay', x: fx + 6, y: fy - 1, w: 2, h: 2, block: f
 const fres = fp.addProp({ t: 'bay', x: fx + 1, y: fy + 4, w: 2, h: 2, block: false });
 fp.assignPropAgent(fcoder.id, 'coder');
 fp.assignPropAgent(fres.id, 'researcher');
-A.ok(!PL.ok(PL.compileRoutingPlan(fp.projectGeometry())), 'a placed filter with NO routes is non-deployable (FILTER_NO_DEFAULT)');
+// FILTER_NO_DEFAULT is a WARN (2026-08-04): a def-less filter never drops work (routed -> def -> first lane),
+// so the un-configured floor deploys with a nag rather than refusing wholesale.
+const fplan0 = PL.compileRoutingPlan(fp.projectGeometry());
+A.ok(fplan0.errors.some(e => e.code === 'FILTER_NO_DEFAULT' && e.warn), 'a placed filter with NO routes nags FILTER_NO_DEFAULT (warn)');
+A.ok(PL.ok(fplan0), '...and the floor still deploys (a def-less filter falls back, never drops work)');
 A.ok(fp.configureJunction(fJunc.id, { routes: { code: 'E', research: 'S' }, def: 'E' }).ok, 'configureJunction sets the filter routes (the editor path)');
 const fplan = PL.compileRoutingPlan(fp.projectGeometry());
 A.ok(PL.ok(fplan), 'after configuring routes the placed-filter floor is DEPLOYABLE');
+A.ok(!fplan.errors.some(e => e.code === 'FILTER_NO_DEFAULT'), 'the configured filter clears the nag');
 A.eq(PL.resolveTarget(fplan, { tag: 'code' }), 'coder', 'code routes to the coder bay');
 A.eq(PL.resolveTarget(fplan, { tag: 'research' }), 'researcher', 'research routes to the researcher bay');
 

@@ -728,7 +728,7 @@
     const m = topicMatch(recipe, opts.topics);
     if (m && TopicMatch && TopicMatch.reason) { const r = TopicMatch.reason(m); if (r) return r; }
     const gh = namableGoalHits(goalKeywordHits(recipe, opts.goalText || ''));
-    if (gh.length) return 'matches your goal: “' + gh[0] + '”';
+    if (gh.length) return 'it matches your goal: “' + gh[0] + '”';
     const u = (opts.launches && typeof opts.launches === 'object') ? opts.launches[recipe.id] : null;
     const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
     const great = rated && Number.isFinite(rated.great) && rated.great > 0 ? Math.floor(rated.great) : 0;

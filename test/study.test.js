@@ -329,7 +329,28 @@ const S = require('../frontend/app/study.js');
     && /Dialogue\.isOpen/.test(chatSrc.slice(iBlocked, iBlocked + 700)),
     'the study beat honors the SAME stand-down guards as curiosity (busy/interview/onboarding/intake/Dialogue)');
   const iWireStudy = chatSrc.indexOf('function wireStudy');
-  A.ok(/STUDY_ARM_MS\);/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)), 'the study offer arms at STUDY_ARM_MS — well after run end, so reflection claims the moment first');
+  /* RECOMMENDATION SPINE: the study offer no longer wins the moment with a 12s head start — it is staged as a
+     'study' CANDIDATE by the ONE collection pass and wins on PRIORITY. MEMORY still WINS: the candidate stands
+     down the instant the shared arbiter reports anything but a free slot (a reflection in flight has reserved
+     'memory'), and a losing offer is re-queued rather than consumed. */
+  const iPass = chatSrc.indexOf('async function recommendPass');
+  A.ok(iPass > 0, 'chat.js drives ONE collection pass for every proactive channel (the recommendation spine)');
+  const passBody = chatSrc.slice(iPass, chatSrc.indexOf('function wireCuriosity', iPass));
+  A.ok(/const winner = Recommend\.pick\(cands, recUnderstanding\(\)\);/.test(passBody),
+    'the winner is chosen by the pure spine, not by an arm-delay race');
+  const iStudyCand = chatSrc.indexOf('async function studyCandidate');
+  A.ok(iStudyCand > 0 && /slotCanStudy\(runId\) !== 'free'\) return null;/.test(chatSrc.slice(iStudyCand, iStudyCand + 700)),
+    'the study candidate cedes the moment to a reserved memory claim (MEMORY WINS, now by reservation not by delay)');
+  A.ok(/if \(study && winner !== study\) queueStudy\(runId, agentId\);/.test(passBody),
+    'a study offer that LOSES the moment is re-queued (deferred, never starved)');
+  A.ok(/if \(momentBlocked\(\)\) \{ queueStudy\(runId, agentId\); queueThread\(runId, agentId\); return; \}/.test(passBody),
+    'a moment that went blocked during the fetch queues the offer instead of dropping it');
+  /* TWO ARMS (B3/B4): the study candidate collects at the SLOW arm, because at 1.6s the run's own study batch
+     is not stashed yet and /api/study/proposals falls back to the PREVIOUS run's — every card was one run stale. */
+  A.ok(/const BEAT_SLOW_ARM_MS = 12000;/.test(chatSrc), 'the fetch-backed turn-ins collect once their stash exists');
+  A.ok(/recommendPass\(p, 'slow'\); \}, BEAT_SLOW_ARM_MS/.test(chatSrc), 'the slow arm is what stages the study candidate');
+  A.ok(/slotCanStudy\(runId\) !== 'free'\) return null;/.test(chatSrc.slice(iStudyCand, iStudyCand + 700)),
+    'the candidate identifies itself by runId so the pass’s OWN reservation cannot veto it (the self-veto that killed the thread channel)');
   A.ok(/scheduleExpire\('study', 900\);[\s\S]{0,100}setTimeout\(flushStudyPending, 900\)/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)),
     'each run end expires an undecided study card (the ignore verdict) THEN drains one deferred beat (anti-starve)');
   // finding-4 lifecycle: the expiry tallies StudyStore.ignore for the shown proposal and frees the slot

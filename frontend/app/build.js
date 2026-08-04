@@ -34,6 +34,7 @@ const Build = (() => {
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
   let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
+  let planDirty = true;   // routing-plan cache flag: set by EDITS (station.onChange / open), never by pure pans — see rebake()
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   // every label NAMES THE FIX, in words (mirrors world.js NAG_LABEL — keep the two in sync)
@@ -41,6 +42,7 @@ const Build = (() => {
     ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'NOT CONNECTED — BELT: CLICK IT, THEN A MACHINE',
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
     UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES',
+    ORPHAN_JUNCTION: 'NOT ON A BELT — MOVE IT ONTO THE LINE',
     // the docks feed each OTHER: no belt loop anywhere, but the work line would run forever, paying each lap
     CHAIN_CYCLE: 'WORK LINE LOOPS — CUT ONE HANDOFF'
   };
@@ -77,12 +79,12 @@ const Build = (() => {
     document.body.classList.add('refit-on');
     updateSafetyClearance();
     unsub = station.onChange(p => {
-      bakeDirty = true;
+      bakeDirty = true; planDirty = true;   // a real floor edit — the compiled plan is stale
       const rects = p && p.dirtyRects;
       bakeDirtyRects = bakeDirtyRects && rects ? bakeDirtyRects.concat(rects) : (rects || bakeDirtyRects);
       updateUndoRedo();
     });
-    bakeDirty = true; bakeDirtyRects = null;
+    bakeDirty = true; bakeDirtyRects = null; planDirty = true;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
     testNotes.length = 0;   // never carry a prior session's ride captions into a fresh REFIT
     lastFrameTs = 0;
@@ -815,7 +817,8 @@ const Build = (() => {
   }
 
   /* ---------- FILTER junction editor (Polish P1): make content-routing reachable from the UI.
-     A FILTER needs routes (tag -> out-lane) + a default lane or it's non-deployable (FILTER_NO_DEFAULT);
+     A FILTER wants routes (tag -> out-lane) + a default lane — a missing default is an amber nag
+     (FILTER_NO_DEFAULT, warn: unrouted work falls back def -> first lane, never dropped);
      it calls station.configureJunction. Opens on place/click.
      A MERGER has NO editor — like the splitter, it is pure topology. It used to offer a "combine K" field
      for a hold-K-then-emit-one barrier the harness never performed (see conveyor.js chooseExit), so the
@@ -829,6 +832,20 @@ const Build = (() => {
     const out = [];
     for (const d of J_LANES) { const v = J_DIRV[d], nb = station.beltAt(tx + v[0], ty + v[1]); if (nb && nb !== J_OPP[d]) out.push(d); }
     return out;
+  }
+  /* the belt tile a junction prop ATTACHES to — the SAME semantics as the compiler (pipeline.js
+     compileRoutingPlan): the prop's own tile if it sits on a belt, else the first belt tile in its
+     footprint + 1-tile ring, in the compiler's exact scan order (y then x, from (x-1,y-1)). Before this
+     the editor computed lanes at the prop's own tile only, so a ring-attached filter (e.g. nudged one
+     tile off its lane by MOVE) still COMPILED and routed, while its editor showed "lay belts OUT of this
+     filter first" with zero lane buttons — an error the Commander could not fix. Returns {x,y} or null. */
+  function junctionBeltTile(p) {
+    if (station.beltAt(p.x, p.y)) return { x: p.x, y: p.y };
+    const w = p.w || 1, h = p.h || 1;
+    for (let yy = p.y - 1; yy <= p.y + h; yy++)
+      for (let xx = p.x - 1; xx <= p.x + w; xx++)
+        if (station.beltAt(xx, yy)) return { x: xx, y: yy };
+    return null;
   }
   /* ---------- THE FLOW STRIP + FLOW CARD (belt-teach): ONE picture of the whole system, shown wherever
      a workflow prop is touched, with the clicked piece lit — so the model accretes instead of fragmenting
@@ -875,7 +892,10 @@ const Build = (() => {
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
 
     {
-      const lanes = junctionOutLanes(p.x, p.y);
+      // resolve lanes at the tile the COMPILER attaches this junction to (own tile OR ring — see
+      // junctionBeltTile), so a ring-attached filter is configurable, not a dead editor.
+      const jt = junctionBeltTile(p);
+      const lanes = jt ? junctionOutLanes(jt.x, jt.y) : [];
       const cur = { routes: (p.routes && typeof p.routes === 'object') ? Object.assign({}, p.routes) : {}, def: p.def || null };
       const selOf = tag => (tag === '__def__' ? cur.def : cur.routes[tag]);
       const ROWS = [['code', 'CODE'], ['research', 'RESEARCH'], ['__def__', 'EVERYTHING ELSE']];
@@ -1311,9 +1331,22 @@ const Build = (() => {
     feedback(res, ev, res && res.dir ? ('belt → ' + res.dir) : 'belt');
   }
   function commitPropMove(d, ev) {
-    const dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
+    let dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
     if (!dx && !dy) { hideTip(); return; }
-    feedback(station.moveProp(d.propId, dx, dy), ev, 'relocated');
+    // JUNCTION SNAP on MOVE — the same rule placement (commitPropStamp) already applies: a filter/
+    // splitter/merger dropped NEXT to a line snaps onto the nearest belt tile. Without this, a moved
+    // filter one tile off its belt still compiled (ring-attached) while reading as misplaced — or, two
+    // tiles off, went silently inert. If the snapped tile is blocked, fall back to the plain move.
+    const mp = station.propById(d.propId);
+    let okMsg = 'relocated';
+    if (mp && (mp.t === 'filter' || mp.t === 'splitter' || mp.t === 'merger') && !station.beltAt(mp.x + dx, mp.y + dy)) {
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        if (station.beltAt(mp.x + dx + ox, mp.y + dy + oy) && station.canPlaceProp(mp.t, mp.x + dx + ox, mp.y + dy + oy, mp.w, mp.h, mp.id).ok) {
+          dx += ox; dy += oy; okMsg = 'snapped onto the line'; break;
+        }
+      }
+    }
+    feedback(station.moveProp(d.propId, dx, dy), ev, okMsg);
   }
   function commitPaint(d, ev) {
     // WALLS are a whole-room surface — there's no per-tile wall, so a drag means the same thing
@@ -1525,15 +1558,23 @@ const Build = (() => {
     cache = StationBake.bakeIncremental
       ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects, { visibleRect, maxRetainedChunks: MAX_REFIT_CHUNKS, onlyMissingVisible: bakeVisibleOnly })
       : StationBake.bake(cacheGeo);
-    valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
-    // dead-vs-live belt render mirrors the live world. The plan is compiled in cacheGeo's LOCAL frame but
-    // drawConveyor draws station.belts() in WORLD tiles — rebase the live keys by the geo origin or every
-    // REFIT belt would look cold (frame-mismatch, not truth).
-    valLive = null;
-    if (valPlan && Pipeline.liveTiles) {
-      const lv = Pipeline.liveTiles(valPlan), o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
-      valLive = {};
-      for (const k in lv) { const p = k.split(','); valLive[(+p[0] + o.tx) + ',' + (+p[1] + o.ty)] = true; }
+    /* recompile the routing plan ONLY when the floor actually changed (planDirty — set by station.onChange
+       and open(), the two edit paths; world.js compileRouting is gated the same way via its geoDirty edit
+       flag). rebake() ALSO runs on pure pans (frame() flips bakeDirty+bakeVisibleOnly when visible chunks
+       are missing), and recompiling plan + liveTiles + the key-rebase on every pan was pure waste: the
+       geometry is identical, so the plan (and valLive — origin only moves on edits) is still exact. */
+    if (planDirty || !valPlan) {
+      valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
+      // dead-vs-live belt render mirrors the live world. The plan is compiled in cacheGeo's LOCAL frame but
+      // drawConveyor draws station.belts() in WORLD tiles — rebase the live keys by the geo origin or every
+      // REFIT belt would look cold (frame-mismatch, not truth).
+      valLive = null;
+      if (valPlan && Pipeline.liveTiles) {
+        const lv = Pipeline.liveTiles(valPlan), o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
+        valLive = {};
+        for (const k in lv) { const p = k.split(','); valLive[(+p[0] + o.tx) + ',' + (+p[1] + o.ty)] = true; }
+      }
+      planDirty = false;
     }
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }

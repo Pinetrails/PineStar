@@ -22,7 +22,7 @@ const World = (() => {
   let deskPropId = null, deskFace = 'north';           // set when the hero's desk is a PLACED workstation prop assigned to it (its id + the seat's facing)
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
-  let routingPlan = null, lastPlanHash = null;   // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
+  let routingPlan = null;                        // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
   let beltLiveSet = null;                        // { "x,y": true } belt tiles on a complete INTAKE→bound-BAY route (energized render)
   let beltTileSet = null;                        // Set("x,y") of every belt tile (hover hit-test; rebuilt with the plan)
   let routeTagCache = null;                      // tileKey -> {text, ok} composed hover route tag (invalidated on recompile)
@@ -5113,17 +5113,78 @@ const World = (() => {
     }
     postRoutingPlan(routingPlan);
   }
-  // fire-and-forget the plan to /api/routing, but only when the floor TOPOLOGY actually changed (hash dedupe —
-  // rederive() also runs on pure camera/agent moves). The sidecar REFUSES a non-deployable plan (cycle/orphan)
-  // and falls back to its default resolution, so a broken floor disables routed-mode rather than stalling work.
+  /* PLAN-POSTER-BEGIN (extraction marker — test/plan-poster.test.js evals this block with injected deps;
+     keep it PURE: params + locals only, no module state, no direct fetch/console/setTimeout).
+
+     Delivery of the compiled plan to /api/routing, with the hash committed ONLY on a server answer — the old
+     fire-and-forget committed the dedupe hash BEFORE the fetch and swallowed every failure, so one dropped
+     POST left the sidecar routing by a STALE floor forever while the world drew the new one (audit 2026-08-04).
+     Semantics:
+       • 200 → commit the hash (dedupe as before: same topology+caps never re-posts), clear staleness.
+       • 422 → the PLAN ITSELF is refused (cycle/orphan) — re-posting the same hash is pointless, so commit it
+         and record the refusal. Not stale: the sidecar holds (and persists) the CLEARED plan, and the floor
+         already draws the same compiler errors as nags — live truth on both sides.
+       • network failure / other status → do NOT commit; bounded fixed-delay retries, then give up until the
+         next offer (rederive re-offers the uncommitted hash). `stale` stays true — server-side routing may
+         not match the drawn floor — and each failure warns via deps.warn.
+     A newer offer supersedes any pending retry (seq guard: a late stale response can never commit). */
+  function makePlanPoster(deps) {
+    const MAX_RETRIES = 3, RETRY_MS = 4000;   // bounded + fixed-delay (deterministic-friendly); rederive re-offers after
+    let lastHash = null;      // last hash the server ANSWERED (200 committed / 422 refused) — never committed on a guess
+    let refusedHash = null;   // the hash of the last 422-refused plan (refusal state, inspectable)
+    let pendingHash = null;   // the hash currently being delivered (in flight or awaiting a retry tick)
+    let inflight = false, timer = null, seq = 0;
+    let stale = false;        // honest flag: the sidecar may still route by an older floor than the one drawn
+    function state() { return { lastHash: lastHash, refusedHash: refusedHash, pendingHash: pendingHash, inflight: inflight, retryPending: timer != null, stale: stale }; }
+    function offer(plan, hash) {
+      if (hash === lastHash) return false;                                   // server already answered this exact floor
+      if (hash === pendingHash && (inflight || timer != null)) return false; // same floor already being delivered
+      if (timer != null) { deps.cancel(timer); timer = null; }               // a different floor supersedes the pending retry
+      pendingHash = hash;
+      send(plan, hash, 0, ++seq);
+      return true;
+    }
+    function send(plan, hash, attempt, mySeq) {
+      const fail = why => {
+        if (mySeq !== seq) return;   // superseded — the newer offer owns delivery (and the flags) now
+        inflight = false;
+        stale = true;
+        deps.warn('[routing] plan post failed (' + why + ') — sidecar routing may be stale' +
+          (attempt < MAX_RETRIES ? '; retrying in ' + RETRY_MS + 'ms' : '; will retry on the next floor change'));
+        if (attempt < MAX_RETRIES) timer = deps.delay(() => { timer = null; send(plan, hash, attempt + 1, mySeq); }, RETRY_MS);
+      };
+      let p = null;
+      inflight = true;
+      try { p = deps.post(plan); } catch (_) { fail('exception'); return; }
+      Promise.resolve(p).then(res => {
+        if (mySeq !== seq) return;   // superseded — never let a stale response commit or clear flags
+        inflight = false;
+        if (res && res.ok) { lastHash = hash; refusedHash = null; pendingHash = null; stale = false; return; }
+        if (res && res.status === 422) { lastHash = hash; refusedHash = hash; pendingHash = null; stale = false; return; }
+        fail('http ' + (res ? res.status : '?'));
+      }, () => fail('network'));
+    }
+    return { offer: offer, state: state };
+  }
+  /* PLAN-POSTER-END */
+  // one poster for the module; on transient failure it warns and keeps `stale` true. No new UI surface:
+  // an unreachable sidecar already raises the LINK DOWN chrome (linkDown/linkState — the one honest
+  // connectivity signal), and _dbgBeltLegibility exposes planSync for the verify harness.
+  const planPoster = makePlanPoster({
+    post: plan => fetch(apiUrl('/api/routing'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }),
+    warn: m => { try { console.warn(m); } catch (_) {} },
+    delay: (fn, ms) => setTimeout(fn, ms),
+    cancel: id => clearTimeout(id)
+  });
+  // post the plan to /api/routing when the floor TOPOLOGY actually changed (hash dedupe — rederive() also runs
+  // on pure camera/agent moves). The sidecar REFUSES a non-deployable plan (cycle/orphan) and falls back to its
+  // default resolution, so a broken floor disables routed-mode rather than stalling work.
   function postRoutingPlan(plan) {
     if (typeof fetch === 'undefined') return;
     // dedupe on topology hash + per-bay caps, so equipping a bay (a capability change with no belt change) still re-POSTs
     const objKey = o => (o && typeof o === 'object') ? (o.objectType + '#' + (o.connectorId || '')) : o;   // connector objs carry a binding; stringify it so a re-bind re-POSTs
     const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')) : '';
-    if (hash === lastPlanHash) return;
-    lastPlanHash = hash;
-    try { fetch(apiUrl('/api/routing'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }).catch(() => {}); } catch (_) {}
+    planPoster.offer(plan, hash);
   }
   // junction props (splitter/filter/merger) keyed by tile — derived from the compiled plan so the VISUAL engine
   // animates filters + mergers (not just splitters) using the SAME config the dispatch router routes by.
@@ -6263,6 +6324,7 @@ const World = (() => {
     liveCount: beltLiveSet ? Object.keys(beltLiveSet).length : 0,
     liveKeys: beltLiveSet ? Object.keys(beltLiveSet).sort() : [],
     nags: routingNags ? routingNags.map(n => n.label) : [],
+    planSync: planPoster.state(),   // plan delivery truth: lastHash committed ONLY on a server answer; stale=true while the sidecar may route by an older floor
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
