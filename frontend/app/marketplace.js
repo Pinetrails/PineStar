@@ -20,6 +20,8 @@ const Marketplace = (() => {
   let root = null, ctx = null, view = 'grid';   // 'grid' | 'save' | 'recipesave' | 'launch'
   let opener = null;
   let editingId = null, editingRecipeId = null, launchId = null;
+  // context-derived launch values from the READY shelf, keyed by recipe id (see readyShelfHTML/launchFormHTML)
+  let readySeeds = {};
   let pendingMintKey = null, pendingMintTemplate = null;
   // SCOUT handoff: the station-drafted recipe being reviewed in the editor. pendingScoutRecipeId is consumed on a
   // successful save (accept — retires the staged draft server-side, never denylists); scoutSeedDraft prefills the
@@ -486,7 +488,7 @@ const Marketplace = (() => {
     paintDossierAccent();
     decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
-    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); }   // "● live as a routine" + the last-run line, once their reads land
+    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); hydrateReadyShelf(); }   // "● live as a routine" + the last-run line, once their reads land
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
   }
   function renderDossier() {
@@ -496,7 +498,7 @@ const Marketplace = (() => {
     paintDossierAccent();
     decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
-    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); }   // refresh the live-routine + last-run lines for the focused recipe
+    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); hydrateReadyShelf(); }   // refresh the live-routine + last-run lines for the focused recipe
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
     root.querySelectorAll('.mkt-card').forEach(c => c.classList.toggle('sel', c.dataset.id === fid));
   }
@@ -670,6 +672,10 @@ const Marketplace = (() => {
       '<span class="mkt-hint">pick a recipe, fill in the blanks, and ' + esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
     if (!filtering && consentFirst) html += consentStripHTML();
     if (suggestedHasCards) html += suggestedShelfHTML();
+    // READY ON THIS STATION sits ABOVE the generic row on purpose: a card bound to a real project root the
+    // Commander granted outranks a varied lineup chosen because we know nothing. It renders '' when the
+    // station has no context, and then FOR YOU is the top shelf exactly as before.
+    html += readyShelfHTML();
     html += forYouShelfHTML();
 
     const builtins = filtRecipes(Recipes.builtins());
@@ -1426,6 +1432,125 @@ const Marketplace = (() => {
     items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));
     return '<div class="mkt-sect-h mkt-foryou-sect">' + head + '</div><div class="mkt-rec-rail">' +
       items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
+  }
+
+  /* ---------- READY ON THIS STATION — the context-bound shelf ----------
+     The library below is the same 98 cards for everybody. THIS shelf is not: it binds catalog recipes to
+     what this station actually has — granted project roots, connected channels, learned topics, and what
+     is already running as a routine — and states the evidence on every card. RecipeFit does the deciding
+     (pure, node-tested); everything here is gathering and painting.
+
+     ⛔ IT RENDERS NOTHING WHEN THERE IS NO CONTEXT. A station with no project granted and no channel
+     connected knows nothing about its Commander, and a "ready for you" shelf on top of that is theatre.
+     RecipeFit.offers returns [] and the Commander sees the honest library instead.
+
+     ⛔ AND IT NEVER BLOCKS THE PAINT. Every input is read from an already-cached best-effort fetch; a
+     sidecar that is down means a smaller shelf or none, never a stalled tab. */
+  let fitProjects = null, fitProjectsPending = null, fitChannels = null, fitChannelsPending = null;
+  function loadFitProjects() {
+    if (fitProjects) return Promise.resolve(fitProjects);
+    if (fitProjectsPending) return fitProjectsPending;
+    fitProjectsPending = fetch('/api/projects', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { projects: [] })
+      .then(d => {
+        fitProjects = (Array.isArray(d && d.projects) ? d.projects : []).map(p => ({
+          root: String((p && (p.root || p.path)) || ''),
+          name: String((p && (p.name || p.label)) || '') || basenameOf(String((p && (p.root || p.path)) || '')),
+          // REAL evidence about what KIND of folder this is — the projects API already computes it. Without it
+          // the shelf cannot tell a code repo from a folder of invoices and offers 'PR Sweep' against either.
+          git: !!(p && p.isGitRepo)
+        })).filter(p => p.root);
+        fitProjectsPending = null; return fitProjects;
+      })
+      .catch(() => { fitProjects = fitProjects || []; fitProjectsPending = null; return fitProjects; });
+    return fitProjectsPending;
+  }
+  function loadFitChannels() {
+    if (fitChannels) return Promise.resolve(fitChannels);
+    if (fitChannelsPending) return fitChannelsPending;
+    fitChannelsPending = fetch('/api/connectors', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { connectors: [] })
+      .then(d => {
+        const rows = Array.isArray(d && d.connectors) ? d.connectors : (Array.isArray(d && d.items) ? d.items : []);
+        // CONNECTED only — a configured-but-broken connector cannot be cited as a reason the station is ready.
+        fitChannels = rows.filter(c => c && c.connected !== false && c.status !== 'error')
+          .map(c => ({ id: String((c && c.id) || ''), label: String((c && (c.label || c.name || c.kind || c.id)) || '') }))
+          .filter(c => c.label);
+        fitChannelsPending = null; return fitChannels;
+      })
+      .catch(() => { fitChannels = fitChannels || []; fitChannelsPending = null; return fitChannels; });
+    return fitChannelsPending;
+  }
+  function basenameOf(p) { const s = String(p || '').replace(/[\\/]+$/, ''); const i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\')); return i >= 0 ? s.slice(i + 1) : s; }
+
+  // the context RecipeFit reasons over — every field is real, already-fetched station truth or [].
+  function fitContext() {
+    let launches = null;
+    try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {}
+    // a live cron job carries its recipe provenance in meta.recipeId (the R3 spine) — that is how we know
+    // a recipe is ALREADY running and must not be offered again.
+    const scheduled = (cronJobs || []).map(j => ({
+      recipeId: String((j && j.meta && j.meta.recipeId) || (j && j.recipeId) || '')
+    })).filter(j => j.recipeId);
+    return {
+      projects: fitProjects || [],
+      channels: fitChannels || [],
+      topics: learnedTopics(),
+      scheduled: scheduled,
+      launches: launches
+    };
+  }
+
+  function readyShelfHTML() {
+    if (!hasRecipes() || typeof RecipeFit === 'undefined') return '';
+    if (catFilter !== 'all' || query) return '';        // only in the clean top-level view
+    const ctx = fitContext();
+    let offers = [];
+    try { offers = RecipeFit.offers(Recipes.list(), ctx, { limit: 3 }) || []; } catch (_) { offers = []; }
+    if (!offers.length) return '';
+    // stash the context-derived values by id so the launch form can prefill from them (see launchFormHTML).
+    // Rebuilt from scratch on every shelf render, so a stale binding can never outlive the context that made it.
+    readySeeds = {}; offers.forEach(o => { if (o.values && Object.keys(o.values).length) readySeeds[o.recipe.id] = o.values; });
+    const basis = RecipeFit.basis(ctx);
+    offers.forEach((o, i) => trackRecommendation('recipe', o.recipe, o.why, i + 1));
+    // the basis strip is the audit trail: it names exactly what was looked at to produce the cards below it.
+    const head = '<div class="mkt-sect-h mkt-ready-sect">▲ READY ON THIS STATION' +
+      (basis ? '<span class="mkt-ready-basis">read: ' + esc(basis) + '</span>' : '') + '</div>';
+    return head + '<div class="mkt-rec-rail">' + offers.map(readyCardHTML).join('') + '</div>';
+  }
+
+  /* One context-bound card. Deliberately the SAME `.mkt-rec[data-id]` markup the other shelves use, so it
+     inherits their styling, focus behaviour and the one click handler at the bottom of renderStage —
+     a bespoke card here would need its own binding and would drift from the rest of the bay's look.
+     What it adds: the evidence line, the cadence chip, and — when the station pre-filled something — the
+     line saying what it filled. A form that silently arrives filled is one that gets launched unread. */
+  function readyCardHTML(o) {
+    const r = o.recipe;
+    const cad = r.cadence ? ' <span class="mkt-badge mkt-ready-cad">↻ ' + esc(cadenceLabelOf(r.cadence)) + '</span>' : '';
+    const fill = (o.bound || []).length
+      ? '<div class="mkt-ready-fill">↳ fills in ' + esc((o.bound || []).map(b => b.key + ': ' + b.label).join(' · ')) + '</div>' : '';
+    return '<button class="mkt-rec mkt-foryou mkt-ready-card" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      '<div class="mkt-rec-top">' + sealHTML(r, false) +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
+      '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + cad +
+        ' <span class="mkt-foryou-why mkt-ready-why">' + esc(o.why) + '</span></div>' + fill + '</button>';
+  }
+  function cadenceLabelOf(c) {
+    const m = { morning: 'every morning', weekly: 'weekly', sixhourly: 'every 6h', hourly: 'hourly' };
+    return m[String(c || '')] || String(c || '');
+  }
+
+  /* Re-derive the shelf when the context it is built from actually lands. The fetches are best-effort and
+     resolve after the first paint, so without this the shelf would be permanently empty on a cold open and
+     only appear on the SECOND visit — which reads as broken. Repaints once, only if something changed. */
+  function hydrateReadyShelf() {
+    if (!hasRecipes() || typeof RecipeFit === 'undefined') return;
+    const before = JSON.stringify(fitContext());
+    Promise.all([loadFitProjects(), loadFitChannels(), loadCronJobs()]).then(() => {
+      if (!root || tab !== 'recipes') return;
+      if (JSON.stringify(fitContext()) === before) return;   // nothing new landed — no repaint
+      renderStage();
+    }).catch(() => {});
   }
   // the station's LEARNED interest topics (server truth: GET /api/scout, cached in ProspectStore). Empty until a
   // read lands or the histogram warms — and an empty list makes every topic term exactly 0, so the shelves rank
@@ -2394,7 +2519,11 @@ const Marketplace = (() => {
     // lane C: prefill each field with the value this recipe launched with LAST time (LaunchMemory, own local key).
     // Confirm-by-sight safety: the values sit visibly in the form and nothing runs until the button — plus the
     // hint below names the mechanism. esc() covers the content (U.esc escapes & < > " ', so </textarea> can't break out).
-    const lastVals = (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {};
+    // CONTEXT BEATS MEMORY: a value the station just derived from a granted project root is fresher and more
+    // specific than whatever this recipe was launched with last time, so the READY shelf's binding wins. Both
+    // are visible in the form and nothing runs until the button — the confirm-by-sight safety is unchanged.
+    const seedVals = (readySeeds && readySeeds[r.id]) ? readySeeds[r.id] : {};
+    const lastVals = Object.assign({}, (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {}, seedVals);
     let prefilled = false;
     const fields = (r.params || []).map(p => {
       const val = (typeof lastVals[p.key] === 'string' && lastVals[p.key].trim()) ? lastVals[p.key] : (p.default || '');

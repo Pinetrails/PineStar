@@ -805,3 +805,21 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
   .mkt-grid { grid-template-columns: 1fr; }
   .mkt-foot .reg { display: none; }
 }
+
+/* ---------- READY ON THIS STATION — the context-bound recipe shelf ----------
+   Reuses .mkt-rec/.mkt-foryou wholesale (markup, focus, click) and only adds what this shelf says that the
+   others cannot: the audit strip naming what was read, the cadence chip, and the pre-fill line. Deliberately
+   sober — this shelf is a claim about the Commander's own station, so it should read as instrumentation
+   rather than a promotion. Matte, never glossy. */
+.mkt-sect-h.mkt-ready-sect { color: var(--gold); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+/* the audit trail: exactly what the station looked at to produce the cards below */
+.mkt-ready-basis { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .4px; text-transform: none; opacity: .85; }
+.mkt-ready-card { border-color: rgba(var(--gold-rgb), .38); }
+.mkt-ready-card:hover { border-color: rgba(var(--gold-rgb), .7); }
+.mkt-ready-card .mkt-rec-why-k { color: var(--gold); border-color: rgba(var(--gold-rgb), .45); }
+/* the evidence line carries this shelf's whole argument, so it reads brighter than a generic why */
+.mkt-ready-card .mkt-ready-why { color: var(--ph-bright); opacity: .95; }
+.mkt-ready-cad { color: var(--gold); border-color: rgba(var(--gold-rgb), .4); }
+/* what the station pre-filled, stated plainly — a silently filled form is one that gets launched unread */
+.mkt-ready-fill { margin-top: 5px; font-size: 10.5px; letter-spacing: .3px; color: var(--ph-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
