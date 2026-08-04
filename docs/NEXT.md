@@ -2507,3 +2507,18 @@ Evidence on the isolated branch: the plist parses as XML, the touched JavaScript
 517/517 green. A macOS artifact build and a real allow/deny/reset microphone round-trip remain
 unverified on this Windows host; the next macOS release candidate must prove the generated
 `StarNet.app/Contents/Info.plist` contains the key and exercise the prompt on real hardware.
+
+# READY TO MERGE 2026-08-04 — FIELD MANUAL SELECTION ACCESSIBILITY (`agent/quality-loop-0804d`)
+
+The Field Manual's five section buttons changed only the visual `.on` class, so assistive
+technology could not identify FIRST STEPS, THE LOOP, GEAR, WIRING, or GROWTH as the active
+section. The same selection predicate now emits `aria-pressed="true|false"`, the generated
+website mirror is synchronized, and an executable production-renderer regression locks the
+initial state plus the FIRST STEPS → GEAR transition.
+
+Live seeded proof on `:8930`: FIRST STEPS initially had the sole visual and pressed state;
+after choosing GEAR, GEAR alone was `.on` and `aria-pressed="true"`, its gear content was
+visible, and the browser warning/error log was empty. Focused regression: 3 assertions;
+website sync: 8 assertions; exact-code `test:fast`: 518/518 green. Frontend-only change, so
+`test:http` was not required. No merge, push, PR, deployment, publish, production-data,
+credential, or secret change was performed.

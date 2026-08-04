@@ -984,7 +984,7 @@ const Tutorial = (() => {
     body.classList.add('fm-body');
     const render = () => {
       body.innerHTML =
-        '<div class="fm-tabs">' + FM_TABS.map(t => '<button class="fm-tab' + (t === curTab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') +
+        '<div class="fm-tabs">' + FM_TABS.map(t => '<button class="fm-tab' + (t === curTab ? ' on' : '') + '" aria-pressed="' + (t === curTab ? 'true' : 'false') + '" data-t="' + t + '">' + t + '</button>').join('') +
         '</div><div class="fm-content">' + fmContent(curTab)
         + (curTab === 'FIRST STEPS' ? '<button class="fm-tab fm-replay" type="button">REPLAY QUICK TOUR</button>' : '')
         + '</div>';
