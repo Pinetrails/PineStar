@@ -300,6 +300,7 @@ test/maintquests.test.js
 test/maintqueststore.test.js
 test/questledgerstore.test.js
 test/kitout.test.js
+test/coach-dodge.test.js
 test/class-loadouts.test.js
 test/seeds.test.js
 test/seedstore.test.js

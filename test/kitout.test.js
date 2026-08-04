@@ -61,8 +61,12 @@ A.ok(/class = 'tut-coach-bail'|className = 'tut-coach-bail'/.test(tut), 'every k
 A.ok(/e\.key !== 'Escape'[\s\S]{0,200}\.refit-overlay'\)[\s\S]{0,80}#terms \.term'\)\) return;\s*kitBail\(\)/.test(tut),
   'Esc bails only when nothing else claims the key — not over REFIT, not over an open station panel');
 
-/* ---------- P1: the tour's two closing surfaces must not cover each other ---------- */
-A.ok(/function dodgeBrief\(/.test(tut), 'the coachmark dodges the FIRST STEPS brief');
-A.ok(/dodgeBrief\(\{ left, top, w: bw, h: bh \}, vw\)/.test(tut), 'placeCoach routes its computed box through the dodge');
+/* ---------- P1: the tour's two closing surfaces must not cover each other ----------
+   (the GEOMETRY itself is unit-tested for real in test/coach-dodge.test.js — these only lock the wiring) */
+A.ok(/function dodgeBrief\(/.test(tut), 'the coachmark measures the live FIRST STEPS brief');
+A.ok(/dodgeBrief\(\{ left, top, w: bw, h: bh \}, vw, vh\)/.test(tut), 'placeCoach routes its computed box through the dodge');
+A.ok(/^function dodgeRect\(box, brief, vw, vh\)/m.test(tut), 'the geometry is a pure top-level fn, not trapped in the IIFE');
+A.ok(/typeof module !== 'undefined' && module\.exports\) module\.exports = \{ dodgeRect \}/.test(tut),
+  'and it is exported under the same browser-safe guard stationui.js uses, so the gate can run it');
 
 A.report('kitout.test');
