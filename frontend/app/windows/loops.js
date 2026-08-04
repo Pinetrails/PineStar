@@ -1,6 +1,8 @@
-/* STARNET — windows/loops.js : the LOOPS window (standing objectives).
+/* STARNET — windows/loops.js : the LOOPS lane of the AUTOMATION window (standing objectives).
 
-   Loads AFTER stationui.js (see index.html) and registers itself via StationUI.registerWindow; the only
+   Loads AFTER stationui.js and windows/automation.js (see index.html) and registers itself as an
+   AutomationWindow LANE — its two sections (ACTIVE LOOPS · START A LOOP) mount inside the shared
+   AUTOMATION console rather than a window of their own (NAV CONDENSE 2026-08-04). The only
    stationui internals it touches are the enumerated StationUI.h helper surface.
 
    ROUTINES answer WHEN. LOOPS answer UNTIL. A loop keeps working at one standing objective and stops for the
@@ -20,10 +22,10 @@
        everything built on top of it. */
 'use strict';
 (() => {
-  if (typeof StationUI === 'undefined' || !StationUI.registerWindow) return;
+  if (typeof StationUI === 'undefined' || typeof AutomationWindow === 'undefined') return;
   const H = StationUI.h;
   const esc = H.esc, sfx = H.sfx, notify = H.notify, fmtRel = H.fmtRel;
-  const mountConsole = H.mountConsole, consoleSection = H.consoleSection;
+  const consoleSection = H.consoleSection;
 
   let pickedId = 'build-test-verify';   // window-local: which shape the START pane is showing
   let loopAgentId = 'agent';
@@ -34,7 +36,7 @@
 
   const T = () => (typeof LoopTemplates !== 'undefined' ? LoopTemplates : null);
 
-  function buildLoops(body) {
+  function loopsLane(body) {
     const roster = H.present.length ? H.present : [{ id: 'agent', name: 'Agent', color: 'var(--ph)' }];
     if (!roster.some(a => a && a.id === loopAgentId)) loopAgentId = (H.present[H.sel] && H.present[H.sel].id) || roster[0].id || 'agent';
 
@@ -62,11 +64,14 @@
       '</div>' +
       '<div id="lp-msg" class="msg"></div>';
     const frag = h => (el => { el.innerHTML = h; });
-    mountConsole(body, 'loops', [
-      { id: 'active', label: 'ACTIVE LOOPS', glyph: '∞', desc: 'Standing objectives, what each is waiting on, and the work queued for your verdict.', build: frag(secActive) },
-      { id: 'start', label: 'START A LOOP', glyph: '✦', desc: 'Pick a shape — build/test/verify, sweep & fix, or research — fill two blanks, and it goes.', build: frag(secStart) }
-    ], { search: false });
-
+    // section ids are namespaced (loops / loops-start) because they share the AUTOMATION console's rail
+    // with the routines lane. wire() runs after mountConsole has appended every pane to `body`, so all
+    // the querySelector wiring below resolves exactly as it always did.
+    const sections = [
+      { id: 'loops', label: 'ACTIVE LOOPS', glyph: '∞', desc: 'Standing objectives, what each is waiting on, and the work queued for your verdict.', build: frag(secActive) },
+      { id: 'loops-start', label: 'START A LOOP', glyph: '✦', desc: 'Pick a shape — build/test/verify, sweep & fix, or research — fill two blanks, and it goes.', build: frag(secStart) }
+    ];
+    function wire() {
     const listEl = body.querySelector('#lp-list'), gateEl = body.querySelector('#lp-gate');
     const shapesEl = body.querySelector('#lp-shapes'), formEl = body.querySelector('#lp-form'), msgEl = body.querySelector('#lp-msg');
     const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -302,8 +307,8 @@
           const cta = listEl.querySelector('#lp-empty-cta');
           if (cta) cta.addEventListener('click', () => {
             sfx('click');
-            consoleSection['loops'] = 'start';
-            const tab = body.querySelector('#con-tab-loops-start'); if (tab) tab.click();
+            consoleSection['automation'] = 'loops-start';
+            const tab = body.querySelector('#con-tab-automation-loops-start'); if (tab) tab.click();
           });
         }
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">station offline — start it to manage loops.</div>'; }
@@ -598,8 +603,8 @@
         sfx('click');
         formEl.querySelectorAll('.lp-p').forEach(el => { el.value = ''; });
         body.querySelector('#lp-s3').hidden = true;
-        consoleSection['loops'] = 'active';
-        const tab = body.querySelector('#con-tab-loops-active'); if (tab) tab.click();
+        consoleSection['automation'] = 'loops';
+        const tab = body.querySelector('#con-tab-automation-loops'); if (tab) tab.click();
         refresh();
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'could not reach the station') + '</span>'; sfx('bad'); }
     }
@@ -607,9 +612,12 @@
     shapeCards(); renderForm(); refresh();
     // poll while the window is open — a loop advances on its own tick, so the panel must not go stale.
     const poll = setInterval(() => { if (body.isConnected) refresh(); else clearInterval(poll); }, 4000);
+    }
+
+    return { sections, wire };
   }
 
-  StationUI.registerWindow('loops', 'LOOPS', buildLoops, { console: true });
+  AutomationWindow.registerLane(loopsLane);
 
   /* ================= THE WATCHER — a loop that needs you must SAY so =====================================
      A loop's whole cadence depends on the Commander noticing that it stopped. Without this it parks on a full
@@ -617,7 +625,8 @@
      looks broken and the feature quietly fails. This runs whenever the app is up (not only while the window
      is open) and does two things:
 
-       · a COUNT BADGE on the ∞ LOOPS dock button, so the state is visible at a glance;
+       · a COUNT BADGE on the AUTOMATION dock item (the loops' home since the ROUTINES+LOOPS merge),
+         so the state is visible at a glance;
        · ONE toast per newly-arrived candidate, keyed by (loopId, iteration) so a poll never re-announces
          work already announced — including across a reload, because the seen-set is persisted.
 
@@ -630,7 +639,7 @@
   const saveSeen = (s) => { try { localStorage.setItem(SEEN_KEY, JSON.stringify([...s].slice(-400))); } catch (_) {} };
 
   function paintBadge(n) {
-    const btn = document.querySelector('.bb[data-term="loops"]');
+    const btn = document.querySelector('.bb[data-term="automation"]');
     if (!btn) return;
     let dot = btn.querySelector('.lp-badge');
     if (!n) { if (dot) dot.remove(); return; }
