@@ -663,7 +663,7 @@ const Tutorial = (() => {
     setTimeout(() => {
       if (typeof PitchStore !== 'undefined' && PitchStore.offerStarter) PitchStore.offerStarter();
       showCoach('quests', '.bb-group[data-group="work"] .bb-grp',
-        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ⏱ ROUTINES (any job on a schedule). nothing in there is ever gated.');
+        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ∞ AUTOMATION (routines & loops — standing work). nothing in there is ever gated.');
     }, skipped ? 900 : 1400);
   }
 

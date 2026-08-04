@@ -156,6 +156,17 @@ A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null'
   A.ok(r.setStation(good).ok, 'good Station routing installs first');
   A.ok(!r.setStation(bad).ok, 'non-deployable Station routing update is refused');
   A.eq(r.resolveTarget({}), 'real', 'last-good Station routing survives the refused update');
+
+  /* refusal must NOT depend on install order (latent bug, fixed 2026-08-04): the old guard was
+     `!v.routingOk && stationPlan`, so the SAME cyclic doc refused above was ACCEPTED when it was the
+     FIRST install (no stationPlan yet) — claiming ok while arming no routing. A fresh router must
+     refuse it identically. */
+  const first = makeRouter();
+  const res = first.setStation(bad);
+  A.ok(!res.ok, 'a non-deployable Station is refused on FIRST install too (no prior station required)');
+  A.ok(Array.isArray(res.codes) && res.codes.indexOf('CYCLE') >= 0, 'the first-install refusal names the real blocker (CYCLE)');
+  A.eq(first.getStation(), null, 'the refused first install stores no station document');
+  A.eq(first.resolveTarget({}), null, '...and arms no routing (dispatch falls back)');
 }
 
 // a connector portal carries a per-instance binding: stationFor passes the rich object through verbatim, so the

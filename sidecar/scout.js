@@ -38,7 +38,20 @@
   const STATE_VERSION = 1;
   const MINT_EVERY_RUNS = 3;                 // moderate loosening: a mint attempt every ~3 qualifying runs…
   const MINT_MIN_GAP_MS = 30 * 60 * 1000;    // …but never two attempts within half an hour…
-  const MAX_LIVE = 3;                        // …and never more than 3 undecided drafts per kind on the shelf
+  /* …and a per-kind ceiling on undecided drafts. RECIPES get a deeper shelf than PROSPECTS on purpose: a
+     recipe draft is a cheap, low-commitment offer the Commander skims and accepts or waves away, and the
+     shelf is the product's discovery surface — three at a time made it feel like a trickle. A prospect is a
+     whole agent joining the crew, a much heavier decision, so a deep queue there would be nagging rather
+     than helpful. liveCap() is the ONLY reader; MAX_LIVE remains the default for any kind added later. */
+  const MAX_LIVE = 3;
+  const MAX_LIVE_BY_KIND = { prospect: 3, recipe: 6 };
+  function liveCap(kind) {
+    const n = MAX_LIVE_BY_KIND[kind];
+    return Number.isFinite(n) && n > 0 ? n : MAX_LIVE;
+  }
+  // the retained-rows ceiling for a hydrated save: generous headroom over the sum of every kind's cap, so a
+  // normalize() can never silently drop a draft that is still legitimately live.
+  const STAGED_RETAIN = Object.keys(MAX_LIVE_BY_KIND).reduce((a, k) => a + MAX_LIVE_BY_KIND[k], 0) * 2;
   const DRAFT_TTL_MS = 14 * 86400000;        // …and an undecided draft is not forever: it ages out on the same
                                              //   14-day horizon interests decay over (interests.DECAY_HALF_LIFE_MS),
                                              //   so stale drafts never wedge the shelf at binding:'full'
@@ -90,7 +103,7 @@
     if (raw && typeof raw === 'object') {
       if (Array.isArray(raw.staged)) {
         s.staged = raw.staged.filter(it => it && typeof it === 'object' && str(it.id) && KINDS.indexOf(it.kind) !== -1 && it.draft && typeof it.draft === 'object')
-          .slice(0, MAX_LIVE * KINDS.length * 2)
+          .slice(0, STAGED_RETAIN)
           .map(it => ({ id: str(it.id), kind: it.kind, draft: it.draft, why: str(it.why).slice(0, WHY_MAX), fingerprint: str(it.fingerprint), at: Number.isFinite(it.at) ? Math.floor(it.at) : 0 }));
       }
       if (Array.isArray(raw.denylist)) s.denylist = raw.denylist.map(str).filter(Boolean).slice(-DENYLIST_CAP);
@@ -142,14 +155,14 @@
     const s = normalize(state, now);
     if (!(inp && inp.warm)) {
       if (inp && inp.dossierWarm && !s.coldStartDone && s.runsSinceMint >= 1) {
-        if (liveCount(s, 'recipe') >= MAX_LIVE) return { fire: false, binding: 'full', kind: null };
+        if (liveCount(s, 'recipe') >= liveCap('recipe')) return { fire: false, binding: 'full', kind: null };
         return { fire: true, binding: null, kind: 'recipe', coldStart: true };
       }
       return { fire: false, binding: 'cold', kind: null };
     }
     if (s.runsSinceMint < MINT_EVERY_RUNS) return { fire: false, binding: 'cooldown', kind: null };
     if (now - s.lastMintAt < MINT_MIN_GAP_MS) return { fire: false, binding: 'gap', kind: null };
-    const open = KINDS.filter(k => liveCount(s, k) < MAX_LIVE);
+    const open = KINDS.filter(k => liveCount(s, k) < liveCap(k));
     if (!open.length) return { fire: false, binding: 'full', kind: null };
     let kind;
     if (open.length === 1) kind = open[0];
@@ -540,7 +553,7 @@
     matchArchetype, archetypeDraft,
     note, sweep, stage, stampAttempt, dismiss, accept, setContext, noteLaunch, noteRated, topLaunched, launchHints,
     fingerprint, overlap,
-    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, DRAFT_TTL_MS, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP,
+    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, MAX_LIVE_BY_KIND, liveCap, DRAFT_TTL_MS, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP,
     ARCH_MIN_TOPIC_WEIGHT
   };
 });
