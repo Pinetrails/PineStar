@@ -62,6 +62,7 @@ try {
     const bundle = Recovery.capture({
       workspaceRoot: workspace,
       browserStore: browserStoreFrom(a['browser-state']),
+      now: Date.now(),
       appVersion: a['app-version'] || 'unknown',
       lastCompletedMutation: a.mutation == null ? null : String(a.mutation)
     });

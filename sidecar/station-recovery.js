@@ -206,6 +206,7 @@ function capture(opts) {
   const path = o.path || pathNative;
   const root = path.resolve(String(o.workspaceRoot || ''));
   if (!o.workspaceRoot || !fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new Error('capture requires an existing workspaceRoot directory');
+  if (!Number.isFinite(o.now)) throw new Error('capture requires an injected numeric now');
   const files = [];
   const skipped = [];
   const reauthentication = [];
@@ -253,7 +254,7 @@ function capture(opts) {
   const bundle = {
     schema: SCHEMA,
     version: VERSION,
-    createdAt: Number.isFinite(o.now) ? o.now : Date.now(),
+    createdAt: o.now,
     appVersion: safeId(o.appVersion, 'unknown'),
     source: { workspaceName: path.basename(root), platform: safeId(o.platform, process.platform) },
     recoveryPoint: {
@@ -307,7 +308,7 @@ function writeBundleAtomic(opts) {
   const file = path.resolve(String(o.file || ''));
   if (!o.file) throw new Error('writeBundleAtomic requires file');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temp = file + '.tmp-' + process.pid + '-' + String(o.nonce || Date.now());
+  const temp = file + '.tmp-' + process.pid + '-' + String(o.nonce || o.bundle.manifestSha256.slice(0, 16));
   const raw = Buffer.from(JSON.stringify(o.bundle, null, 2) + '\n', 'utf8');
   let fd;
   try {
@@ -348,7 +349,7 @@ function restore(opts) {
   const target = safeTarget(o.targetRoot, path);
   const parent = path.dirname(target);
   fs.mkdirSync(parent, { recursive: true });
-  const stage = target + '.restore-stage-' + process.pid + '-' + String(o.nonce || Date.now());
+  const stage = target + '.restore-stage-' + process.pid + '-' + String(o.nonce || o.bundle.manifestSha256.slice(0, 16));
   const rollback = target + '.rollback-' + String(o.rollbackId || o.bundle.createdAt);
   if (fs.existsSync(stage)) throw new Error('restore staging directory already exists: ' + stage);
   if (fs.existsSync(target) && !o.replaceExisting) throw new Error('restore target is not clean; pass replaceExisting to retain it as a rollback generation');
