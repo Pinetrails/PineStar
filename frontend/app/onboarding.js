@@ -104,9 +104,9 @@ const Onboarding = (() => {
       { dossierDim: 'pain', optional: true,
         prompt: 'now the part i exist for. what’s a task you have to do over and over that you wish you never had to do again?',
         options: [
-          { label: 'Copy-pasting between apps', steer: 'which apps? describe the last time it happened — the specific time, what you were moving and where.' },
-          { label: 'The same email, again', steer: 'to who, about what? give me the gist of the last one you sent.' },
-          { label: 'Hunting through files & tabs', steer: 'hunting for what? name the thing you lost last time and where it was hiding.' },
+          { label: 'Copy-pasting between apps', steer: 'which apps? describe the last time it happened — the specific time, what you were moving and where. and how often does that trip happen?' },
+          { label: 'The same email, again', steer: 'to who, about what? give me the gist of the last one you sent — and how often do you end up sending it?' },
+          { label: 'Hunting through files & tabs', steer: 'hunting for what? name the thing you lost last time and where it was hiding. how often does the hunt happen?' },
           { label: 'Skip for now', value: '', skip: true }
         ],
         custom: true, customLabel: 'type your answer', placeholder: 'the task you’d pay to never do again…',
@@ -639,7 +639,7 @@ const Onboarding = (() => {
         if (!running) return;
       }
     }
-    beatTotal = loose ? 5 : 9;
+    beatTotal = loose ? 4 : 10;   // loose: pain, year, read, cadence · deep adds tuesday/dig/stack/lost/dream
 
     // B2 + B3 (deep only). THE TUESDAY — the scene that contains the identity — then THE DIG: the mind's
     // own next question, grounded in their exact words. The dig also pre-authors B4/B6 chips for THIS person.
@@ -691,7 +691,7 @@ const Onboarding = (() => {
       let step = painStep;
       if (digReply && digReply.painChips && digReply.painChips.length >= 2) {
         step = Object.assign({}, painStep, {
-          options: digReply.painChips.map(c => ({ label: c, steer: 'that one? then give me the real instance — the last time it actually happened.' }))
+          options: digReply.painChips.map(c => ({ label: c, steer: 'that one? then give me the real instance — the last time it actually happened, and how often it comes back.' }))
             .concat([{ label: 'Skip for now', value: '', skip: true }])
         });
       }
@@ -725,10 +725,28 @@ const Onboarding = (() => {
       }
     }
 
-    // B5. LOST TIME — where the hours go WILLINGLY: effortless to answer, and it mines what they love
-    // (where long-term direction hides). Their words land verbatim as a stated identity belief.
+    // B4b. THE STACK (deep only) — the one plain fact that aims connectors, recipes, and channels: the
+    // actual apps the pain lives in. Direct question, no fake listening, so it is honestly askable on a
+    // quiet mind too. Lands verbatim as a stated `stack` belief (askStep's dossierDim path) — the dim the
+    // COMMANDER panel already renders as "Stack & tools" and the synthesis is told not to restate.
+    let stackT = '';
+    if (!loose && painT) {
+      stackT = (await askStep({
+        dossierDim: 'stack', optional: true,
+        prompt: 'which apps or tools does that actually happen in? name them.',
+        options: [{ label: 'Skip for now', value: '', skip: true }],
+        custom: true, customLabel: 'type your answer', placeholder: 'the apps it lives in — names, not categories…',
+        build: () => null,
+        ack: t => t ? 'noted — that’s where i’ll learn to work.' : 'fine — i’ll see them soon enough.'
+      })).text;
+      if (!running) return;
+    }
+
+    // B5. LOST TIME (deep only) — where the hours go WILLINGLY: effortless to answer, and it mines what
+    // they love (where long-term direction hides). Their words land verbatim as a stated identity belief.
+    // Loose skips it: the fork promised "two small ones" (pain + the year) and the promise must be true.
     let lostT = '';
-    {
+    if (!loose) {
       lostT = (await askStep({
         dossierDim: 'identity', optional: true,
         prompt: 'flip side — what part of your work do you actually enjoy? the thing you’d happily spend the whole day on if nothing else got in the way?',
@@ -774,7 +792,7 @@ const Onboarding = (() => {
       if (yearT) {
         if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: yearT, source: 'onboarding', weight: 'stated' });
         bumpTruth();
-        const pending = brainReady() ? llmCall(WakeMind.buildYearReply({ year: yearT, tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, lost: lostT, name: NAME })) : null;
+        const pending = brainReady() ? llmCall(WakeMind.buildYearReply({ year: yearT, tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, lost: lostT, name: NAME })) : null;
         const reply = await mindWait(pending, WakeMind.parseYearReply, AMBITION_PATTER, PAIN_REPLY_MS);
         if (!running) return;
         if (reply) upsertSynthBeliefs(reply.beliefs);
@@ -805,7 +823,18 @@ const Onboarding = (() => {
     // SKIPS this beat entirely — a canned offer would be fake listening.
     let grabbedMove = '';
     if (!loose && brainReady() && (tuesdayT || painT || yearT || lostT)) {
-      const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, lost: lostT, year: yearT, dream: dreamT, capabilities: [], name: NAME };
+      // the agent's REAL hands: live placed caps (object=capability), labeled with the same power-words the
+      // palette uses. Empty on a fresh awakening (honest — the kit-out is still ahead, and the mirror's
+      // directive now teaches CONDITIONAL offers for that case); populated on a deferred interview whose
+      // Commander already wired gear.
+      const liveCaps = (() => {
+        try {
+          const ids = (typeof World !== 'undefined' && World.heroCaps) ? (World.heroCaps('agent') || []) : [];
+          const L = (typeof WorldModel !== 'undefined' && WorldModel.CAP_LABEL) ? WorldModel.CAP_LABEL : {};
+          return ids.map(c => ({ id: String(c), label: L[c] || String(c) }));
+        } catch (_) { return []; }
+      })();
+      const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, lost: lostT, year: yearT, dream: dreamT, capabilities: liveCaps, name: NAME };
       let mir = await mindWait(llmCall(WakeMind.buildMirror(mirrorCtx)), WakeMind.parseMirror, MIRROR_PATTER, SYNTHESIS_MS);
       if (!running) return;
       let askedElse = false;
@@ -858,9 +887,9 @@ const Onboarding = (() => {
     //    time, the year, the grabbed offer), and on a thin/loose run the directive makes the read OWN the
     //    thinness — "i barely know you yet" is the honest read, never faked familiarity.
     let purposeDone = false;
-    const gaveAnything = !!(tuesdayT || digT || painT || aboutT || lostT || yearT || dreamT || grabbedMove);
+    const gaveAnything = !!(tuesdayT || digT || painT || aboutT || stackT || lostT || yearT || dreamT || grabbedMove);
     const synPending = brainReady()
-      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
+      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, stack: stackT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
     if (synPending) {
       await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)]);
       if (!running) return;

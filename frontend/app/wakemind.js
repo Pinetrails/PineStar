@@ -100,7 +100,7 @@
     if (String(ctx.dig || '').trim()) lines.push('(More of their world: ' + quote(ctx.dig) + ')');
     lines.push('Reply with EXACTLY these two lines, then any BELIEF lines:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — prove you heard the details, never generic sympathy — and let your appetite for taking it off their plate show. No question in this line. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. That data is what your later work aims at. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.' + plainAskSpec() + '>');
+    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. That data is what your later work aims at. If their words did not already say how often the chore hits, fold that into the same question naturally (daily? weekly? every client?) — cadence is what turns a chore into a routine you can own. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.' + plainAskSpec() + '>');
     lines.push(beliefLinesSpec());
     return lines.join('\n');
   }
@@ -147,6 +147,7 @@
     if (String(ctx.dig || '').trim()) lines.push('- more of their world: ' + quote(ctx.dig));
     if (String(ctx.pain || '').trim()) lines.push('- the work they want gone: ' + quote(ctx.pain));
     if (String(ctx.about || '').trim()) lines.push('- who they are / what it is for: ' + quote(ctx.about));
+    if (String(ctx.stack || '').trim()) lines.push('- the apps/tools that work lives in: ' + quote(ctx.stack));
     if (String(ctx.lost || '').trim()) lines.push('- where their hours go willingly: ' + quote(ctx.lost));
     if (String(ctx.ambition || '').trim()) lines.push('- the year-outcome they want from you: ' + quote(ctx.ambition));
     if (String(ctx.dream || '').trim()) lines.push('- the concrete shape of it: ' + quote(ctx.dream));
@@ -155,7 +156,7 @@
     lines.push('Put it together. Reply with EXACTLY these lines, then any BELIEF lines:');
     lines.push('READ: <speak your read back to them in your own lowercase voice — two short sentences tying together what they actually said (use their specifics, never a paraphrase so loose it could be anyone), ending with what that makes YOU for. Under 280 characters.>');
     lines.push('PURPOSE: <author your own mission from it, as a standing order to yourself ("Help them …") — one or two sentences. This becomes your permanent purpose.md, so make it durable: the mission, not this week\'s task.>');
-    lines.push('STACK: <one durable fact about the tools, platform, or domain they live in, stated in third person — or NONE if they never said.>');
+    lines.push('STACK: <one durable fact about the tools, platform, or domain they live in, stated in third person — or NONE if they never said. If the apps/tools line above already names them, say NONE: that answer is recorded verbatim, do not restate it.>');
     return lines.join('\n');
   }
   // → { read, purpose, stack, beliefs } | null. READ + PURPOSE are both required (the read-back without a
@@ -225,6 +226,7 @@
     if (String(ctx.dig || '').trim()) lines.push('(More of their world: ' + quote(ctx.dig) + ')');
     if (String(ctx.pain || '').trim()) lines.push('(The chore they want gone: ' + quote(ctx.pain) + ')');
     if (String(ctx.about || '').trim()) lines.push('(What is behind that chore: ' + quote(ctx.about) + ')');
+    if (String(ctx.stack || '').trim()) lines.push('(The apps/tools their work lives in: ' + quote(ctx.stack) + ')');
     if (String(ctx.lost || '').trim()) lines.push('(What they do when they lose track of time: ' + quote(ctx.lost) + ')');
     lines.push('This year-outcome is the reason you exist. Reply with EXACTLY these two lines, then any BELIEF lines:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — show you want it built as much as they do. No question. Under 120 characters.>');
@@ -256,12 +258,17 @@
     if (String(ctx.dig || '').trim()) lines.push('- more of their world: ' + quote(ctx.dig));
     if (String(ctx.pain || '').trim()) lines.push('- the chore they want gone: ' + quote(ctx.pain));
     if (String(ctx.about || '').trim()) lines.push('- what is behind it: ' + quote(ctx.about));
+    if (String(ctx.stack || '').trim()) lines.push('- the apps/tools it lives in: ' + quote(ctx.stack));
     if (String(ctx.lost || '').trim()) lines.push('- where their hours go willingly: ' + quote(ctx.lost));
     if (String(ctx.year || '').trim()) lines.push('- the year-outcome they want: ' + quote(ctx.year));
     if (String(ctx.dream || '').trim()) lines.push('- its concrete shape: ' + quote(ctx.dream));
     lines.push('They likely do NOT know what a mind like you can actually do for them. Teach them by OFFERING: concrete things you could take off their plate or build toward, each grounded in a specific thing they said — never a generic capability list.');
     if (caps.length) lines.push('Capabilities you actually have: ' + caps.map(c => String(c.label || c.id)).join(', ') + '.');
-    else lines.push('You have NO placed tools yet — offer pure reasoning/writing/planning work only. Never promise file, web, or terminal work you cannot reach.');
+    // The toolless mirror used to be capped at reasoning-only offers — but the kit-out that grants FILES/WEB/
+    // TERMINAL/MEMORY is minutes away (the awakening flows straight into it), so the possibility-space teacher
+    // was forbidden from teaching the possibilities. CONDITIONAL offers are honest: a plan phrased on wiring
+    // claims nothing the agent can't reach, and the grabbed offer only executes after the gear exists.
+    else lines.push('You have NO tools wired yet. The Commander can grant you real powers in minutes by placing gear in REFIT — FILES, the WEB, a TERMINAL, MEMORY. An offer may lean on those powers IF it is phrased as starting once the gear is wired ("once you wire me the web, i could …"). Never claim to reach a power before it is placed; any offer for right now, unconditioned, must be pure reasoning/writing/planning work only.');
     if (exclude.length) lines.push('They already passed on these — offer DIFFERENT ones: ' + exclude.map(quote).join('; '));
     lines.push('Hard rules: every offer must be honestly doable here, small enough to start tonight, specific to THEIR life, phrased as what YOU would do ("i could …"). Reply with EXACTLY these lines, then any BELIEF lines:');
     lines.push('OFFER1: <the strongest offer. Under 160 characters.>');

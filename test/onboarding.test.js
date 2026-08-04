@@ -153,8 +153,25 @@ A.ok(/llmCall\(WakeMind\.buildDigReply\(\{\s*tuesday:\s*tuesdayT/.test(src),
 A.ok(/say i work for you for a year\. free\. tireless\./.test(src), 'the year question is the signature ask');
 A.ok(/Direction open — wants the station to help discover what to build\.[\s\S]{0,80}weight:\s*'seed'/.test(src),
   'the no-idea-yet out lands as a seed note (LOW-BY-CHOICE, hunt mode inherits)');
+// B4 cadence (2026-08-03): every scripted pain steer also surfaces HOW OFTEN — the fact that turns a
+// chore into a routine. The generated ask carries the same instruction in wakemind's buildPainReply.
+A.ok(/how often does that trip happen\?/.test(src) && /how often do you end up sending it\?/.test(src) && /how often does the hunt happen\?/.test(src),
+  'all three scripted pain steers fold cadence into the ask');
+A.ok(/and how often it comes back\.'/.test(src), 'the dig-personalized pain steer folds cadence in too');
+// B4b the stack (2026-08-03): a plain direct question — honestly askable on a quiet mind — whose answer
+// lands verbatim as a stated `stack` belief (the dim the COMMANDER panel renders as "Stack & tools").
+A.ok(/dossierDim:\s*'stack'/.test(src) && /which apps or tools does that actually happen in\? name them\./.test(src),
+  'the stack question exists and writes through the dossier chokepoint');
+A.ok(/if \(!loose && painT\) \{[\s\S]{0,400}dossierDim:\s*'stack'/.test(src),
+  'the stack ask is deep-path only and grounded on a given pain (never a cold non sequitur)');
+// B5 loose honesty (2026-08-03): the fork promises "two small ones" — so loose asks exactly pain + year.
+A.ok(/let lostT = '';\s*\n\s*if \(!loose\) \{/.test(src.replace(/\r/g, '')),
+  'lost-time is deep-path only, keeping the two-small-ones promise true');
 // B7 the mirror: offers are generated (possibility-space teaching); a grab arms the proof beat.
 A.ok(/llmCall\(WakeMind\.buildMirror\(/.test(src), 'the mirror offers are generated, never canned');
+A.ok(/World\.heroCaps\('agent'\)/.test(src) && /capabilities:\s*liveCaps/.test(src),
+  'the mirror sees the agent\'s REAL placed caps, not a hardcoded empty list');
+A.ok(/stack:\s*stackT/.test(src), 'the stated stack rides into the mirror/year/synthesis contexts');
 A.ok(/PitchStore\.armFirstMove\(grabbedMove\)/.test(src),
   'a grabbed offer arms the post-tour first move (the one below-gate starter allowed)');
 // B8 thin honesty: a loose/empty run synthesizes with thin:true and its purpose lands as a SEED belief.
