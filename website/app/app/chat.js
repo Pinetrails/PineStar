@@ -6509,6 +6509,10 @@ const Chat = (() => {
         // Flag this stream so that WHEN the sidecar is provably back (health probe on reconnect) we tell the
         // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
         if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
+        // the run DIED in flight — settle the stream's outcome so the task board's chip can never claim
+        // "DONE — REVIEW & SHIP" over a dead run (truthful telemetry). Guarded on thisRunId: no run ever
+        // started (e.g. a preflight failure) → nothing was filed, nothing to settle.
+        if (thisRunId && typeof Workstreams !== 'undefined' && Workstreams.noteRunEnd) Workstreams.noteRunEnd(ws.id, thisRunId, false);
         persistPartial(ws, acc);
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // so the failure survives a switch-back, not just a transient notify
@@ -6517,6 +6521,9 @@ const Chat = (() => {
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
         }
       } else {
+        // the run COMPLETED (cleanly, or via a stop / cut-short — either way the stream did not die):
+        // settle the outcome so the board's DONE chip is anchored to a real finished run.
+        if (thisRunId && typeof Workstreams !== 'undefined' && Workstreams.noteRunEnd) Workstreams.noteRunEnd(ws.id, thisRunId, true);
         let replyText = reply || acc;
         const taskQuestion = (isTask && typeof TaskIntent !== 'undefined' && TaskIntent.parse) ? TaskIntent.parse(replyText) : null;
         if (taskQuestion) {

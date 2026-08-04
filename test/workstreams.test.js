@@ -348,4 +348,29 @@ A.eq(W.get('kept_chat').kind, 'chat', 'kind survives a serialize/init round-trip
   A.eq(W.get(anchored.id).projectRoot, 'C:\\proj\\repo', 'projectRoot survives a serialize/init round-trip');
 }
 
+/* ---------- lastRunOk: a run that DIED can never read as DONE on the board (truthful telemetry) ---------- */
+W.reset();
+const fr = W.create('failing task', { kind: 'task' });
+A.eq(fr.lastRunOk, null, 'a fresh stream has no run outcome (null = unknown)');
+W.appendRun(fr.id, 'run_f1');
+A.eq(fr.lastRunOk, null, 'a run in flight has no outcome yet');
+A.ok(W.noteRunEnd(fr.id, 'run_f1', false) === true, 'noteRunEnd settles the failure');
+A.eq(fr.lastRunOk, false, 'the failed outcome is stored');
+W.appendRun(fr.id, 'run_f2');
+A.eq(fr.lastRunOk, null, 'a NEW run resets the outcome to unknown (a retry must not inherit the old failure)');
+A.ok(W.noteRunEnd(fr.id, 'run_f1', true) === false, 'a STALE runId cannot settle the current run');
+A.eq(fr.lastRunOk, null, 'the stale callback was refused — outcome still unknown');
+A.ok(W.noteRunEnd(fr.id, 'run_f2', true) === true, 'the current run settles ok');
+A.eq(fr.lastRunOk, true, 'the success outcome is stored');
+A.ok(W.appendRun(fr.id, 'run_f2') === true && fr.lastRunOk === true, 'a dup re-file of the SAME run does not erase a settled outcome');
+A.ok(W.noteRunEnd(fr.id, 'run_never', false) === false, 'a runId that was never filed is refused (unanchored outcome)');
+A.ok(W.noteRunEnd('ws_no_such', 'run_f2', false) === false, 'unknown stream refused');
+const noRun = W.create('never ran', { kind: 'task', activate: false });
+A.ok(W.noteRunEnd(noRun.id, 'run_x', true) === false, 'a stream with NO filed runs cannot take an outcome');
+W.noteRunEnd(fr.id, 'run_f2', false);   // flip to failed, then prove it survives persistence
+const dumpedRun = JSON.parse(JSON.stringify(W.serialize()));
+W.init(dumpedRun);
+A.eq(W.get(fr.id).lastRunOk, false, 'lastRunOk survives a serialize/init round-trip');
+A.eq(W.get(noRun.id).lastRunOk, null, 'a never-ran stream round-trips as unknown (null), never invented');
+
 A.report('workstreams.test');
