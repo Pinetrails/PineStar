@@ -64,9 +64,11 @@
      reasoning about what the Commander actually SEES must fold first — the marketplace rail delegates here
      rather than keeping its own copy, so the rail and the recommender can never disagree about what "one
      per category" means. Legacy aliases fold; an unknown value falls back to 'general'. */
-  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money',
-    'data', 'general'];
-  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', writing: 'writing',
+  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'ops', 'business', 'money', 'data', 'general'];
+  // 'writing' stays a valid stored category (core's draft-reply / tighten-writing carry it) but folds into
+  // CREATOR on the rail: a two-item chip beside a thirteen-item one reads as broken, and both recipes are
+  // squarely content work. Same treatment as 'code' -> developer and 'planning' -> ops.
+  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', writing: 'creator',
     creator: 'creator', ops: 'ops', planning: 'ops', business: 'business', money: 'money',
     data: 'data', general: 'general' };
   function railBucket(r) {

@@ -82,9 +82,8 @@ const Marketplace = (() => {
   // workbench/studio; computer/connector are per-agent binds, not advisory recipe gear). Labels from the live source.
   const RECIPE_GEAR_PICK = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
   // the category buckets the EDITOR offers as authorable browse buckets (the discovery-rail personas).
-  const RECIPE_CATEGORIES = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money',
-    'data', 'general'];
-  const CAT_LABEL = { developer: 'DEVELOPER', research: 'RESEARCH', writing: 'WRITING', creator: 'CREATOR',
+  const RECIPE_CATEGORIES = ['developer', 'research', 'creator', 'ops', 'business', 'money', 'data', 'general'];
+  const CAT_LABEL = { developer: 'DEVELOPER', research: 'RESEARCH', writing: 'CREATOR', creator: 'CREATOR',
     ops: 'WORK', business: 'BUSINESS', money: 'MONEY', data: 'DATA', general: 'GENERAL',
     // legacy aliases older customs may still carry — labeled so a dossier chip never shows a raw slug.
     code: 'DEVELOPER', planning: 'WORK' };
@@ -98,8 +97,7 @@ const Marketplace = (() => {
      Read LAZILY, never at module scope: this file is written to survive `Recipes` being absent entirely
      (see hasRecipes()), and a top-level `Recipes.RAIL_BUCKETS` would throw on load and take the whole bay
      down instead of just the recipes tab. Fall back to the bare bucket when it is not there. */
-  const RAIL_BUCKETS_FALLBACK = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money',
-    'data', 'general'];
+  const RAIL_BUCKETS_FALLBACK = ['developer', 'research', 'creator', 'ops', 'business', 'money', 'data', 'general'];
   const railBuckets = () => (hasRecipes() && Recipes.RAIL_BUCKETS) || RAIL_BUCKETS_FALLBACK;
   const railBucket = (r) => (hasRecipes() && Recipes.railBucket) ? Recipes.railBucket(r) : 'general';
 
