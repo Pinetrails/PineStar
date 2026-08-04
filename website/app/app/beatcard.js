@@ -31,11 +31,22 @@
       if (key) set.delete(key); else set.clear();
       if (!set.size) pending.delete(kind);
     }
-    function can(kind) {
+    /* can(kind, selfKey) — may `kind` take the one slot right now?
+       'busy' (a card is visible) · the blocking kind (a higher-ranked reservation is in flight) · 'free'.
+
+       SELF-RESERVATION (the thread-channel deadlock, fixed 2026-08-04). The collection pass reserves BOTH of its
+       fetch-backed kinds ('study' and 'thread', under its own runId) so nothing lower can steal the slot across the
+       await — and then asked this predicate whether thread could speak. Its own 'study' reservation outranks
+       'thread', so the answer was always 'study': threadCandidate returned null on EVERY run, queueThread was never
+       reached and offerThread was dead code. A reservation held under `selfKey` is therefore INVISIBLE to a caller
+       that identifies itself with that key: a pass can never veto its own candidate collection. Another run's
+       reservation under the same kind still blocks, because its key differs. */
+    function can(kind, selfKey) {
       if (visible !== null) return 'busy';
       const ownRank = rank(kind);
       for (const [pendingKind, keys] of pending) {
-        if (keys.size && rank(pendingKind) < ownRank) return pendingKind;
+        const others = keys.size - ((selfKey && keys.has(selfKey)) ? 1 : 0);
+        if (others > 0 && rank(pendingKind) < ownRank) return pendingKind;
       }
       return 'free';
     }
@@ -69,16 +80,18 @@
       memoryShown() { show('memory'); },
       memoryDone(runId, more) { releaseReservation('memory', runId); done('memory', more ? 'memory' : null); },
       memoryEmpty(runId) { releaseReservation('memory', runId); },
-      canStudy() { return can('study'); },
+      // every canX takes the OPTIONAL self-key: the collection pass passes its runId so its own in-flight
+      // reservations don't veto its own candidates (see can()).
+      canStudy(selfKey) { return can('study', selfKey); },
       studyShown() { show('study'); },
       studyDone(more) { done('study', more ? 'memory' : null); },
-      canArc() { return can('arc'); },
+      canArc(selfKey) { return can('arc', selfKey); },
       arcShown() { show('arc'); },
       arcDone(more) { done('arc', more ? 'memory' : null); },
-      canTrust() { return can('trust'); },
+      canTrust(selfKey) { return can('trust', selfKey); },
       trustShown() { show('trust'); },
       trustDone(more) { done('trust', more ? 'memory' : null); },
-      canThread() { return can('thread'); },
+      canThread(selfKey) { return can('thread', selfKey); },
       threadShown() { show('thread'); },
       threadDone(more) { done('thread', more ? 'memory' : null); },
       _pending() { return this.pendingCount('memory'); }
@@ -247,7 +260,7 @@
       slot, once, hasSeen, enqueue, shift, queueSize, clearQueue, claim, expire, sweepExpire, scheduleExpire, reset,
       reserve(kind, runId) { slot.reserve(kind, runId); },
       releaseReservation(kind, runId) { slot.releaseReservation(kind, runId); },
-      canOffer(kind) { return slot.can(kind); },
+      canOffer(kind, selfKey) { return slot.can(kind, selfKey); },
       busy(kind) { return !!(active && (!kind || active.kind === kind)); },
       active(kind) { return active && (!kind || active.kind === kind) ? active.handle : null; },
       visibleBeat() { return slot.visibleBeat(); },

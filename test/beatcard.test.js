@@ -64,6 +64,26 @@ A.eq(ctl.canOffer('study'), 'memory', 'an in-flight memory proposal blocks a low
 ctl.releaseReservation('memory', 'run-memory');
 A.eq(ctl.canOffer('study'), 'free', 'an empty memory fetch releases the reservation');
 
+/* ── THE SELF-RESERVATION DEADLOCK (regression, 2026-08-04) ───────────────────────────────────────────
+   The collection pass reserves BOTH fetch-backed kinds under its own runId so nothing lower can steal the
+   slot across the await, then collects both candidates. Before the fix the pass's OWN 'study' reservation
+   outranked 'thread', so the thread candidate was vetoed on every single run — threadCandidate always
+   returned null, queueThread was never reached and offerThread was unreachable code. A reservation held
+   under the caller's own key must be invisible to that caller. */
+ctl.reset();
+ctl.reserve('study', 'run-pass'); ctl.reserve('thread', 'run-pass');     // exactly what recommendPass does
+A.eq(ctl.canOffer('thread'), 'study', 'THE OLD FAILURE: a keyless read still sees the higher-ranked reservation');
+A.eq(ctl.canOffer('thread', 'run-pass'), 'free', 'the pass\'s own reservation can never veto its own thread candidate');
+A.eq(ctl.canOffer('study', 'run-pass'), 'free', 'nor its own study candidate');
+ctl.reserve('memory', 'run-other');
+A.eq(ctl.canOffer('thread', 'run-pass'), 'memory', 'a FOREIGN higher-priority reservation still blocks (memory wins)');
+ctl.reserve('study', 'run-other');
+ctl.releaseReservation('memory', 'run-other');
+A.eq(ctl.canOffer('thread', 'run-pass'), 'study', 'another run holding the same kind still blocks — only the SELF key is excused');
+ctl.releaseReservation('study', 'run-other');
+A.eq(ctl.canOffer('thread', 'run-pass'), 'free', 'releasing the foreign claim frees the pass again');
+ctl.reset();
+
 const oldThread = ctl.claim({ kind: 'thread', runId: 'run-old', node: { id: 'thread-old', isConnected: true } });
 A.eq(oldThread.decide(), true, 'the old async action starts while its card is current');
 let staleFinish = null;

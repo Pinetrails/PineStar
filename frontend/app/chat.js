@@ -3415,16 +3415,20 @@ const Chat = (() => {
   function slotMemoryProposed(runId) { if (beatSlot) beatSlot.memoryProposed(runId); }
   function slotMemoryDeck() { return beatSlot ? beatSlot.memoryDeck() : 'render'; }
   function slotMemoryEmpty(runId) { if (beatSlot) beatSlot.memoryEmpty(runId); }
-  function slotCanStudy() { return beatSlot ? beatSlot.canStudy() : 'busy'; }   // no arbiter -> study stands down
+  /* Every slot predicate takes an OPTIONAL self-key (the collection pass's runId). A pass that RESERVES its own
+     fetch-backed kinds across an await must not then be told by its own reservation that it may not speak — that
+     self-veto is what killed the thread channel outright (beatcard.js can(), 2026-08-04). Called with no key
+     (every non-pass caller) the behavior is byte-identical to before. */
+  function slotCanStudy(selfKey) { return beatSlot ? beatSlot.canStudy(selfKey) : 'busy'; }   // no arbiter -> study stands down
   // GROWTH Tier 2 — the goal-arc confirm beat: the LOWEST-priority participant (memory turn-in + study both win
   // first). null arbiter OR an older bundle without canArc -> arc stands down (byte-identical pre-Tier-2 behavior).
-  function slotCanArc() { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc() : 'busy'; }
+  function slotCanArc(selfKey) { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc(selfKey) : 'busy'; }
   // GROWTH Tier 3 — the earned-autonomy offer beat: the LOWEST-priority participant (memory + study + arc all win
   // first). null arbiter OR an older bundle without canTrust -> trust stands down (byte-identical pre-Tier-3 behavior).
-  function slotCanTrust() { return (beatSlot && beatSlot.canTrust) ? beatSlot.canTrust() : 'busy'; }
+  function slotCanTrust(selfKey) { return (beatSlot && beatSlot.canTrust) ? beatSlot.canTrust(selfKey) : 'busy'; }
   // NS-6 — the THREAD turn-in beat: the LOWEST-priority participant (memory > study > arc > trust > thread —
   // study always wins the moment first). null arbiter OR an older bundle without canThread -> thread stands down.
-  function slotCanThread() { return (beatSlot && beatSlot.canThread) ? beatSlot.canThread() : 'busy'; }
+  function slotCanThread(selfKey) { return (beatSlot && beatSlot.canThread) ? beatSlot.canThread(selfKey) : 'busy'; }
   // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
   // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
   function studyBlocked() {
@@ -4231,7 +4235,7 @@ const Chat = (() => {
   function arcCandidate(runId) {
     if (typeof GoalStore === 'undefined' || typeof Dialogue === 'undefined') return null;
     if (!GoalStore.willOfferDecomposition || !GoalStore.willOfferDecomposition()) return null;
-    if (slotCanArc() !== 'free') return null;
+    if (slotCanArc(runId) !== 'free') return null;
     let belief = null;
     try { belief = GoalStore.pendingDecomposition ? GoalStore.pendingDecomposition() : null; } catch (_) {}
     const text = belief && belief.text ? String(belief.text).trim() : '';
@@ -4243,7 +4247,7 @@ const Chat = (() => {
   // TRUST — the earned-autonomy offer. Cited by the REAL track record the offer was computed from.
   function trustCandidate(runId) {
     if (typeof TrustStore === 'undefined') return null;
-    if (trustBusy() || slotCanTrust() !== 'free') return null;
+    if (trustBusy() || slotCanTrust(runId) !== 'free') return null;
     if (!TrustStore.canShow || !TrustStore.canShow()) return null;          // session cap spent
     const offer = TrustStore.currentOffer ? TrustStore.currentOffer() : null;
     if (!offer) return null;
@@ -4335,7 +4339,7 @@ const Chat = (() => {
   // dropped here rather than surfaced with an empty provenance line.
   async function studyCandidate(runId, agentId) {
     if (typeof StudyStore === 'undefined') return null;
-    if (studyBusy() || slotCanStudy() !== 'free') return null;
+    if (studyBusy() || slotCanStudy(runId) !== 'free') return null;   // runId = the SELF-KEY: the pass's own reservation must not veto it
     if (!runId || !beatCards || !beatCards.once('study', runId)) return null;
     if (!StudyStore.canShow || !StudyStore.canShow()) return null;          // session cap (per-session, not deferrable)
     const proposals = await StudyStore.fetchProposals(runId, agentId);
@@ -4350,7 +4354,7 @@ const Chat = (() => {
   // THREAD — the mined-idea turn-in. Its evidence is the verbatim quote the mine grounded the idea in.
   async function threadCandidate(runId, agentId) {
     if (typeof ThreadStore === 'undefined') return null;
-    if (threadBusy() || slotCanThread() !== 'free') return null;
+    if (threadBusy() || slotCanThread(runId) !== 'free') return null;  // runId = the SELF-KEY (see slotCanStudy)
     if (!runId || !beatCards || !beatCards.once('thread', runId)) return null;
     if (!ThreadStore.canShow || !ThreadStore.canShow()) return null;        // session cap
     const batch = await ThreadStore.fetchProposals(runId, agentId);
