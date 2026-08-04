@@ -1,8 +1,8 @@
-/* dev/onboard-fresh.js — boot a FRESH (un-onboarded) sidecar in DEV mode, for testing onboarding itself.
+/* dev/onboard-fresh.js — boot a FRESH (un-onboarded) sidecar, for testing onboarding itself.
 
    dev/seed.js exists so you can skip the first-run ceremony; this is its inverse: an EMPTY workspace so
    you get the REAL first run — title screen, create screen, the wake ceremony, the interview — but with
-   the API key held server-side from dev/.env.dev (SKYNET_DEV=1), so the live-mind awakening beats fire
+   the API key held server-side from dev/.env.dev, so the live-mind awakening beats fire
    without ever pasting a key into the page. Fresh wipe each launch by default; --keep reuses the state.
 
    Dev-only, no secrets in this file. The scratch workspace lives under the repo root's gitignored
@@ -40,7 +40,6 @@ const port = String(process.env.SKYNET_PORT || process.env.PORT || '8991').trim(
 if (!key) console.warn('[onboard-fresh] WARNING: no SKYNET_OPENROUTER_KEY in dev/.env.dev — the awakening will run all-scripted (quiet mind).');
 
 const env = Object.assign({}, process.env, {
-  SKYNET_DEV: '1',
   SKYNET_WORKSPACES: SCRATCH,
   SKYNET_PORT: port
 });
