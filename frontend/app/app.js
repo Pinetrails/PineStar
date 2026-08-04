@@ -1544,11 +1544,12 @@ const App = (() => {
       const b = document.createElement('button'); b.type = 'button';
       b.className = 'swatch' + (t === cur ? ' sel' : ''); b.dataset.t = t;
       b.style.setProperty('--sw', c); b.title = t.toUpperCase() + ' phosphor'; b.setAttribute('aria-label', t + ' phosphor');
+      b.setAttribute('aria-pressed', String(t === cur));
       b.onclick = () => {
         applyTheme(t);
         try { if (typeof StationUI !== 'undefined' && StationUI.setTheme) StationUI.setTheme(t); } catch (_) {}   // persist + keep Settings in sync
         SFX.click();
-        [...wrap.children].forEach(x => x.classList.toggle('sel', x === b));
+        [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
       };
       wrap.appendChild(b);
     });
