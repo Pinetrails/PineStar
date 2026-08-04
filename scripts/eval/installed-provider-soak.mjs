@@ -71,7 +71,7 @@ async function main() {
   const fixtureServer = await startFixtureMcpServer(); let driver = null, interrupted = false;
   const startedAt = Date.now(), deadline = startedAt + durationHours * 3600000;
   const report = {
-    schemaVersion: 'starnet.eval.installed-provider-soak.v1', mode: 'installed-provider-backed-active-idle', qualifiesRelease: durationHours >= 48,
+    schemaVersion: 'starnet.eval.installed-provider-soak.v1', mode: 'installed-provider-backed-active-idle', qualifyingDuration: durationHours >= 48, qualifiesRelease: false,
     startedAt: iso(startedAt), plannedEndAt: iso(deadline), durationHours, healthIntervalSeconds, activeIntervalSeconds,
     runtime: { root: resolve(opts['runtime-root']), workspace: resolve(opts.workspaces), port, describe: subject.provenance.describe,
       executable: executablePath, executableSha256: expectedExecutableSha256, rawHealthVersion: null, initialFingerprint: initialRuntimeFingerprint },
@@ -121,7 +121,8 @@ async function main() {
     const healthMinimum = requiredSoakCoverage(durationHours, healthIntervalSeconds), activeMinimum = requiredSoakCoverage(durationHours, activeIntervalSeconds);
     const resourcesGood = process.platform !== 'win32' || report.samples.every(row => finite(row.rssBytes, 0) > 0 && finite(row.cpuSeconds, -1) >= 0);
     report.summary.required = { healthMinimum, activeMinimum };
-    report.summary.pass = report.qualifiesRelease && report.summary.completed && report.samples.length >= healthMinimum && report.providerRuns.length >= activeMinimum && report.summary.healthFailures === 0 && report.summary.providerFailures === 0 && report.summary.identityFailures === 0 && report.summary.unexpectedExits === 0 && resourcesGood;
+    report.summary.pass = report.qualifyingDuration && report.summary.completed && report.samples.length >= healthMinimum && report.providerRuns.length >= activeMinimum && report.summary.healthFailures === 0 && report.summary.providerFailures === 0 && report.summary.identityFailures === 0 && report.summary.unexpectedExits === 0 && resourcesGood;
+    report.qualifiesRelease = report.summary.pass;
     writeAtomic(output, report);
     if (!report.summary.pass) throw new Error('installed provider-backed soak did not meet its qualifying gates');
     const result = { schemaVersion: 'starnet.eval.installed-provider-soak-verdict.v1', pass: true, qualifiesRelease: true, scope: report.mode, durationHours, samples: report.samples.length, providerRuns: report.providerRuns.length, summary: report.summary, resources: { rssBytes: report.summary.rssBytes } };

@@ -8,7 +8,7 @@ const A = require('./_assert.js');
   let refused = false; try { requiredSoakCoverage(0, 60); } catch (_) { refused = true; }
   A.ok(refused, 'invalid soak duration fails closed');
   const source = require('node:fs').readFileSync(require('node:path').resolve(__dirname, '../scripts/eval/installed-provider-soak.mjs'), 'utf8');
-  A.ok(/durationHours >= 48/.test(source) && /qualifiesRelease: durationHours >= 48/.test(source), 'release qualification is structurally gated on a real 48-hour duration');
+  A.ok(/qualifyingDuration: durationHours >= 48/.test(source) && /qualifiesRelease: false/.test(source) && /report\.qualifiesRelease = report\.summary\.pass/.test(source), 'release qualification stays false until a real 48-hour run passes every terminal gate');
   A.ok(/providerFailures === 0/.test(source) && /healthFailures === 0/.test(source), 'provider and health failures both fail the soak');
   A.ok(/gradeParityTrajectory/.test(source) && /fixtureCalls\.length > 0/.test(source), 'active samples require independent fixture grading and real host calls');
   const os = require('node:os'), fs = require('node:fs'), path = require('node:path');
