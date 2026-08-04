@@ -102,7 +102,8 @@ for (const junk of [[{ label: '', weight: 9 }], [{ label: 'x', weight: NaN }], [
 
 const niche = withNiche[withNiche.length - 1];
 A.eq(R.forYouReason(niche, { topics: WARM }), TM.reason(TM.match(WARM, 'GPU Price Watch tracks gpu prices daily watch prices general ops')), 'the FOR YOU reason is the topic WHY when a topic matched');
-A.ok(R.forYouReason(niche, { topics: COLD, goalText: 'watch prices closely' }).indexOf('matches your goal') === 0, 'a goal match is named when no topic matched');
+// (the reason leads with "it" so the shared "because …" framing composes into a sentence — see recommend.js whyLine)
+A.ok(R.forYouReason(niche, { topics: COLD, goalText: 'watch prices closely' }).indexOf('it matches your goal') === 0, 'a goal match is named when no topic matched');
 A.eq(R.forYouReason(niche, { launches: { 'niche-gpu': { n: 2, rated: { great: 3 } } } }), 'you rated this work great 3×', 'the Commander\'s own verdicts are cited before raw launches');
 A.eq(R.forYouReason(niche, { launches: { 'niche-gpu': { n: 4 } } }), 'you have launched this 4×', 'a launch count is cited when nothing stronger fired');
 A.eq(R.forYouReason(niche, {}), '', 'with NO real signal the card claims no reason at all (never a fabricated one)');
