@@ -5339,6 +5339,11 @@ const World = (() => {
      riding crate (the pallet + counter still tell the server's truth). */
   const runWork = new Map();         // agentId -> { tools, dels } observed during the CURRENT run
   const shippedRunIds = new Set();   // dedup: run.end can be observed twice (local harness + SSE echo)
+  // runId -> summed RECONCILED usd (folded from agent.cost, whose contract requires reconciled:true).
+  // This is the ONLY source the product crate's mass may read — never cost.estimate, never run.end's usd
+  // (crate-mass honesty: the crate that leaves the line weighs what the run actually cost). Bounded like
+  // shippedRunIds; entries are dropped at run.end after the ship decision reads them.
+  const runUsdRecon = new Map();
   function runWorked(aid) {
     const w = runWork.get(aid || 'agent');
     return !!(w && (w.tools > 0 || w.dels > 0));
@@ -5354,7 +5359,11 @@ const World = (() => {
     const rid = (p && p.runId) || '';
     if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
     const t = outboundBeltTile(p && p.agentId);
-    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: 0.3, workitemId: (p && p.workitemId) || '' });
+    // MASS = the run's real reconciled cost (cargoProduct's contract) — the old hardcoded 0.3 drew every
+    // crate mid-weight regardless of spend. Conveyor.weightForUsd maps reconciled usd -> 0..1; a run with
+    // no reconciled cost ships weight 0 (the back-compat light look), never an estimate.
+    const w = (typeof Conveyor !== 'undefined' && Conveyor.weightForUsd) ? Conveyor.weightForUsd(runUsdRecon.get(rid)) : 0;
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: w, workitemId: (p && p.workitemId) || '' });
   }
   // an unproductive run produced no deliverable — ride a red-hot SLAG crate off the PRODUCING agent's bay
   // carrying its post-mortem one-liner, so the failed outcome is visible leaving the line.
@@ -5822,6 +5831,12 @@ const World = (() => {
     if (!slaglog && typeof SlagLog !== 'undefined') slaglog = SlagLog.create();
     U.bus.on('agent.cost', p => {
       if (floor) floor.onEvent('agent.cost', p, Date.now());
+      // crate-mass fold: sum this run's RECONCILED spend (agent.cost is reconciled by contract) so the
+      // product crate that ships at run.end can weigh what the run really cost. Bounded map.
+      if (p && p.runId && typeof p.usd === 'number' && isFinite(p.usd) && p.usd > 0) {
+        runUsdRecon.set(p.runId, (runUsdRecon.get(p.runId) || 0) + p.usd);
+        if (runUsdRecon.size > 400) runUsdRecon.delete(runUsdRecon.keys().next().value);
+      }
       // remember the most recent RECONCILED cache ratio — the smelter temperature a slag diagnosis reads
       if (p && (p.tokensIn | 0) > 0) lastCacheFrac = Math.max(0, Math.min(1, (p.cachedTokens || 0) / p.tokensIn));
       // E2 + Stage 2: a cost event reinforces the run TTL. A DELEGATED worker's stream is lifecycle+cost
@@ -5850,6 +5865,7 @@ const World = (() => {
       // and rides to the OUTBOX. A done-but-workless run ("I couldn't do that") ships NOTHING.
       if (r === 'done' && runWorked(p && p.agentId)) shipProductCrate(p);
       if (p && p.agentId) runWork.delete(p.agentId);   // the run is over — drop its work tally either way
+      if (p && p.runId) runUsdRecon.delete(p.runId);   // the ship decision above has read it — drop the cost fold
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
       // UNPRODUCTIVE RUN: pulse the SLAG cell, then turn the failed outcome into a lesson — a real post-mortem in the
       // notifications panel + a red-hot slag crate that rides off the line (if a desk belt exists). The

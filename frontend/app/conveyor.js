@@ -151,6 +151,14 @@ const Conveyor = (() => {
       _ctx.globalAlpha *= k; px(x + 3 - r, y + 2 - r, 3 + r * 2, 3 + r * 2, '#e8c860'); _ctx.globalAlpha /= k;
     }
   }
+  /* MASS = the run's real RECONCILED cost, mapped deterministically onto the 0..1 weight the product
+     art draws (seal pips + banked glow): w = min(1, usd / FULL_MASS_USD). A free/sub-cent run reads as
+     a light crate; a $1+ run reads full-mass. NEVER an estimate — callers feed only reconciled
+     agent.cost sums (world.js folds them per runId); no reconciled cost = weight 0, the back-compat
+     look. Ore stays uniform on purpose (cargoOre: inbound size carries no cost signal). Pure + exported
+     so the mapping is headless-testable next to the art whose contract it fulfils. */
+  const FULL_MASS_USD = 1.00;
+  function weightForUsd(usd) { return (typeof usd === 'number' && isFinite(usd) && usd > 0) ? Math.min(1, usd / FULL_MASS_USD) : 0; }
   function cargoProduct(cx, py, h32, dir, weight) {  // green PRODUCT — a banked result; MASS = the run's real reconciled cost
     const w = weight < 0 ? 0 : weight > 1 ? 1 : (weight || 0);   // default 0 = today's look (back-compat)
     const f = cargoChassis(cx, py, h32, '#2c4a36', dir), x = f.tx, y = f.ty;
@@ -560,7 +568,7 @@ const Conveyor = (() => {
     };
   }
 
-  return { create };
+  return { create, weightForUsd };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = Conveyor;

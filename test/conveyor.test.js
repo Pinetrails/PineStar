@@ -389,4 +389,14 @@ A.eq(JSON.stringify(mr.del.map(p => p.workitemId).sort()), JSON.stringify(mrPlai
   A.ok(!overlapped, 'crates never settle on top of each other (leaderDist breaks progress ties by id)');
 }
 
+/* ---------- crate-mass honesty: weightForUsd maps RECONCILED spend -> product-crate mass ---------- */
+A.eq(Conveyor.weightForUsd(undefined), 0, 'no reconciled cost -> weight 0 (the back-compat light look)');
+A.eq(Conveyor.weightForUsd(0), 0, 'a zero-cost run ships a weightless crate');
+A.eq(Conveyor.weightForUsd(-1), 0, 'a negative usd can never weigh a crate');
+A.eq(Conveyor.weightForUsd(NaN), 0, 'NaN is not a cost');
+A.eq(Conveyor.weightForUsd(0.25), 0.25, '25 cents reads as a quarter-mass crate (linear to $1)');
+A.eq(Conveyor.weightForUsd(1.0), 1, 'a $1 run reads full-mass');
+A.eq(Conveyor.weightForUsd(7.5), 1, 'mass clamps at 1 — a pricier run cannot overflow the art');
+A.eq(Conveyor.weightForUsd(0.004), 0.004, 'a sub-cent run reads as a near-weightless crate, never estimated up');
+
 A.report('conveyor');
