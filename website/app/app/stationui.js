@@ -2827,18 +2827,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (s.lane !== 'active') return '';
     const running = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
     if (running) return '<div class="kb-state running"><span class="kb-live"></span>RUNNING</div>';
-    if (s.runIds && s.runIds.length) return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
+    if (s.runIds && s.runIds.length) {
+      // a run that DIED must never read as DONE (truthful telemetry): lastRunOk=false is settled by
+      // chat.js's in-band error branch. null (no outcome recorded — legacy save / delegated run) keeps
+      // the DONE chip: we only claim FAILED when the failure is provable, never by inference.
+      if (s.lastRunOk === false) return '<div class="kb-state failed">✗ RUN FAILED — REVIEW</div>';
+      return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
+    }
     return '';
   }
   function activeAggregate(items) {
-    let running = 0, ready = 0;
+    let running = 0, ready = 0, failed = 0;
     items.forEach(s => {
       const busy = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
       if (busy) running++;
-      else if (s.runIds && s.runIds.length) ready++;
+      else if (s.runIds && s.runIds.length) { if (s.lastRunOk === false) failed++; else ready++; }
     });
     const parts = [];
     if (running) parts.push(running + ' RUNNING');
+    if (failed) parts.push(failed + ' FAILED');
     if (ready) parts.push(ready + ' READY TO REVIEW');
     return parts.length ? '<small class="kb-col-state">' + parts.join(' · ') + '</small>' : '';
   }
@@ -2867,7 +2874,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       stateChip(s) +
       '<div class="kb-acts">' + acts + '</div></div>';
   }
+  // LIVE board refresh (P1, 2026-08-04): renderRail pokes the board on EVERY rail change (run start/end,
+  // cron polls, background approvals). The old path was rerender('tasks') — a full rebuild that replayed
+  // the swap-in crossfade + card entrance stagger (flicker), wiped the add-input's half-typed text, reset
+  // column scroll, and buildTasks's trailing focus() STOLE the keyboard from wherever the Commander was
+  // typing (chat composer included). kbLive tells buildTasks this rebuild is a background data refresh:
+  // preserve input value/selection, focus and per-column scroll, suppress entrance motion (.kb-live-refresh),
+  // and never move focus that wasn't already inside the board.
+  let kbLive = false;
+  function refreshBoardLive() {
+    if (!open.tasks) return;
+    kbLive = true;
+    try { open.tasks._render(false); } finally { kbLive = false; }   // swap=false: no crossfade on a data poke
+  }
   function buildTasks(body) {
+    const live = kbLive;
+    // capture the volatile bits a rebuild destroys (live refresh only — a user open starts clean)
+    const prevInp = live ? body.querySelector('#kb-in') : null;
+    const keepVal = prevInp ? prevInp.value : '';
+    const ae = live ? document.activeElement : null;
+    const focusIn = !!(ae && body.contains(ae));
+    const keepFocus = focusIn
+      ? (ae.id === 'kb-in'
+        ? { kind: 'input', s: ae.selectionStart, e: ae.selectionEnd }
+        : (ae.closest && ae.closest('.kb-card')
+          ? { kind: 'card', id: ae.closest('.kb-card').dataset.id }
+          : { kind: 'other' }))
+      : null;
+    const keepScroll = live ? Array.from(body.querySelectorAll('.kb-col')).map(c => c.scrollTop) : null;
     const streams = boardStreams();
     body.innerHTML =
       '<div class="kb-add"><input id="kb-in" maxlength="80" placeholder="add a workstream for your agent…" autocomplete="off">' +
@@ -2885,8 +2919,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
       // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
       (streams.length ? '' : '<div class="win-note" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
+    // entrance motion belongs to USER-initiated opens only — a background data poke must not re-animate.
+    // (body persists across rebuilds, so the class must be actively toggled both ways.)
+    body.classList.toggle('kb-live-refresh', live);
     const inp = body.querySelector('#kb-in');
-    const submit = () => { addTask(inp.value); };
+    // capture-then-clear BEFORE addTask: its sync() triggers a live rebuild which would otherwise
+    // capture (and faithfully restore) the just-submitted text back into the input.
+    const submit = () => { const t = inp.value; inp.value = ''; addTask(t); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
     // empty-state CTA (TO DO column): focus the add-a-workstream input — no new behaviour, just focus.
@@ -2894,7 +2933,23 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       b.addEventListener('click', () => { sfx('click'); inp.focus(); }));
     const obLink = body.querySelector('#kb-outbox-link');
     if (obLink) obLink.addEventListener('click', () => { sfx('click'); openTerm('outbox'); });
-    inp.focus();
+    if (live) {
+      // restore what the rebuild destroyed. Focus is restored ONLY if it already lived inside the board —
+      // a refresh may never steal the keyboard from the chat composer (the original P1 bug).
+      if (keepVal) inp.value = keepVal;
+      if (keepScroll) body.querySelectorAll('.kb-col').forEach((c, i) => { if (keepScroll[i]) c.scrollTop = keepScroll[i]; });
+      if (keepFocus) {
+        if (keepFocus.kind === 'card') {
+          const c2 = Array.from(body.querySelectorAll('.kb-card')).find(x => x.dataset.id === keepFocus.id);
+          if (c2) c2.focus(); else inp.focus();   // the focused card left the board (shipped/archived) → nearest home
+        } else {
+          inp.focus();
+          if (keepFocus.kind === 'input') { try { inp.setSelectionRange(keepFocus.s, keepFocus.e); } catch (_) {} }
+        }
+      }
+    } else {
+      inp.focus();
+    }
     body.querySelectorAll('.kb-card').forEach(c => {
       const id = c.dataset.id;
       c.querySelectorAll('.kb-acts button').forEach(b => b.addEventListener('click', ev => {
@@ -4566,8 +4621,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
       { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
-      { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
-      { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
+      // NAV CONDENSE (2026-08-04) — two label renames, ids untouched (remembered-section keys + wiring
+      // bind to the id): 'NOTIFICATIONS' collided with the SYSTEM-dock NOTIFICATIONS panel (inbox vs
+      // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
+      // dock read as a loop.
+      { id: 'notifs', label: 'ALERTS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
+      { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
 
@@ -6268,7 +6327,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // OPEN (never toggle-closed) a dock term by key — used by deep links like the COMMS error chip that
   // points a beginner at Settings (fix your model key) or SKILLS (enable a capability). No-op if unknown;
   // if the panel is already open it's left as-is rather than closed.
+  // NAV CONDENSE (2026-08-04): ROUTINES + LOOPS merged into the one AUTOMATION window. The old term
+  // keys live on as deep-link aliases so every existing openTerm('routines'|'loops') caller (and any
+  // future one) lands on its old content — the matching SECTION of the merged console. An explicit
+  // section arg from a caller is honored by namespacing it the way the lanes now name their panes
+  // ('create' → 'routines-create', 'start'/'active' → 'loops-start'/'loops').
+  const TERM_ALIAS = {
+    routines: { term: 'automation', section: 'routines', map: { active: 'routines', create: 'routines-create' } },
+    loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } }
+  };
   function openTerm(key, section) {
+    const al = TERM_ALIAS[key];
+    if (al) { section = (section && al.map[section]) || al.section; key = al.term; }
     const def = BUILDERS[key]; if (!def) return;
     // optional section arg (Lane A error-door routing): land the console rail on a specific section — same
     // mechanism as the dossier's "jump to CONFIG" (consoleSection is what mountConsole reads at render).
@@ -6322,7 +6392,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (sel >= present.length) sel = 0;
     crewRender();
     if (open.agents) rerender('agents');
-    if (open.routines) rerender('routines');
+    if (open.automation) rerender('automation');   // the ROUTINES lane's create form shows the roster
   }
 
   /* ============== ARCADE CABINET ==============
@@ -6360,7 +6430,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // GROWTH Tier 3: repaint the Settings AUTONOMY panel's EARNED badge if it is open (no-op otherwise — the paint fn
   // queries its own (possibly detached) host nodes, so a closed panel costs nothing). Called after a trust accept.
   const repaintAutonomy = () => { try { if (repaintAutonomyDial) repaintAutonomyDial(); } catch (_) {} };
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy, registerWindow, h };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: refreshBoardLive, pokeQuests, setTheme, getTheme, repaintAutonomy, registerWindow, h };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect, clampTerminalSize };

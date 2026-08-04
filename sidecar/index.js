@@ -3699,7 +3699,10 @@ const cronDriver = makeCronDriver({
           surface: 'autonomous', trigger: 'schedule', reflect: true,
           station: router.stationFor(h.agentId) || undefined,
           preloadSkills: o.preloadSkills, requiredPreloads: o.requiredPreloads, workdir: o.workdir, enabledToolsets: o.enabledToolsets,
-          initialTaint: o.initialTaint, unattendedGrants: o.unattendedGrants
+          // GRANTS NEVER FLOW DOWN A LINE (2026-08-04): every runAgent call here is a DOWNSTREAM hop (stage one
+          // ran in the driver, with the job's own grants). Whatever the caller passes, a hop runs ungranted —
+          // an unattended approval names ONE agent and a belt must not silently extend it to another.
+          initialTaint: o.initialTaint, unattendedGrants: []
         });
       } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
       return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
@@ -6359,6 +6362,12 @@ function startTelegramBot(botId) {
     // it, so /talk bindings and floor routing can never quietly change who @ThisBot is. No roster/setModel
     // surface: /agents and /model answer their honest "not available here" fallback.
     resolveAgent: () => (recOf().agentId || null),
+    // WORK-LINE PARITY (2026-08-04): the SAME chain executor every other surface gets (station hub, cron,
+    // COMMS). The hard-lock above still names stage ONE — a bound bot IS its agent — but the belts drawn PAST
+    // that agent's bay run here too; without this seam the same floor did less work depending on which bot
+    // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
@@ -7437,7 +7446,11 @@ function handleRouting(req, res) {
     if (raw && raw.trim()) { try { plan = JSON.parse(raw); } catch (_) { res.writeHead(400); return res.end('bad json'); } }
     const r = router.setPlan(plan);
     // persist every ACCEPTED plan (incl. an accepted clear) so routing survives a sidecar restart (2026-07-06).
-    if (r && r.ok) { try { saveResilient(ROUTING_FILE, plan); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); } }
+    // A REFUSED post persists the CLEAR (2026-08-04): setPlan drops the in-memory plan on refusal, so leaving
+    // the previously-accepted file on disk would re-arm STALE routing at boot — live behavior (unrouted
+    // fallback) and post-restart behavior (old floor's routing) diverged for the same posted state. Boot must
+    // match live: accepted plan -> persist it; accepted clear OR refusal -> persist null (same durable idiom).
+    try { saveResilient(ROUTING_FILE, (r && r.ok) ? plan : null); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); }
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
@@ -8953,7 +8966,12 @@ async function handleCronRun(req, res) {
                 emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
                 surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,
                 station: router.stationFor(h.agentId) || undefined,
-                unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
+                /* GRANTS NEVER FLOW DOWN A LINE (2026-08-04): the unattended grant was approved for the
+                   routine's OWN agent (stage one, above) — a downstream hop is a DIFFERENT agent, and a drawn
+                   belt must not silently widen its authority. Mirrors the scheduled fire (cron-driver.js). */
+                unattendedGrants: [],
+                // skills/workdir/toolsets stay on hops deliberately (routine config; multi-stage routines rely
+                // on them) — flagged 2026-08-04 as a widening risk to revisit, same note as cron-driver.js.
                 preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [], requiredPreloads: true, workdir: job.workdir || null,
                 enabledToolsets: Array.isArray(job.enabledToolsets) ? job.enabledToolsets.slice() : null,
                 initialTaint: !!(job.contextFrom && job.contextFrom.length)

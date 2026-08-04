@@ -76,6 +76,11 @@
       projectRoot: opts.projectRoot != null ? String(opts.projectRoot) : null,
       history: Array.isArray(opts.history) ? opts.history.slice() : [],
       runIds: Array.isArray(opts.runIds) ? opts.runIds.slice() : [],
+      // outcome of the stream's MOST RECENT run: true = it completed (in-band stream finished, even via a
+      // stop/cut-short), false = it DIED in flight (chat.js's in-band `error` branch), null = unknown — no
+      // run yet, a run currently in flight (appendRun resets it), or a pre-upgrade save. The board's DONE
+      // chip reads this so a run that died can never wear "DONE — REVIEW & SHIP" (truthful telemetry).
+      lastRunOk: opts.lastRunOk === true ? true : (opts.lastRunOk === false ? false : null),
       deliverables: Array.isArray(opts.deliverables) ? opts.deliverables.slice() : [],
       cost: { tokens: +c.tokens || 0, usd: +c.usd || 0, calls: +c.calls || 0 },
       pinned: !!opts.pinned,
@@ -350,10 +355,22 @@
   // the rail's "last worked" stamp never reads as boot/poll time (timestamp-honesty law, 2026-07-19).
   function appendRun(id, runId, at) {
     const w = find(id); if (!w || !runId) return false;
-    if (w.runIds.indexOf(runId) < 0) w.runIds.push(runId);   // tolerate dup / no-op runs (e.g. the no-tool-support early error)
+    // tolerate dup / no-op runs (e.g. the no-tool-support early error); only a NEW run resets the
+    // outcome to unknown — a dup re-file of an already-settled run must not erase its truth.
+    if (w.runIds.indexOf(runId) < 0) { w.runIds.push(runId); w.lastRunOk = null; }
     if (w.lane === 'todo') w.lane = 'active';                // hybrid-honest: a REAL run fired
     w.lastActiveAt = Number(at) > 0 ? Number(at) : now();
     if (id === activeId) w.lastReadAt = w.lastActiveAt;      // the open stream is being watched, not unread
+    return true;
+  }
+  // settle the REAL outcome of a finished run (chat.js's two terminal branches call this): ok=false only
+  // when the run errored in flight, ok=true when the stream completed. Only the stream's CURRENT (last-filed)
+  // run may settle the flag — a stale callback from an older run is refused so it can never overwrite the
+  // newer run's truth, and an outcome with no filed run is unanchored and refused too.
+  function noteRunEnd(id, runId, ok) {
+    const w = find(id); if (!w || !runId) return false;
+    if (!w.runIds.length || w.runIds[w.runIds.length - 1] !== runId) return false;
+    w.lastRunOk = ok === true;
     return true;
   }
   function recordDeliverable(id, d) {
@@ -529,7 +546,7 @@
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markUnread, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle, needsModelTitle, isLowSignal, titleBasis,
-    appendRun, recordDeliverable, addCost, costOf,
+    appendRun, noteRunEnd, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
     LANES
   };

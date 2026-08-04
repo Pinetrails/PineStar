@@ -34,6 +34,7 @@ const Build = (() => {
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
   let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
+  let planDirty = true;   // routing-plan cache flag: set by EDITS (station.onChange / open), never by pure pans — see rebake()
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   // every label NAMES THE FIX, in words (mirrors world.js NAG_LABEL — keep the two in sync)
@@ -41,6 +42,8 @@ const Build = (() => {
     ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'NOT CONNECTED — BELT: CLICK IT, THEN A MACHINE',
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
     UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES',
+    ORPHAN_JUNCTION: 'NOT ON A BELT — MOVE IT ONTO THE LINE',
+    BELT_BURIED: 'A PROP SITS ON THIS LINE — MOVE IT',
     // the docks feed each OTHER: no belt loop anywhere, but the work line would run forever, paying each lap
     CHAIN_CYCLE: 'WORK LINE LOOPS — CUT ONE HANDOFF'
   };
@@ -77,12 +80,12 @@ const Build = (() => {
     document.body.classList.add('refit-on');
     updateSafetyClearance();
     unsub = station.onChange(p => {
-      bakeDirty = true;
+      bakeDirty = true; planDirty = true;   // a real floor edit — the compiled plan is stale
       const rects = p && p.dirtyRects;
       bakeDirtyRects = bakeDirtyRects && rects ? bakeDirtyRects.concat(rects) : (rects || bakeDirtyRects);
       updateUndoRedo();
     });
-    bakeDirty = true; bakeDirtyRects = null;
+    bakeDirty = true; bakeDirtyRects = null; planDirty = true;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
     testNotes.length = 0;   // never carry a prior session's ride captions into a fresh REFIT
     lastFrameTs = 0;
@@ -815,7 +818,8 @@ const Build = (() => {
   }
 
   /* ---------- FILTER junction editor (Polish P1): make content-routing reachable from the UI.
-     A FILTER needs routes (tag -> out-lane) + a default lane or it's non-deployable (FILTER_NO_DEFAULT);
+     A FILTER wants routes (tag -> out-lane) + a default lane — a missing default is an amber nag
+     (FILTER_NO_DEFAULT, warn: unrouted work falls back def -> first lane, never dropped);
      it calls station.configureJunction. Opens on place/click.
      A MERGER has NO editor — like the splitter, it is pure topology. It used to offer a "combine K" field
      for a hold-K-then-emit-one barrier the harness never performed (see conveyor.js chooseExit), so the
@@ -829,6 +833,20 @@ const Build = (() => {
     const out = [];
     for (const d of J_LANES) { const v = J_DIRV[d], nb = station.beltAt(tx + v[0], ty + v[1]); if (nb && nb !== J_OPP[d]) out.push(d); }
     return out;
+  }
+  /* the belt tile a junction prop ATTACHES to — the SAME semantics as the compiler (pipeline.js
+     compileRoutingPlan): the prop's own tile if it sits on a belt, else the first belt tile in its
+     footprint + 1-tile ring, in the compiler's exact scan order (y then x, from (x-1,y-1)). Before this
+     the editor computed lanes at the prop's own tile only, so a ring-attached filter (e.g. nudged one
+     tile off its lane by MOVE) still COMPILED and routed, while its editor showed "lay belts OUT of this
+     filter first" with zero lane buttons — an error the Commander could not fix. Returns {x,y} or null. */
+  function junctionBeltTile(p) {
+    if (station.beltAt(p.x, p.y)) return { x: p.x, y: p.y };
+    const w = p.w || 1, h = p.h || 1;
+    for (let yy = p.y - 1; yy <= p.y + h; yy++)
+      for (let xx = p.x - 1; xx <= p.x + w; xx++)
+        if (station.beltAt(xx, yy)) return { x: xx, y: yy };
+    return null;
   }
   /* ---------- THE FLOW STRIP + FLOW CARD (belt-teach): ONE picture of the whole system, shown wherever
      a workflow prop is touched, with the clicked piece lit — so the model accretes instead of fragmenting
@@ -875,7 +893,10 @@ const Build = (() => {
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
 
     {
-      const lanes = junctionOutLanes(p.x, p.y);
+      // resolve lanes at the tile the COMPILER attaches this junction to (own tile OR ring — see
+      // junctionBeltTile), so a ring-attached filter is configurable, not a dead editor.
+      const jt = junctionBeltTile(p);
+      const lanes = jt ? junctionOutLanes(jt.x, jt.y) : [];
       const cur = { routes: (p.routes && typeof p.routes === 'object') ? Object.assign({}, p.routes) : {}, def: p.def || null };
       const selOf = tag => (tag === '__def__' ? cur.def : cur.routes[tag]);
       const ROWS = [['code', 'CODE'], ['research', 'RESEARCH'], ['__def__', 'EVERYTHING ELSE']];
@@ -977,12 +998,22 @@ const Build = (() => {
     const stops = testStops() || {};
     const owner = stops[x + ',' + y];
     if (!p.outbound && owner) {
-      // stage ③ + ④: the dock consumed the job — and the finished work ships back out from the same dock
+      // stage ③ + ④: the dock consumed the job — and the finished work ships back out from the same dock.
+      // fromAgentId stamps the PRODUCER on the return crate (same field the live handoff physics rides —
+      // conveyor.js: a dock never eats its own output), so stage ⑤ below can tell a handoff from a ship-out.
       note(x, y, '③ DELIVERED — ' + agentLabelFor(owner) + "'S DOCK (they work it at their desk)", '#e8c860');
-      convey.enqueueAt(x, y, { test: true, outbound: true, box: 'product', workitemId: 'test-out-' + (++_testN) });
+      convey.enqueueAt(x, y, { test: true, outbound: true, box: 'product', fromAgentId: owner, workitemId: 'test-out-' + (++_testN) });
       setTimeout(() => note(x, y + 1, '④ THE RESULT SHIPS FROM THE DOCK…', '#9adcb0'), 900);
     } else if (p.outbound) {
-      note(x, y, '⑤ …AND OUT. THAT IS THE WHOLE LOOP', '#7ee2a8');
+      // stage ⑤ forks on WHERE the outbound crate landed: a FOREIGN bound dock's hookup tile is a HANDOFF
+      // (this dock's output becomes that agent's input — the chain layer), not a ship-out. Only an open
+      // end / outbox mouth is the whole loop. The stops map knows the tile's owner; the crate knows its
+      // producer — so the caption can only say what the engine actually did.
+      if (owner && owner !== p.fromAgentId) {
+        note(x, y, '⑤ HANDED OFF TO ' + agentLabelFor(owner) + ' — its output becomes their input', '#e8c860');
+      } else {
+        note(x, y, '⑤ …AND OUT. THAT IS THE WHOLE LOOP', '#7ee2a8');
+      }
     } else {
       note(x, y, '③ SANK — no assigned dock on this line', '#ffbe3c');
     }
@@ -993,7 +1024,8 @@ const Build = (() => {
     if (!bx.payload || !bx.payload.test || !info || !info.tile) return;
     if (info.kind === 'filter') note(info.tile.x, info.tile.y, '② SORTED: ' + (info.tag || '?') + ' → ' + info.lane, '#5ad0ff');
     else if (info.kind === 'split') note(info.tile.x, info.tile.y, '② SPLIT: balancing lanes', '#5ad0ff');
-    else if (info.kind === 'merge' && info.absorbed) note(info.tile.x, info.tile.y, '② MERGING: held for the batch', '#5ad0ff');
+    // no merge caption: the merger is a LANE FUNNEL — conveyor.js never emits `absorbed` (the old
+    // "held for the batch" branch described a combine the harness never performed; see chooseExit).
   }
   // the INTAKE's belt-adjacent tile (where a box spawns), or null if no INTAKE sits on a belt
   function intakeBeltTile() {
@@ -1311,9 +1343,22 @@ const Build = (() => {
     feedback(res, ev, res && res.dir ? ('belt → ' + res.dir) : 'belt');
   }
   function commitPropMove(d, ev) {
-    const dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
+    let dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
     if (!dx && !dy) { hideTip(); return; }
-    feedback(station.moveProp(d.propId, dx, dy), ev, 'relocated');
+    // JUNCTION SNAP on MOVE — the same rule placement (commitPropStamp) already applies: a filter/
+    // splitter/merger dropped NEXT to a line snaps onto the nearest belt tile. Without this, a moved
+    // filter one tile off its belt still compiled (ring-attached) while reading as misplaced — or, two
+    // tiles off, went silently inert. If the snapped tile is blocked, fall back to the plain move.
+    const mp = station.propById(d.propId);
+    let okMsg = 'relocated';
+    if (mp && (mp.t === 'filter' || mp.t === 'splitter' || mp.t === 'merger') && !station.beltAt(mp.x + dx, mp.y + dy)) {
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        if (station.beltAt(mp.x + dx + ox, mp.y + dy + oy) && station.canPlaceProp(mp.t, mp.x + dx + ox, mp.y + dy + oy, mp.w, mp.h, mp.id).ok) {
+          dx += ox; dy += oy; okMsg = 'snapped onto the line'; break;
+        }
+      }
+    }
+    feedback(station.moveProp(d.propId, dx, dy), ev, okMsg);
   }
   function commitPaint(d, ev) {
     // WALLS are a whole-room surface — there's no per-tile wall, so a drag means the same thing
@@ -1525,15 +1570,23 @@ const Build = (() => {
     cache = StationBake.bakeIncremental
       ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects, { visibleRect, maxRetainedChunks: MAX_REFIT_CHUNKS, onlyMissingVisible: bakeVisibleOnly })
       : StationBake.bake(cacheGeo);
-    valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
-    // dead-vs-live belt render mirrors the live world. The plan is compiled in cacheGeo's LOCAL frame but
-    // drawConveyor draws station.belts() in WORLD tiles — rebase the live keys by the geo origin or every
-    // REFIT belt would look cold (frame-mismatch, not truth).
-    valLive = null;
-    if (valPlan && Pipeline.liveTiles) {
-      const lv = Pipeline.liveTiles(valPlan), o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
-      valLive = {};
-      for (const k in lv) { const p = k.split(','); valLive[(+p[0] + o.tx) + ',' + (+p[1] + o.ty)] = true; }
+    /* recompile the routing plan ONLY when the floor actually changed (planDirty — set by station.onChange
+       and open(), the two edit paths; world.js compileRouting is gated the same way via its geoDirty edit
+       flag). rebake() ALSO runs on pure pans (frame() flips bakeDirty+bakeVisibleOnly when visible chunks
+       are missing), and recompiling plan + liveTiles + the key-rebase on every pan was pure waste: the
+       geometry is identical, so the plan (and valLive — origin only moves on edits) is still exact. */
+    if (planDirty || !valPlan) {
+      valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
+      // dead-vs-live belt render mirrors the live world. The plan is compiled in cacheGeo's LOCAL frame but
+      // drawConveyor draws station.belts() in WORLD tiles — rebase the live keys by the geo origin or every
+      // REFIT belt would look cold (frame-mismatch, not truth).
+      valLive = null;
+      if (valPlan && Pipeline.liveTiles) {
+        const lv = Pipeline.liveTiles(valPlan), o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
+        valLive = {};
+        for (const k in lv) { const p = k.split(','); valLive[(+p[0] + o.tx) + ',' + (+p[1] + o.ty)] = true; }
+      }
+      planDirty = false;
     }
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
@@ -1809,6 +1862,24 @@ const Build = (() => {
     ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw / 2, topY - bh, bw, bh);
     ctx.fillStyle = bound ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
     ctx.fillText(txt, cx, topY - 2 / zoom);
+    // dock→dock affordance: a BOUND bay's glance also says where its OUTPUT goes — read from the compiled
+    // plan's chain record (valPlan.chains — the same fact the sidecar routes by), so the tag can never
+    // claim a handoff dispatch wouldn't perform. Same tag chrome, stacked one line above; still a glance,
+    // never a window. A beltless dock has no chain record and gains no line.
+    if (isBay && bound && valPlan && valPlan.chains) {
+      const ch = valPlan.chains[p.agentId];
+      const t2 = !ch ? null
+        : (ch.next && ch.next.length) ? '▸ HANDS OFF TO ' + ch.next.map(agentLabelFor).join(' + ')
+        : ch.outbox ? '▸ SHIPS TO OUTBOX'
+        : ch.deadEnd ? '▸ OUTPUT DEAD-ENDS' : null;
+      if (t2) {
+        const bw2 = ctx.measureText(t2).width + pad * 2, top2 = topY - bh;
+        ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw2 / 2, top2 - bh, bw2, bh);
+        // handoff/ship-out = the bound green; a dead-ending output reads amber (same invite-to-fix tone as 'unassigned')
+        ctx.fillStyle = (ch.next && ch.next.length) || ch.outbox ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
+        ctx.fillText(t2, cx, top2 - 2 / zoom);
+      }
+    }
   }
 
   function drawHover(t) {

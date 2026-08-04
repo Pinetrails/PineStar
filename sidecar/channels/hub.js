@@ -1536,6 +1536,9 @@
             // a hop is a plain autonomous run of ANOTHER agent: its OWN composed persona (never this channel's
             // configured system prompt — that belongs to the agent the connection names), its OWN bay station,
             // its OWN durable transcript. No consent keyboard: a downstream stage is machine-to-machine.
+            // GRANTS LAW (2026-08-04): unattended grants never flow down a line — this call deliberately passes
+            // NO unattendedGrants (a routine's grant names ONE agent; see cron-driver.js). `ownerTrusted` below
+            // is different by design and stays: the owner initiated this line on their own channel.
             const hopRunId = newId();
             myRec.runId = hopRunId; myRec.agentId = h.agentId; myRec.startedAt = now ? now() : null;
             const hs = { buf: '', errMsg: null, usd: 0 };

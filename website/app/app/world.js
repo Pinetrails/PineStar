@@ -22,7 +22,7 @@ const World = (() => {
   let deskPropId = null, deskFace = 'north';           // set when the hero's desk is a PLACED workstation prop assigned to it (its id + the seat's facing)
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
-  let routingPlan = null, lastPlanHash = null;   // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
+  let routingPlan = null;                        // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
   let beltLiveSet = null;                        // { "x,y": true } belt tiles on a complete INTAKE→bound-BAY route (energized render)
   let beltTileSet = null;                        // Set("x,y") of every belt tile (hover hit-test; rebuilt with the plan)
   let routeTagCache = null;                      // tileKey -> {text, ok} composed hover route tag (invalidated on recompile)
@@ -4540,7 +4540,8 @@ const World = (() => {
   const NAG_LABEL = {
     UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NOT ON THE LINE', ORPHAN_SOURCE: 'NO BELT OUT',
     BAY_NOT_FED: 'NOT CONNECTED — FIX IN REFIT', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
-    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE', CHAIN_CYCLE: 'WORK LINE LOOPS'
+    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE', CHAIN_CYCLE: 'WORK LINE LOOPS',
+    BELT_BURIED: 'PROP ON THE LINE — MOVE IT'
   };
   // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
   function buildRoutingNags() {
@@ -5113,17 +5114,78 @@ const World = (() => {
     }
     postRoutingPlan(routingPlan);
   }
-  // fire-and-forget the plan to /api/routing, but only when the floor TOPOLOGY actually changed (hash dedupe —
-  // rederive() also runs on pure camera/agent moves). The sidecar REFUSES a non-deployable plan (cycle/orphan)
-  // and falls back to its default resolution, so a broken floor disables routed-mode rather than stalling work.
+  /* PLAN-POSTER-BEGIN (extraction marker — test/plan-poster.test.js evals this block with injected deps;
+     keep it PURE: params + locals only, no module state, no direct fetch/console/setTimeout).
+
+     Delivery of the compiled plan to /api/routing, with the hash committed ONLY on a server answer — the old
+     fire-and-forget committed the dedupe hash BEFORE the fetch and swallowed every failure, so one dropped
+     POST left the sidecar routing by a STALE floor forever while the world drew the new one (audit 2026-08-04).
+     Semantics:
+       • 200 → commit the hash (dedupe as before: same topology+caps never re-posts), clear staleness.
+       • 422 → the PLAN ITSELF is refused (cycle/orphan) — re-posting the same hash is pointless, so commit it
+         and record the refusal. Not stale: the sidecar holds (and persists) the CLEARED plan, and the floor
+         already draws the same compiler errors as nags — live truth on both sides.
+       • network failure / other status → do NOT commit; bounded fixed-delay retries, then give up until the
+         next offer (rederive re-offers the uncommitted hash). `stale` stays true — server-side routing may
+         not match the drawn floor — and each failure warns via deps.warn.
+     A newer offer supersedes any pending retry (seq guard: a late stale response can never commit). */
+  function makePlanPoster(deps) {
+    const MAX_RETRIES = 3, RETRY_MS = 4000;   // bounded + fixed-delay (deterministic-friendly); rederive re-offers after
+    let lastHash = null;      // last hash the server ANSWERED (200 committed / 422 refused) — never committed on a guess
+    let refusedHash = null;   // the hash of the last 422-refused plan (refusal state, inspectable)
+    let pendingHash = null;   // the hash currently being delivered (in flight or awaiting a retry tick)
+    let inflight = false, timer = null, seq = 0;
+    let stale = false;        // honest flag: the sidecar may still route by an older floor than the one drawn
+    function state() { return { lastHash: lastHash, refusedHash: refusedHash, pendingHash: pendingHash, inflight: inflight, retryPending: timer != null, stale: stale }; }
+    function offer(plan, hash) {
+      if (hash === lastHash) return false;                                   // server already answered this exact floor
+      if (hash === pendingHash && (inflight || timer != null)) return false; // same floor already being delivered
+      if (timer != null) { deps.cancel(timer); timer = null; }               // a different floor supersedes the pending retry
+      pendingHash = hash;
+      send(plan, hash, 0, ++seq);
+      return true;
+    }
+    function send(plan, hash, attempt, mySeq) {
+      const fail = why => {
+        if (mySeq !== seq) return;   // superseded — the newer offer owns delivery (and the flags) now
+        inflight = false;
+        stale = true;
+        deps.warn('[routing] plan post failed (' + why + ') — sidecar routing may be stale' +
+          (attempt < MAX_RETRIES ? '; retrying in ' + RETRY_MS + 'ms' : '; will retry on the next floor change'));
+        if (attempt < MAX_RETRIES) timer = deps.delay(() => { timer = null; send(plan, hash, attempt + 1, mySeq); }, RETRY_MS);
+      };
+      let p = null;
+      inflight = true;
+      try { p = deps.post(plan); } catch (_) { fail('exception'); return; }
+      Promise.resolve(p).then(res => {
+        if (mySeq !== seq) return;   // superseded — never let a stale response commit or clear flags
+        inflight = false;
+        if (res && res.ok) { lastHash = hash; refusedHash = null; pendingHash = null; stale = false; return; }
+        if (res && res.status === 422) { lastHash = hash; refusedHash = hash; pendingHash = null; stale = false; return; }
+        fail('http ' + (res ? res.status : '?'));
+      }, () => fail('network'));
+    }
+    return { offer: offer, state: state };
+  }
+  /* PLAN-POSTER-END */
+  // one poster for the module; on transient failure it warns and keeps `stale` true. No new UI surface:
+  // an unreachable sidecar already raises the LINK DOWN chrome (linkDown/linkState — the one honest
+  // connectivity signal), and _dbgBeltLegibility exposes planSync for the verify harness.
+  const planPoster = makePlanPoster({
+    post: plan => fetch(apiUrl('/api/routing'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }),
+    warn: m => { try { console.warn(m); } catch (_) {} },
+    delay: (fn, ms) => setTimeout(fn, ms),
+    cancel: id => clearTimeout(id)
+  });
+  // post the plan to /api/routing when the floor TOPOLOGY actually changed (hash dedupe — rederive() also runs
+  // on pure camera/agent moves). The sidecar REFUSES a non-deployable plan (cycle/orphan) and falls back to its
+  // default resolution, so a broken floor disables routed-mode rather than stalling work.
   function postRoutingPlan(plan) {
     if (typeof fetch === 'undefined') return;
     // dedupe on topology hash + per-bay caps, so equipping a bay (a capability change with no belt change) still re-POSTs
     const objKey = o => (o && typeof o === 'object') ? (o.objectType + '#' + (o.connectorId || '')) : o;   // connector objs carry a binding; stringify it so a re-bind re-POSTs
     const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')) : '';
-    if (hash === lastPlanHash) return;
-    lastPlanHash = hash;
-    try { fetch(apiUrl('/api/routing'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }).catch(() => {}); } catch (_) {}
+    planPoster.offer(plan, hash);
   }
   // junction props (splitter/filter/merger) keyed by tile — derived from the compiled plan so the VISUAL engine
   // animates filters + mergers (not just splitters) using the SAME config the dispatch router routes by.
@@ -5165,13 +5227,18 @@ const World = (() => {
     //  • no reaching line → the work lands directly at the agent's BAY dock (a lone bay is a complete build).
     /* A HANDOFF DOES NOT ENTER THROUGH THE FRONT DOOR. A `chain` work-item is stage N of a work line: it was
        produced at the UPSTREAM dock and rides that dock's lane to this one. Spawning it at an INTAKE would
-       draw a lie — the station never received anything, one of its own agents did. The upstream dock is
-       derived from the compiled plan (the dock whose chain names this agent), so no event field is invented
-       for it; the crate is PRODUCT, not ore, because that is exactly what it is. */
+       draw a lie — the station never received anything, one of its own agents did. The upstream dock is the
+       event's `from` (the PRODUCER — the chain runner names it since 2026-08-04); an old event without it
+       falls back to the plan heuristic (alphabetically-first dock whose chain reaches this agent). The crate
+       is PRODUCT, not ore, because that is exactly what it is; `fromAgentId` rides the payload so the
+       conveyor's dock-delivery physics can refuse to eat a dock's own output (a dock never consumes what it
+       produced — see conveyor.js tick / pipeline.js chain layer). */
     if (p.kind === 'chain' && routingPlan && routingPlan.chains) {
       p.box = 'product';
-      const ups = Object.keys(routingPlan.chains).filter(a => (routingPlan.chains[a].next || []).indexOf(p.agentId) >= 0).sort();
-      const from = ups.length ? routingPlan.chains[ups[0]] : null;
+      const upAid = (p.from && routingPlan.chains[p.from]) ? p.from
+        : Object.keys(routingPlan.chains).filter(a => (routingPlan.chains[a].next || []).indexOf(p.agentId) >= 0).sort()[0];
+      const from = upAid ? routingPlan.chains[upAid] : null;
+      if (upAid) p.fromAgentId = upAid;
       if (from && from.tile) { convey.enqueueAt(from.tile.x, from.tile.y, p); return; }
       dockArrival(p); return;                                       // no drawn lane between them — land it at the dock
     }
@@ -5273,6 +5340,11 @@ const World = (() => {
      riding crate (the pallet + counter still tell the server's truth). */
   const runWork = new Map();         // agentId -> { tools, dels } observed during the CURRENT run
   const shippedRunIds = new Set();   // dedup: run.end can be observed twice (local harness + SSE echo)
+  // runId -> summed RECONCILED usd (folded from agent.cost, whose contract requires reconciled:true).
+  // This is the ONLY source the product crate's mass may read — never cost.estimate, never run.end's usd
+  // (crate-mass honesty: the crate that leaves the line weighs what the run actually cost). Bounded like
+  // shippedRunIds; entries are dropped at run.end after the ship decision reads them.
+  const runUsdRecon = new Map();
   function runWorked(aid) {
     const w = runWork.get(aid || 'agent');
     return !!(w && (w.tools > 0 || w.dels > 0));
@@ -5288,7 +5360,11 @@ const World = (() => {
     const rid = (p && p.runId) || '';
     if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
     const t = outboundBeltTile(p && p.agentId);
-    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: 0.3, workitemId: (p && p.workitemId) || '' });
+    // MASS = the run's real reconciled cost (cargoProduct's contract) — the old hardcoded 0.3 drew every
+    // crate mid-weight regardless of spend. Conveyor.weightForUsd maps reconciled usd -> 0..1; a run with
+    // no reconciled cost ships weight 0 (the back-compat light look), never an estimate.
+    const w = (typeof Conveyor !== 'undefined' && Conveyor.weightForUsd) ? Conveyor.weightForUsd(runUsdRecon.get(rid)) : 0;
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: w, workitemId: (p && p.workitemId) || '' });
   }
   // an unproductive run produced no deliverable — ride a red-hot SLAG crate off the PRODUCING agent's bay
   // carrying its post-mortem one-liner, so the failed outcome is visible leaving the line.
@@ -5756,6 +5832,12 @@ const World = (() => {
     if (!slaglog && typeof SlagLog !== 'undefined') slaglog = SlagLog.create();
     U.bus.on('agent.cost', p => {
       if (floor) floor.onEvent('agent.cost', p, Date.now());
+      // crate-mass fold: sum this run's RECONCILED spend (agent.cost is reconciled by contract) so the
+      // product crate that ships at run.end can weigh what the run really cost. Bounded map.
+      if (p && p.runId && typeof p.usd === 'number' && isFinite(p.usd) && p.usd > 0) {
+        runUsdRecon.set(p.runId, (runUsdRecon.get(p.runId) || 0) + p.usd);
+        if (runUsdRecon.size > 400) runUsdRecon.delete(runUsdRecon.keys().next().value);
+      }
       // remember the most recent RECONCILED cache ratio — the smelter temperature a slag diagnosis reads
       if (p && (p.tokensIn | 0) > 0) lastCacheFrac = Math.max(0, Math.min(1, (p.cachedTokens || 0) / p.tokensIn));
       // E2 + Stage 2: a cost event reinforces the run TTL. A DELEGATED worker's stream is lifecycle+cost
@@ -5784,6 +5866,7 @@ const World = (() => {
       // and rides to the OUTBOX. A done-but-workless run ("I couldn't do that") ships NOTHING.
       if (r === 'done' && runWorked(p && p.agentId)) shipProductCrate(p);
       if (p && p.agentId) runWork.delete(p.agentId);   // the run is over — drop its work tally either way
+      if (p && p.runId) runUsdRecon.delete(p.runId);   // the ship decision above has read it — drop the cost fold
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
       // UNPRODUCTIVE RUN: pulse the SLAG cell, then turn the failed outcome into a lesson — a real post-mortem in the
       // notifications panel + a red-hot slag crate that rides off the line (if a desk belt exists). The
@@ -6263,6 +6346,7 @@ const World = (() => {
     liveCount: beltLiveSet ? Object.keys(beltLiveSet).length : 0,
     liveKeys: beltLiveSet ? Object.keys(beltLiveSet).sort() : [],
     nags: routingNags ? routingNags.map(n => n.label) : [],
+    planSync: planPoster.state(),   // plan delivery truth: lastHash committed ONLY on a server answer; stale=true while the sidecar may route by an older floor
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)

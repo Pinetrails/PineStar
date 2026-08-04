@@ -37,6 +37,14 @@ function block(title, quote, starter, conf) {
   A.eq(r.proposals[0].sourceRef.runId, 'run_3', 'provenance: sourceRef.runId stamped');
   A.eq(r.proposals[0].createdAt, 500, 'createdAt from the injected clock');
   A.ok(r.proposals[0].fingerprint === fingerprint('GPU price watcher'), 'fingerprint stamped for dedup');
+  /* WHO SPOKE (truthful telemetry, 2026-08-04). The grounding veto locates a quote in the WHOLE exchange, which
+     includes the AGENT's turns — so "verbatim quote" never meant "the Commander said this". The turn-in card may
+     only render `you said "…"` for a quote found in the Commander's OWN turns; anything else is cited as coming
+     from the conversation rather than put in their mouth. */
+  A.eq(r.proposals[0].speaker, 'user', 'a quote located in the Commander\'s own turn is stamped speaker:user');
+  const echoed = await mine(run, { propose: () => block('Tokenizer follow-up', 'it was an off-by-one in the tokenizer', 'a regression test for the tokenizer'), clock: makeClock(0) });
+  A.eq(echoed.proposals.length, 1, 'a quote taken from the AGENT\'s turn still passes the grounding veto (it was really said)');
+  A.eq(echoed.proposals[0].speaker, 'other', 'but it is NOT stamped as the Commander\'s speech — the card softens its citation');
 
   // ---- THE SUBSTANCE VETO (regression for the 2026-07-08 escape): banter is grounded — the Commander really
   //      said it — but it is NOT actionable work. Even if the model tries to mint it, it dies without BOTH a

@@ -48,12 +48,33 @@
   const GEAR_TYPES = ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'computer', 'connector'];
   // the SUGGESTED-cadence ids a recipe may carry (mirrors autojobs.js CADENCES). null = one-shot by nature.
   const CADENCES = ['morning', 'weekly', 'sixhourly', 'hourly'];
-  // browse buckets for the marketplace category rail (R6 discovery front: developer / research / creator / ops /
-  // general). The R4 persona catalog (dev.js / creator.js / ops.js) authors 'developer'/'creator'/'ops' — they
-  // MUST be known buckets or normCategory collapses them to 'general' and the rail can't group them. 'code',
-  // 'writing' and 'planning' stay valid legacy aliases (older customs) that the rail maps into developer/general.
+  // browse buckets for the marketplace category rail (the R6 discovery front). A persona catalog module authors
+  // one of these — it MUST be a known bucket or normCategory collapses it to 'general' and the rail can't group
+  // it. 'code' and 'planning' stay valid legacy aliases (older customs) that the rail folds into developer/ops.
   // 'general' is the catch-all fallback. Additive only — no bucket is ever renamed or removed.
-  const CATEGORIES = ['developer', 'research', 'creator', 'ops', 'general', 'code', 'writing', 'planning'];
+  //
+  // STANDING-AUTOMATION BUCKETS (2026-08-04): the catalog is a use-case dictionary for someone who cannot yet
+  // name their own use case, so the buckets are the areas a StarNet user actually works in. A bucket only
+  // exists if a real shelf of recipes stands behind it — an empty or one-item bucket reads as broken next to
+  // a full one, so a bucket is added WITH its module and removed when its module goes.
+  const CATEGORIES = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money',
+    'data', 'general', 'code', 'planning'];
+  /* THE VISIBLE buckets, in rail order, and the fold from a raw category onto one. Two categories can be
+     DIFFERENT values and the same bucket ('code' and 'developer' both render under DEVELOPER), so anything
+     reasoning about what the Commander actually SEES must fold first — the marketplace rail delegates here
+     rather than keeping its own copy, so the rail and the recommender can never disagree about what "one
+     per category" means. Legacy aliases fold; an unknown value falls back to 'general'. */
+  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'ops', 'business', 'money', 'data', 'general'];
+  // 'writing' stays a valid stored category (core's draft-reply / tighten-writing carry it) but folds into
+  // CREATOR on the rail: a two-item chip beside a thirteen-item one reads as broken, and both recipes are
+  // squarely content work. Same treatment as 'code' -> developer and 'planning' -> ops.
+  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', writing: 'creator',
+    creator: 'creator', ops: 'ops', planning: 'ops', business: 'business', money: 'money',
+    data: 'data', general: 'general' };
+  function railBucket(r) {
+    const c = (r && typeof r === 'object') ? r.category : r;
+    return CAT_TO_RAIL[String(c == null ? '' : c)] || 'general';
+  }
   // provenance: where a recipe came from. 'builtin' = curated; 'custom' = hand-authored; 'fork' = tweaked from another.
   const SOURCES = ['builtin', 'custom', 'fork'];
 
@@ -728,7 +749,7 @@
     const m = topicMatch(recipe, opts.topics);
     if (m && TopicMatch && TopicMatch.reason) { const r = TopicMatch.reason(m); if (r) return r; }
     const gh = namableGoalHits(goalKeywordHits(recipe, opts.goalText || ''));
-    if (gh.length) return 'matches your goal: “' + gh[0] + '”';
+    if (gh.length) return 'it matches your goal: “' + gh[0] + '”';
     const u = (opts.launches && typeof opts.launches === 'object') ? opts.launches[recipe.id] : null;
     const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
     const great = rated && Number.isFinite(rated.great) && rated.great > 0 ? Math.floor(rated.great) : 0;
@@ -820,7 +841,7 @@
       if (top.length && top.length < limit) {
         const inRow = {}; top.forEach(r => { inRow[r.id] = true; });
         const spare = scored.filter(x => x.s === 0 && !inRow[x.r.id]).map(x => x.r);
-        top = top.concat(categorySpread(spare, limit - top.length));
+        top = top.concat(categorySpread(spare, limit - top.length, opts.spreadOffset));
       }
       // …unless the SINK TOOK EVERYTHING. The outcome term is negative-heavy on purpose, so a station whose only
       // engagement on record is a 👎 (launched one recipe, rated it miss — the exact first-session shape: no
@@ -829,23 +850,43 @@
       // spread instead: "nothing has earned the row yet" is the same honest state as never having launched one.
       if (top.length) return top;
     }
-    // honest cold-start fallback: a category spread (first recipe of each distinct category, catalog order), topped
-    // up with the next recipes in order if there aren't enough distinct categories to fill the row.
-    return categorySpread(pool, limit);
+    // honest cold-start fallback: a bucket spread (first recipe of each distinct browse bucket), topped up with
+    // the next recipes in order if there aren't enough distinct buckets to fill the row.
+    return categorySpread(pool, limit, opts.spreadOffset);
   }
-  // one recipe per distinct category in catalog order, then the remainder in order, clipped to n. Shared by the
-  // cold-start row and the thin-signal top-up so "varied" means the same thing in both places.
-  function categorySpread(pool, n) {
-    const byCat = [], usedCat = {}, rest = [];
-    (pool || []).forEach(r => {
-      const c = (r && r.category) || 'general';
-      if (!usedCat[c]) { usedCat[c] = true; byCat.push(r); } else rest.push(r);
-    });
-    return byCat.concat(rest).slice(0, Math.max(0, n));
+  /* One recipe per distinct BROWSE BUCKET, then the remainder, clipped to n. Shared by the cold-start row and
+     the thin-signal top-up so "varied" means the same thing in both places.
+
+     ⛔ SPREAD BY BUCKET, NOT BY RAW CATEGORY. This walked `r.category` and it quietly broke as the catalog
+     grew: core.js owns four legacy categories (research/code/writing/planning) and sits FIRST in the aggregate,
+     so a 4-card cold-start row was filled entirely from core.js before any persona module was reached — the
+     other hundred-odd recipes could never appear on a cold station no matter how many were added. It was not
+     even varied in the way the Commander sees it, since code+developer and writing+planning+ops each render
+     under ONE rail chip. Folding to the bucket first fixes both: the row spans what the rail actually shows.
+
+     `offset` rotates WHICH bucket the row starts from. Selection stays pure and deterministic — the same
+     offset always yields the same row, so tests and the all-sunk fallback are unaffected — but a caller that
+     passes a real, changing counter (the marketplace passes how many times this Commander has opened the
+     recipes tab) shows a different corner of the library on each visit instead of the same four cards forever.
+     This claims nothing: the row is labelled as a varied lineup, never as popular or recommended, so rotating
+     it stays inside the truthful-telemetry law — there is no assertion here that could become false. */
+  function categorySpread(pool, n, offset) {
+    const list = pool || [];
+    const firstOf = [], seen = {}, rest = [];
+    for (const r of list) {
+      const b = railBucket(r);
+      if (!seen[b]) { seen[b] = true; firstOf.push({ b, r }); } else rest.push(r);
+    }
+    // rotate the one-per-bucket head so a repeat visitor starts on a different bucket; the remainder keeps
+    // catalog order so the tail is still stable and the whole result is a pure function of (pool, n, offset).
+    const k = firstOf.length;
+    const off = (Number.isFinite(offset) && k > 0) ? (((Math.floor(offset) % k) + k) % k) : 0;
+    const head = off ? firstOf.slice(off).concat(firstOf.slice(0, off)) : firstOf;
+    return head.map(x => x.r).concat(rest).slice(0, Math.max(0, n));
   }
 
   return {
-    TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES, PARAM_TYPES,
+    TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES, PARAM_TYPES, RAIL_BUCKETS, railBucket,
     list, builtins, customs: customList, get, exists,
     fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound,
     // R6 marketplace surface
