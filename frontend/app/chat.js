@@ -3609,6 +3609,7 @@ const Chat = (() => {
     if (!prop) return;
     // re-check the moment after the async fetch — reflection's memory.proposed may have claimed it meanwhile.
     if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked()) { queueStudy(runId, agentId); return; }
+    if (beatCards && !beatCards.once('study', runId)) return;   // this run already got its one study card
     studyCard(prop, agentId, runId);
   }
   /* THE STUDY LANE'S LIFECYCLE (recommendation spine, S3): this listener no longer ARMS an offer — the one
@@ -3707,6 +3708,7 @@ const Chat = (() => {
   }
   // one arc confirm per run: the collection pass consults this before staging the arc candidate (the offer
   // itself, including the paid decomposition call, only happens if the arc actually WINS the moment).
+  function arcSeen(runId) { return !!runId && arcRunsSeen.has(runId); }
   function arcOnce(runId) {
     if (!runId) return true;
     if (arcRunsSeen.has(runId)) return false;
@@ -3935,6 +3937,7 @@ const Chat = (() => {
     if (!prop) return;
     // re-check the moment after the async fetch — a higher-priority beat may have claimed it meanwhile.
     if (threadBusy() || slotCanThread() !== 'free' || studyBlocked()) { queueThread(runId, agentId); return; }
+    if (beatCards && !beatCards.once('thread', runId)) return;   // this run already got its one thread card
     threadCard(prop, agentId, batch.runId || runId);
   }
   function wireThreads() {
@@ -4259,8 +4262,17 @@ const Chat = (() => {
   }
   function recQuote(s) { const t = String(s == null ? '' : s).trim(); return t ? ('you said “' + t + '”') : ''; }
 
-  /* ── the candidate builders. Each is SYNC and side-effect-free (it may only read its store), except the
-        two fetch-backed turn-ins below, which read a stash the sidecar already wrote during the run. ── */
+  /* ── the candidate builders. Each is side-effect-free — it may only READ its store. The two fetch-backed
+        turn-ins additionally GET a stash the sidecar already wrote during the run (a local read, no spend).
+
+        THE ONCE LAW (fixed 2026-08-04). Every per-run token — arcOnce, and beatCards.once() for trust /
+        study / thread — used to be SPENT here, at collection. A candidate that lost the moment (or a pass
+        that stood down after building it) therefore burned the run's only chance to offer that channel,
+        and a re-fired agent.run.end — which really does happen — found every token spent with nothing ever
+        shown. Collection now only ASKS (hasSeen / arcSeen); the token is consumed inside fire(), so it
+        means exactly one thing: "a card for this run was actually rendered." The deferred queue paths
+        (offerStudy / offerThread) consume the SAME token before rendering, so a run can never be offered
+        twice by the queue and the pass racing each other. ── */
 
   // ARC — the goal-arc confirm. Cited by the Commander's OWN goal belief, read synchronously; the paid
   // decomposition call inside offerArc happens only if the arc actually wins the moment.
@@ -4272,8 +4284,8 @@ const Chat = (() => {
     try { belief = GoalStore.pendingDecomposition ? GoalStore.pendingDecomposition() : null; } catch (_) {}
     const text = belief && belief.text ? String(belief.text).trim() : '';
     if (!text) return null;                                  // nothing to cite → the arc stays silent
-    if (!arcOnce(runId)) return null;                        // one confirm per run (unchanged)
-    return { kind: 'arc', dim: 'goals', why: recQuote(text), fire: () => { offerArc(runId); } };
+    if (arcSeen(runId)) return null;                         // one confirm per run — READ only (see the once law below)
+    return { kind: 'arc', dim: 'goals', why: recQuote(text), fire: () => { if (arcOnce(runId)) offerArc(runId); } };
   }
 
   // TRUST — the earned-autonomy offer. Cited by the REAL track record the offer was computed from.
@@ -4289,8 +4301,9 @@ const Chat = (() => {
     const why = streak ? (streak + ' approvals in a row')
       : (runs ? (runs + ' tasks at ' + (Number(pv.confidence) || 0) + '% satisfaction') : '');
     if (!why) return null;                                   // no provable track record → no offer
-    if (!runId || !beatCards.once('trust', runId)) return null;             // one offer per run (unchanged)
-    return { kind: 'trust', why: why, streak: streak, fire: () => { trustCard(offer, runId); } };
+    if (!runId || !beatCards || beatCards.hasSeen('trust', runId)) return null;   // one offer per run — READ only
+    return { kind: 'trust', why: why, streak: streak,
+             fire: () => { if (beatCards.once('trust', runId)) trustCard(offer, runId); } };
   }
 
   // RATE THE WORK — the primary leveling beat. Cited by the run's OWN recorded work (never fabricated: the
@@ -4372,7 +4385,7 @@ const Chat = (() => {
   async function studyCandidate(runId, agentId) {
     if (typeof StudyStore === 'undefined') return null;
     if (studyBusy() || slotCanStudy(runId) !== 'free') return null;   // runId = the SELF-KEY: the pass's own reservation must not veto it
-    if (!runId || !beatCards || !beatCards.once('study', runId)) return null;
+    if (!runId || !beatCards || beatCards.hasSeen('study', runId)) return null;   // one offer per run — READ only
     if (!StudyStore.canShow || !StudyStore.canShow()) return null;          // session cap (per-session, not deferrable)
     const proposals = await StudyStore.fetchProposals(runId, agentId);
     const prop = StudyStore.nextLive(proposals);   // drops resolved/declined/ignored + unmatchable retires
@@ -4380,21 +4393,23 @@ const Chat = (() => {
     const why = prop.evidence ? recQuote(prop.evidence)
       : (prop.kind === 'retire' ? String(prop.text || '').trim() : '');
     if (!why) return null;
-    return { kind: 'study', dim: prop.dim, why: why, fire: () => { studyCard(prop, agentId, runId); } };
+    return { kind: 'study', dim: prop.dim, why: why,
+             fire: () => { if (beatCards.once('study', runId)) studyCard(prop, agentId, runId); } };
   }
 
   // THREAD — the mined-idea turn-in. Its evidence is the verbatim quote the mine grounded the idea in.
   async function threadCandidate(runId, agentId) {
     if (typeof ThreadStore === 'undefined') return null;
     if (threadBusy() || slotCanThread(runId) !== 'free') return null;  // runId = the SELF-KEY (see slotCanStudy)
-    if (!runId || !beatCards || !beatCards.once('thread', runId)) return null;
+    if (!runId || !beatCards || beatCards.hasSeen('thread', runId)) return null;  // one offer per run — READ only
     if (!ThreadStore.canShow || !ThreadStore.canShow()) return null;        // session cap
     const batch = await ThreadStore.fetchProposals(runId, agentId);
     const prop = ThreadStore.nextLive(batch.proposals);   // drops resolved/ignored candidates
     if (!prop) return null;
     const why = recQuote(prop.spec);
     if (!why) return null;
-    return { kind: 'thread', why: why, fire: () => { threadCard(prop, agentId, batch.runId || runId); } };
+    return { kind: 'thread', why: why,
+             fire: () => { if (beatCards.once('thread', runId)) threadCard(prop, agentId, batch.runId || runId); } };
   }
 
   /* THE PASS. Runs TWICE per clean run end — once at the FAST arm (phase !== 'slow': the rate beat, which

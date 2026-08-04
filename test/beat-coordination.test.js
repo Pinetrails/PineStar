@@ -83,6 +83,31 @@ for (const k of ['suggest', 'seed', 'routine', 'recruit', 'curiosity']) {
   A.eq(Recommend.slotKindOf(k), 'nudge', k + ' renders through the one gentle-aside slot');
 }
 
+/* THE ONCE LAW: a per-run token is spent at FIRE time, never at collection. Spending it while merely staging a
+   candidate meant a channel that LOST the moment (or a pass that stood down afterwards) burned the run's only
+   chance to speak, and a re-fired agent.run.end found every token spent with nothing ever shown. */
+for (const [fn, probe] of [['arcCandidate', /if \(arcSeen\(runId\)\) return null;/],
+                           ['trustCandidate', /beatCards\.hasSeen\('trust', runId\)\) return null;/],
+                           ['studyCandidate', /beatCards\.hasSeen\('study', runId\)\) return null;/],
+                           ['threadCandidate', /beatCards\.hasSeen\('thread', runId\)\) return null;/]]) {
+  const i = chatSrc.indexOf('function ' + fn);
+  A.ok(probe.test(chatSrc.slice(i, i + 1800)), fn + ' only READS its per-run token (collection is side-effect-free)');
+}
+const iArcCand = chatSrc.indexOf('function arcCandidate');
+A.ok(/fire: \(\) => \{ if \(arcOnce\(runId\)\) offerArc\(runId\); \}/.test(chatSrc.slice(iArcCand, iArcCand + 1200)),
+  'the arc spends its token when it FIRES');
+for (const [k, fn] of [['trust', 'function trustCandidate'], ['study', 'async function studyCandidate'], ['thread', 'async function threadCandidate']]) {
+  const i = chatSrc.indexOf(fn);
+  A.ok(new RegExp("fire: \\(\\) => \\{ if \\(beatCards\\.once\\('" + k + "', runId\\)\\)").test(chatSrc.slice(i, i + 1800)),
+    k + ' spends its token when it FIRES');
+}
+// …and the deferred queue drain consumes the SAME token, so the queue and the pass can never both render a run's card
+for (const [fn, k] of [['async function offerStudy', 'study'], ['async function offerThread', 'thread']]) {
+  const i = chatSrc.indexOf(fn);
+  A.ok(new RegExp("if \\(beatCards && !beatCards\\.once\\('" + k + "', runId\\)\\) return;").test(chatSrc.slice(i, i + 1600)),
+    fn.replace('async function ', '') + ' consumes the same per-run token before rendering (never a double offer)');
+}
+
 // EVIDENCE OR SILENCE: every candidate builder must cite real state or return null
 for (const fn of ['arcCandidate', 'trustCandidate', 'rateCandidate', 'suggestCandidate', 'seedCandidate',
                   'routineCandidate', 'recruitCandidate', 'curiosityCandidate', 'studyCandidate', 'threadCandidate']) {
