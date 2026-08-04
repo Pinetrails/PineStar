@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "2cb6beb42162500484a6511045622864ba7c2722",
+    "sourceCommit": "26c5583879bb1769520f92df38c2e2ce752d0341",
     "pathSetSha256": "89e6003e522968bcad962342da9a8f804428421941c53bee645ea14476601001",
     "files": [
       {
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 23177,
-        "sha256": "0db1667220f6dabc537a7c057b0ba0f14f4fd6e76fae296a575fe6ca70a04bcb"
+        "bytes": 23440,
+        "sha256": "5e9f2a6b1bbf23d60e8d91a1ef96127c6fa5fc523126d76c9485109ec6480e41"
       },
       {
         "path": "frontend/app/harness.js",
