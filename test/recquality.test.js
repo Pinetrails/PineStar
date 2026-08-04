@@ -35,6 +35,13 @@ A.ok(RQ.beliefStrength({ updatedAt: NOW }, NOW, uRead, 'pain') < RQ.beliefStreng
   'a fresh belief in a thinly-understood dimension is still only moderately strong');
 A.eq(RQ.beliefStrength({ updatedAt: NOW }, NOW, null, 'goals'), 1, 'no understanding read → freshness alone is the reading');
 A.eq(RQ.beliefStrength(null, NOW, uRead, 'goals'), null, 'no belief → no reading');
+/* NEITHER READING MAY ZERO THE OTHER OUT (fixed after a live run, 2026-08-04): the dimension confidence is a
+   lagging aggregate — a station can genuinely hold the goal belief the arc is citing while the goals dim still
+   reads 0 — so a fresh, real citation must never be discounted to nothing by it. */
+A.ok(RQ.beliefStrength({ updatedAt: NOW }, NOW, { dims: { goals: { conf: 0 } } }, 'goals') >= 0.5,
+  'a FRESH belief in a dimension reading zero confidence is still half-strength, never zero');
+A.ok(RQ.beliefStrength({ updatedAt: NOW - 900 * DAY }, NOW, uRead, 'goals') < 0.5,
+  'and a long-dead belief is weak even in a well-understood dimension');
 
 /* ── 4. STRENGTH REORDERS WITHIN A BAND, NEVER ACROSS ONE (the spine’s law is untouched) ── */
 const fresh = { kind: 'seed', why: 'you keep asking me to “ship the digest” (4×)', strength: 0.95 };

@@ -77,9 +77,13 @@
     const f = freshness(belief, now);
     const c = dimStrength(uRead, dim);
     if (c == null) return clamp01(f);
-    // the geometric mean: a fresh belief in a thinly-understood dimension is still only moderately strong, and a
-    // well-understood dimension cannot rescue a belief the Commander last touched a season ago.
-    return clamp01(Math.sqrt(clamp01(f) * clamp01(c)));
+    /* the MEAN of the two, deliberately not their product. A fresh belief in a thinly-understood dimension is
+       still only moderately strong, and a well-understood dimension cannot rescue a belief the Commander last
+       touched a season ago — but neither reading may zero the other out. Proved live (2026-08-04): a station
+       whose goals dimension reads conf 0 STILL holds the goal belief the arc is citing (the confidence read is
+       a lagging aggregate, and a seed-weighted belief scores 0 by design) — a product would have discounted a
+       perfectly fresh, real citation to nothing. Strength is a soft ordering signal, never a verdict. */
+    return clamp01((clamp01(f) + clamp01(c)) / 2);
   }
 
   /* ── STALENESS: a belief this old and this thin may be ASKED about, never ASSERTED ───────────────────────
