@@ -7,10 +7,10 @@
   "candidate": {
     "sourceTree": "ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5",
     "describe": "v0.8.5-74-g194bf60f",
-    "executable": {
-      "path": "src-tauri/target/release/skynet-desktop.exe",
+    "installedExecutable": {
+      "path": "C:/Users/andro/AppData/Local/StarNet/skynet-desktop.exe",
       "bytes": 15269888,
-      "sha256": "7d101005b8f38314b7e6441cf0773add5c3f7bf5887d2ade4bff1abfdc3b2e45"
+      "sha256": "96118585a89f679e88898aac20528378e5b3521aabedacbffb0a5909babd4ae5"
     },
     "installer": {
       "path": "src-tauri/target/release/bundle/nsis/StarNet_0.8.5_x64-setup.exe",
@@ -18,11 +18,47 @@
       "sha256": "c329aa6e25b3463cd6aef538744efbf68955ff7e5f8a79d076585ad3ec2ab01b"
     },
     "manifest": {
-      "path": ".dogfood/eval/starnet-wave-b-candidate-manifest.json",
-      "sha256": "4b5bbf613587feb069c1e3dc5b45dd944e6c4c2ff5a1debc8dea62fe4dfa691e",
+      "path": ".dogfood/eval/starnet-wave-b-installed-manifest.json",
+      "sha256": "63a2105ca877e08c1255df594da3e6027700c6ca0e80aac268e13ade36c0cb50",
       "provenanceVerified": true,
       "runtimeFilesVerified": 4205
     }
+  },
+  "campaignPreflight": {
+    "path": ".dogfood/eval/wave-b-campaign-preflight.json",
+    "sha256": "1521ecf8c261358620bd0dfab8863a45dce4c63068b39fb21683bc2697dd8496",
+    "pass": true,
+    "plannedRowsPerHarness": 96,
+    "fixtureCount": 32,
+    "attemptsPerHarness": 3,
+    "credentialMetadataFresh": true,
+    "credentialContentsRead": false
+  },
+  "sameModelPerformance": {
+    "path": ".dogfood/eval/starnet-hermes-wave-b-same-model-receipt.json",
+    "sha256": "508932d95bec3caa88b0626e38366dabcac734061e5710d56fc8c7d8330c128c",
+    "pass": true,
+    "candidateBound": true,
+    "referenceBound": true,
+    "provider": "openai-codex",
+    "model": "gpt-5.6-luna",
+    "attempts": 3,
+    "signature": {
+      "algorithm": "Ed25519",
+      "keyId": "29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d",
+      "verified": true
+    },
+    "medianMs": {
+      "starnetFirstOutput": 2665.711,
+      "starnetTotal": 3027.694,
+      "referenceFirstOutput": 17854.749,
+      "referenceTotal": 28052.778
+    },
+    "rawProbeSha256": [
+      "b8da5b056ed59dd987c5be4bc91d4cef4418f58b3d24682e37b5049597515c86",
+      "08f1064919bafcc90529505a11edc841ea923b9b54e66089b4aa04638c7f4b24",
+      "cacef9b55f412ec86a9c28d6fb74c4c89ec348660474a31c9018de6b789b6eac"
+    ]
   },
   "performanceControl": {
     "path": ".dogfood/eval/starnet-wave-b-performance-control.json",
@@ -49,7 +85,8 @@
     "intervalSeconds": 60,
     "statusAtIndexWrite": {
       "running": true,
-      "healthChecks": 1,
+      "observedAt": "2026-08-04T01:22:53.695Z",
+      "healthChecks": 1039,
       "healthFailures": 0,
       "unexpectedExits": 0
     }
@@ -61,11 +98,10 @@
     "classification": "voice-stack dependencies: @huggingface/transformers, kokoro-js, onnxruntime-node/adm-zip, and sharp/libvips"
   },
   "limitations": [
-    "The candidate and installer were built but were not installed over the user's current application.",
     "The updater bundle is not release-signed because the release private key was not supplied.",
-    "The active StarNet credential envelope still predates the required August 3 rotation; no provider-backed run was authorized.",
-    "The performance control excludes installed desktop cold boot, first token, first tool activity, useful artifact, and final durable delivery latency.",
+    "The same-model receipt measures the installed runtime node/sidecar path, not desktop UI cold boot or useful-artifact completion.",
+    "The 32 scenario fixtures and independent grader exist, but no executable host-observation campaign adapter exists yet; no 96-row-per-harness trajectory set has been captured.",
     "The running provider-free control-plane soak cannot qualify the release or replace the post-parity installed active/idle 48-hour soak.",
-    "Three-attempt installed parity and the 100% critical / 95% overall / at-most-5-point gates remain unevaluated."
+    "The 100% critical / 95% overall / at-most-5-point gates remain unevaluated."
   ]
 }

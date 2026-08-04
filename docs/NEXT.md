@@ -1,5 +1,39 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-03 - v0.9.0 WAVE B AUTHENTICATED PREFLIGHT (`agent/release-090-parity-plan`)
+
+AUTHENTICATION AND SAME-MODEL PREFLIGHT PASS; FULL PARITY GATES REMAIN UNEVALUATED. The candidate is now
+installed and bound to `C:/Users/andro/AppData/Local/StarNet/skynet-desktop.exe`, SHA-256
+`96118585a89f679e88898aac20528378e5b3521aabedacbffb0a5909babd4ae5`, commit
+`194bf60f2d301112654125adf991df6b5c1cf42f`, and tree
+`ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5`. Its 4,205 shipped runtime files and live health
+describe `v0.8.5-74-g194bf60f` matched. The frozen Hermes v0.19.1 executable remains bound to
+commit `cc4cab2f592e60a197e796506de9168f74baf3ea`, tree
+`fcdc6093750ed0a3a556e20927799d7245ba65e4`, and Python SHA-256
+`a026b3c1ea6da6fd570355f92bcee990dd400f51ec497e5499e6abaf05cf150d`.
+
+The metadata-only campaign preflight is green: credential rotation freshness, both executable identities,
+all 32 active task/fixture pairs, and three contracted attempts (96 rows per harness) passed. Credential
+contents were not read. Three explicit `openai-codex/gpt-5.6-luna` probes then returned exact output from
+both harnesses. Their candidate/reference-bound Ed25519 receipt verifies under key ID
+`29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`. Median first-output/total
+latency was 2,665.7/3,027.7 ms for StarNet and 17,854.7/28,052.8 ms for Hermes. This is a model/provider
+equivalence preflight through StarNet's installed runtime node/sidecar, not desktop cold boot, useful-artifact
+latency, or the workload parity score. The canonical test gate is 512/512 green.
+
+The provider-free 48-hour control soak remains healthy and scheduled to end at
+`2026-08-05T07:59:42.752Z`; at `2026-08-04T01:22:53.695Z` it had 1,039 health checks, zero health
+failures, and zero unexpected exits. It remains `qualifiesRelease:false`.
+
+REMAINING BLOCKER: the repository has 32 independent fixtures and a fail-closed grader, but no executable
+campaign adapter that drives either harness and captures host observations. Therefore the 96 trajectories per
+harness do not exist and the 100% critical / 95% overall / at-most-5-point gates cannot truthfully be evaluated.
+Do not feed `makePassingObservation` into release evidence; it is a test-only forgery helper. Implement common
+fixture materialization plus separate StarNet/Hermes drivers and host observers, capture all 192 runs, grade and
+sign them, then run installed desktop cold-start/useful-artifact measurements and the qualifying installed
+provider-backed 48-hour soak. Updated evidence is indexed in
+[`docs/baselines/v0.9.0-wave-b-candidate-control.json`](baselines/v0.9.0-wave-b-candidate-control.json).
+
 ## 2026-08-03 - v0.9.0 WAVE B CANDIDATE CONTROL (`agent/release-090-parity-plan`)
 
 PROVIDER-FREE WORK CONTINUES; RELEASE GATES REMAIN BLOCKED. A clean Windows candidate was compiled from commit
