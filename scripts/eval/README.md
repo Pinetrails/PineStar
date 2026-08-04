@@ -69,6 +69,19 @@ selects a different model, so a nominal CLI flag cannot hide a real mismatch:
 node scripts/eval/same-model-probe.mjs --model <model> --starnetRoot <installed-root> --starnetHome <active-workspaces> --hermesSource <frozen-checkout> --hermesPython <venv-python> --hermesHome <isolated-home> --output <probe.json> --outputDir <evidence-dir>
 ```
 
+After exactly three successful attempts, bind and sign their immutable raw evidence. The finalizer
+fails closed on a duplicate file, model/provider drift, non-exact output, missing timing/token data,
+or either executable no longer matching its manifest:
+
+```powershell
+node scripts/eval/same-model-receipt.mjs --probes <probe-1.json>,<probe-2.json>,<probe-3.json> --subject-manifest <starnet-manifest.json> --reference-manifest <hermes-manifest.json> --contract scripts/eval/contracts/v0.9.0.json --signing-key <receipt-private.pem> --receipt <performance-receipt.json>
+node scripts/eval/runner.mjs verify-receipt --receipt <performance-receipt.json>
+```
+
+This measures StarNet's bound installed runtime node/sidecar path, not desktop UI cold boot, and is
+only the provider/model equivalence preflight. It does not replace the 32-scenario gauntlet or the
+installed provider-backed 48-hour soak.
+
 Before any provider-backed campaign, run the metadata-only preflight. It fails closed unless the
 installed executable exactly matches the bound candidate, the frozen Hermes identity and executable
 still match, all 32 tasks have independent fixtures, three attempts are contracted, and the credential
