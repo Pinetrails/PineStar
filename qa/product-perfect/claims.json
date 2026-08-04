@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "c5e924e58e10bc2a664b7404eace9ab0182d27e2",
+    "sourceCommit": "496f84886ac9fcde7317806bd2e460d0415a45b8",
     "pathSetSha256": "67b3f0df0ace2d6e273f3018ed6d520ec8f1858fe011dfc43b615afff886d695",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 311306,
-        "sha256": "b263e14db1d46f46c5a23685a561c7d2d7b7a043a102495fbafeed44711b6c64"
+        "bytes": 311832,
+        "sha256": "4fbec8a58ccb450050ea2adab6140ce3437ceeef43aabee8ca6533103447d92c"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 512961,
-        "sha256": "6247e4184cb85f4da7a5f144e8fba6d6e1bc11670d6348fadc3e659e6f0e2a50"
+        "bytes": 518539,
+        "sha256": "697a0a924af6324e83aa6db7fb87626fde44863aabf42cb491ad5c9d3937a0a4"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -228,8 +228,8 @@
       },
       {
         "path": "frontend/app/dossier.js",
-        "bytes": 15853,
-        "sha256": "e72adaf77bdbc35fbdc05b30a31607ea75102dff3e3e76c5b10d93d5e8558bcd"
+        "bytes": 16603,
+        "sha256": "eb270a267a794d775fe977b2709f816296c72eb04b015b08f5e0f965007f6cbb"
       },
       {
         "path": "frontend/app/dossierstore.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 24712,
-        "sha256": "112e17ba92a8395891559b634b11c603e989927ba7aa7a382bcdd51917f06b53"
+        "bytes": 25172,
+        "sha256": "8be3a8bd907df8576a6284544a239ca1530e65e3f8125a2a498bc26623d8a6b0"
       },
       {
         "path": "frontend/app/harness.js",
@@ -553,18 +553,18 @@
       },
       {
         "path": "frontend/app/recommend.js",
-        "bytes": 16657,
-        "sha256": "635c7b37d08d60f903455e2bade407d8da0d82a91da220eae5f1dc4d22eab20e"
+        "bytes": 17316,
+        "sha256": "b975bc32fe29b9e8d5174df2868d3022d239dc76ea2e5c0d1176ead915a0e9d1"
       },
       {
         "path": "frontend/app/recquality.js",
-        "bytes": 11150,
-        "sha256": "159d1252d37518f5f625a79cbe2a6116c310371e6ab164a271227a648f75fee1"
+        "bytes": 12427,
+        "sha256": "c3baa14364f80bcff288a2c2508a4be8f1e1dc5864c81a4b0e8a5de04deb2b15"
       },
       {
         "path": "frontend/app/recqualitystore.js",
-        "bytes": 12171,
-        "sha256": "c345c0094499751a5661fe22f5a73900b9e7c4d636a8e3e46dcf00247b2b3ba8"
+        "bytes": 15449,
+        "sha256": "7c744363c87194b0658be215ff97e24f3c2a8d2125ea8bda618c5f0f004a7a73"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 19164,
-        "sha256": "688b39d4a37ab2878b2ef77e60325cf138e7ffe8382aa84cae57b4eea9e21eba"
+        "bytes": 20178,
+        "sha256": "2f7bc4e7e5bbce28f4daaa16569e09579a8234400732b8a8cb4a3033184a493b"
       },
       {
         "path": "frontend/app/terrain.js",
