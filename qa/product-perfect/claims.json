@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f172ab067e803feaf2d1fcd0b63c6cedc56da7c5",
-    "pathSetSha256": "1fb276f07550e4b1e1c42d1e7c8f88c61b5d46d7c66f780488f247b9caedad2b",
+    "sourceCommit": "b25ba2649e036e78fc470a6466220f3e114f0e4b",
+    "pathSetSha256": "a22c0250f2f5be74019af3d6a5f2b1c980d5aece2c8e12cc53e527e2a065b869",
     "files": [
       {
         "path": "INSTALL.md",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 220585,
-        "sha256": "563ac9b65b99bfb9540862fc64920bc328b388737cb89b56295cf00becead0dc"
+        "bytes": 221143,
+        "sha256": "a660fa5a5a8e3abef9ecbc99af859c9d820599938065043c93f1625c239d47ff"
       },
       {
         "path": "frontend/app/mint.js",
@@ -517,6 +517,16 @@
         "sha256": "782c518fa3e2923451ca9de686595593036181d52b6c6cc34e760b0f836e1866"
       },
       {
+        "path": "frontend/app/recipe-catalog/business.js",
+        "bytes": 23596,
+        "sha256": "3c2273b7aa9fe3e923f536fff07e52a0e5ede51ed0424e467fb41cfd599a4510"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/career.js",
+        "bytes": 23520,
+        "sha256": "2010866b36f8becbd346dbd7f29ba6efd87e227a8ddc69afb82a6e8e51b550a2"
+      },
+      {
         "path": "frontend/app/recipe-catalog/core.js",
         "bytes": 16208,
         "sha256": "11c3d4b622ad9e42d87befa2ed9d70d5f5c2f4c12be1617d345b4312e1e7a1fe"
@@ -527,14 +537,34 @@
         "sha256": "57ed4b133df743f76d3ce2da0d072899bbdc8e1f0f083aca1851111151ee1c7d"
       },
       {
+        "path": "frontend/app/recipe-catalog/data.js",
+        "bytes": 23460,
+        "sha256": "df782cb1ffce224c7b3df17edb1cfc630c445b3a4a2f1cd09b5d9e96a07113d0"
+      },
+      {
         "path": "frontend/app/recipe-catalog/dev.js",
         "bytes": 13326,
         "sha256": "9ebe130bd9802b6b1eed6f9006229158e5227034feb77dbeec8cdb67bcff0a15"
       },
       {
         "path": "frontend/app/recipe-catalog/index.js",
-        "bytes": 2286,
-        "sha256": "a87d2769a8416ef81ae9fc49ac7fa015321d9ce38fdd5d71ae91fc661b7ec7cf"
+        "bytes": 2722,
+        "sha256": "0aa0bcc49315ce4774b1d7811552f7e43e6be7331ced4d163c6d7a09aef79649"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/learn.js",
+        "bytes": 24092,
+        "sha256": "17809dd2265c39ce92c15e8cc39cf0fc8af5524de08362eaee88be334e6a9755"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/life.js",
+        "bytes": 24618,
+        "sha256": "da9eb065325f30669dc90c7eabc5b15607eecfa66079eadfdf6480c3b2063224"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/money.js",
+        "bytes": 21619,
+        "sha256": "ddf7377f9ab73f82294e55dd53a90fdb8e16a690eeefcb988719e43c14f70b7d"
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
@@ -544,12 +574,17 @@
       {
         "path": "frontend/app/recipe-catalog/research.js",
         "bytes": 13890,
-        "sha256": "c3d2ec8f5457fc2a4ec8cdb2cb917c9818e5272ab14ad5e8363f671ed98612df"
+        "sha256": "bd52fbce239888af115686344d2d866f80088cd17ec3a8b8979b7427aded689a"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/writing.js",
+        "bytes": 23742,
+        "sha256": "12728ca7b210586c4cb1fc2a55a81a1d260b4ce565c45a7a2a300edc968c3bab"
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 57219,
-        "sha256": "5b399d7f9a1f51af85495a81d094495027e6a39b314eb475f3ff30205a3ceaa2"
+        "bytes": 57699,
+        "sha256": "5356cc24b53ebb30c5ff0135c4b8a91d3b8ed924beda177994e0766968482e79"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -958,8 +993,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67442,
-        "sha256": "0de03cc6e3fd2dbbc5b33150be02a07db29a9c20db722ff4386496189f976fe9"
+        "bytes": 67899,
+        "sha256": "0151a30f952b51462a3a9e4725335c4ad5088d0fe65937308358111921ddef96"
       },
       {
         "path": "frontend/js/arcade.js",
