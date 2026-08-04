@@ -36,6 +36,7 @@
   const ROLES = new Set(['user', 'assistant', 'tool', 'system']);
   const DEFAULT_LIMIT = 400;        // a sane cap so history() never returns an unbounded transcript
   const CONTENT_MAX = 200000;       // per-turn guard against a pathological payload bloating the file
+  const RAM_ROWS_MAX = 3000;        // global ceiling across many short streams; disk keeps lifetime truth
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function str(v) { return v == null ? '' : String(v); }
 
@@ -85,16 +86,22 @@
     // recent history while a firehose stream self-trims. Disk keeps the full append-only segmented history;
     // the host adapter loads only recent rows here and answers lifetime recall lazily from per-segment indexes.
     const ramPerStream = num(opts.ramPerStream) > 0 ? num(opts.ramPerStream) : Math.max(cap * 3, 1200);
+    const ramMax = num(opts.ramMax) > 0 ? num(opts.ramMax) : RAM_ROWS_MAX;
 
     // in-memory mirror loaded once; append keeps RAM + disk in lockstep so history() is O(n) over RAM.
     let rows = [];
     try {
-      const raw = typeof io.readRecent === 'function' ? io.readRecent({ perStream: ramPerStream }) : io.readAll();
+      const raw = typeof io.readRecent === 'function' ? io.readRecent({ perStream: ramPerStream, globalLimit: ramMax }) : io.readAll();
       if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object');
     }
     catch (e) { rows = []; }
     // trim the boot load per-stream too, so a huge bounded-boot load of one stream can't start us over the cap.
     trimStreamRam();   // no arg => sweep every over-cap stream once
+    trimGlobalRam();
+
+    function trimGlobalRam() {
+      if (rows.length > ramMax) rows.splice(0, rows.length - ramMax);
+    }
 
     // drop the OLDEST rows of `streamId` when that stream exceeds ramPerStream. Splices only that stream's rows,
     // so other streams are untouched (per-stream fairness). Called after each append for the appended stream; the
@@ -250,6 +257,7 @@
       }
       rows.push(stored);
       trimStreamRam(stored.streamId);   // bound THIS stream's RAM only (per-stream fairness; disk keeps full log)
+      trimGlobalRam();                  // and bound the aggregate across thousands of short streams
       return stored;
     }
 
@@ -313,6 +321,14 @@
       o = o || {};
       const limit = num(o.limit) > 0 ? num(o.limit) : cap;
       const want = normStream(streamId);
+      // Segmented hosts retain lifetime rows outside the bounded RAM working set. Ask the
+      // durable index/segments first so an old, idle conversation still resumes exactly.
+      if (typeof io.history === 'function') {
+        try {
+          const found = io.history(want, { limit });
+          if (Array.isArray(found)) return found.map(r => Object.assign({}, r));
+        } catch (_) { /* fall back to the RAM tail below */ }
+      }
       const out = [];
       for (let i = rows.length - 1; i >= 0 && out.length < limit; i--) {
         if (rows[i].streamId === want) out.push(Object.assign({}, rows[i]));

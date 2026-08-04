@@ -308,6 +308,24 @@ function makeSegmentedTranscriptIo(opts) {
   }
   function readRecent(options) {
     const perStream = Math.max(1, num(options && options.perStream) || recentPerStream);
+    // A per-stream ceiling alone is not a process-memory ceiling: thousands of short
+    // streams can each contribute a few rows. The store can query immutable segments
+    // lazily, so callers may request only the newest global working set at boot.
+    const globalLimit = Math.max(0, num(options && options.globalLimit));
+    if (globalLimit > 0) {
+      const counts = new Map(), out = [];
+      for (const meta of manifest.segments.slice().reverse()) {
+        const rows = readRows(meta.number);
+        for (let i = rows.length - 1; i >= 0 && out.length < globalLimit; i--) {
+          const row = rows[i], n = counts.get(row.streamId) || 0;
+          if (n >= perStream) continue;
+          counts.set(row.streamId, n + 1); out.push(row);
+        }
+        if (out.length >= globalLimit) break;
+      }
+      out.sort((a, b) => num(a.rowId) - num(b.rowId));
+      return out.map(publicRow);
+    }
     const wanted = new Set();
     const totals = new Map();
     for (const meta of manifest.segments) for (const sid of Object.keys(meta.streams || {})) wanted.add(sid);

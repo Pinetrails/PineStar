@@ -40,6 +40,8 @@
     "dev:seed:keep": "node dev/seed.js --keep",
     "shoot": "node scripts/shoot.mjs",
     "audit": "node scripts/audit.mjs",
+    "audit:longhaul": "node scripts/longhaul-audit.mjs",
+    "audit:longhaul:budget": "node scripts/longhaul-audit.mjs --scales=3000 --enforce-budgets",
     "eval:recommendations": "node scripts/recommendation-replay.mjs",
     "golden": "node scripts/golden.mjs",
     "golden:bless": "node scripts/golden.mjs --bless",

@@ -226,6 +226,26 @@ function makeRunJournal(opts) {
     return analyze(p.records, p.corrupt);
   }
 
+  function recoverFile(file) {
+    let parsed;
+    try { parsed = parseRecords(io.readFile(file)); }
+    catch (_) { parsed = { records: [], corrupt: true }; }
+    const state = analyze(parsed.records, parsed.corrupt);
+    state.file = file;
+    try {
+      if (parsed.corrupt && parsed.records.length && typeof io.repair === 'function') {
+        state.repairedFrom = io.repair(file, parsed.records);
+      } else if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') {
+        state.quarantinedTo = io.quarantine(file);
+      }
+    } catch (e) { state.repairError = String((e && e.message) || e); }
+    if (state.runId && parsed.records.length) {
+      const last = parsed.records[parsed.records.length - 1];
+      live.set(state.runId, { seq: last.seq, hash: last.hash });
+    }
+    return state;
+  }
+
   return {
     begin(meta) { return record(meta && meta.runId, 'begin', meta, true); },
     checkpoint(runId, payload) { return record(runId, 'checkpoint', payload); },
@@ -245,27 +265,17 @@ function makeRunJournal(opts) {
     },
     inspect,
     recoverAll() {
-      const out = [];
-      for (const file of io.list()) {
-        let parsed;
-        try { parsed = parseRecords(io.readFile(file)); }
-        catch (_) { parsed = { records: [], corrupt: true }; }
-        const state = analyze(parsed.records, parsed.corrupt);
-        state.file = file;
-        try {
-          if (parsed.corrupt && parsed.records.length && typeof io.repair === 'function') {
-            state.repairedFrom = io.repair(file, parsed.records);
-          } else if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') {
-            state.quarantinedTo = io.quarantine(file);
-          }
-        } catch (e) { state.repairError = String((e && e.message) || e); }
-        out.push(state);
-        if (state.runId && parsed.records.length) {
-          const last = parsed.records[parsed.records.length - 1];
-          live.set(state.runId, { seq: last.seq, hash: last.hash });
-        }
-      }
-      return out;
+      return io.list().sort().map(recoverFile);
+    },
+    // Lazy/paged recovery preserves every journal while preventing thousands of failed runs
+    // from blocking process startup or producing one unbounded API response. Stable filename
+    // ordering makes offset pagination deterministic; no file is deleted here.
+    recoverPage(options) {
+      options = options || {};
+      const files = io.list().sort();
+      const offset = Math.max(0, Number(options.offset) || 0);
+      const limit = Math.max(1, Math.min(500, Number(options.limit) || 100));
+      return { rows: files.slice(offset, offset + limit).map(recoverFile), total: files.length, offset, limit };
     },
     _internals: { parseRecords, analyze, hashRecord, runFileName, cloneSafe, writeAll }
   };

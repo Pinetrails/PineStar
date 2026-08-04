@@ -943,17 +943,9 @@ const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: ()
 // Finished journals remain until the segmented transcript store acknowledges their final durable checkpoint;
 // this avoids deleting the only recovery copy after the legacy transcript writer's fail-open append.
 const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
-let recoveredRunJournals = [];
-try {
-  recoveredRunJournals = runJournal.recoverAll().filter(r => {
-    if (!r) return false;
-    // A durable transcript acknowledgement is the commit record. If the process died between that record and
-    // unlink, finish the idempotent retirement now; all other states remain visible for human-led recovery.
-    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
-    return true;
-  });
-  if (recoveredRunJournals.length) console.warn('[run-journal] interrupted run(s) awaiting recovery:', recoveredRunJournals.length);
-} catch (e) { console.warn('[run-journal] recovery scan failed:', (e && e.message) || e); }
+// Recovery is intentionally lazy. Thousands of unresolved/failed journals are audit evidence and
+// must not be discarded, but parsing all of them synchronously before server.listen made startup
+// proportional to lifetime failures. GET /api/run-recoveries pages through the durable files.
 
 // H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of
 // the fs jail (the agent's fs.* tools can't reach it). Singleton (persists across runs); redacted on write.
@@ -15251,7 +15243,10 @@ async function handleSaveRecoveryAck(req, res) {
 // store refuses a write whose updatedAt regressed, so a stale tab can't clobber a newer save (returns stale:true).
 async function handleSaveWrite(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 8 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }   // up to 8MB (station + workstreams can be large)
+  // Measured long-haul boundary: 5,000 three-turn workstreams serialize to ~8.47 MiB.
+  // Keep an explicit 16 MiB ceiling (roughly 9,000 at that density) rather than resetting a
+  // valid 30-90 day save at the former 8 MiB limit. History is never compacted or discarded here.
+  let body; try { body = JSON.parse(await readBody(req, 16 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'a save envelope object is required' });
   // the record key is the agent's OWN id — body.agent is the agent OBJECT ({id,name,...}), not a selector
   // string, so derive from body.agent.id (an explicit body.agentId wins if a future caller sends one).
@@ -15309,6 +15304,19 @@ function serveRuns(req, res) {
 // It exposes safe checkpoint dialogue plus tool names/call ids, never raw tool arguments or results. An uncertain
 // side effect is review-required; the harness does not replay it or claim that it did/didn't happen.
 function serveRunRecoveries(req, res) {
+  const u = new URL(req.url, 'http://127.0.0.1');
+  const offset = Math.max(0, Number(u.searchParams.get('offset')) || 0);
+  const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+  let page;
+  try { page = runJournal.recoverPage({ offset, limit }); }
+  catch (e) { return respondJson(res, 500, { error: 'could not read run recoveries' }); }
+  const recoveredRunJournals = page.rows.filter(r => {
+    if (!r) return false;
+    // A durable transcript acknowledgement is the commit record. If the process died between that record and
+    // unlink, finish the idempotent retirement when its page is inspected; all other states remain visible.
+    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
+    return true;
+  });
   const safeMessage = m => {
     const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
     if (m && m.tool_call_id) out.tool_call_id = String(m.tool_call_id);
@@ -15337,7 +15345,7 @@ function serveRunRecoveries(req, res) {
       messages: Array.isArray(r.checkpoint && r.checkpoint.messages) ? r.checkpoint.messages.slice(-200).map(safeMessage) : []
     }
   }));
-  respondJson(res, 200, { recoveries: rows });
+  respondJson(res, 200, { recoveries: rows, total: page.total, offset: page.offset, limit: page.limit, nextOffset: page.offset + page.limit < page.total ? page.offset + page.limit : null });
 }
 
 // GET /api/autonomy/ledger?limit=N&source=&kind= — NS-0: the recent AUTONOMY DECISION LEDGER (cron fire/skip/
