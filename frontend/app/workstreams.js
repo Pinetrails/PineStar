@@ -107,9 +107,12 @@
 
   // ---------- lifecycle ----------
   // adopt or mint the General default; guarantees there is always exactly one home for casual chat.
+  // Only a CHAT may be adopted as General: an untitled board task (e.g. a legacy kanban import that
+  // never got a title) is a directive, not the chat home — adopting one would drag a task card into
+  // the never-archivable, never-deletable General slot forever.
   function ensureGeneral() {
     let g = generalId ? find(generalId) : null;
-    if (!g) g = ws.filter(w => w.title == null && !w.archived)[0] || null;
+    if (!g) g = ws.filter(w => w.title == null && !w.archived && w.kind !== 'task')[0] || null;
     if (!g) { g = make({ title: null, lane: 'active' }); ws.push(g); }
     generalId = g.id;
     return g;
@@ -529,10 +532,14 @@
 
   // one-shot import of the legacy station kanban tasks[] into real workstreams (col -> lane,
   // empty history). The caller (slice 3) guards this to run exactly once, then clears tasks[].
+  // Every legacy kanban card was a BOARD card, so kind is passed explicitly: without it, make()'s
+  // lane inference read a 'doing' card (lane active) as kind:'chat' and silently dropped it off
+  // the board it was being imported onto.
   function importTasks(tasks) {
     const created = (Array.isArray(tasks) ? tasks : []).map(tk => make({
       title: (tk && tk.title) || null,
       lane: LANE_OF_COL[tk && tk.col] || 'todo',
+      kind: 'task',
       createdAt: (tk && tk.t) || now(), lastActiveAt: (tk && tk.t) || now()
     }));
     for (const w of created) ws.push(w);

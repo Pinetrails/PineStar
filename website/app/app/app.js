@@ -2679,7 +2679,11 @@ const App = (() => {
     if (typeof GoalStore !== 'undefined') GoalStore.init({
       now: () => Date.now(),
       getSystem: () => agent ? agent.systemPrompt : '',
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('Goal milestone', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
+      // title = deriveTitle(directive), the same instant placeholder /background mints: every milestone card
+      // used to read the literal 'Goal milestone', so three goals were three identical cards. The derived
+      // placeholder also equals deriveTitle(first user msg) once Chat.send lands the directive, which is
+      // exactly what needsModelTitle keys on — so the card rides the normal model-title upgrade ladder.
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'Goal milestone', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
       getRunSummary: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; return (m && m.title) ? m.title : ''; }
     });
     // UNDERSTANDING: the one honest, adaptive "how well the station understands the Commander" read
@@ -2727,7 +2731,8 @@ const App = (() => {
       // can't mislabel it), falling back to the active workstream when the runId is unknown (e.g. a direct call).
       getRecentTask: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) return m.title; const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
       launchRecipe: launchRecipe,
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('First build', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
+      // same duplicate-title fix as the goal-milestone launcher above: name the card from the directive.
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'First build', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);

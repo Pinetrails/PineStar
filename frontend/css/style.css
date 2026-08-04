@@ -964,9 +964,14 @@ body.no-scan .crt-scan { display: none; }
 /* the whole card is a role=button that opens the conversation — show the pointer, and give keyboard focus a ring */
 .kb-card:hover { border-color: var(--ph-dim); }
 .kb-card:focus-visible { outline: none; border-color: var(--ph); box-shadow: var(--raise), 0 0 0 1px var(--ph), 0 0 10px var(--ph-glow2); }
-.kb-card.failed { opacity: 0.4; text-decoration: line-through; }
 .kb-card:focus { outline: none; }
-.kb-card.order { border-left-color: var(--gold); }
+/* pinned = prioritized: gold spine, sorts to the top of its column (Workstreams.list pinned-first) */
+.kb-card.pinned { border-left-color: var(--gold); }
+/* drag-a-card-between-lanes affordances (buildTasks dragstart/drop) */
+.kb-card.dragging { opacity: 0.45; }
+.kb-col.drop { outline: 1px dashed var(--ph); outline-offset: -2px; background: var(--ph-faint); }
+/* inline card rename (beginCardRename) — sits where .kb-title text was, same type size */
+.kb-rename { width: 100%; font-size: 13px; padding: 0 3px; }
 .kb-title { color: var(--text); }
 .kb-meta { display: flex; gap: 8px; font-size: 11px; color: var(--ph-dim); margin-top: 2px; }
 
