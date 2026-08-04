@@ -211,10 +211,13 @@ const SuggestStore = (() => {
         // THE OUTCOME LOOP (quality loop, Q2): a built idea SPAWNS A RUN, so nothing is credited here — the
         // pending stamp is claimed by that run and the run's own outcome (a clean finish, and the Commander's
         // 👍/👌/👎 on it) is the evidence. A click is not a result. Declines/defers settle immediately.
+        // THE STAMP IS ARMED OFF THE LAUNCH, NOT OFF THE CLICK (fixed 2026-08-04): doBuild refuses while the
+        // agent is mid-run, and arming first left the stamp waiting for a run this offer never started — the
+        // Commander's next unrelated manual run then claimed it. Arm only when a run really kicked off.
         const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
         if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' });
-          if (rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} }
-          doBuild(parsed); }
+          const launched = doBuild(parsed);
+          if (launched && rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} } }
         else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' });
           if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, false); } catch (_) {} } }
         else { ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
@@ -236,6 +239,12 @@ const SuggestStore = (() => {
   // "build it" → a real run starts immediately. Same routing as the First Pitch: a fully-runnable recipe launches;
   // a recipe that still needs its gap (or an unknown recipe) becomes the gap-asking directive — never an empty
   // template. (Kept local rather than shared so pitchstore.js stays untouched.)
+  /* RETURNS WHETHER A RUN ACTUALLY STARTED. Both launch paths refuse while the agent is mid-run (Chat.send
+     silently no-ops when Chat.isBusy()), and the outcome loop's attribution stamp is armed off this answer —
+     so a "build it" that launched NOTHING used to leave the stamp armed, and the Commander's next unrelated
+     manual run claimed it and moved this channel's weight on work it never caused. FAIL-CLOSED on purpose: a
+     launcher that does not report `true` is treated as "no run started", because an unprovable launch must
+     never become an attributed outcome. */
   function doBuild(parsed) {
     try {
       // G1c: the accepted idea becomes a trackable WORK quest (multi-step, rides the QuestState celebration).
@@ -245,13 +254,14 @@ const SuggestStore = (() => {
       if (b.kind === 'recipe' && b.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
         const r = Recipes.get(b.recipeId);
         const missing = r ? ((typeof Recipes.requiredMissing === 'function') ? Recipes.requiredMissing(r, {}) : []) : ['_unknown'];
-        if (r && deps.launchRecipe && !missing.length) { deps.launchRecipe(r, null); return; }
+        if (r && deps.launchRecipe && !missing.length) return deps.launchRecipe(r, null) === true;
       }
       const gapLine = parsed.gap ? (' First, ask me: ' + parsed.gap + '.') : '';
       const directive = "Let's build it — " + parsed.title + '.' + gapLine;
-      if (deps.launchDirective) deps.launchDirective(directive);
-      else if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(directive);
-    } catch (_) {}
+      if (deps.launchDirective) return deps.launchDirective(directive) === true;
+      if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) { Chat.send(directive); return true; }
+      return false;
+    } catch (_) { return false; }
   }
 
   // S2: a brand-new hero starts fresh (no baseline, no cooldown carryover). Own key, like curiositystore.

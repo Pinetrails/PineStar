@@ -7,10 +7,13 @@
    uses, applied to the station's own suggestions.
 
    HOW AN OUTCOME IS ATTRIBUTED (and why it can't be faked):
-     1. The Commander ACCEPTS an offer. If that accept spawns trackable work, the channel arms a PENDING stamp
-        ({ channel, dim, id }).
+     1. The Commander ACCEPTS an offer, AND the launch that accept triggers really starts. Only then does the
+        channel arm a PENDING stamp ({ channel, dim, id, at }) — an accept whose launch no-opped (a busy stream)
+        arms nothing, because there is no work to attribute.
      2. The very next hero run START claims it (chat.js, at the same point it writes RUN_META) — so the stamp is
-        visible on the run's own meta, and the run is the provable link between "the offer" and "the work".
+        visible on the run's own meta, and the run is the provable link between "the offer" and "the work". The
+        stamp EXPIRES after PENDING_TTL_MS: past that window the next run is not this offer's work, and saying it
+        was would be the app asserting a causal link the harness cannot prove.
      3. The run's real outcome folds back: a clean finish is a weak positive; the Commander's own 👍/👌/👎 on that
         run (the direct rateWork hand-off, never the bus) is the strong one.
      Where an accept spawns NO trackable work (a kept belief, an answered question, a re-confirm), the accept
@@ -32,15 +35,22 @@ const RecQualityStore = (() => {
   const KEY = 'starnet.recquality.v1';
   const STAMP_CAP = 60;      // in-memory run→stamp memory, FIFO, mirroring chat.js's RUN_META ledger size
   const DENY_CAP = 100;      // re-confirm denial memory (FIFO) — bounded exactly like goalstore's offered set
+  /* HOW LONG AN ARMED ACCEPT MAY WAIT FOR ITS RUN. The accept→run link is only honest while the two are the same
+     moment: a "build it" whose launch is slow is still this offer's work; a stamp still sitting there minutes
+     later belongs to nothing the offer caused, and the Commander's next unrelated run must NOT inherit it. */
+  const PENDING_TTL_MS = 3 * 60 * 1000;
   let state = null;          // { v:1, ch:{ channel: weight }, dim:{ dim: weight }, denied:{ fp:1 }, deniedOrder:[fp] }
   let deps = {};
-  let pending = null;        // { channel, dim, id } — an accept waiting for the run it spawns to start
+  let pending = null;        // { channel, dim, id, at } — an accept waiting for the run it spawns to start
   let stamps = new Map();    // runId → { channel, dim, id }  (in-memory: a reload honestly forgets, like RUN_META)
   let settled = new Set();   // runIds whose COMPLETION has already folded (a run completes once)
   let bound = false;
 
   const engine = () => (typeof RecQuality !== 'undefined' && RecQuality && RecQuality.fold) ? RecQuality : null;
   const ready = () => !!(state && engine());
+  // the INJECTED clock (deps.now), exactly like the sibling growth stores — so the node test can fast-forward the
+  // pending stamp's expiry instead of sleeping through it. Falls back to the wall clock in the browser.
+  function nowMs() { const n = deps && typeof deps.now === 'function' ? Number(deps.now()) : NaN; return Number.isFinite(n) ? n : Date.now(); }
 
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
@@ -128,7 +138,11 @@ const RecQualityStore = (() => {
   function noteAccept(stamp) {
     if (!ready() || !stamp || !stamp.channel) return null;
     if (stamp.spawnsWork) {
-      pending = { channel: String(stamp.channel).slice(0, 40), dim: stamp.dim ? String(stamp.dim).slice(0, 40) : '', id: String(stamp.id || '').slice(0, 80) };
+      /* A NEW ACCEPT MUST NOT SILENTLY SWALLOW THE OLD ONE. Overwriting left the first offer with no record at
+         all — it was accepted, and the loop learned nothing from it. It waited for a run that never came, which
+         is the same evidence a "not now" carries: right idea, wrong moment. Settle it as `deferred` and move on. */
+      if (pending) { try { noteOutcome(pending, 'deferred'); } catch (_) {} }
+      pending = { channel: String(stamp.channel).slice(0, 40), dim: stamp.dim ? String(stamp.dim).slice(0, 40) : '', id: String(stamp.id || '').slice(0, 80), at: nowMs() };
       return pending;
     }
     return noteOutcome(stamp, 'engaged');
@@ -138,13 +152,24 @@ const RecQualityStore = (() => {
   function noteDecline(stamp, deferred) { return noteOutcome(stamp, deferred ? 'deferred' : 'declined'); }
 
   /* ---------- the attribution stamp ---------- */
-  // called by chat.js at the exact point it writes RUN_META, for every run it starts. Returns the pending stamp
-  // (and binds it to this run) or null. HERO ONLY: a summoned worker's run is not the work an offer to the
-  // Commander spawned. The pending stamp is consumed either way it goes — it is claimed by the FIRST run after
-  // the accept or by none at all, so a stale accept can never attach itself to unrelated work later.
+  /* called by chat.js at the exact point it writes RUN_META, for every run it starts. Returns the pending stamp
+     (and binds it to this run) or null. HERO ONLY: a summoned worker's run is not the work an offer to the
+     Commander spawned.
+     THE STAMP EXPIRES (fixed 2026-08-04). It is claimed by the first hero run WITHIN PENDING_TTL_MS of the accept,
+     and by nothing after that. Without the clock the stamp simply waited — so an accept whose launch never
+     happened stayed armed indefinitely and the Commander's next unrelated manual run, minutes or hours later,
+     was recorded as the work that offer produced. An expired stamp settles as `deferred`: the offer was accepted
+     and no work followed it, which is a real, mild signal about this channel — and it is the ONLY thing the
+     harness can honestly say about it. */
   function claimForRun(runId, agentId) {
     if (!ready() || !pending || !runId) return null;
     if ((agentId || 'agent') !== 'agent') return null;
+    const armedAt = Number(pending.at);
+    if (Number.isFinite(armedAt) && (nowMs() - armedAt) > PENDING_TTL_MS) {
+      const expired = pending; pending = null;
+      try { noteOutcome(expired, 'deferred'); } catch (_) {}
+      return null;
+    }
     const stamp = { channel: pending.channel, dim: pending.dim, id: pending.id };
     pending = null;
     stamps.set(String(runId), stamp);

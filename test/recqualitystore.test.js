@@ -26,7 +26,8 @@ const { RecQualityStore: S } = require('../frontend/app/recqualitystore.js');
 const RQ = global.RecQuality;
 const NEUTRAL = RQ.Q_START;
 
-S.init({ now: () => 1780000000000 });
+let CLOCK = 1780000000000;
+S.init({ now: () => CLOCK });
 
 /* ── 1. a cold store is NEUTRAL everywhere (it can never change a ranking it has no evidence for) ── */
 A.eq(S.weightFor('suggest'), NEUTRAL, 'an unrated channel reads neutral');
@@ -119,6 +120,33 @@ A.ok(JSON.parse(mem[S.KEY]).deniedOrder.length <= 100, 'the denial memory is FIF
 A.eq(S.isBeliefDenied(RQfp), false, 'and the oldest denials age out rather than accumulating forever');
 S.reset();
 
+/* ── 8c. THE PENDING STAMP CANNOT FALSELY ATTRIBUTE (fixed 2026-08-04) ──
+   Reproduced live: a "build it" accepted while the agent was mid-run launched NOTHING (Chat.send no-ops when
+   busy), the stamp stayed armed forever, and the Commander's next unrelated manual run claimed it — the channel's
+   weight moved on work that offer never caused. Three independent holes, three locks. */
+S.reset(); CLOCK = 1780000000000; S.init({ now: () => CLOCK });
+// (a) an armed stamp EXPIRES: past the window the next run is not this offer's work
+S.noteAccept({ channel: 'suggest', spawnsWork: true, id: 'o1' });
+A.ok(S._pending() && Number.isFinite(S._pending().at), 'an armed stamp records WHEN it was armed');
+CLOCK += 2 * 60 * 1000;
+A.ok(S.claimForRun('run-soon', 'agent'), 'a run two minutes later is still plausibly this offer’s work');
+S.reset(); CLOCK = 1780000000000; S.init({ now: () => CLOCK });
+S.noteAccept({ channel: 'suggest', spawnsWork: true, id: 'o2' });
+CLOCK += 45 * 60 * 1000;
+A.eq(S.claimForRun('run-late', 'agent'), null, 'a run 45 minutes later claims NOTHING — the stamp expired');
+A.eq(S._pending(), null, 'and the expired stamp is cleared, never left to catch a later run either');
+A.ok(S.weightFor('suggest') < NEUTRAL, 'an accept that produced no work in its window settles as a "not now", the only honest read');
+A.eq(S.stampFor('run-late'), null, 'the late run carries no attribution at all');
+// (b) a SECOND accept never silently swallows the first
+S.reset(); CLOCK = 1780000000000; S.init({ now: () => CLOCK });
+S.noteAccept({ channel: 'seed', spawnsWork: true, id: 'first' });
+S.noteAccept({ channel: 'routine', spawnsWork: true, id: 'second' });
+A.eq(S._pending().id, 'second', 'the newest accept holds the pending slot');
+A.ok(S.weightFor('seed') < NEUTRAL, 'and the accept it displaced is SETTLED (deferred), never dropped on the floor');
+A.eq(S.weightFor('routine'), NEUTRAL, 'the new accept itself still credits nothing yet');
+// (c) the caller-side gate: an accept that launched nothing must never reach noteAccept at all (source-lock in §10)
+S.reset(); S.init({});
+
 /* ── 9. the store is a READ-ONLY citizen of the event spine ── */
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'frontend', 'app', 'recqualitystore.js'), 'utf8');
 A.eq(/U\.bus\.emit|bus\.emit/.test(src), false, 'recqualitystore.js NEVER emits on the frozen event contract');
@@ -141,6 +169,12 @@ A.ok(passBody.indexOf('c.quality = recQualityOf') < passBody.indexOf('Recommend.
   '…before the spine ranks them');
 for (const [file, probe, what] of [
   ['frontend/app/suggeststore.js', /noteAccept\(\{ channel: 'suggest', dim: probe \? probe\.dim : '', spawnsWork: true/, 'the suggestion arms a stamp (its accept launches a run)'],
+  ['frontend/app/suggeststore.js', /const launched = doBuild\(parsed\);\s*\n\s*if \(launched && rq && rq\.noteAccept\)/,
+    'and it arms that stamp ONLY when the launch really started — a busy stream no-ops the send, and an accept that ran nothing must attribute nothing'],
+  ['frontend/app/suggeststore.js', /if \(deps\.launchDirective\) return deps\.launchDirective\(directive\) === true;/,
+    'doBuild reports the launch result (fail-closed: an unprovable launch is not a launch)'],
+  ['frontend/app/app.js', /let sent = false; if \(typeof Chat !== 'undefined' && Chat\.send && !Chat\.isBusy\(\)\) \{ Chat\.send\(text\); sent = true; \} persist\(\); return sent;/,
+    'the real launchDirective dep answers truthfully instead of returning undefined'],
   ['frontend/app/seedstore.js', /noteAccept\(\{ channel: 'seed', spawnsWork: false/, 'a saved seed settles immediately (it authors a recipe, it does not run one)'],
   ['frontend/app/routinenudgestore.js', /noteAccept\(\{ channel: 'routine', spawnsWork: false/, 'a scheduled routine settles immediately'],
   ['frontend/app/chat.js', /recAccept\('study', prop\.dim, false\)/, 'a kept belief settles immediately'],
