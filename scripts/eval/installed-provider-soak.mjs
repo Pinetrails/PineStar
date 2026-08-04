@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startFixtureMcpServer } from './campaign/fixture-host.mjs';
 import { startStarNetDriver } from './campaign/drivers.mjs';
@@ -19,6 +19,25 @@ function json(file) { return JSON.parse(readFileSync(resolve(file), 'utf8').repl
 function jsonl(file) { return readFileSync(resolve(file), 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse); }
 function finite(value, fallback = null) { return Number.isFinite(Number(value)) ? Number(value) : fallback; }
 function writeAtomic(file, value) { const target = resolve(file), temp = target + '.tmp'; mkdirSync(dirname(target), { recursive: true }); writeFileSync(temp, JSON.stringify(value, null, 2) + '\n', 'utf8'); renameSync(temp, target); }
+
+export function installedRuntimeFingerprint(root, paths = ['frontend', 'sidecar', 'shared']) {
+  const base = resolve(root), files = [];
+  const visit = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile()) files.push(path);
+    }
+  };
+  for (const path of paths) visit(resolve(base, path));
+  files.sort((a, b) => relative(base, a).localeCompare(relative(base, b), 'en'));
+  const hash = createHash('sha256');
+  for (const file of files) {
+    const name = relative(base, file).split(sep).join('/');
+    hash.update(name).update('\0').update(createHash('sha256').update(readFileSync(file)).digest('hex')).update('\n');
+  }
+  return { algorithm: 'path-content-sha256', files: files.length, sha256: hash.digest('hex') };
+}
 
 export function requiredSoakCoverage(durationHours, intervalSeconds) {
   if (!(Number(durationHours) > 0) || !(Number(intervalSeconds) > 0)) throw new Error('soak duration and interval must be positive');
@@ -46,19 +65,24 @@ async function main() {
   const task = tasks.find(row => row.id === 'parity-code-inspect'), fixture = fixtures.find(row => row.taskId === task?.id);
   if (!task || !fixture) throw new Error('provider activity fixture is missing');
   mkdirSync(dirname(output), { recursive: true }); mkdirSync(outputDir, { recursive: true });
+  const runtimePaths = subject.provenance?.runtime?.paths || ['frontend', 'sidecar', 'shared'];
+  const initialRuntimeFingerprint = installedRuntimeFingerprint(opts['runtime-root'], runtimePaths);
+  const executablePath = resolve(subject.executable.path), expectedExecutableSha256 = subject.executable.sha256;
   const fixtureServer = await startFixtureMcpServer(); let driver = null, interrupted = false;
   const startedAt = Date.now(), deadline = startedAt + durationHours * 3600000;
   const report = {
     schemaVersion: 'starnet.eval.installed-provider-soak.v1', mode: 'installed-provider-backed-active-idle', qualifiesRelease: durationHours >= 48,
     startedAt: iso(startedAt), plannedEndAt: iso(deadline), durationHours, healthIntervalSeconds, activeIntervalSeconds,
-    runtime: { root: resolve(opts['runtime-root']), workspace: resolve(opts.workspaces), port, describe: subject.provenance.describe, executableSha256: subject.executable.sha256 },
-    samples: [], providerRuns: [], summary: { pass: false, completed: false, healthChecks: 0, healthFailures: 0, providerChecks: 0, providerFailures: 0, unexpectedExits: 0 }
+    runtime: { root: resolve(opts['runtime-root']), workspace: resolve(opts.workspaces), port, describe: subject.provenance.describe,
+      executable: executablePath, executableSha256: expectedExecutableSha256, rawHealthVersion: null, initialFingerprint: initialRuntimeFingerprint },
+    samples: [], providerRuns: [], summary: { pass: false, completed: false, healthChecks: 0, healthFailures: 0, providerChecks: 0, providerFailures: 0, identityFailures: 0, unexpectedExits: 0 }
   };
   const stop = () => { interrupted = true; };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   try {
     driver = await startStarNetDriver({ root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, port, timeoutMs: 300000 });
-    if (String(driver.identity.health?.version || '') !== String(subject.provenance.describe)) throw new Error('installed soak health version does not match the manifest');
+    if (driver.identity.health?.status !== 'ok') throw new Error('installed soak sidecar health is not ok');
+    report.runtime.rawHealthVersion = String(driver.identity.health?.version || '');
     report.pid = driver.process.pid; let nextHealth = Date.now(), nextActive = Date.now(), activeAttempt = 0;
     while (!interrupted && Date.now() < deadline) {
       const clock = Date.now();
@@ -66,8 +90,12 @@ async function main() {
         activeAttempt++; const root = mkdtempSync(join(outputDir, `soak-provider-a${activeAttempt}-`)), state = fixtureServer.activate(fixture, root), began = Date.now();
         try {
           const row = await driver.run({ fixture, state, root, attempt: activeAttempt }), grade = gradeParityTrajectory(task, fixture, row, validation.fixtureSha256);
-          const ok = grade.passed && row.metrics.provider === 'openai-codex' && row.metrics.model === 'gpt-5.6-luna' && row.hostEvidence.fixtureCalls.length > 0;
-          report.providerRuns.push({ at: iso(began), ok, runId: row.runId, totalMs: row.metrics.totalMs, firstOutputMs: row.metrics.firstOutputMs, model: row.metrics.model, provider: row.metrics.provider, fixtureCalls: row.hostEvidence.fixtureCalls.length, finalTextSha256: createHash('sha256').update(row.finalText).digest('hex'), failedChecks: grade.checks.filter(check => !check.pass).map(check => check.id) });
+          const executableHashMatch = hashFile(executablePath) === expectedExecutableSha256;
+          const runtimeFingerprint = installedRuntimeFingerprint(opts['runtime-root'], runtimePaths);
+          const runtimeFingerprintMatch = runtimeFingerprint.sha256 === initialRuntimeFingerprint.sha256 && runtimeFingerprint.files === initialRuntimeFingerprint.files;
+          const ok = grade.passed && row.metrics.provider === 'openai-codex' && row.metrics.model === 'gpt-5.6-luna' && row.hostEvidence.fixtureCalls.length > 0 && executableHashMatch && runtimeFingerprintMatch;
+          report.providerRuns.push({ at: iso(began), ok, runId: row.runId, totalMs: row.metrics.totalMs, firstOutputMs: row.metrics.firstOutputMs, model: row.metrics.model, provider: row.metrics.provider, fixtureCalls: row.hostEvidence.fixtureCalls.length, executableHashMatch, runtimeFingerprintMatch, runtimeFingerprint, finalTextSha256: createHash('sha256').update(row.finalText).digest('hex'), failedChecks: grade.checks.filter(check => !check.pass).map(check => check.id) });
+          if (!executableHashMatch || !runtimeFingerprintMatch) report.summary.identityFailures++;
           report.summary.providerChecks++; if (!ok) report.summary.providerFailures++;
         } catch (error) {
           report.providerRuns.push({ at: iso(began), ok: false, error: String(error.message || error).slice(0, 1000) }); report.summary.providerChecks++; report.summary.providerFailures++;
@@ -76,11 +104,12 @@ async function main() {
       }
       if (Date.now() >= nextHealth) {
         const at = Date.now(); let ok = false, status = 0, version = '', error = '';
-        try { const response = await fetch(driver.base + '/health', { signal: AbortSignal.timeout(5000) }); status = response.status; const body = await response.json(); version = String(body.version || ''); ok = response.ok && body.status === 'ok' && version === String(subject.provenance.describe); }
+        let executableHashMatch = false;
+        try { const response = await fetch(driver.base + '/health', { signal: AbortSignal.timeout(5000) }); status = response.status; const body = await response.json(); version = String(body.version || ''); executableHashMatch = hashFile(executablePath) === expectedExecutableSha256; ok = response.ok && body.status === 'ok' && executableHashMatch; }
         catch (caught) { error = String(caught.message || caught).slice(0, 240); }
         const stats = processStats(driver.process.pid), exited = driver.process.exitCode != null;
-        report.samples.push({ at: iso(at), ok, status, version, rssBytes: stats.rssBytes, cpuSeconds: stats.cpuSeconds, exited, error });
-        report.summary.healthChecks++; if (!ok) report.summary.healthFailures++; if (exited) { report.summary.unexpectedExits++; break; }
+        report.samples.push({ at: iso(at), ok, status, version, executableHashMatch, rssBytes: stats.rssBytes, cpuSeconds: stats.cpuSeconds, exited, error });
+        report.summary.healthChecks++; if (!ok) report.summary.healthFailures++; if (!executableHashMatch) report.summary.identityFailures++; if (exited) { report.summary.unexpectedExits++; break; }
         while (nextHealth <= Date.now()) nextHealth += healthIntervalSeconds * 1000;
       }
       const rss = report.samples.map(row => row.rssBytes).filter(Number.isFinite);
@@ -92,7 +121,7 @@ async function main() {
     const healthMinimum = requiredSoakCoverage(durationHours, healthIntervalSeconds), activeMinimum = requiredSoakCoverage(durationHours, activeIntervalSeconds);
     const resourcesGood = process.platform !== 'win32' || report.samples.every(row => finite(row.rssBytes, 0) > 0 && finite(row.cpuSeconds, -1) >= 0);
     report.summary.required = { healthMinimum, activeMinimum };
-    report.summary.pass = report.qualifiesRelease && report.summary.completed && report.samples.length >= healthMinimum && report.providerRuns.length >= activeMinimum && report.summary.healthFailures === 0 && report.summary.providerFailures === 0 && report.summary.unexpectedExits === 0 && resourcesGood;
+    report.summary.pass = report.qualifiesRelease && report.summary.completed && report.samples.length >= healthMinimum && report.providerRuns.length >= activeMinimum && report.summary.healthFailures === 0 && report.summary.providerFailures === 0 && report.summary.identityFailures === 0 && report.summary.unexpectedExits === 0 && resourcesGood;
     writeAtomic(output, report);
     if (!report.summary.pass) throw new Error('installed provider-backed soak did not meet its qualifying gates');
     const result = { schemaVersion: 'starnet.eval.installed-provider-soak-verdict.v1', pass: true, qualifiesRelease: true, scope: report.mode, durationHours, samples: report.samples.length, providerRuns: report.providerRuns.length, summary: report.summary, resources: { rssBytes: report.summary.rssBytes } };
