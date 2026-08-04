@@ -107,6 +107,15 @@ for (const o of repoOffers) {
     A.ok(o.why.indexOf('landing-site') < 0, o.recipe.id + ' does not cite the NON-repo folder as the reason');
   }
 }
+/* ⛔ "nothing watches it" describes a GAP A STANDING RECIPE WOULD FILL, so it may only appear on one. It
+   shipped on one-shots too — "Build a Feature: orbital-api is a git repo and nothing watches it" — which is
+   nonsense, since a one-shot was never going to watch anything. Caught in a screenshot, not by a DOM read. */
+for (const o of F.offers(recipes, oneRepo, { limit: 99 }).concat(F.offers(recipes, noRepo, { limit: 99 }))) {
+  if (!o.recipe.cadence) {
+    A.ok(o.why.indexOf('watches') < 0,
+      o.recipe.id + ' is a one-shot and must not claim to fill a watching gap, got: ' + o.why);
+  }
+}
 
 /* ---------- SHELF SHAPE ---------- */
 const five = F.offers(recipes, FULL, { limit: 5 });

@@ -673,8 +673,14 @@ const Marketplace = (() => {
     // READY ON THIS STATION sits ABOVE the generic row on purpose: a card bound to a real project root the
     // Commander granted outranks a varied lineup chosen because we know nothing. It renders '' when the
     // station has no context, and then FOR YOU is the top shelf exactly as before.
-    html += readyShelfHTML();
-    html += forYouShelfHTML();
+    // READY and FOR YOU do the SAME job — propose what to run next — and READY is strictly better evidenced,
+    // so rendering both stacks two recommendation rows above the library and repeats the idea. Worse, the
+    // cold-start header reads "while the station gets to know you" directly beneath a shelf proving it
+    // already does. When READY fires, it IS the recommendation row; FOR YOU stays the honest cold-start
+    // surface for a station with no context.
+    const ready = readyShelfHTML();
+    html += ready;
+    if (!ready) html += forYouShelfHTML();
 
     const builtins = filtRecipes(Recipes.builtins());
     const customs = filtRecipes(Recipes.customs());
@@ -1504,7 +1510,9 @@ const Marketplace = (() => {
     if (catFilter !== 'all' || query) return '';        // only in the clean top-level view
     const ctx = fitContext();
     let offers = [];
-    try { offers = RecipeFit.offers(Recipes.list(), ctx, { limit: 3 }) || []; } catch (_) { offers = []; }
+    // SIX, not three: READY now replaces the cold-start row rather than stacking above it, so it can spend the
+    // two rows that row was using. Kept to a multiple of the 3-column rail so the grid never leaves an orphan.
+    try { offers = RecipeFit.offers(Recipes.list(), ctx, { limit: 6 }) || []; } catch (_) { offers = []; }
     if (!offers.length) return '';
     // stash the context-derived values by id so the launch form can prefill from them (see launchFormHTML).
     // Rebuilt from scratch on every shelf render, so a stale binding can never outlive the context that made it.

@@ -133,17 +133,20 @@
         : plural(channels.length, 'channel') + ' connected and nothing reads them on a schedule';
     }
     if (needs.folder && projects.length) {
-      // when the recipe is code-shaped, cite the GIT repo specifically — "2 projects granted" is true but
-      // vague, and the Commander cannot tell from it whether the match was reasoned or a coincidence.
+      /* ⛔ "nothing watches it" is only true of a STANDING recipe. It read as the reason for one-shots too —
+         "Build a Feature: orbital-api is a git repo and nothing watches it" — which is nonsense, because a
+         one-shot was never going to watch anything. The clause describes a GAP the recipe would fill, so it
+         may only appear when the recipe actually fills it. A one-shot's honest reason is just the target. */
       const repos = projects.filter(p => p && p.git);
+      const gap = needs.standing;
       if (isCode(recipe) && repos.length) {
-        return repos.length === 1
-          ? str(repos[0].name || repos[0].root) + ' is a git repo and nothing watches it'
-          : plural(repos.length, 'git repo') + ' granted, and nothing watches them';
+        const name = str(repos[0].name || repos[0].root);
+        if (repos.length === 1) return gap ? name + ' is a git repo and nothing watches it' : 'runs against ' + name + ', a git repo you granted';
+        return gap ? plural(repos.length, 'git repo') + ' granted, and nothing watches them' : 'runs against the ' + plural(repos.length, 'git repo') + ' you granted';
       }
-      return projects.length === 1
-        ? 'you have granted ' + str(projects[0].name || projects[0].root) + ' and nothing watches it'
-        : plural(projects.length, 'project') + ' granted, and nothing watches them';
+      const one = str(projects[0].name || projects[0].root);
+      if (projects.length === 1) return gap ? 'you have granted ' + one + ' and nothing watches it' : 'runs against ' + one;
+      return gap ? plural(projects.length, 'project') + ' granted, and nothing watches them' : 'runs against the ' + plural(projects.length, 'project') + ' you granted';
     }
     if (needs.web && topics.length && str(topics[0].term)) {
       return 'you keep working on ' + str(topics[0].term);
