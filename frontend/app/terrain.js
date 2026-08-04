@@ -163,6 +163,31 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     CELL: 64,                         // world px per scatter cell (~5 station tiles)
     LEVELS: 6,                        // flat bands in the floor — pixel art, not a photograph
 
+    /* ⛔⛔ THE SCALE REFERENCE. EVERY size in this ground is world px, and world px only mean
+       something against the one object the player actually compares them to: an agent body.
+
+       MEASURED LIVE off SPRITES.drawBody, never inferred — it draws **35.4 x 35.4 world px**
+       (the 92px master at the skin's 0.385 scale) with a ~21px-wide torso, standing on a 12px
+       station tile. A person is about 1.7m, so:
+
+           ⛔ ONE WORLD PIXEL IS ABOUT 5cm.
+
+       That single number decides every dimension on this floor:
+
+           a fallen leaf     ~12cm  ->  2-3px        a grass tuft   ~40cm across  ->  8px
+           a pine needle      ~8cm  ->  1-2px        a loose stone  ~20cm across  ->  4px
+           a twig       30cm - 1m   ->  6-20px       a surface root ~25cm thick   ->  5px
+           a fern         0.5 - 1.5m ->  R 6-13      a fallen log     2 - 4m      ->  40-75px
+
+       ⛔ THE FIRST CUT SIZED ALL OF THIS BY EYE AGAINST AN EMPTY FLOOR AND EVERY ONE CAME OUT
+       ABOUT 3x TOO BIG — leaves ran to 10.5px, half the width of an agent standing next to them,
+       which is a leaf the size of a dinner plate. Andrew caught it in a single look. The reason
+       is worth keeping: **an empty texture contains no scale cue at all**, so judging one is not
+       merely hard, it is impossible — every render looked fine because there was nothing in the
+       frame to be wrong against. The only way to size ground detail is to DRAW THE BODY NEXT TO
+       IT at 1:1 world px, and that is now the first view the art harness renders. */
+    BODY_PX: 35.42,                   // an agent body, world px — the yardstick for everything here
+
     /* THE VALUE SEPARATION IS THE WHOLE READ. The scrapped first pass had canopy [20,34,17] over
        grass [21,33,17] — the same colour — so the crowns were invisible against the ground and all
        that survived was their lit rims: an outline. A crown from above is a DENSE DARK mass on
@@ -185,7 +210,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       LEAF_DRY: [[54, 38, 22], [78, 55, 30], [104, 75, 39], [134, 100, 51], [166, 128, 66]],
       LEAF_WET: [[24, 20, 14], [35, 29, 19], [48, 40, 25], [63, 52, 32], [80, 66, 40]],
       NEEDLES: [[25, 27, 18], [35, 38, 24], [47, 50, 31], [60, 63, 39]],   // conifer drift: cool, aligned
-      GRASS: [[22, 34, 17], [33, 51, 23], [47, 71, 31], [65, 95, 41], [88, 122, 53]],
+      GRASS: [[20, 29, 16], [29, 42, 21], [40, 57, 27], [54, 75, 35], [72, 96, 45]],   // shade sedge, not lawn
       ROOT: [[30, 24, 17], [45, 36, 25], [63, 51, 36], [84, 69, 49]],      // surface roots and twigs
       GRIT: [[52, 50, 45], [72, 70, 63], [96, 93, 84]],                    // the only cool grey down there
       DAPPLE: [176, 152, 84],                          // warm sun on the floor, used additively
@@ -311,7 +336,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          the same trap the stones fell into. Eight, and each one submerges as it runs. */
       for (let i = 0; i < 8; i++) {
         let x = rnd() * P, y = rnd() * P, a = rnd() * TAU;
-        const steps = 130 + ((rnd() * 240) | 0), w0 = 2.6 + rnd() * 4.4;
+        const steps = 130 + ((rnd() * 240) | 0), w0 = 2.0 + rnd() * 3.0;
         for (let s = 0; s < steps; s++) {
           a += (rnd() - 0.5) * 0.11;
           x += Math.cos(a); y += Math.sin(a);
@@ -341,16 +366,16 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const x = rnd() * P, y = rnd() * P, u = x / P, v = y / P;
         if (rnd() > clamp01((ndrift(u, v) - 0.50) * 3.4)) continue;
         const a = nang(u, v) * TAU + (rnd() - 0.5) * 0.55;
-        const len = 2 + ((rnd() * 4) | 0);
+        const len = 1 + ((rnd() * 2) | 0);                 // ~8cm needle = 1-2px, never 6
         const col = ramp(LT.NEEDLES, 0.18 + rnd() * 0.75);
         for (let s = 0; s < len; s++) put(Math.round(x + Math.cos(a) * s), Math.round(y + Math.sin(a) * s), col);
       }
 
       /* TWIGS — a long thin object WITH A SHADOW BESIDE IT, which is the whole of what makes it
          read as lying ON the floor rather than being drawn INTO it. */
-      for (let i = 0; i < 380; i++) {
+      for (let i = 0; i < 520; i++) {
         const x = rnd() * P, y = rnd() * P;
-        const a = rnd() * TAU, len = 5 + ((rnd() * 17) | 0), th = rnd() < 0.30 ? 2 : 1;
+        const a = rnd() * TAU, len = 3 + ((rnd() * 11) | 0), th = rnd() < 0.12 ? 2 : 1;
         const col = ramp(LT.ROOT, 0.20 + rnd() * 0.45), hi = ramp(LT.ROOT, 0.75 + rnd() * 0.25);
         for (let s = 0; s <= len; s++) {
           const px = x + Math.cos(a) * s, py = y + Math.sin(a) * s;
@@ -366,7 +391,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          sized from a POWER LAW: a distribution with no big end carries no scale cue at all, and
          a floor of uniformly 2px specks is a wash by another name. */
       const drift = noiseField(7, rnd);
-      for (let i = 0; i < 9000; i++) {
+      for (let i = 0; i < 26000; i++) {
         const x = rnd() * P, y = rnd() * P, u = x / P, v = y / P;
         /* LEAVES DRIFT: they gather in hollows and pile against things, and the ground between
            the piles is SWEPT BARE. Density variation of DISCRETE OBJECTS is structure the eye
@@ -377,23 +402,27 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
            slightly different rates, which is CONFETTI. The power term is what buys genuinely bare
            duff next to genuinely deep litter, and that contrast is the large-scale read. */
         if (rnd() > Math.pow(clamp01((drift(u, v) - 0.26) * 1.7), 1.5)) continue;
-        const L = 2 + Math.pow(rnd(), 2.6) * 8.5, W = L * (0.40 + rnd() * 0.32);
+        /* 1.6-4.4px = 8-22cm at this ground's scale, i.e. a beech leaf up to a big maple one.
+           The first cut ran to 10.5px — HALF THE WIDTH OF AN AGENT, a leaf you would need two
+           hands for. Smaller means more of them: litter is dense, and the attempt count went up
+           with the size down so the floor keeps its coverage. */
+        const L = 1.6 + Math.pow(rnd(), 2.2) * 2.8, W = L * (0.42 + rnd() * 0.32);
         /* A DRY LEAF IS AN EVENT. At a third of them the floor was orange confetti; the bright
            end has to be rare or it stops being the bright END and becomes the base colour. */
-        const dry = rnd() < 0.15;
+        const dry = rnd() < 0.22;
         const pal = dry ? LT.LEAF_DRY : LT.LEAF_WET;
         const t = (dry ? 0.40 : 0.14) + rnd() * 0.52;
         const face = ramp(pal, t), rib = ramp(pal, t + 0.30);
         const a = rnd() * TAU, ca = Math.cos(a), sa = Math.sin(a);
         const hl = L / 2, hw = W / 2;
         for (let pass = 0; pass < 2; pass++) {
-          const ox = pass ? 0 : -SUN.x * 1.5, oy = pass ? 0 : -SUN.y * 1.5;
+          const ox = pass ? 0 : -SUN.x * 1.1, oy = pass ? 0 : -SUN.y * 1.1;
           for (let tt = -hl; tt <= hl; tt += 0.55) {
             const wq = hw * Math.sqrt(Math.max(0, 1 - (tt / hl) * (tt / hl)));
             for (let ss = -wq; ss <= wq; ss += 0.55) {
               const px = Math.round(x + tt * ca - ss * sa + ox), py = Math.round(y + tt * sa + ss * ca + oy);
-              if (pass) put(px, py, Math.abs(ss) < 0.55 && L > 4.5 ? rib : face);
-              else shade(px, py, 0.58);
+              if (pass) put(px, py, Math.abs(ss) < 0.55 && L > 3.4 ? rib : face);
+              else shade(px, py, 0.66);
             }
           }
         }
@@ -407,11 +436,15 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          green dust — the same mistake the old litter made, a mark below the size at which the eye
          resolves a shape. A blade must be long enough that its dark base and its lit tip are two
          separate pixels, or the whole gradient that says "grass" averages away. */
-      for (let i = 0; i < 520; i++) {
+      for (let i = 0; i < 1600; i++) {
         const x = rnd() * P, y = rnd() * P, u = x / P, v = y / P;
         const w = wetA(u, v) * 0.6 + wetB(u, v) * 0.4;
-        if (rnd() > clamp01((w - 0.34) * 2.4)) continue;
-        const n = 7 + ((rnd() * 11) | 0), Rr = 4 + Math.pow(rnd(), 1.5) * 8;
+        /* ⛔ GATHERED, NOT SPREAD — the same law the pebbles and the roots each taught once.
+           A tuft every few px across the whole tile is not grass, it is ALGAE: a minority
+           feature spread evenly stops being a feature and becomes the surface. The power term
+           is what buys clumps of sedge in the damp with bare duff between them. */
+        if (rnd() > Math.pow(clamp01((w - 0.40) * 2.8), 1.6)) continue;
+        const n = 6 + ((rnd() * 8) | 0), Rr = 1.8 + Math.pow(rnd(), 1.5) * 2.8;
         for (let k = 0; k < 14; k++) {                       // one shadow under the crown, not per blade
           const aa = rnd() * TAU, dd = rnd() * Rr * 0.5;
           shade(Math.round(x + Math.cos(aa) * dd - SUN.x * 1.6), Math.round(y + Math.sin(aa) * dd - SUN.y * 1.6), 0.64);
@@ -435,9 +468,9 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          moment a minority material is spread evenly at one size it stops being an accent and
          becomes the surface. They are rarer, mostly tiny, and LOBED — a perfect circle is the one
          outline out here that could only have been made by a machine. */
-      for (let i = 0; i < 55; i++) {
+      for (let i = 0; i < 90; i++) {
         const x = rnd() * P, y = rnd() * P;
-        const Rr = 1.1 + Math.pow(rnd(), 2.2) * 4.2, lim = Math.ceil(Rr) + 2;
+        const Rr = 0.9 + Math.pow(rnd(), 2.2) * 2.2, lim = Math.ceil(Rr) + 2;
         const m = 3 + ((rnd() * 3) | 0), ph = rnd() * TAU, amp = 0.14 + rnd() * 0.16;
         const rAt = th => Rr * (1 + amp * Math.sin(th * m + ph));
         for (let pass = 0; pass < 2; pass++) {
@@ -517,7 +550,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
            fuzzy pale puff with no edge, which is the soft haze this whole ground keeps trying to
            become. Raising the floor on the radius and the amplitude costs a little coverage and
            buys back the hard rim that makes a light pool read as light. */
-        const r0 = 2.2 + Math.pow(rnd(), 2.4) * 8 * (0.5 + open);
+        const r0 = 1.6 + Math.pow(rnd(), 2.4) * 5.5 * (0.5 + open);
         const m1 = 2 + ((rnd() * 3) | 0), m2 = 5 + ((rnd() * 4) | 0);
         const p1 = rnd() * TAU, p2 = rnd() * TAU;
         /* ⛔ RAGGEDNESS HAS TO SCALE WITH THE FLECK. A 3px fleck given a full-amplitude 4-lobed
@@ -844,10 +877,10 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          grows where the canopy opens has to be a placed object, and it is what fills the middle
          scale between the patch's 8px blades and a sapling. Andrew named grass first. */
       for (let v = 0; v < 5; v++) {
-        const R = 5 + Math.round(rnd() * 7);
-        const S = Math.ceil(R * 3), cx = S / 2, cy = S / 2;
+        const R = 3 + Math.round(rnd() * 4);
+        const S = Math.ceil(R * 3.4), cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
-        for (let i = 0, n = 16 + ((rnd() * 18) | 0); i < n; i++) {
+        for (let i = 0, n = 14 + ((rnd() * 14) | 0); i < n; i++) {
           /* ⛔ EVERY BLADE FROM ONE POINT IS A STARBURST. That is the same fault the fern had in
              another costume: a perfect rosette is a machine-made shape and the eye files it as a
              symbol. A tuft in a wood is several plants that seeded next to each other, so the
