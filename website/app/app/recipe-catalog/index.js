@@ -42,6 +42,7 @@
     mod('./life.js', 'RecipeCatalogLife'),
     mod('./data.js', 'RecipeCatalogData'),
     mod('./writing.js', 'RecipeCatalogWriting'),
+    mod('./general.js', 'RecipeCatalogGeneral'),
   ];
 
   // flatten + de-dup by id (first occurrence wins). The aggregate is the single built-in source recipes.js reads.
