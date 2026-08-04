@@ -819,7 +819,11 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-ready-card .mkt-rec-why-k { color: var(--gold); border-color: rgba(var(--gold-rgb), .45); }
 /* the evidence line carries this shelf's whole argument, so it reads brighter than a generic why */
 .mkt-ready-card .mkt-ready-why { color: var(--ph-bright); opacity: .95; }
-.mkt-ready-cad { color: var(--gold); border-color: rgba(var(--gold-rgb), .4); }
+/* ⛔ .mkt-badge is already SOLID gold with ink text — restating `color: var(--gold)` here painted gold on
+   gold and the chip rendered as a blank bar. Caught only by looking at a screenshot; the DOM read its text
+   back correctly the whole time. Keep the badge's own contrast and change only the fill. */
+.mkt-ready-cad { background: transparent; color: var(--gold); border: 1px solid rgba(var(--gold-rgb), .45);
+  border-radius: 3px; }
 /* what the station pre-filled, stated plainly — a silently filled form is one that gets launched unread */
 .mkt-ready-fill { margin-top: 5px; font-size: 10.5px; letter-spacing: .3px; color: var(--ph-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
