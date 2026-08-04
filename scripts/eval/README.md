@@ -61,6 +61,14 @@ node scripts/eval/runner.mjs mark-unavailable --harness starnet --reason <reason
 Provider evaluation homes may copy non-secret roster/state fixtures, but must never copy OAuth token,
 auth, or `.env` files. Bindings prove the executable; they do not authorize credential use.
 
+Before the full campaign, probe both harnesses with one explicit comparison model. `--model` is applied
+to Hermes and to StarNet's default-model environment; the probe still fails if a persisted StarNet roster
+selects a different model, so a nominal CLI flag cannot hide a real mismatch:
+
+```powershell
+node scripts/eval/same-model-probe.mjs --model <model> --starnetRoot <installed-root> --starnetHome <active-workspaces> --hermesSource <frozen-checkout> --hermesPython <venv-python> --hermesHome <isolated-home> --output <probe.json> --outputDir <evidence-dir>
+```
+
 Before any provider-backed campaign, run the metadata-only preflight. It fails closed unless the
 installed executable exactly matches the bound candidate, the frozen Hermes identity and executable
 still match, all 32 tasks have independent fixtures, three attempts are contracted, and the credential

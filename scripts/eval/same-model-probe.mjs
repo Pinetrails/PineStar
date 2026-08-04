@@ -25,7 +25,7 @@ async function waitHealth(base, child) {
   throw new Error('StarNet sidecar health timeout');
 }
 
-async function starnetProbe(opts, prompt) {
+async function starnetProbe(opts, prompt, model) {
   const root = resolve(opts.starnetRoot), workspaces = resolve(opts.starnetHome);
   const port = 19000 + (process.pid % 1000), base = `http://127.0.0.1:${port}`;
   const bearer = randomBytes(32).toString('hex');
@@ -35,7 +35,7 @@ async function starnetProbe(opts, prompt) {
     cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     env: Object.assign({}, process.env, {
       STARNET_WORKSPACES: workspaces, STARNET_PORT: String(port), STARNET_API_KEY: bearer,
-      STARNET_DEFAULT_MODEL: 'gpt-5.6-sol', STARNET_FULL_ACCESS: '1', SKYNET_FULL_ACCESS: '1',
+      STARNET_DEFAULT_MODEL: model, STARNET_FULL_ACCESS: '1', SKYNET_FULL_ACCESS: '1',
       STARNET_CRON_ARMED: '0', SKYNET_CRON_ARMED: '0'
     })
   });
@@ -79,11 +79,11 @@ async function starnetProbe(opts, prompt) {
   }
 }
 
-async function hermesProbe(opts, prompt) {
+async function hermesProbe(opts, prompt, model) {
   const source = resolve(opts.hermesSource), python = resolve(opts.hermesPython), home = resolve(opts.hermesHome);
   const usageFile = resolve(opts.outputDir, 'same-model-hermes-usage.json');
   const started = performance.now(); let firstTokenMs = null, stdout = '', stderr = '';
-  const child = spawn(python, ['-m', 'hermes_cli.main', '--ignore-rules', '--provider', 'openai-codex', '--model', 'gpt-5.6-sol',
+  const child = spawn(python, ['-m', 'hermes_cli.main', '--ignore-rules', '--provider', 'openai-codex', '--model', model,
     '--usage-file', usageFile, '--oneshot', prompt], {
     cwd: source, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { HERMES_HOME: home })
   });
@@ -96,7 +96,7 @@ async function hermesProbe(opts, prompt) {
   });
   let usage = null; try { usage = JSON.parse(readFileSync(usageFile, 'utf8')); } catch (_) {}
   const text = stdout.trim();
-  return { ok: exitCode === 0 && text.length > 0, exitCode, model: 'gpt-5.6-sol', provider: 'openai-codex', text,
+  return { ok: exitCode === 0 && text.length > 0, exitCode, model, provider: 'openai-codex', text,
     firstOutputMs: firstTokenMs, totalMs: performance.now() - started, usage,
     error: exitCode === 0 ? '' : stderr.trim().slice(0, 500) };
 }
@@ -105,8 +105,9 @@ const opts = argsOf(process.argv.slice(2));
 for (const key of ['starnetRoot', 'starnetHome', 'hermesSource', 'hermesPython', 'hermesHome', 'output']) if (!opts[key]) throw new Error(`missing --${key}`);
 opts.outputDir = resolve(opts.outputDir || '.dogfood/eval'); mkdirSync(opts.outputDir, { recursive: true });
 const prompt = 'Return exactly PARITY-PROBE-731 and no other text.';
-const result = { schemaVersion: 'starnet.eval.same-model-probe.v1', generatedAt: new Date().toISOString(), prompt,
-  starnet: await starnetProbe(opts, prompt), hermes: await hermesProbe(opts, prompt) };
+const model = String(opts.model || 'gpt-5.6-sol');
+const result = { schemaVersion: 'starnet.eval.same-model-probe.v1', generatedAt: new Date().toISOString(), prompt, comparisonModel: model,
+  starnet: await starnetProbe(opts, prompt, model), hermes: await hermesProbe(opts, prompt, model) };
 result.sameModel = result.starnet.model === result.hermes.model && result.starnet.provider === result.hermes.provider;
 result.pass = result.sameModel && result.starnet.ok && result.hermes.ok && result.starnet.text === 'PARITY-PROBE-731' && result.hermes.text === 'PARITY-PROBE-731';
 writeFileSync(resolve(opts.output), JSON.stringify(result, null, 2) + '\n', 'utf8');
