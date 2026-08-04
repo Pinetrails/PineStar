@@ -36,6 +36,14 @@ const GoalStore = (() => {
   let deps = {};                // { getSystem, getName, getCaps } injected by app.js (all optional; fail-open)
   let bound = false;
   let firing = false;           // re-entrancy guard while a decomposition confirm is mid-flight
+  /* THE STUBBORN-BELIEF SPEND LEAK (fixed 2026-08-04). A reply that parses to fewer than MIN_PATH milestones is
+     unusable, and the old code marked NOTHING offered so a later, better reply could still land — which meant a
+     belief the model simply cannot decompose re-paid the aux call at EVERY run end, forever. Two failed attempts
+     on one belief fingerprint is enough evidence: mark it offered, so it re-offers only when the belief itself
+     changes (exactly what a not-now does). In-memory per session; markOffered is what persists. */
+  const DECOMP_FAIL_LIMIT = 2;
+  const MIN_PATH = 3;           // the floor the confirm panel itself enforces — a shorter path is a failure here too
+  let decompFails = {};         // beliefFingerprint -> consecutive unusable decomposition attempts
   let cachedProposal = null;    // { fp, texts } — the last USABLE decomposition the model produced, keyed by the belief fingerprint. If the beat moment was lost after the (paid) aux call, the next offer for the SAME belief state reuses it instead of re-spending. In-memory only; cleared on confirm/decline/init/reset.
 
   const now = () => { try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {} return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0; };
@@ -162,16 +170,24 @@ const GoalStore = (() => {
     if (!belief) return null;
     const fp = beliefFingerprint(belief);
     if (cachedProposal && cachedProposal.fp === fp) return { belief, texts: cachedProposal.texts.slice() };   // reuse the already-paid-for path
+    // one unusable attempt is a hiccup; DECOMP_FAIL_LIMIT of them is a belief this model cannot decompose —
+    // stop paying for it and let a change to the belief re-open it (see DECOMP_FAIL_LIMIT).
+    const failed = () => {
+      decompFails[fp] = (decompFails[fp] || 0) + 1;
+      if (decompFails[fp] >= DECOMP_FAIL_LIMIT) { markOffered(belief); save(); }
+      return null;
+    };
     try {
       const directive = Goals.buildDirective(belief.text);
       const system = deps.getSystem ? deps.getSystem() : '';
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
-      if (!res || res.error) return null;
+      if (!res || res.error) return failed();
       const texts = Goals.parseDecomposition(res.text, { redact: deps.redact });
-      if (!texts.length) return null;   // under-decomposed / unusable — leave un-offered so a later belief change retries
+      if (texts.length < MIN_PATH) return failed();   // under-decomposed / unusable — the confirm panel would drop it anyway
+      delete decompFails[fp];
       cachedProposal = { fp, texts: texts.slice() };
       return { belief, texts };
-    } catch (_) { return null; }
+    } catch (_) { return failed(); }
   }
 
   // CONFIRM a decomposition: persist the goal tree from the (possibly edited) milestone texts, bound to the belief.
@@ -346,12 +362,12 @@ const GoalStore = (() => {
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    firing = false; cachedProposal = null;
+    firing = false; cachedProposal = null; decompFails = {};
     bind();
     pushToSidecar();
   }
   // a brand-new hero starts with no goals (own key; Save.clear only wipes the main envelope — mirrors the siblings).
-  function reset() { state = hydrate(null); firing = false; cachedProposal = null; try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
+  function reset() { state = hydrate(null); firing = false; cachedProposal = null; decompFails = {}; try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
 
   // re-read on the quest-log heartbeat: retire drift + reconcile completed work before the fold (like the sibling
   // sync()s buildQuests calls). Cheap + idempotent.
