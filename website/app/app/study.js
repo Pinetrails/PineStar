@@ -205,7 +205,13 @@
       // New-format proposals must ground their quote in the real run. Old-format replies remain compatible and
       // fall back to the directive receipt while providers roll onto the stricter prompt.
       if (evidence && (evidence.length < 6 || evidenceBlob.indexOf(normEvidence(evidence)) < 0)) continue;
-      if (!evidence) evidence = (typeof run.directive === 'string' && run.directive) ? String(run.directive).slice(0, 140) : '';
+      // FALLBACK GROUNDING: no located quote → cite the run's DIRECTIVE instead, stamped kind:'directive' below so
+      // the card never presents a (possibly machine-composed) task as the Commander's own speech. A cut directive
+      // ends in an ellipsis so the quote can never read as a complete sentence the Commander never finished.
+      if (!evidence) {
+        const dir = (typeof run.directive === 'string' && run.directive) ? String(run.directive) : '';
+        evidence = dir.length > 140 ? (dir.slice(0, 139) + '…') : dir;
+      }
       if (lowValue(text)) continue;                       // trivia / run-narration floor
       const key = cand.dim + '::' + text.toLowerCase();
       if (seen[key]) continue;

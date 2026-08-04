@@ -3528,7 +3528,7 @@ const Chat = (() => {
     const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === prop.dim) || {}).label || prop.dim) : prop.dim;
     // the EVIDENCE is the Commander's own words — the verbatim directive this belief was observed from. A
     // retire's grounding is the model's reasoning about the stored belief instead.
-    const evLine = prop.evidence ? recWhy('you said “' + String(prop.evidence).trim() + '”')
+    const evLine = prop.evidence ? recWhy(recCite(prop.evidence, prop.evidenceRef && prop.evidenceRef.kind))
       : (prop.kind === 'retire' ? recWhy(prop.text) : '');
     // the card's main text is what will actually happen: the belief to be ADDED, or (retire) the EXACT stored
     // belief that would be deleted — never just the model's paraphrase of it.
@@ -3843,7 +3843,7 @@ const Chat = (() => {
     if (typeof ThreadStore.markShown === 'function') ThreadStore.markShown();   // spend the one session-cap slot
     // the EVIDENCE is the VERBATIM quote the mine grounded this idea in — never a paraphrase.
     const card0 = recCard({
-      kind: 'thread', evidence: prop.spec ? recWhy('you said “' + String(prop.spec).trim() + '”') : '',
+      kind: 'thread', evidence: prop.spec ? recWhy(recCite(prop.spec, threadCiteKind(prop))) : '',
       label: 'THREAD', proposal: prop.title,
       note: 'kept threads feed the night shift'
     });
@@ -4260,7 +4260,27 @@ const Chat = (() => {
     try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) return UnderstandingStore.read(); } catch (_) {}
     return null;
   }
-  function recQuote(s) { const t = String(s == null ? '' : s).trim(); return t ? ('you said “' + t + '”') : ''; }
+  /* ONE citation grammar, DISCRIMINATED BY WHERE THE WORDS CAME FROM (truthful telemetry, 2026-08-04).
+     The card used to say `because you said "…"` about every citation it had. But a study proposal falls back to
+     the run's DIRECTIVE when the model returns no QUOTE line (study.js stamps evidenceRef.kind='directive'), and a
+     directive is very often machine-composed — a routine, a recipe, a scheduled brief. Presenting that as the
+     Commander's own speech is the app asserting something the harness cannot prove. So each source gets its own
+     honest phrasing, and anything unlabelled falls back to a neutral quote that claims nothing about who spoke.
+       verbatim     — words the Commander really typed (a located, grounded quote)
+       directive    — the task text that drove the run; it may have been composed for them
+       conversation — somewhere in the exchange, speaker not established */
+  function recCite(text, kind) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return '';
+    if (kind === 'verbatim') return 'you said “' + t + '”';
+    if (kind === 'directive') return 'from the task you gave me: “' + t + '”';
+    if (kind === 'conversation') return 'from the conversation: “' + t + '”';
+    return 'from “' + t + '”';
+  }
+  function recQuote(s) { return recCite(s, 'verbatim'); }
+  // a mined thread's quote is located in the whole exchange, which includes the AGENT's turns — threadmine
+  // stamps speaker:'user' only when it also matched the Commander's own turns. Anything else is softened.
+  function threadCiteKind(prop) { return (prop && prop.speaker === 'user') ? 'verbatim' : 'conversation'; }
 
   /* ── the candidate builders. Each is side-effect-free — it may only READ its store. The two fetch-backed
         turn-ins additionally GET a stash the sidecar already wrote during the run (a local read, no spend).
@@ -4390,7 +4410,7 @@ const Chat = (() => {
     const proposals = await StudyStore.fetchProposals(runId, agentId);
     const prop = StudyStore.nextLive(proposals);   // drops resolved/declined/ignored + unmatchable retires
     if (!prop) return null;
-    const why = prop.evidence ? recQuote(prop.evidence)
+    const why = prop.evidence ? recCite(prop.evidence, prop.evidenceRef && prop.evidenceRef.kind)
       : (prop.kind === 'retire' ? String(prop.text || '').trim() : '');
     if (!why) return null;
     return { kind: 'study', dim: prop.dim, why: why,
@@ -4406,7 +4426,7 @@ const Chat = (() => {
     const batch = await ThreadStore.fetchProposals(runId, agentId);
     const prop = ThreadStore.nextLive(batch.proposals);   // drops resolved/ignored candidates
     if (!prop) return null;
-    const why = recQuote(prop.spec);
+    const why = recCite(prop.spec, threadCiteKind(prop));
     if (!why) return null;
     return { kind: 'thread', why: why,
              fire: () => { if (beatCards.once('thread', runId)) threadCard(prop, agentId, batch.runId || runId); } };

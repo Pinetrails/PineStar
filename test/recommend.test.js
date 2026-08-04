@@ -119,6 +119,34 @@ for (const fn of ['studyCard', 'trustCard', 'threadCard']) {
 // the why-string grammar is shared with the FOR YOU shelf
 A.ok(/Recommend\.whyLine\(\{ why: raw \}\)/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'marketplace.js'), 'utf8')),
   'the FOR YOU shelf speaks the same "because …" grammar as the COMMS cards');
+/* ── 11b. THE CARD NEVER PUTS WORDS IN THE COMMANDER'S MOUTH (truthful telemetry, 2026-08-04) ──
+   `because you said "…"` was rendered for EVERY citation the card had. But study.js falls back to the run's
+   DIRECTIVE when the model returns no QUOTE line (evidenceRef.kind = 'directive'), and a directive is very often
+   machine-composed (routine, recipe, scheduled brief); threadmine locates its quote in the whole exchange, which
+   includes the AGENT's turns. Each source now gets its own honest phrasing. */
+const iCite = chatSrc.indexOf('function recCite');
+A.ok(iCite > 0, 'chat.js has ONE citation composer, discriminated by source');
+const citeBody = chatSrc.slice(iCite, iCite + 700);
+A.ok(/kind === 'verbatim'\) return 'you said/.test(citeBody), 'only a VERBATIM quote may be rendered as speech');
+A.ok(/kind === 'directive'\) return 'from the task you gave me/.test(citeBody), 'a directive is cited as the task, not as words spoken');
+A.ok(/kind === 'conversation'\) return 'from the conversation/.test(citeBody), 'an unattributed quote is cited as the conversation');
+A.ok(/return 'from “' \+ t \+ '”';/.test(citeBody), 'anything unlabelled falls back to a neutral quote that claims no speaker');
+for (const [fn, probe] of [['function studyCard', /recCite\(prop\.evidence, prop\.evidenceRef && prop\.evidenceRef\.kind\)/],
+                           ['async function studyCandidate', /recCite\(prop\.evidence, prop\.evidenceRef && prop\.evidenceRef\.kind\)/],
+                           ['function threadCard', /recCite\(prop\.spec, threadCiteKind\(prop\)\)/],
+                           ['async function threadCandidate', /recCite\(prop\.spec, threadCiteKind\(prop\)\)/]]) {
+  const i = chatSrc.indexOf(fn);
+  A.ok(i > 0 && probe.test(chatSrc.slice(i, i + 2000)), fn.replace(/^(async )?function /, '') + ' cites by SOURCE, never blanket "you said"');
+}
+A.ok(/prop\.speaker === 'user'/.test(chatSrc.slice(iCite - 400, iCite + 1400)),
+  'a mined thread claims speech only when threadmine located the quote in the Commander’s own turns');
+// …and the producer stamps that discrimination in the first place
+A.ok(/speaker: \(nq && spoken\.indexOf\(nq\) >= 0\) \? 'user' : 'other'/.test(fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'threadmine.js'), 'utf8')),
+  'threadmine stamps WHO said the quote it mined');
+// a cut directive ends in an ellipsis, so the citation can never read as a sentence the Commander never finished
+A.ok(/dir\.length > 140 \? \(dir\.slice\(0, 139\) \+ '…'\) : dir/.test(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'study.js'), 'utf8')),
+  'a truncated directive citation is visibly truncated');
+
 const iRecWhy = chatSrc.indexOf('function recWhy');
 A.ok(iRecWhy > 0 && /Recommend\.whyLine/.test(chatSrc.slice(iRecWhy, iRecWhy + 420)), 'the cards route their citation through whyLine');
 // styling: matte, dark-only, no gloss, no white control, entrance mirrors the vanish timing
