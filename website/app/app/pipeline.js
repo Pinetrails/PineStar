@@ -140,6 +140,24 @@
           if (map[key(xx, yy)]) outs.push({ propId: p.id, tile: { x: xx, y: yy } });
     }
 
+    /* A SOLID PROP BURIES THE LINE (2026-08-04 legibility audit): a blocking prop placed over a belt run
+       used to be silently legal — the line stayed compiled + energized and crates drew straight over the
+       prop. Warn, never a blocker (transport still conserves every crate; the floor just looks wrong).
+       Only an EXPLICIT blocks:true prop counts: belt machines (intake/bay/outbox/junctions) legitimately
+       sit on/next to the line, and flat decor (block:false) buries nothing. geo already carries `block`
+       per prop (worldmodel.projectGeometry emits it) — no contract change; a geo without the field
+       (older callers/tests) simply never trips this. Anchored on the first covered belt tile. */
+    const BELT_MACHINES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    for (const p of props) {
+      if (p.block !== true || BELT_MACHINES[p.t]) continue;
+      const pw = p.w || 1, ph = p.h || 1;
+      let hit = null;
+      for (let yy = p.y; yy < p.y + ph && !hit; yy++)
+        for (let xx = p.x; xx < p.x + pw && !hit; xx++)
+          if (map[key(xx, yy)]) hit = { x: xx, y: yy };
+      if (hit) errors.push({ code: 'BELT_BURIED', propId: p.id, tile: hit, warn: true });
+    }
+
     const seenAgent = {}, unboundBays = [], dockBays = [];
     const hasLine = sources.length > 0;   // an INTAKE line exists — only then can "not fed by it" be a finding
     for (const p of props) {
@@ -242,8 +260,10 @@
 
      A DOCK NEVER EATS ITS OWN OUTPUT. A handoff crate leaves its producer's dock and rides THROUGH every other
      hookup tile of that same bay (a lane running along a dock's edge touches several ring tiles) — it is consumed
-     only by a FOREIGN bound bay. The engine enforces the identical rule (`fromAgentId === stopOwner` rides on),
-     which is what makes a self-loop structurally impossible rather than merely unlikely. */
+     only by a FOREIGN bound bay. The engine enforces the identical rule since 2026-08-04: world.js stamps the
+     producer on the crate (`payload.fromAgentId`) and conveyor.js's dock-delivery check rides a crate past any
+     stop whose owner IS its producer — physics, which is what makes a self-loop structurally impossible rather
+     than merely unlikely. */
 
   // walk the flow from `starts`, fanning ALL junction lanes: which foreign docks / outboxes can this reach?
   function chainWalk(plan, agentId, starts) {
