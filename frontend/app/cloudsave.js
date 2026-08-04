@@ -142,6 +142,13 @@ const CloudSave = (() => {
       });
   }
 
+  // flush() returns false both when there was nothing pending (safe) and when a real pending write failed
+  // (unsafe). Update installation needs that distinction so it can fail closed on an unproved newest save.
+  function flushForUpdate() {
+    const hadPending = isSave(pending);
+    return flush({ force: true }).then(ok => ({ ok: !hadPending || ok === true, hadPending, flushed: ok === true }));
+  }
+
   // queue a write-through; coalesces a burst of persists into one POST after the debounce settles.
   // SINGLE-WRITER assumption: the app is single-agent/single-session, so this mirrors whatever localStorage
   // holds with last-write-wins (the sidecar rejects only a STALE-timestamp write). Two live tabs editing the
@@ -306,6 +313,6 @@ const CloudSave = (() => {
       .then(r => !!(r && r.ok)).catch(() => false);
   }
 
-  return { push, pull, reconcile, flush, installUnloadFlush, health: healthNow, isFutureSentinel, isUnknownSentinel, markDegraded, recoveryNotice, ackRecovery, pullOutcome: () => lastPullOutcome, _isSave: isSave, _isFutureSave: isFutureSave };
+  return { push, pull, reconcile, flush, flushForUpdate, installUnloadFlush, health: healthNow, isFutureSentinel, isUnknownSentinel, markDegraded, recoveryNotice, ackRecovery, pullOutcome: () => lastPullOutcome, _isSave: isSave, _isFutureSave: isFutureSave };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = CloudSave;

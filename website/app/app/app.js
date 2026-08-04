@@ -1305,12 +1305,14 @@ const App = (() => {
             throw new Error('roster refused: ' + (body.error || (body.stale ? 'stale push' : 'unknown')));
           }
           if (rosterPushFailed) { rosterPushFailed = false; try { console.info('[roster] sidecar roster sync recovered.'); } catch (_) {} }
+          return true;
         })
         .catch(() => {
           if (!rosterPushFailed) { rosterPushFailed = true; try { console.warn('[roster] sidecar roster sync failed; will retry on next persist. Local roster is intact.'); } catch (_) {} }
+          return false;
         });
       return lastRosterPush;
-    } catch (_) { return Promise.resolve(); }
+    } catch (_) { return Promise.resolve(false); }
   }
 
   // BACKEND-INITIATED SUMMON (crew.summon.request): the orchestrator's team.summon tool asked the station to

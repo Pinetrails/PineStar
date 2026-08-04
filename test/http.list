@@ -2,6 +2,7 @@
 test/provider-recovery.e2e.test.js
 test/sidecar.http.test.js
 test/workspace-owner.e2e.test.js
+test/update-preparation.http.test.js
 test/codex-status.e2e.test.js
 test/oauth-status.e2e.test.js
 test/roster-envelope.http.test.js
