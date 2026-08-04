@@ -23,6 +23,7 @@ const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) 
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
+const { makeWorkspaceOwner } = require('./workspace-owner.js');
 const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
@@ -336,6 +337,27 @@ function defaultWorkspaces() {
   return neu;
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
+
+// DATA-SAFETY INVARIANT: every durable store below assumes exactly one sidecar owns WORKSPACES.
+// Claim that root BEFORE pricing cache, runtime knobs, roster, station save, or any other persisted state
+// is read. A second writer fails closed; a crash-killed holder is reclaimed only when its PID is provably
+// dead (never merely because the claim is old). The desktop shell's uncatchable Windows force-kill leaves
+// this file behind by design; the next legitimate boot performs that proven-dead recovery.
+const workspaceOwner = makeWorkspaceOwner({ fs: fs, path: path, now: () => Date.now() });
+const workspaceOwnerClaim = workspaceOwner.acquire(WORKSPACES);
+if (!workspaceOwnerClaim.ok) {
+  const holderPid = workspaceOwnerClaim.holder && workspaceOwnerClaim.holder.valid
+    ? workspaceOwnerClaim.holder.pid : 'unverified';
+  console.error('✗ StarNet refused to open this workspace because another process may own it.');
+  console.error('  workspace: ' + WORKSPACES);
+  console.error('  holder PID: ' + holderPid);
+  console.error('  safety code: ' + String(workspaceOwnerClaim.code || 'WORKSPACE_OWNER_UNAVAILABLE'));
+  console.error('  Close the other StarNet process and retry. StarNet will not risk concurrent writes.');
+  process.exit(73);
+}
+// Synchronous and idempotent: covers ordinary returns and every process.exit path. SIGKILL/TerminateProcess
+// cannot run handlers, so their valid PID-stamped claim is recovered by the next boot instead.
+process.once('exit', () => { try { workspaceOwner.release(); } catch (_) {} });
 
 /* ---- LIVE MODEL PRICING (2026-07-31, Hermes-parity pass): wire the models.dev aggregate into the
    price snapshot so a newly-released model gets its real published rate instead of a stale family
@@ -7263,6 +7285,7 @@ function gracefulShutdown(signal) {
   try { stopDiscord(); } catch (_) {}    // disconnect the Discord gateway socket
   try { for (const ac of runs.values()) { try { ac.abort(); } catch (_) {} } } catch (_) {}   // abort any in-flight run so it stops spending
   try { if (typeof cronLock !== 'undefined' && cronLock && cronLock.release) cronLock.release(); } catch (_) {}   // drop cron.lock so the next boot's tick isn't wedged
+  try { workspaceOwner.release(); } catch (_) {}   // drop the process-wide WORKSPACES owner claim on catchable shutdown
   // BROWSER/CDP: the per-run browser session is created fresh per run and not retained at module scope (see the
   // registry build in runOnce), so there is no persistent CDP handle to close here. A Chrome launched by an
   // in-flight run is aborted via runs.abort() above; a detached window the user is watching is intentionally left
