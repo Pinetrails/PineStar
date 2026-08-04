@@ -213,12 +213,20 @@
       return record.handle;
     }
     function expire(kind) { if (!active || (kind && active.kind !== kind)) return false; return active.handle.expire(); }
+    /* THE STARVE FIX (recommendation spine, S2). A scheduled sweep is armed at a NEW task end to retire the
+       PREVIOUS moment's undecided card. It used to expire only when the holder's kind matched the sweep's
+       kind — so an unanswered gentle nudge (or any other family) kept the one slot until the next reset()
+       and starved every higher-value offer queued behind it. The sweep now retires whichever UNDECIDED card
+       is holding the slot. Nothing about a decision is weakened: handle.expire() still refuses a decided
+       card, so a verdict can never be miscounted as an "ignore", and each record fires its OWN onExpire
+       hook — the right feature tallies the ignore, never the sweeper's. */
+    function sweepExpire() { return active ? active.handle.expire() : false; }
     function scheduleExpire(kind, delay) {
       clearExpiry(kind);
       const expectedGeneration = generation;
       const id = later(function () {
         expiryTimers.delete(kind);
-        if (generation === expectedGeneration) expire(kind);
+        if (generation === expectedGeneration) sweepExpire();
       }, Math.max(0, Number(delay) || 0));
       expiryTimers.set(kind, id);
       return id;
@@ -236,7 +244,7 @@
     }
 
     return {
-      slot, once, hasSeen, enqueue, shift, queueSize, clearQueue, claim, expire, scheduleExpire, reset,
+      slot, once, hasSeen, enqueue, shift, queueSize, clearQueue, claim, expire, sweepExpire, scheduleExpire, reset,
       reserve(kind, runId) { slot.reserve(kind, runId); },
       releaseReservation(kind, runId) { slot.releaseReservation(kind, runId); },
       canOffer(kind) { return slot.can(kind); },

@@ -77,4 +77,29 @@ A.eq(staleFinish, false, 'a stale async completion cannot schedule cleanup');
 A.eq(ctl.visibleBeat(), 'study', 'the stale completion cannot release or replace the fresh card');
 A.eq(vanished.indexOf('study-fresh'), -1, 'the fresh card was not touched by stale cleanup');
 
+/* THE STARVE FIX (recommendation spine S2): a sweep armed for one kind must free the slot from whatever
+   UNDECIDED card is holding it — the old kind-matched sweep let an unanswered nudge starve every offer. */
+ctl.reset();
+const stuck = ctl.claim({ kind: 'nudge', runId: 'run-stuck', node: { id: 'nudge-stuck', isConnected: true } });
+let nudgeIgnored = 0;
+stuck.ifCurrent(rec => { rec.onExpire = () => { nudgeIgnored += 1; }; });
+A.eq(ctl.visibleBeat(), 'nudge', 'the gentle aside holds the one slot');
+ctl.scheduleExpire('study', 20);            // a NEW task end sweeps the previous moment
+clock.tick(20);
+A.eq(nudgeIgnored, 1, 'the mismatched holder fires its OWN ignore hook, not the sweeper kind\'s');
+A.eq(ctl.visibleBeat(), null, 'a cross-kind sweep frees the slot instead of starving the queue');
+A.ok(ctl.claim({ kind: 'study', runId: 'run-after', node: { id: 'study-after', isConnected: true } }),
+  'the higher-value offer can now take the freed moment');
+
+// a DECIDED card is still immune — a verdict is never miscounted as an ignore.
+ctl.reset();
+const answered = ctl.claim({ kind: 'nudge', runId: 'run-answered', node: { id: 'nudge-answered', isConnected: true } });
+let answeredIgnored = 0;
+answered.ifCurrent(rec => { rec.onExpire = () => { answeredIgnored += 1; }; });
+A.eq(answered.decide(), true, 'the Commander answered the aside');
+ctl.scheduleExpire('thread', 20);
+clock.tick(20);
+A.eq(answeredIgnored, 0, 'a decided card is never swept as ignored');
+A.eq(ctl.sweepExpire(), false, 'a direct sweep also refuses a decided card');
+
 A.report('beatcard.test');
