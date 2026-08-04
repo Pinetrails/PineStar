@@ -53,23 +53,22 @@
   // it. 'code' and 'planning' stay valid legacy aliases (older customs) that the rail folds into developer/ops.
   // 'general' is the catch-all fallback. Additive only — no bucket is ever renamed or removed.
   //
-  // LIFE-DOMAIN BUCKETS (2026-08-03): the catalog's job is to be a USE-CASE DICTIONARY for someone who cannot
-  // yet name their own use case, so the buckets must be the areas a person actually HAS — not just the five
-  // professional personas the R4 catalog shipped with. A reader scans this rail for themselves; a bucket they
-  // don't see is a use case they never discover. Each new bucket ships with a real shelf of recipes behind it
-  // (an empty bucket is worse than no bucket) — see recipe-catalog/<bucket>.js.
-  const CATEGORIES = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money', 'career',
-    'learn', 'life', 'data', 'general', 'code', 'planning'];
+  // STANDING-AUTOMATION BUCKETS (2026-08-04): the catalog is a use-case dictionary for someone who cannot yet
+  // name their own use case, so the buckets are the areas a StarNet user actually works in. A bucket only
+  // exists if a real shelf of recipes stands behind it — an empty or one-item bucket reads as broken next to
+  // a full one, so a bucket is added WITH its module and removed when its module goes.
+  const CATEGORIES = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money',
+    'data', 'general', 'code', 'planning'];
   /* THE VISIBLE buckets, in rail order, and the fold from a raw category onto one. Two categories can be
      DIFFERENT values and the same bucket ('code' and 'developer' both render under DEVELOPER), so anything
      reasoning about what the Commander actually SEES must fold first — the marketplace rail delegates here
      rather than keeping its own copy, so the rail and the recommender can never disagree about what "one
      per category" means. Legacy aliases fold; an unknown value falls back to 'general'. */
-  const RAIL_BUCKETS = ['developer', 'research', 'writing', 'creator', 'ops', 'business', 'money', 'career',
-    'learn', 'life', 'data', 'general'];
+  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money',
+    'data', 'general'];
   const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', writing: 'writing',
-    creator: 'creator', ops: 'ops', planning: 'ops', business: 'business', money: 'money', career: 'career',
-    learn: 'learn', life: 'life', data: 'data', general: 'general' };
+    creator: 'creator', ops: 'ops', planning: 'ops', business: 'business', money: 'money',
+    data: 'data', general: 'general' };
   function railBucket(r) {
     const c = (r && typeof r === 'object') ? r.category : r;
     return CAT_TO_RAIL[String(c == null ? '' : c)] || 'general';

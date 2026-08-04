@@ -5,18 +5,34 @@
    (R4: ~50 use cases across personas) without ever touching the launch logic — a persona file (dev.js /
    research.js / creator.js / ops.js) is a sibling of this one, registered in index.js with a one-line add.
 
-   ══ THE RECIPE BAR (2026-07 content overhaul — every built-in, core or persona, must clear ALL four) ══
-     1. EARNS ITS TAP  — the directive encodes METHOD and JUDGMENT (steps, quality criteria, output shape)
-                         the Commander would never bother typing. A one-line paraphrase of the recipe's own
-                         name ("summarize this") is worth LESS than the chat box and does not ship.
-     2. DRIVES THE STATION — it leans on real gear: the web (dish), files (cabinet), terminal (workbench),
-                         memory (notebook), connected channels (connector) — or a cadence. Paste-boxes are a
-                         last resort for material genuinely outside the station's reach, and even then the
-                         directive accepts a file / link / channel as the source.
-     3. LANDS SOMEWHERE — it ends in a deliverable or a decision (a draft, a ranked call, a delta report,
-                         an offered file), plus what to do next. Never "here is some text".
-     4. COMPOUNDS      — a naturally-recurring recipe (cadence != null) keeps notes in the agent's memory
-                         and reports what CHANGED since the last run, so the Nth run beats the first.
+   ══ THE RECIPE BAR (2026-08 STANDING-AUTOMATION overhaul — every built-in must clear ALL SIX) ══
+     1. THE CHAT-BOX TEST — ⛔ THE GATE THAT DECIDES EVERYTHING. Paste this directive into a plain chat box
+                         with no tools. If the answer is roughly as good, THE RECIPE DOES NOT SHIP. A recipe
+                         must NEED this station: its live tools, its durable memory, or its cadence. "Plan a
+                         trip", "draft a reply", "give me gift ideas" all fail — they are prompts wearing a
+                         card, and a catalog full of them makes the whole feature look like a prompt list.
+     2. DRIVES THE STATION — it reads or writes something REAL: the web (dish), files (cabinet), terminal
+                         (workbench), memory (notebook), connected channels (connector). A paste-box is a
+                         fallback the directive offers, never the primary input.
+     3. COMPOUNDS      — it reads its OWN previous run out of memory and reports the DELTA. The Nth run must
+                         beat the first. A recipe that returns the same answer every time is a one-shot, and
+                         a one-shot had better be clearing bar 1 on tools alone.
+     4. LANDS SOMEWHERE — a file, a scheduled routine, a drafted message on a real channel, or a ranked
+                         decision. Never "here is some text" in the transcript.
+     5. EARNS ITS TAP  — the directive encodes METHOD and JUDGMENT (steps, quality criteria, output shape,
+                         the failure mode to avoid) the Commander would never bother typing.
+     6. NON-OBVIOUS **or** UNIVERSAL — ⛔ THE CONTENT TEST, and the reason this catalog exists at all. A
+                         recipe ships only if it is EITHER something the Commander would never have thought
+                         to ask an agent for and immediately wants once they see it ("scan my sent messages
+                         for promises I made and never closed"), OR something of real value to essentially
+                         every StarNet user ("tell me what changed in the terms of the services I pay for").
+                         A recipe that is merely a competent version of an obvious request fails this — the
+                         obvious request is what the chat box is for. THE CATALOG'S JOB IS TO SHOW SOMEONE A
+                         USE CASE THEY COULD NOT HAVE NAMED THEMSELVES.
+
+   Aim the content at who ACTUALLY runs this station — people building software, shipping content, and
+   running small operations — but reach for the use case that generalizes, not the one narrowed to one job.
+
    The scout's auto-mint directive (sidecar/scout.js buildRecipeDirective) enforces the same bar, so
    personalized recipes the station drafts for its Commander never regress below the curated catalog.
 
