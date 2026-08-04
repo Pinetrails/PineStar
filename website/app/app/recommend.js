@@ -114,6 +114,12 @@
          it declines to shout about one whose evidence is thin. */
   const STRENGTH_MAX = 30;      // the within-BAND swing thin evidence may cost a candidate (3 rank steps)
   const STRENGTH_FLOOR = 0.5;   // strength 0 → ×0.5 → −STRENGTH_MAX/2.
+  /* QUALITY OUTRANKS RANK, NOT EVERYTHING (measured live 2026-08-04). Its swing comfortably clears a RANK_STEP,
+     so a channel's real outcome record reorders it against its band siblings — which is the whole point. It does
+     NOT clear a maximum-VOI promotion: forty real declines still leave a blank high-weight dimension the most
+     valuable thing the station can ask about. That is deliberate and it is this module's stated law — silencing a
+     channel is the job of the per-channel caps and the Commander's own explicit "never", not of a number the
+     station computed. Raising this until quality could veto VOI was tried and reverted. */
   const QUALITY_MAX = 30;       // the within-BAND swing a channel's real outcome history may move it
   const QUALITY_FLOOR = 0.5;    // matches recquality.js Q_FLOOR — a dud channel is quieter, NEVER silent
   const QUALITY_CAP = 1.25;     // matches recquality.js Q_CAP — a proven channel earns a small, bounded edge

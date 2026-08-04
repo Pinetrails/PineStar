@@ -4,8 +4,9 @@
    the floor, then asserts against the REAL page (real modules, real stores, real DOM):
 
      1. Both halves are loaded and read the LIVE understanding/dossier state (no injected fakes).
-     2. STRENGTH REORDERS a real pick: two candidates in the same priority band, one citing a fresh belief and
-        one citing a season-old one, ranked through the live Recommend.pick.
+     2. THE SCORER CHANGES A REAL OUTCOME: two REAL agent.run.end passes, the gentle-band field the pass itself
+        stages captured each time, real outcomes folded through the store's own API in between — and the
+        same-band winner moves off the one pure priority order would have named.
      3. The QUALITY WEIGHT reaches the live pass: Recommend.pick is wrapped, a real agent.run.end is emitted,
         and the candidates the REAL recommendPass hands the spine are inspected for their earned `quality`.
      4. The ATTRIBUTION STAMP lands on the spawned work's meta: an accepted offer is armed, a real run is
@@ -68,7 +69,117 @@ try {
   eq(loaded.neutralWeight, 1, 'a cold station reads every channel NEUTRAL (it can change no ranking it has no evidence for)');
   ok(loaded.floor >= 0.5, 'the quality floor is live at ' + loaded.floor);
 
-  /* ---- 2. strength reorders a real pick, using the live understanding read ---- */
+  /* ---- 2. THE SCORER CHANGES A REAL OUTCOME — proved on candidates the REAL pass produced ----
+     This slice used to hand Recommend.pick two hand-built candidates of the SAME kind. The pass can never emit
+     that shape (one candidate per kind), so it proved nothing about the live product — and while it passed, the
+     scorer was in fact INERT: every modifier was clamped under the per-kind tier gap, and no field the pass
+     could actually produce ever ranked differently from pure priority order.
+     The honest proof: drive TWO real agent.run.end passes, capture the REAL gentle-band field each one stages,
+     apply REAL outcomes through the store's own API in between, and watch the same-band winner change. The first
+     pass's pick is SUPPRESSED (returns null) so no card fires and no session/channel cap is spent — the field
+     the pass staged is the measurement, and nothing about the station's state is disturbed by taking it. */
+  // PASS 1 — the field as the station stages it COLD (every channel neutral). pick() is SUPPRESSED for both
+  // passes: nothing fires, no session/channel cap is spent, no nudge lands in the feed to disturb the slices
+  // below. The field the pass staged and the arbiter that ranks it are the real ones; only rendering is skipped.
+  const staged = await evalJS(cdp, `(() => {
+    const GENTLE = Recommend.BANDS[Recommend.BANDS.length - 1];
+    const orig = Recommend.pick;
+    window.__rq2 = { orig, field: null };
+    Recommend.pick = function (cands) {
+      const s = window.__rq2;
+      const gentle = (cands || []).filter(c => c && GENTLE.indexOf(c.kind) >= 0)
+        .map(c => ({ kind: c.kind, dim: c.dim || '', why: String(c.why || '').slice(0, 70), strength: c.strength, quality: c.quality }));
+      if (gentle.length) s.field = gentle;
+      return null;
+    };
+    /* EARN TWO MORE GENTLE CHANNELS THE WAY THE PRODUCT REALLY EARNS THEM — no injected candidates:
+         SEED    — the station learns a recurring SHAPE by observing real task directives (chat.js calls
+                   MintStore.observe on every one). Four repeats crosses mint.js's THRESHOLD, and seedCandidate
+                   then cites that REAL repeat count as its strength.
+         ROUTINE — a recipe hand-launched past RoutineNudgeStore.LAUNCH_FLOOR, recorded through the same
+                   ProspectStore.noteLaunch the bay calls, plus the store's own cron read (its duplicate gate).
+       Both are dim-less, so neither carries a value-of-information term: the ONLY thing that can separate them
+       is what the station has learned about the two channels' real outcomes. That is exactly the measurement. */
+    let seedReady = false, routine = null;
+    try {
+      for (const t of ['summarise the weekly billing report', 'summarise the weekly invoice report',
+                       'summarise the weekly revenue report', 'summarise the weekly churn report']) MintStore.observe(t);
+      seedReady = !!(SeedStore.willPropose && SeedStore.willPropose());
+    } catch (e) {}
+    try {
+      const r = (Recipes.list() || []).find(x => x && x.cadence);
+      if (r) { for (let i = 0; i < 4; i++) ProspectStore.noteLaunch(r); routine = r.id; }
+      RoutineNudgeStore.onRunEnd();      // warm the store's own cron cache (its no-duplicate-routine gate)
+    } catch (e) {}
+    try { for (let i = 0; i < 8; i++) CuriosityStore.noteWork(); } catch (e) {}
+    U.bus.emit('agent.run.end', { agentId: 'agent', runId: 'rq-reorder-1', reason: 'done' });
+    return { seedReady, routine };
+  })()`);
+  ok(staged.seedReady, 'four real observations of one directive shape earned the station a live SEED candidate');
+  ok(!!staged.routine, 'and four real hand-launches of a recurring recipe earned it a live ROUTINE candidate (' + staged.routine + ')');
+  await sleep(13500);
+  // teach the station the OPPOSITE of its rank order through REAL outcomes: the channel that leads on rank alone
+  // gets a run of real declines; the one below it gets real accepts. Then run the pass again.
+  const cold = await evalJS(cdp, `(() => {
+    const s = window.__rq2, all = s.field ? s.field.slice() : [];
+    const byPriority = ks => ks.slice().sort((a, b) => Recommend.PRIORITY.indexOf(a) - Recommend.PRIORITY.indexOf(b))[0];
+    // the VOI-FREE pair: two dim-less gentle channels, so nothing but their outcome records can separate them.
+    const pair = all.filter(c => !c.dim);
+    const out = { all, allWinner: all.length ? s.orig(all, UnderstandingStore.read()).kind : null,
+                  allPriority: byPriority(all.map(c => c.kind)), pair: pair.map(c => c.kind) };
+    if (pair.length < 2) return out;
+    const coldWinner = s.orig(pair, UnderstandingStore.read());
+    const runnerUp = pair.find(c => c.kind !== coldWinner.kind);
+    /* REAL, NAMED OUTCOMES through the store's own API: 👎 on the work the leader's offers spawned, 👍 on the
+       runner-up's. Nothing is poked — every fold goes through noteOutcome exactly as rateWork's hand-off does. */
+    for (let i = 0; i < 30; i++) RecQualityStore.noteOutcome({ channel: coldWinner.kind }, 'miss');
+    for (let i = 0; i < 30; i++) RecQualityStore.noteOutcome({ channel: runnerUp.kind }, 'great');
+    s.coldWinner = coldWinner.kind; s.runnerUp = runnerUp.kind;
+    s.field = null;
+    U.bus.emit('agent.run.end', { agentId: 'agent', runId: 'rq-reorder-2', reason: 'done' });
+    return Object.assign(out, { coldWinner: coldWinner.kind, runnerUp: runnerUp.kind,
+             priorityWinner: byPriority(pair.map(c => c.kind)),
+             sameBand: Recommend.sameBand(coldWinner.kind, runnerUp.kind) });
+  })()`);
+  if (cold.pair && cold.pair.length >= 2) await sleep(13500);
+  const reorder = await evalJS(cdp, `(() => {
+    const s = window.__rq2;
+    const warmAll = s.field ? s.field.slice() : [];
+    const warm = warmAll.filter(c => !c.dim);
+    const warmWinner = warm.length ? s.orig(warm, UnderstandingStore.read()) : null;
+    Recommend.pick = s.orig;
+    return Object.assign(${JSON.stringify(cold)}, {
+      warm, warmWinner: warmWinner && warmWinner.kind,
+      scores: warm.map(c => ({ kind: c.kind, score: Math.round(Recommend.score(c, UnderstandingStore.read()) * 100) / 100 })),
+      weights: s.coldWinner ? { down: RecQualityStore.weightFor(s.coldWinner), up: RecQualityStore.weightFor(s.runnerUp) } : null
+    });
+  })()`);
+  console.log('gentle field the live pass staged (cold): ' + JSON.stringify(reorder.all));
+  ok(reorder.all && reorder.all.length >= 2,
+    'the REAL pass stages several gentle-band candidates (' + (reorder.all || []).map(c => c.kind).join(', ') + ')');
+  // (a) the whole field: the VOI-promoted question the old ±50 clamp had silently killed, back and live
+  ok(reorder.allWinner !== reorder.allPriority,
+    'the REAL pass’s winner is NOT the pure-priority pick — a maximum-VOI question (' + reorder.allWinner
+      + ') outranks the channel above it (' + reorder.allPriority + '), the spine-era promotion the clamp had removed');
+  // (b) the VOI-free pair: nothing but recorded outcomes can separate them, and they swap
+  ok(reorder.pair && reorder.pair.length >= 2,
+    'two of them are dim-less, so no value-of-information term can confound the measurement (' + (reorder.pair || []).join(', ') + ')');
+  if (reorder.pair && reorder.pair.length >= 2) {
+    eq(reorder.sameBand, true, 'the two channels really are in one band (a cross-band flip would be a BUG, not a feature)');
+    eq(reorder.coldWinner, reorder.priorityWinner, 'cold, the station knows nothing about either and rank order decides');
+    ok(reorder.weights.down <= 0.55 && reorder.weights.up >= 1.2,
+      'thirty real 👎 outcomes and thirty real 👍 outcomes moved the two channels apart: ' + JSON.stringify(reorder.weights));
+    eq(reorder.warm.map(c => c.kind).sort(), reorder.pair.slice().sort(),
+      'the SECOND pass staged the SAME two channels — only what the station has learned about them changed');
+    eq(reorder.warmWinner, reorder.runnerUp,
+      'and the arbiter hands the moment to the one whose offers actually produced good work (was ' + reorder.coldWinner + ')');
+    ok(reorder.warmWinner !== reorder.priorityWinner,
+      'THE SCORER CHANGED A REAL OUTCOME: same field, same priority order, different winner — before the bands, no field the pass could produce ever did this');
+    console.log('VOI-free pair (warm): ' + JSON.stringify(reorder.warm));
+    console.log('warm scores: ' + JSON.stringify(reorder.scores) + ' · cold winner ' + reorder.coldWinner + ' → warm winner ' + reorder.warmWinner);
+  }
+
+  /* ---- 2b. the pure reads behind it, against the LIVE understanding state ---- */
   const strength = await evalJS(cdp, `(() => {
     const now = Date.now(), DAY = 86400000;
     const u = UnderstandingStore.read();
@@ -76,26 +187,20 @@ try {
     const oldB = { id: 'o', text: 'ship the billing rewrite', updatedAt: now - 120 * DAY };
     const sFresh = RecQuality.beliefStrength(freshB, now, u, 'goals');
     const sOld = RecQuality.beliefStrength(oldB, now, u, 'goals');
-    const cands = [
-      { kind: 'arc', dim: 'goals', why: 'you said "the OLD thing"', strength: sOld },
-      { kind: 'arc', dim: 'goals', why: 'you said "the FRESH thing"', strength: sFresh }
-    ];
-    const winner = Recommend.pick(cands, u);
-    const scores = cands.map(c => Recommend.score(c, u));
-    // and the band law: a maxed-out lower band still loses
+    // the band law: a maxed-out lower band still loses
     const cross = Recommend.pick([
-      { kind: 'curiosity', why: 'x', dim: 'goals', strength: 1, quality: 1.25 },
-      { kind: 'arc', why: 'y', strength: 0, quality: 0.5 }
+      { kind: 'curiosity', why: 'x', dim: 'goals', strength: 1, quality: 1.25, streak: 99 },
+      { kind: 'arc', why: 'y', strength: 0, quality: 0.5, declines: 99 }
     ], u);
-    return { sFresh, sOld, winner: winner && winner.why, scores, cross: cross && cross.kind,
-             stale: RecQuality.staleness(oldB, now, u, 'goals'), staleFresh: RecQuality.staleness(freshB, now, u, 'goals').stale };
+    return { sFresh, sOld, cross: cross && cross.kind,
+             stale: RecQuality.staleness(oldB, now, u, 'goals'), staleFresh: RecQuality.staleness(freshB, now, u, 'goals').stale,
+             nullConf: RecQuality.staleness(oldB, now, { dims: { goals: { weight: 3, conf: null } } }, 'goals').stale };
   })()`);
   ok(strength.sOld < strength.sFresh, 'a 120-day-old belief reads WEAKER than a fresh one against the live dossier ('
     + strength.sOld.toFixed(3) + ' < ' + strength.sFresh.toFixed(3) + ')');
-  ok(/FRESH/.test(String(strength.winner)), 'the live arbiter picks the better-grounded candidate: ' + strength.winner);
-  ok(strength.scores[1] > strength.scores[0], 'and it is the SCORE that decided it: ' + JSON.stringify(strength.scores));
-  eq(strength.cross, 'arc', 'a maxed-out lower-priority candidate still cannot cross a band');
+  eq(strength.cross, 'arc', 'a maxed-out gentle candidate still cannot cross a band');
   eq(strength.staleFresh, false, 'a fresh belief is never stale');
+  eq(strength.nullConf, false, 'an UNREADABLE confidence is not confidence zero — it claims no staleness at all');
   console.log('live staleness read: ' + JSON.stringify(strength.stale));
 
   /* ---- 3+5. ONE real pass proves both halves: the earned quality weight reaches the spine, and the stale
@@ -111,6 +216,7 @@ try {
     const u = UnderstandingStore.read();
     const b = arr[0] || null;
     return { count: arr.length, id: b && b.id, text: b && b.text, conf: u.dims.goals.conf,
+             weight: b && b.weight, source: b && b.source,
              stale: b ? RecQuality.staleness(b, Date.now(), u, 'goals') : null,
              willOffer: !!(GoalStore.willOfferDecomposition && GoalStore.willOfferDecomposition()) };
   })()`);
@@ -168,11 +274,17 @@ try {
   console.log('re-confirm card: ' + JSON.stringify(card));
   if (card.rendered) {
     ok(card.winner && card.winner.reconfirm === true, 'the spine’s winner was the RE-CONFIRM, not an assertion');
-    ok(/STILL TRUE\?/.test(String(card.label)), 'it is labelled as a question, not a proposal');
+    eq(String(card.label), 'STILL TRUE', 'labelled as a question, and unpunctuated like every sibling label');
     ok(/still where you’re heading/.test(String(card.proposal)), 'the proposal IS phrased as a question');
-    ok(/because you said/.test(String(card.evidence)), 'it cites the Commander’s own words: ' + card.evidence);
+    // THE CITATION MATCHES THE BELIEF'S OWN PROVENANCE: only Commander-authored evidence may be quoted as speech.
+    // NB: whyLine leaves a citation that carries its own preposition alone — "because from …" is not English.
+    const spoken = seeded.weight === 'stated' || seeded.source === 'commander';
+    ok(String(card.evidence).indexOf(spoken ? 'because you said' : 'from “') === 0,
+      'it cites by the belief’s recorded provenance (weight=' + seeded.weight + ', source=' + seeded.source + '): ' + card.evidence);
     ok(/week/.test(String(card.note)), 'and says how long it has been: ' + card.note);
-    eq(card.btns, ['Still true', 'Not anymore'], 'two taps, either way');
+    ok(/re-learn it from your work/.test(String(card.note)), 'and discloses what DENY really costs: ' + card.note);
+    ok(String(card.note).length < 100, 'in a short aside, not a paragraph (' + String(card.note).length + ' chars)');
+    eq(card.btns, ['Still true', 'Not now', 'Not anymore'], 'three taps — ignoring it is no longer the only way to defer');
     const osPaint = ['rgb(255, 255, 255)', 'rgb(239, 239, 239)'];
     ok(osPaint.indexOf(card.btnBg) < 0 && card.btnBorder !== 'rgb(118, 118, 118)',
       'no OS paint on the consent buttons (' + card.btnBg + ' / ' + card.btnBorder + ')');
