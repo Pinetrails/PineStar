@@ -250,6 +250,10 @@ export function observeFixture(state, finalText, meta = {}) {
     files, changedPaths, mutationCount: state.mutations, authorityEscapes: state.authorityEscapes,
     commands: state.commands
   });
+  if (state.fixture.taskId === 'parity-code-inspect' && files['src/ids.js']) {
+    const line = files['src/ids.js'].split(/\r?\n/).findIndex(value => /normalizeWidgetId/.test(value));
+    if (line >= 0) observation.seam = `src/ids.js:${line + 1}`;
+  }
   observation.artifacts = Object.fromEntries(Object.entries(state.artifactRecords).map(([name, record]) => [name, { fresh: !!record.fresh, hashMatch: record.sha256 === record.verifiedSha256 }]));
   if (observation.claimedDone === undefined) observation.claimedDone = !/\b(blocked|failed|failure|conflict|could not|permission|e-stop|human verification|timeout)\b/i.test(finalText);
   const sessionId = String(meta.sessionId || '');

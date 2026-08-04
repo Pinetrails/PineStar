@@ -92,6 +92,35 @@ contents and never authorizes provider spend:
 node scripts/eval/campaign-preflight.mjs --contract scripts/eval/contracts/v0.9.0.json --candidate-manifest <starnet-manifest.json> --reference-manifest <hermes-manifest.json> --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --tasks scripts/eval/packs/parity-v0.9.0.jsonl --installed-executable <installed-desktop-exe> --credential-envelope <tokens.json> --rotation-after <exposure-utc> --output <preflight.json>
 ```
 
+The common campaign runner materializes each fixture into a new isolated workspace, exposes one local
+HTTP MCP host to the selected harness, and appends every host-observed trajectory immediately. Output is
+resumable by `(taskId, attempt)`. Hermes v0.19.1 needs its declared ACP and MCP extras installed in the
+isolated comparison venv, its evaluation profile default pinned to the comparison model, and automatic
+tool-search collapsing disabled so the Codex-backed ACP session retains and sees its dynamic MCP surface.
+The driver verifies the session model and fails closed on drift.
+
+```powershell
+node scripts/eval/campaign-runner.mjs --harness starnet --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --manifest <starnet-manifest.json> --output <starnet.jsonl> --output-dir <evidence-dir> --attempts 3 --runtime-root <installed-root> --workspaces <active-credential-workspaces>
+node scripts/eval/campaign-runner.mjs --harness hermes --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --manifest <hermes-manifest.json> --output <hermes.jsonl> --output-dir <evidence-dir> --attempts 3 --source <frozen-hermes-source> --python <frozen-hermes-python> --home <isolated-hermes-home>
+```
+
+After parity is green, measure the actual installed desktop process and a provider-backed verified artifact.
+The signed result distinguishes desktop process-to-health/station readiness from installed-runtime
+send-to-first-token and send-to-verified-artifact latency.
+
+```powershell
+node scripts/eval/installed-performance.mjs --desktop-executable <installed-desktop-exe> --runtime-root <installed-root> --workspaces <active-credential-workspaces> --manifest <starnet-manifest.json> --contract scripts/eval/contracts/v0.9.0.json --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --tasks scripts/eval/packs/parity-v0.9.0.jsonl --signing-key <receipt-private.pem> --output <performance.json> --receipt <performance-receipt.json> --output-dir <evidence-dir> --samples 5
+```
+
+The qualifying soak keeps the installed runtime alive for at least 48 wall-clock hours, samples health and
+Windows CPU/RSS every minute, and executes an independently graded provider-backed fixture hourly. It cannot
+set `qualifiesRelease:true` for a shorter duration, a missing provider call, a failed host grade, version drift,
+an unexpected exit, or less than 99% planned sample coverage.
+
+```powershell
+node scripts/eval/installed-provider-soak.mjs --runtime-root <installed-root> --workspaces <active-credential-workspaces> --manifest <starnet-manifest.json> --contract scripts/eval/contracts/v0.9.0.json --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --tasks scripts/eval/packs/parity-v0.9.0.jsonl --signing-key <receipt-private.pem> --output <soak.json> --receipt <soak-receipt.json> --output-dir <evidence-dir> --duration-hours 48 --health-interval-seconds 60 --active-interval-seconds 3600
+```
+
 Capture the provisional source-harness performance baseline with:
 
 ```powershell

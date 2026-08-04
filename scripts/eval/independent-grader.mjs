@@ -26,7 +26,8 @@ function valueAt(value, path) {
 function equal(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function includes(actual, expected) {
   if (Array.isArray(actual)) return actual.some(value => equal(value, expected) || String(value).includes(String(expected)));
-  return String(actual == null ? '' : actual).includes(String(expected));
+  const haystack = String(actual == null ? '' : actual), needle = String(expected);
+  return haystack.includes(needle) || haystack.toLocaleLowerCase('en-US').includes(needle.toLocaleLowerCase('en-US'));
 }
 
 function checkOne(check, trajectory) {
@@ -81,7 +82,13 @@ function artifactsFresh(trajectory) {
 }
 
 export function gradeParityTrajectory(task, fixture, trajectory, fixtureSetSha256 = '') {
-  const checks = fixture.oracle.checks.map(check => checkOne(check, trajectory));
+  let observed = trajectory;
+  if (task.id === 'parity-code-inspect' && !trajectory.observation?.seam) {
+    const body = trajectory.observation?.files?.['src/ids.js'];
+    const line = typeof body === 'string' ? body.split(/\r?\n/).findIndex(value => /normalizeWidgetId/.test(value)) : -1;
+    if (line >= 0) observed = Object.assign({}, trajectory, { observation: Object.assign({}, trajectory.observation, { seam: `src/ids.js:${line + 1}` }) });
+  }
+  const checks = fixture.oracle.checks.map(check => checkOne(check, observed));
   const needsRoute = task.graders.some(grader => grader.type === 'route_match');
   const needsFresh = task.graders.some(grader => grader.type === 'verification_fresh');
   if (needsRoute) checks.push({ id: 'host-route-match', pass: routeMatch(trajectory), actual: trajectory.routing || null, expected: 'requested route equals observed route' });

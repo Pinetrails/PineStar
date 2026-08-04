@@ -61,6 +61,15 @@ const { tmpdir } = require('node:os');
   realDottedArtifact.observation.files = { 'dist/release.txt': 'VERIFIED-ARTIFACT-731' };
   A.ok(independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: [realDottedArtifact] })[0].outcome.passed,
     'nested receipt fields resolve beneath a dotted artifact filename');
+  const diskDerivedSeam = JSON.parse(JSON.stringify(parityRows.find(row => row.taskId === 'parity-code-inspect')));
+  delete diskDerivedSeam.observation.seam;
+  diskDerivedSeam.observation.files = { 'src/ids.js': 'export const normalizeWidgetId = value => String(value);\n' };
+  A.ok(independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: [diskDerivedSeam] })[0].outcome.passed,
+    'the seam is independently derived from captured fixture bytes when no convenience action supplied it');
+  const conflictCase = JSON.parse(JSON.stringify(parityRows.find(row => row.taskId === 'parity-code-patch-conflict')));
+  conflictCase.finalText = 'Conflict detected; no files were changed.';
+  A.ok(independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: [conflictCase] })[0].outcome.passed,
+    'semantic prose containment is case-insensitive while structural checks remain exact');
   const forged = JSON.parse(JSON.stringify(parityRows));
   forged[0].outcome.passed = true; forged[0].observation.seam = 'forged:1'; forged[0].observation.claimedDone = true;
   const refusedForge = independent.applyIndependentParityGrades({ tasks: parityTasks, fixtures: parityFixtures, rows: forged });
