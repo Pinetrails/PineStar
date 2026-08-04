@@ -829,3 +829,30 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* what the station pre-filled, stated plainly — a silently filled form is one that gets launched unread */
 .mkt-ready-fill { margin-top: 6px; font-size: 11.5px; letter-spacing: .3px; color: var(--ph-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- A DEEP SHELF SCROLLS SIDEWAYS, IT DOES NOT WRAP ----------
+   ⛔ THE CABINET HEIGHT IS HARDWARE. The roster pane is ~646px at 1440x900, so every card row a shelf spends
+   is a row the RECIPE LIBRARY loses. Raising the shelves to six cards each made them wrap to two rows apiece
+   and pushed the library — the 101 recipes this whole tab exists for — to 874px: fully offscreen, 1.35
+   screens of scrolling before the catalog. That is the same failure a previous pass hit at four cards, and
+   wrapping is the mechanism both times.
+
+   So a shelf holding more than one row's worth becomes a horizontal scroller: all six stay reachable, the
+   shelf still costs exactly ONE row, and the library stays above the fold. The 4th card deliberately peeks
+   at the right edge — that overflow is the affordance telling the reader to scroll. Scrolling is contained
+   to the rail (overscroll-behavior) so it never turns into a page-level horizontal scroll. */
+.mkt-rec-rail.mkt-rail-deep {
+  grid-template-columns: none;                 /* override the wrapping auto-fill grid */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(232px, 1fr);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  padding-bottom: 6px;                          /* room for the scrollbar so it never overlaps a card */
+}
+.mkt-rec-rail.mkt-rail-deep > * { scroll-snap-align: start; }
+/* a thin, matte scrollbar — the station's chrome, never a glossy OS default */
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar { height: 6px; }
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar-track { background: rgba(var(--ph-rgb), .08); }
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar-thumb { background: rgba(var(--ph-rgb), .35); border-radius: 3px; }
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar-thumb:hover { background: rgba(var(--ph-rgb), .55); }

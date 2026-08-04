@@ -1522,7 +1522,8 @@ const Marketplace = (() => {
     // the basis strip is the audit trail: it names exactly what was looked at to produce the cards below it.
     const head = '<div class="mkt-sect-h mkt-ready-sect">▲ READY ON THIS STATION' +
       (basis ? '<span class="mkt-ready-basis">read: ' + esc(basis) + '</span>' : '') + '</div>';
-    return head + '<div class="mkt-rec-rail">' + offers.map(readyCardHTML).join('') + '</div>';
+    const deep = offers.length > 3 ? ' mkt-rail-deep' : '';
+    return head + '<div class="mkt-rec-rail' + deep + '">' + offers.map(readyCardHTML).join('') + '</div>';
   }
 
   /* One context-bound card. Deliberately the SAME `.mkt-rec[data-id]` markup the other shelves use, so it
@@ -1598,7 +1599,9 @@ const Marketplace = (() => {
     const cands = suggestedMissions();
     const drafts = scoutRecipeDrafts();
     if (!cands.length && !drafts.length) return scoutColdStateHTML();
-    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div><div class="mkt-rec-rail">' +
+    // a rail deeper than one row SCROLLS sideways instead of wrapping — see the .mkt-rail-deep note in the CSS.
+    const deep = (cands.length + drafts.length) > 3 ? ' mkt-rail-deep' : '';
+    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div><div class="mkt-rec-rail' + deep + '">' +
       cands.map(suggestCardHTML).join('') + drafts.map(scoutRecipeCardHTML).join('') + '</div>';
   }
   /* ---------- the SUGGESTED shelf's honest COLD STATE ----------
