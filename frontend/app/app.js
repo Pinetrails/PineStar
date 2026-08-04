@@ -2436,6 +2436,7 @@ const App = (() => {
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     if (typeof LaunchMemory !== 'undefined') LaunchMemory.reset();   // …and no inherited last-used recipe inputs (own key)
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
+    if (typeof RecQualityStore !== 'undefined') RecQualityStore.reset();   // …and no inherited recommendation-quality history (own key)
     if (typeof StudyStore !== 'undefined') StudyStore.reset();   // …and a fresh STUDY state — a new Commander never inherits the prior hero's studyDeclined denylist / ignore tallies / rating streaks (own key)
     if (typeof ThreadStore !== 'undefined') ThreadStore.reset();   // …and a fresh THREAD turn-in gate — a new Commander never inherits the prior hero's resolved/ignored mined ideas (the ledger itself is server-side, station-wide)
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
@@ -2649,6 +2650,11 @@ const App = (() => {
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
+    // THE RECOMMENDATION QUALITY LOOP (outcome attribution): per-channel EWMA weights over what the station's
+    // accepted offers actually PRODUCED — read by the spine's scorer, moved only by real attributed outcomes
+    // (a clean run, the Commander's 👍/👌/👎, an explicit decline). Self-persists its own key; read-only bus
+    // citizen. Init here, alongside the other proactive-channel stores, so the first pass already sees it.
+    if (typeof RecQualityStore !== 'undefined') RecQualityStore.init({ now: () => Date.now() });
     // QUEST MEMORY (G1a): durable quest state — firstSeenAt/completedAt per quest + dismissed-forever — and
     // the open→done completion celebration (quest sting + gold toast + row flourish; NEVER XP). Self-persists
     // to its own key. Init AFTER XpStore/DossierStore so its first fold sees the real projection as a quiet

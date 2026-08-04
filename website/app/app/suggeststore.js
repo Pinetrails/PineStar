@@ -208,9 +208,17 @@ const SuggestStore = (() => {
         // R3: settle the probe — the choice on an AIMED idea is evidence about the belief it was aimed at
         // (accept corroborates, decline counter-evidences). An un-aimed idea settles nothing.
         if (probe) { try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteProbe) UnderstandingStore.noteProbe(probe.dim, accepted); } catch (_) {} }
-        if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' }); doBuild(parsed); }
-        else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' }); }
-        else ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
+        // THE OUTCOME LOOP (quality loop, Q2): a built idea SPAWNS A RUN, so nothing is credited here — the
+        // pending stamp is claimed by that run and the run's own outcome (a clean finish, and the Commander's
+        // 👍/👌/👎 on it) is the evidence. A click is not a result. Declines/defers settle immediately.
+        const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
+        if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' });
+          if (rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} }
+          doBuild(parsed); }
+        else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' });
+          if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, false); } catch (_) {} } }
+        else { ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
+          if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, true); } catch (_) {} } }
       });
 
       sessionShown++;                                   // spend this session's single idea (anti-nag)

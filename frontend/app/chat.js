@@ -2176,6 +2176,10 @@ const Chat = (() => {
     // verdict onto that recipe's own counters — what actually HELPED ranks the FOR-YOU shelf, not just what was
     // clicked. Missing meta (ledger evicted / page reloaded) → no rating recorded, never guessed. Fail-open.
     try { const rmp = runMeta(runId); if (rmp && rmp.recipeId && typeof ProspectStore !== 'undefined' && ProspectStore.noteRated) ProspectStore.noteRated(rmp.recipeId, verdict); } catch (_) {}
+    // THE OUTCOME LOOP (quality loop, Q2): if THIS run was spawned by an accepted recommendation (the `rec` stamp
+    // written onto RUN_META at run start), the Commander's verdict on the work is the strongest honest evidence
+    // there is about whether that channel's offers are worth making. Unattributed runs say nothing. Fail-open.
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteVerdict) RecQualityStore.noteVerdict(runId, verdict); } catch (_) {}
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   const WORKRATE_COACH_KEY = 'starnet.workrate.seen';
@@ -3565,10 +3569,12 @@ const Chat = (() => {
         const ok = StudyStore.accept(prop, editedText, agentId);
         if (!ok) { settle('✕ couldn’t apply — it changed', true); return; }   // honest: never flash "✓ retired" on a failed write
         settle(prop.kind === 'retire' ? '✓ retired' : (editedText != null ? 'saved (edited)' : 'kept'), false);
+        recAccept('study', prop.dim, false);   // a kept belief spawns no run — the accept IS the outcome
         if (prop.kind !== 'retire') briefingReceipt(prop.dim);   // R4: a KEPT observation visibly propagates ("now in every agent's briefing"); a retire removes knowledge — nothing new to announce
         return;
       }
       StudyStore.discard(prop, agentId); settle('✕ discarded', true);
+      recDecline('study', prop.dim, false);
     }
     function renderChoices() {
       btns.innerHTML = '';
@@ -3783,6 +3789,7 @@ const Chat = (() => {
           if (!card.isCurrent()) return;
           if (!ok) { settle('✕ couldn’t apply', true); return; }   // honest: never flash "✓ granted" on a failed/unverified apply
           settle(offer.kind === 'grant' ? '✓ granted' : '✓ ' + String(offer.to).toLowerCase(), false);
+          recAccept('trust', '', false);   // recorded only on the VERIFIED apply — never on an attempt
           if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
           if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(offer.kind === 'grant' ? '◈ earned — it may write files on its own now (revoke any time in Settings)' : '◈ earned — autonomy raised to ' + String(offer.to).toUpperCase() + ' (adjust any time in Settings)', 'gold');
           // if the Settings AUTONOMY panel is open, repaint its EARNED badge live (fail-open no-op otherwise).
@@ -3791,6 +3798,7 @@ const Chat = (() => {
         return;
       }
       TrustStore.decline(offer); settle('✕ not yet', true);
+      recDecline('trust', '', true);   // "not yet" is about TIMING — the mildest signal the loop records
     }
     const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
     mk('Accept', '', () => commit('accept'));
@@ -3878,7 +3886,7 @@ const Chat = (() => {
         Promise.resolve(ThreadStore.keep(prop, batchRunId, agentId, edits || null)).then(res => {
           if (!card.isCurrent()) return;
           if (!res || res.ok !== true) { settle('✕ couldn’t reach the ledger', true); return; }
-          if (res.reason === 'added') settle(edits ? '✓ kept (edited) — on the ledger' : '✓ kept — on the ledger', false);
+          if (res.reason === 'added') { settle(edits ? '✓ kept (edited) — on the ledger' : '✓ kept — on the ledger', false); recAccept('thread', '', false); }
           else if (res.reason === 'duplicate') settle('✓ already on the ledger', false);
           else if (res.reason === 'declined') settle('✕ you discarded this idea before', true);   // the permanent denylist refused it — honest
           else settle('✕ the ledger refused it', true);   // 'unknown'/stale — nothing was committed
@@ -3888,6 +3896,7 @@ const Chat = (() => {
       Promise.resolve(ThreadStore.discard(prop, batchRunId, agentId)).then(res => {
         if (!card.isCurrent()) return;
         settle((res && res.ok === true) ? '✕ discarded — never again' : '✕ couldn’t reach the ledger', true);
+        if (res && res.ok === true) recDecline('thread', '', false);
       }).catch(() => { if (card.isCurrent()) settle('✕ couldn’t reach the ledger', true); });
     }
     function renderChoices() {
@@ -4003,6 +4012,7 @@ const Chat = (() => {
       if (a && a.beat && a.beat.isCurrent()) { a.beat.decide(); a.beat.finish(); }
       else if (a) vanish(a.row);   // decided beats LEAVE: the prompt goes with its chips, never lingers over what follows
       if (item.value === 'yes' && typeof Intake !== 'undefined' && typeof Dossier !== 'undefined') {
+        recAccept('curiosity', dim, false);   // an answered question spawns no run — the accept IS the outcome
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
           skip: skip,
@@ -4014,6 +4024,7 @@ const Chat = (() => {
         });
       } else if (typeof CuriosityStore !== 'undefined') {
         CuriosityStore.markDismissed(dim);   // waved off → never raise this dimension again
+        recDecline('curiosity', dim, true);  // "not now" is a timing signal, not a verdict on the channel
       }
     });
     const beat = beatCards && beatCards.claim({ kind: 'nudge', node: r.d, data: { dim: dim } });
@@ -4289,6 +4300,30 @@ const Chat = (() => {
     try { if (typeof RecQuality !== 'undefined' && RecQuality.countStrength) return RecQuality.countStrength(n); } catch (_) {}
     return null;
   }
+  /* ── THE OUTCOME LOOP (quality loop, Q2) ─────────────────────────────────────────────────────────────
+     The station's own suggestions are held to the standard everything else here is: what did they actually
+     PRODUCE? recQualityOf reads the channel's earned weight (recqualitystore.js) for the scorer; recAccept /
+     recDecline record what the Commander really did with the card. An accept that spawns a run records
+     NOTHING yet — the run's own outcome is the evidence, and a click is not a result. Fail-open everywhere:
+     no store → null → the spine treats the channel as neutral. */
+  function recQualityOf(kind, dim) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.weightFor) return RecQualityStore.weightFor(kind, dim); } catch (_) {}
+    return null;
+  }
+  function recAccept(channel, dim, spawnsWork, id) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteAccept) RecQualityStore.noteAccept({ channel: channel, dim: dim || '', spawnsWork: !!spawnsWork, id: id || '' }); } catch (_) {}
+  }
+  function recDecline(channel, dim, deferred) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteDecline) RecQualityStore.noteDecline({ channel: channel, dim: dim || '' }, !!deferred); } catch (_) {}
+  }
+  /* THE ATTRIBUTION STAMP. A run started right after an accepted offer IS that offer's work — so the stamp is
+     written where every other piece of a run's provenance is written: RUN_META, at run start (`rec`). It rides
+     the same ledger the recipe spine and rateWork already read, which is what makes the loop's outcome
+     attributable at all. null for every ordinary run — the overwhelming majority. */
+  function recClaimRun(runId, agentId) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.claimForRun) return RecQualityStore.claimForRun(runId, agentId); } catch (_) {}
+    return null;
+  }
   /* ONE citation grammar, DISCRIMINATED BY WHERE THE WORDS CAME FROM (truthful telemetry, 2026-08-04).
      The card used to say `because you said "…"` about every citation it had. But a study proposal falls back to
      the run's DIRECTIVE when the model returns no QUOTE line (study.js stamps evidenceRef.kind='directive'), and a
@@ -4549,6 +4584,13 @@ const Chat = (() => {
       // re-check the moment after the awaits — reflection's memory deck may have claimed it meanwhile.
       if (momentBlocked()) { queueStudy(runId, agentId); queueThread(runId, agentId); return; }
     }
+
+    /* THE EARNED WEIGHT (quality loop, Q2). Each candidate carries its channel's REAL outcome history into the
+       scorer — read here, once, rather than in ten builders. A channel whose accepted offers produced 👎 work
+       ranks lower within its band; one that produced 👍 work ranks a little higher. It can never cross a band,
+       and the floor means it can never be silenced by quality alone: priority and the per-channel caps remain
+       the law. A never-rated channel reads neutral, so nothing changes until real outcomes exist. */
+    for (const c of cands) { if (c && c.quality == null) c.quality = recQualityOf(c.kind, c.dim); }
 
     const winner = Recommend.pick(cands, recUnderstanding());
     // DEFERRED, NEVER STARVED: a fetched turn-in that lost the moment goes back on its FIFO queue and
@@ -6456,7 +6498,7 @@ const Chat = (() => {
         projectRoot: ws.projectRoot || undefined,   // project-anchored session: the sidecar injects the folder context ONLY if the root is still a standing blessed grant (truthful)
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent', rec: recClaimRun(id, ws.agentId || 'agent') }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is

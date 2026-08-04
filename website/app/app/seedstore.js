@@ -47,8 +47,14 @@ const SeedStore = (() => {
     let handled = false;   // one-shot: a double-click on the choice can't double-author the recipe
     Chat.nudge(s.line, (typeof Seeds !== 'undefined' ? Seeds.choices() : []), choice => {
       if (handled) return; handled = true;
-      if (choice && choice.value === 'save') save(s);
-      else if (typeof MintStore !== 'undefined' && MintStore.markDismissed) MintStore.markDismissed(s.key);
+      // THE OUTCOME LOOP (quality loop, Q2): saving a seed authors a recipe rather than launching a run, so the
+      // accept IS the outcome; a wave-off is the Commander's own signal about this channel. Fail-open.
+      const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
+      if (choice && choice.value === 'save') { save(s); if (rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'seed', spawnsWork: false, id: s.key }); } catch (_) {} } }
+      else {
+        if (typeof MintStore !== 'undefined' && MintStore.markDismissed) MintStore.markDismissed(s.key);
+        if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'seed' }, false); } catch (_) {} }
+      }
     });
   }
 

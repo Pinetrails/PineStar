@@ -1,0 +1,173 @@
+/* STARNET — recqualitystore.js : THE OUTCOME LOOP (the live half of the recommendation quality loop).
+
+   The spine picks the best-grounded offer it can cite. This store answers the question nobody was asking before
+   it existed: DID THAT OFFER ACTUALLY HELP? A channel whose accepted offers produce work the Commander rates 👎
+   — or work that never finishes — gets structurally quieter. A channel whose offers produce 👍 work earns a
+   small, bounded edge. Nobody hand-tunes anything; the same earned-trust philosophy the autonomy dial already
+   uses, applied to the station's own suggestions.
+
+   HOW AN OUTCOME IS ATTRIBUTED (and why it can't be faked):
+     1. The Commander ACCEPTS an offer. If that accept spawns trackable work, the channel arms a PENDING stamp
+        ({ channel, dim, id }).
+     2. The very next hero run START claims it (chat.js, at the same point it writes RUN_META) — so the stamp is
+        visible on the run's own meta, and the run is the provable link between "the offer" and "the work".
+     3. The run's real outcome folds back: a clean finish is a weak positive; the Commander's own 👍/👌/👎 on that
+        run (the direct rateWork hand-off, never the bus) is the strong one.
+     Where an accept spawns NO trackable work (a kept belief, an answered question, a re-confirm), the accept
+     itself IS the outcome — a small positive, recorded once.
+
+   TRUTHFUL TELEMETRY, the version that matters here:
+     · Weights start NEUTRAL and move ONLY on outcomes the harness can actually name and attribute. A run that
+       ended in a stop / an error / a budget limit folds NOTHING — the station cannot honestly blame the offer
+       for that, so it says nothing about it.
+     · The floor (recquality.js Q_FLOOR ≥ 0.5) means quality alone can never silence a channel. Silencing is the
+       job of the per-channel caps and the Commander's own declines — never of a number the station computed.
+     · Nothing user-facing ever asserts a quality score. It orders offers; it does not narrate them.
+
+   Discipline mirrors curiositystore / suggeststore: a READ-ONLY citizen of the event spine (subscribes to
+   agent.run.end, NEVER emits — the frozen shared/events.js contract is owned elsewhere), self-persists its own
+   key (no save.js change), node-exportable for its test. The pure arithmetic lives in recquality.js. */
+'use strict';
+const RecQualityStore = (() => {
+  const KEY = 'starnet.recquality.v1';
+  const STAMP_CAP = 60;      // in-memory run→stamp memory, FIFO, mirroring chat.js's RUN_META ledger size
+  let state = null;          // { v:1, ch:{ channel: weight }, dim:{ dim: weight } }
+  let deps = {};
+  let pending = null;        // { channel, dim, id } — an accept waiting for the run it spawns to start
+  let stamps = new Map();    // runId → { channel, dim, id }  (in-memory: a reload honestly forgets, like RUN_META)
+  let settled = new Set();   // runIds whose COMPLETION has already folded (a run completes once)
+  let bound = false;
+
+  const engine = () => (typeof RecQuality !== 'undefined' && RecQuality && RecQuality.fold) ? RecQuality : null;
+  const ready = () => !!(state && engine());
+
+  function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
+
+  function hydrate(raw) {
+    const s = { v: 1, ch: {}, dim: {} };
+    const rq = engine();
+    for (const bag of ['ch', 'dim']) {
+      const src = raw && raw[bag];
+      if (!src || typeof src !== 'object') continue;
+      for (const k of Object.keys(src)) {
+        const n = Number(src[k]);
+        if (!Number.isFinite(n)) continue;                       // a corrupted entry is DROPPED, never guessed
+        const w = rq ? rq.clampQuality(n) : n;
+        if (w !== (rq ? rq.Q_START : 1)) s[bag][String(k).slice(0, 40)] = w;   // neutral needs no storage
+      }
+    }
+    return s;
+  }
+
+  /* ---------- the read the spine scores against ---------- */
+  // the quality multiplier for a candidate. Absent module / absent store / never-rated channel → NEUTRAL (the
+  // engine's Q_START), so a cold station ranks exactly as the pre-quality spine did. When the candidate targets a
+  // dimension that has its OWN history, the two readings are averaged — a channel is not condemned for one bad
+  // dimension, and a dimension's history is not lost inside a channel average.
+  function weightFor(channel, dim) {
+    const rq = engine();
+    const neutral = rq ? rq.Q_START : 1;
+    if (!ready()) return neutral;
+    const c = state.ch[String(channel || '')];
+    const d = dim ? state.dim[String(dim)] : undefined;
+    const readings = [];
+    if (Number.isFinite(c)) readings.push(c);
+    if (Number.isFinite(d)) readings.push(d);
+    if (!readings.length) return neutral;
+    return rq.clampQuality(readings.reduce((a, b) => a + b, 0) / readings.length);
+  }
+
+  /* ---------- folding a real outcome ---------- */
+  // fold ONE named outcome onto a channel (and the dimension it targeted, when it targeted one). Unknown verdicts
+  // and unknown channels move nothing — the loop only ever records what it can name.
+  function noteOutcome(stamp, verdict) {
+    if (!ready() || !stamp) return null;
+    const rq = engine();
+    if (!rq.isOutcome(verdict)) return null;
+    const channel = String(stamp.channel || '').slice(0, 40);
+    if (!channel) return null;
+    state.ch[channel] = rq.fold(Number.isFinite(state.ch[channel]) ? state.ch[channel] : rq.Q_START, verdict);
+    const dim = stamp.dim ? String(stamp.dim).slice(0, 40) : '';
+    if (dim) state.dim[dim] = rq.fold(Number.isFinite(state.dim[dim]) ? state.dim[dim] : rq.Q_START, verdict);
+    save();
+    return state.ch[channel];
+  }
+
+  /* an offer was ACCEPTED.
+       spawnsWork:true  → the accept launches a run; arm the pending stamp and wait for the REAL outcome. Nothing
+                          is credited yet: accepting is not the same as being helped, and the whole point of this
+                          loop is to stop treating a click as a result.
+       spawnsWork:false → the accept IS the outcome (a kept belief, an answered question) — one small positive. */
+  function noteAccept(stamp) {
+    if (!ready() || !stamp || !stamp.channel) return null;
+    if (stamp.spawnsWork) {
+      pending = { channel: String(stamp.channel).slice(0, 40), dim: stamp.dim ? String(stamp.dim).slice(0, 40) : '', id: String(stamp.id || '').slice(0, 80) };
+      return pending;
+    }
+    return noteOutcome(stamp, 'engaged');
+  }
+  // an offer was refused. "not now" is a signal about TIMING (the mildest thing we record); "no"/"never" is a
+  // signal about the offer itself. Both are real, both are the Commander's own words about this channel.
+  function noteDecline(stamp, deferred) { return noteOutcome(stamp, deferred ? 'deferred' : 'declined'); }
+
+  /* ---------- the attribution stamp ---------- */
+  // called by chat.js at the exact point it writes RUN_META, for every run it starts. Returns the pending stamp
+  // (and binds it to this run) or null. HERO ONLY: a summoned worker's run is not the work an offer to the
+  // Commander spawned. The pending stamp is consumed either way it goes — it is claimed by the FIRST run after
+  // the accept or by none at all, so a stale accept can never attach itself to unrelated work later.
+  function claimForRun(runId, agentId) {
+    if (!ready() || !pending || !runId) return null;
+    if ((agentId || 'agent') !== 'agent') return null;
+    const stamp = { channel: pending.channel, dim: pending.dim, id: pending.id };
+    pending = null;
+    stamps.set(String(runId), stamp);
+    while (stamps.size > STAMP_CAP) { const k = stamps.keys().next().value; stamps.delete(k); settled.delete(k); }
+    return stamp;
+  }
+  function stampFor(runId) { return (runId && stamps.has(String(runId))) ? stamps.get(String(runId)) : null; }
+
+  // the Commander's own 👍/👌/👎 on a run an offer spawned — the strongest honest signal in the loop. Called
+  // DIRECTLY from chat.js rateWork (this verdict never rides the bus), like the sibling growth stores.
+  function noteVerdict(runId, verdict) {
+    const stamp = stampFor(runId);
+    if (!stamp) return null;      // an unattributed run says nothing about any channel
+    const v = verdict === 'great' ? 'great' : verdict === 'miss' ? 'miss' : verdict === 'ok' ? 'ok' : null;
+    return v ? noteOutcome(stamp, v) : null;
+  }
+
+  /* the run an accepted offer spawned finished. A CLEAN finish is a weak positive — the work the offer proposed
+     actually got done. Anything else (stop / error / budget limit) folds NOTHING: the harness cannot honestly
+     attribute an interrupted run to the quality of the suggestion that started it, so it stays quiet about it.
+     A later 👍/👌/👎 on the same run folds SEPARATELY and deliberately: "it finished" and "it was any good" are
+     two different pieces of evidence, and the Commander's verdict is the one that carries weight. */
+  function onRunEnd(p) {
+    if (!ready() || !p) return;
+    const runId = String(p.runId || p.id || '');
+    if (!runId || settled.has(runId)) return;
+    const stamp = stampFor(runId);
+    if (!stamp) return;
+    if (p.reason !== 'done') return;
+    settled.add(runId);
+    noteOutcome(stamp, 'completed');
+  }
+  function bind() {
+    if (bound) return;
+    if (typeof U !== 'undefined' && U.bus && U.bus.on) { U.bus.on('agent.run.end', onRunEnd); bound = true; }
+  }
+
+  function init(opts) {
+    deps = opts || {};
+    state = hydrate(load());
+    pending = null; stamps = new Map(); settled = new Set();
+    bind();
+  }
+  // a brand-new hero starts with NO inherited channel history (own key; mirrors the sibling growth stores).
+  function reset() { state = { v: 1, ch: {}, dim: {} }; pending = null; stamps = new Map(); settled = new Set(); try { localStorage.removeItem(KEY); } catch (_) {} }
+
+  // _-prefixed handles are for the deterministic node test (harmless in the browser).
+  return { init, reset, weightFor, noteOutcome, noteAccept, noteDecline, claimForRun, stampFor, noteVerdict, onRunEnd,
+    KEY, _state: () => state, _pending: () => pending, _deps: () => deps };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { RecQualityStore };
