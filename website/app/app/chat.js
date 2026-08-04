@@ -4422,9 +4422,21 @@ const Chat = (() => {
       if (!confirmed && live.pinned) { settle('✕ it’s pinned — kept', true); return; }
       try {
         if (confirmed) {
-          // CONFIRMED OUT LOUD → the belief IS now Commander-stated evidence, and is recorded as such. Without the
-          // weight re-stamp a seed-weighted belief stays at confidence 0 and this exact question returns forever.
-          DossierStore.upsert(dim, { id: belief.id, text: text, source: 'commander', weight: 'stated' });
+          /* CONFIRMED OUT LOUD → the belief IS now Commander-stated evidence, and is recorded as such. Without the
+             weight re-stamp a seed-weighted belief stays at confidence 0 and this exact question returns forever.
+             THE TEXT WRITTEN BACK IS THE LIVE ONE, NEVER THE RENDER-TIME CAPTURE (fixed 2026-08-04). This card can
+             sit in the feed for minutes, and the COMMANDER panel is editable the whole time. Writing the captured
+             `text` silently REVERTED an edit the Commander made after the card rendered — and then stamped the
+             reverted wording commander/stated, i.e. recorded a sentence they had just replaced as one they had
+             just said. `live` is the belief as it stands at CLICK time; its text is the only honest thing to
+             re-affirm. (The card's own citation still quotes what it SHOWED — that part is history.)
+             THE WEIGHT UPGRADE IS DELIBERATE, INCLUDING THE seed→stated JUMP: answering "still true?" with "still
+             true" IS a statement of the CONTENT, not merely of the paraphrase, so 'stated' is the truthful weight
+             and it is the only thing that ends the three-weekly re-ask. What it is NOT is a claim that these were
+             the Commander's WORDS — a station-authored belief was paraphrased by the station. So the confirmation
+             also stamps evidenceRef.kind='confirmed', and beliefCiteKind reads that FIRST, so every later card
+             cites it as `you confirmed "…"` rather than `you said "…"`. Affirmation and authorship, kept apart. */
+          DossierStore.upsert(dim, { id: belief.id, text: live.text, source: 'commander', weight: 'stated', evidenceRef: { kind: 'confirmed' } });
           if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, +1);
         } else {
           if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, -1);
@@ -4462,17 +4474,20 @@ const Chat = (() => {
      Commander's own speech is the app asserting something the harness cannot prove. So each source gets its own
      honest phrasing, and anything unlabelled falls back to a neutral quote that claims nothing about who spoke.
        verbatim     — words the Commander really typed (a located, grounded quote)
+       confirmed    — the station's OWN wording, which the Commander then affirmed out loud (the re-confirm card).
+                      Affirming a paraphrase is real evidence about the CONTENT and no evidence at all about the
+                      authorship, so it gets its own verb: `you confirmed "…"`, never `you said "…"`.
        directive    — the task text that drove the run; it may have been composed for them
        conversation — somewhere in the exchange, speaker not established */
   function recCite(text, kind) {
     const t = String(text == null ? '' : text).trim();
     if (!t) return '';
     if (kind === 'verbatim') return 'you said “' + t + '”';
+    if (kind === 'confirmed') return 'you confirmed “' + t + '”';
     if (kind === 'directive') return 'from the task you gave me: “' + t + '”';
     if (kind === 'conversation') return 'from the conversation: “' + t + '”';
     return 'from “' + t + '”';
   }
-  function recQuote(s) { return recCite(s, 'verbatim'); }
   /* A DOSSIER BELIEF'S OWN CITATION KIND (truthful telemetry, 2026-08-04). The arc and the re-confirm card cited
      every goals belief as `you said "…"` — but the dossier holds beliefs the STATION observed from work (study
      writes source:'study', weight:'observed') and beliefs synthesised during onboarding, and quoting those back as
@@ -4480,10 +4495,19 @@ const Chat = (() => {
      provenance picks the phrasing recCite already has: only Commander-authored evidence may be rendered as speech;
      an observed belief cites the work it was observed from; anything unlabelled claims no speaker at all. */
   function beliefCiteKind(b) {
+    const ref = String((b && b.evidenceRef && b.evidenceRef.kind) || '');
+    /* CONFIRMED BEATS STATED, AND IS CHECKED FIRST (2026-08-04). The re-confirm card upgrades a station-authored
+       belief to commander/stated — truthfully, because affirming "still true?" IS a statement of the content. But
+       the WORDS are still the station's paraphrase, so falling through to the 'stated' clause below would have
+       every later card quote the Commander saying something they never said. The confirmation stamp is the more
+       specific fact, so it wins. */
+    if (ref === 'confirmed') return 'confirmed';
     const w = String((b && b.weight) || '');
     const src = String((b && b.source) || '');
-    if (w === 'stated' || src === 'commander' || src === 'curiosity') return 'verbatim';
-    const ref = String((b && b.evidenceRef && b.evidenceRef.kind) || '');
+    // NB: NOT source:'curiosity'. A curiosity answer is 'stated' when the Commander TYPED it (caught by the weight
+    // clause) and 'seed' when they tapped a canned chip (interview.js beliefFromAnswer) — and a canned chip is the
+    // station's own sentence, which this clause was rendering back at them as `you said "…"`.
+    if (w === 'stated' || src === 'commander') return 'verbatim';
     if (ref === 'verbatim' || ref === 'directive' || ref === 'conversation') return ref;
     return '';   // observed / study / onboarding-synth / seed → the neutral 'from "…"' quote (claims no speaker)
   }

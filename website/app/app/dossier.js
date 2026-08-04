@@ -102,6 +102,17 @@
            re-stamp is truthful: the Commander really did just state it. Omit source/weight and nothing moves. */
         if (belief.source && typeof belief.source === 'string') cur.source = belief.source;
         if (isWeight(belief.weight)) cur.weight = belief.weight;
+        /* …and the EVIDENCE REFERENCE, when the caller explicitly declares one (additive, 2026-08-04; DEFAULTED
+           OFF — omit the field and the stored ref is untouched, exactly as before). The re-confirm card needs it:
+           it upgrades a station-authored belief to commander/stated, and without a marker saying the Commander
+           AFFIRMED the station's wording rather than authored it, every later card renders `you said "…"` about
+           words they never spoke. Same shape/normalization as the insert path below. */
+        if (belief.evidenceRef && typeof belief.evidenceRef === 'object') {
+          cur.evidenceRef = {
+            runId: (typeof belief.evidenceRef.runId === 'string') ? belief.evidenceRef.runId : null,
+            kind: (typeof belief.evidenceRef.kind === 'string') ? belief.evidenceRef.kind.slice(0, 40) : ''
+          };
+        }
         dossier.updatedAt = now; return dossier;
       }
     }

@@ -238,8 +238,15 @@ A.ok(/RecQualityStore\.denyBelief\(fp\)/.test(cardBody), 'and fingerprints the q
    re-stamped updatedAt, the dimension stayed exactly as under-confirmed, and the SAME question came back at the
    next 21-day mark — two or three times over a couple of months. Confirming now re-stamps the PROVENANCE too,
    which is simply true: the Commander just stated it, in answer to a direct question. */
-A.ok(/DossierStore\.upsert\(dim, \{ id: belief\.id, text: text, source: 'commander', weight: 'stated' \}\)/.test(cardBody),
+A.ok(/DossierStore\.upsert\(dim, \{ id: belief\.id, text: live\.text, source: 'commander', weight: 'stated', evidenceRef: \{ kind: 'confirmed' \} \}\)/.test(cardBody),
   'CONFIRM records the belief as Commander-STATED evidence — the only thing that actually ends the re-ask loop');
+/* …and it writes back the LIVE text, not the render-time capture (B1, 2026-08-04). The card sits in the feed
+   while the COMMANDER panel stays editable; writing the captured string reverted an edit made in between AND
+   stamped the reverted wording as something the Commander had just stated. */
+A.eq(/text: text,/.test(cardBody), false,
+  'the confirm never writes the RENDER-TIME text back (that silently reverted a mid-card edit)');
+A.ok(cardBody.indexOf('const live = liveBelief();') < cardBody.indexOf('text: live.text'),
+  'the belief is re-read BEFORE the write, and the write uses that re-read');
 const DossierPure = require('../frontend/app/dossier.js');
 {
   const now0 = 1780000000000;
@@ -258,6 +265,30 @@ const DossierPure = require('../frontend/app/dossier.js');
   // checks the belief is still there before writing anything.
   const d2 = DossierPure.upsert(d, 'goals', { id: 'cd_999', text: 'ghost' }, now0 + 3000);
   A.eq(DossierPure.beliefs(d2, 'goals').length, 2, 'an upsert on a GONE id invents a brand-new belief (the hazard the card guards)');
+}
+/* ── 11b-i. THE MID-CARD EDIT SURVIVES THE CONFIRM (B1, 2026-08-04) ──
+   The Commander edits the belief in the COMMANDER panel while the re-confirm card is still sitting in the feed,
+   then taps "Still true". Writing the render-time capture reverted their edit — and recorded the reverted wording
+   as commander/stated, i.e. a sentence they had just replaced, stamped as one they had just said. */
+{
+  const now0 = 1780000000000;
+  let d = DossierPure.fresh();
+  d = DossierPure.upsert(d, 'goals', { text: 'ship the billing rewrite', source: 'onboarding', weight: 'seed' }, now0);
+  const id = DossierPure.beliefs(d, 'goals')[0].id;
+  const captured = DossierPure.beliefs(d, 'goals')[0].text;          // what the card RENDERED
+  d = DossierPure.upsert(d, 'goals', { id: id, text: 'ship the billing rewrite by Q3' }, now0 + 1000);   // …the panel edit
+  const live = DossierPure.beliefs(d, 'goals').find(b => b.id === id);
+  d = DossierPure.upsert(d, 'goals', { id: id, text: live.text, source: 'commander', weight: 'stated', evidenceRef: { kind: 'confirmed' } }, now0 + 2000);
+  const after = DossierPure.beliefs(d, 'goals')[0];
+  A.eq(after.text, 'ship the billing rewrite by Q3', 'confirming re-affirms the LIVE text — the mid-card edit survives');
+  A.ok(after.text !== captured, 'and is not silently reverted to what the card happened to show');
+  A.eq(after.weight, 'stated', 'the weight upgrade still lands (that is what ends the re-ask loop)');
+  /* ── 11b-ii. AN AFFIRMATION IS NOT AN AUTHORSHIP CLAIM (S2) ── */
+  A.eq(after.evidenceRef && after.evidenceRef.kind, 'confirmed',
+    'and the confirmation stamps evidenceRef.kind=confirmed, so later cards cite the affirmation, not authorship');
+  const untouched = DossierPure.upsert(d, 'goals', { id: id, text: after.text, weight: 'stated' }, now0 + 3000);
+  A.eq(DossierPure.beliefs(untouched, 'goals')[0].evidenceRef.kind, 'confirmed',
+    'the evidenceRef acceptance is DEFAULTED OFF: an upsert that declares none leaves the stored ref alone');
 }
 A.ok(/const live = liveBelief\(\);\s*\n\s*if \(!live\) \{ settle\(/.test(cardBody),
   'the card re-reads the belief at CLICK time and settles quietly when it is gone — never fabricating a new one');

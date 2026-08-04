@@ -234,6 +234,21 @@ const citeKindBody = A.fnBody(chatSrc, 'function beliefCiteKind(');
 A.ok(citeKindBody.length > 0, 'chat.js derives a belief’s citation kind from the belief itself');
 A.ok(/w === 'stated' \|\| src === 'commander'/.test(citeKindBody), 'only Commander-authored evidence may be rendered as speech');
 A.ok(/return '';/.test(citeKindBody), 'an observed / synthesised / seeded belief falls back to the neutral quote that claims no speaker');
+/* …and the two provenance holes the re-sweep found in that predicate (2026-08-04):
+     · source:'curiosity' was a blanket "you said" — but a CANNED CHIP tap lands as weight:'seed'
+       (interview.js beliefFromAnswer), i.e. the station's own sentence read back as the Commander's words. A
+       TYPED answer is already 'stated', so the clause bought nothing and cost the truth.
+     · CONFIRMED must be checked BEFORE stated/commander: the re-confirm card upgrades a station-authored belief
+       to commander/stated (truthfully — an affirmation IS a statement of the content), so without the earlier
+       check every later card would quote words the Commander never spoke. */
+A.eq(/src === 'curiosity'/.test(citeKindBody), false,
+  'a curiosity answer is NOT blanket-quoted as speech — a canned chip tap is the station’s own sentence');
+A.ok(/if \(ref === 'confirmed'\) return 'confirmed';/.test(citeKindBody),
+  'an AFFIRMED belief cites the affirmation, never authorship');
+A.ok(citeKindBody.indexOf("ref === 'confirmed'") < citeKindBody.indexOf("w === 'stated'"),
+  '…and that check comes FIRST, or the stated/commander clause the confirm itself writes would swallow it');
+A.ok(/kind === 'confirmed'\) return 'you confirmed/.test(citeBody),
+  'recCite gives the affirmation its own verb: “you confirmed …”, never “you said …”');
 for (const fn of ['function arcCandidate(', 'function reconfirmCard(']) {
   A.ok(/recCite\((?:text|prop\.text), beliefCiteKind\(belief\)\)/.test(A.fnBody(chatSrc, fn)),
     fn.replace(/^function |\($/g, '') + ' cites its belief by that provenance, never a blanket recQuote');
