@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b07b0858ae1e430dcec4d344ba6bc9ca95845f66",
+    "sourceCommit": "5310a5cb450dae8ee18ee00ca544f6dc793a9920",
     "pathSetSha256": "67b3f0df0ace2d6e273f3018ed6d520ec8f1858fe011dfc43b615afff886d695",
     "files": [
       {
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 20178,
-        "sha256": "2f7bc4e7e5bbce28f4daaa16569e09579a8234400732b8a8cb4a3033184a493b"
+        "bytes": 21747,
+        "sha256": "bc18115978f2057dd80bbc55247e59005da31c085a6d7b95665dd5f0edcabe0c"
       },
       {
         "path": "frontend/app/terrain.js",
