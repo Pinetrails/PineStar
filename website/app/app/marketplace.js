@@ -87,23 +87,37 @@ const Marketplace = (() => {
     data: 'DATA', general: 'GENERAL',
     // legacy aliases older customs may still carry — labeled so a dossier chip never shows a raw slug.
     code: 'DEVELOPER', planning: 'WORK' };
-  // Discovery-rail buckets (in rail order) + how a recipe's raw category maps into one. Legacy customs may carry
-  // code/planning — fold those in so the rail groups every recipe under exactly one visible bucket (never a stray
-  // slug, never an uncounted recipe). ORDER IS THE SCAN ORDER: the rail is how a Commander who cannot yet name
-  // their use case finds one, so it runs work-shaped buckets first, then the life domains. `.mkt-lanes` wraps
-  // (flex-wrap), so a rail this long lays out as two tidy rows rather than overflowing.
-  const RAIL_BUCKETS = ['developer', 'research', 'writing', 'creator', 'ops', 'business', 'money', 'career',
-    'learn', 'life', 'data', 'general'];
-  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', writing: 'writing',
-    creator: 'creator', ops: 'ops', planning: 'ops', business: 'business', money: 'money', career: 'career',
-    learn: 'learn', life: 'life', data: 'data', general: 'general' };
-  function railBucket(r) { return CAT_TO_RAIL[(r && r.category) || 'general'] || 'general'; }
+  /* Discovery-rail buckets (in rail order) + the fold from a raw category onto one — BOTH owned by recipes.js
+     and delegated to here. They used to be a second copy living in this file, which is a standing invitation
+     for the rail and the recommender to disagree about what "one per category" means (they did: the FOR-YOU
+     spread walked raw categories while the rail folded them). ORDER IS THE SCAN ORDER: the rail is how a
+     Commander who cannot yet name their use case finds one, so it runs work-shaped buckets first, then the
+     life domains. `.mkt-lanes` wraps (flex-wrap), so a rail this long lays out as two tidy rows.
+
+     Read LAZILY, never at module scope: this file is written to survive `Recipes` being absent entirely
+     (see hasRecipes()), and a top-level `Recipes.RAIL_BUCKETS` would throw on load and take the whole bay
+     down instead of just the recipes tab. Fall back to the bare bucket when it is not there. */
+  const RAIL_BUCKETS_FALLBACK = ['developer', 'research', 'writing', 'creator', 'ops', 'business', 'money',
+    'career', 'learn', 'life', 'data', 'general'];
+  const railBuckets = () => (hasRecipes() && Recipes.RAIL_BUCKETS) || RAIL_BUCKETS_FALLBACK;
+  const railBucket = (r) => (hasRecipes() && Recipes.railBucket) ? Recipes.railBucket(r) : 'general';
 
   /* ---------- personalization (the recommender's read surface) ---------- */
   const FAM_TAGS = ['code', 'research', 'general'];
   const TAG_LABEL = { code: 'CODE', research: 'RESEARCH', general: 'GENERAL OPS' };
   const BECAUSE = { code: 'matches your focus on code', research: 'matches your focus on research', general: 'fits your day-to-day ops' };
   const ACK_KEY = 'starnet.profile.ack.v1';
+  /* The cold-start row's rotation seed: a REAL count of how many times this Commander has opened the recipes
+     tab, persisted so it survives a reload. With 12 browse buckets and a 3-card shelf, a fixed spread would
+     show the same three corners of the library forever and the other nine would only ever be found by
+     browsing. This ONLY selects which bucket the varied lineup starts from — it is not a ranking signal, it
+     asserts nothing about the recipes it picks, and the shelf is labelled as a varied lineup rather than as
+     popular or recommended, so rotating it stays inside the truthful-telemetry law. */
+  const VISITS_KEY = 'starnet.recipes.visits.v1';
+  function recipeVisits() { try { return parseInt(localStorage.getItem(VISITS_KEY), 10) || 0; } catch (_) { return 0; } }
+  function bumpRecipeVisits() {
+    try { const n = recipeVisits() + 1; localStorage.setItem(VISITS_KEY, String(n)); return n; } catch (_) { return 0; }
+  }
   const profileApi = () => (typeof ProfileStore !== 'undefined' && ProfileStore.summary) ? ProfileStore : null;
   function acked() { try { return typeof localStorage !== 'undefined' && !!localStorage.getItem(ACK_KEY); } catch (_) { return true; } }
   function setAcked() { try { if (typeof localStorage !== 'undefined') localStorage.setItem(ACK_KEY, '1'); } catch (_) {} }
@@ -215,6 +229,9 @@ const Marketplace = (() => {
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
+    // count the VISIT, not the render — forYouShelfHTML re-runs on every filter and search keystroke, and
+    // seeding the rotation from that would reshuffle the shelf under the Commander's cursor as they type.
+    if (tab === 'recipes') bumpRecipeVisits();
     glassOpen = !acked();
     summonConfigOpen = false;
     scoutLogOpen = false;
@@ -378,12 +395,12 @@ const Marketplace = (() => {
       const builtins = Recipes.builtins(), customs = Recipes.customs();
       const all = builtins.concat(customs);
       const counts = { all: all.length, mine: customs.length };
-      RAIL_BUCKETS.forEach(b => counts[b] = 0);
+      railBuckets().forEach(b => counts[b] = 0);
       all.forEach(r => { const rb = railBucket(r); counts[rb] = (counts[rb] || 0) + 1; });
       const cat = (id, label) => '<button class="mkt-lane' + (catFilter === id ? ' on' : '') + '" data-cat="' + id + '">' +
         label + '<span class="ct">' + (counts[id] || 0) + '</span></button>';
       let rail = cat('all', 'ALL');
-      RAIL_BUCKETS.forEach(b => { if (counts[b] > 0 || b === 'general') rail += cat(b, CAT_LABEL[b] || b); });
+      railBuckets().forEach(b => { if (counts[b] > 0 || b === 'general') rail += cat(b, CAT_LABEL[b] || b); });
       rail += cat('mine', 'MINE');
       html += '<span class="mkt-lanes-lbl">BROWSE</span><div class="mkt-lanes">' + rail + '</div>' +
         '<button class="mkt-import bb sm" title="import a recipe from a JSON file">⇪ IMPORT</button>' +
@@ -415,6 +432,7 @@ const Marketplace = (() => {
     bar.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.tab; if (!next || next === tab) return;
       tab = next; view = 'grid'; laneFilter = 'all'; catFilter = 'all'; sfx('click');
+      if (next === 'recipes') bumpRecipeVisits();   // arriving via the tab IS a visit (open() only sees ctx.tab)
       pendingCardAnim = true;   // a tab switch is a fresh context — animate; a filter/search rebuild is not
       renderBar(); renderStage(); syncSub(); syncFoot();
     }));
@@ -1391,7 +1409,11 @@ const Marketplace = (() => {
     // two rows above the library is the thing that pushed the catalog off screen. Three also matches the
     // specialists shelf next door, so both tabs speak the same visual language.
     const preferenceModel = (typeof ProspectStore !== 'undefined' && ProspectStore.preferenceModel) ? ProspectStore.preferenceModel() : null;
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3 });
+    // Stride by the ROW SIZE, not by 1: a stride of 1 slides the window one bucket per visit, so consecutive
+    // visits repeat two of three cards and it takes twelve visits to see the whole library. Striding by 3
+    // makes each visit a disjoint set and surfaces all twelve buckets in four. This shelf exists for someone
+    // who cannot yet name a use case, so three NEW domains beats one new and two they already skipped.
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 });
     if (!items || !items.length) return '';
     // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
     // shelf blends four real signals and used to explain NONE of them — every other shelf in the bay names its
