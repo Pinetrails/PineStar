@@ -3488,9 +3488,12 @@ const Chat = (() => {
     const text = document.createElement('span'); text.className = 'turnin-text';
     text.textContent = String(spec.proposal == null ? '' : spec.proposal);
     const btns = document.createElement('span'); btns.className = 'consent-btns';
-    item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
+    item.appendChild(kind); item.appendChild(text);
+    // the note is CONSEQUENCE, not evidence ("raises the dial to FREE") — a dim aside between the
+    // proposal and the buttons, so the card still ENDS on the two taps.
     const note = String(spec.note == null ? '' : spec.note).trim();
     if (note) { const n = document.createElement('div'); n.className = 'turnin-evidence'; n.textContent = '↳ ' + note; item.appendChild(n); }
+    item.appendChild(btns);
     slotEl.appendChild(item);
     return { row: r.d, item: item, kind: kind, text: text, btns: btns };
   }
