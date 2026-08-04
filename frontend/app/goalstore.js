@@ -153,7 +153,10 @@ const GoalStore = (() => {
   // (paid) aux call (memory/study claimed it mid-round-trip), the next offer for the SAME belief state reuses the
   // cached path instead of re-calling the model. The cache clears the moment the belief is decided (markOffered).
   async function proposeDecomposition() {
-    if (!ready() || firing) return null;
+    // NOTE: no `firing` guard here — the offer flow (chat.js offerArc) sets firing BEFORE this call, so
+    // gating on it deadlocked the arc into always returning null (re-entry is already blocked by
+    // willOfferDecomposition + offerArc's isFiring() entry check).
+    if (!ready()) return null;
     if (typeof Harness === 'undefined' || !Harness.chat) return null;
     const belief = pendingDecomposition();
     if (!belief) return null;
