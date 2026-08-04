@@ -24,6 +24,7 @@ const ACTIONS = {
   'parity-memory-long-transcript': ['search_segments'],
   'parity-memory-compaction': ['compact_and_verify'],
   'parity-memory-restart': ['restart_and_recover'],
+  'parity-orch-parallel-fanout': ['run_parallel_workers'],
   'parity-orch-background': ['start_background_worker', 'collect_background_worker'],
   'parity-orch-synthesis': ['synthesize_workers'],
   'parity-routine-create-run': ['attempt_routine_under_estop'],
@@ -226,6 +227,7 @@ async function act(state, action) {
     case 'search_segments': o.segmentsSearched = 2; return { needle: setup.historyGenerator.needle, segmentsSearched: 2 };
     case 'compact_and_verify': o.compactionCommitted = true; o.factSearchableAfter = true; return { fact: setup.historyGenerator.needle, compacted: true, searchable: true };
     case 'restart_and_recover': o.recoveredSessionId = setup.restart.sessionId; state.routeUsed = true; return { sessionId: o.recoveredSessionId, history: setup.history };
+    case 'run_parallel_workers': return Promise.all(Object.keys(setup.workers || {}).map(worker => runWorker(state, worker)));
     case 'start_background_worker': state.foregroundEnded = true; return { worker: 'archivist', background: true, foregroundEndedAtMs: setup.foregroundEndsAtMs };
     case 'collect_background_worker': o.backgroundCompletedAfterForeground = state.foregroundEnded; o.backgroundRecordDurable = true; state.routeUsed = true; return { result: setup.workers.archivist.result, durable: true };
     case 'synthesize_workers': o.synthesizedWorkerCount = Object.keys(setup.workers).length; state.routeUsed = true; return { workers: setup.workers };

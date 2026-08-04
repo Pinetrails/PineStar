@@ -48,11 +48,8 @@ try {
   const commandValue = JSON.parse(command.content[0].text);
   check(commandValue.exitCode === 7 && commandValue.stderr === 'MARKER', 'real command status is retained');
 
-  await Promise.all([
-    call('fixture_worker_run', { worker: 'alpha' }),
-    call('fixture_worker_run', { worker: 'beta' }),
-    call('fixture_worker_run', { worker: 'gamma' })
-  ]);
+  const fanout = await call('fixture_action', { action: 'run_parallel_workers' });
+  check(!fanout.isError, 'one orchestration action runs the declared worker fanout');
   const host = observeFixture(state, 'done', { sessionId: 's1', agentId: 'agent' });
   check(host.observation.maxConcurrentWorkers === 3, 'concurrent worker calls are host observed');
   check(host.observation.authorityEscapes === 1, 'authority escape count is host observed');

@@ -105,6 +105,7 @@ export async function startStarNetDriver(opts) {
   if (!configured.connected) throw new Error('StarNet fixture connector did not connect: ' + JSON.stringify(configured).slice(0, 500));
 
   return {
+    process: child, base,
     identity: { harness: 'starnet', model: MODEL, provider: PROVIDER, health },
     async run({ fixture, state, root: fixtureRoot, attempt }) {
       const startedAt = new Date().toISOString(), prompt = submittedPrompt(fixture.prompt);

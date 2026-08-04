@@ -47,6 +47,8 @@ test/eval-soak-receipt.test.js
 test/eval-same-model-receipt.test.js
 test/eval-acp-client.test.js
 test/eval-fixture-host.test.js
+test/eval-installed-performance.test.js
+test/eval-installed-provider-soak.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
 test/realtime-voice.test.js
