@@ -134,6 +134,7 @@
     "release:verify-host": "node scripts/verify-update-host.mjs",
     "release:verify-sig": "node scripts/minisign-verify.mjs",
     "release:canary": "node scripts/update-canary.mjs",
+    "release:promotion-gate": "node scripts/release-promotion-gate.mjs",
     "security:secrets": "node scripts/scan-history-secrets.mjs"
   },
   "devDependencies": {

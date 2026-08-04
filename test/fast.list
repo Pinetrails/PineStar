@@ -187,6 +187,7 @@ test/backup-secrets.test.js
 test/schema-stamp.test.js
 test/rename-migrate.test.js
 test/update-state-parity.test.js
+test/update-continuity.test.js
 test/update-preparation.test.js
 test/updates-install.test.js
 test/roster-clause.test.js
