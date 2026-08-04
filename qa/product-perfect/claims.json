@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "fc8b086ef77e06bdfb041e70bc37c1d7f7888aa9",
-    "pathSetSha256": "a12523313f726ac59b04759740922d259b47d52646966847fb46dcec01437a2c",
+    "sourceCommit": "ca55e461836a5fc0b58553315fe05e53c1b83af7",
+    "pathSetSha256": "71a1e05e944b2f724ea36f98a44ef4bdc51cffe5cd3c3abf8a1b9a996efb1eaa",
     "files": [
       {
         "path": "INSTALL.md",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 223179,
-        "sha256": "995e5fbb27ea05b5232d12909a5e1f47e0fd5b9bae80d443c0f6162dda3c5218"
+        "bytes": 223070,
+        "sha256": "79ad8b8c2b06328f5289fd39a4b04905d2f6b88fbb7717225c286c9b73d613b8"
       },
       {
         "path": "frontend/app/mint.js",
@@ -522,14 +522,9 @@
         "sha256": "3c2273b7aa9fe3e923f536fff07e52a0e5ede51ed0424e467fb41cfd599a4510"
       },
       {
-        "path": "frontend/app/recipe-catalog/career.js",
-        "bytes": 23520,
-        "sha256": "2010866b36f8becbd346dbd7f29ba6efd87e227a8ddc69afb82a6e8e51b550a2"
-      },
-      {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 16208,
-        "sha256": "11c3d4b622ad9e42d87befa2ed9d70d5f5c2f4c12be1617d345b4312e1e7a1fe"
+        "bytes": 17643,
+        "sha256": "685ead5f0d0c4e0f46ab91aa230fe20cb3ce42065139ad24b6e0fab75bcfb7e0"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
@@ -548,23 +543,13 @@
       },
       {
         "path": "frontend/app/recipe-catalog/general.js",
-        "bytes": 18045,
-        "sha256": "6fa36ce0303a779a7977ce5b17196ef9bdf1b0c17436cb0c922c17f2f431462d"
+        "bytes": 20273,
+        "sha256": "9965a77111dd87cd37fdd33453186bc31b5aff152edd6039744a54d39eba7b0f"
       },
       {
         "path": "frontend/app/recipe-catalog/index.js",
         "bytes": 2771,
         "sha256": "fe4ea394d7bb3887a6b4a16b0dd7143eb0ddce4e80147463fdf485330e544557"
-      },
-      {
-        "path": "frontend/app/recipe-catalog/learn.js",
-        "bytes": 24092,
-        "sha256": "17809dd2265c39ce92c15e8cc39cf0fc8af5524de08362eaee88be334e6a9755"
-      },
-      {
-        "path": "frontend/app/recipe-catalog/life.js",
-        "bytes": 24618,
-        "sha256": "da9eb065325f30669dc90c7eabc5b15607eecfa66079eadfdf6480c3b2063224"
       },
       {
         "path": "frontend/app/recipe-catalog/money.js",
@@ -582,14 +567,9 @@
         "sha256": "bd52fbce239888af115686344d2d866f80088cd17ec3a8b8979b7427aded689a"
       },
       {
-        "path": "frontend/app/recipe-catalog/writing.js",
-        "bytes": 23742,
-        "sha256": "12728ca7b210586c4cb1fc2a55a81a1d260b4ce565c45a7a2a300edc968c3bab"
-      },
-      {
         "path": "frontend/app/recipes.js",
-        "bytes": 60620,
-        "sha256": "d25d22cf330c8b50323499d936748ab4142ba8934d77077885e3c0a31b5f3343"
+        "bytes": 60409,
+        "sha256": "f0f4ad46d1f23a946f70de08e466c0bf04a56efe3352946277865f25442bf295"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -998,8 +978,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 67953,
-        "sha256": "78ad1fed48b5ed0ef66c1de68bf0abadb6f9b3fd771d99814fdbf09837534b31"
+        "bytes": 67743,
+        "sha256": "793e539a0ea514e661f9d39a508cc9f4012ed4402eb524625d9cde088ec60e5b"
       },
       {
         "path": "frontend/js/arcade.js",
