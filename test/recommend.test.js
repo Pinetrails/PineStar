@@ -214,20 +214,30 @@ for (const v of ['it matches your focus on code', 'it matches your focus on rese
    includes the AGENT's turns. Each source now gets its own honest phrasing. */
 const iCite = chatSrc.indexOf('function recCite');
 A.ok(iCite > 0, 'chat.js has ONE citation composer, discriminated by source');
-const citeBody = chatSrc.slice(iCite, iCite + 700);
+const citeBody = A.fnBody(chatSrc, 'function recCite(');
 A.ok(/kind === 'verbatim'\) return 'you said/.test(citeBody), 'only a VERBATIM quote may be rendered as speech');
 A.ok(/kind === 'directive'\) return 'from the task you gave me/.test(citeBody), 'a directive is cited as the task, not as words spoken');
 A.ok(/kind === 'conversation'\) return 'from the conversation/.test(citeBody), 'an unattributed quote is cited as the conversation');
 A.ok(/return 'from “' \+ t \+ '”';/.test(citeBody), 'anything unlabelled falls back to a neutral quote that claims no speaker');
-for (const [fn, probe] of [['function studyCard', /recCite\(prop\.evidence, prop\.evidenceRef && prop\.evidenceRef\.kind\)/],
-                           ['async function studyCandidate', /recCite\(prop\.evidence, prop\.evidenceRef && prop\.evidenceRef\.kind\)/],
-                           ['function threadCard', /recCite\(prop\.spec, threadCiteKind\(prop\)\)/],
-                           ['async function threadCandidate', /recCite\(prop\.spec, threadCiteKind\(prop\)\)/]]) {
-  const i = chatSrc.indexOf(fn);
-  A.ok(i > 0 && probe.test(chatSrc.slice(i, i + 2000)), fn.replace(/^(async )?function /, '') + ' cites by SOURCE, never blanket "you said"');
+for (const [fn, probe] of [['function studyCard(', /recCite\(prop\.evidence, prop\.evidenceRef && prop\.evidenceRef\.kind\)/],
+                           ['async function studyCandidate(', /recCite\(prop\.evidence, prop\.evidenceRef && prop\.evidenceRef\.kind\)/],
+                           ['function threadCard(', /recCite\(prop\.spec, threadCiteKind\(prop\)\)/],
+                           ['async function threadCandidate(', /recCite\(prop\.spec, threadCiteKind\(prop\)\)/]]) {
+  A.ok(probe.test(A.fnBody(chatSrc, fn)), fn.replace(/^(async )?function |\($/g, '') + ' cites by SOURCE, never blanket "you said"');
 }
-A.ok(/prop\.speaker === 'user'/.test(chatSrc.slice(iCite - 400, iCite + 1400)),
+A.ok(/prop\.speaker === 'user'/.test(A.fnBody(chatSrc, 'function threadCiteKind(')),
   'a mined thread claims speech only when threadmine located the quote in the Commander’s own turns');
+/* …and a DOSSIER belief is cited by ITS recorded provenance, so the arc and the re-confirm card can no longer
+   render a study-OBSERVED goal as words the Commander spoke (that is the exact mis-attribution above, on the one
+   card whose whole subject is whether the station's memory can be trusted). */
+const citeKindBody = A.fnBody(chatSrc, 'function beliefCiteKind(');
+A.ok(citeKindBody.length > 0, 'chat.js derives a belief’s citation kind from the belief itself');
+A.ok(/w === 'stated' \|\| src === 'commander'/.test(citeKindBody), 'only Commander-authored evidence may be rendered as speech');
+A.ok(/return '';/.test(citeKindBody), 'an observed / synthesised / seeded belief falls back to the neutral quote that claims no speaker');
+for (const fn of ['function arcCandidate(', 'function reconfirmCard(']) {
+  A.ok(/recCite\((?:text|prop\.text), beliefCiteKind\(belief\)\)/.test(A.fnBody(chatSrc, fn)),
+    fn.replace(/^function |\($/g, '') + ' cites its belief by that provenance, never a blanket recQuote');
+}
 // …and the producer stamps that discrimination in the first place
 A.ok(/speaker: \(nq && spoken\.indexOf\(nq\) >= 0\) \? 'user' : 'other'/.test(fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'threadmine.js'), 'utf8')),
   'threadmine stamps WHO said the quote it mined');

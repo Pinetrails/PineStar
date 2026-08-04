@@ -40,6 +40,35 @@ function collectBus(bus, names) {
   return log;
 }
 
+/* fnBody(src, header) → the source of exactly ONE function, from its declaration to its OWN closing brace.
+   Source-lock tests in this repo slice chat.js by a magic char count (`src.slice(i, i + 2600)`), which silently
+   overruns into the NEXT function as bodies grow: a `why:` assertion aimed at suggestCandidate happily matched
+   seedCandidate's, and deleting the line under test left the test green. Brace-count to the real end instead —
+   then every lock binds the function it names, and nothing else. Quotes, template literals and comments are
+   skipped so a brace inside a string or a prose comment can't end the body early. (Regex literals are NOT
+   parsed — this is a test helper, not a JS parser; the callers below assert the extracted body is non-empty and
+   shorter than the file, which is what catches a mis-scan.) Returns '' if the header is absent. */
+function fnBody(src, header) {
+  const start = src.indexOf(header);
+  if (start < 0) return '';
+  let i = src.indexOf('{', start);
+  if (i < 0) return '';
+  let depth = 0;
+  for (; i < src.length; i++) {
+    const c = src[i], n = src[i + 1];
+    if (c === '/' && n === '/') { const nl = src.indexOf('\n', i); i = nl < 0 ? src.length : nl; continue; }
+    if (c === '/' && n === '*') { const e = src.indexOf('*/', i + 2); i = e < 0 ? src.length : e + 1; continue; }
+    if (c === '"' || c === "'" || c === '`') {
+      const q = c;
+      for (i++; i < src.length; i++) { if (src[i] === '\\') { i++; continue; } if (src[i] === q) break; }
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return src.slice(start, i + 1); }
+  }
+  return src.slice(start);
+}
+
 let reported = false;
 
 function report(title) {
@@ -65,4 +94,4 @@ process.on('exit', (code) => {
   process.exitCode = 1;
 });
 
-module.exports = { ok, eq, throws, notThrows, makeBus, collectBus, report, fails: () => fail };
+module.exports = { ok, eq, throws, notThrows, makeBus, collectBus, report, fnBody, fails: () => fail };

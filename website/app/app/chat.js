@@ -3694,14 +3694,20 @@ const Chat = (() => {
         const decision = (typeof Goals !== 'undefined' && Goals.resolveConfirmChoice)
           ? Goals.resolveConfirmChoice(choice, path)
           : { action: (choice && choice.value === 'confirm') ? 'confirm' : 'decline', path: path };
+        /* THE ARC CHANNEL LEARNS FROM ITS REAL OFFER (2026-08-04). Only the re-confirm card used to train this
+           channel — the arc's own confirm panel, which IS the channel's flagship offer, recorded nothing at all.
+           A confirmed path spawns quests rather than a run, so the accept IS the outcome; a not-now is a timing
+           signal, the mildest thing the loop records. */
         if (decision.action === 'confirm') {
           const g = GoalStore.confirm(res.belief, decision.path);
           if (g) {
             if (typeof SFX !== 'undefined' && SFX.quest) { try { SFX.quest(); } catch (_) {} }
             if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◇ goal path set — track it under ⚑ QUESTS', 'gold');
           }
+          recAccept('arc', 'goals', false);
         } else {
           GoalStore.declineDecomposition(res.belief);   // not-now / rejected edit: re-offer only when the belief changes (never nag)
+          recDecline('arc', 'goals', true);
         }
       } finally {
         // release the moment — and if a memory deck QUEUED behind this panel (a late memory.proposed during a
@@ -4088,7 +4094,11 @@ const Chat = (() => {
     recruitShown = true;                                                   // spend the session's single recruit offer (even on dismiss — never re-ask this session)
     if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // same soft chime as the idea beat
     nudge(line, [{ label: 'meet them', value: 'go' }, { label: 'not now', value: 'no', skip: true }], choice => {
-      if (choice && choice.value === 'go') { try { App.openSummonBay(); } catch (_) {} }
+      // THE OUTCOME LOOP: recruitment had a real accept path and recorded nothing, so it drifted down against
+      // every channel that does record. Opening the bay spawns no run — the accept IS the outcome; "not now" is
+      // a timing signal, the mildest negative the loop keeps.
+      if (choice && choice.value === 'go') { try { App.openSummonBay(); } catch (_) {} recAccept('recruit', '', false); }
+      else recDecline('recruit', '', true);
     });
     return true;
   }
@@ -4337,29 +4347,38 @@ const Chat = (() => {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.isBeliefDenied) return !!RecQualityStore.isBeliefDenied(fp); } catch (_) {}
     return false;
   }
-  /* THE RE-CONFIRM CARD. The same recCard grammar every other offer uses — eyebrow → evidence in the
-     Commander's own words → proposal → two taps — with the proposal phrased as a QUESTION instead of a
-     proposal, because that is the only honest thing this card can say. Consent writes through the EXISTING
-     store paths and nothing else:
-       still true  → DossierStore.upsert re-stamps the belief's updatedAt (it is confirmed as of now, which is
-                     what freshness actually measures) + one unit of positive evidence on its dimension.
+  /* THE RE-CONFIRM CARD. The same recCard grammar every other offer uses — eyebrow → evidence, cited by the
+     belief's OWN provenance → proposal → taps — with the proposal phrased as a QUESTION instead of a proposal,
+     because that is the only honest thing this card can say. Consent writes through the EXISTING store paths:
+       still true  → the belief is re-stamped COMMANDER-STATED through DossierStore.upsert (they just said so,
+                     out loud, in answer to a direct question — that is exactly what 'stated' evidence is) plus
+                     one unit of positive evidence on its dimension. Re-stamping the WEIGHT is what ends the
+                     re-ask loop: a seed-weighted belief contributes 0 confidence by design (understanding.js
+                     EVIDENCE_WEIGHT.seed = 0), so touching only updatedAt left the dimension reading exactly as
+                     under-confirmed as before and the same question came back every three weeks, forever.
+       not now     → the belief state is recorded as decided (GoalStore.markOffered — the SAME not-now
+                     discipline the arc's own "not now" uses), so it re-asks only when the belief changes.
+                     Nothing is folded onto the channel: a deferral is a signal about timing, and this card
+                     already has an honest way to say that — the other two chips.
        not anymore → one unit of counter-evidence, the belief is forgotten through the store's own forget path
-                     (which also denylists its text against re-proposal), and the QUESTION is fingerprinted so
-                     it is never asked again for this belief state.
+                     (which ALSO permanently denylists its text against being re-learned from work — the same
+                     path a study RETIRE takes, and the note says so), and the QUESTION is fingerprinted so it
+                     is never asked again for this belief state.
      Returns true iff the card actually rendered. */
   function reconfirmCard(belief, dim, weeks, fp, runId) {
     if (!log || !belief || typeof DossierStore === 'undefined') return false;
     const text = String(belief.text || '').trim();
     if (!text) return false;
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
-    const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === dim) || {}).label || dim) : dim;
     const card0 = recCard({
-      kind: 'arc', evidence: recWhy(recQuote(text)),
-      label: 'STILL TRUE?',
+      kind: 'arc', evidence: recWhy(recCite(text, beliefCiteKind(belief))),
+      // the sibling labels (RETIRE · GRANT · AUTONOMY · THREAD) carry no punctuation; neither does this one.
+      label: 'STILL TRUE',
       proposal: 'is that still where you’re heading?',
-      // the CONSEQUENCE line, and the honest reason this is a question and not a proposal — a real measured age,
-      // never a vague "a while back".
-      note: 'nothing has confirmed it in about ' + weeks + ' week' + (weeks === 1 ? '' : 's') + ' — confirm it and i’ll keep building on it, or drop it and i’ll stop treating it as your ' + String(dimName).toLowerCase()
+      /* the CONSEQUENCE line: a real measured age (never a vague "a while back") and the ACTUAL cost of "no".
+         Deny does not merely stop the station treating it as a goal — DossierStore.forget denylists the text so
+         the study loop can never re-learn it from work. That is the honest thing to disclose, in one aside. */
+      note: 'unconfirmed for ~' + weeks + ' week' + (weeks === 1 ? '' : 's') + ' — drop it and i won’t re-learn it from your work'
     });
     if (!card0) return false;
     const r = { d: card0.row }, item = card0.item, btns = card0.btns;
@@ -4375,11 +4394,37 @@ const Chat = (() => {
       item.appendChild(tag);
       card.finish({ delay: 600 });
     }
-    function commit(confirmed) {
+    // the belief AS IT STANDS RIGHT NOW. The card can sit in the feed for minutes; the dossier does not freeze
+    // while it does. Every write below re-reads it first (see commit()).
+    function liveBelief() {
+      try { return (DossierStore.beliefs(dim) || []).find(b => b && b.id === belief.id) || null; } catch (_) { return null; }
+    }
+    function commit(answer) {
       if (!card.decide()) return;
+      if (answer === 'defer') {
+        // NOT NOW. The arc's own not-now discipline: re-offer only when the belief itself changes. No fold — a
+        // "ask me later" says nothing about whether this channel's offers are any good.
+        try { if (typeof GoalStore !== 'undefined' && GoalStore.markOffered) GoalStore.markOffered(belief); } catch (_) {}
+        settle('✓ i’ll ask again if it changes', false);
+        return;
+      }
+      /* THE RESURRECT GUARD. If the belief was retired or deleted between render and click, DossierStore.upsert
+         with an unknown id does NOT update anything — it PUSHES A BRAND-NEW belief, stamped commander/stated,
+         inventing a Commander assertion that never happened. (forget on a gone id is a harmless no-op, but the
+         -1 evidence would still land on a dimension for a belief that no longer exists.) Settle quietly instead:
+         the question was overtaken by events, and the station has nothing honest to record about it. */
+      const live = liveBelief();
+      if (!live) { settle('✓ already handled', false); return; }
+      const confirmed = answer === 'confirm';
+      // A PINNED belief is Commander-asserted-durable; this card may never forget one. (staleness() never marks a
+      // pinned belief stale, so this only fires when it was pinned AFTER the card rendered — but the card must
+      // not be the one path that quietly overrides a pin.)
+      if (!confirmed && live.pinned) { settle('✕ it’s pinned — kept', true); return; }
       try {
         if (confirmed) {
-          DossierStore.upsert(dim, { id: belief.id, text: text });   // re-stamps updatedAt: confirmed as of now
+          // CONFIRMED OUT LOUD → the belief IS now Commander-stated evidence, and is recorded as such. Without the
+          // weight re-stamp a seed-weighted belief stays at confidence 0 and this exact question returns forever.
+          DossierStore.upsert(dim, { id: belief.id, text: text, source: 'commander', weight: 'stated' });
           if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, +1);
         } else {
           if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, -1);
@@ -4387,16 +4432,18 @@ const Chat = (() => {
           if (typeof RecQualityStore !== 'undefined' && RecQualityStore.denyBelief) RecQualityStore.denyBelief(fp);
         }
       } catch (_) {}
-      // EITHER answer is the ask doing its job: "no" is exactly as useful as "yes" here (it is the answer that
-      // cleans stale memory up), so the channel earns for having asked a question worth answering — never for
-      // getting the answer it hoped for.
-      recAccept('arc', dim, false);
+      /* THE CHANNEL LEARNS THE REAL ANSWER. This used to fold 'engaged' (a positive) on BOTH answers, on the
+         theory that any answer is the ask doing its job — which made the arc channel a one-way ratchet that could
+         only ever rate itself up. A "no" here means the station built an ask on a belief that was not true: that
+         is a decline, and the loop is worth nothing if it cannot hear one. */
+      if (confirmed) recAccept('arc', dim, false); else recDecline('arc', dim, false);
       settle(confirmed ? '✓ still true' : '✕ dropped it', !confirmed);
       if (typeof StationUI !== 'undefined' && StationUI.rerender) { try { StationUI.rerender('commander'); } catch (_) {} }
     }
     const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
-    mk('Still true', '', () => commit(true));
-    mk('Not anymore', 'deny', () => commit(false));
+    mk('Still true', '', () => commit('confirm'));
+    mk('Not now', '', () => commit('defer'));
+    mk('Not anymore', 'deny', () => commit('deny'));
     autoscroll();
     return true;
   }
@@ -4426,6 +4473,20 @@ const Chat = (() => {
     return 'from “' + t + '”';
   }
   function recQuote(s) { return recCite(s, 'verbatim'); }
+  /* A DOSSIER BELIEF'S OWN CITATION KIND (truthful telemetry, 2026-08-04). The arc and the re-confirm card cited
+     every goals belief as `you said "…"` — but the dossier holds beliefs the STATION observed from work (study
+     writes source:'study', weight:'observed') and beliefs synthesised during onboarding, and quoting those back as
+     the Commander's speech is the card asserting something the harness cannot prove. So the belief's OWN recorded
+     provenance picks the phrasing recCite already has: only Commander-authored evidence may be rendered as speech;
+     an observed belief cites the work it was observed from; anything unlabelled claims no speaker at all. */
+  function beliefCiteKind(b) {
+    const w = String((b && b.weight) || '');
+    const src = String((b && b.source) || '');
+    if (w === 'stated' || src === 'commander' || src === 'curiosity') return 'verbatim';
+    const ref = String((b && b.evidenceRef && b.evidenceRef.kind) || '');
+    if (ref === 'verbatim' || ref === 'directive' || ref === 'conversation') return ref;
+    return '';   // observed / study / onboarding-synth / seed → the neutral 'from "…"' quote (claims no speaker)
+  }
   // a mined thread's quote is located in the whole exchange, which includes the AGENT's turns — threadmine
   // stamps speaker:'user' only when it also matched the Commander's own turns. Anything else is softened.
   function threadCiteKind(prop) { return (prop && prop.speaker === 'user') ? 'verbatim' : 'conversation'; }
@@ -4466,12 +4527,13 @@ const Chat = (() => {
       if (recReconfirmDenied(fp)) return null;               // asked, answered "no" — silence until the belief changes
       const weeks = Math.max(1, Math.round(stale.ageDays / 7));
       // NO strength reading on an ASK: strength discounts a weak ASSERTION, and this card asserts nothing.
-      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recQuote(text),
+      // The citation is phrased by the belief's OWN provenance — a study-observed goal was never "said".
+      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recCite(text, beliefCiteKind(belief)),
                fire: () => { if (arcOnce(runId)) reconfirmCard(belief, 'goals', weeks, fp, runId); } };
     }
     // STRENGTH: the cited goal belief's OWN freshness × how well the goals dimension is corroborated. A goal the
     // Commander stated last season, with nothing since to confirm it, is a weaker thing to build an arc on.
-    return { kind: 'arc', dim: 'goals', why: recQuote(text), strength: recStrengthOfBelief(belief, 'goals'),
+    return { kind: 'arc', dim: 'goals', why: recCite(text, beliefCiteKind(belief)), strength: recStrengthOfBelief(belief, 'goals'),
              fire: () => { if (arcOnce(runId)) offerArc(runId); } };
   }
 

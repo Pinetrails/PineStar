@@ -193,28 +193,80 @@ A.ok(/app\/recqualitystore\.js/.test(fs.readFileSync(path.join(__dirname, '..', 
 /* ── 11. THE STALENESS GUARD IS WIRED (Q3, source-lock) ──
    A stale belief must ASK, never ASSERT — and the ask must ride the SAME slot and the SAME card grammar, or
    this becomes a new surface, which the spine's contract forbids. */
-const iArc = chatSrc.indexOf('function arcCandidate');
-const arcBody = chatSrc.slice(iArc, iArc + 2600);
+const arcBody = A.fnBody(chatSrc, 'function arcCandidate(');
 A.ok(/const stale = recStale\(belief, 'goals'\)/.test(arcBody), 'the arc consults staleness BEFORE citing its belief');
-A.ok(arcBody.indexOf('recStale(belief') < arcBody.indexOf("why: recQuote(text), strength:"),
+A.ok(arcBody.indexOf('recStale(belief') < arcBody.indexOf('beliefCiteKind(belief)), strength:'),
   'the stale branch is taken INSTEAD of the assertion, not after it');
 A.ok(/if \(recReconfirmDenied\(fp\)\) return null;/.test(arcBody), 'a re-confirm answered "no" is never re-asked (silence, not a nag)');
 A.ok(/reconfirm: true/.test(arcBody) && !/strength:[^\n]*\n[^\n]*reconfirm/.test(arcBody),
   'the ask carries NO strength reading — strength discounts a weak assertion, and an ask asserts nothing');
-const iCard = chatSrc.indexOf('function reconfirmCard');
-A.ok(iCard > 0, 'chat.js renders the re-confirm through its own card function');
-const cardBody = chatSrc.slice(iCard, iCard + 3800);
+const cardBody = A.fnBody(chatSrc, 'function reconfirmCard(');
+A.ok(cardBody.length > 0, 'chat.js renders the re-confirm through its own card function');
 A.ok(/recCard\(\{/.test(cardBody), 'the re-confirm rides the SHARED offer-card grammar — no new surface');
 A.ok(/kind: 'arc'/.test(cardBody) && /beatCards && beatCards\.claim\(\{/.test(cardBody),
   'and the SAME beat slot family, so it is bounded by the same one-voice arbiter');
 A.ok(/proposal: 'is that still where you’re heading\?'/.test(cardBody), 'the proposal is phrased as a QUESTION');
-A.ok(/DossierStore\.upsert\(dim, \{ id: belief\.id, text: text \}\)/.test(cardBody),
-  'CONFIRM re-stamps the belief through the store’s own upsert path (freshness is what it measures)');
 A.ok(/UnderstandingStore\.noteEvidence\(dim, \+1\)/.test(cardBody) && /UnderstandingStore\.noteEvidence\(dim, -1\)/.test(cardBody),
   'both answers write real signed evidence onto the dimension');
 A.ok(/DossierStore\.forget\(dim, belief\.id\)/.test(cardBody), 'DENY retires the belief through the store’s own forget path');
 A.ok(/RecQualityStore\.denyBelief\(fp\)/.test(cardBody), 'and fingerprints the question so it is never asked again');
-A.ok(/nothing has confirmed it in about ' \+ weeks/.test(cardBody),
-  'the card says WHY it is asking with a real measured age — never a vague "a while back"');
+
+/* ── 11b. THE RE-CONFIRM LOOP MUST END (Q3 follow-up, 2026-08-04) ──
+   A seed-weighted belief contributes ZERO confidence by design (understanding.js EVIDENCE_WEIGHT.seed = 0), so
+   the same signal eae2011a proved false for the strength read still fired the staleness read: confirming only
+   re-stamped updatedAt, the dimension stayed exactly as under-confirmed, and the SAME question came back at the
+   next 21-day mark — two or three times over a couple of months. Confirming now re-stamps the PROVENANCE too,
+   which is simply true: the Commander just stated it, in answer to a direct question. */
+A.ok(/DossierStore\.upsert\(dim, \{ id: belief\.id, text: text, source: 'commander', weight: 'stated' \}\)/.test(cardBody),
+  'CONFIRM records the belief as Commander-STATED evidence — the only thing that actually ends the re-ask loop');
+const DossierPure = require('../frontend/app/dossier.js');
+{
+  const now0 = 1780000000000;
+  let d = DossierPure.fresh();
+  d = DossierPure.upsert(d, 'goals', { text: 'ship the billing rewrite', source: 'onboarding', weight: 'seed' }, now0);
+  const id = DossierPure.beliefs(d, 'goals')[0].id;
+  d = DossierPure.upsert(d, 'goals', { id: id, text: 'ship the billing rewrite' }, now0 + 1000);
+  A.eq(DossierPure.beliefs(d, 'goals')[0].weight, 'seed', 'an upsert that declares no provenance changes none');
+  d = DossierPure.upsert(d, 'goals', { id: id, text: 'ship the billing rewrite', source: 'commander', weight: 'stated' }, now0 + 2000);
+  const b = DossierPure.beliefs(d, 'goals')[0];
+  A.eq(b.weight, 'stated', 'a declared weight RE-STAMPS an existing belief (a seed the Commander confirmed is no longer a seed)');
+  A.eq(b.source, 'commander', 'and so does the declared source');
+  A.eq(b.updatedAt, now0 + 2000, 'the confirmation is also what freshness measures');
+  A.eq(DossierPure.beliefs(d, 'goals').length, 1, 'and it updates in place — a confirm never mints a second belief');
+  // …and the resurrect race: an id that no longer exists PUSHES A NEW belief, which is exactly why the card
+  // checks the belief is still there before writing anything.
+  const d2 = DossierPure.upsert(d, 'goals', { id: 'cd_999', text: 'ghost' }, now0 + 3000);
+  A.eq(DossierPure.beliefs(d2, 'goals').length, 2, 'an upsert on a GONE id invents a brand-new belief (the hazard the card guards)');
+}
+A.ok(/const live = liveBelief\(\);\s*\n\s*if \(!live\) \{ settle\(/.test(cardBody),
+  'the card re-reads the belief at CLICK time and settles quietly when it is gone — never fabricating a new one');
+A.ok(/if \(!confirmed && live\.pinned\) \{ settle\(/.test(cardBody),
+  'a PINNED belief is never forgotten by this card (DossierStore.forget has no pin guard of its own)');
+// F3: the third chip. Both answers were terminal, so ignoring the card re-asked at every task end forever.
+A.ok(/mk\('Still true'/.test(cardBody) && /mk\('Not now'/.test(cardBody) && /mk\('Not anymore', 'deny'/.test(cardBody),
+  'the card offers three answers — including a NOT NOW, so ignoring it is not the only way to defer');
+A.ok(/GoalStore\.markOffered\(belief\)/.test(cardBody),
+  'and "not now" records the belief state as decided (the arc’s own not-now discipline: re-ask only on a change)');
+const deferIdx = cardBody.indexOf("answer === 'defer'");
+A.ok(deferIdx > 0 && cardBody.indexOf('recAccept', deferIdx) > cardBody.indexOf("settle('✓ i’ll ask again", deferIdx),
+  'a deferral folds NOTHING onto the channel (a "later" is not a verdict on the offer)');
+// F7: the arc channel is no longer a one-way ratchet
+A.ok(/if \(confirmed\) recAccept\('arc', dim, false\); else recDecline\('arc', dim, false\);/.test(cardBody),
+  'the re-confirm folds POSITIVE on confirm and a real DECLINE on deny (it used to fold "engaged" on both)');
+const offerArcBody = A.fnBody(chatSrc, 'async function offerArc(');
+A.ok(/recAccept\('arc', 'goals', false\);/.test(offerArcBody) && /recDecline\('arc', 'goals', true\);/.test(offerArcBody),
+  'and the arc’s REAL confirm flow trains the channel too — it recorded nothing at all before');
+// F5: deny's real consequence is disclosed, in the house's short-aside voice
+A.ok(/i won’t re-learn it from your work/.test(cardBody),
+  'the note discloses what DENY really does: forget() also denylists the text against being re-learned from work');
+A.ok(/label: 'STILL TRUE'/.test(cardBody), 'the label is unpunctuated like every sibling (RETIRE · GRANT · AUTONOMY · THREAD)');
+{
+  const m = /note: ([^\n]+)\n/.exec(cardBody);
+  const noteLen = m ? m[1].replace(/' \+ weeks \+ '/, '3').replace(/' \+ \(weeks === 1 \? '' : 's'\) \+ '/, 's').replace(/[',]/g, '').length : 999;
+  A.ok(noteLen < 90, 'and the note stays a short aside like its siblings (' + noteLen + ' chars, was ~180)');
+}
+// F9: the recruit channel has a real accept path and now records both directions
+A.ok(/recAccept\('recruit', '', false\);/.test(A.fnBody(chatSrc, 'function maybeRecruit(')),
+  'recruitment records its accept (it had a real accept path and folded nothing, drifting down against channels that do)');
 
 A.report('recqualitystore.test');

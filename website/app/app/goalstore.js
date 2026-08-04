@@ -208,7 +208,11 @@ const GoalStore = (() => {
   function declineDecomposition(belief) { if (ready() && belief) { markOffered(belief); save(); } }
   // record the belief state as decided (FIFO-capped, mirrors studystore's resolved set) + drop the spend-once cache
   // for it — a decided belief's cached path can never leak into a later, different offer.
+  // PUBLIC (2026-08-04): the re-confirm card's "not now" chip records the belief state as decided through this
+  // same door, so a question the Commander deferred re-surfaces only when the belief itself changes — one
+  // not-now discipline for every proactive ask about a goals belief, not two.
   function markOffered(belief) {
+    if (!ready() || !belief) return;
     const fp = beliefFingerprint(belief);
     if (!fp) return;
     if (cachedProposal && cachedProposal.fp === fp) cachedProposal = null;
@@ -217,6 +221,7 @@ const GoalStore = (() => {
       state.offeredOrder.push(fp);
       while (state.offeredOrder.length > OFFERED_CAP) { const old = state.offeredOrder.shift(); delete state.offered[old]; }
     }
+    save();   // a decision this durable is never left in memory only (confirm()'s null-path used to drop it)
   }
 
   /* ---------- THE MILESTONE → WORK-QUEST BINDING ---------- */
@@ -385,7 +390,7 @@ const GoalStore = (() => {
 
   return {
     init, reset, sync, quests, activeGoal, pushToSidecar,
-    willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition,
+    willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition, markOffered,
     acceptMilestone, reconcile, syncDrift, setFiring, isFiring, beliefFingerprint, questLive,
     _state: () => state, _onRunEnd: onRunEnd
   };

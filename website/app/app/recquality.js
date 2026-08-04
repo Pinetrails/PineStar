@@ -35,7 +35,15 @@
      state it reads is absent — and null means NEUTRAL everywhere downstream (recommend.js applies no discount).
      A cold station therefore ranks on pure priority, exactly as it did before this module existed. */
 
-  function num(v) { return Number.isFinite(Number(v)) ? Number(v) : null; }
+  /* NULL IS NOT ZERO (fixed 2026-08-04). `Number(null)`, `Number('')` and `Number(false)` are all a perfectly
+     finite 0, so an explicit `conf: null` used to read as CONFIDENCE ZERO — which marked the belief stale and
+     asked the Commander to re-confirm it — while an ABSENT conf correctly failed open to neutral. The same
+     unreadable state has to fail open the same way whichever shape it arrives in. */
+  function num(v) {
+    if (v == null || v === '' || typeof v === 'boolean') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
   // the confidence the understanding engine already computes for a dimension. This is the right strength for a
@@ -72,18 +80,25 @@
     if (!t || t <= 0 || at == null || at <= 0 || at <= t) return 1;   // undatable / future-dated → fresh
     return clamp01(Math.pow(0.5, (at - t) / HALF_LIFE_MS));
   }
+  /* FRESHNESS IS THE TRUNK; CORROBORATION ONLY MODULATES IT (reshaped 2026-08-04).
+     This was the MEAN of the two readings, under a comment claiming "a well-understood dimension cannot rescue a
+     belief the Commander last touched a season ago". The mean does not enforce that: a FIVE-YEAR-OLD belief in a
+     0.9-confidence dimension still measured 0.45 — a middling score for a citation with no life left in it — and
+     the mean's floor means age can never take the reading below 0.5 at all. Documenting that as a law the code
+     did not have would have been the app asserting something it cannot prove, so the CURVE was fixed instead of
+     the comment: this module exists to serve "stale asks, fresh asserts", and a shape where age cannot dominate
+     cannot serve it.
+     Now: strength = freshness × (0.5 + confidence/2). Confidence lives in [0.5 .. 1] as a MULTIPLIER, so it can
+     only ever discount freshness — never manufacture it — which is the same law strength obeys everywhere else
+     (weak evidence subtracts; strong evidence is not a bonus). The live finding that produced the mean survives
+     exactly: a FRESH belief in a dimension reading conf 0 still scores 0.5, never 0, because the confidence read
+     is a lagging aggregate and a seed-weighted belief scores 0 by design. Strength is a soft ordering signal. */
   function beliefStrength(belief, now, uRead, dim) {
     if (!belief) return null;
-    const f = freshness(belief, now);
+    const f = clamp01(freshness(belief, now));
     const c = dimStrength(uRead, dim);
-    if (c == null) return clamp01(f);
-    /* the MEAN of the two, deliberately not their product. A fresh belief in a thinly-understood dimension is
-       still only moderately strong, and a well-understood dimension cannot rescue a belief the Commander last
-       touched a season ago — but neither reading may zero the other out. Proved live (2026-08-04): a station
-       whose goals dimension reads conf 0 STILL holds the goal belief the arc is citing (the confidence read is
-       a lagging aggregate, and a seed-weighted belief scores 0 by design) — a product would have discounted a
-       perfectly fresh, real citation to nothing. Strength is a soft ordering signal, never a verdict. */
-    return clamp01((clamp01(f) + clamp01(c)) / 2);
+    if (c == null) return f;                       // no confidence read → freshness alone is the reading
+    return clamp01(f * (0.5 + clamp01(c) / 2));
   }
 
   /* ── STALENESS: a belief this old and this thin may be ASKED about, never ASSERTED ───────────────────────

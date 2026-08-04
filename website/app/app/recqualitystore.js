@@ -26,6 +26,12 @@
      · The floor (recquality.js Q_FLOOR ≥ 0.5) means quality alone can never silence a channel. Silencing is the
        job of the per-channel caps and the Commander's own declines — never of a number the station computed.
      · Nothing user-facing ever asserts a quality score. It orders offers; it does not narrate them.
+     · TWO CHANNELS ARE EXEMPT BY DESIGN and record no outcomes: `memory` (the run's own reflection deck) and
+       `rate` (the rating of work just done). Neither is a suggestion the station CHOSE to make — the run earns
+       them — which is the same reason recommend.js exempts both from the session ask budget. They sit permanently
+       neutral, and that is correct: there is no "was this offer worth making?" to answer about them. Every
+       channel that DOES choose to interrupt records both directions (accept and decline), so no recording
+       channel can drift down merely for being measured.
 
    Discipline mirrors curiositystore / suggeststore: a READ-ONLY citizen of the event spine (subscribes to
    agent.run.end, NEVER emits — the frozen shared/events.js contract is owned elsewhere), self-persists its own
@@ -97,21 +103,26 @@ const RecQualityStore = (() => {
   }
 
   /* ---------- the read the spine scores against ---------- */
-  // the quality multiplier for a candidate. Absent module / absent store / never-rated channel → NEUTRAL (the
-  // engine's Q_START), so a cold station ranks exactly as the pre-quality spine did. When the candidate targets a
-  // dimension that has its OWN history, the two readings are averaged — a channel is not condemned for one bad
-  // dimension, and a dimension's history is not lost inside a channel average.
+  /* the quality multiplier for a candidate. Absent module / absent store / never-rated channel → NEUTRAL (the
+     engine's Q_START), so a cold station ranks exactly as the pre-quality spine did.
+     THE DIMENSION BAG IS SHARED, AND IT IS WEIGHTED ACCORDINGLY (2026-08-04). Several channels target the same
+     dimension, so a dimension's weight carries other channels' outcomes into this one — that sharing is
+     deliberate (a dimension nobody wants to be asked about should quieten every ask aimed at it) but it is not
+     evidence about THIS channel, and a 50/50 average let one channel's declines drag an unrelated one down by
+     half. Now the channel's own record is the reading (0.75) and the shared dimension only tilts it (0.25).
+     A channel with no record of its own still reads its dimension alone — that is the only signal there is. */
+  const DIM_SHARE = 0.25;
   function weightFor(channel, dim) {
     const rq = engine();
     const neutral = rq ? rq.Q_START : 1;
     if (!ready()) return neutral;
     const c = state.ch[String(channel || '')];
     const d = dim ? state.dim[String(dim)] : undefined;
-    const readings = [];
-    if (Number.isFinite(c)) readings.push(c);
-    if (Number.isFinite(d)) readings.push(d);
-    if (!readings.length) return neutral;
-    return rq.clampQuality(readings.reduce((a, b) => a + b, 0) / readings.length);
+    const hasC = Number.isFinite(c), hasD = Number.isFinite(d);
+    if (!hasC && !hasD) return neutral;
+    if (!hasD) return rq.clampQuality(c);
+    if (!hasC) return rq.clampQuality(d);
+    return rq.clampQuality(c * (1 - DIM_SHARE) + d * DIM_SHARE);
   }
 
   /* ---------- folding a real outcome ---------- */

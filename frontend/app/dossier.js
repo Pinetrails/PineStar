@@ -93,7 +93,17 @@
     const arr = dossier.dims[dim] || (dossier.dims[dim] = []);
     if (belief.id) {
       const cur = arr.find(b => b.id === belief.id);
-      if (cur) { cur.text = text; cur.updatedAt = now; dossier.updatedAt = now; return dossier; }
+      if (cur) {
+        cur.text = text; cur.updatedAt = now;
+        /* A CALLER MAY RE-STAMP PROVENANCE ON AN EXISTING BELIEF (2026-08-04). Only updatedAt moved before, which
+           left a belief the Commander had just CONFIRMED OUT LOUD still recorded as the mechanical seed it started
+           as (EVIDENCE_WEIGHT.seed = 0) — so its dimension's confidence never rose, it read stale again three
+           weeks later, and the station asked "still true?" about the same belief every three weeks forever. The
+           re-stamp is truthful: the Commander really did just state it. Omit source/weight and nothing moves. */
+        if (belief.source && typeof belief.source === 'string') cur.source = belief.source;
+        if (isWeight(belief.weight)) cur.weight = belief.weight;
+        dossier.updatedAt = now; return dossier;
+      }
     }
     arr.push({
       id: nextId(dossier), text,
