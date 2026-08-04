@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "2014ce6c165b2a5909ef1ae684ae8f81388f4b70",
+    "sourceCommit": "0b7e8a357e4d6ae886079bf7d8e336a4879adcc9",
     "pathSetSha256": "89e6003e522968bcad962342da9a8f804428421941c53bee645ea14476601001",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 479871,
-        "sha256": "2563046d7f4def95785a0d2e458078484deea095e13987197f282d461e27262a"
+        "bytes": 490825,
+        "sha256": "1dda12f934d2d5d40a139a271284cb4db717968b84d814b3ab4d5081e33eb6fd"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 220585,
-        "sha256": "563ac9b65b99bfb9540862fc64920bc328b388737cb89b56295cf00becead0dc"
+        "bytes": 220960,
+        "sha256": "f57409c1bd266aa3dd71ff5ff03e77e6fe4d8f196ef1bfe78371433e4d15b0a0"
       },
       {
         "path": "frontend/app/mint.js",
@@ -673,8 +673,8 @@
       },
       {
         "path": "frontend/app/study.js",
-        "bytes": 22887,
-        "sha256": "225519cab41c1904896afd067f0228b53fbb1c3e7815a0f483495ca9bccf6df3"
+        "bytes": 21284,
+        "sha256": "51f3e1e63ea9b926c4fc6dcb5f11708ce9220960c7709f879460b885942f0196"
       },
       {
         "path": "frontend/app/studystore.js",
@@ -893,8 +893,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 259081,
-        "sha256": "f3a9b04c117aa09537f7bc542919749aa2cb3550369dd7860e66af9b53ee605c"
+        "bytes": 261869,
+        "sha256": "2beca76f3270c5e3b723e23872587ead441cb864b7a4fabec5ce648993ae2bf0"
       },
       {
         "path": "frontend/css/asciifx.css",
