@@ -55,7 +55,7 @@ function processStats(pid) {
 
 async function main() {
   const opts = argsOf(process.argv.slice(2));
-  for (const key of ['runtime-root', 'workspaces', 'manifest', 'contract', 'fixtures', 'tasks', 'signing-key', 'output', 'receipt', 'output-dir']) if (!opts[key]) throw new Error(`missing --${key}`);
+  for (const key of ['desktop-executable', 'runtime-root', 'workspaces', 'manifest', 'contract', 'fixtures', 'tasks', 'signing-key', 'output', 'receipt', 'output-dir']) if (!opts[key]) throw new Error(`missing --${key}`);
   const durationHours = finite(opts['duration-hours'], 48), healthIntervalSeconds = finite(opts['health-interval-seconds'], 60), activeIntervalSeconds = finite(opts['active-interval-seconds'], 3600);
   if (!(durationHours >= 48) && opts['allow-short-smoke'] !== '1') throw new Error('a qualifying provider-backed soak must run for at least 48 hours');
   if (!(healthIntervalSeconds >= 10) || !(activeIntervalSeconds >= healthIntervalSeconds)) throw new Error('invalid soak sampling intervals');
@@ -68,6 +68,8 @@ async function main() {
   const runtimePaths = subject.provenance?.runtime?.paths || ['frontend', 'sidecar', 'shared'];
   const initialRuntimeFingerprint = installedRuntimeFingerprint(opts['runtime-root'], runtimePaths);
   const executablePath = resolve(subject.executable.path), expectedExecutableSha256 = subject.executable.sha256;
+  const desktopExecutable = resolve(opts['desktop-executable']);
+  if (desktopExecutable !== executablePath) throw new Error('soak desktop executable does not match the candidate manifest path');
   const fixtureServer = await startFixtureMcpServer(); let driver = null, interrupted = false;
   const startedAt = Date.now(), deadline = startedAt + durationHours * 3600000;
   const report = {
@@ -80,8 +82,8 @@ async function main() {
   const stop = () => { interrupted = true; };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   try {
-    driver = await startStarNetDriver({ root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, port, timeoutMs: 300000 });
-    if (driver.identity.health?.status !== 'ok') throw new Error('installed soak sidecar health is not ok');
+    driver = await startStarNetDriver({ desktopExecutable, root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, port, timeoutMs: 300000 });
+    if (driver.identity.mode !== 'installed-desktop' || driver.identity.health?.status !== 'ok' || String(driver.identity.health?.version || '') !== String(subject.provenance.describe)) throw new Error('installed desktop soak health identity does not match the manifest');
     report.runtime.rawHealthVersion = String(driver.identity.health?.version || '');
     report.pid = driver.process.pid; let nextHealth = Date.now(), nextActive = Date.now(), activeAttempt = 0;
     while (!interrupted && Date.now() < deadline) {
@@ -105,7 +107,8 @@ async function main() {
       if (Date.now() >= nextHealth) {
         const at = Date.now(); let ok = false, status = 0, version = '', error = '';
         let executableHashMatch = false;
-        try { const response = await fetch(driver.base + '/health', { signal: AbortSignal.timeout(5000) }); status = response.status; const body = await response.json(); version = String(body.version || ''); executableHashMatch = hashFile(executablePath) === expectedExecutableSha256; ok = response.ok && body.status === 'ok' && executableHashMatch; }
+        try { executableHashMatch = hashFile(executablePath) === expectedExecutableSha256; } catch (caught) { error = String(caught.message || caught).slice(0, 240); }
+        try { const response = await fetch(driver.base + '/health', { signal: AbortSignal.timeout(5000) }); status = response.status; const body = await response.json(); version = String(body.version || ''); ok = response.ok && body.status === 'ok' && version === String(subject.provenance.describe) && executableHashMatch; }
         catch (caught) { error = String(caught.message || caught).slice(0, 240); }
         const stats = processStats(driver.process.pid), exited = driver.process.exitCode != null;
         report.samples.push({ at: iso(at), ok, status, version, executableHashMatch, rssBytes: stats.rssBytes, cpuSeconds: stats.cpuSeconds, exited, error });

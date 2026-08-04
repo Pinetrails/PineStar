@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { spawn, spawnSync } from 'node:child_process';
 import { spawnAcpClient } from './acp-client.mjs';
@@ -20,8 +20,14 @@ function promptSha256(prompt) {
   return createHash('sha256').update(prompt, 'utf8').digest('hex');
 }
 
-async function terminateChild(child) {
+async function terminateChild(child, opts = {}) {
   if (!child || child.exitCode != null) return;
+  if (process.platform === 'win32' && opts.gracefulWindow && Number.isInteger(child.pid)) {
+    const script = `$p=Get-Process -Id ${child.pid} -ErrorAction SilentlyContinue;if($p){$null=$p.CloseMainWindow()}`;
+    spawnSync('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true, stdio: 'ignore', timeout: 10000 });
+    await Promise.race([new Promise(done => child.once('exit', done)), sleep(5000)]);
+    if (child.exitCode != null) return;
+  }
   if (process.platform === 'win32' && Number.isInteger(child.pid)) {
     spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 10000 });
   } else {
@@ -32,7 +38,7 @@ async function terminateChild(child) {
 
 async function waitHealth(base, child) {
   for (let attempt = 0; attempt < 180; attempt++) {
-    if (child.exitCode != null) throw new Error(`StarNet sidecar exited ${child.exitCode} before health`);
+    if (child.exitCode != null) throw new Error(`StarNet process exited ${child.exitCode} before health`);
     try { const response = await fetch(base + '/health', { signal: AbortSignal.timeout(1000) }); if (response.ok) return response.json(); } catch (_) {}
     await sleep(100);
   }
@@ -91,8 +97,11 @@ export async function startStarNetDriver(opts) {
   const port = Number(opts.port || (19200 + (process.pid % 600))), base = `http://127.0.0.1:${port}`;
   const stdout = createWriteStream(resolve(opts.outputDir, 'campaign-starnet.out.log'), { flags: 'a' });
   const stderr = createWriteStream(resolve(opts.outputDir, 'campaign-starnet.err.log'), { flags: 'a' });
-  const child = spawn(join(root, 'node.exe'), [join(root, 'sidecar', 'index.js')], {
-    cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  const desktopExecutable = opts.desktopExecutable ? resolve(opts.desktopExecutable) : null;
+  const command = desktopExecutable || join(root, 'node.exe');
+  const args = desktopExecutable ? [] : [join(root, 'sidecar', 'index.js')];
+  const child = spawn(command, args, {
+    cwd: desktopExecutable ? dirname(desktopExecutable) : root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     env: Object.assign({}, process.env, {
       STARNET_WORKSPACES: workspaces, STARNET_PORT: String(port), STARNET_DEFAULT_MODEL: MODEL,
       STARNET_FULL_ACCESS: '1', SKYNET_FULL_ACCESS: '1', STARNET_CRON_ARMED: '0', SKYNET_CRON_ARMED: '0'
@@ -106,7 +115,7 @@ export async function startStarNetDriver(opts) {
 
   return {
     process: child, base,
-    identity: { harness: 'starnet', model: MODEL, provider: PROVIDER, health },
+    identity: { harness: 'starnet', mode: desktopExecutable ? 'installed-desktop' : 'installed-runtime', model: MODEL, provider: PROVIDER, health },
     async run({ fixture, state, root: fixtureRoot, attempt }) {
       const startedAt = new Date().toISOString(), prompt = submittedPrompt(fixture.prompt);
       const response = await fetch(base + '/api/run', {
@@ -130,7 +139,7 @@ export async function startStarNetDriver(opts) {
     },
     async close() {
       try { await api(base, token, '/api/connectors/remove', { id: CONNECTOR_ID }); } catch (_) {}
-      await terminateChild(child);
+      await terminateChild(child, { gracefulWindow: !!desktopExecutable });
       stdout.end(); stderr.end();
     }
   };

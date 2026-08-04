@@ -22,5 +22,6 @@ const A = require('./_assert.js');
     A.ok(first.sha256 !== second.sha256, 'runtime fingerprint detects content drift');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
   A.ok(/identityFailures === 0/.test(source) && /executableHashMatch/.test(source) && /runtimeFingerprintMatch/.test(source), 'candidate identity drift fails the soak');
+  A.ok(/desktop-executable/.test(source) && /desktopExecutable/.test(source) && /installed-desktop/.test(source), 'qualifying soak launches and observes the installed desktop rather than an orphan sidecar');
   A.report('eval-installed-provider-soak.test');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

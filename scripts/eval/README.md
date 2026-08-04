@@ -118,7 +118,7 @@ set `qualifiesRelease:true` for a shorter duration, a missing provider call, a f
 an unexpected exit, or less than 99% planned sample coverage.
 
 ```powershell
-node scripts/eval/installed-provider-soak.mjs --runtime-root <installed-root> --workspaces <active-credential-workspaces> --manifest <starnet-manifest.json> --contract scripts/eval/contracts/v0.9.0.json --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --tasks scripts/eval/packs/parity-v0.9.0.jsonl --signing-key <receipt-private.pem> --output <soak.json> --receipt <soak-receipt.json> --output-dir <evidence-dir> --duration-hours 48 --health-interval-seconds 60 --active-interval-seconds 3600
+node scripts/eval/installed-provider-soak.mjs --desktop-executable <installed-skynet-desktop.exe> --runtime-root <installed-root> --workspaces <active-credential-workspaces> --manifest <starnet-manifest.json> --contract scripts/eval/contracts/v0.9.0.json --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --tasks scripts/eval/packs/parity-v0.9.0.jsonl --signing-key <receipt-private.pem> --output <soak.json> --receipt <soak-receipt.json> --output-dir <evidence-dir> --duration-hours 48 --health-interval-seconds 60 --active-interval-seconds 3600
 ```
 
 Capture the provisional source-harness performance baseline with:
