@@ -339,12 +339,18 @@ const S = require('../frontend/app/study.js');
   A.ok(/const winner = Recommend\.pick\(cands, recUnderstanding\(\)\);/.test(passBody),
     'the winner is chosen by the pure spine, not by an arm-delay race');
   const iStudyCand = chatSrc.indexOf('async function studyCandidate');
-  A.ok(iStudyCand > 0 && /slotCanStudy\(\) !== 'free'\) return null;/.test(chatSrc.slice(iStudyCand, iStudyCand + 700)),
+  A.ok(iStudyCand > 0 && /slotCanStudy\(runId\) !== 'free'\) return null;/.test(chatSrc.slice(iStudyCand, iStudyCand + 700)),
     'the study candidate cedes the moment to a reserved memory claim (MEMORY WINS, now by reservation not by delay)');
   A.ok(/if \(study && winner !== study\) queueStudy\(runId, agentId\);/.test(passBody),
     'a study offer that LOSES the moment is re-queued (deferred, never starved)');
-  A.ok(/if \(momentBlocked\(\)\) \{ if \(study\) queueStudy\(runId, agentId\);/.test(passBody),
+  A.ok(/if \(momentBlocked\(\)\) \{ queueStudy\(runId, agentId\); queueThread\(runId, agentId\); return; \}/.test(passBody),
     'a moment that went blocked during the fetch queues the offer instead of dropping it');
+  /* TWO ARMS (B3/B4): the study candidate collects at the SLOW arm, because at 1.6s the run's own study batch
+     is not stashed yet and /api/study/proposals falls back to the PREVIOUS run's — every card was one run stale. */
+  A.ok(/const BEAT_SLOW_ARM_MS = 12000;/.test(chatSrc), 'the fetch-backed turn-ins collect once their stash exists');
+  A.ok(/recommendPass\(p, 'slow'\); \}, BEAT_SLOW_ARM_MS/.test(chatSrc), 'the slow arm is what stages the study candidate');
+  A.ok(/slotCanStudy\(runId\) !== 'free'\) return null;/.test(chatSrc.slice(iStudyCand, iStudyCand + 700)),
+    'the candidate identifies itself by runId so the pass’s OWN reservation cannot veto it (the self-veto that killed the thread channel)');
   A.ok(/scheduleExpire\('study', 900\);[\s\S]{0,100}setTimeout\(flushStudyPending, 900\)/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)),
     'each run end expires an undecided study card (the ignore verdict) THEN drains one deferred beat (anti-starve)');
   // finding-4 lifecycle: the expiry tallies StudyStore.ignore for the shown proposal and frees the slot

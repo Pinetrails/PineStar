@@ -46,6 +46,19 @@
     suggest: 'nudge', seed: 'nudge', routine: 'nudge', recruit: 'nudge', curiosity: 'nudge'
   };
 
+  /* THE SESSION ASK BUDGET. Per-channel caps are the second floor, but nothing bounded the TOTAL number of
+     unprompted consent cards a single browser session could stack up — five channels each spending their own
+     one-per-session cap is still five interruptions. This is the spine-level ceiling on PROACTIVE asks.
+     TUNABLE: raise/lower this one number to make the station more or less talkative.
+     Two kinds are EXEMPT because the run itself earns them rather than the station choosing to interrupt:
+       · memory — the Commander's own reflection deck; it is the run reporting back, and it never routes
+                  through the pass at all (it reserves the slot directly on memory.proposed).
+       · rate   — the primary leveling beat for work that was just done, and the one control the Commander
+                  is asking FOR when they finish a task. */
+  const SESSION_ASK_MAX = 4;
+  const ASK_EXEMPT = { memory: true, rate: true };
+  function asksBudget(kind) { return !Object.prototype.hasOwnProperty.call(ASK_EXEMPT, String(kind || '')); }
+
   const BASE_STEP = 100;   // one full priority tier
   const VOI_MAX = 60;      // value-of-information term ceiling (< BASE_STEP: never flips a tier)
   const STREAK_STEP = 5;   // per corroborating signal…
@@ -127,8 +140,8 @@
   }
 
   return {
-    score, pick, whyLine, citable, rank, slotKindOf,
+    score, pick, whyLine, citable, rank, slotKindOf, asksBudget,
     PRIORITY: PRIORITY.slice(), SLOT_KIND: Object.assign({}, SLOT_KIND),
-    BASE_STEP, VOI_MAX
+    BASE_STEP, VOI_MAX, SESSION_ASK_MAX
   };
 });

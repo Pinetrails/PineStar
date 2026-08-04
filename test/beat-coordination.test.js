@@ -23,10 +23,42 @@ const Recommend = require('../frontend/app/recommend.js');
 const iPass = chatSrc.indexOf('async function recommendPass');
 A.ok(iPass > 0, 'chat.js drives ONE post-run collection pass (the recommendation spine)');
 const iWireAnchor = chatSrc.indexOf('function wireCuriosity');
-A.ok(iWireAnchor > iPass, 'chat.js still defines wireCuriosity (the single arm point for the pass)');
+A.ok(iWireAnchor > iPass, 'chat.js still defines wireCuriosity (the one place the pass is armed)');
 const passBody = chatSrc.slice(iPass, iWireAnchor);
-A.ok(/setTimeout\(\(\) => \{ recommendPass\(p\); \}, BEAT_ARM_MS\)/.test(chatSrc.slice(iWireAnchor, iWireAnchor + 900)),
-  'a clean run end arms the pass ONCE (no per-channel arm delays left to race)');
+/* TWO ARMS, ONE ARBITER. A single 1.6s arm broke the two channels whose evidence the run must first PRODUCE:
+   memory.proposed lands seconds later (so "memory wins" was a fiction — a turn-in took the free slot and the
+   consent deck queued behind it, invisible), and the study/thread stashes weren't written yet (so every study
+   card offered the PREVIOUS run's batch). The rating keeps the fast arm — it needs nothing but the run's own
+   counters, and that is the precedence parity the old 650ms ladder gave it. Everything else collects late. */
+const iWire = chatSrc.slice(iWireAnchor, iWireAnchor + 1400);
+A.ok(/setTimeout\(\(\) => \{ recommendPass\(p, 'fast'\); \}, BEAT_ARM_MS\)/.test(iWire),
+  'a clean run end arms the FAST pass (the rate beat — nothing to wait for)');
+A.ok(/setTimeout\(\(\) => \{ recommendPass\(p, 'slow'\); \}, BEAT_SLOW_ARM_MS\)/.test(iWire),
+  'and the SLOW pass, once reflection has landed and both turn-in stashes are written');
+A.ok(/const BEAT_ARM_MS = 1600;/.test(chatSrc) && /const BEAT_SLOW_ARM_MS = 12000;/.test(chatSrc),
+  'the slow arm is the old STUDY_ARM_MS reality (12s), the fast arm stays at 1.6s');
+A.ok(/const slow = phase === 'slow';/.test(passBody), 'the ONE pass body serves both arms (one arbiter, never two)');
+A.ok(passBody.indexOf('rateCandidate(agentId, runId)') < passBody.indexOf('arcCandidate(runId)'),
+  'the FAST arm collects the rating; every fetch-backed / produced-evidence channel collects on the SLOW arm');
+// MEMORY WINS BY RESERVATION, not by an arm delay: memory.proposed reserves the slot the instant it fires, so a
+// turn-in that has not rendered yet stands down, and one that HAS rendered is queued behind — never replaced.
+const iWireProp = chatSrc.indexOf('function wireProposals');
+A.ok(iWireProp > 0 && /slotMemoryProposed\(runId\);/.test(chatSrc.slice(iWireProp, iWireProp + 1400)),
+  'memory.proposed RESERVES the beat slot the instant it fires (it needs no arm at all)');
+// THE SESSION ASK BUDGET: a spine-level ceiling on proactive consent cards, with memory + rate exempt.
+A.eq(Recommend.SESSION_ASK_MAX, 4, 'the spine caps proactive consent cards per browser session');
+A.eq(Recommend.asksBudget('memory'), false, 'a reflection deck is earned by the run, never budgeted');
+A.eq(Recommend.asksBudget('rate'), false, 'so is the rating of work just done');
+for (const k of ['study', 'arc', 'trust', 'thread', 'suggest', 'seed', 'routine', 'recruit', 'curiosity']) {
+  A.eq(Recommend.asksBudget(k), true, k + ' spends the session ask budget');
+}
+A.ok(/if \(askBudgetSpent\(\)\) \{[\s\S]{0,40}return;|\} else if \(askBudgetSpent\(\)\) \{/.test(passBody),
+  'a spent budget makes the pass silent for every consent channel');
+A.ok(/Recommend\.asksBudget\(winner\.kind\)\) sessionAsks \+= 1;/.test(passBody),
+  'the budget is spent by a card that actually FIRED, never by one that merely collected');
+// S1: a blocked moment defers the run's turn-ins instead of destroying them
+A.ok(/if \(slow && isHeroRun && runId\) \{ queueStudy\(runId, agentId\); queueThread\(runId, agentId\); \}/.test(passBody),
+  'a blocked moment QUEUES this run\'s study + thread (the pre-spine listeners deferred them; returning dropped them forever)');
 
 // the pass asks the PURE spine who speaks, and exactly one candidate ever fires
 A.ok(/const winner = Recommend\.pick\(cands, recUnderstanding\(\)\);/.test(passBody),
@@ -63,18 +95,18 @@ for (const fn of ['arcCandidate', 'trustCandidate', 'rateCandidate', 'suggestCan
 const iMoment = chatSrc.indexOf('function momentBlocked');
 A.ok(iMoment > 0 && /studyBlocked\(\) \|\| taskQuestionLive\(\)/.test(chatSrc.slice(iMoment, iMoment + 260)),
   'momentBlocked is the ONE stand-down set (the old study/arc guards + the live-question rule)');
-A.ok(/if \(momentBlocked\(\)\) return;/.test(passBody), 'the pass stands down on a blocked moment');
+A.ok(/if \(momentBlocked\(\)\) \{/.test(passBody), 'the pass stands down on a blocked moment');
 const iBlocked0 = chatSrc.indexOf('function studyBlocked');
 A.ok(iBlocked0 > 0 && /Dialogue\.isOpen/.test(chatSrc.slice(iBlocked0, iBlocked0 + 700)),
   'the shared stand-down set includes a focused Dialogue panel (First Pitch / awakening / tutorial)');
 
 // the gentle half stays HERO-ONLY; the rating does not (S1 specialist rate-starve fix, re-locked by order)
-A.ok(/if \(gentleOk && isHeroRun\) \{/.test(passBody), 'the gentle-nudge half of the pass is hero-only');
+A.ok(/if \(!turninOwnsMoment\(runId\) && isHeroRun\) \{/.test(passBody), 'the gentle-nudge half of the pass is hero-only');
 const iArmInPass = passBody.indexOf('armRateFallback(agentId, runId)');
-A.ok(iArmInPass > 0 && iArmInPass < passBody.indexOf('if (momentBlocked()) return;'),
+A.ok(iArmInPass > 0 && iArmInPass < passBody.indexOf('if (momentBlocked()) {'),
   'armRateFallback is armed BEFORE every stand-down guard (a blocked moment cannot skip arming)');
 A.ok(passBody.indexOf('rateCandidate(agentId, runId)') > 0
-  && passBody.indexOf('rateCandidate(agentId, runId)') < passBody.indexOf('if (gentleOk && isHeroRun)'),
+  && passBody.indexOf('rateCandidate(agentId, runId)') < passBody.indexOf('if (!turninOwnsMoment(runId) && isHeroRun)'),
   'the rate candidate is staged before the hero gate (a specialist run can still be rated)');
 // a new gentle beat retires any prior unanswered one (no cross-run nudge stacking), and clearNudge is exported
 // so the First Pitch can retire a live nudge before its focused panel opens over it.
@@ -175,7 +207,7 @@ A.ok(/'blocked'\s*&&\s*left > 0\)\s*attempt\(left - 1\)/.test(chatSrc.slice(iArm
   'the fallback re-attempts while transiently blocked (a tutorial panel delays, never starves, the rating)');
 // (the arm-before-guards ORDER inside the pass is locked in section 1; here we only re-assert it exists)
 const iRunEnd = chatSrc.indexOf('armRateFallback(agentId, runId)');
-const iBusyGuard = chatSrc.indexOf('if (momentBlocked()) return;');
+const iBusyGuard = chatSrc.indexOf('if (momentBlocked()) {');
 A.ok(iRunEnd > 0 && iBusyGuard > 0 && iRunEnd < iBusyGuard,
   'the fallback is armed BEFORE the post-run slot\'s stand-down guards (a blocked moment cannot skip arming)');
 // hole 1: proposed-but-empty batch (no deck AND no receipts) — the no-deck branch of routeProposalBatch must

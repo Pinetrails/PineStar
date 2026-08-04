@@ -4216,8 +4216,40 @@ const Chat = (() => {
      lives in that channel's own store and is spent by its own fire path. The spine only decides WHO speaks.
      A channel that LOSES the moment is not consumed — study/thread go back on their FIFO queues, and every
      other channel's predicate simply reads true again at the next task end. */
-  const BEAT_ARM_MS = 1600;   // the ONE arm point: long enough for the reply to finish rendering, short
-                              // enough that the rate beat still feels like part of the run that earned it.
+  /* ── TWO ARMS, ONE ARBITER ──────────────────────────────────────────────────────────────────────────
+     A single 1.6s arm was WRONG for half the channels, in a way that silently broke two of them:
+
+       · MEMORY WINS was a fiction. memory.proposed is emitted only after the sidecar's reflection aux call
+         returns — SECONDS after the run ends. At 1.6s the slot was still free, a turn-in claimed it, and the
+         consent deck the Commander actually cares about queued behind a lower-value card, invisible.
+       · THE STUDY STASH WASN'T WRITTEN YET. /api/study/proposals falls back to the agent's PREVIOUS batch
+         when this run's isn't stashed, so at 1.6s every study card offered the LAST run's belief and each
+         run's own batch never got offered at its own moment. Same for the thread mine.
+
+     So the pass runs TWICE per run end, and each channel collects at the arm where its evidence is real:
+
+       FAST (1.6s) — the RATE beat only. It needs nothing but the run's own work counters, which are already
+         on hand, and it is the beat the Commander is waiting for; this also restores the precedence the old
+         650ms ladder gave it, without letting it win by being early (it is still ranked, not raced).
+       SLOW (12s)  — everything the run must first PRODUCE: the fetch-backed turn-ins (study, thread), the
+         arc and trust offers, and the gentle channels. 12s is the old STUDY_ARM_MS reality — by then
+         reflection has landed (or reserved the slot) and both stashes are written. The arc gets its focused
+         Dialogue at this arm too, rather than popping 1.6s after the reply.
+
+     memory is unchanged and needs no arm: memory.proposed RESERVES the slot the instant it fires, so a turn-in
+     that hasn't rendered yet stands down, and one that HAS already rendered is queued behind — never replaced. */
+  const BEAT_ARM_MS = 1600;          // FAST arm — the rate beat (nothing to wait for)
+  const BEAT_SLOW_ARM_MS = 12000;    // SLOW arm — reflection has landed and both stashes are written
+
+  /* the SESSION ASK BUDGET (Recommend.SESSION_ASK_MAX): the spine-level ceiling on proactive CONSENT cards for
+     this browser session. Per-channel caps remain the second floor; this bounds their SUM, because five
+     channels each spending their own one-per-session cap is still five interruptions. memory and rate are
+     exempt (Recommend.asksBudget) — the run itself earns those. */
+  let sessionAsks = 0;
+  function askBudgetSpent() {
+    const cap = (typeof Recommend !== 'undefined' && Number.isFinite(Recommend.SESSION_ASK_MAX)) ? Recommend.SESSION_ASK_MAX : 4;
+    return sessionAsks >= cap;
+  }
 
   // the understanding read the spine scores value-of-information against. Fail-open: a cold/absent store
   // means no VOI bonus at all (pure priority order) — never a fabricated one.
@@ -4365,71 +4397,88 @@ const Chat = (() => {
     return { kind: 'thread', why: why, fire: () => { threadCard(prop, agentId, batch.runId || runId); } };
   }
 
-  /* THE PASS. Runs once per clean run end, at the single arm point. */
-  async function recommendPass(p) {
+  /* THE PASS. Runs TWICE per clean run end — once at the FAST arm (phase !== 'slow': the rate beat, which
+     needs nothing the run has yet to produce) and once at the SLOW arm ('slow': every channel whose evidence
+     the run must first WRITE). Both phases share the one arbiter and fire at most one candidate between them. */
+  async function recommendPass(p, phase) {
+    const slow = phase === 'slow';
     const agentId = (p && p.agentId) || 'agent';
     const isHeroRun = agentId === 'agent';
     const runId = (p && (p.runId || p.id)) || null;
     // G2.4: arm the self-retrying rate fallback FIRST, before any stand-down guard — a focused tutorial
     // panel / busy stream / open deck may block THIS moment, but the rating for a run that did real work
-    // must eventually fire (permanent ineligibility stops it inside).
-    if (runId) armRateFallback(agentId, runId);
-    if (momentBlocked()) return;
+    // must eventually fire (permanent ineligibility stops it inside). Armed once, on the fast arm.
+    if (!slow && runId) armRateFallback(agentId, runId);
+    if (momentBlocked()) {
+      /* A BLOCKED MOMENT MUST NOT DROP THE RUN'S TURN-INS. Returning here discarded this run's study and
+         thread offers FOREVER (the pre-spine listeners queued them). Enqueue the markers instead — the
+         existing FIFO flush paths re-fetch and re-offer them at a later, free moment. */
+      if (slow && isHeroRun && runId) { queueStudy(runId, agentId); queueThread(runId, agentId); }
+      return;
+    }
     if (typeof Recommend === 'undefined' || !Recommend.pick) return;        // no spine → no proactive beat
     const lifecycle = beatCards, gen = lifecycle ? lifecycle.generation() : 0;
     const stale = () => !lifecycle || beatCards !== lifecycle || lifecycle.generation() !== gen;
 
     const cands = [];
-    // ── the TURN-IN half: hero-only, gated by the shared arbiter + the stand-down guards ──
-    if (isHeroRun) {
-      const arc = arcCandidate(runId); if (arc) cands.push(arc);
-      const trust = trustCandidate(runId); if (trust) cands.push(trust);
-    }
-    /* ── the GENTLE + RATE half. It carries one floor the turn-ins never did: this run's memory turn-in
-          owns the moment, and a real turn-in deck still sitting in the feed suppresses a fresh ask (the
-          visible dogpile). Standing down cannot STARVE the rating — armRateFallback was armed above. ── */
-    const gentleOk = !turninOwnsMoment(runId);
-    if (gentleOk) { const rate = rateCandidate(agentId, runId); if (rate) cands.push(rate); }
-    // from here down it stays HERO-ONLY: a summoned worker's clean run must never fire a suggestion /
-    // seed / routine / recruitment / curiosity ask against the hero's dossier.
-    if (gentleOk && isHeroRun) {
-      // FIRE ON SALIENCE: a basic conversational turn (not a task) earns NO gentle beat — mirrors the
-      // server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
-      const meta = runId ? runMeta(runId) : null;
-      if (!meta || meta.isTask) {
-        // WORK-EARNED ASK FLOOR: a real task-run banks toward the session's ask budget, and no gentle
-        // unsolicited beat fires until the station has completed Curiosity.MIN_WORK task-runs this session.
-        if (typeof CuriosityStore !== 'undefined' && CuriosityStore.noteWork) CuriosityStore.noteWork();
-        const earned = !(typeof CuriosityStore !== 'undefined' && CuriosityStore.earned && !CuriosityStore.earned());
-        if (earned) {
-          const s = suggestCandidate(); if (s) cands.push(s);                 // SuggestStore.willSuggest()
-          const sd = seedCandidate(); if (sd) cands.push(sd);                 // SeedStore.willPropose()
-          if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.onRunEnd) { try { RoutineNudgeStore.onRunEnd(); } catch (_) {} }
-          const rt = routineCandidate(); if (rt) cands.push(rt);              // RoutineNudgeStore.willPropose()
-          const rc = recruitCandidate(); if (rc) cands.push(rc);              // RecruiterStore.topPick()
-          const cu = curiosityCandidate(); if (cu) cands.push(cu);            // CuriosityStore.consider()
+    let study = null, thread = null;
+    /* ── THE FAST ARM: the rating, and only the rating. It carries one floor the turn-ins never did: this
+          run's memory turn-in owns the moment, and a real turn-in deck still sitting in the feed suppresses
+          a fresh ask (the visible dogpile). Standing down cannot STARVE it — armRateFallback ran above. ── */
+    if (!slow) {
+      if (turninOwnsMoment(runId)) return;
+      const rate = rateCandidate(agentId, runId); if (rate) cands.push(rate);
+    } else if (askBudgetSpent()) {
+      return;   // the session's proactive-ask budget is spent: the station stays quiet for every consent channel
+    } else {
+      // ── the TURN-IN half: hero-only, gated by the shared arbiter + the stand-down guards ──
+      if (isHeroRun) {
+        const arc = arcCandidate(runId); if (arc) cands.push(arc);
+        const trust = trustCandidate(runId); if (trust) cands.push(trust);
+      }
+      // the GENTLE half — same visible-dogpile floor the rating honors, and HERO-ONLY: a summoned worker's
+      // clean run must never fire a suggestion / seed / routine / recruitment / curiosity ask against the
+      // hero's dossier.
+      if (!turninOwnsMoment(runId) && isHeroRun) {
+        // FIRE ON SALIENCE: a basic conversational turn (not a task) earns NO gentle beat — mirrors the
+        // server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
+        const meta = runId ? runMeta(runId) : null;
+        if (!meta || meta.isTask) {
+          // WORK-EARNED ASK FLOOR: a real task-run banks toward the session's ask budget, and no gentle
+          // unsolicited beat fires until the station has completed Curiosity.MIN_WORK task-runs this session.
+          if (typeof CuriosityStore !== 'undefined' && CuriosityStore.noteWork) CuriosityStore.noteWork();
+          const earned = !(typeof CuriosityStore !== 'undefined' && CuriosityStore.earned && !CuriosityStore.earned());
+          if (earned) {
+            const s = suggestCandidate(); if (s) cands.push(s);                 // SuggestStore.willSuggest()
+            const sd = seedCandidate(); if (sd) cands.push(sd);                 // SeedStore.willPropose()
+            if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.onRunEnd) { try { RoutineNudgeStore.onRunEnd(); } catch (_) {} }
+            const rt = routineCandidate(); if (rt) cands.push(rt);              // RoutineNudgeStore.willPropose()
+            const rc = recruitCandidate(); if (rc) cands.push(rc);              // RecruiterStore.topPick()
+            const cu = curiosityCandidate(); if (cu) cands.push(cu);            // CuriosityStore.consider()
+          }
         }
       }
-    }
 
-    /* ── the FETCH-BACKED turn-ins. They outrank everything below memory, so their REAL evidence has to be
-          on the table before the spine decides. Both are local reads of a stash the sidecar already wrote
-          during the run (no model spend). Their kinds are RESERVED across the await so nothing lower can
-          take the slot mid-fetch, and the reservations are released the moment the fetch resolves. ── */
-    let study = null, thread = null;
-    if (isHeroRun && runId && !stale()) {
-      lifecycle.reserve('study', runId); lifecycle.reserve('thread', runId);
-      try {
-        const both = await Promise.all([studyCandidate(runId, agentId), threadCandidate(runId, agentId)]);
-        study = both[0]; thread = both[1];
-      } catch (_) {}
-      if (!stale()) { lifecycle.releaseReservation('study', runId); lifecycle.releaseReservation('thread', runId); }
+      /* ── the FETCH-BACKED turn-ins. They outrank everything below memory, so their REAL evidence has to be
+            on the table before the spine decides. Both are local reads of a stash the sidecar wrote during the
+            run (no model spend) — and at THIS arm that stash is the run's OWN batch, not the previous run's.
+            Their kinds are RESERVED across the await so nothing lower can take the slot mid-fetch; the pass
+            passes its own runId as the self-key everywhere so those reservations never veto its own
+            candidates (beatcard.js can()), and they are released the moment the fetch resolves. ── */
+      if (isHeroRun && runId && !stale()) {
+        lifecycle.reserve('study', runId); lifecycle.reserve('thread', runId);
+        try {
+          const both = await Promise.all([studyCandidate(runId, agentId), threadCandidate(runId, agentId)]);
+          study = both[0]; thread = both[1];
+        } catch (_) {}
+        if (!stale()) { lifecycle.releaseReservation('study', runId); lifecycle.releaseReservation('thread', runId); }
+      }
+      if (stale()) return;                  // the COMMS generation turned over mid-fetch (stream switch / new session)
+      if (study) cands.push(study);
+      if (thread) cands.push(thread);
+      // re-check the moment after the awaits — reflection's memory deck may have claimed it meanwhile.
+      if (momentBlocked()) { queueStudy(runId, agentId); queueThread(runId, agentId); return; }
     }
-    if (stale()) return;                    // the COMMS generation turned over mid-fetch (stream switch / new session)
-    if (study) cands.push(study);
-    if (thread) cands.push(thread);
-    // re-check the moment after the awaits — reflection's memory deck may have claimed it meanwhile.
-    if (momentBlocked()) { if (study) queueStudy(runId, agentId); if (thread) queueThread(runId, agentId); return; }
 
     const winner = Recommend.pick(cands, recUnderstanding());
     // DEFERRED, NEVER STARVED: a fetched turn-in that lost the moment goes back on its FIFO queue and
@@ -4440,6 +4489,8 @@ const Chat = (() => {
     // the shared slot still has the last word: a deferred beat drained at the sweep may already hold it.
     if (lifecycle.canOffer(Recommend.slotKindOf(winner.kind)) !== 'free') return;
     try { winner.fire(); } catch (_) {}
+    // spend one unit of the session ask budget — but only for a card the station CHOSE to raise.
+    if (Recommend.asksBudget && Recommend.asksBudget(winner.kind)) sessionAsks += 1;
   }
 
   function wireCuriosity() {
@@ -4447,8 +4498,10 @@ const Chat = (() => {
     curiosityWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
-      // ONE arm point for every proactive channel. Let the reply finish rendering, then run the pass.
-      setTimeout(() => { recommendPass(p); }, BEAT_ARM_MS);
+      // TWO arms, ONE arbiter (see BEAT_ARM_MS / BEAT_SLOW_ARM_MS): the rating collects the moment the reply
+      // has rendered; every channel whose evidence the run must first WRITE collects once it exists.
+      setTimeout(() => { recommendPass(p, 'fast'); }, BEAT_ARM_MS);
+      setTimeout(() => { recommendPass(p, 'slow'); }, BEAT_SLOW_ARM_MS);
     });
   }
   // IDLE-DRIVEN curiosity (the autopilot EARN-CONTEXT branch, autonomy Slice A): the SAME gentle get-to-know-you
