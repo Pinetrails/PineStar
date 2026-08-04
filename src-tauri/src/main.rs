@@ -13,6 +13,7 @@
 
 mod credentials;
 
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -21,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -393,6 +394,174 @@ fn copy_missing_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// successful legacy migration. Its presence is the sole signal to never migrate again.
 const MIGRATION_MARKER: &str = ".migrated";
 const MIGRATION_PENDING_MARKER: &str = ".migration-pending";
+const MIGRATION_STAGE_SUFFIX: &str = ".migration-stage";
+const MIGRATION_ROLLBACK_SUFFIX: &str = ".migration-rollback";
+const MIGRATION_RECEIPT: &str = ".migration-receipt.json";
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationFileReceipt {
+    path: String,
+    bytes: u64,
+    sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationReceipt {
+    version: u8,
+    validated: bool,
+    source_roots: Vec<String>,
+    files: Vec<MigrationFileReceipt>,
+}
+
+fn migration_sibling(current: &Path, suffix: &str) -> PathBuf {
+    let name = current
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("workspaces");
+    current.with_file_name(format!("{name}{suffix}"))
+}
+
+fn unique_migration_sibling(current: &Path, suffix: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    migration_sibling(current, &format!("{suffix}-{}-{stamp}", std::process::id()))
+}
+
+fn is_migration_internal(path: &Path) -> bool {
+    path.components().count() == 1
+        && matches!(
+            path.file_name().and_then(|value| value.to_str()),
+            Some(MIGRATION_MARKER | MIGRATION_PENDING_MARKER | MIGRATION_RECEIPT)
+        )
+}
+
+fn hash_file(path: &Path) -> std::io::Result<(u64, String)> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut bytes = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        bytes += read as u64;
+        hasher.update(&buffer[..read]);
+    }
+    Ok((bytes, format!("{:x}", hasher.finalize())))
+}
+
+fn collect_expected_files(
+    root: &Path,
+    relative: &Path,
+    files: &mut BTreeMap<String, MigrationFileReceipt>,
+) -> std::io::Result<()> {
+    let path = root.join(relative);
+    let metadata = std::fs::symlink_metadata(&path)?;
+    if metadata.file_type().is_symlink() || is_migration_internal(relative) {
+        return Ok(());
+    }
+    if metadata.is_file() {
+        let key = relative.to_string_lossy().replace('\\', "/");
+        if !files.contains_key(&key) {
+            let (bytes, sha256) = hash_file(&path)?;
+            files.insert(
+                key.clone(),
+                MigrationFileReceipt {
+                    path: key,
+                    bytes,
+                    sha256,
+                },
+            );
+        }
+        return Ok(());
+    }
+    if metadata.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            collect_expected_files(root, &relative.join(entry.file_name()), files)?;
+        }
+    }
+    Ok(())
+}
+
+fn migration_inventory(root: &Path) -> std::io::Result<Vec<MigrationFileReceipt>> {
+    let mut files = BTreeMap::new();
+    if root.is_dir() {
+        collect_expected_files(root, Path::new(""), &mut files)?;
+    }
+    Ok(files.into_values().collect())
+}
+
+fn expected_migration_inventory(sources: &[PathBuf]) -> std::io::Result<Vec<MigrationFileReceipt>> {
+    let mut files = BTreeMap::new();
+    for source in sources {
+        if source.is_dir() {
+            collect_expected_files(source, Path::new(""), &mut files)?;
+        }
+    }
+    Ok(files.into_values().collect())
+}
+
+fn validate_migration_semantics(
+    stage: &Path,
+    files: &[MigrationFileReceipt],
+) -> std::io::Result<()> {
+    for file in files {
+        let name = Path::new(&file.path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if name == "agent.roster.json" || name.ends_with(".save.json") {
+            let value: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(stage.join(&file.path))?)
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+            if !value.is_object() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{} must contain a JSON object", file.path),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_staged_generation(stage: &Path, receipt: &MigrationReceipt) -> std::io::Result<()> {
+    if receipt.version != 1 || !receipt.validated {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "migration receipt is not validated version 1",
+        ));
+    }
+    let actual = migration_inventory(stage)?;
+    if actual != receipt.files {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "staged workspace inventory does not match its receipt",
+        ));
+    }
+    validate_migration_semantics(stage, &actual)
+}
+
+fn activate_staged_generation(current: &Path, stage: &Path) -> std::io::Result<PathBuf> {
+    let rollback = unique_migration_sibling(current, MIGRATION_ROLLBACK_SUFFIX);
+    let had_current = current.exists();
+    if had_current {
+        std::fs::rename(current, &rollback)?;
+    }
+    if let Err(error) = std::fs::rename(stage, current) {
+        if had_current {
+            let _ = std::fs::rename(&rollback, current);
+        }
+        return Err(error);
+    }
+    Ok(rollback)
+}
 
 /// True when the live workspace root already holds real data (anything other than our own
 /// marker file). A pre-existing populated root means an earlier install/migration already ran,
@@ -401,9 +570,12 @@ fn workspace_has_content(current: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(current) else {
         return false;
     };
-    entries
-        .flatten()
-        .any(|e| e.file_name() != std::ffi::OsStr::new(MIGRATION_MARKER))
+    entries.flatten().any(|entry| {
+        let name = entry.file_name();
+        name != std::ffi::OsStr::new(MIGRATION_MARKER)
+            && name != std::ffi::OsStr::new(MIGRATION_PENDING_MARKER)
+            && name != std::ffi::OsStr::new(MIGRATION_RECEIPT)
+    })
 }
 
 /// One-time import of data from legacy workspace roots into the live one. THIS RUNS ONCE, EVER.
@@ -415,78 +587,218 @@ fn workspace_has_content(current: &Path) -> bool {
 ///   1. If the `.migrated` marker exists in the live root, skip entirely (the definitive signal).
 ///   2. Belt-and-suspenders: if the live root already has real content, skip and drop the marker
 ///      so a first-run-with-marker-missing but already-populated install never migrates either.
-/// A pending marker is written BEFORE copying. A crash or returned I/O error therefore retries
-/// the idempotent, copy-missing-only pass instead of mistaking its partial tree for live data.
+/// Copies land in a sibling generation first. A hash inventory, semantic state validation, and a
+/// durable receipt must all agree before directory renames activate it; the prior generation is
+/// retained as rollback evidence.
 fn migrate_workspace_data(
     current: &Path,
     legacy_roots: &[PathBuf],
     startup_log: &Option<PathBuf>,
 ) -> Vec<PathBuf> {
     let mut migrated = Vec::new();
-    let _ = std::fs::create_dir_all(current);
+    if let Some(parent) = current.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let marker = current.join(MIGRATION_MARKER);
     let pending = current.join(MIGRATION_PENDING_MARKER);
+    let stage = migration_sibling(current, MIGRATION_STAGE_SUFFIX);
 
     // (1) Already migrated once — never touch legacy roots again.
     if marker.exists() {
         let _ = std::fs::remove_file(&pending);
         return migrated;
     }
-    // (2) Live root already populated (upgrade from a pre-marker build, or a manual copy): treat
-    //     as already-migrated. Stamp the marker so future boots take the fast path at (1).
+    // A populated live root predating migration receipts remains authoritative. Never let a
+    // stale sibling generation replace it; only an explicit pending marker permits recovery.
     if !pending.exists() && workspace_has_content(current) {
         let _ = std::fs::write(&marker, b"1");
         return migrated;
     }
-
-    // Stamp BEFORE copying so both a process crash and a returned I/O error remain retryable
-    // even when the partial pass created directories or copied some files.
-    if let Err(error) = std::fs::write(&pending, b"1") {
+    let staged_receipt = std::fs::read(stage.join(MIGRATION_RECEIPT))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<MigrationReceipt>(&bytes).ok());
+    if let Some(receipt) = staged_receipt {
+        if validate_staged_generation(&stage, &receipt).is_ok() {
+            match activate_staged_generation(current, &stage) {
+                Ok(rollback) => {
+                    log_startup(
+                        startup_log,
+                        format!(
+                            "workspace-migration: activated verified staged generation; rollback={}",
+                            rollback.display()
+                        ),
+                    );
+                    return receipt
+                        .source_roots
+                        .into_iter()
+                        .map(PathBuf::from)
+                        .collect();
+                }
+                Err(error) => {
+                    log_startup(
+                        startup_log,
+                        format!(
+                            "workspace-migration: RETRY required; staged activation failed: {error}"
+                        ),
+                    );
+                    return migrated;
+                }
+            }
+        }
+    }
+    // Invalid or incomplete stages are preserved for forensics before a clean retry.
+    if stage.exists() {
+        let quarantine = unique_migration_sibling(current, ".migration-invalid");
+        if let Err(error) = std::fs::rename(&stage, &quarantine) {
+            log_startup(
+                startup_log,
+                format!(
+                    "workspace-migration: RETRY required; could not quarantine invalid stage: {error}"
+                ),
+            );
+            return migrated;
+        }
+    }
+    if let Err(error) = std::fs::create_dir_all(&stage)
+        .and_then(|_| std::fs::write(stage.join(MIGRATION_PENDING_MARKER), b"1"))
+    {
         log_startup(
             startup_log,
-            format!(
-                "workspace-migration: RETRY required; could not create pending marker {}: {error}",
-                pending.display()
-            ),
+            format!("workspace-migration: RETRY required; could not create stage: {error}"),
         );
         return migrated;
     }
 
-    let mut copy_failed = false;
-    for legacy in legacy_roots {
-        if !legacy.is_dir() {
-            continue;
+    let mut sources = Vec::new();
+    if current.is_dir() {
+        sources.push(current.to_path_buf());
+    }
+    sources.extend(legacy_roots.iter().filter(|root| root.is_dir()).cloned());
+    let expected = match expected_migration_inventory(&sources) {
+        Ok(files) => files,
+        Err(error) => {
+            log_startup(
+                startup_log,
+                format!("workspace-migration: RETRY required; source inventory failed: {error}"),
+            );
+            return migrated;
         }
-        match copy_missing_dir(legacy, current) {
-            Ok(()) => migrated.push(legacy.clone()),
+    };
+
+    let mut copy_failed = false;
+    for source in &sources {
+        match copy_missing_dir(source, &stage) {
+            Ok(()) => {
+                if !same_path(source, current) {
+                    migrated.push(source.clone());
+                }
+            }
             Err(error) => {
                 copy_failed = true;
                 log_startup(
                     startup_log,
                     format!(
                         "workspace-migration: RETRY required; copy from {} failed: {error}",
-                        legacy.display()
+                        source.display()
                     ),
                 );
             }
         }
     }
     if copy_failed {
+        migrated.clear();
         return migrated;
     }
-    // Marker written LAST, after all copies land: crash-safe (a mid-copy crash leaves no marker,
-    // so the idempotent copy-missing pass simply re-runs next boot).
-    match std::fs::write(&marker, b"1") {
-        Ok(()) => {
-            let _ = std::fs::remove_file(&pending);
+
+    let _ = std::fs::remove_file(stage.join(MIGRATION_PENDING_MARKER));
+    let _ = std::fs::remove_file(stage.join(MIGRATION_MARKER));
+    let actual = match migration_inventory(&stage) {
+        Ok(files) => files,
+        Err(error) => {
+            log_startup(
+                startup_log,
+                format!("workspace-migration: RETRY required; staged inventory failed: {error}"),
+            );
+            migrated.clear();
+            return migrated;
         }
-        Err(error) => log_startup(
+    };
+    if actual != expected {
+        log_startup(
+            startup_log,
+            "workspace-migration: RETRY required; staged inventory differs from source inventory",
+        );
+        migrated.clear();
+        return migrated;
+    }
+    if let Err(error) = validate_migration_semantics(&stage, &actual) {
+        log_startup(
+            startup_log,
+            format!("workspace-migration: RETRY required; semantic validation failed: {error}"),
+        );
+        migrated.clear();
+        return migrated;
+    }
+
+    let receipt = MigrationReceipt {
+        version: 1,
+        validated: true,
+        source_roots: migrated
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        files: actual,
+    };
+    let receipt_bytes = match serde_json::to_vec_pretty(&receipt) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            log_startup(
+                startup_log,
+                format!(
+                    "workspace-migration: RETRY required; receipt serialization failed: {error}"
+                ),
+            );
+            migrated.clear();
+            return migrated;
+        }
+    };
+    if let Err(error) = std::fs::write(stage.join(MIGRATION_RECEIPT), receipt_bytes)
+        .and_then(|_| std::fs::write(stage.join(MIGRATION_MARKER), b"1"))
+    {
+        log_startup(
             startup_log,
             format!(
-                "workspace-migration: RETRY required; could not write completion marker {}: {error}",
-                marker.display()
+                "workspace-migration: RETRY required; could not seal staged generation: {error}"
+            ),
+        );
+        migrated.clear();
+        return migrated;
+    }
+    if let Err(error) = validate_staged_generation(&stage, &receipt) {
+        log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: RETRY required; sealed generation validation failed: {error}"
+            ),
+        );
+        migrated.clear();
+        return migrated;
+    }
+    match activate_staged_generation(current, &stage) {
+        Ok(rollback) => log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: activated verified generation; rollback={}",
+                rollback.display()
             ),
         ),
+        Err(error) => {
+            log_startup(
+                startup_log,
+                format!("workspace-migration: RETRY required; activation failed: {error}"),
+            );
+            migrated.clear();
+        }
     }
     migrated
 }
@@ -537,7 +849,16 @@ mod workspace_migration_tests {
             !current.join(MIGRATION_MARKER).exists(),
             "a failed copy must not stamp the one-shot marker"
         );
-        assert!(current.join(MIGRATION_PENDING_MARKER).exists());
+        assert!(
+            !current.exists(),
+            "a failed copy must not expose a partial live workspace"
+        );
+        assert!(
+            migration_sibling(&current, MIGRATION_STAGE_SUFFIX)
+                .join(MIGRATION_PENDING_MARKER)
+                .exists(),
+            "the failed sibling generation remains retryable"
+        );
         let failure_log = std::fs::read_to_string(&startup_log).unwrap();
         assert!(failure_log.contains("RETRY required"));
         assert!(failure_log.contains(&legacy.display().to_string()));
@@ -555,6 +876,61 @@ mod workspace_migration_tests {
         );
         assert!(current.join(MIGRATION_MARKER).exists());
         assert!(!current.join(MIGRATION_PENDING_MARKER).exists());
+        assert!(current.join(MIGRATION_RECEIPT).exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn verified_generation_preserves_prior_live_tree_as_rollback() {
+        let base = temp_dir("rollback");
+        let legacy = base.join("legacy");
+        let current = base.join("current");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::write(current.join(MIGRATION_PENDING_MARKER), b"1").unwrap();
+        std::fs::write(current.join("agent.save.json"), br#"{"version":1}"#).unwrap();
+        std::fs::write(legacy.join("agent.roster.json"), br#"{"agents":[]}"#).unwrap();
+
+        let migrated = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
+        assert_eq!(migrated, vec![legacy.clone()]);
+        assert!(current.join(MIGRATION_MARKER).exists());
+        assert!(current.join(MIGRATION_RECEIPT).exists());
+        assert!(current.join("agent.save.json").exists());
+        assert!(current.join("agent.roster.json").exists());
+
+        let rollback = std::fs::read_dir(&base)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with("current.migration-rollback-"))
+                    .unwrap_or(false)
+            })
+            .expect("activation retains the prior live generation");
+        assert!(rollback.join("agent.save.json").exists());
+        assert!(rollback.join(MIGRATION_PENDING_MARKER).exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn invalid_semantic_state_never_activates() {
+        let base = temp_dir("invalid-json");
+        let legacy = base.join("legacy");
+        let current = base.join("current");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("agent.save.json"), b"{not-json").unwrap();
+
+        let migrated = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
+        assert!(migrated.is_empty());
+        assert!(!current.exists(), "invalid state is never made live");
+        assert!(
+            migration_sibling(&current, MIGRATION_STAGE_SUFFIX).exists(),
+            "invalid stage is retained for recovery and forensics"
+        );
 
         let _ = std::fs::remove_dir_all(base);
     }

@@ -2,7 +2,7 @@
 
    Public downloads must not strand user state when a previous build wrote to an older app-data root. The
    Rust launcher is not easily unit-loaded from Node, so this test pins the important source invariants:
-   known legacy roots are considered, migration is non-overwriting, and it runs before the sidecar starts. */
+   known legacy roots are considered, migration is staged and verified, and activation runs before the sidecar. */
 'use strict';
 const A = require('./_assert.js');
 const fs = require('node:fs');
@@ -25,9 +25,19 @@ A.ok(/file_type\(\)\.is_symlink\(\)[\s\S]{0,80}return\s+Ok\(\(\)\)/.test(src), '
 // regresses back to unconditional copying.
 A.ok(/const\s+MIGRATION_MARKER\s*:\s*&str\s*=\s*"\.migrated"/.test(src), 'migration declares a .migrated done-marker');
 A.ok(/const\s+MIGRATION_PENDING_MARKER\s*:\s*&str\s*=\s*"\.migration-pending"/.test(src), 'migration declares an in-progress receipt');
+A.ok(/const\s+MIGRATION_STAGE_SUFFIX\s*:\s*&str\s*=\s*"\.migration-stage"/.test(src), 'migration builds in a sibling stage');
+A.ok(/const\s+MIGRATION_ROLLBACK_SUFFIX\s*:\s*&str\s*=\s*"\.migration-rollback"/.test(src), 'migration names retained rollback generations');
+A.ok(/const\s+MIGRATION_RECEIPT\s*:\s*&str\s*=\s*"\.migration-receipt\.json"/.test(src), 'migration seals a durable receipt');
 A.ok(/if\s+marker\.exists\(\)\s*\{[\s\S]{0,60}return/.test(src), 'migration skips entirely once the marker exists');
 A.ok(/workspace_has_content\(current\)/.test(src), 'migration skips when the live workspace already has content');
-A.ok(/if\s+copy_failed\s*\{[\s\S]{0,80}return\s+migrated/.test(src), 'a copy failure returns before the done-marker is written');
+A.ok(/copy_missing_dir\(source,\s*&stage\)/.test(src), 'legacy files copy into the sibling stage, never the live root');
+A.ok(/if\s+copy_failed\s*\{[\s\S]{0,100}return\s+migrated/.test(src), 'a copy failure returns before the done-marker is written');
+A.ok(/actual\s*!=\s*expected/.test(src), 'staged byte inventory must match the source union');
+A.ok(/validate_migration_semantics\(&stage,\s*&actual\)/.test(src), 'canonical JSON state receives semantic validation');
+A.ok(/Sha256::new\(\)/.test(src), 'migration fingerprints file contents with SHA-256');
+A.ok(/validate_staged_generation\(&stage,\s*&receipt\)[\s\S]{0,300}activate_staged_generation\(current,\s*&stage\)/.test(src), 'sealed generation is revalidated immediately before activation');
+A.ok(/std::fs::rename\(current,\s*&rollback\)/.test(src), 'activation retains the prior live generation as rollback');
+A.ok(/std::fs::rename\(stage,\s*current\)/.test(src), 'activation renames the verified sibling into the canonical path');
 A.ok(/workspace-migration:\s+RETRY required/.test(src), 'copy failures are named as retryable in the startup log');
 
 const setupMigration = src.indexOf('let migrated_workspaces = migrate_workspace_data');
