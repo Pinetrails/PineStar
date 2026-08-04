@@ -194,6 +194,12 @@ for (const [file, probe, what] of [
     'and it arms that stamp ONLY when the launch really started — a busy stream no-ops the send, and an accept that ran nothing must attribute nothing'],
   ['frontend/app/suggeststore.js', /if \(deps\.launchDirective\) return deps\.launchDirective\(directive\) === true;/,
     'doBuild reports the launch result (fail-closed: an unprovable launch is not a launch)'],
+  /* S6: …and a REFUSED launch is no longer silent. Detecting it was only half the fix — the loop learned
+     nothing from it and the Commander was told nothing (they tapped "let's build it" and the beat vanished). */
+  ['frontend/app/suggeststore.js', /acceptedRecommendation = null; acceptedRunId = null;\s*\n\s*if \(rq && rq\.noteDecline\) \{ try \{ rq\.noteDecline\(\{ channel: 'suggest', dim: probe \? probe\.dim : '' \}, true\); \}/,
+    'a refused launch folds "deferred" — right idea, wrong moment, which is all the harness can honestly say'],
+  ['frontend/app/suggeststore.js', /Chat\.localLine\('stream’s busy — ask me again after this run'\)/,
+    'and it TELLS the Commander why, in one short house line, instead of the beat just disappearing'],
   ['frontend/app/app.js', /let sent = false; if \(typeof Chat !== 'undefined' && Chat\.send && !Chat\.isBusy\(\)\) \{ Chat\.send\(text\); sent = true; \} persist\(\); return sent;/,
     'the real launchDirective dep answers truthfully instead of returning undefined'],
   ['frontend/app/seedstore.js', /noteAccept\(\{ channel: 'seed', spawnsWork: false/, 'a saved seed settles immediately (it authors a recipe, it does not run one)'],

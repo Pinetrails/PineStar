@@ -217,7 +217,23 @@ const SuggestStore = (() => {
         const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
         if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' });
           const launched = doBuild(parsed);
-          if (launched && rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} } }
+          if (launched && rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} }
+          /* A REFUSED LAUNCH IS A REAL EVENT, AND IT WAS SILENT (fixed 2026-08-04). doBuild returns false when
+             the stream is busy — the guard above correctly stops the attribution stamp being armed on work that
+             never started, but then NOTHING happened: the loop learned nothing and the Commander was told
+             nothing. They tapped "let's build it" and the beat simply vanished.
+             What the harness can honestly say is exactly what a "not now" says — right idea, wrong moment — so
+             that is the outcome folded, and the chip settles with one short line naming the real reason.
+             `acceptedRecommendation` is cleared for the same reason the stamp is not armed: no run started, so
+             the next unrelated run must not be recorded (onRunStart) as this recommendation's work.
+             THE LEDGER IS DELIBERATELY LEFT AS-IS: 'accepted' is already posted and truthful (they really did
+             accept), and recommendation-ledger.js NEXT allows accepted → started/declined/completed only —
+             there is no state for "accepted, launch refused", and inventing one of the three would be a lie. */
+          else {
+            acceptedRecommendation = null; acceptedRunId = null;
+            if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, true); } catch (_) {} }
+            try { if (typeof Chat !== 'undefined' && Chat.localLine) Chat.localLine('stream’s busy — ask me again after this run'); } catch (_) {}
+          } }
         else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' });
           if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, false); } catch (_) {} } }
         else { ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
