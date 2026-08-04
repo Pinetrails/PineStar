@@ -362,7 +362,10 @@ const Marketplace = (() => {
     if (!(ctx && ctx.mode === 'pick') && hasRecipes()) {
       const t = (id, label) => '<button class="mkt-tab' + (tab === id ? ' on' : '') + '" role="tab" aria-selected="' +
         (tab === id ? 'true' : 'false') + '" data-tab="' + id + '">' + label + '</button>';
-      html += '<div class="mkt-tabs" role="tablist">' + t('agents', '☰ AGENTS') + t('recipes', '❒ RECIPES') + '</div>';
+      // NAV CONDENSE (2026-08-04): the tab is labelled CLASSES, not AGENTS — 'AGENTS' already names the
+      // CREW dossier of the crew you HAVE; this tab is the catalog of classes you can summon. The tab id
+      // ('agents') is untouched: deep-links (openSummonBay/openDeployBay) and the persisted tab bind to it.
+      html += '<div class="mkt-tabs" role="tablist">' + t('agents', '☰ CLASSES') + t('recipes', '❒ RECIPES') + '</div>';
     }
     if (tab === 'recipes' && hasRecipes()) {
       // R6 CATEGORY RAIL — persona buckets (developer/research/creator/ops/general) + ALL + MINE, each with a
