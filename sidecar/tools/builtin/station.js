@@ -101,9 +101,55 @@
       }
     };
 
+    const taskListTool = {
+      name: 'task.list', capability: 'orchestrator', scope: 'read', requiresConsent: false,
+      description: 'List the durable cards on the Commander\'s task board. Use this for requests about board cards or tasks; sessions are separate and come from session.list.',
+      schema: { type: 'object', properties: {} },
+      run: async () => {
+        const out = await ask('station.tasks', {});
+        if (!out.ok) return refuse(out.error);
+        const r = out.result || {};
+        return { content: JSON.stringify(r), summary: (r.count != null ? r.count : (r.tasks || []).length) + ' board task(s)' };
+      }
+    };
+
+    const taskCreateTool = {
+      name: 'task.create', capability: 'orchestrator', scope: 'write', requiresConsent: false,
+      description: 'Add one durable card to the Commander\'s task board when they say “add this to my board”, “make a task”, or equivalent. This does not start work and does not create a chat session. Repeating the same title returns the existing card instead of creating a duplicate.',
+      schema: { type: 'object', required: ['title'], properties: { title: { type: 'string' }, agentId: { type: 'string' } } },
+      run: async (args) => {
+        const title = String((args && args.title) || '').trim().slice(0, 80);
+        if (!title) return refuse('a task needs a title');
+        const out = await ask('station.new_task', { title, agentId: String((args && args.agentId) || '').trim() || undefined });
+        if (!out.ok) return refuse(out.error);
+        const r = out.result || {};
+        return { content: JSON.stringify(r), summary: r.created === false ? 'already on board: "' + (r.title || title) + '"' : 'added "' + (r.title || title) + '" to the board' };
+      }
+    };
+
+    const taskManageTool = {
+      name: 'task.manage', capability: 'orchestrator', scope: 'write', requiresConsent: true,
+      description: 'Change an EXISTING durable task-board card: move it between todo/active/shipped, rename it, assign it to a crew agent, archive/restore it, or remove it. Never call this to start work; use team.dispatch for delegation. `shipped` is allowed only when the Commander explicitly asks to mark/ship/complete that card. Destructive actions are consent-gated.',
+      schema: {
+        type: 'object', required: ['task', 'action'], properties: {
+          task: { type: 'string' }, action: { type: 'string', enum: ['move', 'rename', 'assign', 'archive', 'restore', 'remove'] },
+          lane: { type: 'string', enum: ['todo', 'active', 'shipped'] }, title: { type: 'string' }, agentId: { type: 'string' }
+        }
+      },
+      run: async (args) => {
+        args = args || {};
+        if (!String(args.task || '').trim()) return refuse('name which task to change');
+        const out = await ask('station.manage_task', args);
+        if (!out.ok) return refuse(out.error);
+        const r = out.result || {};
+        const done = { move: 'moved', rename: 'renamed', assign: 'assigned', archive: 'archived', restore: 'restored', remove: 'removed' }[args.action] || 'changed';
+        return { content: JSON.stringify(r), summary: r.changed === false ? 'task already had that state' : (done + ' task') };
+      }
+    };
+
     return {
-      listTool, createTool, peekTool, focusTool,
-      register(reg) { [listTool, createTool, peekTool, focusTool].forEach(t => reg.register(t)); return reg; }
+      listTool, createTool, peekTool, focusTool, taskListTool, taskCreateTool, taskManageTool,
+      register(reg) { [listTool, createTool, peekTool, focusTool, taskListTool, taskCreateTool, taskManageTool].forEach(t => reg.register(t)); return reg; }
     };
   }
 

@@ -224,7 +224,18 @@
       // session.peek reads another session's recent turns — the anti-guessing verb: without it a lead asked
       // "what did the researcher do?" answered from assumption and denied real finished work (2026-07-30).
       { capId: 'orchestrator', tool: 'session.peek', scope: 'read', requiresConsent: false, network: false },
-      { capId: 'orchestrator', tool: 'session.focus', scope: 'write', requiresConsent: false, network: false }
+      { capId: 'orchestrator', tool: 'session.focus', scope: 'write', requiresConsent: false, network: false },
+      // TASK BOARD: cards are the page's canonical kind:'task' Workstreams and are persisted through the same
+      // agent save the board renders. Creation is reversible and spends nothing; management is consent-gated
+      // because its action set includes shipping, archiving, reassignment, and deletion.
+      { capId: 'orchestrator', tool: 'task.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'task.create', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'task.manage', scope: 'write', requiresConsent: true, network: false },
+      // LOOPS: standing objective iteration through loops.json. Both mutations require consent because they
+      // create or alter future autonomous work. Model tools never accept the host-run check command.
+      { capId: 'orchestrator', tool: 'loop.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'loop.create', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'orchestrator', tool: 'loop.manage', scope: 'write', requiresConsent: true, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so

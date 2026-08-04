@@ -254,6 +254,7 @@ const { makeLspManager } = require('./lsp-manager.js');             // lazy inst
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeStationTools } = require('./tools/builtin/station.js');               // session verbs (list/create/focus) over the station bridge
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
+const { makeLoopTools } = require('./tools/builtin/loops.js');       // LOOPS: model-facing durable standing-objective controls
 const { makeCommsTools } = require('./tools/builtin/comms.js');      // COMMS: outbound reach — an agent messages a connected chat
 const cronGuard = require('./cron-guard.js');                        // routine prompt-injection tripwire (pure, see file header)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
@@ -3359,7 +3360,14 @@ function saveCronJobs() {   // throws on failure (the CRUD routes let it surface
   // tmp so concurrent writers never collide), then best-effort fsync the directory after (Windows-safe). Same
   // durability the ledger/runs appends already get; the protected-state helper also snapshots the prior good
   // envelope to cron.jobs.json.bak before replacing main, so a torn/corrupt main never boots as amnesiac.
-  saveResilient(CRON_FILE, cronStore.toEnvelope(cronJobs));
+  const intended = cronStore.toEnvelope(cronJobs);
+  const proofText = JSON.stringify(intended);
+  const saved = saveJsonVerified({
+    save: () => saveResilient(CRON_FILE, intended),
+    load: () => loadResilient(CRON_FILE, 'cron'),
+    proof: got => JSON.stringify(got) === proofText
+  });
+  if (!saved.ok) throw new Error('cron durable read-back failed after ' + saved.attempts + ' attempt(s): ' + saved.error);
 }
 
 /* ---- G4.6: persisted "is the scheduler armed?" flag, so a one-click ENABLE in the UI arms the timer WITHOUT
@@ -3389,7 +3397,9 @@ function loadCronArmed() {
 function saveCronArmed(armed) {   // durable like the jobs file; throws on a real write failure so the route surfaces it
   // route through the resilient writer (fsync temp→rename + snapshot the prior good value to .bak) so a torn write
   // can be recovered on the next boot instead of silently disarming the scheduler. Same idiom as connectors/cron.jobs.
-  saveResilient(CRON_ARMED_FILE, { version: 1, armed: armed === true });
+  const intended = { version: 1, armed: armed === true };
+  const r = saveJsonVerified({ save: () => saveResilient(CRON_ARMED_FILE, intended), load: () => loadResilient(CRON_ARMED_FILE, 'cron-armed'), proof: got => JSON.stringify(got) === JSON.stringify(intended) });
+  if (!r.ok) throw new Error('cron arm durable read-back failed: ' + r.error);
 }
 // ---- Lane 4D: the durable cron E-STOP halt (the routines equivalent of nightshift.engageHalt). ----
 // POST /api/halt used to abort in-flight cron leases but left the TIMER armed, so due routines re-fired
@@ -3411,7 +3421,9 @@ function loadCronHalted() {
   } catch (_) { return false; }
 }
 function saveCronHalted(halted) {
-  saveResilient(CRON_HALT_FILE, { version: 1, halted: halted === true, at: Date.now() });
+  const intended = { version: 1, halted: halted === true, at: Date.now() };
+  const r = saveJsonVerified({ save: () => saveResilient(CRON_HALT_FILE, intended), load: () => loadResilient(CRON_HALT_FILE, 'cron-halt'), proof: got => JSON.stringify(got) === JSON.stringify(intended) });
+  if (!r.ok) throw new Error('cron halt durable read-back failed: ' + r.error);
 }
 let cronHalted = loadCronHalted();
 // The ONE resume seam: clear the durable halt and re-arm the live timer when the user's arm intent says so.
@@ -3481,7 +3493,15 @@ function mergeCronById(computed, base) {
 // re-read once more and MERGE our change by job id (never a blind clobber that drops a concurrent advance).
 // ASYNC now: callers await it (or fire it in a promise chain) — the fast path resolves on the first tick.
 async function withCronWrite(mutate) {
-  const run = () => { cronJobs = mutate(loadCronJobs()); saveCronJobs(); };   // re-read -> apply -> persist
+  const run = () => {
+    const prior = cronJobs;
+    cronJobs = mutate(loadCronJobs());
+    try { saveCronJobs(); }
+    catch (e) {
+      try { cronJobs = loadCronJobs(); } catch (_) { cronJobs = prior; }
+      throw e;
+    }
+  };   // re-read -> apply -> verified persist; a failed receipt never leaves a RAM-only mutation
   for (let i = 0; i < CRON_WRITE_RETRIES; i++) {
     const r = cronLock.withLock(run);
     if (r.ran) return;
@@ -4989,12 +5009,29 @@ function loadLoops() {
   catch (e) { console.warn('[loops] load failed:', (e && e.message) || e); return []; }
 }
 let loopJobs = loadLoops();
-function saveLoops() { saveResilient(LOOPS_FILE, loopjobStore.toEnvelope(loopJobs)); }   // throws; CRUD routes surface it
+function commitLoops(next) {
+  const intended = loopjobStore.toEnvelope(next || []);
+  const proofText = JSON.stringify(intended);
+  const saved = saveJsonVerified({
+    save: () => saveResilient(LOOPS_FILE, intended),
+    load: () => loadResilient(LOOPS_FILE, 'loops'),
+    proof: got => JSON.stringify(got) === proofText
+  });
+  if (!saved.ok) throw new Error('loop durable read-back failed after ' + saved.attempts + ' attempt(s): ' + saved.error);
+  // Assign the RAM mirror only after the durable envelope was read back. A failed mutation therefore cannot
+  // remain visible in the UI until restart while the disk correctly says it never landed.
+  loopJobs = loopjobStore.loadEnvelope(loadResilient(LOOPS_FILE, 'loops')).loops;
+  return loopJobs;
+}
 function loadLoopsHalted() {
   try { const raw = loadResilient(LOOPS_HALT_FILE, 'loops-halt'); return !!(raw && raw.halted); } catch (_) { return false; }
 }
 let loopsHalted = loadLoopsHalted();
-function saveLoopsHalted(v) { saveResilient(LOOPS_HALT_FILE, { halted: !!v }); }
+function saveLoopsHalted(v) {
+  const intended = { halted: !!v };
+  const r = saveJsonVerified({ save: () => saveResilient(LOOPS_HALT_FILE, intended), load: () => loadResilient(LOOPS_HALT_FILE, 'loops-halt'), proof: got => JSON.stringify(got) === JSON.stringify(intended) });
+  if (!r.ok) throw new Error('loop halt durable read-back failed: ' + r.error);
+}
 
 /* loopPrecheck — the PURELY-LOCAL readiness gate, evaluated BEFORE any spend (the night shift's NS-2
    cold-leash discipline: a stand-down no model call could have avoided must cost neither money nor an
@@ -5310,10 +5347,10 @@ async function loopHarvest(loop, res, iterN, ctx) {
     // persist the branch the moment it exists, so a crash between here and the commit cannot orphan it and
     // start a SECOND branch on the next pass (which would split one loop's work across two undo domains).
     try {
-      loopJobs = loopjobStore.updateLoop(loopJobs, loop.id, {
+      const candidate = loopjobStore.updateLoop(loopJobs, loop.id, {
         branch: target.branch, baseCommit: loopgit.isSha(base) ? base : null
       }, { now: Date.now() });
-      saveLoops();
+      commitLoops(candidate);
     } catch (e) { console.warn('[loops] could not persist the loop branch:', (e && e.message) || e); }
   } else {
     const cur = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 15000);
@@ -5439,7 +5476,7 @@ const loopDriver = makeLoopDriver({
   // failure we roll the RAM mirror back to disk so the loop stays eligible and retries, rather than living as
   // a RAM-only advance a restart would forget. Same shape as the cron setJobs receipt.
   setLoops: (next) => {
-    try { loopJobs = next; saveLoops(); return true; }
+    try { commitLoops(next); return true; }
     catch (e) {
       console.warn('[loops] persist failed:', (e && e.message) || e);
       try { loopJobs = loadLoops(); } catch (_) { /* disk unreadable too — keep the RAM mirror */ }
@@ -5588,16 +5625,10 @@ function disarmLoops() {
    the Commander's click is what starts the next iteration. ---- */
 const loopJson = (res) => (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
 
-// GET /api/loops — the LOOPS window's poll. Every field is a durable record value or a pure derivation of
-// one (loopjob.summarize), including the BINDING that names why a quiet loop is quiet.
-function handleLoopsList(req, res) {
-  const json = loopJson(res);
+function loopStateSnapshot() {
   const now = Date.now();
   const rows = (loopJobs || []).map(l => loopjob.summarize(l, {
-    now: now,
-    staleMs: LOOP_MAX_RUN_MS,
-    // the SAME inputs the driver's gate sees, so the panel can never claim a loop is ready when the driver is
-    // standing it down (see loopPrecheck).
+    now: now, staleMs: LOOP_MAX_RUN_MS,
     inp: {
       halted: loopsHalted,
       inFlight: loopDriver.leases.has(l.id),
@@ -5605,15 +5636,136 @@ function handleLoopsList(req, res) {
       precheck: loopPrecheck(l)
     }
   }));
-  json(200, {
-    loops: rows,
-    halted: loopsHalted,
-    // TRUTHFUL TELEMETRY: `armed` is whether a timer is genuinely running, not whether loops exist. The window
-    // must be able to say "this loop will not advance right now" when that is the truth.
-    armed: !!loopTimer,
-    tickMs: LOOP_TICK_MS,
-    inFlight: loopDriver.leases.size
-  });
+  return { loops: rows, halted: loopsHalted, armed: !!loopTimer, tickMs: LOOP_TICK_MS, inFlight: loopDriver.leases.size };
+}
+
+function modelLoopRow(id) {
+  const row = loopStateSnapshot().loops.find(loop => loop && loop.id === id);
+  if (!row) throw new Error('loop durable read-back did not contain ' + id);
+  row._halted = loopsHalted;
+  return row;
+}
+
+async function modelCreateLoop(spec) {
+  spec = spec || {};
+  const objective = String(spec.objective || '').trim();
+  if (!objective) throw new Error('a loop needs an objective');
+  const scan = cronGuard.scanRoutinePrompt(objective);
+  if (!scan.ok) throw new Error(scan.error);
+  const agentId = parseCronAgentIdOr400(spec.agentId);
+  if (agentId !== 'agent' && (agentRoster.size === 0 || !agentRoster.has(agentId))) {
+    throw new Error('no owned crew agent with id "' + agentId + '"');
+  }
+  const provider = parseCronProviderOr400(spec.provider);
+  const workdir = spec.workdir ? path.resolve(String(spec.workdir)) : null;
+  if (workdir) {
+    try { if (!fs.statSync(workdir).isDirectory()) throw new Error('not a folder: ' + workdir); }
+    catch (e) { throw new Error('that project folder does not exist: ' + workdir); }
+    // Model runs have no interactive path prompt. Existing approval is the capability; absent approval is a
+    // refusal, never an invitation for the model to bless its own path.
+    if (!isBlessedRoot(workdir)) throw new Error('that project folder is not approved for this station - approve it in the UI first');
+  }
+  let checkCmd = null;
+  const exitOn = loopjobStore.EXIT_MODES.indexOf(spec.exitOn) >= 0 ? spec.exitOn : 'empty-digests';
+  if (exitOn === 'check-green') {
+    if (!workdir) throw new Error('check-green needs an already-approved project folder');
+    const detected = detectCheckCommand(workdir);
+    checkCmd = detected && detected.cmd ? detected.cmd : null;
+    if (!checkCmd) throw new Error('no safe project check could be derived; create the LOOP in the UI so the Commander can review its check');
+  }
+  const norm = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const duplicate = (loopJobs || []).find(loop => loop && loop.agentId === agentId
+    && norm(loop.objective) === norm(objective) && (loop.workdir || null) === workdir);
+  if (duplicate) {
+    const row = modelLoopRow(duplicate.id);
+    row._duplicate = true;
+    return row;
+  }
+  const id = crypto.randomUUID();
+  const candidate = loopjobStore.createLoop(loopJobs, {
+    id, name: spec.name || objective.slice(0, 60), objective, agentId,
+    model: spec.model, provider, gate: 'review', workdir, checkCmd, exitOn,
+    maxIterations: spec.maxIterations
+  }, { id, now: Date.now() });
+  commitLoops(candidate);
+  armLoops(true);
+  return modelLoopRow(id);
+}
+
+async function modelUpdateLoop(id, rawPatch) {
+  const loop = loopjobStore.getLoop(loopJobs, id);
+  if (!loop) throw new Error('no such loop');
+  rawPatch = rawPatch || {};
+  const patch = {};
+  for (const key of ['name', 'objective', 'model', 'maxIterations']) {
+    if (Object.prototype.hasOwnProperty.call(rawPatch, key)) patch[key] = rawPatch[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'agentId')) {
+    patch.agentId = parseCronAgentIdOr400(rawPatch.agentId);
+    if (patch.agentId !== 'agent' && (agentRoster.size === 0 || !agentRoster.has(patch.agentId))) throw new Error('no owned crew agent with id "' + patch.agentId + '"');
+  }
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'provider')) patch.provider = parseCronProviderOr400(rawPatch.provider);
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'objective')) {
+    const scan = cronGuard.scanRoutinePrompt(rawPatch.objective);
+    if (!scan.ok) throw new Error(scan.error);
+  }
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'exitOn')) {
+    if (loopjobStore.EXIT_MODES.indexOf(rawPatch.exitOn) < 0) throw new Error('unknown loop exit mode');
+    if (rawPatch.exitOn === 'check-green' && !loop.checkCmd) throw new Error('this loop has no Commander-approved or host-derived check; edit it in the UI');
+    patch.exitOn = rawPatch.exitOn;
+  }
+  commitLoops(loopjobStore.updateLoop(loopJobs, id, patch, { now: Date.now() }));
+  armLoops(true);
+  return modelLoopRow(id);
+}
+
+async function modelControlLoop(id, action, reason) {
+  if (!loopjobStore.getLoop(loopJobs, id)) throw new Error('no such loop');
+  const now = Date.now();
+  let candidate;
+  if (action === 'pause') candidate = loopjobStore.pauseLoop(loopJobs, id, reason || 'paused by the Commander', { now });
+  else if (action === 'resume') candidate = loopjobStore.resumeLoop(loopJobs, id, { now });
+  else if (action === 'stop') candidate = loopjobStore.stopLoop(loopJobs, id, reason, { now });
+  else throw new Error('unknown loop control');
+  commitLoops(candidate);
+  if (action !== 'resume') {
+    const lease = loopDriver.leases.get(id);
+    try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+  }
+  armLoops(true);
+  return modelLoopRow(id);
+}
+
+async function modelRemoveLoop(id) {
+  if (!loopjobStore.getLoop(loopJobs, id)) throw new Error('no such loop');
+  const lease = loopDriver.leases.get(id);
+  try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+  commitLoops(loopjobStore.removeLoop(loopJobs, id));
+  if (loopjobStore.getLoop(loopJobs, id)) throw new Error('loop durable read-back still contains the removed loop');
+  if (!anyLiveLoop()) disarmLoops();
+  return true;
+}
+
+async function modelVerdictLoop(id, n, verdict, note) {
+  const loop = loopjobStore.getLoop(loopJobs, id);
+  if (!loop) throw new Error('no such loop');
+  const target = (loop.iterations || []).find(it => it && it.n === n);
+  if (!target || target.outcome !== 'candidate' || target.verdict) throw new Error('iteration #' + n + ' is not pending review');
+  if (verdict === 'rejected') {
+    const undone = await loopUndoWork(loop, n);
+    if (!undone.ok) throw new Error(undone.error || 'the iteration could not be undone, so no rejection was recorded');
+  }
+  commitLoops(loopjobStore.recordVerdict(loopJobs, id, n, verdict, { now: Date.now(), note }));
+  try { autonomyLedger.record({ source: 'loop', kind: verdict === 'approved' ? 'earn' : 'decline', jobId: id, agentId: loop.agentId, reason: 'verdict-' + verdict, binding: 'commander', detail: { iteration: n, noted: !!note } }); } catch (_) {}
+  armLoops(true);
+  return modelLoopRow(id);
+}
+
+// GET /api/loops — the LOOPS window's poll. Every field is a durable record value or a pure derivation of
+// one (loopjob.summarize), including the BINDING that names why a quiet loop is quiet.
+function handleLoopsList(req, res) {
+  const json = loopJson(res);
+  json(200, loopStateSnapshot());
 }
 
 // POST /api/loops — create a standing objective. body: { name, objective, agentId?, gate?, queueCap?,
@@ -5640,7 +5792,7 @@ function handleLoopsCreate(req, res) {
     if (body.checkCmd && !workdir) return json(400, { error: 'a check command needs a project folder — set workdir' });
     const id = crypto.randomUUID();
     try {
-      loopJobs = loopjobStore.createLoop(loopJobs, {
+      const candidate = loopjobStore.createLoop(loopJobs, {
         id: id, name: body.name || objective.slice(0, 60), objective: objective,
         agentId: agentId, model: body.model, provider: provider,
         gate: body.gate, queueCap: body.queueCap, maxIterations: body.maxIterations,
@@ -5652,7 +5804,7 @@ function handleLoopsCreate(req, res) {
         exitOn: body.exitOn, redStopAfter: body.redStopAfter,
         perDayUsd: body.perDayUsd, perIterationUsd: body.perIterationUsd, meta: body.meta
       }, { id: id, now: Date.now() });
-      saveLoops();
+      commitLoops(candidate);
     } catch (e) { return json(500, { error: 'could not save the loop: ' + ((e && e.message) || e) }); }
     armLoops(true);
     json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
@@ -5671,7 +5823,7 @@ function handleLoopsUpdate(req, res) {
       try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'workdir') && patch.workdir) patch.workdir = path.resolve(String(patch.workdir));
-    try { loopJobs = loopjobStore.updateLoop(loopJobs, id, patch, { now: Date.now() }); saveLoops(); }
+    try { commitLoops(loopjobStore.updateLoop(loopJobs, id, patch, { now: Date.now() })); }
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     armLoops(true);
     json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
@@ -5724,8 +5876,7 @@ function handleLoopsVerdict(req, res) {
     }
 
     try {
-      loopJobs = loopjobStore.recordVerdict(loopJobs, id, n, verdict, { now: Date.now(), note: body.note });
-      saveLoops();
+      commitLoops(loopjobStore.recordVerdict(loopJobs, id, n, verdict, { now: Date.now(), note: body.note }));
     } catch (e) { return json(500, { error: 'could not save the verdict: ' + ((e && e.message) || e) }); }
     try {
       autonomyLedger.record({
@@ -5772,11 +5923,12 @@ function handleLoopsControl(req, res) {
     if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
     const now = Date.now();
     try {
-      if (action === 'pause') loopJobs = loopjobStore.pauseLoop(loopJobs, id, body.reason || 'paused by the Commander', { now: now });
-      else if (action === 'resume') loopJobs = loopjobStore.resumeLoop(loopJobs, id, { now: now });
-      else if (action === 'stop') loopJobs = loopjobStore.stopLoop(loopJobs, id, body.reason, { now: now });
+      let candidate;
+      if (action === 'pause') candidate = loopjobStore.pauseLoop(loopJobs, id, body.reason || 'paused by the Commander', { now: now });
+      else if (action === 'resume') candidate = loopjobStore.resumeLoop(loopJobs, id, { now: now });
+      else if (action === 'stop') candidate = loopjobStore.stopLoop(loopJobs, id, body.reason, { now: now });
       else return json(400, { error: 'action must be pause, resume, stop or unhalt' });
-      saveLoops();
+      commitLoops(candidate);
     } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     // stopping/pausing must also kill an iteration already in flight — otherwise the Commander clicks STOP and
     // the run keeps spending until it finishes, which the button plainly implies it will not.
@@ -5865,7 +6017,7 @@ function handleLoopsRemove(req, res) {
     if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
     const lease = loopDriver.leases.get(id);
     try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
-    try { loopJobs = loopjobStore.removeLoop(loopJobs, id); saveLoops(); }
+    try { commitLoops(loopjobStore.removeLoop(loopJobs, id)); }
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     if (!anyLiveLoop()) disarmLoops();
     json(200, { ok: true });
@@ -11784,7 +11936,7 @@ async function runOnce(o) {
     // the LIVE provider set drives the tool schema's `provider` enum — a hardcoded pair meant an agent on a
     // Kimi/Grok/Ollama/custom station was schema-refused when it pinned the provider the station actually runs.
     providerIds: () => listProviderProfiles({ includeInactive: true, public: false }).map(p => p.id),
-    createRoutine: (spec) => {
+    createRoutine: async (spec) => {
       spec = spec || {};
       // INJECTION TRIPWIRE — the agent-authored path, and the one that matters most: an agent that just read a
       // hostile web page could otherwise persist its payload as a standing scheduled routine. Throwing here
@@ -11804,11 +11956,7 @@ async function runOnce(o) {
       for (const ref of skillRefs) if (!skillStore.view(spec.agentId, ref, { bump: false })) throw new Error('unknown runtime skill "' + ref + '" for ' + spec.agentId);
       const contextRefs = cronStringList(spec.contextFrom, 8, /^[A-Za-z0-9_-]{1,40}$/);
       for (const ref of contextRefs) if (!cronStore.getJob(cronJobs, ref)) throw new Error('unknown upstream routine ' + ref);
-      let created = null;
-      // withCronWrite is async, but its fast path runs `mutate` synchronously inside the first lock acquire, so
-      // `created` is populated before we return. We don't await (this tool callback is sync); guard the promise so
-      // a rare contended-path rejection can't surface as an unhandledRejection. `created || getJob` is the fallback.
-      withCronWrite(jobs => {
+      await withCronWrite(jobs => {
         const next = cronStore.createJob(jobs, {
           id: id, name: spec.name, prompt: spec.prompt, schedule: schedule,
           agentId: spec.agentId, model: spec.model, provider: spec.provider,
@@ -11817,11 +11965,12 @@ async function runOnce(o) {
           skills: skillRefs, contextFrom: contextRefs,
           enabledToolsets: spec.enabledToolsets == null ? null : cronStringList(spec.enabledToolsets, 16, /^[A-Za-z0-9:_-]{1,80}$/)
         }, { id: id, now: Date.now(), defaultTz: CRON_HOST_TZ });
-        created = cronStore.getJob(next, id);
         return next;
-      }).catch(e => console.warn('[cron] routine.create persist failed:', (e && e.message) || e));
+      });
+      const created = cronStore.getJob(cronJobs, id);
+      if (!created) throw new Error('routine durable read-back did not contain the created job');
       recordMint(spec.agentId, { name: spec.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
-      return created || cronStore.getJob(cronJobs, id);
+      return created;
     },
     // W6: the "you already maintain: …" summary the tool folds into its create response so the model KNOWS what
     // exists (informational reinforcement of the hard gate). Pure read of the per-agent ledger.
@@ -11893,6 +12042,16 @@ async function runOnce(o) {
     // ...and tell the tool, so its response can say the scheduler is still stood down rather than implying the
     // routine will fire. A caller that cannot see the halt cannot disclose it.
     schedulerHalted: () => !!cronHalted
+  }).register(registry);
+  // loop.list/create/manage share loops.json and the same pure reducers as the LOOPS panel. The host closures
+  // enforce path approval, derive checks without model-authored shell, and return only after verified read-back.
+  makeLoopTools({
+    listState: loopStateSnapshot,
+    createLoop: modelCreateLoop,
+    updateLoop: modelUpdateLoop,
+    controlLoop: modelControlLoop,
+    removeLoop: modelRemoveLoop,
+    verdictLoop: modelVerdictLoop
   }).register(registry);
   /* channel.targets / channel.send — OUTBOUND messaging reach (see tools/builtin/comms.js for the security
      rationale on known-targets-only). Both hang off the placed DISH under their own 'comms' capId. */

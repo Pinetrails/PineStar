@@ -22,6 +22,9 @@ function stubBridge(impl) {
     if (verb === 'station.new_session') return { ok: true, result: { id: 'c', title: 'ops', focused: false } };
     if (verb === 'station.switch_session') return { ok: true, result: { id: 'a', title: 'research' } };
     if (verb === 'station.read_session') return { ok: true, result: { id: 'a', title: 'research', busy: true, turns: [{ speaker: 'researcher', text: 'Phobos and Deimos.' }] } };
+    if (verb === 'station.tasks') return { ok: true, result: { count: 1, tasks: [{ id: 't1', title: 'Fix check', lane: 'todo' }] } };
+    if (verb === 'station.new_task') return { ok: true, result: { id: 't1', title: 'Fix check', lane: 'todo', created: true, durable: true } };
+    if (verb === 'station.manage_task') return { ok: true, result: { id: 't1', changed: true, durable: true, task: { id: 't1', lane: 'active' } } };
     return { ok: false, error: 'unknown' };
   });
   const t = makeStationTools({ station: bridge });
@@ -42,12 +45,15 @@ function stubBridge(impl) {
   A.eq(bridge.seen[bridge.seen.length - 1].args.limit, 12, 'the default read window travels');
   await t.peekTool.run({ session: 'research', limit: 500 });
   A.eq(bridge.seen[bridge.seen.length - 1].args.limit, 30, 'a runaway limit clamps');
+  A.eq(JSON.parse((await t.taskListTool.run({})).content).count, 1, 'task.list reads the real board projection');
+  A.eq(JSON.parse((await t.taskCreateTool.run({ title: 'Fix check' })).content).durable, true, 'task.create returns the page durability receipt');
+  A.eq(JSON.parse((await t.taskManageTool.run({ task: 'Fix check', action: 'move', lane: 'active' })).content).task.lane, 'active', 'task.manage returns the stored state');
 }
 
 // ---- ⛔ the honesty contract: every failure is an explicit REFUSED, never a soft nothing ----
 {
   const t = makeStationTools({});   // no bridge at all (bare host / headless composition)
-  for (const [tool, args] of [[t.listTool, {}], [t.createTool, { title: 'x' }], [t.focusTool, { session: 'x' }], [t.peekTool, { session: 'x' }]]) {
+  for (const [tool, args] of [[t.listTool, {}], [t.createTool, { title: 'x' }], [t.focusTool, { session: 'x' }], [t.peekTool, { session: 'x' }], [t.taskListTool, {}], [t.taskCreateTool, { title: 'x' }], [t.taskManageTool, { task: 'x', action: 'archive' }]]) {
     const out = await tool.run(args);
     A.ok(/^REFUSED:/.test(out.content), tool.name + ' without a bridge refuses explicitly');
     A.ok(/do not report this action as done/.test(out.content), 'and tells the model not to claim it');
@@ -69,6 +75,7 @@ function stubBridge(impl) {
   const t = makeStationTools({ station: bridge });
   A.ok(/REFUSED: a session needs a title/.test((await t.createTool.run({ title: '   ' })).content), 'a blank title never reaches the page');
   A.ok(/REFUSED: name which session/.test((await t.focusTool.run({})).content), 'a blank focus target never reaches the page');
+  A.ok(/REFUSED: a task needs a title/.test((await t.taskCreateTool.run({ title: ' ' })).content), 'a blank task title never reaches the page');
   A.eq(bridge.seen.length, 0, 'no bridge round-trip was spent on either');
   const long = 'x'.repeat(200);
   await t.createTool.run({ title: long });
@@ -85,11 +92,15 @@ function stubBridge(impl) {
   A.eq(t.listTool.scope, 'read', 'listing is a read');
   A.eq(t.peekTool.scope, 'read', 'peeking is a read');
   A.eq(t.createTool.scope, 'write', 'creating is a write');
+  for (const tool of [t.taskListTool, t.taskCreateTool, t.taskManageTool]) A.eq(tool.capability, 'orchestrator', tool.name + ' is lead-only');
+  A.eq(t.taskListTool.requiresConsent, false, 'task listing is consent-free');
+  A.eq(t.taskCreateTool.requiresConsent, false, 'adding a reversible card is consent-free');
+  A.eq(t.taskManageTool.requiresConsent, true, 'task management is consent-gated because it includes destructive actions');
   A.ok(/NEVER answer from memory/i.test(t.peekTool.description) || /answering from memory is guessing/i.test(t.peekTool.description),
     "peek's description carries the anti-guessing rule — the tool exists because a lead denied real work");
   const reg = { registered: [], register(x) { this.registered.push(x.name); } };
   t.register(reg);
-  A.eq(reg.registered.join(','), 'session.list,session.create,session.peek,session.focus', 'register() installs exactly the four verbs');
+  A.eq(reg.registered.join(','), 'session.list,session.create,session.peek,session.focus,task.list,task.create,task.manage', 'register() installs session and task verbs');
 }
 
 /* ---- ⛔ THE CAPABILITY REGISTRY IS AN ALLOWLIST. A tool registered with the host but not declared in
@@ -99,7 +110,7 @@ function stubBridge(impl) {
 {
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'sidecar', 'capability', 'registry.js'), 'utf8');
   const orch = src.slice(src.indexOf('orchestrator: ['), src.indexOf(']', src.indexOf('orchestrator: [')));
-  for (const name of ['session.list', 'session.create', 'session.peek', 'session.focus']) {
+  for (const name of ['session.list', 'session.create', 'session.peek', 'session.focus', 'task.list', 'task.create', 'task.manage']) {
     A.ok(orch.indexOf("tool: '" + name + "'") >= 0, name + ' is DECLARED in the orchestrator capability allowlist (registration alone exposes nothing)');
   }
   A.ok(/tool: 'session\.create', scope: 'write', requiresConsent: false/.test(orch), 'session.create is consent-free (spends nothing, reversible)');
