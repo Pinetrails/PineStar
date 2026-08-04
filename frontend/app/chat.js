@@ -57,6 +57,13 @@ const Chat = (() => {
   let studyWired = false;       // the agent.run.end STUDY (dossier Phase B) listener is registered exactly once
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   let arcRunsSeen = new Set();  // GROWTH Tier 2: runIds already arc-offered (agent.run.end can re-fire; offer once per run)
+  /* RE-CONFIRM DEFERRALS, THIS SESSION ONLY (fixed 2026-08-04). "Not now" on a "still true?" card used to call
+     GoalStore.markOffered — but that same offered-fingerprint ALSO gates pendingDecomposition, so deferring the
+     STALENESS QUESTION permanently withdrew the unrelated MILESTONE-DECOMPOSITION offer for that belief until its
+     text changed. Two different asks, one kill switch. A deferral is a statement about the MOMENT, so it lives
+     here: in memory, keyed by the belief fingerprint, gone on reload — which is exactly what "i'll ask again
+     later" promises. The durable "never ask this again" answer is still the deny chip (RecQualityStore.denyBelief). */
+  const reconfirmDeferred = new Set();
   let skillAsideWired = false;  // the deliverable(kind:skill) background-review aside listener is registered exactly once
   let skillDelivSeen = new Set();   // deliverable ids already asided → the background review re-firing never double-asides
   let recentInRunSkill = 0;     // ts of the last IN-RUN skill.* tool call — suppresses the aside for a save the A1 chip already showed
@@ -4356,9 +4363,11 @@ const Chat = (() => {
                      re-ask loop: a seed-weighted belief contributes 0 confidence by design (understanding.js
                      EVIDENCE_WEIGHT.seed = 0), so touching only updatedAt left the dimension reading exactly as
                      under-confirmed as before and the same question came back every three weeks, forever.
-       not now     → the belief state is recorded as decided (GoalStore.markOffered — the SAME not-now
-                     discipline the arc's own "not now" uses), so it re-asks only when the belief changes.
-                     Nothing is folded onto the channel: a deferral is a signal about timing, and this card
+       not now     → THIS QUESTION goes quiet for the rest of the session (an in-memory fingerprint set, local to
+                     this module). It must NOT route through GoalStore.markOffered: that set also gates
+                     pendingDecomposition, so deferring the staleness question used to withdraw the belief's
+                     milestone-decomposition offer permanently too — two different asks sharing one kill switch.
+                     Nothing is folded onto the channel either: a deferral is a signal about timing, and this card
                      already has an honest way to say that — the other two chips.
        not anymore → one unit of counter-evidence, the belief is forgotten through the store's own forget path
                      (which ALSO permanently denylists its text against being re-learned from work — the same
@@ -4402,10 +4411,14 @@ const Chat = (() => {
     function commit(answer) {
       if (!card.decide()) return;
       if (answer === 'defer') {
-        // NOT NOW. The arc's own not-now discipline: re-offer only when the belief itself changes. No fold — a
-        // "ask me later" says nothing about whether this channel's offers are any good.
-        try { if (typeof GoalStore !== 'undefined' && GoalStore.markOffered) GoalStore.markOffered(belief); } catch (_) {}
-        settle('✓ i’ll ask again if it changes', false);
+        /* NOT NOW — a statement about the MOMENT, and nothing else. This used to route through
+           GoalStore.markOffered, whose offered-fingerprint ALSO gates pendingDecomposition: deferring the
+           staleness QUESTION therefore withdrew the belief's MILESTONE-DECOMPOSITION offer too, permanently,
+           until its text changed. The session-scoped set silences only this ask, only this session; the arc's own
+           offer is untouched. No fold either — a "later" says nothing about whether this channel's offers are
+           any good. The copy says exactly what now happens. */
+        if (fp) reconfirmDeferred.add(fp);
+        settle('✓ i’ll ask again later', false);
         return;
       }
       /* THE RESURRECT GUARD. If the belief was retired or deleted between render and click, DossierStore.upsert
@@ -4549,6 +4562,7 @@ const Chat = (() => {
     if (stale && stale.stale) {
       const fp = recBeliefFp('goals', belief);
       if (recReconfirmDenied(fp)) return null;               // asked, answered "no" — silence until the belief changes
+      if (fp && reconfirmDeferred.has(fp)) return null;      // asked, answered "not now" — silence for the rest of THIS session
       const weeks = Math.max(1, Math.round(stale.ageDays / 7));
       // NO strength reading on an ASK: strength discounts a weak ASSERTION, and this card asserts nothing.
       // The citation is phrased by the belief's OWN provenance — a study-observed goal was never "said".

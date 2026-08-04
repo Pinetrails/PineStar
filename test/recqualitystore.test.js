@@ -297,8 +297,26 @@ A.ok(/if \(!confirmed && live\.pinned\) \{ settle\(/.test(cardBody),
 // F3: the third chip. Both answers were terminal, so ignoring the card re-asked at every task end forever.
 A.ok(/mk\('Still true'/.test(cardBody) && /mk\('Not now'/.test(cardBody) && /mk\('Not anymore', 'deny'/.test(cardBody),
   'the card offers three answers — including a NOT NOW, so ignoring it is not the only way to defer');
-A.ok(/GoalStore\.markOffered\(belief\)/.test(cardBody),
-  'and "not now" records the belief state as decided (the arc’s own not-now discipline: re-ask only on a change)');
+/* ── 11c. A DEFERRAL SILENCES THE QUESTION, NOT THE UNRELATED OFFER (S4, 2026-08-04) ──
+   "Not now" called GoalStore.markOffered — but that offered-fingerprint ALSO gates pendingDecomposition, so
+   deferring the STALENESS question permanently withdrew the belief's MILESTONE-DECOMPOSITION offer until its
+   text changed. Two different asks, one kill switch. The deferral is now session-local to chat.js. */
+A.eq(/GoalStore\.markOffered\(/.test(cardBody), false,
+  '"not now" never touches GoalStore.offered — that set gates the arc’s decomposition offer, not this question');
+A.ok(/if \(fp\) reconfirmDeferred\.add\(fp\);/.test(cardBody),
+  'it records the deferral in chat.js’s own session-lifetime fingerprint set instead');
+A.ok(/const reconfirmDeferred = new Set\(\);/.test(chatSrc),
+  '…which is in-memory and module-level: a reload honestly forgets a "later" rather than persisting it as a "no"');
+A.ok(/if \(fp && reconfirmDeferred\.has\(fp\)\) return null;/.test(arcBody),
+  'and the candidate builder consults it, so the question is not re-asked this session');
+A.ok(/settle\('✓ i’ll ask again later'/.test(cardBody),
+  'the settle copy says what actually happens now — “later”, not “if it changes”');
+/* the decomposition offer is UNAFFECTED: goalstore’s offered set is written only by the arc’s own paths. */
+{
+  const goalSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'goalstore.js'), 'utf8');
+  const callers = (goalSrc.match(/markOffered\(belief\)/g) || []).length;
+  A.ok(callers >= 3, 'goalstore still marks offered on its own confirm / null-path / decline (' + callers + ' call sites)');
+}
 const deferIdx = cardBody.indexOf("answer === 'defer'");
 A.ok(deferIdx > 0 && cardBody.indexOf('recAccept', deferIdx) > cardBody.indexOf("settle('✓ i’ll ask again", deferIdx),
   'a deferral folds NOTHING onto the channel (a "later" is not a verdict on the offer)');
