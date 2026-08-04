@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "aa4dbdd21b9118b825bd5f22cad92ed67899c2bc",
+    "sourceCommit": "f084219ec80559734aeda38008e7d0fa5b6ee9c2",
     "pathSetSha256": "23c6ea3d6950a17ce0ac3cc7dfe5ade4493bc1d7f81e6b3d5f069c26ed79d3db",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 131485,
-        "sha256": "523d36f882162b0c989cd655d6ef26c415bc48df1cfb36b17823019e2983aa1b"
+        "bytes": 133657,
+        "sha256": "fb2520af88f40b61f3f4b3b605f9258e5165aebd73ee934e0bc858da0e6b0c49"
       },
       {
         "path": "frontend/app/channels.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 500938,
-        "sha256": "723596b1599b6bbe7bca88b2972e78a020262e46c3553adbca7c581a56b16c90"
+        "bytes": 501150,
+        "sha256": "b1e85237814c327261f303327d5a7dda2fa914d9e2c862cb5939bd3741bb5831"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -178,8 +178,8 @@
       },
       {
         "path": "frontend/app/conveyor.js",
-        "bytes": 37996,
-        "sha256": "c547719fe6c28c37c9f701aa90355c344687243c991c2c7afe298b6c12de2bfa"
+        "bytes": 39138,
+        "sha256": "4b2938767935b46cd98f08ee0103d30df5b20c6d0bde03d7b872123239b955d0"
       },
       {
         "path": "frontend/app/crtlab.js",
@@ -413,8 +413,8 @@
       },
       {
         "path": "frontend/app/pipeline.js",
-        "bytes": 36360,
-        "sha256": "4f1b44c063b2503a8a2a13e87afb549f47460334a944082a5f5d1451bfb416c8"
+        "bytes": 37761,
+        "sha256": "99f8dca63417c45a897264af164457c8d7536244bb53a791dda83cda7f4bce72"
       },
       {
         "path": "frontend/app/pitch.js",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 495323,
-        "sha256": "e7d1ef6e4fb55900b05f52d04bd006b21566814bda724c33812c7fdae20e3559"
+        "bytes": 497220,
+        "sha256": "bd8c5506742988dc2a22590772247351d4852bfc72cafd7567fc398072d2e2ef"
       },
       {
         "path": "frontend/app/worldmodel.js",
