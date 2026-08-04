@@ -3,7 +3,7 @@
   "release": "0.9.0",
   "kind": "wave-b-candidate-control",
   "candidateCommit": "194bf60f2d301112654125adf991df6b5c1cf42f",
-  "controlRunnerCommit": "6c7ef4c05e5339e5ff6b5293cde8b0fc47ba1cea",
+  "controlRunnerCommit": "e7ace17839ed83aca083649fe75afee8e53c5cf7",
   "candidate": {
     "sourceTree": "ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5",
     "describe": "v0.8.5-74-g194bf60f",
@@ -111,12 +111,14 @@
     "mode": "installed-provider-backed-active-idle",
     "status": "running",
     "qualifiesRelease": false,
-    "startedAt": "2026-08-04T03:20:04.351Z",
-    "plannedEndAt": "2026-08-06T03:20:04.351Z",
+    "startedAt": "2026-08-04T05:26:29.510Z",
+    "plannedEndAt": "2026-08-06T05:26:29.510Z",
     "healthIntervalSeconds": 60,
     "providerIntervalSeconds": 3600,
     "initialStatus": { "healthChecks": 1, "providerChecks": 1, "healthFailures": 0, "providerFailures": 0, "identityFailures": 0, "unexpectedExits": 0 },
-    "shortSmoke": { "path": ".dogfood/eval/starnet-installed-provider-soak-smoke-v2.json", "sha256": "1bb08256699515a6d94857dca3c03fe87efefa33e239c6a3e4ffe61721ee213b", "healthChecks": 3, "providerChecks": 3, "failures": 0, "qualifiesRelease": false }
+    "shortSmoke": { "path": ".dogfood/eval/starnet-installed-provider-soak-smoke-v3.json", "sha256": "023fbeecc91541a3d31de869927b6445ea48937bc553645fa2a3c7f7e4201709", "healthChecks": 3, "providerChecks": 3, "failures": 0, "qualifiesRelease": false },
+    "invalidatedAttempt": { "path": ".dogfood/eval/starnet-installed-provider-soak-failed-20260804T0428Z.json", "sha256": "e7d0c31b83f1d4ad313cd2ed5f4431208e84eacc43805d8dff67d42ad28e953e", "healthChecks": 69, "providerChecks": 2, "cause": "A normal installed desktop launch reaped the direct-runtime soak process as an orphan sidecar; this attempt cannot qualify." },
+    "cleanupSmoke": { "path": ".dogfood/eval/starnet-installed-provider-soak-smoke-v4.json", "sha256": "d55d30a249e19c497d8a7e502c2fb52e10f4b6b99f3aa4a9b24b6832b9ec42e1", "healthChecks": 1, "providerChecks": 1, "failures": 0, "gracefulDesktopExit": true }
   },
   "performanceControl": {
     "path": ".dogfood/eval/starnet-wave-b-performance-control.json",

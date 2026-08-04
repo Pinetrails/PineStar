@@ -25,10 +25,14 @@ send-to-final is 12,029.909/13,998.052 ms. Every artifact independently graded g
 `99de9b06...a2c72`. The performance receipt signature verifies and is bound to installed executable SHA-256
 `96118585...4ae5`.
 
-A fail-closed 36-second installed provider-soak smoke completed 3/3 health checks and 3/3 independently graded
+A fail-closed installed-desktop provider-soak smoke completed 3/3 health checks and 3/3 independently graded
 `openai-codex/gpt-5.6-luna` active probes with zero health, provider, identity, or exit failures. It correctly
-remained `qualifiesRelease:false`. The real qualifying 48-hour installed active/idle soak started at
-`2026-08-04T03:20:04.351Z`, is due at `2026-08-06T03:20:04.351Z`, and began with green health/provider
+remained `qualifiesRelease:false`. An earlier direct-runtime soak attempt was invalidated after 69 health and
+two green provider checks when a normal desktop launch correctly reaped that process as an orphan sidecar.
+The observer also incorrectly coupled executable hashing to health fetch success; the executable remained an
+exact manifest match. Both issues are fixed: the qualifying runner now owns the installed desktop lifecycle,
+observes its exact build health, and closes it gracefully. The fresh 48-hour run started at
+`2026-08-04T05:26:29.510Z`, is due at `2026-08-06T05:26:29.510Z`, and began with green health/provider
 checks. It re-hashes the installed executable every minute and the 4,578-file runtime fingerprint with each
 hourly provider probe. An hourly task heartbeat monitors the durable report and will verify the signed receipt,
 run the final clean `test:fast`, and finish this handoff only after the actual 48 hours. The last full fast run
