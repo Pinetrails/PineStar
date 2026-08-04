@@ -59,7 +59,7 @@ async function main() {
   const durationHours = finite(opts['duration-hours'], 48), healthIntervalSeconds = finite(opts['health-interval-seconds'], 60), activeIntervalSeconds = finite(opts['active-interval-seconds'], 3600);
   if (!(durationHours >= 48) && opts['allow-short-smoke'] !== '1') throw new Error('a qualifying provider-backed soak must run for at least 48 hours');
   if (!(healthIntervalSeconds >= 10) || !(activeIntervalSeconds >= healthIntervalSeconds)) throw new Error('invalid soak sampling intervals');
-  const port = Math.max(1024, Math.floor(finite(opts.port, 19341))), output = resolve(opts.output), receiptPath = resolve(opts.receipt), outputDir = resolve(opts['output-dir']), manifestPath = resolve(opts.manifest);
+  const output = resolve(opts.output), receiptPath = resolve(opts.receipt), outputDir = resolve(opts['output-dir']), manifestPath = resolve(opts.manifest);
   const manifest = validateManifest(json(manifestPath)), subject = manifest.subject, tasks = jsonl(opts.tasks), fixtures = jsonl(opts.fixtures), validation = validateParityFixtures(tasks, fixtures);
   if (!validation.ok) throw new Error('fixture pack invalid: ' + validation.errors.join('; '));
   const task = tasks.find(row => row.id === 'parity-code-inspect'), fixture = fixtures.find(row => row.taskId === task?.id);
@@ -75,16 +75,17 @@ async function main() {
   const report = {
     schemaVersion: 'starnet.eval.installed-provider-soak.v1', mode: 'installed-provider-backed-active-idle', qualifyingDuration: durationHours >= 48, qualifiesRelease: false,
     startedAt: iso(startedAt), plannedEndAt: iso(deadline), durationHours, healthIntervalSeconds, activeIntervalSeconds,
-    runtime: { root: resolve(opts['runtime-root']), workspace: resolve(opts.workspaces), port, describe: subject.provenance.describe,
+    runtime: { root: resolve(opts['runtime-root']), workspace: resolve(opts.workspaces), port: null, describe: subject.provenance.describe,
       executable: executablePath, executableSha256: expectedExecutableSha256, rawHealthVersion: null, initialFingerprint: initialRuntimeFingerprint },
     samples: [], providerRuns: [], summary: { pass: false, completed: false, healthChecks: 0, healthFailures: 0, providerChecks: 0, providerFailures: 0, identityFailures: 0, unexpectedExits: 0 }
   };
   const stop = () => { interrupted = true; };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   try {
-    driver = await startStarNetDriver({ desktopExecutable, root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, port, timeoutMs: 300000 });
+    driver = await startStarNetDriver({ desktopExecutable, root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, timeoutMs: 300000 });
     if (driver.identity.mode !== 'installed-desktop' || driver.identity.health?.status !== 'ok' || String(driver.identity.health?.version || '') !== String(subject.provenance.describe)) throw new Error('installed desktop soak health identity does not match the manifest');
     report.runtime.rawHealthVersion = String(driver.identity.health?.version || '');
+    report.runtime.port = Number(new URL(driver.base).port);
     report.pid = driver.process.pid; let nextHealth = Date.now(), nextActive = Date.now(), activeAttempt = 0;
     while (!interrupted && Date.now() < deadline) {
       const clock = Date.now();

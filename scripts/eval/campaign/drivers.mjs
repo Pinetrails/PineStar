@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { spawn, spawnSync } from 'node:child_process';
@@ -43,6 +43,29 @@ async function waitHealth(base, child) {
     await sleep(100);
   }
   throw new Error('StarNet sidecar health timeout');
+}
+
+export function installedDesktopStartupLog(workspaces) {
+  return join(dirname(resolve(workspaces)), 'startup.log');
+}
+
+export function desktopStartupLogMark(file) {
+  try { return statSync(resolve(file)).size; } catch (_) { return 0; }
+}
+
+export async function waitInstalledDesktopPort({ startupLog, afterBytes = 0, child, timeoutMs = 30000 }) {
+  const started = performance.now(), file = resolve(startupLog);
+  while (performance.now() - started < timeoutMs) {
+    if (child.exitCode != null) throw new Error(`installed desktop exited ${child.exitCode} before publishing its sidecar port`);
+    try {
+      const body = readFileSync(file), offset = body.length >= afterBytes ? afterBytes : 0, fresh = body.subarray(offset).toString('utf8');
+      const starts = Array.from(fresh.matchAll(/startup exe=.*? port=(\d+)/g));
+      const port = Number(starts.at(-1)?.[1] || 0);
+      if (port && new RegExp(`spawn_sidecar pid=\\d+ port=${port} listening=true`).test(fresh)) return port;
+    } catch (_) {}
+    await sleep(100);
+  }
+  throw new Error(`installed desktop did not publish a listening sidecar port within ${timeoutMs}ms`);
 }
 
 async function discoverToken(base) {
@@ -94,20 +117,26 @@ async function readStarNetRun(response, base, token) {
 export async function startStarNetDriver(opts) {
   const root = resolve(opts.root), workspaces = resolve(opts.workspaces), fixtureUrl = String(opts.fixtureUrl);
   const runTimeoutMs = Number(opts.timeoutMs || 300000);
-  const port = Number(opts.port || (19200 + (process.pid % 600))), base = `http://127.0.0.1:${port}`;
+  let port = Number(opts.port || (19200 + (process.pid % 600)));
   const stdout = createWriteStream(resolve(opts.outputDir, 'campaign-starnet.out.log'), { flags: 'a' });
   const stderr = createWriteStream(resolve(opts.outputDir, 'campaign-starnet.err.log'), { flags: 'a' });
   const desktopExecutable = opts.desktopExecutable ? resolve(opts.desktopExecutable) : null;
   const command = desktopExecutable || join(root, 'node.exe');
   const args = desktopExecutable ? [] : [join(root, 'sidecar', 'index.js')];
+  const startupLog = desktopExecutable ? installedDesktopStartupLog(workspaces) : null;
+  const startupMark = startupLog ? desktopStartupLogMark(startupLog) : 0;
+  const env = Object.assign({}, process.env, {
+    STARNET_WORKSPACES: workspaces, STARNET_DEFAULT_MODEL: MODEL,
+    STARNET_FULL_ACCESS: '1', SKYNET_FULL_ACCESS: '1', STARNET_CRON_ARMED: '0', SKYNET_CRON_ARMED: '0'
+  });
+  if (!desktopExecutable) env.STARNET_PORT = String(port);
   const child = spawn(command, args, {
     cwd: desktopExecutable ? dirname(desktopExecutable) : root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: Object.assign({}, process.env, {
-      STARNET_WORKSPACES: workspaces, STARNET_PORT: String(port), STARNET_DEFAULT_MODEL: MODEL,
-      STARNET_FULL_ACCESS: '1', SKYNET_FULL_ACCESS: '1', STARNET_CRON_ARMED: '0', SKYNET_CRON_ARMED: '0'
-    })
+    env
   });
   child.stdout.pipe(stdout); child.stderr.pipe(stderr);
+  if (desktopExecutable) port = await waitInstalledDesktopPort({ startupLog, afterBytes: startupMark, child, timeoutMs: Math.min(runTimeoutMs, 60000) });
+  const base = `http://127.0.0.1:${port}`;
   const health = await waitHealth(base, child), token = await discoverToken(base);
   try { await api(base, token, '/api/connectors/remove', { id: CONNECTOR_ID }); } catch (_) {}
   const configured = await api(base, token, '/api/connectors', { id: CONNECTOR_ID, label: 'Parity fixture host', transport: 'http', url: fixtureUrl, enabled: true, timeoutMs: 120000 });

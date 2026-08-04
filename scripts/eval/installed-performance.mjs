@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { startFixtureMcpServer } from './campaign/fixture-host.mjs';
-import { startStarNetDriver } from './campaign/drivers.mjs';
+import { desktopStartupLogMark, installedDesktopStartupLog, startStarNetDriver, waitInstalledDesktopPort } from './campaign/drivers.mjs';
 import { validateManifest } from './bind.mjs';
 import { makeReceipt } from './comparison.mjs';
 import { gradeParityTrajectory, validateParityFixtures } from './independent-grader.mjs';
@@ -28,7 +28,12 @@ export function performanceStats(values) {
 
 async function terminateTree(child) {
   if (!child || child.exitCode != null) return;
-  if (process.platform === 'win32') spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 10000 });
+  if (process.platform === 'win32') {
+    const script = `$p=Get-Process -Id ${child.pid} -ErrorAction SilentlyContinue;if($p){$null=$p.CloseMainWindow()}`;
+    spawnSync('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true, stdio: 'ignore', timeout: 10000 });
+    await Promise.race([new Promise(done => child.once('exit', done)), sleep(5000)]);
+    if (child.exitCode == null) spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 10000 });
+  }
   else { try { child.kill('SIGTERM'); } catch (_) {} }
   await Promise.race([new Promise(done => child.once('exit', done)), sleep(3000)]);
 }
@@ -37,8 +42,7 @@ async function endpointAvailable(base) {
   try { return (await fetch(base + '/health', { signal: AbortSignal.timeout(500) })).ok; } catch (_) { return false; }
 }
 
-async function waitDesktopReady(base, child, timeoutMs) {
-  const started = performance.now();
+async function waitDesktopReady(base, child, timeoutMs, started = performance.now()) {
   while (performance.now() - started < timeoutMs) {
     if (child.exitCode != null) throw new Error(`installed desktop exited ${child.exitCode} before readiness`);
     try {
@@ -60,26 +64,27 @@ async function main() {
   const opts = argsOf(process.argv.slice(2));
   for (const key of ['desktop-executable', 'runtime-root', 'workspaces', 'manifest', 'contract', 'fixtures', 'tasks', 'signing-key', 'output', 'receipt', 'output-dir']) if (!opts[key]) throw new Error(`missing --${key}`);
   const samples = Math.max(3, Math.min(30, Math.floor(Number(opts.samples) || 5)));
-  const desktopPort = Math.max(1024, Math.floor(Number(opts['desktop-port']) || 19100));
-  const runPort = Math.max(1024, Math.floor(Number(opts['run-port']) || 19317));
   const timeoutMs = Math.max(30000, Math.min(600000, Math.floor(Number(opts['timeout-ms']) || 180000)));
   const executable = resolve(opts['desktop-executable']), manifestPath = resolve(opts.manifest), output = resolve(opts.output), receiptPath = resolve(opts.receipt), outputDir = resolve(opts['output-dir']);
   const manifest = validateManifest(json(manifestPath)), subject = manifest.subject;
   if (resolve(subject.executable.path) !== executable || subject.executable.sha256 !== hashFile(executable)) throw new Error('desktop executable does not match the installed candidate manifest');
   mkdirSync(dirname(output), { recursive: true }); mkdirSync(outputDir, { recursive: true });
 
-  const desktopBase = `http://127.0.0.1:${desktopPort}`;
-  if (await endpointAvailable(desktopBase)) throw new Error(`desktop port ${desktopPort} is already active; refusing to measure a warm or unrelated process`);
+  const startupLog = installedDesktopStartupLog(opts.workspaces);
   const coldSamples = [];
   for (let index = 0; index < samples; index++) {
-    const child = spawn(executable, [], { cwd: dirname(executable), windowsHide: true, stdio: 'ignore', env: Object.assign({}, process.env, { STARNET_PORT: String(desktopPort) }) });
+    const launchStarted = performance.now(), startupMark = desktopStartupLogMark(startupLog);
+    const child = spawn(executable, [], { cwd: dirname(executable), windowsHide: true, stdio: 'ignore', env: Object.assign({}, process.env) });
+    let desktopBase = '';
     try {
-      const ready = await waitDesktopReady(desktopBase, child, timeoutMs);
+      const actualPort = await waitInstalledDesktopPort({ startupLog, afterBytes: startupMark, child, timeoutMs });
+      desktopBase = `http://127.0.0.1:${actualPort}`;
+      const ready = await waitDesktopReady(desktopBase, child, timeoutMs, launchStarted);
       if (ready.version !== subject.provenance.describe) throw new Error(`desktop health version ${ready.version} != ${subject.provenance.describe}`);
-      coldSamples.push({ attempt: index + 1, ...ready });
+      coldSamples.push({ attempt: index + 1, port: actualPort, ...ready });
     } finally { await terminateTree(child); }
-    for (let wait = 0; wait < 100 && await endpointAvailable(desktopBase); wait++) await sleep(100);
-    if (await endpointAvailable(desktopBase)) throw new Error(`desktop port ${desktopPort} did not release after attempt ${index + 1}`);
+    for (let wait = 0; desktopBase && wait < 100 && await endpointAvailable(desktopBase); wait++) await sleep(100);
+    if (desktopBase && await endpointAvailable(desktopBase)) throw new Error(`desktop port did not release after attempt ${index + 1}`);
   }
 
   const tasks = jsonl(opts.tasks), fixtures = jsonl(opts.fixtures), validation = validateParityFixtures(tasks, fixtures);
@@ -89,7 +94,7 @@ async function main() {
   const fixtureServer = await startFixtureMcpServer(); let driver = null;
   const artifactSamples = [];
   try {
-    driver = await startStarNetDriver({ root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, port: runPort, timeoutMs });
+    driver = await startStarNetDriver({ desktopExecutable: executable, root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, timeoutMs });
     for (let index = 0; index < samples; index++) {
       const root = mkdtempSync(join(outputDir, `installed-artifact-a${index + 1}-`)), state = fixtureServer.activate(fixture, root);
       try {
