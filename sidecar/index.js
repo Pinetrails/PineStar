@@ -7316,7 +7316,11 @@ function handleRouting(req, res) {
     if (raw && raw.trim()) { try { plan = JSON.parse(raw); } catch (_) { res.writeHead(400); return res.end('bad json'); } }
     const r = router.setPlan(plan);
     // persist every ACCEPTED plan (incl. an accepted clear) so routing survives a sidecar restart (2026-07-06).
-    if (r && r.ok) { try { saveResilient(ROUTING_FILE, plan); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); } }
+    // A REFUSED post persists the CLEAR (2026-08-04): setPlan drops the in-memory plan on refusal, so leaving
+    // the previously-accepted file on disk would re-arm STALE routing at boot — live behavior (unrouted
+    // fallback) and post-restart behavior (old floor's routing) diverged for the same posted state. Boot must
+    // match live: accepted plan -> persist it; accepted clear OR refusal -> persist null (same durable idiom).
+    try { saveResilient(ROUTING_FILE, (r && r.ok) ? plan : null); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); }
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
