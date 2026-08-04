@@ -17,11 +17,15 @@ historical 20k body clamp that could pair an upstream digest with truncated loca
 now matches the 256k package ceiling, and a regression pins intact long-document round trips.
 
 Focused proof is green: exchange core 24 assertions, skill lifecycle 128, gate 96, real authenticated
-sidecar exchange 20, the selected HTTP manifest 154, and website mirror 8. Canonical full-gate attempts are
-not green on this loaded host, so this branch remains unmerged: the HTTP gate passed 26 suites before a LOOP
-git candidate timeout (55 assertions green alone); fast-gate retries separately tripped timing assumptions in
-parallel-tools (15 green alone) and Codex sign-in polling (17 green alone). These are recorded as unrelated
-timing flakes, not waived release evidence; a clean canonical rerun is still required before merge readiness.
+sidecar exchange 20, the selected HTTP manifest 154, and website mirror 8. The first committed full-fast run
+correctly caught stale candidate-bound frontend hashes; `b8c25898` regenerated only the seven expected
+release-surface fields and the claims authority is now 64 assertions green. A full retry then passed steps
+1-517 and failed the code-mode nested-dispatch deadline at step 518; that suite passed 26 assertions alone,
+and the final two recovery steps passed 54 and 14 alone. The latest HTTP retry passed 24 suites before the
+LOOP E2E sidecar missed its 12-second boot deadline and reproduced that timeout alone. Earlier attempts also
+hit unrelated LOOP-git/parallel-tools/Codex-sign-in timing failures that passed alone. Canonical gates remain
+non-green on this heavily loaded host, so these isolated receipts are not treated as a waiver and the branch
+remains unmerged pending a clean run.
 
 Attended seeded proof installed Anthropic's official `skill-creator` from raw GitHub. The running UI showed
 the complete 32,624-character body, source SHA-256, bounded guard summary, quarantine status, source link,
