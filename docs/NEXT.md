@@ -1,6 +1,6 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-08-03 - v0.9.0 WAVE B INSTALLED CAMPAIGN + PERFORMANCE (QUALIFYING SOAK RUNNING)
+## 2026-08-03 - v0.9.0 WAVE B INSTALLED CAMPAIGN + PERFORMANCE (FINAL CANDIDATE PENDING)
 
 THE THREE REQUESTED NUMERIC PARITY GATES PASS; THE BROADER FROZEN CONTRACT REMAINS RED ON TWO
 ZERO-TOLERANCE FALSE-DONE EVENTS. Both installed/provider-backed campaign drivers completed exactly three
@@ -50,6 +50,13 @@ restart on this pressured host would be dishonest. Finish the permanent desktop 
 stabilize or reboot the host, build the definitive candidate, then start its one final 48-hour run. The last full
 fast run was 513/514 with one timing-sensitive code-deadline assertion; that test immediately passed 26/26 in
 isolation, so a clean full rerun remains required after the final soak.
+
+The permanent desktop binding fix is now committed at `037a8783f617909b8e623d89766d4f348cdcad46`.
+Tauri replaces both `STARNET_*` and legacy `SKYNET_*` aliases for every shell-owned port, API/IPC token,
+workspace, provider key/pool, and channel token before spawning the sidecar. A poisoned-parent Rust regression
+test plus the 26-assertion static hardening suite cover both alias directions. The installed 0.8.5 binary is
+unchanged; compile, full fast gate, final build/install, and live poisoned-environment proof remain deferred until
+the host has been rebooted or otherwise returned to a qualified memory state.
 
 ## 2026-08-03 - v0.9.0 WAVE B AUTHENTICATED PREFLIGHT (`agent/release-090-parity-plan`)
 
