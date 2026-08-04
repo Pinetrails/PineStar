@@ -401,7 +401,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
            The curve matters as much as the field: a linear accept spreads leaves everywhere at
            slightly different rates, which is CONFETTI. The power term is what buys genuinely bare
            duff next to genuinely deep litter, and that contrast is the large-scale read. */
-        if (rnd() > Math.pow(clamp01((drift(u, v) - 0.26) * 1.7), 1.5)) continue;
+        if (rnd() > Math.pow(clamp01((drift(u, v) - 0.26) * 1.7), 2.3)) continue;
         /* 1.6-4.4px = 8-22cm at this ground's scale, i.e. a beech leaf up to a big maple one.
            The first cut ran to 10.5px — HALF THE WIDTH OF AN AGENT, a leaf you would need two
            hands for. Smaller means more of them: litter is dense, and the attempt count went up
@@ -409,7 +409,12 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const L = 1.6 + Math.pow(rnd(), 2.2) * 2.8, W = L * (0.42 + rnd() * 0.32);
         /* A DRY LEAF IS AN EVENT. At a third of them the floor was orange confetti; the bright
            end has to be rare or it stops being the bright END and becomes the base colour. */
-        const dry = rnd() < 0.22;
+        /* ⛔ A FRACTION IS NOT A COUNT. Tripling the leaf population to hold coverage at the
+           smaller size tripled the BRIGHT ones too, and 22% of 26000 is autumn confetti where
+           22% of 9000 was an accent. The bright end has to be rare in ABSOLUTE terms — it is
+           the top of the value range, and a top that covers a fifth of the floor is just the
+           floor colour. */
+        const dry = rnd() < 0.085;
         const pal = dry ? LT.LEAF_DRY : LT.LEAF_WET;
         const t = (dry ? 0.40 : 0.14) + rnd() * 0.52;
         const face = ramp(pal, t), rib = ramp(pal, t + 0.30);
