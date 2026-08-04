@@ -6212,8 +6212,10 @@ const Chat = (() => {
       const who = (typeof App !== 'undefined' && App.agentName && App.agentName(nx)) || nx;
       const wiHop = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
       const hopStart = Date.now();
-      // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next
-      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
+      // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next.
+      // `from` = the PRODUCER dock (mirrors chain.js's placed event — must not drift): world.js spawns the
+      // crate at THIS dock instead of guessing the upstream dock from the compiled plan.
+      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', from: cur, preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
       if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
 
       const prompt = (typeof Pipeline !== 'undefined' && Pipeline.handoffPrompt)

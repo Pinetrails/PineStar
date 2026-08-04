@@ -43,6 +43,7 @@ const Build = (() => {
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
     UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES',
     ORPHAN_JUNCTION: 'NOT ON A BELT — MOVE IT ONTO THE LINE',
+    BELT_BURIED: 'A PROP SITS ON THIS LINE — MOVE IT',
     // the docks feed each OTHER: no belt loop anywhere, but the work line would run forever, paying each lap
     CHAIN_CYCLE: 'WORK LINE LOOPS — CUT ONE HANDOFF'
   };
@@ -997,12 +998,22 @@ const Build = (() => {
     const stops = testStops() || {};
     const owner = stops[x + ',' + y];
     if (!p.outbound && owner) {
-      // stage ③ + ④: the dock consumed the job — and the finished work ships back out from the same dock
+      // stage ③ + ④: the dock consumed the job — and the finished work ships back out from the same dock.
+      // fromAgentId stamps the PRODUCER on the return crate (same field the live handoff physics rides —
+      // conveyor.js: a dock never eats its own output), so stage ⑤ below can tell a handoff from a ship-out.
       note(x, y, '③ DELIVERED — ' + agentLabelFor(owner) + "'S DOCK (they work it at their desk)", '#e8c860');
-      convey.enqueueAt(x, y, { test: true, outbound: true, box: 'product', workitemId: 'test-out-' + (++_testN) });
+      convey.enqueueAt(x, y, { test: true, outbound: true, box: 'product', fromAgentId: owner, workitemId: 'test-out-' + (++_testN) });
       setTimeout(() => note(x, y + 1, '④ THE RESULT SHIPS FROM THE DOCK…', '#9adcb0'), 900);
     } else if (p.outbound) {
-      note(x, y, '⑤ …AND OUT. THAT IS THE WHOLE LOOP', '#7ee2a8');
+      // stage ⑤ forks on WHERE the outbound crate landed: a FOREIGN bound dock's hookup tile is a HANDOFF
+      // (this dock's output becomes that agent's input — the chain layer), not a ship-out. Only an open
+      // end / outbox mouth is the whole loop. The stops map knows the tile's owner; the crate knows its
+      // producer — so the caption can only say what the engine actually did.
+      if (owner && owner !== p.fromAgentId) {
+        note(x, y, '⑤ HANDED OFF TO ' + agentLabelFor(owner) + ' — its output becomes their input', '#e8c860');
+      } else {
+        note(x, y, '⑤ …AND OUT. THAT IS THE WHOLE LOOP', '#7ee2a8');
+      }
     } else {
       note(x, y, '③ SANK — no assigned dock on this line', '#ffbe3c');
     }
@@ -1013,7 +1024,8 @@ const Build = (() => {
     if (!bx.payload || !bx.payload.test || !info || !info.tile) return;
     if (info.kind === 'filter') note(info.tile.x, info.tile.y, '② SORTED: ' + (info.tag || '?') + ' → ' + info.lane, '#5ad0ff');
     else if (info.kind === 'split') note(info.tile.x, info.tile.y, '② SPLIT: balancing lanes', '#5ad0ff');
-    else if (info.kind === 'merge' && info.absorbed) note(info.tile.x, info.tile.y, '② MERGING: held for the batch', '#5ad0ff');
+    // no merge caption: the merger is a LANE FUNNEL — conveyor.js never emits `absorbed` (the old
+    // "held for the batch" branch described a combine the harness never performed; see chooseExit).
   }
   // the INTAKE's belt-adjacent tile (where a box spawns), or null if no INTAKE sits on a belt
   function intakeBeltTile() {
@@ -1850,6 +1862,24 @@ const Build = (() => {
     ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw / 2, topY - bh, bw, bh);
     ctx.fillStyle = bound ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
     ctx.fillText(txt, cx, topY - 2 / zoom);
+    // dock→dock affordance: a BOUND bay's glance also says where its OUTPUT goes — read from the compiled
+    // plan's chain record (valPlan.chains — the same fact the sidecar routes by), so the tag can never
+    // claim a handoff dispatch wouldn't perform. Same tag chrome, stacked one line above; still a glance,
+    // never a window. A beltless dock has no chain record and gains no line.
+    if (isBay && bound && valPlan && valPlan.chains) {
+      const ch = valPlan.chains[p.agentId];
+      const t2 = !ch ? null
+        : (ch.next && ch.next.length) ? '▸ HANDS OFF TO ' + ch.next.map(agentLabelFor).join(' + ')
+        : ch.outbox ? '▸ SHIPS TO OUTBOX'
+        : ch.deadEnd ? '▸ OUTPUT DEAD-ENDS' : null;
+      if (t2) {
+        const bw2 = ctx.measureText(t2).width + pad * 2, top2 = topY - bh;
+        ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw2 / 2, top2 - bh, bw2, bh);
+        // handoff/ship-out = the bound green; a dead-ending output reads amber (same invite-to-fix tone as 'unassigned')
+        ctx.fillStyle = (ch.next && ch.next.length) || ch.outbox ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
+        ctx.fillText(t2, cx, top2 - 2 / zoom);
+      }
+    }
   }
 
   function drawHover(t) {

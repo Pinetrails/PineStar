@@ -292,6 +292,24 @@ A.eq(JSON.stringify(mr.del.map(p => p.workitemId).sort()), JSON.stringify(mrPlai
   cv2.enqueueAt(2, 0, { workitemId: 'b1' });   // inbound born on the dock — birth tile never consumes
   let t2 = 0; for (let i = 0; i < 400; i++) { t2 += 16; cv2.tick(16, t2, lane, null, stops); }
   A.ok(cv2del.length === 1 && cv2del[0].x === 5, 'a crate born ON a dock tile is not consumed at birth');
+
+  // A DOCK NEVER EATS ITS OWN OUTPUT (handoff physics): a chain crate produced by A, riding A's OTHER ring
+  // tiles on the way to B, rides past every one of them and is consumed only at B's dock. The birth-tile
+  // check alone can't cover this — a multi-tile hookup puts A's dock under tiles the crate never spawned on.
+  const hoLane = [0, 1, 2, 3, 4, 5].map(x => ({ x, y: 0, dir: 'E' }));
+  const hoStops = { '1,0': 'alpha', '2,0': 'alpha', '4,0': 'beta' };   // alpha owns TWO ring tiles; beta downstream
+  const hoDel = [];
+  const cvho = Conveyor.create({ onDeliver: (bx, x, y) => hoDel.push({ x, y }) });
+  cvho.enqueueAt(0, 0, { workitemId: 'h1', agentId: 'beta', fromAgentId: 'alpha', box: 'product' });
+  let t3 = 0; for (let i = 0; i < 400; i++) { t3 += 16; cvho.tick(16, t3, hoLane, null, hoStops); }
+  A.eq(hoDel.length, 1, 'a handoff crate delivers exactly once');
+  A.ok(hoDel[0].x === 4, "…at the RECEIVER's dock — it rode past both of its producer's ring tiles (x=" + hoDel[0].x + ')');
+  // and an UNOWNED crate from the same producer still refuses the producer's dock but stops at the first foreign one
+  const hoDel2 = [];
+  const cvho2 = Conveyor.create({ onDeliver: (bx, x, y) => hoDel2.push({ x, y }) });
+  cvho2.enqueueAt(0, 0, { workitemId: 'h2', fromAgentId: 'alpha' });
+  let t4 = 0; for (let i = 0; i < 400; i++) { t4 += 16; cvho2.tick(16, t4, hoLane, null, hoStops); }
+  A.ok(hoDel2.length === 1 && hoDel2[0].x === 4, "an unowned crate skips its OWN producer's dock and stops at the first foreign dock");
 }
 
 /* ---------- ADDRESSED CRATES RIDE HOME through junctions (owners beat tag routing) ---------- */
@@ -370,5 +388,15 @@ A.eq(JSON.stringify(mr.del.map(p => p.workitemId).sort()), JSON.stringify(mrPlai
     if (bs[a].x === bs[b].x && bs[a].y === bs[b].y && Math.abs(bs[a].prog - bs[b].prog) < 0.8) overlapped = true;
   A.ok(!overlapped, 'crates never settle on top of each other (leaderDist breaks progress ties by id)');
 }
+
+/* ---------- crate-mass honesty: weightForUsd maps RECONCILED spend -> product-crate mass ---------- */
+A.eq(Conveyor.weightForUsd(undefined), 0, 'no reconciled cost -> weight 0 (the back-compat light look)');
+A.eq(Conveyor.weightForUsd(0), 0, 'a zero-cost run ships a weightless crate');
+A.eq(Conveyor.weightForUsd(-1), 0, 'a negative usd can never weigh a crate');
+A.eq(Conveyor.weightForUsd(NaN), 0, 'NaN is not a cost');
+A.eq(Conveyor.weightForUsd(0.25), 0.25, '25 cents reads as a quarter-mass crate (linear to $1)');
+A.eq(Conveyor.weightForUsd(1.0), 1, 'a $1 run reads full-mass');
+A.eq(Conveyor.weightForUsd(7.5), 1, 'mass clamps at 1 — a pricier run cannot overflow the art');
+A.eq(Conveyor.weightForUsd(0.004), 0.004, 'a sub-cent run reads as a near-weightless crate, never estimated up');
 
 A.report('conveyor');
