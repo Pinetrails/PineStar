@@ -21,7 +21,7 @@ function freePort() {
   });
 }
 
-function start(workspaces, port) {
+function start(workspaces, port, extraEnv) {
   const child = spawn(process.execPath, [INDEX], {
     env: Object.assign({}, process.env, {
       SKYNET_WORKSPACES: workspaces,
@@ -31,7 +31,7 @@ function start(workspaces, port) {
       SKYNET_CRON: '0',
       SKYNET_OPENROUTER_KEY: '',
       STARNET_OPENROUTER_KEY: ''
-    }),
+    }, extraEnv || {}),
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let output = '';
@@ -68,6 +68,21 @@ function waitExit(child, timeoutMs) {
   fs.writeFileSync(sentinel, sentinelBytes);
   const processes = [];
   try {
+    const fakeAppData = path.join(root, 'fake-app-data');
+    const protectedRoot = path.join(fakeAppData, 'ai.skynet.harness', 'workspaces');
+    fs.mkdirSync(protectedRoot, { recursive: true });
+    const protectedSentinel = path.join(protectedRoot, 'real-user-state.json');
+    fs.writeFileSync(protectedSentinel, sentinelBytes);
+    const protectedPort = await freePort();
+    const dev = start(protectedRoot, protectedPort, {
+      LOCALAPPDATA: fakeAppData, APPDATA: fakeAppData, SKYNET_DEV: '1', STARNET_DEV: '1'
+    });
+    processes.push(dev.child);
+    const devRefused = await waitExit(dev.child, 5000);
+    A.eq(devRefused.code, 74, 'DEV/QA host cannot target a canonical user root');
+    A.ok(dev.output().includes('DEV_WORKSPACE_PROTECTED'), 'DEV refusal reports the stable safety code');
+    A.eq(fs.readFileSync(protectedSentinel, 'utf8'), sentinelBytes, 'DEV refusal happens before user-state mutation');
+
     const portA = await freePort();
     const portB = await freePort();
     const a = start(root, portA); processes.push(a.child);
