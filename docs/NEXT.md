@@ -40,13 +40,16 @@ observes its exact build health, and closes it gracefully. A subsequent run was 
 the same sample's health endpoint remained 200, later samples and a direct re-hash matched the manifest, and the
 observer's PowerShell child simultaneously reported CLR startup failure. The frozen zero-failure gate was not
 weakened. Executable hashes now use bounded 64 KiB streams and host telemetry retries three times; focused tests
-are green. The replacement 48-hour run started at `2026-08-04T17:30:17.070Z`, is due at
-`2026-08-06T17:30:17.070Z`, and began with green health/provider/identity/observer
-checks. It re-hashes the installed executable every minute and the 4,578-file runtime fingerprint with each
-hourly provider probe. An hourly task heartbeat monitors the durable report and will verify the signed receipt,
-run the final clean `test:fast`, and finish this handoff only after the actual 48 hours. The last full fast run
-was 513/514 with one timing-sensitive code-deadline assertion; that test immediately passed 26/26 in isolation,
-so a clean full rerun remains required after the soak.
+are green. The replacement run then captured 103 green health checks and two green provider probes before its
+runner and desktop were terminated without a terminal report at `2026-08-04T19:12:20.545Z`. Host evidence makes
+this an invalid environment, not a StarNet failure: Windows recorded low virtual memory at 18:27Z, `codex.exe`
+crashed at 18:29Z, the Codex app hung at 18:34Z, free physical memory fell below 400 MiB, and `SignalRgb` alone
+held about 9.9 GiB private allocation while several unrelated Node processes held 1.6--1.9 GiB each. The orphaned
+test sidecar was verified by exact executable/command and cleaned up. No qualifying soak is active, and another
+restart on this pressured host would be dishonest. Finish the permanent desktop binding and false-done fixes,
+stabilize or reboot the host, build the definitive candidate, then start its one final 48-hour run. The last full
+fast run was 513/514 with one timing-sensitive code-deadline assertion; that test immediately passed 26/26 in
+isolation, so a clean full rerun remains required after the final soak.
 
 ## 2026-08-03 - v0.9.0 WAVE B AUTHENTICATED PREFLIGHT (`agent/release-090-parity-plan`)
 

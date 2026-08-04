@@ -110,7 +110,7 @@
   "qualifyingSoak": {
     "path": ".dogfood/eval/starnet-installed-provider-soak.json",
     "mode": "installed-provider-backed-active-idle",
-    "status": "running",
+    "status": "paused-no-active-run-host-resource-exhaustion",
     "qualifiesRelease": false,
     "startedAt": "2026-08-04T17:30:17.070Z",
     "plannedEndAt": "2026-08-06T17:30:17.070Z",
@@ -121,7 +121,8 @@
     "invalidatedAttempt": { "path": ".dogfood/eval/starnet-installed-provider-soak-failed-20260804T0428Z.json", "sha256": "e7d0c31b83f1d4ad313cd2ed5f4431208e84eacc43805d8dff67d42ad28e953e", "healthChecks": 69, "providerChecks": 2, "cause": "A normal installed desktop launch reaped the direct-runtime soak process as an orphan sidecar; this attempt cannot qualify." },
     "cleanupSmoke": { "path": ".dogfood/eval/starnet-installed-provider-soak-smoke-v5.json", "sha256": "f6a62e1801a90e4384e0a1759059408b78f8e176add4895446c5b1a65772335b", "healthChecks": 1, "providerChecks": 1, "failures": 0, "gracefulDesktopExit": true, "uiEnginePortCoherent": true },
     "invalidatedPortSplitAttempt": { "path": ".dogfood/eval/starnet-installed-provider-soak-invalid-ui-port-split.json", "sha256": "4b0abe9435af96e61e267f3bd5218623240c64686bd121fa3acf5bc8cf259811", "cause": "STARNET_PORT moved only the sidecar; the WebView retained Tauri's different random engine address, proven by page-side diagnostics." },
-    "invalidatedHostPressureAttempt": { "path": ".dogfood/eval/starnet-installed-provider-soak-invalid-host-pressure-20260804T1713Z.json", "sha256": "fc62d9fc882249f8fc3690e083899227d0ff1f3ebfa2b175c7fae034172e0177", "healthChecks": 659, "providerChecks": 11, "healthEndpointFailures": 0, "cause": "Host-wide memory pressure caused one synchronous executable-hash ArrayBuffer allocation failure while the health endpoint remained 200; a simultaneous PowerShell CLR-start failure corroborated observer pressure. The exact executable hash matched before and after, but the frozen zero-failure gate invalidated the run." }
+    "invalidatedHostPressureAttempt": { "path": ".dogfood/eval/starnet-installed-provider-soak-invalid-host-pressure-20260804T1713Z.json", "sha256": "fc62d9fc882249f8fc3690e083899227d0ff1f3ebfa2b175c7fae034172e0177", "healthChecks": 659, "providerChecks": 11, "healthEndpointFailures": 0, "cause": "Host-wide memory pressure caused one synchronous executable-hash ArrayBuffer allocation failure while the health endpoint remained 200; a simultaneous PowerShell CLR-start failure corroborated observer pressure. The exact executable hash matched before and after, but the frozen zero-failure gate invalidated the run." },
+    "invalidatedHostExhaustionAttempt": { "path": ".dogfood/eval/starnet-installed-provider-soak-invalid-host-exhaustion-20260804T1912Z.json", "sha256": "16e78574a474127727214ee04dc62cb9158cbc11f91a3e6a1234985507c6fe6b", "healthChecks": 103, "providerChecks": 2, "failuresBeforeTermination": 0, "lastUpdatedAt": "2026-08-04T19:12:20.545Z", "cause": "The runner and desktop were externally terminated without a terminal report during documented Windows virtual-memory exhaustion; codex.exe crashed and the Codex app hung in the same pressure window. This environment cannot qualify a release soak." }
   },
   "performanceControl": {
     "path": ".dogfood/eval/starnet-wave-b-performance-control.json",
