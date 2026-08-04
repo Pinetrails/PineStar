@@ -4621,8 +4621,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
       { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
-      { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
-      { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
+      // NAV CONDENSE (2026-08-04) — two label renames, ids untouched (remembered-section keys + wiring
+      // bind to the id): 'NOTIFICATIONS' collided with the SYSTEM-dock NOTIFICATIONS panel (inbox vs
+      // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
+      // dock read as a loop.
+      { id: 'notifs', label: 'ALERTS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
+      { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
 
@@ -6323,7 +6327,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // OPEN (never toggle-closed) a dock term by key — used by deep links like the COMMS error chip that
   // points a beginner at Settings (fix your model key) or SKILLS (enable a capability). No-op if unknown;
   // if the panel is already open it's left as-is rather than closed.
+  // NAV CONDENSE (2026-08-04): ROUTINES + LOOPS merged into the one AUTOMATION window. The old term
+  // keys live on as deep-link aliases so every existing openTerm('routines'|'loops') caller (and any
+  // future one) lands on its old content — the matching SECTION of the merged console. An explicit
+  // section arg from a caller is honored by namespacing it the way the lanes now name their panes
+  // ('create' → 'routines-create', 'start'/'active' → 'loops-start'/'loops').
+  const TERM_ALIAS = {
+    routines: { term: 'automation', section: 'routines', map: { active: 'routines', create: 'routines-create' } },
+    loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } }
+  };
   function openTerm(key, section) {
+    const al = TERM_ALIAS[key];
+    if (al) { section = (section && al.map[section]) || al.section; key = al.term; }
     const def = BUILDERS[key]; if (!def) return;
     // optional section arg (Lane A error-door routing): land the console rail on a specific section — same
     // mechanism as the dossier's "jump to CONFIG" (consoleSection is what mountConsole reads at render).
@@ -6377,7 +6392,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (sel >= present.length) sel = 0;
     crewRender();
     if (open.agents) rerender('agents');
-    if (open.routines) rerender('routines');
+    if (open.automation) rerender('automation');   // the ROUTINES lane's create form shows the roster
   }
 
   /* ============== ARCADE CABINET ==============

@@ -1,13 +1,15 @@
-/* STARNET — windows/routines.js : the ROUTINES window (extracted verbatim from stationui.js).
-   Loads AFTER stationui.js (see index.html) and registers itself via StationUI.registerWindow;
-   the only stationui internals it touches are the enumerated StationUI.h helper surface
-   (esc/sfx/notify/fmtRel, mountConsole + its consoleSection store, and the live present/sel views). */
+/* STARNET — windows/routines.js : the ROUTINES lane of the AUTOMATION window (extracted from stationui.js).
+   Loads AFTER stationui.js and windows/automation.js (see index.html) and registers itself as an
+   AutomationWindow LANE — its two sections (ACTIVE ROUTINES · CREATE ROUTINE) mount inside the shared
+   AUTOMATION console rather than a window of their own (NAV CONDENSE 2026-08-04). The only stationui
+   internals it touches are the enumerated StationUI.h helper surface
+   (esc/sfx/notify/fmtRel, consoleSection, and the live present/sel views). */
 'use strict';
 (() => {
-  if (typeof StationUI === 'undefined' || !StationUI.registerWindow) return;
+  if (typeof StationUI === 'undefined' || typeof AutomationWindow === 'undefined') return;
   const H = StationUI.h;
   const esc = H.esc, sfx = H.sfx, notify = H.notify, fmtRel = H.fmtRel;
-  const mountConsole = H.mountConsole, consoleSection = H.consoleSection;
+  const consoleSection = H.consoleSection;
   let routineAgentId = 'agent'; // selected roster agent for new scheduled routines (window-local state)
 
   /* ============== ROUTINES — scheduled autonomous runs (server-owned cron) ==============
@@ -15,7 +17,7 @@
      (schedule + boot-frozen secrets never touch the browser), so this panel is a thin CRUD client over
      /api/cron — render from GET, mutate via POST, re-fetch. Honest by construction: it shows a next-fire /
      last-result only from real server data, and says plainly when the scheduler tick is off. */
-  function buildRoutines(body) {
+  function routinesLane(body) {
     const roster = H.present.length ? H.present : [{ id: 'agent', name: 'Agent', color: 'var(--ph)' }];
     const hasSelected = roster.some(a => a && a.id === routineAgentId);
     if (!hasSelected) routineAgentId = (H.present[H.sel] && H.present[H.sel].id) || (roster[0] && roster[0].id) || 'agent';
@@ -97,11 +99,14 @@
       '</div>' +
       '<div id="rt-msg" class="msg"></div>';
     const frag = h => (el => { el.innerHTML = h; });
-    mountConsole(body, 'routines', [
-      { id: 'active', label: 'ACTIVE ROUTINES', glyph: '◷', desc: 'Standing jobs that fire on a schedule — their next run, last result, and whether the scheduler is armed.', build: frag(secActive) },
-      { id: 'create', label: 'CREATE ROUTINE', glyph: '✦', desc: 'Put your agent to work on a schedule — a morning brief, a nightly summary, a recurring check.', build: frag(secCreate) }
-    ], { search: false });
-
+    // section ids are namespaced (routines / routines-create) because they share the AUTOMATION console's
+    // rail with the loops lane — 'active' alone would collide. wire() runs after mountConsole has appended
+    // every pane to `body`, so all the querySelector wiring below resolves exactly as it always did.
+    const sections = [
+      { id: 'routines', label: 'ACTIVE ROUTINES', glyph: '◷', desc: 'Standing jobs that fire on a schedule — their next run, last result, and whether the scheduler is armed.', build: frag(secActive) },
+      { id: 'routines-create', label: 'CREATE ROUTINE', glyph: '✦', desc: 'Put your agent to work on a schedule — a morning brief, a nightly summary, a recurring check.', build: frag(secCreate) }
+    ];
+    function wire() {
     const listEl = body.querySelector('#rt-list'), gateEl = body.querySelector('#rt-gate');
     const msgEl = body.querySelector('#rt-msg'), outEl = body.querySelector('#rt-out');
     const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -259,8 +264,8 @@
           // then re-activate the console tab) and focus the name field once the pane is visible.
           if (cta) cta.addEventListener('click', () => {
             sfx('click');
-            consoleSection['routines'] = 'create';
-            const tab = body.querySelector('#con-tab-routines-create');
+            consoleSection['automation'] = 'routines-create';
+            const tab = body.querySelector('#con-tab-automation-routines-create');
             if (tab) tab.click();
             const nm = body.querySelector('#rt-name'); if (nm) nm.focus();
           });
@@ -429,7 +434,10 @@
     });
 
     refresh();
+    }
+
+    return { sections, wire };
   }
 
-  StationUI.registerWindow('routines', 'ROUTINES', buildRoutines, { console: true });
+  AutomationWindow.registerLane(routinesLane);
 })();

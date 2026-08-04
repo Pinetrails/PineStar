@@ -27,9 +27,10 @@ const MANUAL =
   'NAVIGATION — the controls the Commander uses:\n' +
   '- COMMS: the chat panel. The Commander types a request and hits Enter to task the focused agent. ' +
   'Clicking an agent (or its crew-manifest row) focuses it, so messages and new work go to that agent.\n' +
-  '- ROUTINES: the built-in scheduled-work panel. It creates StarNet routines/cron jobs that wake agents ' +
-  'inside the harness. Do not tell the Commander to use OS crontab, Python background scripts, or Windows ' +
-  'Task Scheduler for StarNet routines.\n' +
+  '- AUTOMATION (dock, under ▤ WORK): the standing-work window, holding ROUTINES (scheduled work) and ' +
+  'LOOPS (one objective repeated until done) as sections of one panel. ROUTINES creates StarNet ' +
+  'routines/cron jobs that wake agents inside the harness. Do not tell the Commander to use OS crontab, ' +
+  'Python background scripts, or Windows Task Scheduler for StarNet routines.\n' +
   '- TASKS: the project board/workstream view. Cards are real workstreams; assigning one opens COMMS and ' +
   'hands that work to an agent.\n' +
   '- The DOCK (bottom bar): ⚒ BUILD → BUILD STATION opens REFIT; the RECRUIT/SUMMON control opens ' +
