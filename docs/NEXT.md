@@ -28,6 +28,9 @@ failures, and zero unexpected exits. It remains `qualifiesRelease:false`.
 REMAINING BLOCKER: the repository has 32 independent fixtures and a fail-closed grader, but no executable
 campaign adapter that drives either harness and captures host observations. Therefore the 96 trajectories per
 harness do not exist and the 100% critical / 95% overall / at-most-5-point gates cannot truthfully be evaluated.
+The formal candidate/reference-bound verdict is signed and red: critical and overall gates fail, while its
+0%/0%/zero-gap values are explicitly availability sentinels rather than measured harness scores. Receipt SHA-256
+is `3cdafeee315a23948beb7cefc9f8a2a02a1e82e585abaea21a1db99eab2ef9eb` and its Ed25519 signature verifies.
 Do not feed `makePassingObservation` into release evidence; it is a test-only forgery helper. Implement common
 fixture materialization plus separate StarNet/Hermes drivers and host observers, capture all 192 runs, grade and
 sign them, then run installed desktop cold-start/useful-artifact measurements and the qualifying installed

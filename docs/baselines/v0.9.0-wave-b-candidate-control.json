@@ -60,6 +60,31 @@
       "cacef9b55f412ec86a9c28d6fb74c4c89ec348660474a31c9018de6b789b6eac"
     ]
   },
+  "parityVerdict": {
+    "path": ".dogfood/eval/starnet-hermes-wave-b-parity-verdict.json",
+    "sha256": "3cdafeee315a23948beb7cefc9f8a2a02a1e82e585abaea21a1db99eab2ef9eb",
+    "pass": false,
+    "candidateBound": true,
+    "referenceBound": true,
+    "signature": {
+      "algorithm": "Ed25519",
+      "keyId": "29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d",
+      "verified": true
+    },
+    "availabilitySentinels": {
+      "rowsPerHarness": 96,
+      "starnetPassRatePct": 0,
+      "referencePassRatePct": 0,
+      "gapPoints": 0
+    },
+    "gates": {
+      "critical100Pct": false,
+      "overall95Pct": false,
+      "withinFivePoints": true,
+      "zeroTolerance": false
+    },
+    "reason": "No executable host-observation campaign adapter is implemented; the zero scores are availability sentinels, not measured harness quality."
+  },
   "performanceControl": {
     "path": ".dogfood/eval/starnet-wave-b-performance-control.json",
     "sha256": "189ef51edff5b9e044b47387c6b059a909e53318ffb45e85da1c5752528c62d8",
