@@ -548,4 +548,30 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.ok(P.ok(plan), 'neither is a deploy blocker');
 }
 
+/* ---- BELT_BURIED: a blocking prop over a belt run warns; machines and flat decor never do ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 6, y: 0, w: 1, h: 1, agentId: 'coder' },
+     { id: 'crate', t: 'crate_stack', x: 3, y: 0, w: 1, h: 1, block: true },    // solid, ON the run
+     { id: 'rug', t: 'rug', x: 4, y: 0, w: 1, h: 1, block: false },             // flat decor on the run
+     { id: 'desk', t: 'desk', x: 3, y: 5, w: 2, h: 1, block: true }],           // solid, nowhere near a belt
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 0, 'E')]
+  ));
+  const buried = plan.errors.filter(e => e.code === 'BELT_BURIED');
+  A.eq(buried.length, 1, 'exactly ONE buried finding — the solid prop on the run');
+  A.ok(buried[0].propId === 'crate' && buried[0].warn, '…naming the prop, as a warn');
+  A.ok(buried[0].tile && buried[0].tile.x === 3 && buried[0].tile.y === 0, '…anchored on the covered belt tile');
+  A.ok(P.ok(plan), 'a buried line still deploys (transport conserves crates; the floor just looks wrong)');
+  // machines sitting on the line are the LINE, not a burial; props without a block field never trip it
+  const clean = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'f1', t: 'filter', x: 2, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 6, y: 0, w: 1, h: 1, agentId: 'coder' },
+     { id: 'legacy', t: 'plant', x: 4, y: 0, w: 1, h: 1 }],                     // no block field (older geo)
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 0, 'E')]
+  ));
+  A.ok(!clean.errors.some(e => e.code === 'BELT_BURIED'), 'junctions on the line and block-less legacy props never read as buried');
+}
+
 A.report('pipeline');
