@@ -28,7 +28,7 @@ send-to-final is 12,029.909/13,998.052 ms. Every artifact independently graded g
 A fail-closed 36-second installed provider-soak smoke completed 3/3 health checks and 3/3 independently graded
 `openai-codex/gpt-5.6-luna` active probes with zero health, provider, identity, or exit failures. It correctly
 remained `qualifiesRelease:false`. The real qualifying 48-hour installed active/idle soak started at
-`2026-08-04T03:13:53.304Z`, is due at `2026-08-06T03:13:53.304Z`, and began with green health/provider
+`2026-08-04T03:20:04.351Z`, is due at `2026-08-06T03:20:04.351Z`, and began with green health/provider
 checks. It re-hashes the installed executable every minute and the 4,578-file runtime fingerprint with each
 hourly provider probe. An hourly task heartbeat monitors the durable report and will verify the signed receipt,
 run the final clean `test:fast`, and finish this handoff only after the actual 48 hours. The last full fast run
