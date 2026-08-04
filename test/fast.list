@@ -288,6 +288,7 @@ test/pitchstore.test.js
 test/suggeststore.test.js
 test/beat-coordination.test.js
 test/beatcard.test.js
+test/recommend.test.js
 test/quests.test.js
 test/queststore.test.js
 test/queststate.test.js

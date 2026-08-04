@@ -771,6 +771,48 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
+/* ── THE OFFER CARD (recommendation spine) ────────────────────────────────────────────────────────────
+   ONE shape for every proactive consent offer: eyebrow → evidence (the Commander's own words) → proposal
+   → consent. It is the SAME gold-inset .turnin hardware, not a new visual language — only the internal
+   rhythm is unified, which was the named friction (seven inconsistent card shapes). Matte throughout: no
+   gloss, no second box, no OS-painted control anywhere; the only additions are a quieter eyebrow, a lit
+   evidence line and a hairline rule that separates the citation from the ask. */
+.cmsg.turnin.rec { padding-top: 8px; }
+.cmsg.turnin.rec .body { gap: 5px; }
+/* the eyebrow is a LABEL, not a sentence — dim, tracked-out, small. It must never out-shout the evidence. */
+.rec-eyebrow {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; letter-spacing: 2.2px; line-height: 1;
+  color: var(--gold); opacity: .72;
+}
+/* ◈ is a fallback-font glyph under VT323 — give it its own BOX and centre it there. Never derive the
+   eyebrow's spacing from font-size: the two faces disagree and the label drifts off its baseline. */
+.rec-glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 11px; height: 11px; flex: 0 0 11px; font-size: 10px; line-height: 1; letter-spacing: 0;
+}
+/* THE EVIDENCE — the Commander's own words. It is the reason the card exists, so it reads as the lit
+   line: full width, phosphor-bright, with a hairline beneath separating citation from proposal. */
+.rec-item > .rec-evidence {
+  grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere;
+  color: var(--ph-bright); font-size: 13px; line-height: 1.45; letter-spacing: .2px;
+  padding-bottom: 6px; margin-bottom: 1px;
+  border-bottom: 1px solid rgba(var(--gold-rgb), .18);
+}
+.rec-item { gap: 5px 8px; }
+/* the note ("raises the dial to FREE") is consequence, not evidence — it stays the dim aside it was. */
+.rec-item > .turnin-evidence { margin-top: 1px; }
+/* the ask itself carries the weight of a headline without any glow — matte CRT, not a web toast. */
+.rec-item > .turnin-text { font-size: 14.5px; }
+/* ENTRANCE — the mirror of .beat-vanish (.26s ease): a settled card leaves the way an offered card
+   arrives, so the feed has one motion vocabulary. Slides down out of the reply above it, never a pop. */
+@keyframes rec-card-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.cmsg.turnin.rec { animation: rec-card-in .26s var(--ease-out, ease) both; }
+@media (prefers-reduced-motion: reduce) { .cmsg.turnin.rec { animation: none; } }
+
 /* W3 — THE DELIVERY CARD (rendered inside the deliverable's OWN session, 2026-07-15). Rides the gold-inset
    turn-in family (.cmsg.turnin.workshop-return); a flat stack — headline, verify line, what/how lines, the
    Open-it action, the files pane, and one action row (optional message + Implement / Later / Discard). */

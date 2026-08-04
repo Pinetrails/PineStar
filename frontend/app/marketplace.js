@@ -95,7 +95,9 @@ const Marketplace = (() => {
   /* ---------- personalization (the recommender's read surface) ---------- */
   const FAM_TAGS = ['code', 'research', 'general'];
   const TAG_LABEL = { code: 'CODE', research: 'RESEARCH', general: 'GENERAL OPS' };
-  const BECAUSE = { code: 'matches your focus on code', research: 'matches your focus on research', general: 'fits your day-to-day ops' };
+  // EVERY reason string must read as natural English after the shared “because …” framing (Recommend.whyLine).
+  // “because matches your focus on code” was not a sentence — the leading “it” is what makes it one.
+  const BECAUSE = { code: 'it matches your focus on code', research: 'it matches your focus on research', general: 'it fits your day-to-day ops' };
   const ACK_KEY = 'starnet.profile.ack.v1';
   const profileApi = () => (typeof ProfileStore !== 'undefined' && ProfileStore.summary) ? ProfileStore : null;
   function acked() { try { return typeof localStorage !== 'undefined' && !!localStorage.getItem(ACK_KEY); } catch (_) { return true; } }
@@ -1179,6 +1181,13 @@ const Marketplace = (() => {
   }
 
   /* ---------- recommender shelves ---------- */
+  /* ONE grammar for every recommendation the station makes — the shelves speak the exact line the COMMS offer
+     cards do (recommend.js whyLine). Fail-open: the raw reason if the pure spine isn't loaded. */
+  function whyGrammar(raw) {
+    const t = String(raw == null ? '' : raw).trim();
+    if (!t) return '';
+    return (typeof Recommend !== 'undefined' && Recommend.whyLine) ? (Recommend.whyLine({ why: t }) || t) : t;
+  }
   function becauseText(s) {
     const ps = profileApi(); if (!ps || !ps.explain) return '';
     const t = ps.explain(s.tags || {});
@@ -1252,8 +1261,8 @@ const Marketplace = (() => {
       // the honest per-pick WHY, most-specific evidence first: a learned topic NAMES the actual subject and its
       // observation count, so it outranks both priors; then profile affinity (the stronger of the two remaining);
       // then a goal match, which NAMES the matched keyword rather than ×3 boilerplate.
-      const why = (topic > 0 ? TopicMatch.reason(tm) : '') ||
-        (aff > 0 ? becauseText(s) : '') || (goal > 0 ? ('matches your goal: “' + goalHits[0] + '”') : '');
+      const why = whyGrammar((topic > 0 ? TopicMatch.reason(tm) : '') ||
+        (aff > 0 ? becauseText(s) : '') || (goal > 0 ? ('it matches your goal: “' + goalHits[0] + '”') : ''));
       return { s, idx, v: aff * 4 + goal * 2 + topic, why };
     });
     if (anySignal) {
@@ -1264,7 +1273,7 @@ const Marketplace = (() => {
     pool.forEach(s => { const l = dominantLane(s); if (!used[l]) { used[l] = true; byLane.push(s); } else rest.push(s); });
     return { personalized: false, items: byLane.concat(rest).slice(0, 3).map(s => {
       const lbl = TAG_LABEL[dominantLane(s)] || 'GENERAL OPS';
-      return { s, why: 'covers the ' + lbl.toLowerCase() + ' lane' };
+      return { s, why: whyGrammar('it covers the ' + lbl.toLowerCase() + ' lane') };
     }) };
   }
   function trackRecommendation(surface, item, why, rank) {
@@ -1392,7 +1401,10 @@ const Marketplace = (() => {
     const reasonFor = (r) => {
       let why = '';
       try { why = Recipes.forYouReason ? (Recipes.forYouReason(r, { topics: topics, goalText: gt, launches: launches }) || '') : ''; } catch (_) { why = ''; }
-      return why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
+      const raw = why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
+      // ONE grammar for every recommendation the station makes: the shelf speaks the same "because …" line
+      // the COMMS offer cards do (recommend.js whyLine). Fail-open — the raw reason if the spine isn't loaded.
+      return whyGrammar(raw);
     };
     const head = ready ? '◈ FOR YOU' : '◈ STARTING POINTS — a varied lineup while the station gets to know you';
     items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));
