@@ -34,6 +34,14 @@
     mod('./research.js', 'RecipeCatalogResearch'),
     mod('./creator.js', 'RecipeCatalogCreator'),
     mod('./ops.js', 'RecipeCatalogOps'),
+    // life-domain catalogs (2026-08-03) — the buckets a person actually has, not just the five work personas:
+    mod('./business.js', 'RecipeCatalogBusiness'),
+    mod('./money.js', 'RecipeCatalogMoney'),
+    mod('./career.js', 'RecipeCatalogCareer'),
+    mod('./learn.js', 'RecipeCatalogLearn'),
+    mod('./life.js', 'RecipeCatalogLife'),
+    mod('./data.js', 'RecipeCatalogData'),
+    mod('./writing.js', 'RecipeCatalogWriting'),
   ];
 
   // flatten + de-dup by id (first occurrence wins). The aggregate is the single built-in source recipes.js reads.

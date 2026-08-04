@@ -79,17 +79,24 @@ const Marketplace = (() => {
   // the gear objectTypes a recipe editor offers (same pickable set as the class builder — dish/cabinet/notebook/
   // workbench/studio; computer/connector are per-agent binds, not advisory recipe gear). Labels from the live source.
   const RECIPE_GEAR_PICK = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
-  // the category buckets the EDITOR offers as authorable browse buckets (the R6 discovery-rail personas).
-  const RECIPE_CATEGORIES = ['developer', 'research', 'creator', 'ops', 'general'];
-  const CAT_LABEL = { developer: 'DEVELOPER', research: 'RESEARCH', creator: 'CREATOR', ops: 'OPS', general: 'GENERAL',
+  // the category buckets the EDITOR offers as authorable browse buckets (the discovery-rail personas).
+  const RECIPE_CATEGORIES = ['developer', 'research', 'writing', 'creator', 'ops', 'business', 'money',
+    'career', 'learn', 'life', 'data', 'general'];
+  const CAT_LABEL = { developer: 'DEVELOPER', research: 'RESEARCH', writing: 'WRITING', creator: 'CREATOR',
+    ops: 'WORK', business: 'BUSINESS', money: 'MONEY', career: 'CAREER', learn: 'LEARNING', life: 'LIFE',
+    data: 'DATA', general: 'GENERAL',
     // legacy aliases older customs may still carry — labeled so a dossier chip never shows a raw slug.
-    code: 'DEVELOPER', writing: 'CREATOR', planning: 'OPS' };
-  // R6 discovery-rail buckets (in rail order) + how a recipe's raw category maps into one. The catalog authors
-  // developer/research/creator/ops/general; legacy customs may carry code/writing/planning — fold those in so the
-  // rail groups every recipe under exactly one visible bucket (never a stray slug, never an uncounted recipe).
-  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'ops', 'general'];
-  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', creator: 'creator',
-    writing: 'creator', ops: 'ops', planning: 'ops', general: 'general' };
+    code: 'DEVELOPER', planning: 'WORK' };
+  // Discovery-rail buckets (in rail order) + how a recipe's raw category maps into one. Legacy customs may carry
+  // code/planning — fold those in so the rail groups every recipe under exactly one visible bucket (never a stray
+  // slug, never an uncounted recipe). ORDER IS THE SCAN ORDER: the rail is how a Commander who cannot yet name
+  // their use case finds one, so it runs work-shaped buckets first, then the life domains. `.mkt-lanes` wraps
+  // (flex-wrap), so a rail this long lays out as two tidy rows rather than overflowing.
+  const RAIL_BUCKETS = ['developer', 'research', 'writing', 'creator', 'ops', 'business', 'money', 'career',
+    'learn', 'life', 'data', 'general'];
+  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', writing: 'writing',
+    creator: 'creator', ops: 'ops', planning: 'ops', business: 'business', money: 'money', career: 'career',
+    learn: 'learn', life: 'life', data: 'data', general: 'general' };
   function railBucket(r) { return CAT_TO_RAIL[(r && r.category) || 'general'] || 'general'; }
 
   /* ---------- personalization (the recommender's read surface) ---------- */
