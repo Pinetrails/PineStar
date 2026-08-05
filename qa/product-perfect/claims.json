@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "265f16d0bf6562f31118a12ed57cdf4944a4ceb7",
+    "sourceCommit": "f0a074e9a1da130ac1e1b14f1f8a56c7b553866f",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -83,8 +83,8 @@
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 18081,
-        "sha256": "c5cb98fd10e702931a130b1bac1794ca90fbe848bcc074ee975d6649582c5fde"
+        "bytes": 18150,
+        "sha256": "e9f05b529eefa8f6da0f1e0eddefab6d9a4227019078ad094b9992c44907e0a7"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 540307,
-        "sha256": "65e4ef21695eb39a6dd8104170308b987110e0d9025113bd00820967e95c35b0"
+        "bytes": 534395,
+        "sha256": "ba8bd1efa7b2d5b8e9cfe755cfc587cf08169d837c3f129482fdd5d03eb4fa1e"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -218,8 +218,8 @@
       },
       {
         "path": "frontend/app/dialogue.js",
-        "bytes": 15222,
-        "sha256": "ae248aa33fc62aef8e0c3afe7413d5cbd5b613e322a8cddc7ba249ae995e7f89"
+        "bytes": 20127,
+        "sha256": "bd5bc1213994e65fe50d50ea8827fb67617e2add5568b3ca7922064932046d52"
       },
       {
         "path": "frontend/app/dockglow.js",
@@ -393,8 +393,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 70839,
-        "sha256": "c41c8e09fda12c2ef7310ee382228dc06b6cece5558d058d1e701b4c3fc3ebda"
+        "bytes": 70984,
+        "sha256": "b1e9d49776931b4455e52876eea0ade3375ef9405625238ae796185b6e43ddb2"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -423,8 +423,8 @@
       },
       {
         "path": "frontend/app/pitchstore.js",
-        "bytes": 16953,
-        "sha256": "5356c2a1c459147f522847c8bd20575c26f01fb7d521298b6f5d8131cab4e8a4"
+        "bytes": 17022,
+        "sha256": "deac04d58c5598afb25593c2a679ddda2267fd8490c94c535ed7b282722618aa"
       },
       {
         "path": "frontend/app/pride.js",
@@ -933,8 +933,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 271604,
-        "sha256": "c58012eedcef2484b8c0ef5999a9c149913836edf68733a3c5d39262e2f1121c"
+        "bytes": 272152,
+        "sha256": "4a54a0b55e3dfe51be6b8c9a9dad7930ff80ce745ec0658748dea2b38702a607"
       },
       {
         "path": "frontend/css/asciifx.css",

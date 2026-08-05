@@ -138,7 +138,7 @@ const AutoJobStore = (() => {
 
       if (typeof Chat !== 'undefined' && Chat.clearNudge) Chat.clearNudge();   // retire any stale gentle nudge before the focused panel opens
       Dialogue.open({ name });
-      await Dialogue.say('give me a second — let me think about what would be worth running for you on a schedule…');
+      await Dialogue.say('give me a second — let me think about what would be worth running for you on a schedule…', { auto: true });   // latency patter — never gate a wait on a click
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
       const proposals = (res && !res.error) ? AutoJobs.parseProposals(res.text) : [];
       if (!proposals.length) {   // model hiccup / nothing groundable → say nothing useful, leave the flag UNSET so a later run can retry

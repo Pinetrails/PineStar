@@ -17,10 +17,15 @@
 'use strict';
 
 const Dialogue = (() => {
-  let host = null, panel = null, speakerEl = null, lineEl = null, optsEl = null;
+  let host = null, panel = null, speakerEl = null, lineEl = null, optsEl = null, moreEl = null;
   let open = false, name = 'AGENT';
   let typer = null;            // active typewriter cancel handle
   let keyHandler = null;       // active option/number keydown handler
+  let skipNow = null;          // active "reveal the rest of this beat now" handle (fires onDone, unlike typer)
+  let gate = null;             // armed read-gate: { resolve, onKey, onClick } — narration waits here for the Commander
+  let pendingSay = null;       // the in-flight say()'s idempotent finish — teardown flushes it even MID-TYPE
+                               // (cancelType drops onDone by design, so without this a close during typing
+                               // would strand the awaiting flow forever)
 
   // GENESIS never leaves a mind nameless-yet-labelled. If the Commander wakes an overseer without typing a name,
   // the flow used to fall back to the bland literal 'AGENT' (name = n || name) with no nudge — a blank ceremony.
@@ -69,8 +74,12 @@ const Dialogue = (() => {
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-live', 'polite');
     speakerEl = document.createElement('div'); speakerEl.className = 'fnv-speaker'; speakerEl.textContent = name;
     lineEl = document.createElement('div'); lineEl.className = 'fnv-line';
+    // the read-gate cue: a quiet blinking prompt under the line. Hidden until a narration beat finishes typing;
+    // the beat then WAITS for the Commander (space / enter / click) instead of rolling on at machine speed.
+    moreEl = document.createElement('div'); moreEl.className = 'fnv-more';
+    moreEl.textContent = '▸ space / click to continue';
     optsEl = document.createElement('div'); optsEl.className = 'fnv-opts';
-    panel.appendChild(speakerEl); panel.appendChild(lineEl); panel.appendChild(optsEl);
+    panel.appendChild(speakerEl); panel.appendChild(lineEl); panel.appendChild(moreEl); panel.appendChild(optsEl);
     if (host) { host.classList.add('fnv-host'); host.appendChild(panel); }
     else { panel.classList.add('fnv-floating'); document.body.appendChild(panel); }   // COMMS missing → free-floating fallback
   }
@@ -85,19 +94,58 @@ const Dialogue = (() => {
     document.body.classList.add('fnv-mode');
     if (panel) panel.classList.add('show');
   }
+  function flushSay() { if (pendingSay) { const f = pendingSay; pendingSay = null; try { f(); } catch (_) {} } }
+
   function closePanel() {
     cancelType(); clearKeys(); clearOpts();
+    clearGate(true);      // a torn-down panel FLUSHES a waiting narration beat — an awaiting caller must never hang
+    flushSay();           // …including one still MID-TYPE (cancelType dropped its onDone, so the gate never armed)
     pendingPick = null;   // a torn-down panel must never leave a stale question armed for Dialogue.answer
     open = false;
     document.body.classList.remove('fnv-mode');
     if (host) host.classList.remove('fnv-host');
     if (panel) panel.remove();
-    panel = speakerEl = lineEl = optsEl = host = null;
+    panel = speakerEl = lineEl = optsEl = moreEl = host = null;
   }
 
-  function cancelType() { if (typer) { try { typer(); } catch (_) {} typer = null; } }
+  function cancelType() { if (typer) { try { typer(); } catch (_) {} typer = null; } skipNow = null; }
   function clearKeys() { if (keyHandler) { window.removeEventListener('keydown', keyHandler); keyHandler = null; } }
   function clearOpts() { if (optsEl) optsEl.innerHTML = ''; }
+
+  // keys that belong to a real text field (the COMMS composer, a panel input) must never drive the dialogue —
+  // the same guard the option picker uses (the awakening answer-swallow bug, 2026-07-20).
+  function fromTextField(e) {
+    const t = e && e.target;
+    return !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable));
+  }
+
+  /* the READ GATE — after a narration beat finishes typing, hold it on screen until the Commander advances
+     (space / enter, or a click on the panel). This is the fix for the onboarding "text rolls on before I can
+     read it" complaint: a beat REPLACES the previous one, so auto-advance was destroying unread words.
+     clearGate(true) fires the held resolve — teardown paths use it so an awaiting flow can never hang. */
+  function clearGate(fire) {
+    if (!gate) return;
+    const g = gate; gate = null;
+    window.removeEventListener('keydown', g.onKey);
+    if (panel) { panel.removeEventListener('click', g.onClick); panel.classList.remove('fnv-wait'); }
+    if (moreEl) moreEl.classList.remove('show');
+    if (fire) { try { g.resolve(); } catch (_) {} }
+  }
+  function armGate(resolve) {
+    clearGate(true);
+    if (!panel) { resolve(); return; }
+    const fire = e => { if (e && e.preventDefault) e.preventDefault(); sfx('click'); clearGate(true); };
+    const onKey = e => {
+      if (fromTextField(e)) return;
+      if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') fire(e);
+    };
+    const onClick = () => fire();
+    gate = { resolve, onKey, onClick };
+    if (moreEl) moreEl.classList.add('show');
+    panel.classList.add('fnv-wait');
+    window.addEventListener('keydown', onKey);
+    panel.addEventListener('click', onClick);
+  }
 
   /* typewriter into the single line area — REPLACES the previous beat (never accumulates a scroll). That
      "one beat at a time" is the whole anti-wall-of-text move. onDone ALWAYS fires (even if cancelled). */
@@ -107,7 +155,16 @@ const Dialogue = (() => {
     lineEl.textContent = '';
     let si = 0, ci = 0, killed = false, charN = 0;
     const timers = [];
-    function done() { typer = null; if (onDone) try { onDone(); } catch (_) {} }
+    // impatient tap DURING typing → reveal the whole beat at once and land in the same place a full
+    // type-out would (done fires, so a say() gate arms / a node()'s options render immediately).
+    const onSkipKey = e => { if (fromTextField(e)) return; if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') { e.preventDefault(); if (skipNow) skipNow(); } };
+    const onSkipClick = () => { if (skipNow) skipNow(); };
+    function disarmSkip() {
+      skipNow = null;
+      window.removeEventListener('keydown', onSkipKey);
+      if (panel) panel.removeEventListener('click', onSkipClick);
+    }
+    function done() { typer = null; disarmSkip(); if (onDone) try { onDone(); } catch (_) {} }
     function step() {
       if (killed) return;
       if (si >= segs.length) { done(); return; }
@@ -122,15 +179,30 @@ const Dialogue = (() => {
       timers.push(setTimeout(step, reduceMotion() ? 0 : jitter));
     }
     if (reduceMotion()) { lineEl.textContent = segs.map(s => s.text).join(''); done(); return; }
-    typer = () => { killed = true; timers.forEach(clearTimeout); lineEl && (lineEl.textContent = segs.map(s => s.text).join('')); };
+    typer = () => { killed = true; disarmSkip(); timers.forEach(clearTimeout); lineEl && (lineEl.textContent = segs.map(s => s.text).join('')); };
+    skipNow = () => { if (killed) return; killed = true; timers.forEach(clearTimeout); if (lineEl) lineEl.textContent = segs.map(s => s.text).join(''); done(); };
+    window.addEventListener('keydown', onSkipKey);
+    if (panel) panel.addEventListener('click', onSkipClick);
     step();
   }
 
-  /* NARRATION — type a short beat, no options. Resolves after a small settle so beats breathe. */
-  function say(lines) {
+  /* NARRATION — type a short beat, no options. By default the beat then WAITS for the Commander
+     (space / enter / click, cue = the blinking ▸ row) before resolving — a beat replaces the previous
+     one, so rolling on at machine speed was erasing words nobody had finished reading (the onboarding
+     "text moves too fast" complaint). A tap mid-type reveals the full beat first, then a tap advances.
+     opts.auto = true keeps the old fixed-settle auto-advance — ONLY for transient latency-cover lines
+     ("give me a second…") where the flow is about to do real async work and must not block on a click. */
+  function say(lines, opts) {
+    const auto = !!(opts && opts.auto);
     return new Promise(resolve => {
-      ensure(); clearKeys(); clearOpts();
-      typeInto(norm(lines), () => setTimeout(resolve, 260));
+      ensure(); clearKeys(); clearOpts(); clearGate(true); flushSay();
+      let settled = false;
+      const finish = () => { if (settled) return; settled = true; if (pendingSay === finish) pendingSay = null; resolve(); };
+      pendingSay = finish;   // teardown (closePanel) or a superseding beat flushes this even mid-type
+      typeInto(norm(lines), () => {
+        if (auto) { setTimeout(finish, 260); return; }
+        armGate(finish);
+      });
     });
   }
 
@@ -140,7 +212,7 @@ const Dialogue = (() => {
   function node(cfg) {
     cfg = cfg || {};
     return new Promise(resolve => {
-      ensure(); clearKeys(); clearOpts();
+      ensure(); clearKeys(); clearOpts(); clearGate(true); flushSay();
       let settled = false;
       const finishPick = res => { if (settled) return; settled = true; pendingPick = null; clearKeys(); sfx('click'); resolve(res); };
       typeInto(norm(cfg.lines), () => renderOptions(cfg, finishPick));
