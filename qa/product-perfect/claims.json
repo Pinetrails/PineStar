@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0340ddaaf05c687779037f8085d6249e2e33de84",
-    "pathSetSha256": "3c76d976b6571a75b7071f817196faa721d37cce0d9639716ba23587d1560b15",
+    "sourceCommit": "5f2fc379ceb6ae45c4ec2bfa888f09bf863ee623",
+    "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 312687,
-        "sha256": "c2e83d3b16d99fd41954f4934a81e147ae4b31d89e3a2b17ef3a28a7c79d5df9"
+        "bytes": 312283,
+        "sha256": "942ec8a0fd9d35a9596d862112510533ba1f5ad81e9a918eadbdcb1ad3223278"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -83,8 +83,8 @@
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 18081,
-        "sha256": "c5cb98fd10e702931a130b1bac1794ca90fbe848bcc074ee975d6649582c5fde"
+        "bytes": 18150,
+        "sha256": "e9f05b529eefa8f6da0f1e0eddefab6d9a4227019078ad094b9992c44907e0a7"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 506406,
-        "sha256": "f205638d200ef808b14e62eb96f72b443c98c2d447a9c0dca6ebf8e78a0663ca"
+        "bytes": 540307,
+        "sha256": "65e4ef21695eb39a6dd8104170308b987110e0d9025113bd00820967e95c35b0"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -218,8 +218,8 @@
       },
       {
         "path": "frontend/app/dialogue.js",
-        "bytes": 15222,
-        "sha256": "ae248aa33fc62aef8e0c3afe7413d5cbd5b613e322a8cddc7ba249ae995e7f89"
+        "bytes": 20127,
+        "sha256": "bd5bc1213994e65fe50d50ea8827fb67617e2add5568b3ca7922064932046d52"
       },
       {
         "path": "frontend/app/dockglow.js",
@@ -228,8 +228,8 @@
       },
       {
         "path": "frontend/app/dossier.js",
-        "bytes": 15853,
-        "sha256": "e72adaf77bdbc35fbdc05b30a31607ea75102dff3e3e76c5b10d93d5e8558bcd"
+        "bytes": 17489,
+        "sha256": "c7ba8f423dd2c6c41a0e835c4fa27e1d270fc7849c67e940d04dee2f506faf8a"
       },
       {
         "path": "frontend/app/dossierstore.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 24712,
-        "sha256": "112e17ba92a8395891559b634b11c603e989927ba7aa7a382bcdd51917f06b53"
+        "bytes": 25526,
+        "sha256": "b7ee12eff832bd3089a4d23ad53fae3af0c76c2c16eb772ed5fe083cbe88701b"
       },
       {
         "path": "frontend/app/harness.js",
@@ -328,8 +328,8 @@
       },
       {
         "path": "frontend/app/logoclip.js",
-        "bytes": 4016,
-        "sha256": "8fb9d2499e5f46c71631eaa8b1a6422abfafe3dcf3caa07bdd94baf18e8dfb34"
+        "bytes": 4037,
+        "sha256": "b0599d5276c29dac7062fede4168b2a71538b76d911d81684941c6261fa8bbc3"
       },
       {
         "path": "frontend/app/loop-templates.js",
@@ -393,8 +393,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 70839,
-        "sha256": "c41c8e09fda12c2ef7310ee382228dc06b6cece5558d058d1e701b4c3fc3ebda"
+        "bytes": 70984,
+        "sha256": "b1e9d49776931b4455e52876eea0ade3375ef9405625238ae796185b6e43ddb2"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -423,8 +423,8 @@
       },
       {
         "path": "frontend/app/pitchstore.js",
-        "bytes": 16953,
-        "sha256": "5356c2a1c459147f522847c8bd20575c26f01fb7d521298b6f5d8131cab4e8a4"
+        "bytes": 17022,
+        "sha256": "deac04d58c5598afb25593c2a679ddda2267fd8490c94c535ed7b282722618aa"
       },
       {
         "path": "frontend/app/pride.js",
@@ -578,8 +578,18 @@
       },
       {
         "path": "frontend/app/recommend.js",
-        "bytes": 9673,
-        "sha256": "c2c16256707e31dbf1355b0a4327932b842426f78113f8ae96e4235fb8920a11"
+        "bytes": 19844,
+        "sha256": "144763c6b6dc1548964988168c30442e09fa022aa7e63c9615c11f4fcfa718a9"
+      },
+      {
+        "path": "frontend/app/recquality.js",
+        "bytes": 12994,
+        "sha256": "2f50b353701fe0449a0275188879e1c94fd3808126486f188602d6cd36c8b82f"
+      },
+      {
+        "path": "frontend/app/recqualitystore.js",
+        "bytes": 16353,
+        "sha256": "a691980fb11761b9974785c321cd7654d5d277d61a5e5b3cddba8907b0c1baf9"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -608,8 +618,8 @@
       },
       {
         "path": "frontend/app/routinenudgestore.js",
-        "bytes": 7252,
-        "sha256": "35d59a6f0315bb070a747bc1509a32c25cd990c804c05b14270823cfb5f83add"
+        "bytes": 7787,
+        "sha256": "998cdba86bf6bcbe33711ccfff73307db39ad4755a8b291cd0442a62fc95e504"
       },
       {
         "path": "frontend/app/safety.js",
@@ -643,8 +653,8 @@
       },
       {
         "path": "frontend/app/seedstore.js",
-        "bytes": 4905,
-        "sha256": "da477ecadf8b38bc95e4bbd631d934704c9aeb6436039f430dc253e0194e5182"
+        "bytes": 5447,
+        "sha256": "267b0527c72ccd5a24de67be1d6e79ed06ae609cb9321d934b1b57e5bb1f4e52"
       },
       {
         "path": "frontend/app/skinstage.js",
@@ -693,8 +703,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 464644,
-        "sha256": "aa40b68cfa38e1753703cd8a11eaf6c80ab82b695d435741e1e57b611ece6e22"
+        "bytes": 467294,
+        "sha256": "9a737ecdc91d60d5d461014eba4d29438e06c5202006d849c80f182ee9c75c70"
       },
       {
         "path": "frontend/app/study.js",
@@ -708,8 +718,8 @@
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 18290,
-        "sha256": "8bef66b3feff3745d49042f254d8d6ed36007b5afe5eb9da06b35264559fb199"
+        "bytes": 22823,
+        "sha256": "d8c7797c30d8ebb0b8c91592511e71e69e9e522cf25153854a2525f21d8e72d6"
       },
       {
         "path": "frontend/app/terrain.js",
@@ -923,8 +933,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 271588,
-        "sha256": "fb249f68ff6bf827810e532d1f57f1e8c0106175fd6662f0405f56b3e0b19a9d"
+        "bytes": 272168,
+        "sha256": "2f6edd777b8456d6d8176b40c3e1c569f086b8e452ca9b9b6b067817127d5221"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -963,8 +973,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 94893,
-        "sha256": "682f89bee5b27cf35ec5b80ec926e9c386c094b241c47ca5329d56bc6c578b7f"
+        "bytes": 93191,
+        "sha256": "cf8b437ff4c067ea178535ac1826d60a4fd2860e2f8f08ed11c79dbd8f23308f"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -993,8 +1003,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 68217,
-        "sha256": "7d2429c76109bd3f9ea013d4e3d6c58f2a21bb047d23bd9bf01cca32fc91fcd2"
+        "bytes": 68440,
+        "sha256": "a20399416f8f3f274b3ea22aeb780b1fec7f0af826a47f57fc56482b10d115e3"
       },
       {
         "path": "frontend/js/arcade.js",

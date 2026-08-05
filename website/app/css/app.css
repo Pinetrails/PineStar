@@ -995,7 +995,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .nl-yes .nl-m { color: var(--gold); }
 .nl-no .nl-m { color: var(--bad); }
 .nl-no .nl-t { color: var(--ph-dim); }
-.nl-build .nl-m { color: var(--gold); }
+.nl-build .nl-m, .nl-file .nl-m { color: var(--gold); }
 /* nested rows sit under their parent's PROSE column, not under its marker */
 .nudge-line.nl-sub { padding-left: 22px; }
 .nudge-line.nl-sub .nl-t { color: var(--ph); }
@@ -1247,6 +1247,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   text-shadow: 0 0 6px var(--ph-glow2); white-space: pre-wrap; min-height: 2.4em;
   display: flex; align-items: center;
 }
+/* the read-gate cue: hidden until a narration beat finishes typing; the beat then waits for the
+   Commander, so the blink is an invitation, not a countdown. Blink dies under reduced motion. */
+.fnv-more { display: none; flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; user-select: none; }
+.fnv-more.show { display: block; animation: fnv-more-blink 1.2s steps(2, start) infinite; }
+.fnv-dialogue.no-anim .fnv-more.show { animation: none; }
+.fnv-dialogue.fnv-wait { cursor: pointer; }
+@keyframes fnv-more-blink { 50% { opacity: .3; } }
 .fnv-opts { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; }
 .fnv-opt {
   display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;

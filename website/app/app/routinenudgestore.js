@@ -117,10 +117,15 @@ const RoutineNudgeStore = (() => {
       [{ label: '▸ put it on a schedule', value: 'routine' }, { label: 'not now', value: 'no', skip: true }],
       choice => {
         if (handled) return; handled = true;
+        // THE OUTCOME LOOP (quality loop, Q2): scheduling opens the SCHEDULE IT form rather than launching a
+        // run, so the accept IS the outcome; a wave-off is real signal about this channel. Fail-open.
+        const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
         if (choice && choice.value === 'routine') {
           if (typeof App !== 'undefined' && App.openRecipeLaunch) App.openRecipeLaunch(c.id, 'routine');
+          if (rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'routine', spawnsWork: false, id: c.id }); } catch (_) {} }
         } else {
           markDismissed(c.id);   // an explicit "not now" is a decision — never offer this recipe again
+          if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'routine' }, false); } catch (_) {} }
         }
       }
     );

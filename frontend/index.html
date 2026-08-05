@@ -642,6 +642,7 @@
 <script src="app/study.js"></script><!-- GROWTH Tier 1: pure STUDY engine (dossier Phase B) — parse/salience/dedup for work→belief proposals + ratings-taste + archetype classifier -->
 <script src="app/beatcard.js"></script><!-- shared COMMS post-run lifecycle; MUST load before chat.js -->
 <script src="app/recommend.js"></script><!-- THE RECOMMENDATION SPINE: pure one-voice arbiter over every proactive channel (evidence-or-silence); MUST load before chat.js -->
+<script src="app/recquality.js"></script><!-- THE QUALITY LOOP: pure evidence-STRENGTH / belief-STALENESS / channel-quality-EWMA reads behind the spine; MUST load before chat.js -->
 <script src="app/interview.js"></script>
 <script src="app/curiosity.js"></script>
 <script src="app/pitch.js"></script>
@@ -756,6 +757,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/threadstore.js"></script><!-- NS-6: THREAD turn-in wiring — fetch mined idea candidates, session cap + resolved/ignore gate, Keep/Edit/Discard → /api/threads/turnin (the click IS the consent); self-persists (own key), never emits -->
 <script src="app/curiositystore.js"></script>
 <script src="app/pitchstore.js"></script>
+<script src="app/recqualitystore.js"></script><!-- THE OUTCOME LOOP: per-channel quality weights earned from what accepted offers really produced (run stamp -> completion/verdict); read-only bus citizen -->
 <script src="app/suggeststore.js"></script>
 <script src="app/goalstore.js"></script><!-- GROWTH Tier 2: GOAL-TREE wiring — decomposition confirm (aux model call), persist (own key) + sidecar mirror, milestone→work-quest binding, chaining/evidence/drift; never emits -->
 <script src="app/understandingstore.js"></script><!-- UNDERSTANDING: composes the honest "how well the station knows the Commander" read from live dossier beliefs + work-samples + active goal; drives curiosity targeting + the COMMANDER meter; read-only bus citizen -->

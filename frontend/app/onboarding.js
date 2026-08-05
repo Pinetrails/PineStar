@@ -455,7 +455,7 @@ const Onboarding = (() => {
       await Promise.race([capped, sleep(windows[w])]);
       if (done || !running) break;
       const line = patter && patter[w];
-      if (line) await Dialogue.say([seg(line, 44, 240)]);
+      if (line) await Dialogue.say([seg(line, 44, 240)], { auto: true });   // latency patter — never gate a wait on a click
     }
     if (!done && running) await capped;                  // the last stretch, bounded by the ceiling
     return done ? out : null;
@@ -891,7 +891,7 @@ const Onboarding = (() => {
     const synPending = brainReady()
       ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, stack: stackT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
     if (synPending) {
-      await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)]);
+      await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)], { auto: true });   // covers the synthesis wait — never gate it on a click
       if (!running) return;
       const syn = await mindWait(synPending, WakeMind.parseSynthesis, SYNTH_PATTER, SYNTHESIS_MS);
       if (!running) return;
