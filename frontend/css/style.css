@@ -338,7 +338,7 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
    ever regenerated at a different field height, copy the new viewBox here.
    No CSS glow/drop-shadow — removed per Andrew, and that still stands. */
 .logo-img {
-  height: 30px; aspect-ratio: 1419 / 240; display: block;
+  height: 30px; aspect-ratio: 2837 / 480; display: block;
   background-color: var(--ph);
   -webkit-mask: url(../assets/brand/starnet-wordmark.svg) center / contain no-repeat;
           mask: url(../assets/brand/starnet-wordmark.svg) center / contain no-repeat;

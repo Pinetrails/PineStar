@@ -14,13 +14,21 @@
 // The pipeline:
 //   alpha coverage -> PERCEIVED-DENSITY field (area-average to ~the size the eye reads it at, which
 //   is exactly what the browser's minification does) -> Gaussian fuse -> normalize -> marching-squares
-//   isoline at `iso` -> RDP simplify -> SVG path, fill-rule evenodd, fill=currentColor.
+//   isoline at `iso` -> corner-preserving smooth -> RDP simplify -> SVG path, evenodd, currentColor.
 //
 // The (sigma, iso) default comes from the sweep in dev/logo-field-sheet.mjs: at field height 100,
 // sigma 1.2 / iso 0.30 closes every stroke while keeping the counters and the star in the A open.
 // Both scale with field height, so FH only buys contour precision — never a different shape.
 //
-//   node dev/trace-logo.mjs [out.svg] [--fh=240] [--sigma=1.2] [--iso=0.30] [--eps=0.35] [--min-area=6]
+// smooth/eps come from a second sweep, after Andrew called the first cut "rough on the edges": the
+// isoline of a mosaic-derived field ripples along every straight run. Raising SIGMA flattens the
+// ripple but is the wrong lever — by 1.8 the four-pointed star in the A has collapsed to a diamond.
+// Smoothing the CONTOUR (never the field) fixes the edges and leaves the star at 11 loops, the same
+// topology the unsmoothed trace produced.
+//
+//   node dev/trace-logo.mjs [out.svg] [--fh=480] [--sigma=1.2] [--iso=0.30] [--eps=1.6]
+//                           [--smooth=24] [--corner=32] [--min-area=6]
+// Defaults ARE the shipped asset — a bare run reproduces frontend/assets/brand/starnet-wordmark.svg.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -35,11 +43,13 @@ const flag = (name, dflt) => {
 };
 const OUT = argv.find(a => !a.startsWith('--')) || path.join(REPO, 'frontend/assets/brand/starnet-wordmark.svg');
 
-const FH = flag('fh', 240);            // trace-field height; contour precision only
+const FH = flag('fh', 480);            // trace-field height; contour precision only
 const SIGMA100 = flag('sigma', 1.2);   // fuse radius EXPRESSED AT field height 100
 const ISO = flag('iso', 0.30);         // density threshold on the normalized field
-const EPS100 = flag('eps', 0.35);      // RDP tolerance, also expressed at field height 100
+const EPS100 = flag('eps', 1.6);       // RDP tolerance, also expressed at field height 100
 const MIN_AREA100 = flag('min-area', 6); // drop loops smaller than this (field-100 px^2) — mosaic specks
+const SMOOTH = flag('smooth', 24);     // corner-preserving low-pass passes over each contour
+const CORNER_DEG = flag('corner', 32); // a turn sharper than this is a CORNER — never smoothed
 
 /* ---------- marching squares: isolines of a scalar field, linearly interpolated ----------
    Samples are pixel CENTRES, so the cell grid is (w-1) x (h-1). Saddle cases (5, 10) are resolved
@@ -107,6 +117,39 @@ function stitch(segs) {
   return loops;
 }
 
+/* Corner-preserving low-pass along the contour.
+   The isoline of a mosaic-derived field WOBBLES: what the art draws as one straight edge comes out
+   as a ripple of ±half a field pixel, and RDP faithfully preserves every bump of it. Blurring the
+   FIELD harder would flatten the ripple, but it also destroys the four-pointed star in the A (it
+   goes to a diamond by sigma 1.8) — the field blur is not the lever.
+   So smooth the CURVE instead, and only where it is trying to be straight: at each vertex compare
+   the incoming and outgoing directions, and apply a [1 2 1] average only if the turn is gentler
+   than `cornerDeg`. Hard corners, chamfers and the star's points all exceed it and are left exactly
+   where the trace put them. */
+function smoothContour(pts, passes, cornerDeg) {
+  if (!(passes > 0) || pts.length < 5) return pts;
+  const closed = pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1];
+  let ring = closed ? pts.slice(0, -1) : pts.slice();
+  const n = ring.length;
+  if (n < 5) return pts;
+  const cosMin = Math.cos(cornerDeg * Math.PI / 180);
+  const unit = (a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    return L < 1e-9 ? null : [dx / L, dy / L];
+  };
+  for (let p = 0; p < passes; p++) {
+    const next = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = ring[(i - 1 + n) % n], v = ring[i], b = ring[(i + 1) % n];
+      const d1 = unit(a, v), d2 = unit(v, b);
+      if (!d1 || !d2 || d1[0] * d2[0] + d1[1] * d2[1] < cosMin) { next[i] = v; continue; }
+      next[i] = [(a[0] + 2 * v[0] + b[0]) / 4, (a[1] + 2 * v[1] + b[1]) / 4];
+    }
+    ring = next;
+  }
+  return closed ? ring.concat([ring[0]]) : ring;
+}
+
 /** Ramer-Douglas-Peucker. Straight edges and hard corners are the whole character of this
     wordmark, so simplification must PRESERVE corners — which is exactly what RDP does. */
 function rdp(pts, eps) {
@@ -148,8 +191,10 @@ const FW = Math.round(art.width * FH / art.height);
 const k = FH / 100;                      // every tuned constant is expressed at field height 100
 const { field } = normalizeField(blurField(densityField(art, FW, FH), FW, FH, SIGMA100 * k));
 
+// Smooth BEFORE simplifying: RDP measures deviation from the polyline it is given, so wobble that
+// is still present at that point gets preserved as vertices instead of averaged away.
 const loops = stitch(isolines(field, FW, FH, ISO))
-  .map(l => rdp(l, EPS100 * k))
+  .map(l => rdp(smoothContour(l, SMOOTH, CORNER_DEG), EPS100 * k))
   .filter(l => l.length > 3 && area(l) >= MIN_AREA100 * k * k);
 
 const n = v => (Math.round(v * 100) / 100).toString();
