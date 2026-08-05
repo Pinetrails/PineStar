@@ -227,6 +227,7 @@ const Marketplace = (() => {
     laneFilter = 'all'; catFilter = 'all'; query = '';
     lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
     recipeRuns = null;        // re-read the run log on every open: work done since the last visit shows up
+    invalidateFit();          // …and so does a folder granted or a channel connected in another panel since
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
@@ -1505,7 +1506,20 @@ const Marketplace = (() => {
 
      ⛔ AND IT NEVER BLOCKS THE PAINT. Every input is read from an already-cached best-effort fetch; a
      sidecar that is down means a smaller shelf or none, never a stalled tab. */
+  /* ⛔ AND A FAILURE MUST STAY RETRYABLE (2026-08-05). Both caches used to `.catch(() => { fitX = fitX || []; })`,
+     and `[]` is TRUTHY — so the `if (fitX) return` guard above short-circuited every later call. ONE transient
+     /api/projects hiccup (a sidecar restart, a slow first paint) therefore killed the READY shelf for the rest of
+     the session: RecipeFit was handed zero projects forever, decided the station knows nothing about its
+     Commander, and correctly rendered nothing. The shelf did not look broken — it looked EMPTY, which is its own
+     honest state, so the bug is invisible. This file already documents the exact fix twenty lines into the module
+     (loadSkillCatalog: leave the cache null, clear the in-flight marker, return an empty value for THIS call so
+     the current paint degrades instead of throwing); these two are now the same shape.
+
+     Invalidation is the other half: a Commander who grants a folder or connects a channel does it in ANOTHER
+     panel and comes BACK to the bay, so re-opening the bay drops both caches (invalidateFit, called from open()).
+     A stale-forever "ready" shelf is the same lie as an empty one. */
   let fitProjects = null, fitProjectsPending = null, fitChannels = null, fitChannelsPending = null;
+  function invalidateFit() { fitProjects = null; fitChannels = null; }
   function loadFitProjects() {
     if (fitProjects) return Promise.resolve(fitProjects);
     if (fitProjectsPending) return fitProjectsPending;
@@ -1521,7 +1535,8 @@ const Marketplace = (() => {
         })).filter(p => p.root);
         fitProjectsPending = null; return fitProjects;
       })
-      .catch(() => { fitProjects = fitProjects || []; fitProjectsPending = null; return fitProjects; });
+      // retryable: leave fitProjects NULL (an empty array would be truthy and cache the failure forever).
+      .catch(() => { fitProjectsPending = null; return fitProjects || []; });
     return fitProjectsPending;
   }
   function loadFitChannels() {
@@ -1537,7 +1552,8 @@ const Marketplace = (() => {
           .filter(c => c.label);
         fitChannelsPending = null; return fitChannels;
       })
-      .catch(() => { fitChannels = fitChannels || []; fitChannelsPending = null; return fitChannels; });
+      // retryable: leave fitChannels NULL — same reason (see the note above the cache declarations).
+      .catch(() => { fitChannelsPending = null; return fitChannels || []; });
     return fitChannelsPending;
   }
   function basenameOf(p) { const s = String(p || '').replace(/[\\/]+$/, ''); const i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\')); return i >= 0 ? s.slice(i + 1) : s; }
