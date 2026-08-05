@@ -129,4 +129,15 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
   A.ok(/classList\.add\('no-flicker'\)/.test(shoot), 'shared screenshot runner disables the global seven-second flicker cycle');
 }
 
+// The navigation-condense change merged ROUTINES + LOOPS behind the AUTOMATION dock entry. The
+// golden frame deliberately keeps its old name (and therefore its baseline identity), but its
+// driver must follow the live navigation contract or every visual run aborts before comparison.
+{
+  const states = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'lib', 'states.mjs'), 'utf8');
+  A.ok(/name: 'work-routines'[\s\S]{0,120}data-term="automation"[\s\S]{0,80}'AUTOMATION'/.test(states),
+    'work-routines golden frame opens the merged AUTOMATION dock entry');
+  A.ok(!/name: 'work-routines'[\s\S]{0,120}data-term="routines"/.test(states),
+    'work-routines golden frame does not target the removed ROUTINES dock entry');
+}
+
 A.report('golden.test');
