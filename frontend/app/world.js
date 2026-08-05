@@ -1820,6 +1820,13 @@ const World = (() => {
   const LOUNGE_MAXT = 7;
   const SEAT_NB = [[0, 1], [0, -1], [1, 0], [-1, 0]];   // approach a cushion from any walkable neighbour
   function planCouchSit(now, couch, tvId, faceDir, zone) {
+    /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
+       new destination means it is leaving the old seat regardless, and an inherited `pendSeat` is worse than
+       a leaked key — takeSeat() would consume the PREVIOUS seat's cushion on THIS goal's arrival and draw the
+       body on furniture it never walked to. Only planSeat sets a pendSeat now, so a stale one is rare enough
+       to be invisible until it isn't. Safe to release before the plan can fail: every caller is the idle
+       decision, which only runs when the body is free to move. */
+    releaseSeat();
     const w = couch.w || 1, h = couch.h || 1;
     const lo = w >= 3 ? 1 : 0, hi = w >= 3 ? w - 2 : w - 1;   // skip an arm tile each end when wide
     const slots = [];
@@ -1851,6 +1858,7 @@ const World = (() => {
      makes the sit pose honest: there is a seat under the body. One occupant per seat (occupiedSeats),
      released by the same releaseSeat()/seizeFromIdle() paths as every other claim. */
   function planSeat(now, p, zone) {
+    releaseSeat();                                            // STALE-CLAIM RULE (see planCouchSit)
     const key = p.id + ':0';
     if (occupiedSeats.has(key)) return false;                 // taken — planProp tries the next candidate
     if (!tileInZone(zone, p.x, p.y)) return false;            // P1: the seat the body RENDERS on must be in-zone
@@ -3028,6 +3036,7 @@ const World = (() => {
      standing fallback intact. SEAT LAW: no pendSeat — the body powers down standing BESIDE the bunk. */
   function planBedSleep(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
+    releaseSeat();                                             // STALE-CLAIM RULE (see planCouchSit)
     const zone = zoneFor(self);
     const beds = geo.props.filter(p => { const u = propUse(p); return u && u.kind === 'bed'; });
     if (!beds.length) return false;
