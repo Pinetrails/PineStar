@@ -18,6 +18,7 @@
 
 const Dialogue = (() => {
   let host = null, panel = null, speakerEl = null, lineEl = null, optsEl = null, moreEl = null;
+  let inkEl = null, inkTimer = null;   // the operating-file ink stamp — shows a dossier write LANDING
   let open = false, name = 'AGENT';
   let typer = null;            // active typewriter cancel handle
   let keyHandler = null;       // active option/number keydown handler
@@ -78,8 +79,12 @@ const Dialogue = (() => {
     // the beat then WAITS for the Commander (space / enter / click) instead of rolling on at machine speed.
     moreEl = document.createElement('div'); moreEl.className = 'fnv-more';
     moreEl.textContent = '▸ space / click to continue';
+    // the ink stamp: a quiet one-line receipt under the beat showing an answer landing in the operating
+    // file. Callers (onboarding) fire it ONLY beside a real DossierStore write — truthful telemetry: the
+    // stamp is a receipt for a write that happened, never theater.
+    inkEl = document.createElement('div'); inkEl.className = 'fnv-ink';
     optsEl = document.createElement('div'); optsEl.className = 'fnv-opts';
-    panel.appendChild(speakerEl); panel.appendChild(lineEl); panel.appendChild(moreEl); panel.appendChild(optsEl);
+    panel.appendChild(speakerEl); panel.appendChild(lineEl); panel.appendChild(moreEl); panel.appendChild(inkEl); panel.appendChild(optsEl);
     if (host) { host.classList.add('fnv-host'); host.appendChild(panel); }
     else { panel.classList.add('fnv-floating'); document.body.appendChild(panel); }   // COMMS missing → free-floating fallback
   }
@@ -102,10 +107,23 @@ const Dialogue = (() => {
     flushSay();           // …including one still MID-TYPE (cancelType dropped its onDone, so the gate never armed)
     pendingPick = null;   // a torn-down panel must never leave a stale question armed for Dialogue.answer
     open = false;
+    if (inkTimer) { clearTimeout(inkTimer); inkTimer = null; }
     document.body.classList.remove('fnv-mode');
     if (host) host.classList.remove('fnv-host');
     if (panel) panel.remove();
-    panel = speakerEl = lineEl = optsEl = moreEl = host = null;
+    panel = speakerEl = lineEl = optsEl = moreEl = inkEl = host = null;
+  }
+
+  /* THE INK STAMP — show one line landing in the operating file ("» filed · pain: …"). Non-blocking:
+     it rides under the current beat, holds a few seconds, and fades; a new stamp replaces the last.
+     The caller owns truthfulness — fire it only beside a real dossier write, with the stored text. */
+  function ink(line) {
+    const t = String(line == null ? '' : line).trim();
+    if (!inkEl || !t) return;
+    inkEl.textContent = '» filed · ' + t;
+    inkEl.classList.add('show');
+    if (inkTimer) clearTimeout(inkTimer);
+    inkTimer = setTimeout(() => { if (inkEl) inkEl.classList.remove('show'); inkTimer = null; }, 4600);
   }
 
   function cancelType() { if (typer) { try { typer(); } catch (_) {} typer = null; } skipNow = null; }
@@ -319,7 +337,7 @@ const Dialogue = (() => {
   // codename() is also exported so the WAKE funnel (app.js) can persist a real minted name instead of the bland
   // 'AGENT' when the Commander leaves the name blank — keeping the world nameplate / dossier consistent with the
   // speaker label. isUnnamed() lets a caller cheaply detect the blank/placeholder case.
-  return { open: openPanel, close: closePanel, say, node, answer, setName, isOpen: () => open, codename, isUnnamed };
+  return { open: openPanel, close: closePanel, say, node, answer, setName, ink, isOpen: () => open, codename, isUnnamed };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Dialogue };

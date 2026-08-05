@@ -87,6 +87,15 @@
     return 'Then, on separate lines, 0-' + MAX_BELIEFS + ' durable facts you just learned about them, each as: BELIEF <dim>: <one third-person sentence grounded ONLY in what they actually said — never invented>. <dim> is one of: ' + BELIEF_DIMS.join(', ') + '. Skip any you did not actually learn.';
   }
 
+  // ADAPTIVE FOLLOW-UPS (Andrew, 2026-08-05): the interview digs where the material is rich, not on a rail.
+  // Every ASK spec carries this escape hatch, and every parser reads ASK: NONE as "no follow-up earned" —
+  // the mind's own judgment call, per answer. The orchestrator adds a global follow-up budget on top so
+  // depth never blows the ceremony's runtime; between the two, a rich answer gets dug and a thin one never
+  // drags the Commander through a forced extra question.
+  function askOrNoneSpec() {
+    return ' If their answer was thin, guarded, or already complete — nothing left that one more question would genuinely earn — write exactly: ASK: NONE. Only ask when the answer opened a door worth walking through.';
+  }
+
   /* ---- 1. THE PAIN REPLY — a heard-you reaction + ONE grounded follow-up ---- */
   // ctx: { pain, tuesday, dig, name } — V3: tuesday/dig (when given) ground the reaction in their whole
   // world and stop the follow-up re-asking what is already known. Deterministic: same ctx → same directive.
@@ -100,15 +109,16 @@
     if (String(ctx.dig || '').trim()) lines.push('(More of their world: ' + quote(ctx.dig) + ')');
     lines.push('Reply with EXACTLY these two lines, then any BELIEF lines:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — prove you heard the details, never generic sympathy — and let your appetite for taking it off their plate show. No question in this line. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. That data is what your later work aims at. If their words did not already say how often the chore hits, fold that into the same question naturally (daily? weekly? every client?) — cadence is what turns a chore into a routine you can own. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.' + plainAskSpec() + '>');
+    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. That data is what your later work aims at. If their words did not already say how often the chore hits, fold that into the same question naturally (daily? weekly? every client?) — cadence is what turns a chore into a routine you can own. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.' + plainAskSpec() + askOrNoneSpec() + '>');
     lines.push(beliefLinesSpec());
     return lines.join('\n');
   }
-  // → { ack, ask, beliefs } | null. ACK is required (a reply that heard nothing is worthless); ASK optional.
+  // → { ack, ask, beliefs } | null. ACK is required (a reply that heard nothing is worthless); ASK optional
+  // (and ASK: NONE — the mind judging the answer complete — honestly reads as no follow-up).
   function parsePainReply(text) {
     const ack = clamp(grab(text, 'ACK'), ACK_CHARS);
     if (!ack) return null;
-    return { ack, ask: clamp(grab(text, 'ASK'), ASK_CHARS), beliefs: parseBeliefLines(text) };
+    return { ack, ask: clamp(noneIsEmpty(grab(text, 'ASK')), ASK_CHARS), beliefs: parseBeliefLines(text) };
   }
 
   /* ---- 2. THE AMBITION REPLY — a want-it-too reaction + ONE follow-up that makes it concrete ---- */
@@ -148,6 +158,8 @@
     if (String(ctx.pain || '').trim()) lines.push('- the work they want gone: ' + quote(ctx.pain));
     if (String(ctx.about || '').trim()) lines.push('- who they are / what it is for: ' + quote(ctx.about));
     if (String(ctx.stack || '').trim()) lines.push('- the apps/tools that work lives in: ' + quote(ctx.stack));
+    if (String(ctx.projects || '').trim()) lines.push('- the projects on their bench right now (recorded verbatim — never restate them): ' + quote(ctx.projects));
+    if (String(ctx.bench || '').trim()) lines.push('- the live wire in that bench: ' + quote(ctx.bench));
     if (String(ctx.lost || '').trim()) lines.push('- where their hours go willingly: ' + quote(ctx.lost));
     if (String(ctx.ambition || '').trim()) lines.push('- the year-outcome they want from you: ' + quote(ctx.ambition));
     if (String(ctx.dream || '').trim()) lines.push('- the concrete shape of it: ' + quote(ctx.dream));
@@ -227,18 +239,50 @@
     if (String(ctx.pain || '').trim()) lines.push('(The chore they want gone: ' + quote(ctx.pain) + ')');
     if (String(ctx.about || '').trim()) lines.push('(What is behind that chore: ' + quote(ctx.about) + ')');
     if (String(ctx.stack || '').trim()) lines.push('(The apps/tools their work lives in: ' + quote(ctx.stack) + ')');
+    if (String(ctx.projects || '').trim()) lines.push('(The projects on their bench right now: ' + quote(ctx.projects) + ')');
+    if (String(ctx.bench || '').trim()) lines.push('(The live wire in that bench: ' + quote(ctx.bench) + ')');
     if (String(ctx.lost || '').trim()) lines.push('(What they do when they lose track of time: ' + quote(ctx.lost) + ')');
     lines.push('This year-outcome is the reason you exist. Reply with EXACTLY these two lines, then any BELIEF lines:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — show you want it built as much as they do. No question. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up that makes the year concrete — the first thing a stranger would SEE of it, who it is for, or the piece they can already picture. Never re-ask anything shown above. Answerable in one breath. Under 140 characters.' + plainAskSpec() + '>');
+    lines.push('ASK: <ONE follow-up that makes the year concrete — the first thing a stranger would SEE of it, who it is for, or the piece they can already picture. Never re-ask anything shown above. Answerable in one breath. Under 140 characters.' + plainAskSpec() + askOrNoneSpec() + '>');
     lines.push(beliefLinesSpec());
     return lines.join('\n');
   }
-  // → { ack, ask, beliefs } | null — ACK required, same contract as the pain reply.
+  // → { ack, ask, beliefs } | null — ACK required, same contract as the pain reply (ASK: NONE = no follow-up).
   function parseYearReply(text) {
     const ack = clamp(grab(text, 'ACK'), ACK_CHARS);
     if (!ack) return null;
-    return { ack, ask: clamp(grab(text, 'ASK'), ASK_CHARS), beliefs: parseBeliefLines(text) };
+    return { ack, ask: clamp(noneIsEmpty(grab(text, 'ASK')), ASK_CHARS), beliefs: parseBeliefLines(text) };
+  }
+
+  /* ---- V3.4 THE BENCH (B4c, Andrew 2026-08-05) — the projects actually in flight. The interview asked
+     about chores and ambitions but never about what the Commander is BUILDING right now — the single
+     richest context for aiming recommendations, recipes, and the first pitch. Same shape as the pain
+     reply: react to the SPECIFIC bench, then ONE follow-up that finds the live wire in it (which project
+     matters most now / where it is stuck / what ships next). ctx: { projects, tuesday, dig, pain, stack,
+     name } — shown context is never re-asked; the bench answer itself is recorded verbatim (stated
+     `goals` belief), so beliefs here should ADD (who it serves, what stage), never restate. ---- */
+  function buildProjectsReply(ctx) {
+    ctx = ctx || {};
+    const lines = [];
+    lines.push('INTERNAL — YOUR FIRST MEETING, THE BENCH. Do not run any tools. Reason only, then reply in the exact format below.');
+    lines.push('You are minutes old, meeting your Commander for the first time. You asked what they are actually building or working on right now — the projects on their bench. They said:');
+    lines.push(quote(ctx.projects));
+    if (String(ctx.tuesday || '').trim()) lines.push('(Their real tuesday: ' + quote(ctx.tuesday) + ')');
+    if (String(ctx.dig || '').trim()) lines.push('(More of their world: ' + quote(ctx.dig) + ')');
+    if (String(ctx.pain || '').trim()) lines.push('(The chore they want gone: ' + quote(ctx.pain) + ')');
+    if (String(ctx.stack || '').trim()) lines.push('(The apps/tools their work lives in: ' + quote(ctx.stack) + ')');
+    lines.push('These live projects are where your work will land first. Their exact words are already recorded verbatim — your job is to find the live wire, not to restate. Reply with EXACTLY these two lines, then any BELIEF lines:');
+    lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC projects they named — prove you heard them, and let it show that you want in. No question in this line. Under 120 characters.>');
+    lines.push('ASK: <ONE follow-up that finds the live wire in the bench — which project matters most right now, where it is stuck, or the next piece that has to ship. Never re-ask anything shown above. Concrete and targeted: answerable in one breath. Never abstract, never a question whose honest answer is "it depends". Under 140 characters.' + plainAskSpec() + askOrNoneSpec() + '>');
+    lines.push(beliefLinesSpec());
+    return lines.join('\n');
+  }
+  // → { ack, ask, beliefs } | null — ACK required; ASK optional / NONE-aware, same contract as its siblings.
+  function parseProjectsReply(text) {
+    const ack = clamp(grab(text, 'ACK'), ACK_CHARS);
+    if (!ack) return null;
+    return { ack, ask: clamp(noneIsEmpty(grab(text, 'ASK')), ASK_CHARS), beliefs: parseBeliefLines(text) };
   }
 
   /* ---- V3.3 THE MIRROR (B7) — the possibility-space teacher. Most Commanders do not know what an agent
@@ -259,6 +303,8 @@
     if (String(ctx.pain || '').trim()) lines.push('- the chore they want gone: ' + quote(ctx.pain));
     if (String(ctx.about || '').trim()) lines.push('- what is behind it: ' + quote(ctx.about));
     if (String(ctx.stack || '').trim()) lines.push('- the apps/tools it lives in: ' + quote(ctx.stack));
+    if (String(ctx.projects || '').trim()) lines.push('- the projects on their bench right now: ' + quote(ctx.projects));
+    if (String(ctx.bench || '').trim()) lines.push('- the live wire in that bench: ' + quote(ctx.bench));
     if (String(ctx.lost || '').trim()) lines.push('- where their hours go willingly: ' + quote(ctx.lost));
     if (String(ctx.year || '').trim()) lines.push('- the year-outcome they want: ' + quote(ctx.year));
     if (String(ctx.dream || '').trim()) lines.push('- its concrete shape: ' + quote(ctx.dream));
@@ -347,6 +393,6 @@
   }
 
   return { buildBirthScript, parseBirthScript, splitFrags, buildPainReply, parsePainReply, buildAmbitionReply, parseAmbitionReply, buildSynthesis, parseSynthesis, confirmChoices,
-    buildDigReply, parseDigReply, buildYearReply, parseYearReply, buildMirror, parseMirror, parseBeliefLines,
+    buildDigReply, parseDigReply, buildYearReply, parseYearReply, buildProjectsReply, parseProjectsReply, buildMirror, parseMirror, parseBeliefLines,
     ACK_CHARS, ASK_CHARS, READ_CHARS, PURPOSE_CHARS, BELIEF_CHARS, LINE_CHARS, OFFER_CHARS, BELIEF_DIMS, MAX_BELIEFS };
 });

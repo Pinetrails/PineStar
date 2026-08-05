@@ -4496,24 +4496,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
       '<div id="ns-report"></div>';
     const secPermissions =
-      // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
-      // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
-      // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
-      '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
-      '<p class="set-about" id="perm-desc"></p>' +
-      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
+      // PERMISSIONS — reorganized (2026-08-05): ONE pane answers the three questions users kept hunting across
+      // surfaces. 1 · WHO asks first — the per-agent ASK/FULL ACCESS switch (previously reachable only via each
+      // dossier CONFIG card or /yolo) plus a whole-station switch. 2 · HOW FAR it may go unattended — the
+      // WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here). 3 · WHAT is pre-blessed — the standing-grant
+      // ledger. No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
+      // ── 0 · FULL BYPASS — the master switch, above everything it outranks ──
+      '<div class="set-row"><span class="dim">FULL BYPASS — the master switch</span></div>' +
+      '<div class="key-list" id="perm-bypass"><p class="set-about">checking the bypass switch…</p></div>' +
+      // ── 1 · APPROVAL ──
+      '<div class="set-row"><span class="dim">1 · APPROVAL — who stops to ask you first</span></div>' +
+      '<p class="set-about">Each crew member either <b>ASKS</b> — a permission card pauses its run until you answer — or holds <b>FULL ACCESS</b> and runs everything itself, no prompts. Same switch as the dossier CONFIG card and <code>/yolo</code> in COMMS.</p>' +
+      '<div class="key-list" id="perm-approval"></div>' +
+      '<div class="mc-acts">' +
+        '<button class="bb sm danger" id="perm-full-all">⚡ FULL ACCESS — WHOLE STATION</button>' +
+        '<button class="bb sm" id="perm-ask-all">✋ EVERYONE ASKS FIRST</button>' +
+      '</div>' +
+      '<div class="mc-hint">full access skips the prompts, not the floor: a hard safety floor still blocks the most dangerous host actions, and unattended runs (night shift, routines) never inherit it — those follow the level and approvals below.</div>' +
+      // ── 2 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
       // (test-pinned, and it says the stakes plainly).
-      '<div class="set-row"><span class="dim">LEVEL — the same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY</span></div>' +
+      '<div class="set-row"><span class="dim">2 · UNATTENDED LEVEL — how far it may go while you’re away (the same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place)</span></div>' +
+      '<p class="set-about" id="perm-desc"></p>' +
+      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       '<div class="set-themes" id="perm-level">' +
         '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">WAIT</button>' +
         '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
         '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
-      '<div class="set-row"><span class="dim">STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
+      // ── 3 · STANDING APPROVALS ──
+      '<div class="set-row"><span class="dim">3 · STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
       '<div class="key-list" id="perm-grants"></div>';
     const secBudget =
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
@@ -4722,7 +4737,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
       { id: 'nightshift', label: 'NIGHT SHIFT', glyph: '☾', desc: 'What the station is doing unattended right now, and its recent decision trail.', build: frag(secNightShift) },
-      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
+      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'Who asks first (per-agent FULL ACCESS), how far it may go unattended, and every standing approval — grant or revoke each one.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
       // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
@@ -5345,6 +5360,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         return rows.join('');
       };
+      /* ── 1 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
+         (not copies), so approvalMode read here is the same truth pushRoster ships to the sidecar; a flip goes
+         through access.config.setApproval — the identical path the dossier CONFIG card and /yolo use — so the
+         per-run consent gate follows it. Escalation (→ FULL ACCESS) keeps the house two-press confirm; taking
+         power BACK (→ ask) applies on first click, never armed. */
+      const apWrap = host.querySelector('#perm-approval');
+      const paintApproval = () => {
+        if (!apWrap) return;
+        const can = !!(access.config && access.config.setApproval);
+        if (!present.length) { apWrap.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
+        apWrap.innerHTML = present.map(a => {
+          const full = !!(a && a.approvalMode === 'full');
+          return '<div class="set-row"><span>' + (full ? '⚡ ' : '✋ ') + '<b>' + esc(a.name || a.id) + '</b> <span class="dim">— ' + (full ? 'full access: runs everything itself, no prompts' : 'asks before it writes, runs, or reaches out') + '</span></span>' +
+            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? '✋ MAKE IT ASK' : '⚡ FULL ACCESS') + '</button>' : '') +
+            '</div>';
+        }).join('');
+        apWrap.querySelectorAll('[data-ap-flip]').forEach(b => {
+          const id = b.getAttribute('data-ap-flip'), to = b.getAttribute('data-ap-to');
+          const apply = () => { if (access.config.setApproval(id, to)) paintApproval(); };
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: '⚡ SURE? NO PROMPTS', restLabel: '⚡ FULL ACCESS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          else b.addEventListener('click', () => { sfx('click'); apply(); });
+        });
+      };
+      const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
+      if (fullAll) ArmConfirm.wire(fullAll, {
+        armedLabel: '⚡ SURE? EVERY AGENT, NO PROMPTS', restLabel: '⚡ FULL ACCESS — WHOLE STATION', timeoutMs: 4000,
+        onArm: () => sfx('bad'),
+        onConfirm: () => {
+          if (!(access.config && access.config.setApproval)) return;
+          present.forEach(a => access.config.setApproval(a.id, 'full'));
+          sfx('bad'); paintApproval();
+          notify('⚡ whole station on FULL ACCESS — no approval prompts (the hard safety floor still applies)', 'warn');
+        }
+      });
+      if (askAll) askAll.addEventListener('click', () => {
+        if (!(access.config && access.config.setApproval)) return;
+        present.forEach(a => access.config.setApproval(a.id, 'ask'));
+        sfx('click'); paintApproval();
+        notify('✋ every agent will ask before risky moves again', 'good');
+      });
+      paintApproval();
       const wireGrants = () => {
         if (!grantsWrap) return;
         grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
@@ -5356,8 +5412,38 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           onConfirm: () => { sfx('bad'); Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm); }
         }));
       };
+      /* ── 0 · FULL BYPASS switch — painted from SERVER truth (snap.masterBypass / snap.envFullAccess), never a
+         local guess. Turning it ON is the broadest action in the product → house two-press confirm; turning it
+         OFF is taking power back → first click. When the boot env forces it, the panel says WHY the switch is
+         pinned instead of rendering a toggle that appears to do nothing (truthful telemetry). */
+      const bypassWrap = host.querySelector('#perm-bypass');
+      const paintBypass = (snap) => {
+        if (!bypassWrap) return;
+        if (!snap.loaded) { bypassWrap.innerHTML = '<p class="set-about">The bypass switch is unavailable until the local permission service confirms it.</p>'; return; }
+        const floorNote = 'Still standing either way: the protected-file floor (.env / .git) and real mouse &amp; screen control (desktop pairing only).';
+        if (snap.envFullAccess) {
+          bypassWrap.innerHTML = '<div class="set-row"><span>⚡⚡ <b>FULL BYPASS</b> — forced ON by the <code>SKYNET_FULL_ACCESS</code> environment variable. Remove it and restart the station to hand control back to this switch.</span></div>' +
+            '<div class="mc-hint">' + floorNote + '</div>';
+          return;
+        }
+        bypassWrap.innerHTML = snap.masterBypass
+          ? ('<div class="set-row"><span>⚡⚡ <b>FULL BYPASS IS ON</b> <span class="dim">— every agent, every surface (chat, Telegram, routines, night shift) runs everything without asking — shell included. Survives restarts until you turn it off.</span></span>' +
+             '<button class="bb sm" id="perm-bypass-off">✕ TURN OFF</button></div>' +
+             '<div class="mc-hint">' + floorNote + '</div>')
+          : ('<div class="set-row"><span>⚡⚡ <b>FULL BYPASS</b> <span class="dim">— one switch, no permission prompts anywhere: every agent, every surface (chat, Telegram, routines, night shift), shell included. Persists until you turn it off.</span></span>' +
+             '<button class="bb sm danger" id="perm-bypass-on">⚡⚡ TURN ON</button></div>' +
+             '<div class="mc-hint">' + floorNote + '</div>');
+        const onBtn = bypassWrap.querySelector('#perm-bypass-on'), offBtn = bypassWrap.querySelector('#perm-bypass-off');
+        if (onBtn) ArmConfirm.wire(onBtn, {
+          armedLabel: '⚡⚡ SURE? EVERYTHING, EVERYWHERE, NO PROMPTS', restLabel: '⚡⚡ TURN ON', timeoutMs: 4000,
+          onArm: () => sfx('bad'),
+          onConfirm: () => { sfx('bad'); Promise.resolve(PermissionsStore.setBypass(true)).then(s => { repaintPerm(); if (!s.error) notify('⚡⚡ FULL BYPASS ON — nothing asks for approval anywhere until you turn it off', 'warn'); }); }
+        });
+        if (offBtn) offBtn.addEventListener('click', () => { sfx('click'); Promise.resolve(PermissionsStore.setBypass(false)).then(s => { repaintPerm(); if (!s.error) notify('✋ FULL BYPASS off — approvals apply again', 'good'); }); });
+      };
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();
+        paintBypass(snap);
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
         if (permStatus) {

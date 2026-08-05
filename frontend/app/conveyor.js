@@ -180,6 +180,41 @@ const Conveyor = (() => {
     if (hot && bloomOK()) { _ctx.globalAlpha *= 0.45; px(x + 2, y, 4, 4, '#ff5a2d'); _ctx.globalAlpha /= 0.45; }
   }
 
+  /* ---- GHOST projection crate (guided workflows Phase 3): NOT a cargo type. A payload flagged
+     `ghost:true` rides with a hollow dashed outline + a faint interior — deliberately unlike every
+     real body above (no solid faces, no economy colour, no shadow, no tag), so a viewer can never
+     mistake the projection for real work. Marching dashes + shimmer run off the injected _now only
+     (deterministic). Drawn by ghostline.js's DEDICATED engine — a real conveyor never carries one. */
+  function cargoGhost(cx, py, h32, dir) {
+    const x = cx - 4, y = py - 5;                 // same 9x8 stance as the chassis, so it rides the belt right
+    const C = '#8fd8e8';                          // projection phosphor (pale scanner cyan)
+    const a = _ctx.globalAlpha;
+    _ctx.globalAlpha = a * 0.14; px(x + 1, y + 1, 7, 6, C);            // faint field — the belt shows through
+    _ctx.globalAlpha = a * 0.26; px(x + 2, y + 2, 5, 4, '#0c2a32');    // dim interior (net ~0.4 read)
+    // interior scan shimmer: one pale line sweeping the field (injected clock, hash-phased)
+    const sweep = ((((_now / 240) | 0) + (h32 & 7)) % 5);
+    _ctx.globalAlpha = a * 0.30; px(x + 2 + sweep, y + 2, 1, 4, C);
+    // ◇ projection glyph at the heart
+    _ctx.globalAlpha = a * 0.55;
+    px(cx, py - 3, 1, 1, C); px(cx - 1, py - 2, 1, 1, C); px(cx + 1, py - 2, 1, 1, C); px(cx, py - 1, 1, 1, C);
+    // dashed outline: 2-on/1-off pixels marching around the silhouette (reads "drawn, not built")
+    _ctx.globalAlpha = a * 0.75;
+    let i = ((_now / 160) | 0) % 3;
+    const dot = (dx, dy) => { if ((i++ % 3) !== 2) px(dx, dy, 1, 1, C); };
+    for (let k = 0; k < 9; k++) dot(x + k, y);
+    for (let k = 1; k < 8; k++) dot(x + 8, y + k);
+    for (let k = 8; k >= 0; k--) dot(x + k, y + 7);
+    for (let k = 7; k >= 1; k--) dot(x, y + k);
+    // leading-edge tick (travel direction, like the rim light — but dashed-thin, never a lit face)
+    const v = DIRV[dir];
+    _ctx.globalAlpha = a * 0.9;
+    if (v[0] > 0) px(x + 8, y + 3, 1, 2, C);
+    else if (v[0] < 0) px(x, y + 3, 1, 2, C);
+    else if (v[1] < 0) px(x + 3, y, 3, 1, C);
+    else px(x + 3, y + 7, 3, 1, C);
+    _ctx.globalAlpha = a;
+  }
+
   // pure, replayable id -> type. weights keep the meaningful colours rare.
   function cargoType(id) {
     const r = U.hash('' + id) % 100;
@@ -541,10 +576,14 @@ const Conveyor = (() => {
         const base = boxPix(bx, T), m = boxMotion(bx, nowMs);
         if (m.alpha <= 0) continue;
         const cx = Math.round(base.cx + m.lx), py = Math.round(base.py + m.bob + m.ly), h32 = U.hash('' + bx.id);
+        // a GHOST projection casts no contact shadow and wears no work tag — nothing about it may
+        // read as a real crate (ghostline.js rides these on its own dedicated engine)
+        const isGhost = !!(bx.payload && bx.payload.ghost);
         // bob-coupled contact shadow (drawn first, under the box)
         const sa = (0.30 - 0.12 * m.lift) * m.shadowMul;
-        if (sa > 0) { ctx.globalAlpha = sa * m.alpha; const sw = 9 + Math.round(m.lift * 2); px(cx - (sw >> 1), Math.round(base.py) + 3, sw, 2, '#05080a'); }
+        if (sa > 0 && !isGhost) { ctx.globalAlpha = sa * m.alpha; const sw = 9 + Math.round(m.lift * 2); px(cx - (sw >> 1), Math.round(base.py) + 3, sw, 2, '#05080a'); }
         ctx.globalAlpha = m.alpha;
+        if (isGhost) { cargoGhost(cx, py, h32, bx.dir); ctx.globalAlpha = 1; continue; }
         // ECONOMIC role (set by world.js from real cost/outcome events) picks the art; an untyped
         // payload still rides as the cyan data cassette, so nothing about existing boxes changes.
         const role = bx.payload && bx.payload.box;

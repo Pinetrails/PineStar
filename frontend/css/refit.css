@@ -89,7 +89,31 @@
 .refit-conn-rows .conn-dot.warn { color: var(--warn); }
 .refit-conn-rows .conn-dot.bad { color: var(--bad); }
 
-/* ---------- entrance — a soft rise-in on the card when a picker opens (transform/opacity only) --- */
+/* ---------- ⊕ SUMMON A <ROLE> HERE — the leading action on a role-carrying dock's picker ---------- */
+.refit-summon { display: flex; align-items: center; justify-content: center; width: 100%; margin: 2px 0 4px; }
+
+/* ---------- FINISH THE LINE — the per-line checklist card (guided workflows Phase 2) ----------
+   A floating side card in the station's matte panel vocabulary: theme vars only, VT323, and every
+   mixed-glyph label BOX-centred (flex), never padded from font-size (symbol-glyph fallback law).
+   position:fixed — it shares the flashTip/clientX coordinate basis build.js positions it in.
+   z-index 3 (with the action tip): every .refit-guide picker (z 4) opens OVER it by design. */
+.refit-finline {
+  position: fixed; z-index: 3; width: 236px; padding: 8px 10px 10px;
+  background: var(--panel); border-radius: 7px;
+  box-shadow: 0 0 0 1.5px var(--ph), 0 0 0 3px rgba(0,0,0,.9), 0 0 18px var(--ph-glow2), inset 0 0 30px rgba(0,0,0,.85);
+  font-family: 'VT323', monospace;
+}
+.refit-finline .fl-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.refit-finline .fl-title { color: var(--ink); background: var(--ph); padding: 1px 8px; font-size: 13px; letter-spacing: 1.5px; }
+.refit-finline .fl-x { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 22px; }
+.refit-finline .fl-step {
+  display: flex; align-items: center; text-align: left; width: 100%; margin-top: 4px;
+  font-family: 'VT323', monospace; font-size: 14.5px; letter-spacing: .5px; line-height: 1.2;
+  padding: 4px 7px;
+}
+.refit-finline .fl-step.done { color: var(--ok); opacity: .8; }
+/* an OFF step keeps pointer events so the station tooltip ("coming online soon") still speaks */
+.refit-finline .fl-step.off { opacity: .45; cursor: default; }
 .refit-guide.refit-swap .refit-guide-card { animation: refit-rise var(--t-med, .22s) var(--ease-out, cubic-bezier(.2, .7, .3, 1)); }
 @keyframes refit-rise {
   from { opacity: 0; transform: translateY(8px) scale(.985); }

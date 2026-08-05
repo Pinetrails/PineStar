@@ -143,6 +143,7 @@ test/tauri.hardening.test.js
 test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
+test/master-bypass.test.js
 test/workshop-store.test.js
 test/workshop-undo.e2e.test.js
 test/workshop-visibility.test.js
@@ -433,9 +434,12 @@ test/g1bprops.test.js
 test/g3btrophy.test.js
 test/stationbake.chunk.test.js
 test/stationbake.materials.test.js
+test/stationbake.hull.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/blueprints.test.js
+test/guidedline.test.js
+test/ghostline.test.js
 test/routing.b5.test.js
 test/plan-poster.test.js
 test/chain.test.js

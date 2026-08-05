@@ -166,7 +166,10 @@ A.ok(stationui.indexOf('access.config.apply({ [key]: val })') === -1, 'the id-le
 A.ok(/function wireConfig\(body\) \{[\s\S]{0,600}const a = present\[sel\];/.test(stationui), 'wireConfig resolves the selected agent BEFORE wiring the .md editors');
 // parity: no per-agent control on the dossier may go back to being id-less.
 A.eq((stationui.match(/access\.config\.(apply|setModel|setPersona|setApproval|setWorkshop|setName|setSkin)\(/g) || []).length,
-     (stationui.match(/access\.config\.(apply|setModel|setPersona|setApproval|setWorkshop|setName|setSkin)\([^)]*a(?:gent)?\s*&&\s*a\.id|access\.config\.setSkin\(a\.id/g) || []).length,
+     // accepted id-carrying shapes: the dossier's `a && a.id`, setSkin's `a.id`, and the settings
+     // PERMISSIONS pane's approval rows (`setApproval(id, …)` from the row's data attr / `setApproval(a.id, …)`
+     // in the whole-station loops) — every shape still passes an explicit agent id as the first argument.
+     (stationui.match(/access\.config\.(apply|setModel|setPersona|setApproval|setWorkshop|setName|setSkin)\([^)]*a(?:gent)?\s*&&\s*a\.id|access\.config\.setSkin\(a\.id|access\.config\.setApproval\((?:id|a\.id),/g) || []).length,
      'every per-agent dossier control passes the selected agent\'s id');
 
 A.report('agent-config-target.test');

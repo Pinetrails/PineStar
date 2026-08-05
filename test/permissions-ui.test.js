@@ -9,9 +9,25 @@ const appSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'ap
 
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 
-// the panel header + the live combined-truth blurb
-ok(/PERMISSIONS\s*<span class="dim">/.test(src), 'PERMISSIONS section header present');
+// the reorganized pane (2026-08-05): three numbered blocks under the console's own PERMISSIONS section head
+// (no duplicated inner h4 — the PROVIDERS rule), topped by the master FULL BYPASS switch.
+ok(/1 · APPROVAL — who stops to ask you first/.test(src), 'block 1: per-agent APPROVAL header present');
+ok(/2 · UNATTENDED LEVEL/.test(src), 'block 2: unattended-level header present');
+ok(/3 · STANDING APPROVALS/.test(src), 'block 3: standing-approvals header present');
 ok(/id="perm-desc"/.test(src), '#perm-desc combined-level blurb element present');
+
+// ── 0 · the master FULL BYPASS switch ──
+ok(/id="perm-bypass"/.test(src), '#perm-bypass master-switch host present');
+ok(/PermissionsStore\.setBypass\(true\)/.test(src) && /PermissionsStore\.setBypass\(false\)/.test(src), 'bypass switch drives PermissionsStore.setBypass both ways');
+ok(/ArmConfirm\.wire\(onBtn/.test(src), 'turning FULL BYPASS ON keeps the two-press confirm (destructive-action guard)');
+ok(/snap\.envFullAccess/.test(src), 'an env-forced bypass is explained (pinned switch), never a dead toggle');
+ok(/protected-file floor/.test(src), 'the bypass copy names the floors that still stand (truthful telemetry)');
+
+// ── 1 · per-agent APPROVAL rows ──
+ok(/id="perm-approval"/.test(src), '#perm-approval per-agent list present');
+ok(/setApproval/.test(src), 'rows apply through access.config.setApproval (the dossier/-yolo path)');
+ok(/id="perm-full-all"/.test(src) && /id="perm-ask-all"/.test(src), 'whole-station FULL ACCESS + everyone-asks switches present');
+ok(/ArmConfirm\.wire\(fullAll/.test(src), 'whole-station FULL ACCESS keeps the two-press confirm');
 
 // the level spectrum: never → suggest → draft → full
 ok(/id="perm-level"/.test(src), '#perm-level chooser present');

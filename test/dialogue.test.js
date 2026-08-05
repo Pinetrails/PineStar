@@ -70,4 +70,11 @@ A.ok(/onSkipKey = e => \{ if \(fromTextField\(e\)\) return;/.test(dlgSrc),
 A.ok(/skipNow = \(\) => \{[\s\S]{0,220}done\(\);/.test(dlgSrc),
   'an impatient tap mid-type reveals the FULL beat and still fires done (never a dropped continuation)');
 
+/* ---- THE INK STAMP (2026-08-05): a dossier write shows its receipt in the panel. DOM-bound → source locks. */
+A.ok(typeof Dialogue.ink === 'function', 'ink() is exported (onboarding stamps real dossier writes)');
+A.notThrows(() => Dialogue.ink('pain: test line'), 'ink() with no panel mounted is a safe no-op');
+A.ok(/inkEl\.textContent = '» filed · ' \+ t;/.test(dlgSrc), 'the stamp is a ledger receipt (» filed · …)');
+A.ok(/function closePanel\(\) \{[\s\S]{0,600}clearTimeout\(inkTimer\)/.test(dlgSrc),
+  'closePanel clears the ink fade timer (no dangling timeout after teardown)');
+
 A.report('dialogue.test');
