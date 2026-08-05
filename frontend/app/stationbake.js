@@ -1464,6 +1464,89 @@ const StationBake = (() => {
     bulkhead: wallBulkhead, courses: wallCourses, service: wallService
   };
 
+  /* ---------------- THE SIDE FACE — the same inner face, seen foreshortened ----------------
+     Read the ladder bakeWalls documents for an e/w edge, outward from the deck:
+
+         contact seam · INNER FACE · dark under-seam · CROWN · lit outer edge · hull
+
+     The CROWN is the wall's top surface and is rightly plain — you do not see coursing looking down
+     at a wall's cap. But the band inside it is not the crown: it is the wall's own INNER FACE, the
+     identical surface `bakeTallNorthFace` hands to WALL_RECIPES, just foreshortened to `FACEW` px
+     because you are looking down its length instead of square at it. It was painted as one flat
+     `pal.face` fill plus a single rib line, so three of a room's four walls carried the room's HUE
+     (that part was already right) but none of its MATERIAL — RIBBED, COURSES and WAINSCOT all met
+     the north wall's corner as the same blank strip.
+
+     I argued this surface should stay plain and was wrong; Andrew pushed back and the ladder above
+     is why he was right. What is true is only that it cannot be the north recipe run sideways —
+     4px of depth cannot hold a squashed 23px face, and squashing one produces mush. So the edge is
+     AUTHORED per material instead: a depth ramp that gives the face thickness, plus the material's
+     own rhythm along the wall's length. Same discipline as the hull's `dress`/`veins` split.
+
+     COORDINATES ARE (depth, along), never (x, y) — `put` maps them per side. `d` is 0 at the wall's
+     TOP edge (the crown side) and grows toward the floor contact; `a` runs along the wall's length.
+     That is what lets one painter serve west, east, south and an interior north seam, each of which
+     points its depth axis a different way. */
+  const WALL_EDGES = {
+    bulkhead:  { pitch: 12, joint: -0.30 },
+    courses:   { pitch: 6,  joint: -0.34 },
+    service:   { pitch: 12, joint: -0.26, runs: [[1, 0.16]] },              // the conduit that rides the wall
+    plating:   { pitch: 12, joint: -0.30, runs: [[0, 0.14]] },              // lit plate lip along the top
+    ribbed:    { pitch: 4,  joint: -0.36, litNext: 0.16 },                  // the tightest rhythm in the set
+    panelled:  { pitch: 12, joint: -0.32, runs: [[1, -0.18]] },             // panel inset
+    viewport:  { pitch: 12, joint: -0.20, glass: true },                    // dark cool glazing
+    pipework:  { pitch: 6,  joint: -0.24, runs: [[1, 0.12], [2, -0.20]] },  // pipes running the length
+    wainscot:  { pitch: 12, joint: -0.28, runs: [[2, 0.20]] },              // the dado rail
+    hedge:     { pitch: 0,  speck: true }
+  };
+
+  /* Paint one side face. `w`×`h` is the strip in bake pixels; `axis` says which way depth runs and
+     `dir` which end of it is the wall's TOP:
+       axis 'x' → depth along x (west/east)      axis 'y' → depth along y (south / interior north)
+       dir  +1  → depth grows with the coord     dir  -1  → depth grows against it
+     Marks along the wall are phase-locked to ABSOLUTE world coords so a joint runs unbroken across
+     tile boundaries — the old per-tile `Y + 5` rib restarted at every tile, which is invisible at
+     pitch 12 and would have been a picket fence at RIBBED's pitch 4. */
+  function bakeSideFace(b, pal, matId, x, y, w, h, axis, dir) {
+    const ed = WALL_EDGES[matId] || WALL_EDGES.bulkhead;
+    const depth = axis === 'x' ? w : h, len = axis === 'x' ? h : w;
+    if (depth <= 0 || len <= 0) return;
+    const put = (d, a, n, color) => {
+      b.fillStyle = color;
+      const dd = dir > 0 ? d : depth - 1 - d;
+      if (axis === 'x') b.fillRect(x + dd, y + a, 1, n);
+      else b.fillRect(x + a, y + dd, n, 1);
+    };
+    const a0 = axis === 'x' ? y : x;                       // this strip's absolute along-origin
+    /* the depth ramp: lightest at the top edge where the ceiling light lands, falling to the floor
+       contact. This is what makes 4px read as a surface with thickness instead of a stripe. */
+    const base = ed.glass ? U.shade(pal.base, -0.55) : pal.face;
+    for (let d = 0; d < depth; d++) {
+      const t = depth === 1 ? 0 : d / (depth - 1);
+      put(d, 0, len, U.shade(base, 0.12 - 0.38 * t));
+    }
+    if (ed.speck) {                                        // foliage: no rhythm at all, just density
+      for (let a = 0; a < len; a++) for (let d = 0; d < depth; d++) {
+        const r = h2(a0 + a, d, 'wedge');
+        if (r % 3 === 0) put(d, a, 1, U.shade(base, 0.18));
+        else if (r % 5 === 0) put(d, a, 1, U.shade(base, -0.26));
+      }
+      return;
+    }
+    for (const [d, lift] of (ed.runs || [])) {             // continuous lines running the wall's length
+      if (d < depth) put(d, 0, len, U.shade(base, lift));
+    }
+    if (ed.pitch > 0) {                                    // the material's rhythm, across the depth
+      const first = a0 - ((a0 % ed.pitch) + ed.pitch) % ed.pitch;
+      for (let wa = first; wa < a0 + len; wa += ed.pitch) {
+        const a = wa - a0;
+        if (a < 0) continue;
+        for (let d = 0; d < depth; d++) put(d, a, 1, U.shade(base, ed.joint));
+        if (ed.litNext && a + 1 < len) for (let d = 0; d < depth; d++) put(d, a + 1, 1, U.shade(base, ed.litNext));
+      }
+    }
+  }
+
   /* ---------------- HULL RECIPES — the materials of the exterior shell ----------------
      Contract, deliberately mirroring WALL_RECIPES so the two axes stay learnable together:
 
@@ -2065,10 +2148,11 @@ const StationBake = (() => {
       const X = e.x * T, Y = e.y * T;
       if (e.door) { bakeThreshold(b, e, X, Y); continue; }
       const fw = e.room ? FACEW : 2, out = e.room ? 4 : 2, face = e.room ? NFACE : 5;
-      const dep = fw + 1, rib = 'rgba(0,0,0,0.25)';
+      const dep = fw + 1;
       // the SIDE faces (s/w/e) and interior seams carry the room's own wall tone too — otherwise a
-      // cobalt room's tall north wall would meet three brown-grey walls at its corners.
-      const pal = wallPal(e.z), wallFace = pal.face, wallTop = pal.top;
+      // cobalt room's tall north wall would meet three brown-grey walls at its corners. As of
+      // 2026-08-05 they carry its MATERIAL as well, via bakeSideFace — see the ladder note there.
+      const pal = wallPal(e.z), wallFace = pal.face, wallTop = pal.top, mat = wallMatOf(e.z);
       /* A SIDE WALL IS SEEN AS ITS TOP SURFACE, and that surface is a BAND, not a line.
          THE CROWN IS A RING, NOT A BACK WALL (2026-07-27, Andrew, tracing the missing left edge in
          a screenshot: "it seems to cut off as if there's only a back wall ... on the left and right
@@ -2091,8 +2175,8 @@ const StationBake = (() => {
       // an adjacent room/corridor floor (v7 render.js parity).
       if (e.side === 'n') {
         if (e.exterior) { bakeTallNorthFace(b, e, X, Y); continue; }
-        b.fillStyle = wallFace; b.fillRect(X, Y, T, face);
-        b.fillStyle = rib; b.fillRect(X + 5, Y, 1, face);
+        // interior north seam: depth runs DOWN from the tile's top edge (the wall's top is up-screen)
+        bakeSideFace(b, pal, mat, X, Y, T, face, 'y', 1);
         b.fillStyle = wallTop; b.fillRect(X, Y + face, T, 1);
         b.fillStyle = 'rgba(255,255,255,0.05)'; b.fillRect(X, Y, T, 1);
       } else if (e.side === 's') {
@@ -2101,8 +2185,9 @@ const StationBake = (() => {
         // only ever hang SOUTH of the tile: extruding it toward the viewer like the north wall
         // would bury the walkable row in front of it.
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
-        b.fillStyle = wallFace; b.fillRect(X, Y + T - fw, T, fw);                 // the sliver of face still inside the tile
-        b.fillStyle = rib; b.fillRect(X + 5, Y + T - fw, 1, fw);
+        // south: the sliver of face still inside the tile. Its top edge is the SOUTH one (the crown
+        // hangs below), so depth runs UP-screen — dir -1.
+        bakeSideFace(b, pal, mat, X, Y + T - fw, T, fw, 'y', -1);
         if (e.exterior) {
           b.fillStyle = wallDk; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
           crown(b, X, Y + T + 1, T, cw, pal.cap);                                 // the wall's LIT TOP SURFACE
@@ -2113,8 +2198,7 @@ const StationBake = (() => {
         }
       } else if (e.side === 'w') {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + fw, Y, 1, T);      // contact seam onto the deck
-        b.fillStyle = wallFace; b.fillRect(X, Y, fw, T);
-        b.fillStyle = rib; b.fillRect(X, Y + 5, fw, 1);
+        bakeSideFace(b, pal, mat, X, Y, fw, T, 'x', 1);        // west: crown is to the LEFT, so depth grows with x
         if (e.exterior) {
           const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
           b.fillStyle = wallDk; b.fillRect(X - side, Y, side, T);          // outer hull band — the shell, global tone
@@ -2125,8 +2209,7 @@ const StationBake = (() => {
         }
       } else {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + T - dep, Y, 1, T);
-        b.fillStyle = wallFace; b.fillRect(X + T - fw, Y, fw, T);
-        b.fillStyle = rib; b.fillRect(X + T - fw, Y + 5, fw, 1);
+        bakeSideFace(b, pal, mat, X + T - fw, Y, fw, T, 'x', -1);   // east: crown is to the RIGHT — depth reversed
         if (e.exterior) {
           const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
           b.fillStyle = wallDk; b.fillRect(X + T, Y, side, T);
