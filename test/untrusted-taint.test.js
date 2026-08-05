@@ -119,7 +119,7 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
   A.ok(/terminalGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the terminal grant respects taint');
   A.ok(/connectorGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the connector grant respects taint');
   // enforcement must run BEFORE the tool executes
-  A.ok(src.indexOf("if (taintedBy && surface !== 'interactive' && !ownerTrusted") < src.indexOf('let r = await registry.dispatch(c, dctx)'),
+  A.ok(src.indexOf("if (execution.taintedBy() && surface !== 'interactive' && !ownerTrusted") < src.indexOf('r = await registry.dispatch(c, dctx)'),
     'the lockout is checked BEFORE dispatch, so a revoked power never executes');
 }
 

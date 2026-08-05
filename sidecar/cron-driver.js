@@ -163,9 +163,14 @@
     /* finishFire — record a fired run's outcome once it settles: markRun (the reducer owns the transient-backoff
        / one-shot-finalize math) → persist → cron.result → release the lease (only if it is still ours). */
     function finishFire(jobId, runId, state, threw) {
-      const at = now();
+      const currentLease = leases.get(jobId);
+      const pending = currentLease && currentLease.runId === runId ? currentLease.settlement : null;
+      const at = pending ? pending.at : now();
       const reply = (state.buf || '').trim();
-      const errMsg = state.errMsg || (threw ? ('run failed: ' + ((threw && threw.message) || threw)) : null);
+      const terminalReason = String(state.reason || '');
+      const errMsg = state.errMsg
+        || (threw ? ('run failed: ' + ((threw && threw.message) || threw)) : null)
+        || (terminalReason === 'done' ? null : ('run ended without completion: ' + (terminalReason || 'missing terminal outcome')));
       const ok = !errMsg;
       const transient = !!(state.transient || (threw && threw.transient));
       // GENERATION FENCE (2026-07-15 reliability audit): only the run that STILL OWNS the job's lease may
@@ -174,8 +179,9 @@
       // replacement's fresher state (nextRunAt / retryCount / lastRunId — the "stale completion clobbers
       // the replacement" bug). The stale run still emits an honest cron.result (reason suffixed
       // 'stale-lease') so its outcome is observable, but the STORE belongs to the current lease holder.
-      const lease = leases.get(jobId);
+      const lease = currentLease;
       const owned = !!(lease && lease.runId === runId);
+      let persisted = true;
       if (owned) {
         try {
           const next = cronStore.markRun(getJobs(), jobId, {
@@ -183,8 +189,19 @@
             reason: state.reason || (ok ? 'done' : 'error'),
             error: errMsg || undefined, transient: transient, output: ok ? reply : undefined
           }, { now: at });
-          setJobs(next);
-        } catch (_) { /* a persist/markRun failure must never crash a settling run */ }
+          if (setJobs(next) === false) persisted = false;
+        } catch (_) { persisted = false; }
+        if (!persisted) {
+          // The run is over, but its outcome is not durable yet. Keep ownership and retry the SETTLEMENT on the
+          // next tick; releasing the lease here lets a one-shot's still-persisted fireClaim age into a zombie and
+          // execute the already-completed work again. Do not emit cron.result until its backing record exists.
+          if (!lease.settlement) lease.settlement = { at: at, state: Object.assign({}, state), threw: threw || null };
+          if (!lease.persistNotified) {
+            lease.persistNotified = true;
+            warn('[cron] settlement persist failed for ' + jobId + ' (' + runId + '); retaining lease and retrying');
+          }
+          return false;
+        }
       }
       // job-level outcome: a FAILED run always reports (never silent); SILENT only on a clean, exactly-"[SILENT]" reply.
       const outcome = !ok ? 'failed' : (reply === SILENT_MARKER ? 'silent' : 'ok');
@@ -383,6 +400,15 @@
     function applyTickInner(nowMs) {
       let skips = 0, fires = 0;
 
+      // Retry completed-but-not-yet-durable outcomes before planning new work. These leases are settlement
+      // receipts, not live processes: they must never enter the stale-run reclaim path and re-execute the job.
+      for (const entry of Array.from(leases.entries())) {
+        const jobId = entry[0], lease = entry[1];
+        if (!lease || !lease.settlement) continue;
+        const settlement = lease.settlement;
+        finishFire(jobId, lease.runId, settlement.state, settlement.threw);
+      }
+
       // 1. SELF-HEALING LEASE (NS-0 heartbeat-based): reclaim a run ONLY when its HEARTBEAT is stale — i.e. it
       //    stopped proving liveness (crashed / the emit stream died), not merely because it is taking a long
       //    time. A genuinely-live long run keeps renewing lease.heartbeatAt on every progress event, so it is
@@ -391,6 +417,7 @@
       //    reclaimed after heartbeatStaleMs (>= the old maxRunMs by default) rather than the old fixed ceiling.
       for (const entry of leases) {
         const jobId = entry[0], lease = entry[1];
+        if (lease.settlement) continue;
         const beatAge = nowMs - (lease.heartbeatAt != null ? lease.heartbeatAt : lease.startedAt);
         if (beatAge > heartbeatStaleMs) {
           try { lease.ac.abort(); } catch (_) {}

@@ -69,7 +69,7 @@ function world(opts) {
     // let the driver's pre-run context hop settle (only project-shaped loops take it)
     flush: () => new Promise(r => setImmediate(() => setImmediate(r))),
     // resolve the oldest in-flight run, then let the settle microtasks drain
-    finish: (res) => { const p = pending.shift(); p.resolve(res); return new Promise(r => setImmediate(r)); },
+    finish: (res) => { const p = pending.shift(); p.resolve(Object.assign({ reason: 'done' }, res)); return new Promise(r => setImmediate(r)); },
     fail: (err) => { const p = pending.shift(); p.reject(err); return new Promise(r => setImmediate(r)); },
     seed: (spec) => { loops = S.createLoop(loops, Object.assign({ id: 'l1', objective: 'find bugs' }, spec), { now: T0 }); }
   };
@@ -186,6 +186,12 @@ function world(opts) {
     A.eq(w2.loop().iterations[0].outcome, 'cancelled', 'an aborted iteration is cancelled, not a failure');
     A.eq(w2.loop().failStreak, 0, 'so it costs no failure streak');
 
+    // a resolved run can still be incomplete (budget/max_iters/refusal/empty); only done is a candidate
+    const wb = world(); wb.seed({}); wb.tick(T0);
+    await wb.finish({ reason: 'budget', text: 'partial work' });
+    A.eq(wb.loop().iterations[0].outcome, 'failed', 'a budget-ended run is not parked as an approvable candidate');
+    A.ok(/budget/.test(wb.loop().iterations[0].error || ''), 'the failed iteration names its terminal reason');
+
     // a run host that throws synchronously
     const w3 = world({ runThrows: true }); w3.seed({});
     w3.tick(T0);
@@ -198,6 +204,22 @@ function world(opts) {
     await w4.finish({ text: 'I fixed everything' });
     A.eq(w4.loop().iterations[0].outcome, 'failed', 'a failed harvest is a failed iteration, not a silent success');
     A.ok(/dirty tree/.test(w4.loop().iterations[0].error), 'and names why the work could not land');
+  }
+
+  // ---- 5b. a failed settlement persist retries the receipt, never the completed iteration ----------------
+  {
+    let failing = false;
+    const w = world({ persistFails: () => failing });
+    w.seed({ queueCap: 1 }); w.tick(T0);
+    failing = true;
+    await w.finish({ text: 'completed once' });
+    A.eq(w.loop().iterations[0].outcome, 'running', 'an unpersisted settlement is not exposed as completed');
+    A.eq(w.drv.leases.size, 1, 'the lease retains the pending settlement');
+    failing = false;
+    w.tick(T0 + MIN);
+    A.eq(w.calls.length, 1, 'settlement recovery does not execute the iteration again');
+    A.eq(w.loop().iterations[0].outcome, 'candidate', 'the original outcome lands after persistence recovers');
+    A.eq(w.drv.leases.size, 0, 'the lease releases only after durable settlement');
   }
 
   // ---- 6. a deleted agent stops the loop instead of firing under a ghost ---------------------------------

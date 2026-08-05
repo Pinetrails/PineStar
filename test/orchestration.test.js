@@ -7,6 +7,7 @@ const A = require('./_assert.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { getEventListeners } = require('events');
 const { makeOrchestrationTools } = require('../sidecar/tools/builtin/orchestration.js');
 const { makeSubagentManager } = require('../sidecar/subagents.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
@@ -642,11 +643,13 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   const ro = fakeRunOnce();
   const roster = new Map([['a', {}], ['b', {}], ['c', {}], ['d', {}]]);
   let clock = 0;
+  const parent = new AbortController();
   const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 4000, now: () => clock });
-  await dispatchTool.run({ workers: ['a', 'b', 'c', 'd'].map(a => ({ agentId: a, prompt: 'p' })) }, { agentId: 'lead', emit: () => {} });
+  await dispatchTool.run({ workers: ['a', 'b', 'c', 'd'].map(a => ({ agentId: a, prompt: 'p' })) }, { agentId: 'lead', signal: parent.signal, emit: () => {} });
   A.eq(ro.calls.length, 4, 'all four sequential workers ran');
   // clock never advances in this stub, so each worker sees the full remaining budget / workers remaining
   A.ok(ro.calls[0].signal && ro.calls[3].signal, 'every sequential worker got its own signal');
+  A.eq(getEventListeners(parent.signal, 'abort').length, 0, 'settled workers detach their parent abort listeners');
 }
 
 // ---- abort PROPAGATION survives the per-worker controller: E-STOP on the lead still stops the worker ----

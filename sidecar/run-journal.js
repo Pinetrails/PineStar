@@ -215,14 +215,29 @@ function makeRunJournal(opts) {
     return r;
   }
 
+  function inspect(runId) {
+    const p = parseRecords(io.read(runId));
+    return analyze(p.records, p.corrupt);
+  }
+
   return {
     begin(meta) { return record(meta && meta.runId, 'begin', meta, true); },
     checkpoint(runId, payload) { return record(runId, 'checkpoint', payload); },
     toolIntent(runId, payload) { return record(runId, 'tool_intent', payload); },
     toolResult(runId, payload) { return record(runId, 'tool_result', payload); },
     finish(runId, payload) { return record(runId, 'finish', payload); },
-    remove(runId) { live.delete(String(runId || '')); io.remove(runId); },
-    inspect(runId) { const p = parseRecords(io.read(runId)); return analyze(p.records, p.corrupt); },
+    // Retirement is a safety boundary, not a raw unlink. A terminal record does not settle an unmatched tool
+    // intent: that journal is the only durable evidence that a side effect may have happened, so ordinary host
+    // teardown must retain it for review. Corrupt/unreadable journals also fail closed and remain recoverable.
+    remove(runId) {
+      let state;
+      try { state = inspect(runId); } catch (_) { return false; }
+      if (!state || state.status !== 'finished') return false;
+      live.delete(String(runId || ''));
+      io.remove(runId);
+      return true;
+    },
+    inspect,
     recoverAll() {
       const out = [];
       for (const file of io.list()) {

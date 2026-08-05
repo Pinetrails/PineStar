@@ -215,7 +215,13 @@
         const t0 = meta.clock ? meta.clock.now() : 0;
         let r;
         try { r = await dispatch(c, capCtx); }
-        catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
+        catch (e) {
+          // The host marks a dispatch fatal when it has durably recorded a tool intent but cannot durably
+          // establish the outcome. Converting that boundary loss into an ordinary tool error would let the
+          // model continue and claim success over an unknown side effect.
+          if (e && e.fatalToRun === true) throw e;
+          r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' };
+        }
         r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
         return { c, r, ms: Math.max(0, (meta.clock ? meta.clock.now() : 0) - t0) };
       }));
@@ -252,7 +258,10 @@
       const t0 = meta.clock ? meta.clock.now() : 0;
       let r;
       try { r = await dispatch(c, capCtx); }
-      catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
+      catch (e) {
+        if (e && e.fatalToRun === true) throw e;
+        r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' };
+      }
       r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
       const t1 = meta.clock ? meta.clock.now() : 0;
       results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });

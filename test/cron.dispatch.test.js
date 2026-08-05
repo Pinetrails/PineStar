@@ -31,7 +31,13 @@ function setup(jobs, opts) {
   const driver = makeCronDriver({
     getJobs: () => store,
     setJobs: (j) => { if (failPersist) return false; store = j; return true; },
-    runOnce: (o) => new Promise((resolve, reject) => { runs.push({ opts: o, resolve, reject }); }),
+    runOnce: (o) => new Promise((resolve, reject) => {
+      runs.push({
+        opts: o,
+        resolve: () => { o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); resolve(); },
+        reject
+      });
+    }),
     emit: (name, payload) => { events.push({ name, payload }); },
     newId: () => 'run-' + (++idN),
     newAbort: () => new AbortController(),

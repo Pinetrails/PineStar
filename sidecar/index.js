@@ -8817,6 +8817,13 @@ async function handleCronRun(req, res) {
     state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
+    // A terminal event is authoritative. Cancellation, refusal, budget exhaustion, and iteration limits can
+    // end without agent.run.error; treating "no error event" as success would publish partial output and stamp
+    // the routine green. Missing terminal telemetry also fails closed.
+    const terminalReason = String(state.reason || '').trim();
+    if (!state.errMsg && terminalReason !== 'done') {
+      state.errMsg = 'run ended without completion: ' + (terminalReason || 'missing-terminal-event');
+    }
     /* RUN NOW MUST FIRE THE WHOLE LINE, exactly like the scheduled fire does. This route calls runOnce
        DIRECTLY (it streams to the watching browser), so it does not pass through the cron driver's
        advanceChain seam — without this the SAME routine would run four stages on schedule and one stage
@@ -12027,20 +12034,39 @@ async function runOnce(o) {
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
     // Persist the exact call before it can have side effects. If the process dies after this barrier but before a
     // durable result, restart classifies the outcome as unknown and never replays it automatically.
-    if (execution.journalStarted()) runJournal.toolIntent(runId, {
-      callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
-      mutating: !!(liveTool && liveTool.scope !== 'read')
-    });
-    let r = await registry.dispatch(c, dctx);
-    if (DomainTask.isTargetFetch(c, directDomainTask) && DomainTask.isDomainMissing(r)) {
-      r = Object.assign({}, r, { control: Object.assign({}, r && r.control, DomainTask.stopControl(directDomainTask)) });
+    const fatalToolBoundary = (stage, cause) => {
+      const detail = String((cause && cause.message) || cause || 'unknown failure');
+      const e = new Error('tool outcome could not be durably established (' + stage + '): ' + detail);
+      e.fatalToRun = true;
+      return e;
+    };
+    if (execution.journalStarted()) {
+      try {
+        runJournal.toolIntent(runId, {
+          callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
+          mutating: !!(liveTool && liveTool.scope !== 'read')
+        });
+      } catch (e) {
+        // No tool may execute after the recovery barrier itself failed.
+        throw fatalToolBoundary('intent', e);
+      }
     }
-    // Persist the full model-visible result before the loop advances to another call/turn. A journal write failure
-    // throws here, leaving the intent unmatched and therefore review-required after restart.
-    if (execution.journalStarted()) runJournal.toolResult(runId, {
-      callId: c.id, ok: !!(r && r.ok), isError: !!(r && r.isError),
-      content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
-    });
+    let r;
+    try {
+      r = await registry.dispatch(c, dctx);
+      if (DomainTask.isTargetFetch(c, directDomainTask) && DomainTask.isDomainMissing(r)) {
+        r = Object.assign({}, r, { control: Object.assign({}, r && r.control, DomainTask.stopControl(directDomainTask)) });
+      }
+      // Persist the full model-visible result before the loop advances to another call/turn. Once intent is
+      // durable, any exception before this result boundary means the side effect is unknown and must end the run.
+      if (execution.journalStarted()) runJournal.toolResult(runId, {
+        callId: c.id, ok: !!(r && r.ok), isError: !!(r && r.isError),
+        content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
+      });
+    } catch (e) {
+      if (execution.journalStarted()) throw fatalToolBoundary('result', e);
+      throw e;
+    }
     // TASTE EXTRACTION (announce-and-act): a successful brief.proceed IS the product moment — the model's
     // settled READ (objective + correctable assumptions, incl. its taste guesses) surfaces to COMMS as a
     // non-blocking card while the run continues. Internal brief controls stay hidden from tool telemetry;
@@ -12634,7 +12660,13 @@ async function runOnce(o) {
           reason: (result && result.reason) || 'error', turns: finalTurns, tokens: finalTokens, usd: finalUsd,
           transcriptAck: true
         });
-        runJournal.remove(runId);
+        const retired = runJournal.remove(runId);
+        if (!retired) {
+          // Make the retained uncertainty visible immediately, not only after the next process restart.
+          const recovery = runJournal.inspect(runId);
+          recoveredRunJournals = recoveredRunJournals.filter(r => r && r.runId !== runId).concat([recovery]);
+          console.warn('[run-journal] retained unsettled run for review:', runId, recovery.status);
+        }
       } else {
         if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
         if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);

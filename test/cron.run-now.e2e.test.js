@@ -20,6 +20,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function startMockOpenRouter() {
   const requests = [];
+  let hold = null;
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
@@ -32,6 +33,12 @@ function startMockOpenRouter() {
         req.on('data', d => { body += d; });
         req.on('end', () => {
           try { requests.push(JSON.parse(body)); } catch (_) {}
+          if (hold) {
+            const h = hold;
+            hold = null;
+            h();
+            return;
+          }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'AI news found' } }] }) + '\n\n');
           res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
@@ -42,7 +49,12 @@ function startMockOpenRouter() {
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, requests, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({
+      server,
+      requests,
+      base: 'http://' + HOST + ':' + server.address().port + '/api/v1',
+      holdNext() { return new Promise(resolveHold => { hold = resolveHold; }); }
+    }));
   });
 }
 
@@ -224,6 +236,21 @@ async function readNdjson(res) {
     A.ok(defining, 'that stream still carries the run it is NAMED after');
     A.ok(defining && String(defining.title || '').indexOf('PIPELINE HANDOFF') < 0,
       'and the defining row is the ROUTINE, never a stage handoff — internal plumbing must not become a session title');
+    /* Disconnecting the Run Now watcher cancels the run. Cancellation has no agent.run.error by design, so
+       success must be derived from the terminal reason, not merely the absence of an error event. */
+    const resultCount = sse.events.filter(e => e.name === 'cron.result' && e.payload && e.payload.jobId === job.id).length;
+    const held = mock.holdNext();
+    const cancel = new AbortController();
+    const cancelledRun = fetch(B + '/api/cron/run', {
+      method: 'POST', headers, body: JSON.stringify({ id: job.id }), signal: cancel.signal
+    }).catch(() => null);
+    await held;
+    cancel.abort();
+    await cancelledRun;
+    await sse.waitFor(events => events.filter(e => e.name === 'cron.result' && e.payload && e.payload.jobId === job.id).length > resultCount, 5000, 'cancelled cron result');
+    const cancelledResult = sse.events.filter(e => e.name === 'cron.result' && e.payload && e.payload.jobId === job.id).slice(-1)[0];
+    A.eq(cancelledResult.payload.outcome, 'failed', 'cancelled Run Now is never announced as successful');
+    A.eq(cancelledResult.payload.reason, 'cancelled', 'cancelled Run Now retains its terminal reason');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}
