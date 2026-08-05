@@ -2904,9 +2904,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
     const dv = (s.deliverables && s.deliverables.length) || 0;   // real produced artifacts (workstreams.recordDeliverable)
     // shared tail: rename + pin + archive on every lane (title= is adopted into the station tooltip).
-    const tail = '<button data-act="rename" title="rename this task">✎</button>' +
+    // One .kb-meta-keys unit so the housekeeping cluster right-aligns AND wraps as a whole — never
+    // a stranded ⌫ on its own row (the raggedness the keycap restyle made visible).
+    const tail = '<span class="kb-meta-keys">' +
+      '<button data-act="rename" title="rename this task">✎</button>' +
       '<button data-act="pin" title="' + (s.pinned ? 'unpin' : 'pin to the top of its column') + '">' + (s.pinned ? '★' : '☆') + '</button>' +
-      '<button data-act="arch" title="archive — recover from the COMMS rail&#39;s ARCHIVED toggle">⌫</button>';
+      '<button data-act="arch" title="archive — recover from the COMMS rail&#39;s ARCHIVED toggle">⌫</button></span>';
     const acts = s.lane === 'todo'
       ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button>' + tail
       : s.lane === 'active'

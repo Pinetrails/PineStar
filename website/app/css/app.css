@@ -2229,12 +2229,45 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* TASK BOARD — add-row + per-card actions (new controls over v7 .kb-* cards) */
 .kb-add { display: flex; gap: 8px; margin-bottom: 10px; }
 .kb-add input { flex: 1; font-size: 15px; padding: 5px 8px; }
-.kb-acts { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+.kb-acts { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; align-items: center; }
+/* the meta glyphs (rename/pin/archive) are ONE right-aligned cluster (.kb-meta-keys) that wraps as
+   a unit: verbs read left, housekeeping right, and a narrow card gets two structured rows — never a
+   stranded ⌫. Glyph-only keys sit in a tighter, equal box (single fallback-font symbols —
+   box-centred, never padded from font metrics). */
+.kb-acts .kb-meta-keys { margin-left: auto; display: inline-flex; gap: 4px; }
+.kb-acts .kb-meta-keys button { padding: 1px 0; min-width: 24px; }
+/* the card keys wear the SAME molded matte keycap as the console's .bb.sm/.bb.xs (the app.css:100
+   material block): top light, phosphor body, shaded base, contact shadow, press sink. Only the
+   surface + radius — the compact metrics stay exactly as they were so no card reflows. The base
+   shade is 1px (not the sm key's 2px): these keys are ~20px tall and a 2px base reads as a ledge. */
 .kb-acts button {
-  font-family: inherit; background: transparent; color: var(--ph-dim);
+  font-family: inherit; color: var(--ph-dim);
   border: 1px solid var(--ph-faint); cursor: pointer; font-size: 12px; padding: 1px 7px; letter-spacing: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 3px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 6%, var(--panel2)) 0%,
+    var(--panel2) 58%,
+    color-mix(in srgb, #000 20%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .08),
+    inset 0 -1px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45);
 }
-.kb-acts button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+.kb-acts button:hover {
+  color: var(--ph-bright); border-color: var(--ph);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 11%, var(--panel2)) 0%,
+    var(--panel2) 62%,
+    color-mix(in srgb, #000 16%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .12),
+    inset 0 -1px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45),
+    0 0 10px var(--ph-glow2);
+}
+/* pressed = the key is DOWN: the seat sinks and the base light goes out (same verb as .bb.sm) */
+.kb-acts button:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,.42); }
 .kb-acts .assign { color: var(--gold); border-color: var(--ph-dim); }
 /* empty-state wrapper: NO dimming — the .empty-state component (glyph + copy + CTA) is already designed at the
    right strength; the old opacity:0.4 ghosted even the + ADD ONE call-to-action. */
