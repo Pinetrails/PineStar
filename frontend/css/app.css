@@ -3584,14 +3584,33 @@ body.crew-rail-off #screen-game.active {
 .mc-enable input[type=checkbox] { margin: 0; }
 
 /* ===== TOOLSETS console: one CRT pill-switch row per capability family ===== */
+/* COMPUTE is the always-on core: seated INTO the panel (a well, not a raised tile) so it reads as
+   part of the chassis rather than as one more switchable row. Dashed edge keeps "not a control". */
 .ts-core { align-items: center; gap: 8px; border: 1px dashed var(--ph-dim); border-radius: var(--r-sm);
-  padding: 8px 10px; margin-bottom: 8px; background: rgba(0,0,0,.28); opacity: .85; }
+  padding: 9px 11px; margin-bottom: 8px; background: rgba(0,0,0,.30); box-shadow: var(--well); opacity: .9; }
+.ts-core .ts-glyph { color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
 .ts-core-tag { font-size: 10px; letter-spacing: 1.5px; color: var(--gold); border: 1px solid var(--gold);
   border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: middle; }
 #ts-list { display: flex; flex-direction: column; gap: 8px; }
+/* Same depth language as the front door and the catalog cards — one top-left light, matte. Scoped to
+   `.ts-row`/`.ts-core` and NOT the shared `.set-row`, which every other settings console also uses. */
 .ts-row { align-items: flex-start; gap: 8px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  padding: 8px 10px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  padding: 8px 10px; box-shadow: var(--raise); position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out);
   animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms); }
+/* the live spine: a lit edge on a granting toolset, dark on one that is off or inert. It states the
+   row's REAL state at a glance, which the checkbox alone only says up close. */
+.ts-row::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--ph); opacity: .55; transition: background var(--t-fast) var(--ease-out),
+  opacity var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out); }
+.ts-row:hover { border-color: var(--ph);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .09), rgba(0,0,0,.32) 62%);
+  box-shadow: var(--raise), 0 0 16px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.5); }
+.ts-row:hover::before { opacity: 1; box-shadow: 0 0 10px var(--ph-glow); }
+/* off or inert = the spine goes dark. Truthful telemetry, in the paint. */
+.ts-row.ts-off::before, .ts-row.ts-inert-row::before { background: var(--ph-dim); opacity: .35; box-shadow: none; }
 .ts-row > input[type=checkbox] { margin-top: 2px; }
 .ts-glyph { font-size: 15px; color: var(--ph); line-height: 1.4; flex: 0 0 auto; }
 .ts-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
@@ -3611,8 +3630,11 @@ body.crew-rail-off #screen-game.active {
   border-radius: 4px; padding: 1px 6px; transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out); }
 .ts-more:hover { color: var(--ph-bright); border-color: var(--ph); }
 .ts-tools { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+/* each tool name is a key set into the row — recessed, so the chips read as an inventory strip
+   rather than as a row of buttons competing with the real actions */
 .ts-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px;
-  padding: 1px 5px; background: rgba(0,0,0,.4); }
+  padding: 1px 5px; background: rgba(0,0,0,.42);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.6), inset 0 -1px 0 rgba(var(--ph-bright-rgb), .04); }
 .ts-row.ts-off { opacity: .62; }
 .ts-row.ts-off .ts-name { color: var(--ph-dim); }
 .ts-row.ts-inert-row .ts-glyph { color: var(--ph-dim); }
@@ -3701,28 +3723,80 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 /* ===== ABILITIES front door: "what are you trying to connect?" =====
    Six routes above the panes. Styled as pressable rows rather than the card grid so it reads as a
    MENU (pick one and move on), not as more content to study — the whole point is to be left behind. */
-.ab-router { margin: 0 0 16px; padding: 0 0 14px; border-bottom: 1px dashed var(--ph-faint); }
-.ab-router-q { color: var(--ph-bright); letter-spacing: 2px; font-size: 15px; margin: 0 0 8px; }
-.ab-router-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 6px; }
-.ab-route {
-  display: flex; align-items: flex-start; gap: 9px; text-align: left; cursor: pointer;
-  font-family: inherit; font-size: 13px; letter-spacing: .5px; padding: 8px 10px;
-  color: var(--ph); background: rgba(0,0,0,.32); border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out),
-              transform var(--t-fast) var(--ease-out);
-  animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms);
+/* ⛔⛔ LIFT WITH `translate`, NEVER `transform`. Every card here carries `animation: cardIn … both`,
+   and a FINISHED fill:both animation retains its final keyframe — `transform: translateY(0)` — which
+   outranks even an INLINE style (probed live: setting el.style.transform moved the box 0px). The old
+   `.ab-route:active { transform: translateY(1px) }` here was dead CSS for exactly that reason. The
+   independent `translate` property is a separate animatable property cardIn never touches, so it
+   composes freely (probed: a real 6px move). Same family as the `.cc-card.added` opacity trap. */
+
+/* The front door is seated in a RECESSED WELL — the station's own `--well` recipe — so the six routes
+   read as keys set into a console face rather than as six more paragraphs. Matte: an inset floor and
+   one top-left light, no specular sheen (`--glass` is the tube in front of the picture, not a panel). */
+.ab-router {
+  margin: 0 0 16px; padding: 12px 12px 13px; border-radius: var(--r-sm);
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px calc(3px * var(--cz, 1))),
+    linear-gradient(180deg, rgba(var(--ph-rgb), .045), transparent 62%),
+    rgba(0,0,0,.30);
+  box-shadow: var(--well);
 }
-.ab-route:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
-.ab-route:active { transform: translateY(1px); }
+.ab-router-q {
+  color: var(--ph-bright); letter-spacing: 2px; font-size: 15px; margin: 0 0 10px;
+  display: flex; align-items: center; gap: 9px; text-shadow: 0 0 8px var(--ph-glow);
+}
+/* a phosphor rule that fades out — the console's section grammar, not a new ornament */
+.ab-router-q::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--ph-dim), transparent);
+  opacity: .75;
+}
+.ab-router-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 7px; }
+.ab-route {
+  display: flex; align-items: flex-start; gap: 10px; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 13px; letter-spacing: .5px; padding: 9px 11px;
+  color: var(--ph); border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.34) 70%);
+  box-shadow: var(--raise);
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out);
+  animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms);
+  position: relative; overflow: hidden;
+}
+/* the spine: a dark phosphor edge that IGNITES on hover. One element, no extra markup. */
+.ab-route::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--ph-dim); opacity: .5;
+  transition: background var(--t-fast) var(--ease-out), opacity var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out);
+}
+.ab-route:hover {
+  border-color: var(--ph); color: var(--ph-bright);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .13), rgba(0,0,0,.30) 70%);
+  box-shadow: var(--raise), 0 0 18px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.55);
+  translate: 0 -1px;
+}
+.ab-route:hover::before { background: var(--ph); opacity: 1; box-shadow: 0 0 10px var(--ph-glow); }
+.ab-route:active { translate: 0 1px; box-shadow: var(--well); }
 .ab-route:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
-.ab-route-glyph { flex: 0 0 auto; font-size: 15px; line-height: 1.35; opacity: .9; }
-.ab-route-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.ab-route-title { color: var(--ph-bright); letter-spacing: .5px; }
-.ab-route-blurb { font-size: 11px; line-height: 1.4; letter-spacing: .2px; }
+/* the glyph sits on its own recessed KEY PLATE — the single strongest "this is hardware" cue here */
+.ab-route-glyph {
+  flex: 0 0 auto; font-size: 15px; line-height: 1; color: var(--ph);
+  width: calc(26px * var(--cz, 1)); height: calc(26px * var(--cz, 1));
+  display: grid; place-items: center; border-radius: 3px;
+  background: rgba(0,0,0,.42); box-shadow: var(--well);
+  text-shadow: 0 0 7px var(--ph-glow);
+  transition: color var(--t-fast) var(--ease-out), text-shadow var(--t-fast) var(--ease-out);
+}
+.ab-route:hover .ab-route-glyph { color: var(--ph-bright); text-shadow: 0 0 12px var(--ph-glow); }
+.ab-route-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ab-route-title { color: var(--ph-bright); letter-spacing: .5px; text-shadow: 0 0 6px var(--ph-glow2); }
+.ab-route-blurb { font-size: 11px; line-height: 1.45; letter-spacing: .2px; }
 .ab-route-blurb b { color: var(--ph); font-weight: normal; }
 /* the affordance carries the DESTINATION: › stays in this console, ↗ opens another window */
-.ab-route-go { flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; line-height: 1.3; }
-.ab-route:hover .ab-route-go { color: var(--ph-bright); }
+.ab-route-go { flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; line-height: 1.3;
+  transition: color var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out); }
+.ab-route:hover .ab-route-go { color: var(--ph-bright); translate: 2px 0; }
 /* Searching means the Commander already named the thing — the results are the answer, so the
    question stops taking up the top of the pane. */
 .con-searching .ab-router { display: none; }
@@ -3732,18 +3806,28 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    font, so no faux-bold; the color carries the emphasis. */
 /* tier filter — the legend's own vocabulary turned into controls. Each chip wears the colour of the
    tier it selects, so the row reads as the legend it replaces rather than as a new set of buttons. */
-.cc-filters { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 8px; }
+/* Seated in a recessed TRACK so the row reads as one segmented control — a single instrument with a
+   lit segment — instead of five loose buttons floating on the pane. */
+.cc-filters {
+  display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 10px;
+  padding: 4px; border-radius: var(--r-sm); width: fit-content; max-width: 100%;
+  background: rgba(0,0,0,.30); box-shadow: var(--well);
+}
 .cc-filter {
   font-family: inherit; font-size: 11px; letter-spacing: 1px; cursor: pointer; text-transform: uppercase;
-  color: var(--ph-dim); background: rgba(0,0,0,.35); border: 1px solid var(--ph-dim);
-  border-radius: 3px; padding: 2px 9px;
+  color: var(--ph-dim); background: transparent; border: 1px solid transparent;
+  border-radius: 3px; padding: 3px 10px;
   transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out),
-              background var(--t-fast) var(--ease-out);
+              background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
 }
-.cc-filter:hover { color: var(--ph-bright); border-color: var(--ph); }
+.cc-filter:hover { color: var(--ph-bright); border-color: var(--ph-dim); background: rgba(var(--ph-rgb), .08); }
 .cc-filter:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
-/* the selected chip inverts — the same "this one is live" grammar the console rail uses */
-.cc-filter.active { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; }
+/* the selected chip inverts and BLOOMS — the same "this one is live" grammar the console rail uses,
+   plus the phosphor halo that says the segment is energised rather than merely filled */
+.cc-filter.active {
+  color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none;
+  box-shadow: 0 0 12px var(--ph-glow2), inset 0 1px 0 rgba(255,255,255,.14);
+}
 /* each tier chip carries its own tier colour (the `.cc-lg-*` rules below are scoped to `.cc-legend`,
    so the filter row states them again rather than inheriting from prose it is not inside) */
 .cc-filter.cc-lg-none { color: var(--ok); border-color: var(--ok); }
@@ -3765,9 +3849,18 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .cc-group[hidden], .cc-card[hidden] { display: none; }
 .cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 8px; }
 .cc-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  padding: 9px 11px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  padding: 9px 11px; box-shadow: var(--raise);
+  /* one top-left light: a faint phosphor wash at the head falling to the dark card floor */
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out);
   animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 28ms); }
-.cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); }
+/* lift on hover via `translate` — `transform` is retained by cardIn and cannot win (see the front-door note) */
+.cc-card:hover { border-color: var(--ph); translate: 0 -1px;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .10), rgba(0,0,0,.32) 62%);
+  box-shadow: var(--raise), 0 0 16px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.5); }
+/* a connected card is LIT, not merely outlined — the green edge plus its own faint halo */
+.cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok), 0 0 14px rgba(123,200,138,.16); }
 .cc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cc-head b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
 .cc-badge { font-size: 10px; letter-spacing: .5px; border-radius: 3px; padding: 0 4px; text-transform: uppercase; }
