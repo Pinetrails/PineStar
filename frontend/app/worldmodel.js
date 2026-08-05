@@ -285,13 +285,27 @@ const WorldModel = (() => {
      last tile aims INTO its destination footprint so the crate visibly sinks at the dock — the same
      shape connectBelt lays by hand. Each blueprint must compile (pipeline.js compileRoutingPlan)
      to UNBOUND_BAY warns ONLY — locked by test/blueprints.test.js. */
+  /* BAY ROLES (guided workflows Phase 1, 2026-08-05): a blueprint bay stamps MEANING, not a blank
+     dock — `role` names who should crew it, `desc` says what that crew member does (placard copy),
+     `cls` maps to the real Specialties class the one-click summon deploys. The catalog is static
+     code (single source for copy + class wiring); the SAVED doc carries only the prop's `role`
+     string — see migrate()'s prop whitelist. Role is provenance: it survives binding (a suggestion,
+     never a gate — sandbox law), and hand-placed bays simply have none. */
+  const BAY_ROLES = {
+    RESEARCHER: { desc: 'digs sources & builds the brief', cls: 'researcher' },
+    WRITER:     { desc: 'drafts the result',               cls: 'writer' },
+    ENGINEER:   { desc: 'works the code lane',             cls: 'engineer' },
+    GENERALIST: { desc: 'handles everything else',         cls: 'chief' },
+    CREW:       { desc: 'works its share of the stream',   cls: 'chief' },
+    SHIPPER:    { desc: 'finishes the job & ships it',     cls: 'chief' },
+  };
   const BLUEPRINTS = [
     { id: 'research_line', label: 'RESEARCH LINE', w: 17, h: 2,
       desc: 'INBOX ▸ BAY ▸ BAY ▸ OUTBOX — work rides in, two agents work it in turn (a hand-off chain), the result ships out.',
       props: [
         { t: 'intake', x: 0, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 5, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 10, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 5, y: 0, w: 2, h: 2, role: 'RESEARCHER' },
+        { t: 'bay', x: 10, y: 0, w: 2, h: 2, role: 'WRITER' },
         { t: 'outbox', x: 15, y: 0, w: 2, h: 2 },
       ],
       belts: [
@@ -305,8 +319,8 @@ const WorldModel = (() => {
         { t: 'intake', x: 0, y: 0, w: 2, h: 2 },
         // pre-configured so a fresh stamp never nags FILTER_NO_DEFAULT: code → east lane, everything else → south
         { t: 'filter', x: 4, y: 1, w: 1, h: 1, block: false, routes: { code: 'E' }, def: 'S' },
-        { t: 'bay', x: 7, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 7, y: 3, w: 2, h: 2 },
+        { t: 'bay', x: 7, y: 0, w: 2, h: 2, role: 'ENGINEER' },     // the filter's `code -> E` lane lands here
+        { t: 'bay', x: 7, y: 3, w: 2, h: 2, role: 'GENERALIST' },   // the default (everything-else) lane
       ],
       belts: [
         { x: 2, y: 1, d: 'E' }, { x: 3, y: 1, d: 'E' }, { x: 4, y: 1, d: 'E' },
@@ -318,9 +332,9 @@ const WorldModel = (() => {
       props: [
         { t: 'intake', x: 0, y: 3, w: 2, h: 2 },
         { t: 'splitter', x: 4, y: 4, w: 1, h: 1, block: false },
-        { t: 'bay', x: 8, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 8, y: 3, w: 2, h: 2 },
-        { t: 'bay', x: 8, y: 6, w: 2, h: 2 },
+        { t: 'bay', x: 8, y: 0, w: 2, h: 2, role: 'CREW' },
+        { t: 'bay', x: 8, y: 3, w: 2, h: 2, role: 'CREW' },
+        { t: 'bay', x: 8, y: 6, w: 2, h: 2, role: 'CREW' },
       ],
       belts: [
         { x: 2, y: 4, d: 'E' }, { x: 3, y: 4, d: 'E' }, { x: 4, y: 4, d: 'E' },
@@ -331,7 +345,7 @@ const WorldModel = (() => {
     { id: 'ship_out', label: 'SHIP-OUT LOOP', w: 7, h: 2,
       desc: 'BAY ▸ OUTBOX — the smallest line: one agent, and every finished job ships a crate to the pallet.',
       props: [
-        { t: 'bay', x: 0, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 0, y: 0, w: 2, h: 2, role: 'SHIPPER' },
         { t: 'outbox', x: 5, y: 0, w: 2, h: 2 },
       ],
       belts: [
@@ -896,6 +910,7 @@ const WorldModel = (() => {
       for (const s of bp.props) {
         const prop = { id: 'p' + (doc._nid++), t: s.t, x: tx + s.x, y: ty + s.y, w: s.w, h: s.h };
         if (s.block === false) prop.block = false;
+        if (s.role && BAY_ROLES[s.role]) prop.role = s.role;   // guided workflows: the dock stamps carrying its ROLE (see BAY_ROLES)
         applyJunctionCfg(prop, s);   // the FILTER's routes/def ride in pre-configured
         doc.props.push(prop);
         ids.push(prop.id);
@@ -1043,6 +1058,7 @@ const WorldModel = (() => {
       for (const p of doc.props) {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
         const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
+        if (p.role) lp.role = p.role;   // a role-carrying dock's placard/nag copy (guided workflows)
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
         if (p.door) lp.door = p.door;   // an AIRLOCK's seal state -> the prop sprite's status light / jam spark
         if (p.connectorId) lp.connectorId = p.connectorId;   // a CONNECTOR PORTAL's bound server -> live state + firing pulse on the sprite
@@ -1448,7 +1464,7 @@ const WorldModel = (() => {
     // lookup is installed (i.e. a real client with the catalog); plain node tests keep every prop.
     if (propRules) doc.props = doc.props.filter(p => !(p && typeof p.t === 'string') || !!propRules(p.t));
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }
@@ -1479,6 +1495,8 @@ const WorldModel = (() => {
     CAP_PROP_MAP, CAP_LABEL, capForProp: t => CAP_PROP_MAP[t] || null, grantLabelForProp,
     // starter-line blueprints — the static catalog the REFIT LINES palette + headless tests read
     BLUEPRINTS,
+    // bay-role catalog (guided workflows): placard copy + summon-class wiring for role-carrying docks
+    BAY_ROLES, bayRoleInfo: r => BAY_ROLES[r] || null,
   };
 })();
 

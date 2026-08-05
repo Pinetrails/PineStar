@@ -291,6 +291,13 @@
     // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
     // byte-identical to the behaviour before work lines existed.
     const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
+    // SAMPLE/PROOF SEAM (additive, 2026-08-05): an optional streamId (string, or fn(chatId) -> string) stamped
+    // onto every runOnce this hub fires (entry dock AND chain hops). With it, the host records the runs +
+    // transcripts under that workstream (runs.jsonl streamId -> a readable OUTBOX crate); WITHOUT it — every
+    // existing channel — runOnce receives streamId undefined, which the host already reads exactly like the
+    // old absent property ('' / 'global' fallbacks), so behaviour is unchanged.
+    const streamIdFor = typeof o.streamId === 'function' ? o.streamId
+      : (o.streamId ? function () { return String(o.streamId); } : null);
     // ONE-RESOLVER LAW: any telemetry that attributes an inbound message to an agent (workitem crates, queue
     // HUD) must come from THIS hub's resolution, never a parallel guess. onResolved fires once per real message
     // (never for /commands) with the exact agentId the run will execute as, in onInbound's first synchronous
@@ -1479,6 +1486,7 @@
           await runOnce({
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
+            streamId: streamIdFor ? streamIdFor(chatId) : undefined,   // sample/proof seam — undefined for every ordinary channel
             surface: wantApprovals ? 'interactive' : 'autonomous',
             ownerTrusted: ownerTrusted,
             // ...but ONLY for who answers a consent prompt. A phone has no floor to place props on, so this run
@@ -1557,6 +1565,7 @@
                 key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
                 system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
                 agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
+                streamId: streamIdFor ? streamIdFor(chatId) : undefined,   // the whole line's runs share one workstream (sample/proof seam)
                 surface: 'autonomous', ownerTrusted: ownerTrusted, broadcast: true, reflect: true,
                 station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,
                 taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel
