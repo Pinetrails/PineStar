@@ -234,19 +234,53 @@ const StationBake = (() => {
      Everything is phase-locked to ABSOLUTE world coords (that is what vx/vy are for), so two
      adjacent buildings in the same skin share coursing, and a chunk bake lands identically to a
      monolithic one. */
-  const coursedVein = (fg, w, h, vx, vy, o) => {
-    const px = boxed(fg, 0, 0, w, h);
-    for (let wy = courseAt(vy, o.ch); wy < vy + h; wy += o.ch) {
-      const row = Math.floor(wy / o.ch), yTop = wy - vy;
-      if (o.crest) { fg.fillStyle = o.crest; px(0, yTop, w, 1); }
-      if (o.bed) { fg.fillStyle = o.bed; px(0, yTop + o.ch - (o.bedH || 1), w, o.bedH || 1); }
-      if (o.joint && o.uw > 1) {
-        fg.fillStyle = o.joint;
-        const off = (row & 1) ? (o.uw >> 1) : 0;                      // the stagger — half a unit, every other course
-        const from = o.jointFrom || 0, run = o.ch - from - (o.bedH || 1);
-        if (run > 0) for (let wx = courseAt(vx - off, o.uw) + off; wx < vx + w; wx += o.uw) px(wx - vx, yTop + from, 1, run);
-      }
+  /* WALK THE WALL IN RUNS OF EQUAL HEIGHT. `topOf[x]` is the canvas row where this column's skirt
+     begins (see skirtTops). Along a straight edge it is constant, so the whole wall is one rect;
+     it only steps where the hull curves. Calling back per RUN rather than per column keeps a flat
+     wall at a handful of fills while still letting a corner staircase down one pixel at a time. */
+  const wallRuns = (topOf, w, cb, minRun) => {
+    if (!topOf) { cb(0, w, 0); return; }          // no geometry (headless / swatch): one flat wall
+    const min = minRun || 1;
+    let x0 = 0;
+    while (x0 < w) {
+      const t = topOf[x0];
+      let x1 = x0 + 1;
+      while (x1 < w && topOf[x1] === t) x1 += 1;
+      /* WHERE THE WALL TURNS TOO STEEPLY TO SHOW A COURSE, SHOW NONE. Around the tightest part of a
+         corner arc every run is one pixel wide, so each column lands its own course line and they
+         stack into a bright ragged strip — the exact edge artefact this whole fix was meant to
+         remove, just rotated 90°. Dropping sub-`min` runs lets the material fade into the plain
+         depth ramp there, which is both what the untextured station shell already does and what
+         real masonry does at a grazing angle. */
+      if (t >= 0 && x1 - x0 >= min) cb(x0, x1 - x0, t);
+      x0 = x1;
     }
+  };
+
+  // how wide a run of equal wall height has to be before it is worth drawing a course on — see the
+  // grazing-angle note in wallRuns. 3 clears the steepest third of a corner arc.
+  const COURSE_MIN_RUN = 3;
+
+  const coursedVein = (fg, w, h, vx, vy, o, topOf) => {
+    const px = boxed(fg, 0, 0, w, h);
+    const bedH = o.bedH || 1, from = o.jointFrom || 0, run = o.ch - from - bedH;
+    const rows = Math.ceil(h / o.ch) + 2;
+    wallRuns(topOf, w, (rx, rw, top) => {
+      for (let k = 0; k < rows; k++) {
+        const yTop = top + k * o.ch;
+        if (yTop > h) break;
+        if (o.crest) { fg.fillStyle = o.crest; px(rx, yTop, rw, 1); }
+        if (o.bed) { fg.fillStyle = o.bed; px(rx, yTop + o.ch - bedH, rw, bedH); }
+        if (o.joint && o.uw > 1 && run > 0) {
+          fg.fillStyle = o.joint;
+          // the stagger is keyed on the course's index DOWN THE WALL, so it stays consistent around
+          // a corner; the joint's x stays keyed on ABSOLUTE world coords, so two buildings in the
+          // same skin still line up and a chunk bake lands identically to a monolithic one.
+          const off = (k & 1) ? (o.uw >> 1) : 0;
+          for (let wx = courseAt(vx + rx - off, o.uw) + off; wx < vx + rx + rw; wx += o.uw) px(wx - vx, yTop + from, 1, run);
+        }
+      }
+    }, COURSE_MIN_RUN);
   };
 
   const CORNER = {
@@ -1358,8 +1392,12 @@ const StationBake = (() => {
                                      one bug this whole module's parity test exists to catch.
        rim(b, pal, x1, y1, x2, y2)   the frame around that footprint (source-atop, same reason).
        bands(pal, skirt)             the skirt's DEPTH ramp — six stops, no texture. See ramp6.
-       veins(fg, pal, w, h, vx, vy)  optional pass over the FINISHED skirt (source-atop, canvas-local
-                                     coords; add vx/vy to key marks on world coords).
+       veins(fg, pal, w, h, vx, vy, topOf)
+                                     optional pass over the FINISHED skirt (source-atop, canvas-local
+                                     coords; add vx/vy to key marks on world coords). `topOf[x]` is
+                                     the row that column's wall starts at — index rows from it, via
+                                     coursedVein/wallRuns, and the material FOLLOWS the hull's
+                                     rounded corners instead of being sliced by them (see skirtTops).
 
      WHERE TO SPEND THE DETAIL: the plate ring is `pad` = 7px read from straight above; the skirt is
      32px and faces the camera. The skirt IS the material — it is the surface in Andrew's screenshot
@@ -1433,15 +1471,18 @@ const StationBake = (() => {
     bands: (pal, skirt) => ramp6(pal, skirt, -0.62, 0.16),
     // a log reads from a lit crest and a HARD undercut, nothing else. The undercut carries most of
     // the weight — take it out and the wall goes back to being a flat brown band.
-    veins(fg, pal, w, h, vx, vy) {
-      coursedVein(fg, w, h, vx, vy, { ch: LOG, crest: 'rgba(255,240,214,0.20)', bed: 'rgba(0,0,0,0.52)', bedH: 2 });
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      coursedVein(fg, w, h, vx, vy, { ch: LOG, crest: 'rgba(255,240,214,0.20)', bed: 'rgba(0,0,0,0.52)', bedH: 2 }, topOf);
       const px = boxed(fg, 0, 0, w, h);
-      for (let wy = courseAt(vy, LOG) + 2; wy < vy + h; wy += LOG) {   // knots, sparse
-        for (let wx = courseAt(vx, 19); wx < vx + w; wx += 19) {
-          if (h2(wx, wy, 'knotv') % 3) continue;
-          fg.fillStyle = 'rgba(0,0,0,0.40)'; px(wx - vx, wy - vy, 2, 2);
+      fg.fillStyle = 'rgba(0,0,0,0.40)';
+      wallRuns(topOf, w, (rx, rw, top) => {          // knots ride their own log, so they turn the corner too
+        for (let k = 0; k < Math.ceil(h / LOG) + 2; k++) {
+          const y = top + k * LOG + 2;
+          if (y > h) break;
+          for (let wx = courseAt(vx + rx, 19); wx < vx + rx + rw; wx += 19)
+            if (h2(wx, k, 'knotv') % 3 === 0) px(wx - vx, y, 2, 2);
         }
-      }
+      }, COURSE_MIN_RUN);
     }
   };
 
@@ -1465,8 +1506,8 @@ const StationBake = (() => {
     },
     bands: (pal, skirt) => ramp6(pal, skirt, -0.56, 0.20),
     // tighter pitch than TIMBER and a thinner shadow: a board is a plank, not a log
-    veins(fg, pal, w, h, vx, vy) {
-      coursedVein(fg, w, h, vx, vy, { ch: LAP, crest: 'rgba(255,250,238,0.16)', bed: 'rgba(0,0,0,0.44)' });
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      coursedVein(fg, w, h, vx, vy, { ch: LAP, crest: 'rgba(255,250,238,0.16)', bed: 'rgba(0,0,0,0.44)' }, topOf);
     }
   };
 
@@ -1509,20 +1550,16 @@ const StationBake = (() => {
        shingle wall is a stack of OVERHANGING layers. So this one takes a fat 2px black undercut
        under every course, wide tabs, and splits that stop short of the course above (a shingle's
        split does not run through the one it laps over) — and no light horizontal line at all. */
-    veins(fg, pal, w, h, vx, vy) {
+    veins(fg, pal, w, h, vx, vy, topOf) {
       /* THE SPLIT HAS TO RUN NEARLY THE FULL COURSE or this is just dark CLAPBOARD — which is what
          it was at jointFrom 2 on a 5px course, leaving a 2px nub of a joint nobody could see. The
          stagger is the only thing separating a shingle roof from a lapped wall, so it gets the tall
          run and the wide tab; the course pitch grew with it so the tabs stay square-ish. */
       coursedVein(fg, w, h, vx, vy, {
         ch: SHG, uw: SHW, bedH: 2, bed: 'rgba(0,0,0,0.60)',
-        joint: 'rgba(0,0,0,0.55)', jointFrom: 0
-      });
-      // the sliver of sky each tab catches along its own top edge — what makes the layers read as
-      // stacked rather than as one dark grid
-      const px = boxed(fg, 0, 0, w, h);
-      fg.fillStyle = 'rgba(255,248,228,0.13)';
-      for (let wy = courseAt(vy, SHG); wy < vy + h; wy += SHG) px(0, wy - vy, w, 1);
+        joint: 'rgba(0,0,0,0.55)', jointFrom: 0,
+        crest: 'rgba(255,248,228,0.13)'   // the sliver of sky each tab catches — layers, not a grid
+      }, topOf);
     }
   };
 
@@ -1569,11 +1606,11 @@ const StationBake = (() => {
     bands: (pal, skirt) => ramp6(pal, skirt, -0.60, 0.18),
     // a LIGHT grid, flat: mortar reads lighter than the brick at every depth down the wall, and
     // there is deliberately no shadow band — that is SHINGLE's move, and it is what separates them
-    veins(fg, pal, w, h, vx, vy) {
+    veins(fg, pal, w, h, vx, vy, topOf) {
       coursedVein(fg, w, h, vx, vy, {
         ch: BRK, uw: BRW, bedH: 1,
         bed: 'rgba(255,246,226,0.22)', joint: 'rgba(255,246,226,0.18)'
-      });
+      }, topOf);
     }
   };
 
@@ -1609,19 +1646,22 @@ const StationBake = (() => {
        THE JITTER MUST BE A PURE FUNCTION OF ABSOLUTE COORDS, never an accumulation: a `wy += ch`
        walk with a hashed ch starts from a different place in every chunk and the whole wall
        desynchronises across chunk seams. Fixed pitch, hashed OFFSET — parity-safe irregularity. */
-    veins(fg, pal, w, h, vx, vy) {
+    veins(fg, pal, w, h, vx, vy, topOf) {
       const px = boxed(fg, 0, 0, w, h);
-      for (let wy = courseAt(vy, 7); wy < vy + h; wy += 7) {
-        const row = Math.floor(wy / 7), yTop = wy - vy;
-        const drop = h2(0, row, 'stnh') % 3;                 // the bed wanders 0..2 inside its course
-        fg.fillStyle = 'rgba(0,0,0,0.46)'; px(0, yTop + 6 - drop, w, 1);
-        for (let wx = courseAt(vx, 9); wx < vx + w; wx += 9) {
-          const r = h2(wx, row, 'stnj');
-          if (r % 5 === 0) continue;                         // not every cell carries a joint
-          fg.fillStyle = 'rgba(0,0,0,0.44)'; px(wx - vx + (r % 7), yTop, 1, 6 - drop);
-          if (r % 4 === 0) { fg.fillStyle = 'rgba(255,250,240,0.11)'; px(wx - vx + 2, yTop + 1, 3, 1); }
+      wallRuns(topOf, w, (rx, rw, top) => {
+        for (let k = 0; k < Math.ceil(h / 7) + 2; k++) {
+          const yTop = top + k * 7;
+          if (yTop > h) break;
+          const drop = h2(0, k, 'stnh') % 3;                 // the bed wanders 0..2 inside its course
+          fg.fillStyle = 'rgba(0,0,0,0.46)'; px(rx, yTop + 6 - drop, rw, 1);
+          for (let wx = courseAt(vx + rx, 9); wx < vx + rx + rw; wx += 9) {
+            const r = h2(wx, k, 'stnj');
+            if (r % 5 === 0) continue;                       // not every cell carries a joint
+            fg.fillStyle = 'rgba(0,0,0,0.44)'; px(wx - vx + (r % 7), yTop, 1, 6 - drop);
+            if (r % 4 === 0) { fg.fillStyle = 'rgba(255,250,240,0.11)'; px(wx - vx + 2, yTop + 1, 3, 1); }
+          }
         }
-      }
+      }, COURSE_MIN_RUN);
     }
   };
 
@@ -2123,6 +2163,35 @@ const StationBake = (() => {
      in open void, first-drawn wins, deterministically. Grouping reads only room ids and never the
      viewport, so a chunk bake groups identically to a monolithic one (chunk-parity, the property
      stationbake.chunk.test.js exists to defend). */
+  /* PER-COLUMN WALL TOP — for each canvas column, the row where this group's exterior wall begins
+     (one past the silhouette's lowest opaque pixel), or -1 where the group has no wall at all.
+
+     THIS IS WHAT MAKES A MATERIAL TURN A CORNER (2026-08-05, Andrew: "any way they can curve around
+     the edges so it makes a bit more sense?"). The skirt's own DEPTH ramp already follows the hull —
+     it is the silhouette stamped downward, so it curves for free, and that is why the untextured
+     station shell always looked right at a rounded corner. The veins did not: they were ruled in
+     flat absolute rows and then clipped by the curve, so every log course and brick bed ended at a
+     different x and the corner read as a RAGGED STAIRCASE of sliced units beside a wall that curved
+     perfectly. Measuring each course down from its own column's wall top instead bends the whole
+     texture with the hull, and the wall runs out into the corner the way masonry actually does.
+
+     Falls back to null where pixels can't be read back (the headless canvas mock), exactly like
+     ditherLight — coursed materials then paint flat absolute rows, which is what they did before,
+     so both bake paths still agree with each other and chunk parity is unaffected. */
+  function skirtTops(sil, w, h) {
+    const g = sil.getContext('2d');
+    if (typeof g.getImageData !== 'function') return null;
+    let img;
+    try { img = g.getImageData(0, 0, w, h); } catch (e) { return null; }
+    const d = img.data, out = new Int32Array(w);
+    for (let x = 0; x < w; x++) {
+      let last = -1;
+      for (let y = h - 1; y >= 0; y--) if (d[((y * w + x) << 2) + 3]) { last = y; break; }
+      out[x] = last < 0 ? -1 : last + 1;
+    }
+    return out;
+  }
+
   function bakeHullExtrusion(b) {
     const skirt = Math.max(4, Math.round(WALL.skirt));
     // vertical working margin: a footprint whose bottom edge sits just ABOVE this viewport
@@ -2165,7 +2234,7 @@ const StationBake = (() => {
         fg.globalCompositeOperation = 'source-atop';
         // world-coord keying: the canvas' top-left is world (VX, VY - M), so a recipe adding these
         // offsets gets marks that land on the same world pixel in every chunk that shows them
-        recipe.veins(fg, pal, CW, CH2, VX, VY - M);
+        recipe.veins(fg, pal, CW, CH2, VX, VY - M, skirtTops(sil, CW, CH2));
       }
       fg.globalCompositeOperation = 'source-over';
       b.globalCompositeOperation = 'destination-over';
