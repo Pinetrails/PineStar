@@ -280,4 +280,72 @@ A.ok(/function invalidateFit\(\) \{ fitProjects = null; fitChannels = null; \}/.
   A.eq(mem['starnet.prospects.shown.v1'], undefined, 'reset clears the impression memory with everything else');
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   11. THE EXCLUSION LISTS RIDE THE PROMPT, NOT ONLY THE POST-HOC FILTER
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   Scout, quest-refresh, prospect and autojobs all hand their exclusions to the model. These three burned a paid
+   aux call to produce something they already knew they would throw away. The post-hoc filters ALL STAY — a
+   prompt is guidance, never a guarantee, and the filter is what actually protects the store. */
+const Pitch = require('../frontend/app/pitch.js');
+const dirPlain = Pitch.buildDirective({ recipes: [], capabilities: [] });
+const dirEx = Pitch.buildDirective({ recipes: [], capabilities: [], exclude: ['Invoice sweep bot', 'Weekly competitor digest'] });
+A.eq(/ALREADY SUGGESTED/.test(dirPlain), false, 'no exclusions → no block (an empty list adds nothing to the prompt)');
+A.ok(/ALREADY SUGGESTED/.test(dirEx) && dirEx.indexOf('"Invoice sweep bot"') > 0 && dirEx.indexOf('"Weekly competitor digest"') > 0,
+  'the suggest directive names what must not be proposed again');
+A.ok(Pitch.buildDirective({ exclude: new Array(200).fill('x') }).split('ALREADY SUGGESTED')[1].split('"x"').length - 1 <= 12,
+  '…bounded, so a long history can never bloat the prompt');
+// suggeststore keeps the readable titles that make that list possible, and feeds them in
+const sugSrc = read('frontend/app/suggeststore.js');
+A.ok(/exclude: excludeTitles\(\)/.test(sugSrc), 'suggeststore hands its exclusion list to the directive');
+A.ok(/rememberIdea\(fp, parsed\.title\)/.test(sugSrc) && /rememberDeclined\(fp, parsed\.title\)/.test(sugSrc),
+  '…because it now records the readable title beside each fingerprint');
+A.ok(/if \(Array\.isArray\(raw\.declinedTitles\)\)/.test(sugSrc), '…hydrated tolerantly, so an existing store upgrades in place');
+A.ok(/if \(seenRecently\(fp\)\)/.test(sugSrc), 'and the post-hoc fingerprint check is still the authority');
+
+const Reflect_ = require('../sidecar/reflect.js');
+const MSGS = [{ role: 'user', content: 'I run everything on postgres and I hate writing standups by hand.' },
+  { role: 'assistant', content: 'Noted.' }];
+const rPlain = Reflect_.buildPrompt(MSGS, 4000);
+const rKnown = Reflect_.buildPrompt(MSGS, 4000, ['Postgres is their database', 'They dislike manual standups']);
+A.eq(/ALREADY REMEMBERED/.test(rPlain), false, 'reflect: an empty known set changes the prompt not at all');
+A.ok(/ALREADY REMEMBERED/.test(rKnown) && rKnown.indexOf('- Postgres is their database') > 0,
+  'reflect lists what the notebook already holds');
+A.ok(rKnown.indexOf('ALREADY REMEMBERED') < rKnown.indexOf('I run everything on postgres'),
+  '…before the exchange, so the instruction is read as an instruction');
+A.ok(Reflect_.buildPrompt(MSGS, 4000, new Array(90).fill('a belief')).split('- a belief').length - 1 <= 25,
+  '…bounded on count');
+A.ok(Reflect_.buildPrompt(MSGS, 4000, ['z'.repeat(900)]).indexOf('…') > 0, '…and clipped per belief');
+// the SAME set feeds the prompt and the filter — the model is told exactly what will be rejected
+const reflectSrc = read('sidecar/reflect.js');
+A.ok(/buildPrompt\(run\.messages, PROMPT_CAP, priorTexts\.slice\(\)\)/.test(reflectSrc),
+  'reflect builds the prompt from the very list its post-hoc dedup uses');
+A.ok(reflectSrc.indexOf('for (const r of (Array.isArray(opts.existing)') < reflectSrc.indexOf('const prompt = buildPrompt('),
+  '…which is why the prior set is now assembled BEFORE the call');
+
+const threadmine = require('../sidecar/threadmine.js');
+const tPlain = threadmine.buildPrompt(MSGS, 6000);
+const tKnown = threadmine.buildPrompt(MSGS, 6000, ['Build the standup drafter']);
+A.eq(/ALREADY ON THE BOARD/.test(tPlain.prompt), false, 'threadmine: an empty board changes the prompt not at all');
+A.ok(/ALREADY ON THE BOARD/.test(tKnown.prompt) && tKnown.prompt.indexOf('- Build the standup drafter') > 0,
+  'threadmine lists the live threads');
+A.eq(tKnown.conversation, tPlain.conversation,
+  '…and the quote-veto haystack is UNCHANGED — the block must never become minable "conversation"');
+A.ok(threadmine.buildPrompt(MSGS, 6000, new Array(80).fill('a thread')).prompt.split('- a thread').length - 1 <= 20, '…bounded');
+A.ok(/clock: \{ now: \(\) => Date\.now\(\) \}, known, knownTitles, max/.test(sidecarSrc) && /t\.state !== 'declined'/.test(sidecarSrc),
+  'the sidecar passes the LIVE thread titles (the declined half has no title to show — post-hoc only)');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   12. THE SUGGEST LEDGER STOPS CALLING THE MODEL'S OWN PROSE A QUOTE
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+A.eq(/type: 'context', quote: parsed\.why/.test(sugSrc.replace(/\/\*[\s\S]*?\*\//g, '')), false,
+  'the WHY line the model wrote about its own pitch is no longer posted as quote-typed evidence');
+A.ok(/id: 'suggest-rationale', type: 'rationale', text: parsed\.why/.test(sugSrc),
+  '…it is typed for what it is: model-authored rationale');
+// …and the DISPLAYED line never framed it as speech in the first place — checked, not assumed
+const fireBody = sugSrc.slice(sugSrc.indexOf('async function fire()'));
+A.ok(/const why = parsed\.why \? \(' ' \+ parsed\.why\) : '';/.test(fireBody),
+  'the nudge appends the model text plainly');
+A.eq(/you said|because you/.test(fireBody.slice(0, fireBody.indexOf('Chat.nudge'))), false,
+  '…with no framing that would attribute it to the Commander');
+
 A.report('rec truth & consistency (W3)');

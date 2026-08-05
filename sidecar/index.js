@@ -2015,8 +2015,13 @@ async function runThreadMine(o) {
     // known fingerprints = every live (non-declined) thread + the permanent declined denylist — so a duplicate or a
     // previously-declined idea is deduped AT THE SOURCE and never even stashed again (parity with study's declined).
     let known = {}; try { known = threadsStore.knownFingerprints(); } catch (_) { known = {}; }
+    // …and the READABLE half of that same set, so the model is told what is already on the board BEFORE the paid
+    // call instead of having its duplicates thrown away after it. Live threads only: the declined denylist keeps
+    // fingerprints with no title, so it stays post-hoc-only — which is where it was already doing its job.
+    let knownTitles = [];
+    try { knownTitles = (threadsStore.read().threads || []).filter(t => t && t.state !== 'declined').map(t => String(t.title || '')).filter(Boolean); } catch (_) { knownTitles = []; }
     const out = await threadmine.mine({ agentId, runId, streamId, messages }, {
-      propose, redact, clock: { now: () => Date.now() }, known, max: threadmine.DEFAULT_MAX
+      propose, redact, clock: { now: () => Date.now() }, known, knownTitles, max: threadmine.DEFAULT_MAX
     });
     let proposals = (out && out.proposals) || [];
     // CROSS-WIRE: mine() already deduped vs the thread ledger's own fingerprints; drop anything the Commander
