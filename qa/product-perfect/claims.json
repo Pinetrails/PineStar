@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "dfcd81d4e3c5fcb4b10f326b4bac7d3be9e522af",
+    "sourceCommit": "9a9c9d6bdc27954d8076b14c5caf6e3662b2c2e8",
     "pathSetSha256": "3c76d976b6571a75b7071f817196faa721d37cce0d9639716ba23587d1560b15",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 133657,
-        "sha256": "fb2520af88f40b61f3f4b3b605f9258e5165aebd73ee934e0bc858da0e6b0c49"
+        "bytes": 144381,
+        "sha256": "a56fb344a4840ec550549555a7d074eb9e9d9700dd1e9f7d80c84b691cda85b5"
       },
       {
         "path": "frontend/app/channels.js",
@@ -463,8 +463,8 @@
       },
       {
         "path": "frontend/app/propsprites.js",
-        "bytes": 562949,
-        "sha256": "3ef50b33026bf685be1524c1c1f0e21481cd7ecb8f7a118740a7a2969bedffd0"
+        "bytes": 564126,
+        "sha256": "80f96ef6dccf5784e05f75e9967c2c477be33e2577c1e76d25012ced77f61db3"
       },
       {
         "path": "frontend/app/prospect.js",
@@ -768,8 +768,8 @@
       },
       {
         "path": "frontend/app/tutorial.js",
-        "bytes": 72437,
-        "sha256": "95004bf2685f41574c72bfbd2f0e9a941d6cb6ff550c39e86883e79ca7e5c2da"
+        "bytes": 72709,
+        "sha256": "316ddafe03093f1e3602e367eb008c5237d8bfc302610142c2a8dbf1b553068d"
       },
       {
         "path": "frontend/app/understanding.js",
@@ -898,13 +898,13 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 497220,
-        "sha256": "bd8c5506742988dc2a22590772247351d4852bfc72cafd7567fc398072d2e2ef"
+        "bytes": 502937,
+        "sha256": "cc6bde369e87f76ba20abae16874f9b7afb25228bdf80dbc788e2fcd6814748d"
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 81246,
-        "sha256": "87775a1c14a74812b3622b9fe5f68f8b8a9513bf9e26538ba90f408c14aff535"
+        "bytes": 87987,
+        "sha256": "501f7f90a9018cd0a9d22140241ca418e66f23dce8fe74f0b1ca1aba42f149be"
       },
       {
         "path": "frontend/app/xp.js",
@@ -923,8 +923,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 263684,
-        "sha256": "993b8b82b6e2717509929a40fa023dcb9a0de7a8aba0e486f2aebf2ebf368ea8"
+        "bytes": 265214,
+        "sha256": "8b75b30778a7e00bdf7a8a7b7135c50f96383fdf3a21d49115b00c8f4f7f2eca"
       },
       {
         "path": "frontend/css/asciifx.css",
