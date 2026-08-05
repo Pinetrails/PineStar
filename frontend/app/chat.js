@@ -4597,7 +4597,12 @@ const Chat = (() => {
     if (stale && stale.stale) {
       const fp = recBeliefFp('goals', belief);
       if (recReconfirmDenied(fp)) return null;               // asked, answered "no" — silence until the belief changes
-      if (fp && reconfirmDeferred.has(fp)) return null;      // asked, answered "not now" — silence for the rest of THIS session
+      /* asked, answered "not now" — silence for the rest of THIS session. KNOWN AND ACCEPTED CONSEQUENCE:
+         pendingDecomposition returns the FIRST un-offered goals belief, so a deferred one keeps the arc lane
+         quiet for every belief behind it until the session ends. That is the same shape the DENY path above has
+         always had, and it is the better half of the trade — the alternative (markOffered) bought one more ask
+         by permanently withdrawing this belief's milestone-decomposition offer, which is the bug being fixed. */
+      if (fp && reconfirmDeferred.has(fp)) return null;
       const weeks = Math.max(1, Math.round(stale.ageDays / 7));
       // NO strength reading on an ASK: strength discounts a weak ASSERTION, and this card asserts nothing.
       // The citation is phrased by the belief's OWN provenance — a study-observed goal was never "said".

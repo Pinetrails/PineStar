@@ -327,6 +327,89 @@ try {
     console.log('deny round-trip: ' + JSON.stringify(denied));
   }
 
+  /* ---- 5b. THE OTHER TWO CHIPS, driven live (the deny path above was the only one ever exercised) ----
+        A helper that mints a fresh stale goals belief, drives ONE real pass, and hands back the rendered card.
+        Every belief here is written through DossierStore's own upsert path — no poked records. */
+  const stageReconfirm = async (text, runId) => {
+    const setup = await evalJS(cdp, `(() => {
+      DossierStore.upsert('goals', { text: ${JSON.stringify(text)}, source: 'onboarding', weight: 'seed' });
+      const b = DossierStore.beliefs('goals').find(x => x && x.text === ${JSON.stringify(text)});
+      const at = Date.now() - 45 * 86400000;
+      if (b) { b.updatedAt = at; b.createdAt = at; b.observedAt = null; b.pinned = false; }
+      UnderstandingStore.refresh(false);
+      const u = UnderstandingStore.read();
+      return { id: b && b.id, stale: b ? RecQuality.staleness(b, Date.now(), u, 'goals').stale : null,
+               pending: !!(GoalStore.pendingDecomposition && GoalStore.pendingDecomposition()) };
+    })()`);
+    if (!setup.stale) return setup;
+    await evalJS(cdp, `U.bus.emit('agent.run.end', { agentId: 'agent', runId: ${JSON.stringify(runId)}, reason: 'done' })`);
+    await sleep(14000);
+    return Object.assign(setup, await evalJS(cdp, `(() => {
+      const el = document.querySelector('#chat-log .cmsg.turnin.rec.arc');
+      return { rendered: !!el, evidence: el ? (el.querySelector('.rec-evidence') || {}).textContent : '' };
+    })()`));
+  };
+
+  // (i) NOT NOW must silence the QUESTION without withdrawing the belief's milestone-decomposition offer.
+  const deferStage = await stageReconfirm('launch the mobile companion app', 'rq-defer-1');
+  ok(deferStage.rendered === true, 'a second stale belief produced its own re-confirm card (' + JSON.stringify(deferStage.id) + ')');
+  if (deferStage.rendered) {
+    const deferred = await evalJS(cdp, `(() => {
+      const el = document.querySelector('#chat-log .cmsg.turnin.rec.arc');
+      Array.from(el.querySelectorAll('.consent-btn')).find(b => /Not now/.test(b.textContent)).click();
+      const pend = GoalStore.pendingDecomposition ? GoalStore.pendingDecomposition() : null;
+      return { result: (el.querySelector('.consent-result') || {}).textContent,
+               stillPending: !!(pend && pend.id === ${JSON.stringify(deferStage.id)}),
+               beliefs: DossierStore.beliefs('goals').length };
+    })()`);
+    ok(/ask again later/.test(String(deferred.result)), 'the chip settles with what actually happens: ' + deferred.result);
+    /* THE S4 FIX, live: "not now" used to run through GoalStore.markOffered, whose offered-fingerprint also gates
+       pendingDecomposition — so deferring the STALENESS question permanently withdrew the belief's unrelated
+       MILESTONE-DECOMPOSITION offer. The belief must still be pending decomposition after a deferral. */
+    ok(deferred.stillPending === true,
+      'deferring the QUESTION leaves the belief’s milestone-decomposition offer live (it used to withdraw it permanently)');
+    await sleep(2000);
+    const reAsk = await evalJS(cdp, `(() => {
+      document.querySelectorAll('#chat-log .cmsg.turnin.rec.arc').forEach(n => n.remove());
+      U.bus.emit('agent.run.end', { agentId: 'agent', runId: 'rq-defer-2', reason: 'done' });
+      return true;
+    })()`);
+    await sleep(14000);
+    const reAsked = await evalJS(cdp, `document.querySelectorAll('#chat-log .cmsg.turnin.rec.arc').length`);
+    ok(reAsk === true && reAsked === 0, 'and the question is NOT re-asked this session (the in-memory deferral holds)');
+    console.log('defer round-trip: ' + JSON.stringify(deferred) + ' · re-asked cards: ' + reAsked);
+    // retire it so the next slice's belief is the one the arc reaches (pendingDecomposition returns the FIRST)
+    await evalJS(cdp, `DossierStore.forget('goals', ${JSON.stringify(deferStage.id)})`);
+  }
+
+  /* (ii) STILL TRUE — the two writes the re-sweep found wrong: the LIVE text (not the render-time capture), and
+     an evidence marker that keeps the affirmation from being replayed as authorship. */
+  const confirmStage = await stageReconfirm('ship the billing rewrite', 'rq-confirm-1');
+  ok(confirmStage.rendered === true, 'a third stale belief produced a re-confirm card to CONFIRM');
+  if (confirmStage.rendered) {
+    const confirmed = await evalJS(cdp, `(() => {
+      const el = document.querySelector('#chat-log .cmsg.turnin.rec.arc');
+      const shown = (el.querySelector('.rec-evidence') || {}).textContent;
+      // THE COMMANDER EDITS THE BELIEF WHILE THE CARD IS STILL IN THE FEED (the COMMANDER panel's own write path)
+      DossierStore.upsert('goals', { id: ${JSON.stringify(confirmStage.id)}, text: 'ship the billing rewrite by Q3' });
+      Array.from(el.querySelectorAll('.consent-btn')).find(b => /Still true/.test(b.textContent)).click();
+      const b = DossierStore.beliefs('goals').find(x => x && x.id === ${JSON.stringify(confirmStage.id)});
+      return { shown, result: (el.querySelector('.consent-result') || {}).textContent,
+               text: b && b.text, weight: b && b.weight, source: b && b.source,
+               ref: b && b.evidenceRef && b.evidenceRef.kind };
+    })()`);
+    ok(/still true/.test(String(confirmed.result)), 'the card settles as confirmed: ' + confirmed.result);
+    ok(confirmed.text === 'ship the billing rewrite by Q3',
+      'THE MID-CARD EDIT SURVIVED: the confirm wrote back the LIVE belief, not the render-time capture (' + confirmed.text + ')');
+    ok(/ship the billing rewrite”/.test(String(confirmed.shown)) && confirmed.shown.indexOf('Q3') < 0,
+      '…and the card really had rendered the pre-edit wording, so the capture WOULD have reverted it');
+    eq(confirmed.weight, 'stated', 'the confirmation is recorded as Commander-STATED evidence (what ends the re-ask loop)');
+    eq(confirmed.source, 'commander', 'with commander provenance');
+    eq(confirmed.ref, 'confirmed',
+      'AND an evidence marker saying it was AFFIRMED, not authored — so no later card replays a paraphrase as speech');
+    console.log('confirm round-trip: ' + JSON.stringify(confirmed));
+  }
+
   /* ---- 4. the attribution stamp lands on the spawned run's meta ---- */
   if (liveKey) {
     const armed = await evalJS(cdp, `(() => {
