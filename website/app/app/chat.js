@@ -1953,7 +1953,11 @@ const Chat = (() => {
      read as a busy machine log. When chips are present the LEAD block keeps only its header — the identity,
      duration and call count, which the chips genuinely do not carry. WORKER blocks always keep their rows:
      a dispatched worker's calls never produced chips on this stream, so those lines are the only record of
-     them. And on a reloaded transcript, where the chips are gone, the rows come back. */
+     them. The suppression is conditioned on chips ACTUALLY being in this fold rather than assumed: today
+     hydrateRunTelemetry only ever runs at run end on the displayed stream, so in practice the lead rows are
+     always the duplicate — but a fold without chips still gets the full listing rather than losing the
+     record. (Do not read this as a reload guarantee: the fold and its telemetry are DOM-only and do not
+     survive a reload or a stream switch at all — replayChannel rebuilds the chips, nothing rebuilds these.) */
   function telemetryRun(entry, role, skipTools) {
     const wrap = document.createElement('div'); wrap.className = 'rt-run';
     const calls = runCallCount(entry);
@@ -2894,7 +2898,7 @@ const Chat = (() => {
     const patchSaveOnly = !!(plan && m.kind === 'patch' && plan.action !== 'apply');
     // gold PRIMARY when the click really implements; a fallback save stays neutral so the gold always means "accept"
     const implBtn = document.createElement('button'); implBtn.className = 'consent-btn' + (patchSaveOnly ? '' : ' ws-primary');
-    implBtn.classList.add('primary'); implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
+    implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
     implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
       : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'
       : ('saves the files to ' + ((plan && plan.dest) || 'your StarNet deliverables folder'));
@@ -5058,6 +5062,12 @@ const Chat = (() => {
   // with the frontend-hud change that lifts the "can't switch while busy" guard — see the GATE handoff note.)
   function replayChannel() {
     activeLiveRow = null;   // log was just cleared by load(); drop any stale live controller before re-rendering
+    /* …and drop stale call→result pairings for the same reason: load() has just emptied the log, so every
+       chip this map points at is now DETACHED. It used to be cleared as a side effect of endToolRail(),
+       which is no longer that function's job (see there). Without this, a snapshot holding a RESULT whose
+       call was trimmed away would resolve the previous replay's orphaned node — invisibly — and leave the
+       chip actually on screen pending forever. Same law as startPresence: a fresh render, a fresh map. */
+    pendingChips.clear();
     if (!activeWs || typeof Channels === 'undefined') return;
     const s = Channels.snapshot(activeWs.id);
     if (!s) return;

@@ -995,7 +995,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .nl-yes .nl-m { color: var(--gold); }
 .nl-no .nl-m { color: var(--bad); }
 .nl-no .nl-t { color: var(--ph-dim); }
-.nl-build .nl-m { color: var(--gold); }
+.nl-build .nl-m, .nl-file .nl-m { color: var(--gold); }
 /* nested rows sit under their parent's PROSE column, not under its marker */
 .nudge-line.nl-sub { padding-left: 22px; }
 .nudge-line.nl-sub .nl-t { color: var(--ph); }
