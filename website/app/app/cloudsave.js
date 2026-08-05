@@ -37,6 +37,7 @@ const CloudSave = (() => {
   // EL-11 FIX 2/3: the persisted quarantine/recovery marker the sidecar returned on the last pull (GET /api/save
   // carries `recovery`). The boot path reads it via recoveryNotice() and acks it after showing the honest notice.
   let lastRecovery = null;
+  let lastLineage = null;
   // SAVE-UNKNOWN HONESTY: what the last pull() actually PROVED. 'empty' means the sidecar answered 200 and
   // definitively holds no save; 'forbidden' (auth 401/403) and 'unreachable' (network/timeout/5xx) mean we
   // could not ask — states that must NEVER be presented to the boot path as "no save exists".
@@ -142,6 +143,13 @@ const CloudSave = (() => {
       });
   }
 
+  // flush() returns false both when there was nothing pending (safe) and when a real pending write failed
+  // (unsafe). Update installation needs that distinction so it can fail closed on an unproved newest save.
+  function flushForUpdate() {
+    const hadPending = isSave(pending);
+    return flush({ force: true }).then(ok => ({ ok: !hadPending || ok === true, hadPending, flushed: ok === true }));
+  }
+
   // queue a write-through; coalesces a burst of persists into one POST after the debounce settles.
   // SINGLE-WRITER assumption: the app is single-agent/single-session, so this mirrors whatever localStorage
   // holds with last-write-wins (the sidecar rejects only a STALE-timestamp write). Two live tabs editing the
@@ -185,6 +193,7 @@ const CloudSave = (() => {
           if (j.degraded === true) degraded = true;
           // EL-11 FIX 2/3: capture the persisted quarantine/recovery marker for the boot path's disclosure.
           if (j.recovery && typeof j.recovery === 'object') lastRecovery = j.recovery;
+          if (j.lineage && typeof j.lineage === 'object') lastLineage = j.lineage;
         }
         const s = j && j.save;
         if (isSave(s)) { lastPullOutcome = 'save'; return s; }
@@ -299,6 +308,7 @@ const CloudSave = (() => {
   // EL-11 FIX 2/3: the quarantine/recovery marker seen on the last pull (null if none), and the one-shot ack
   // that clears it server-side after the honest notice has been shown. Ack is best-effort (boolean promise).
   function recoveryNotice() { return lastRecovery; }
+  function lineage() { return lastLineage; }
   function ackRecovery() {
     const rec = lastRecovery; lastRecovery = null;
     if (!rec) return Promise.resolve(false);
@@ -306,6 +316,6 @@ const CloudSave = (() => {
       .then(r => !!(r && r.ok)).catch(() => false);
   }
 
-  return { push, pull, reconcile, flush, installUnloadFlush, health: healthNow, isFutureSentinel, isUnknownSentinel, markDegraded, recoveryNotice, ackRecovery, pullOutcome: () => lastPullOutcome, _isSave: isSave, _isFutureSave: isFutureSave };
+  return { push, pull, reconcile, flush, flushForUpdate, installUnloadFlush, health: healthNow, isFutureSentinel, isUnknownSentinel, markDegraded, recoveryNotice, lineage, ackRecovery, pullOutcome: () => lastPullOutcome, _isSave: isSave, _isFutureSave: isFutureSave };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = CloudSave;

@@ -26,6 +26,9 @@ test/harness-import.test.js
 test/settings-p1-backend.test.js
 test/concurrency.test.js
 test/workspace-lease.test.js
+test/workspace-owner.test.js
+test/workspace-safety.test.js
+test/workspace-lineage.test.js
 test/durable-store.test.js
 test/domain-store.test.js
 test/provider-runtime.test.js
@@ -184,6 +187,9 @@ test/backup-secrets.test.js
 test/schema-stamp.test.js
 test/rename-migrate.test.js
 test/update-state-parity.test.js
+test/update-continuity.test.js
+test/update-preparation.test.js
+test/updates-install.test.js
 test/roster-clause.test.js
 test/agent-config-target.test.js
 test/notebookrestore.test.js

@@ -18,6 +18,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { materializeSeedWorkspace, bootSeededSidecar } from './lib/seed.mjs';
 
 const APP_PORT = process.env.SKYNET_SHOT_PORT || '8920';
 const APP_URL = `http://127.0.0.1:${APP_PORT}/`;
@@ -65,8 +66,10 @@ async function ensureSidecar() {
   const up = async () => { try { const r = await fetch(APP_URL); return r.ok; } catch { return false; } };
   if (await up()) return null;
   if (process.argv.indexOf('--boot') === -1) { console.log(`sidecar down on :${APP_PORT}; pass --boot`); return null; }
-  console.log(`booting SKYNET_DEV on :${APP_PORT} ...`);
-  const sc = spawn(process.execPath, ['sidecar/index.js'], { env: { ...process.env, SKYNET_DEV: '1', SKYNET_PORT: String(APP_PORT) }, stdio: 'ignore' });
+  const scratch = join(OUT_DIR, '_seed-workspace');
+  materializeSeedWorkspace(scratch);
+  console.log(`booting isolated SKYNET_DEV on :${APP_PORT} (workspace=${scratch}) ...`);
+  const sc = bootSeededSidecar({ port: APP_PORT, scratchDir: scratch });
   for (let i = 0; i < 60; i++) { if (await up()) return sc; await sleep(500); }
   throw new Error('sidecar failed on :' + APP_PORT);
 }

@@ -36,7 +36,7 @@ const BROWSER_SECRET_NAMESPACE = /^(?:starnet|skynet)\.(?:channels?|oauth|auth|c
 const BROWSER_SECRET_SEGMENT = /(?:^|[._:-])(?:api[-_]?key|apikey|key|keys|token|tokens|secret|secrets|credential|credentials|password|passwd|pwd|authorization|bearer)(?:$|[._:-])/i;
 const SECRET_FIELD = /^(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|key|api[_-]?key|secret|client[_-]?secret|password|passwd|pwd|authorization|bearer|cookie|session)$/i;
 const EPHEMERAL_TOP = new Set(['.browser-profile']);
-const EPHEMERAL_FILES = new Set(['cron.lock', 'proc-ledger.json']);
+const EPHEMERAL_FILES = new Set(['cron.lock', 'proc-ledger.json', '.starnet-workspace-owner.json']);
 const SYSTEM_SECRET_TOP = new Set(['.secrets', 'codex']);
 
 function sha256(data) { return crypto.createHash('sha256').update(data).digest('hex'); }

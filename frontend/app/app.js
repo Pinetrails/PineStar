@@ -1305,12 +1305,14 @@ const App = (() => {
             throw new Error('roster refused: ' + (body.error || (body.stale ? 'stale push' : 'unknown')));
           }
           if (rosterPushFailed) { rosterPushFailed = false; try { console.info('[roster] sidecar roster sync recovered.'); } catch (_) {} }
+          return true;
         })
         .catch(() => {
           if (!rosterPushFailed) { rosterPushFailed = true; try { console.warn('[roster] sidecar roster sync failed; will retry on next persist. Local roster is intact.'); } catch (_) {} }
+          return false;
         });
       return lastRosterPush;
-    } catch (_) { return Promise.resolve(); }
+    } catch (_) { return Promise.resolve(false); }
   }
 
   // BACKEND-INITIATED SUMMON (crew.summon.request): the orchestrator's team.summon tool asked the station to
@@ -4048,6 +4050,35 @@ const App = (() => {
     show('screen-unreachable');
   }
 
+  // PRIOR-INSTALL LINEAGE GATE: both active save sources are definitively empty, yet the sidecar found bounded
+  // evidence in a legacy workspace, a pending migration, the current profile, or a verified update snapshot.
+  // This is read-only Recovery Mode: no path reaches startCreation(), and therefore onboarding cannot create a
+  // replacement station while prior state remains unaccounted for. Restore uses the existing validated backup
+  // importer; retry reloads the entire boot chain after an external/manual recovery.
+  function showPriorStateGate(lineage) {
+    gateActive = true;
+    try { if (World && World.stop) World.stop(); } catch (_) {}
+    const rows = lineage && Array.isArray(lineage.evidence) ? lineage.evidence : [];
+    const box = el('lineage-evidence');
+    if (box) {
+      box.innerHTML = rows.slice(0, 8).map(row => {
+        const kind = String(row && row.kind || 'prior-state').replace(/-/g, ' ').toUpperCase();
+        const root = String(row && row.root || 'local StarNet storage');
+        const examples = Array.isArray(row && row.examples) && row.examples.length ? ' · ' + row.examples.slice(0, 4).join(', ') : '';
+        return '<div><b>' + U.esc(kind) + '</b> — <code>' + U.esc(root) + '</code>' + U.esc(examples) + '</div>';
+      }).join('') || '<div><b>PRIOR STATE MARKER</b> — local StarNet storage</div>';
+    }
+    const retry = el('btn-lineage-retry');
+    if (retry) retry.onclick = () => { SFX.click && SFX.click(); try { location.reload(); } catch (_) {} };
+    const restore = el('btn-lineage-restore');
+    if (restore) restore.onclick = () => {
+      SFX.click && SFX.click();
+      const input = el('file-import');
+      if (input) { input.value = ''; input.click(); }
+    };
+    show('screen-lineage');
+  }
+
   /* ---------- boot ---------- */
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
@@ -4102,6 +4133,7 @@ const App = (() => {
         : (r.memories ? r.memories + ' in file' : 0);
       dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + (r.records == null ? r.keys : r.records) + ' records'
         + (mem ? ' + ' + mem + ' memories' : ''));
+      gateActive = false;
       reentry();   // resume straight into the restored agent (or its RESUME screen if creds are still missing)
     };
 
@@ -4172,6 +4204,13 @@ const App = (() => {
       resumingSaved = saved;
       show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
       return;
+    }
+    // A definitive empty active save is not automatically a first run. If the host proves prior-install
+    // lineage elsewhere, hold in read-only Recovery Mode. This check is immediately before showSplash(), so
+    // every onboarding path is structurally dominated by it.
+    const lineage = (typeof CloudSave !== 'undefined' && CloudSave.lineage) ? CloudSave.lineage() : null;
+    if (lineage && lineage.priorInstallEvidence === true) {
+      showPriorStateGate(lineage); return;
     }
     // FIRST RUN (no save) — the key-art boot splash, then PRESS ANY KEY → CREATE YOUR OVERSEER.
     showSplash();
