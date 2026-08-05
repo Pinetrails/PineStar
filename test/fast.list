@@ -290,6 +290,8 @@ test/suggeststore.test.js
 test/beat-coordination.test.js
 test/beatcard.test.js
 test/recommend.test.js
+test/recquality.test.js
+test/recqualitystore.test.js
 test/quests.test.js
 test/queststore.test.js
 test/queststate.test.js
@@ -332,6 +334,7 @@ test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js
 test/theme-custom-phosphor.test.js
+test/panel-brightness.test.js
 test/window-minimize.test.js
 test/nightshift-steer-ui.test.js
 test/world-setskin.test.js
@@ -433,6 +436,7 @@ test/stationbake.hull.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/blueprints.test.js
+test/guidedline.test.js
 test/routing.b5.test.js
 test/plan-poster.test.js
 test/chain.test.js
