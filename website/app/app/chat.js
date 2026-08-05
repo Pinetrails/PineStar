@@ -57,6 +57,13 @@ const Chat = (() => {
   let studyWired = false;       // the agent.run.end STUDY (dossier Phase B) listener is registered exactly once
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   let arcRunsSeen = new Set();  // GROWTH Tier 2: runIds already arc-offered (agent.run.end can re-fire; offer once per run)
+  /* RE-CONFIRM DEFERRALS, THIS SESSION ONLY (fixed 2026-08-04). "Not now" on a "still true?" card used to call
+     GoalStore.markOffered — but that same offered-fingerprint ALSO gates pendingDecomposition, so deferring the
+     STALENESS QUESTION permanently withdrew the unrelated MILESTONE-DECOMPOSITION offer for that belief until its
+     text changed. Two different asks, one kill switch. A deferral is a statement about the MOMENT, so it lives
+     here: in memory, keyed by the belief fingerprint, gone on reload — which is exactly what "i'll ask again
+     later" promises. The durable "never ask this again" answer is still the deny chip (RecQualityStore.denyBelief). */
+  const reconfirmDeferred = new Set();
   let skillAsideWired = false;  // the deliverable(kind:skill) background-review aside listener is registered exactly once
   let skillDelivSeen = new Set();   // deliverable ids already asided → the background review re-firing never double-asides
   let recentInRunSkill = 0;     // ts of the last IN-RUN skill.* tool call — suppresses the aside for a save the A1 chip already showed
@@ -506,6 +513,7 @@ const Chat = (() => {
     // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
     // never flush into a new session (same law as turninQueue above). A fresh beat-slot arbiter matches the DOM.
     arcRunsSeen.clear();   // GROWTH Tier 2: the arc side starts clean per session (a prior hero's arc offers never carry over)
+    reconfirmDeferred.clear();   // quality loop Q3: a deferred "still true?" is per-session like every sibling above — an agent switch starts clean
     clearNudge();
     if (beatCards) beatCards.reset();
     beatCards = (typeof BeatCard !== 'undefined' && BeatCard.create) ? BeatCard.create({ vanish: vanish }) : null;
@@ -2195,6 +2203,10 @@ const Chat = (() => {
     // verdict onto that recipe's own counters — what actually HELPED ranks the FOR-YOU shelf, not just what was
     // clicked. Missing meta (ledger evicted / page reloaded) → no rating recorded, never guessed. Fail-open.
     try { const rmp = runMeta(runId); if (rmp && rmp.recipeId && typeof ProspectStore !== 'undefined' && ProspectStore.noteRated) ProspectStore.noteRated(rmp.recipeId, verdict); } catch (_) {}
+    // THE OUTCOME LOOP (quality loop, Q2): if THIS run was spawned by an accepted recommendation (the `rec` stamp
+    // written onto RUN_META at run start), the Commander's verdict on the work is the strongest honest evidence
+    // there is about whether that channel's offers are worth making. Unattributed runs say nothing. Fail-open.
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteVerdict) RecQualityStore.noteVerdict(runId, verdict); } catch (_) {}
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   const WORKRATE_COACH_KEY = 'starnet.workrate.seen';
@@ -3594,10 +3606,12 @@ const Chat = (() => {
         const ok = StudyStore.accept(prop, editedText, agentId);
         if (!ok) { settle('✕ couldn’t apply — it changed', true); return; }   // honest: never flash "✓ retired" on a failed write
         settle(prop.kind === 'retire' ? '✓ retired' : (editedText != null ? 'saved (edited)' : 'kept'), false);
+        recAccept('study', prop.dim, false);   // a kept belief spawns no run — the accept IS the outcome
         if (prop.kind !== 'retire') briefingReceipt(prop.dim);   // R4: a KEPT observation visibly propagates ("now in every agent's briefing"); a retire removes knowledge — nothing new to announce
         return;
       }
       StudyStore.discard(prop, agentId); settle('✕ discarded', true);
+      recDecline('study', prop.dim, false);
     }
     function renderChoices() {
       btns.innerHTML = '';
@@ -3717,14 +3731,25 @@ const Chat = (() => {
         const decision = (typeof Goals !== 'undefined' && Goals.resolveConfirmChoice)
           ? Goals.resolveConfirmChoice(choice, path)
           : { action: (choice && choice.value === 'confirm') ? 'confirm' : 'decline', path: path };
+        /* THE ARC CHANNEL LEARNS FROM ITS REAL OFFER (2026-08-04). Only the re-confirm card used to train this
+           channel — the arc's own confirm panel, which IS the channel's flagship offer, recorded nothing at all.
+           A confirmed path spawns quests rather than a run, so the accept IS the outcome; a not-now is a timing
+           signal, the mildest thing the loop records. */
         if (decision.action === 'confirm') {
           const g = GoalStore.confirm(res.belief, decision.path);
+          /* THE FOLD IS GATED ON THE REAL RESULT. GoalStore.confirm returns null when the path was edited down to
+             something Goals.makeGoal will not build — no goal tree was created, so recording an ACCEPT would be
+             the loop crediting this channel for an offer that produced nothing. It is not a decline either (the
+             Commander did not refuse; their edit was unusable), so it folds NOTHING at all — the same silence the
+             loop keeps for every outcome the harness cannot name. */
           if (g) {
             if (typeof SFX !== 'undefined' && SFX.quest) { try { SFX.quest(); } catch (_) {} }
             if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◇ goal path set — track it under ⚑ QUESTS', 'gold');
+            recAccept('arc', 'goals', false);
           }
         } else {
           GoalStore.declineDecomposition(res.belief);   // not-now / rejected edit: re-offer only when the belief changes (never nag)
+          recDecline('arc', 'goals', true);
         }
       } finally {
         // release the moment — and if a memory deck QUEUED behind this panel (a late memory.proposed during a
@@ -3812,6 +3837,7 @@ const Chat = (() => {
           if (!card.isCurrent()) return;
           if (!ok) { settle('✕ couldn’t apply', true); return; }   // honest: never flash "✓ granted" on a failed/unverified apply
           settle(offer.kind === 'grant' ? '✓ granted' : '✓ ' + String(offer.to).toLowerCase(), false);
+          recAccept('trust', '', false);   // recorded only on the VERIFIED apply — never on an attempt
           if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
           if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(offer.kind === 'grant' ? '◈ earned — it may write files on its own now (revoke any time in Settings)' : '◈ earned — autonomy raised to ' + String(offer.to).toUpperCase() + ' (adjust any time in Settings)', 'gold');
           // if the Settings AUTONOMY panel is open, repaint its EARNED badge live (fail-open no-op otherwise).
@@ -3820,6 +3846,7 @@ const Chat = (() => {
         return;
       }
       TrustStore.decline(offer); settle('✕ not yet', true);
+      recDecline('trust', '', true);   // "not yet" is about TIMING — the mildest signal the loop records
     }
     const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
     mk('Accept', 'primary', () => commit('accept'));
@@ -3907,7 +3934,7 @@ const Chat = (() => {
         Promise.resolve(ThreadStore.keep(prop, batchRunId, agentId, edits || null)).then(res => {
           if (!card.isCurrent()) return;
           if (!res || res.ok !== true) { settle('✕ couldn’t reach the ledger', true); return; }
-          if (res.reason === 'added') settle(edits ? '✓ kept (edited) — on the ledger' : '✓ kept — on the ledger', false);
+          if (res.reason === 'added') { settle(edits ? '✓ kept (edited) — on the ledger' : '✓ kept — on the ledger', false); recAccept('thread', '', false); }
           else if (res.reason === 'duplicate') settle('✓ already on the ledger', false);
           else if (res.reason === 'declined') settle('✕ you discarded this idea before', true);   // the permanent denylist refused it — honest
           else settle('✕ the ledger refused it', true);   // 'unknown'/stale — nothing was committed
@@ -3917,6 +3944,7 @@ const Chat = (() => {
       Promise.resolve(ThreadStore.discard(prop, batchRunId, agentId)).then(res => {
         if (!card.isCurrent()) return;
         settle((res && res.ok === true) ? '✕ discarded — never again' : '✕ couldn’t reach the ledger', true);
+        if (res && res.ok === true) recDecline('thread', '', false);
       }).catch(() => { if (card.isCurrent()) settle('✕ couldn’t reach the ledger', true); });
     }
     function renderChoices() {
@@ -4032,6 +4060,7 @@ const Chat = (() => {
       if (a && a.beat && a.beat.isCurrent()) { a.beat.decide(); a.beat.finish(); }
       else if (a) vanish(a.row);   // decided beats LEAVE: the prompt goes with its chips, never lingers over what follows
       if (item.value === 'yes' && typeof Intake !== 'undefined' && typeof Dossier !== 'undefined') {
+        recAccept('curiosity', dim, false);   // an answered question spawns no run — the accept IS the outcome
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
           skip: skip,
@@ -4043,6 +4072,7 @@ const Chat = (() => {
         });
       } else if (typeof CuriosityStore !== 'undefined') {
         CuriosityStore.markDismissed(dim);   // waved off → never raise this dimension again
+        recDecline('curiosity', dim, true);  // "not now" is a timing signal, not a verdict on the channel
       }
     });
     const beat = beatCards && beatCards.claim({ kind: 'nudge', node: r.d, data: { dim: dim } });
@@ -4140,7 +4170,11 @@ const Chat = (() => {
     recruitShown = true;                                                   // spend the session's single recruit offer (even on dismiss — never re-ask this session)
     if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // same soft chime as the idea beat
     nudge(line, [{ label: 'meet them', value: 'go' }, { label: 'not now', value: 'no', skip: true }], choice => {
-      if (choice && choice.value === 'go') { try { App.openSummonBay(); } catch (_) {} }
+      // THE OUTCOME LOOP: recruitment had a real accept path and recorded nothing, so it drifted down against
+      // every channel that does record. Opening the bay spawns no run — the accept IS the outcome; "not now" is
+      // a timing signal, the mildest negative the loop keeps.
+      if (choice && choice.value === 'go') { try { App.openSummonBay(); } catch (_) {} recAccept('recruit', '', false); }
+      else recDecline('recruit', '', true);
     });
     return true;
   }
@@ -4327,6 +4361,224 @@ const Chat = (() => {
     try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) return UnderstandingStore.read(); } catch (_) {}
     return null;
   }
+  /* ── EVIDENCE STRENGTH (quality loop, Q1) ────────────────────────────────────────────────────────────
+     The spine asks "can this candidate cite?". These ask "how STRONG is that citation?" — read from state the
+     station already holds (recquality.js: dimension confidence, belief freshness, a real repeat counter), never
+     computed fresh and never fabricated. recommend.js turns the reading into a bounded WITHIN-TIER discount, so
+     thin evidence speaks later — it can never move a candidate across a priority band.
+
+     Fail-open at every step: no module / no store / nothing to read → null → NO adjustment at all, and the
+     station ranks exactly as it did before the quality loop existed.
+
+     WHO REPORTS, AND WHY THAT MATTERS. Strength only ever SUBTRACTS, so a channel that reports one is the only
+     kind that can be down-ranked by it — silence is a relative advantage. Every channel with honest data to read
+     therefore reads it:
+       · ARC     — its cited goal belief's freshness × the goals dimension's corroboration.
+       · SEED / ROUTINE — the real repeat / hand-launch counter behind the citation.
+       · STUDY   — the CONFIDENCE of the dimension the proposal targets. (Deliberately not the belief's AGE: a
+                   RETIRE proposal is most valuable exactly when the belief it targets is oldest, and its
+                   directive citation is fresh by construction — this is the dimension read, not a freshness one.)
+       · TRUST   — the offer's own provenance confidence, the real satisfaction percentage it cites, 0..100 → 0..1.
+     And the ones that genuinely have nothing to read, stated rather than left implicit:
+       · CURIOSITY asks ABOUT a dimension rather than asserting one, so a blank dim is a high-VALUE question, not
+         weak evidence — precisely what the spine's VOI term already scores. A strength read here would double-count
+         the same blankness with the opposite sign.
+       · THREAD has no dim at all (a mined idea is not aimed at a dossier dimension) and its quote is located in
+         the run that just ended, so there is no age and no confidence to read. Neutral is the honest reading.
+       · The RE-CONFIRM ask carries none by design: strength discounts a weak ASSERTION, and an ask asserts nothing.
+     The residual tradeoff is real and is not papered over: suggest / recruit / thread / curiosity and the
+     re-confirm ask cannot be discounted for thin evidence, so within a band they hold a small structural edge over
+     the reporters at their weakest. That is the price of never fabricating a reading, and it is bounded by
+     STRENGTH_MAX (recommend.js) — never a band crossing.
+
+     Fail-open at every step: no module / no store / nothing to read → null → NO adjustment at all, and the
+     station ranks exactly as it did before the quality loop existed. */
+  function recStrengthOfBelief(belief, dim) {
+    try {
+      if (typeof RecQuality !== 'undefined' && RecQuality.beliefStrength) return RecQuality.beliefStrength(belief, Date.now(), recUnderstanding(), dim);
+    } catch (_) {}
+    return null;
+  }
+  function recStrengthOfCount(n) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.countStrength) return RecQuality.countStrength(n); } catch (_) {}
+    return null;
+  }
+  // the confidence the understanding engine already holds for a dimension — the right reading for an offer that
+  // ASSERTS something about it (study). Absent dim / absent read → null → neutral.
+  function recStrengthOfDim(dim) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.dimStrength) return RecQuality.dimStrength(recUnderstanding(), dim); } catch (_) {}
+    return null;
+  }
+  // a 0..100 PERCENTAGE the station already computed (trust's provenance confidence) as a 0..1 strength. A
+  // non-numeric / absent percentage is no reading at all — never 0, which would be the full thin-evidence penalty.
+  function recStrengthOfPercent(pct) {
+    const n = Number(pct);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n > 100 ? 1 : n / 100;
+  }
+  /* ── THE OUTCOME LOOP (quality loop, Q2) ─────────────────────────────────────────────────────────────
+     The station's own suggestions are held to the standard everything else here is: what did they actually
+     PRODUCE? recQualityOf reads the channel's earned weight (recqualitystore.js) for the scorer; recAccept /
+     recDecline record what the Commander really did with the card. An accept that spawns a run records
+     NOTHING yet — the run's own outcome is the evidence, and a click is not a result. Fail-open everywhere:
+     no store → null → the spine treats the channel as neutral. */
+  function recQualityOf(kind, dim) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.weightFor) return RecQualityStore.weightFor(kind, dim); } catch (_) {}
+    return null;
+  }
+  function recAccept(channel, dim, spawnsWork, id) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteAccept) RecQualityStore.noteAccept({ channel: channel, dim: dim || '', spawnsWork: !!spawnsWork, id: id || '' }); } catch (_) {}
+  }
+  function recDecline(channel, dim, deferred) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteDecline) RecQualityStore.noteDecline({ channel: channel, dim: dim || '' }, !!deferred); } catch (_) {}
+  }
+  /* ── THE STALENESS GUARD (quality loop, Q3) ──────────────────────────────────────────────────────────
+     A belief that is OLD and UNCORROBORATED may not be ASSERTED in an offer ("because you said X") — the
+     station would be claiming something the Commander last confirmed a season ago as if it were current. But
+     it is a perfectly good QUESTION ("still true that X?"). These read the state; the transformation happens
+     in the candidate builder, and the ask rides the SAME slot, the same session budget and the same card
+     grammar as the offer it replaces — no new surface, no new concept. Fail-open: no module, no reading, no
+     claim of staleness (a station that cannot prove a belief is stale treats it as fresh). */
+  function recStale(belief, dim) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.staleness) return RecQuality.staleness(belief, Date.now(), recUnderstanding(), dim); } catch (_) {}
+    return null;
+  }
+  function recBeliefFp(dim, belief) {
+    try { if (typeof RecQuality !== 'undefined' && RecQuality.beliefFingerprint) return RecQuality.beliefFingerprint(dim, belief); } catch (_) {}
+    return '';
+  }
+  // a re-confirm answered "no" is never asked again until the belief itself changes (goalstore's offered-set
+  // discipline). Fail-open the SAFE way here: an unreadable denial set means we do NOT re-ask.
+  function recReconfirmDenied(fp) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.isBeliefDenied) return !!RecQualityStore.isBeliefDenied(fp); } catch (_) {}
+    return false;
+  }
+  /* THE RE-CONFIRM CARD. The same recCard grammar every other offer uses — eyebrow → evidence, cited by the
+     belief's OWN provenance → proposal → taps — with the proposal phrased as a QUESTION instead of a proposal,
+     because that is the only honest thing this card can say. Consent writes through the EXISTING store paths:
+       still true  → the belief is re-stamped COMMANDER-STATED through DossierStore.upsert (they just said so,
+                     out loud, in answer to a direct question — that is exactly what 'stated' evidence is) plus
+                     one unit of positive evidence on its dimension. Re-stamping the WEIGHT is what ends the
+                     re-ask loop: a seed-weighted belief contributes 0 confidence by design (understanding.js
+                     EVIDENCE_WEIGHT.seed = 0), so touching only updatedAt left the dimension reading exactly as
+                     under-confirmed as before and the same question came back every three weeks, forever.
+       not now     → THIS QUESTION goes quiet for the rest of the session (an in-memory fingerprint set, local to
+                     this module). It must NOT route through GoalStore.markOffered: that set also gates
+                     pendingDecomposition, so deferring the staleness question used to withdraw the belief's
+                     milestone-decomposition offer permanently too — two different asks sharing one kill switch.
+                     Nothing is folded onto the channel either: a deferral is a signal about timing, and this card
+                     already has an honest way to say that — the other two chips.
+       not anymore → one unit of counter-evidence, the belief is forgotten through the store's own forget path
+                     (which ALSO permanently denylists its text against being re-learned from work — the same
+                     path a study RETIRE takes, and the note says so), and the QUESTION is fingerprinted so it
+                     is never asked again for this belief state.
+     Returns true iff the card actually rendered. */
+  function reconfirmCard(belief, dim, weeks, fp, runId) {
+    if (!log || !belief || typeof DossierStore === 'undefined') return false;
+    const text = String(belief.text || '').trim();
+    if (!text) return false;
+    clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
+    const card0 = recCard({
+      kind: 'arc', evidence: recWhy(recCite(text, beliefCiteKind(belief))),
+      // the sibling labels (RETIRE · GRANT · AUTONOMY · THREAD) carry no punctuation; neither does this one.
+      label: 'STILL TRUE',
+      proposal: 'is that still where you’re heading?',
+      /* the CONSEQUENCE line: a real measured age (never a vague "a while back") and the ACTUAL cost of "no".
+         Deny does not merely stop the station treating it as a goal — DossierStore.forget denylists the text so
+         the study loop can never re-learn it from work. That is the honest thing to disclose, in one aside. */
+      note: 'unconfirmed for ~' + weeks + ' week' + (weeks === 1 ? '' : 's') + ' — drop it and i won’t re-learn it from your work'
+    });
+    if (!card0) return false;
+    const r = { d: card0.row }, item = card0.item, btns = card0.btns;
+    const card = beatCards && beatCards.claim({
+      kind: 'arc', runId: runId, node: r.d, data: { dim: dim, belief: belief.id },
+      handoff: () => turninQueue.length > 0 ? 'memory' : null,
+      onGone: () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); }
+    });
+    if (!card) { if (r.d && r.d.parentNode) r.d.remove(); return false; }
+    function settle(label, isDeny) {
+      btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
+      item.appendChild(tag);
+      card.finish({ delay: 600 });
+    }
+    // the belief AS IT STANDS RIGHT NOW. The card can sit in the feed for minutes; the dossier does not freeze
+    // while it does. Every write below re-reads it first (see commit()).
+    function liveBelief() {
+      try { return (DossierStore.beliefs(dim) || []).find(b => b && b.id === belief.id) || null; } catch (_) { return null; }
+    }
+    function commit(answer) {
+      if (!card.decide()) return;
+      if (answer === 'defer') {
+        /* NOT NOW — a statement about the MOMENT, and nothing else. This used to route through
+           GoalStore.markOffered, whose offered-fingerprint ALSO gates pendingDecomposition: deferring the
+           staleness QUESTION therefore withdrew the belief's MILESTONE-DECOMPOSITION offer too, permanently,
+           until its text changed. The session-scoped set silences only this ask, only this session; the arc's own
+           offer is untouched. No fold either — a "later" says nothing about whether this channel's offers are
+           any good. The copy says exactly what now happens. */
+        if (fp) reconfirmDeferred.add(fp);
+        settle('✓ i’ll ask again later', false);
+        return;
+      }
+      /* THE RESURRECT GUARD. If the belief was retired or deleted between render and click, DossierStore.upsert
+         with an unknown id does NOT update anything — it PUSHES A BRAND-NEW belief, stamped commander/stated,
+         inventing a Commander assertion that never happened. (forget on a gone id is a harmless no-op, but the
+         -1 evidence would still land on a dimension for a belief that no longer exists.) Settle quietly instead:
+         the question was overtaken by events, and the station has nothing honest to record about it. */
+      const live = liveBelief();
+      if (!live) { settle('✓ already handled', false); return; }
+      const confirmed = answer === 'confirm';
+      // A PINNED belief is Commander-asserted-durable; this card may never forget one. (staleness() never marks a
+      // pinned belief stale, so this only fires when it was pinned AFTER the card rendered — but the card must
+      // not be the one path that quietly overrides a pin.)
+      if (!confirmed && live.pinned) { settle('✕ it’s pinned — kept', true); return; }
+      try {
+        if (confirmed) {
+          /* CONFIRMED OUT LOUD → the belief IS now Commander-stated evidence, and is recorded as such. Without the
+             weight re-stamp a seed-weighted belief stays at confidence 0 and this exact question returns forever.
+             THE TEXT WRITTEN BACK IS THE LIVE ONE, NEVER THE RENDER-TIME CAPTURE (fixed 2026-08-04). This card can
+             sit in the feed for minutes, and the COMMANDER panel is editable the whole time. Writing the captured
+             `text` silently REVERTED an edit the Commander made after the card rendered — and then stamped the
+             reverted wording commander/stated, i.e. recorded a sentence they had just replaced as one they had
+             just said. `live` is the belief as it stands at CLICK time; its text is the only honest thing to
+             re-affirm. (The card's own citation still quotes what it SHOWED — that part is history.)
+             THE WEIGHT UPGRADE IS DELIBERATE, INCLUDING THE seed→stated JUMP: answering "still true?" with "still
+             true" IS a statement of the CONTENT, not merely of the paraphrase, so 'stated' is the truthful weight
+             and it is the only thing that ends the three-weekly re-ask. What it is NOT is a claim that these were
+             the Commander's WORDS — a station-authored belief was paraphrased by the station. So the confirmation
+             also stamps evidenceRef.kind='confirmed', and beliefCiteKind reads that FIRST, so every later card
+             cites it as `you confirmed "…"` rather than `you said "…"`. Affirmation and authorship, kept apart. */
+          DossierStore.upsert(dim, { id: belief.id, text: live.text, source: 'commander', weight: 'stated', evidenceRef: { kind: 'confirmed' } });
+          if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, +1);
+        } else {
+          if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteEvidence) UnderstandingStore.noteEvidence(dim, -1);
+          DossierStore.forget(dim, belief.id);
+          if (typeof RecQualityStore !== 'undefined' && RecQualityStore.denyBelief) RecQualityStore.denyBelief(fp);
+        }
+      } catch (_) {}
+      /* THE CHANNEL LEARNS THE REAL ANSWER. This used to fold 'engaged' (a positive) on BOTH answers, on the
+         theory that any answer is the ask doing its job — which made the arc channel a one-way ratchet that could
+         only ever rate itself up. A "no" here means the station built an ask on a belief that was not true: that
+         is a decline, and the loop is worth nothing if it cannot hear one. */
+      if (confirmed) recAccept('arc', dim, false); else recDecline('arc', dim, false);
+      settle(confirmed ? '✓ still true' : '✕ dropped it', !confirmed);
+      if (typeof StationUI !== 'undefined' && StationUI.rerender) { try { StationUI.rerender('commander'); } catch (_) {} }
+    }
+    const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
+    mk('Still true', '', () => commit('confirm'));
+    mk('Not now', '', () => commit('defer'));
+    mk('Not anymore', 'deny', () => commit('deny'));
+    autoscroll();
+    return true;
+  }
+  /* THE ATTRIBUTION STAMP. A run started right after an accepted offer IS that offer's work — so the stamp is
+     written where every other piece of a run's provenance is written: RUN_META, at run start (`rec`). It rides
+     the same ledger the recipe spine and rateWork already read, which is what makes the loop's outcome
+     attributable at all. null for every ordinary run — the overwhelming majority. */
+  function recClaimRun(runId, agentId) {
+    try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.claimForRun) return RecQualityStore.claimForRun(runId, agentId); } catch (_) {}
+    return null;
+  }
   /* ONE citation grammar, DISCRIMINATED BY WHERE THE WORDS CAME FROM (truthful telemetry, 2026-08-04).
      The card used to say `because you said "…"` about every citation it had. But a study proposal falls back to
      the run's DIRECTIVE when the model returns no QUOTE line (study.js stamps evidenceRef.kind='directive'), and a
@@ -4334,17 +4586,43 @@ const Chat = (() => {
      Commander's own speech is the app asserting something the harness cannot prove. So each source gets its own
      honest phrasing, and anything unlabelled falls back to a neutral quote that claims nothing about who spoke.
        verbatim     — words the Commander really typed (a located, grounded quote)
+       confirmed    — the station's OWN wording, which the Commander then affirmed out loud (the re-confirm card).
+                      Affirming a paraphrase is real evidence about the CONTENT and no evidence at all about the
+                      authorship, so it gets its own verb: `you confirmed "…"`, never `you said "…"`.
        directive    — the task text that drove the run; it may have been composed for them
        conversation — somewhere in the exchange, speaker not established */
   function recCite(text, kind) {
     const t = String(text == null ? '' : text).trim();
     if (!t) return '';
     if (kind === 'verbatim') return 'you said “' + t + '”';
+    if (kind === 'confirmed') return 'you confirmed “' + t + '”';
     if (kind === 'directive') return 'from the task you gave me: “' + t + '”';
     if (kind === 'conversation') return 'from the conversation: “' + t + '”';
     return 'from “' + t + '”';
   }
-  function recQuote(s) { return recCite(s, 'verbatim'); }
+  /* A DOSSIER BELIEF'S OWN CITATION KIND (truthful telemetry, 2026-08-04). The arc and the re-confirm card cited
+     every goals belief as `you said "…"` — but the dossier holds beliefs the STATION observed from work (study
+     writes source:'study', weight:'observed') and beliefs synthesised during onboarding, and quoting those back as
+     the Commander's speech is the card asserting something the harness cannot prove. So the belief's OWN recorded
+     provenance picks the phrasing recCite already has: only Commander-authored evidence may be rendered as speech;
+     an observed belief cites the work it was observed from; anything unlabelled claims no speaker at all. */
+  function beliefCiteKind(b) {
+    const ref = String((b && b.evidenceRef && b.evidenceRef.kind) || '');
+    /* CONFIRMED BEATS STATED, AND IS CHECKED FIRST (2026-08-04). The re-confirm card upgrades a station-authored
+       belief to commander/stated — truthfully, because affirming "still true?" IS a statement of the content. But
+       the WORDS are still the station's paraphrase, so falling through to the 'stated' clause below would have
+       every later card quote the Commander saying something they never said. The confirmation stamp is the more
+       specific fact, so it wins. */
+    if (ref === 'confirmed') return 'confirmed';
+    const w = String((b && b.weight) || '');
+    const src = String((b && b.source) || '');
+    // NB: NOT source:'curiosity'. A curiosity answer is 'stated' when the Commander TYPED it (caught by the weight
+    // clause) and 'seed' when they tapped a canned chip (interview.js beliefFromAnswer) — and a canned chip is the
+    // station's own sentence, which this clause was rendering back at them as `you said "…"`.
+    if (w === 'stated' || src === 'commander') return 'verbatim';
+    if (ref === 'verbatim' || ref === 'directive' || ref === 'conversation') return ref;
+    return '';   // observed / study / onboarding-synth / seed → the neutral 'from "…"' quote (claims no speaker)
+  }
   // a mined thread's quote is located in the whole exchange, which includes the AGENT's turns — threadmine
   // stamps speaker:'user' only when it also matched the Commander's own turns. Anything else is softened.
   function threadCiteKind(prop) { return (prop && prop.speaker === 'user') ? 'verbatim' : 'conversation'; }
@@ -4372,7 +4650,33 @@ const Chat = (() => {
     const text = belief && belief.text ? String(belief.text).trim() : '';
     if (!text) return null;                                  // nothing to cite → the arc stays silent
     if (arcSeen(runId)) return null;                         // one confirm per run — READ only (see the once law below)
-    return { kind: 'arc', dim: 'goals', why: recQuote(text), fire: () => { if (arcOnce(runId)) offerArc(runId); } };
+    /* THE STALENESS GUARD (quality loop, Q3). Before building an arc on this belief, is it still true? A goal
+       the Commander stated a month ago that nothing since has corroborated is not something the station may
+       ASSERT ("because you said X") — decomposing it into a milestone tree would be building a plan on a memory
+       we cannot stand behind. So the SAME slot carries a QUESTION instead: "still true?". Confirm re-stamps the
+       belief (and the arc proposal returns naturally at a later run, now grounded); deny retires it and is
+       never asked again for this belief state. A stale belief thereby becomes a good question rather than a
+       confident bad recommendation. */
+    const stale = recStale(belief, 'goals');
+    if (stale && stale.stale) {
+      const fp = recBeliefFp('goals', belief);
+      if (recReconfirmDenied(fp)) return null;               // asked, answered "no" — silence until the belief changes
+      /* asked, answered "not now" — silence for the rest of THIS session. KNOWN AND ACCEPTED CONSEQUENCE:
+         pendingDecomposition returns the FIRST un-offered goals belief, so a deferred one keeps the arc lane
+         quiet for every belief behind it until the session ends. That is the same shape the DENY path above has
+         always had, and it is the better half of the trade — the alternative (markOffered) bought one more ask
+         by permanently withdrawing this belief's milestone-decomposition offer, which is the bug being fixed. */
+      if (fp && reconfirmDeferred.has(fp)) return null;
+      const weeks = Math.max(1, Math.round(stale.ageDays / 7));
+      // NO strength reading on an ASK: strength discounts a weak ASSERTION, and this card asserts nothing.
+      // The citation is phrased by the belief's OWN provenance — a study-observed goal was never "said".
+      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recCite(text, beliefCiteKind(belief)),
+               fire: () => { if (arcOnce(runId)) reconfirmCard(belief, 'goals', weeks, fp, runId); } };
+    }
+    // STRENGTH: the cited goal belief's OWN freshness × how well the goals dimension is corroborated. A goal the
+    // Commander stated last season, with nothing since to confirm it, is a weaker thing to build an arc on.
+    return { kind: 'arc', dim: 'goals', why: recCite(text, beliefCiteKind(belief)), strength: recStrengthOfBelief(belief, 'goals'),
+             fire: () => { if (arcOnce(runId)) offerArc(runId); } };
   }
 
   // TRUST — the earned-autonomy offer. Cited by the REAL track record the offer was computed from.
@@ -4389,7 +4693,10 @@ const Chat = (() => {
       : (runs ? (runs + ' tasks at ' + (Number(pv.confidence) || 0) + '% satisfaction') : '');
     if (!why) return null;                                   // no provable track record → no offer
     if (!runId || !beatCards || beatCards.hasSeen('trust', runId)) return null;   // one offer per run — READ only
-    return { kind: 'trust', why: why, streak: streak,
+    // STRENGTH: the offer's OWN provenance confidence — the same satisfaction percentage the citation quotes,
+    // read as 0..1. An offer computed from a 60%-satisfaction record is a thinner thing to propose autonomy on
+    // than one computed from 95%, and now says so. Absent/unreadable → null → neutral (never a fabricated 0).
+    return { kind: 'trust', why: why, streak: streak, strength: recStrengthOfPercent(pv.confidence),
              fire: () => { if (beatCards.once('trust', runId)) trustCard(offer, runId); } };
   }
 
@@ -4428,8 +4735,10 @@ const Chat = (() => {
     const title = (s && s.title) ? String(s.title).trim() : '';
     if (!title) return null;
     const n = Math.max(0, Math.floor(Number(s.count) || 0));
+    // STRENGTH: the REAL repeat count behind the shape — a shape asked for four times is corroborated; one seen
+    // once is real but thin, and says so by speaking later rather than by claiming less.
     return { kind: 'seed', why: 'you keep asking me to “' + title.toLowerCase() + '”' + (n > 1 ? ' (' + n + '×)' : ''),
-             fire: () => { SeedStore.propose(); } };
+             strength: recStrengthOfCount(n), fire: () => { SeedStore.propose(); } };
   }
 
   // ROUTINE NUDGE — cited by the real hand-launch count.
@@ -4440,8 +4749,9 @@ const Chat = (() => {
     const nm = (c && c.name) ? String(c.name).trim() : '';
     const n = Math.max(0, Math.floor(Number(c && c.n) || 0));
     if (!nm || n < 1) return null;
+    // STRENGTH: the same real hand-launch count the citation quotes (corroboration, saturating).
     return { kind: 'routine', why: 'you’ve launched ' + nm + ' ' + n + ' times by hand',
-             fire: () => { RoutineNudgeStore.propose(); } };
+             strength: recStrengthOfCount(n), fire: () => { RoutineNudgeStore.propose(); } };
   }
 
   // ADAPTIVE RECRUITMENT — cited by the recruiter's own counter-derived why (the SAME string the bay's
@@ -4480,7 +4790,10 @@ const Chat = (() => {
     const why = prop.evidence ? recCite(prop.evidence, prop.evidenceRef && prop.evidenceRef.kind)
       : (prop.kind === 'retire' ? String(prop.text || '').trim() : '');
     if (!why) return null;
-    return { kind: 'study', dim: prop.dim, why: why,
+    // STRENGTH: the CONFIDENCE the understanding engine already holds for the dimension this proposal targets —
+    // an assertion aimed at a dimension the station barely understands is a thinner thing to raise. Not a
+    // freshness read: a RETIRE proposal is most valuable exactly when its belief is oldest.
+    return { kind: 'study', dim: prop.dim, why: why, strength: recStrengthOfDim(prop.dim),
              fire: () => { if (beatCards.once('study', runId)) studyCard(prop, agentId, runId); } };
   }
 
@@ -4495,6 +4808,10 @@ const Chat = (() => {
     if (!prop) return null;
     const why = recCite(prop.spec, threadCiteKind(prop));
     if (!why) return null;
+    // NO STRENGTH, and not for a convenient reason: a mined idea targets no dossier dimension (no dim → no
+    // confidence to read) and its quote comes from the run that just ended (no age to read). There is nothing
+    // here the station holds, and inventing a reading would be worse than the small structural edge neutrality
+    // buys it — see the strength block above, which states that residual tradeoff rather than hiding it.
     return { kind: 'thread', why: why,
              fire: () => { if (beatCards.once('thread', runId)) threadCard(prop, agentId, batch.runId || runId); } };
   }
@@ -4581,6 +4898,13 @@ const Chat = (() => {
       // re-check the moment after the awaits — reflection's memory deck may have claimed it meanwhile.
       if (momentBlocked()) { queueStudy(runId, agentId); queueThread(runId, agentId); return; }
     }
+
+    /* THE EARNED WEIGHT (quality loop, Q2). Each candidate carries its channel's REAL outcome history into the
+       scorer — read here, once, rather than in ten builders. A channel whose accepted offers produced 👎 work
+       ranks lower within its band; one that produced 👍 work ranks a little higher. It can never cross a band,
+       and the floor means it can never be silenced by quality alone: priority and the per-channel caps remain
+       the law. A never-rated channel reads neutral, so nothing changes until real outcomes exist. */
+    for (const c of cands) { if (c && c.quality == null) c.quality = recQualityOf(c.kind, c.dim); }
 
     const winner = Recommend.pick(cands, recUnderstanding());
     // DEFERRED, NEVER STARVED: a fetched turn-in that lost the moment goes back on its FIFO queue and
@@ -6508,7 +6832,7 @@ const Chat = (() => {
         projectRoot: ws.projectRoot || undefined,   // project-anchored session: the sidecar injects the folder context ONLY if the root is still a standing blessed grant (truthful)
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent', rec: recClaimRun(id, ws.agentId || 'agent') }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is

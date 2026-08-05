@@ -208,9 +208,48 @@ const SuggestStore = (() => {
         // R3: settle the probe — the choice on an AIMED idea is evidence about the belief it was aimed at
         // (accept corroborates, decline counter-evidences). An un-aimed idea settles nothing.
         if (probe) { try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteProbe) UnderstandingStore.noteProbe(probe.dim, accepted); } catch (_) {} }
-        if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' }); doBuild(parsed); }
-        else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' }); }
-        else ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
+        // THE OUTCOME LOOP (quality loop, Q2): a built idea SPAWNS A RUN, so nothing is credited here — the
+        // pending stamp is claimed by that run and the run's own outcome (a clean finish, and the Commander's
+        // 👍/👌/👎 on it) is the evidence. A click is not a result. Declines/defers settle immediately.
+        // THE STAMP IS ARMED OFF THE LAUNCH, NOT OFF THE CLICK (fixed 2026-08-04): doBuild refuses while the
+        // agent is mid-run, and arming first left the stamp waiting for a run this offer never started — the
+        // Commander's next unrelated manual run then claimed it. Arm only when a run really kicked off.
+        /* ⚠ AN ORDERING DEPENDENCY THIS RELIES ON, NAMED SO IT IS NOT BROKEN BY ACCIDENT: arming AFTER the launch
+           is only safe because the run's id arrives ASYNCHRONOUSLY. chat.js claims the pending stamp inside the
+           stream's `onRunId` callback (RUN_META, recClaimRun), which fires after the network round-trip — well
+           after doBuild() has returned and the noteAccept below has run. If onRunId ever became synchronous with
+           Chat.send(), claimForRun would run against a still-empty `pending` and every suggestion-spawned run
+           would silently lose its attribution. Locked by recqualitystore.test §10. */
+        const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
+        if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' });
+          const launched = doBuild(parsed);
+          if (launched) {
+            if (rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} }
+          }
+          /* A REFUSED LAUNCH IS A REAL EVENT, AND IT WAS SILENT (fixed 2026-08-04). doBuild returns false when
+             the stream is busy — the guard above correctly stops the attribution stamp being armed on work that
+             never started, but then NOTHING happened: the loop learned nothing and the Commander was told
+             nothing. They tapped "let's build it" and the beat simply vanished.
+             What the harness can honestly say is exactly what a "not now" says — right idea, wrong moment — so
+             that is the outcome folded, and the chip settles with one short line naming the real reason.
+             `acceptedRecommendation` is cleared for the same reason the stamp is not armed: no run started, so
+             the next unrelated run must not be recorded (onRunStart) as this recommendation's work.
+             The ledger gets the same truth: NEXT.accepted permits `declined`, and the ledger's own fold
+             (recommendation-ledger.js) explicitly treats declined/wrong_time as NEUTRAL, not negative — the
+             exact "right idea, wrong moment" shape this is. Leaving the row terminal at `accepted` would have
+             counted a launch that never happened as a positive preference signal forever.
+             NOTE this branch keys on `launched` ALONE — a successful launch with RecQualityStore absent must
+             never take the refused path (it would clear the accept and lie to the Commander mid-run). */
+          else {
+            acceptedRecommendation = null; acceptedRunId = null;
+            ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_time' });
+            if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, true); } catch (_) {} }
+            try { if (typeof Chat !== 'undefined' && Chat.localLine) Chat.localLine('stream’s busy — ask me again after this run'); } catch (_) {}
+          } }
+        else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' });
+          if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, false); } catch (_) {} } }
+        else { ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
+          if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, true); } catch (_) {} } }
       });
 
       sessionShown++;                                   // spend this session's single idea (anti-nag)
@@ -228,6 +267,12 @@ const SuggestStore = (() => {
   // "build it" → a real run starts immediately. Same routing as the First Pitch: a fully-runnable recipe launches;
   // a recipe that still needs its gap (or an unknown recipe) becomes the gap-asking directive — never an empty
   // template. (Kept local rather than shared so pitchstore.js stays untouched.)
+  /* RETURNS WHETHER A RUN ACTUALLY STARTED. Both launch paths refuse while the agent is mid-run (Chat.send
+     silently no-ops when Chat.isBusy()), and the outcome loop's attribution stamp is armed off this answer —
+     so a "build it" that launched NOTHING used to leave the stamp armed, and the Commander's next unrelated
+     manual run claimed it and moved this channel's weight on work it never caused. FAIL-CLOSED on purpose: a
+     launcher that does not report `true` is treated as "no run started", because an unprovable launch must
+     never become an attributed outcome. */
   function doBuild(parsed) {
     try {
       // G1c: the accepted idea becomes a trackable WORK quest (multi-step, rides the QuestState celebration).
@@ -237,13 +282,14 @@ const SuggestStore = (() => {
       if (b.kind === 'recipe' && b.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
         const r = Recipes.get(b.recipeId);
         const missing = r ? ((typeof Recipes.requiredMissing === 'function') ? Recipes.requiredMissing(r, {}) : []) : ['_unknown'];
-        if (r && deps.launchRecipe && !missing.length) { deps.launchRecipe(r, null); return; }
+        if (r && deps.launchRecipe && !missing.length) return deps.launchRecipe(r, null) === true;
       }
       const gapLine = parsed.gap ? (' First, ask me: ' + parsed.gap + '.') : '';
       const directive = "Let's build it — " + parsed.title + '.' + gapLine;
-      if (deps.launchDirective) deps.launchDirective(directive);
-      else if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(directive);
-    } catch (_) {}
+      if (deps.launchDirective) return deps.launchDirective(directive) === true;
+      if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) { Chat.send(directive); return true; }
+      return false;
+    } catch (_) { return false; }
   }
 
   // S2: a brand-new hero starts fresh (no baseline, no cooldown carryover). Own key, like curiositystore.

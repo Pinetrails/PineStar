@@ -45,6 +45,14 @@ frontend/  (no build step; index.html loads ~80 app/*.js modules in order)
               ├─ app/chat.js          COMMS window + streaming; recommendPass() = the ONE post-run beat
               ├─ app/recommend.js     THE RECOMMENDATION SPINE — pure one-voice arbiter over every
               │                       proactive channel; drops any offer that can't cite its evidence
+              ├─ app/recquality.js    THE QUALITY LOOP (pure) — evidence STRENGTH, belief STALENESS, the
+              │  + recqualitystore.js  per-channel outcome EWMA. Strength/quality are bounded WITHIN-tier
+              │                       damping (priority order stays the spine's law) and are NEUTRAL when
+              │                       state is absent. Weights move only on attributed outcomes: an accepted
+              │                       offer stamps the run it spawns (RUN_META.rec) and that run's finish +
+              │                       the Commander's 👍/👎 fold back. Floored ≥0.5 — a dud channel gets
+              │                       quieter, never silent. A STALE belief may be ASKED about ("still
+              │                       true?", same slot + card grammar), never asserted.
               ├─ app/beatcard.js      beat-slot machinery (one visible beat, reserve, FIFO, expiry)
               ├─ app/queryspine.js    keyed GET dedupe, TTL, last-good state, subscriber polling
               └─ app/*                dossier, quests, recruiter, build mode, stores, voice…
