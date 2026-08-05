@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b8470588d919e6d0139632b3f731e28662a3823b",
+    "sourceCommit": "af50689f3b7dc16cc94daff0be7010abbc4de5ba",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -418,8 +418,8 @@
       },
       {
         "path": "frontend/app/pitch.js",
-        "bytes": 19045,
-        "sha256": "d5fc183f2ebbc94a13ee6a5c5b12dcfa327d49affb5578eadc42fe3efd5ccb04"
+        "bytes": 20198,
+        "sha256": "93966d2ba10affe9d0ec00ee7075bdbd9c550b6e9a8713fa9ee2df09430101f6"
       },
       {
         "path": "frontend/app/pitchstore.js",
@@ -718,8 +718,8 @@
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 22823,
-        "sha256": "d8c7797c30d8ebb0b8c91592511e71e69e9e522cf25153854a2525f21d8e72d6"
+        "bytes": 26548,
+        "sha256": "1849e7e976978b5dbfc5e5aa38ed32a642c73947b65934f7e7a15c53bf21eb6b"
       },
       {
         "path": "frontend/app/terrain.js",
