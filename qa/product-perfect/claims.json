@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "af50689f3b7dc16cc94daff0be7010abbc4de5ba",
+    "sourceCommit": "7775485b93bbe5c091215ae483c18c4c0d0f7c5e",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -83,8 +83,8 @@
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 18612,
-        "sha256": "9c219c368ced0659f87dc46437b24649479bc088ef75c83956f23176ea516775"
+        "bytes": 19163,
+        "sha256": "519d7ef58960a50d81c418a738f12a38a905bac04f5cedc3c6b08d4fcff715d9"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 238588,
-        "sha256": "915df616bc8e78cfb8eda4373d5e5e17307d19dd743f7e6e21c815805b55ca91"
+        "bytes": 241547,
+        "sha256": "1cf0a6f86cc7668f2d42f6f80a2506b6d65ab3c2db84f24fee8a59cceafc1397"
       },
       {
         "path": "frontend/app/mint.js",
@@ -418,8 +418,8 @@
       },
       {
         "path": "frontend/app/pitch.js",
-        "bytes": 20198,
-        "sha256": "93966d2ba10affe9d0ec00ee7075bdbd9c550b6e9a8713fa9ee2df09430101f6"
+        "bytes": 20437,
+        "sha256": "7f37d279c88c9f74c9f46382f4fd7817f060e874a22efb005e01d2d76f1e656a"
       },
       {
         "path": "frontend/app/pitchstore.js",
@@ -473,8 +473,8 @@
       },
       {
         "path": "frontend/app/prospectstore.js",
-        "bytes": 17741,
-        "sha256": "c18f4a6fbbcc6757357c50c7dbeef962a283d9436ab8682293b5a49e6247bfe7"
+        "bytes": 18874,
+        "sha256": "58a2c08a64ae5964d78498e45b371afd0c1033a3cf3e6c2761e597c163195e9c"
       },
       {
         "path": "frontend/app/queryspine.js",
@@ -573,8 +573,8 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 62195,
-        "sha256": "f868bff6ac8098049051432d341e8d8e892ee7c6f1d90be3151e059762deafcb"
+        "bytes": 63003,
+        "sha256": "a74e2fa75be4609965ae984e93c077fdc6a043c318f0c00ba7ba3d0317fd4c81"
       },
       {
         "path": "frontend/app/recommend.js",
@@ -593,8 +593,8 @@
       },
       {
         "path": "frontend/app/recruiter.js",
-        "bytes": 17399,
-        "sha256": "602f2b999c81665cede0c0fb7305eb797864701ceb2d7e948a940af331cb1f88"
+        "bytes": 17826,
+        "sha256": "ddcff666f97afad075c2ef4e0fc1ab09ff7f330c54d83a8e5f9d3839a16503fb"
       },
       {
         "path": "frontend/app/recruiterstore.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/routinenudgestore.js",
-        "bytes": 9330,
-        "sha256": "d6e63a7419c4357e4d6d63bdf097deca08137f7e4c87b843e42781e4d6062aa9"
+        "bytes": 10645,
+        "sha256": "4ce8698a8fa7a7560320db66f4c1f75b8c0f6d933915a2362ec5cc81c3a05e5e"
       },
       {
         "path": "frontend/app/safety.js",
