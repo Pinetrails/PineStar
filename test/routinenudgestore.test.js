@@ -60,6 +60,26 @@ A.eq(R._pick().id, 'price-watch', 'the most-launched eligible recipe is picked')
 // …and an EQUAL count breaks toward the one whose author declared a rhythm (ordering only, never admission)
 launchCounts = { 'fix-bug': { n: 6, lastAt: 2 }, 'morning-brief': { n: 6, lastAt: 1 } };
 A.eq(R._pick().id, 'morning-brief', 'on a tie, the recipe with a declared cadence wins the slot');
+/* ---------- THE RATED COUNTERS ARE CONSULTED, NOT JUST THE LAUNCH COUNT (2026-08-05) ----------
+   pick() read `u.n` and nothing else, so a recipe launched three times and rated 👎 all three still earned
+   "want this every day?" — repetition read as approval while the Commander's own rate-the-work verdicts said
+   the opposite. The offer is BINARY, so a mismatch of kind must EXCLUDE, not down-rank (repo law). */
+launchCounts = { 'morning-brief': { n: 3, lastAt: 1 } };
+A.eq(R.willPropose(), true, 'control: the same 3 launches with NO verdicts on record does earn the offer');
+launchCounts = { 'morning-brief': { n: 3, lastAt: 1, rated: { great: 0, miss: 3 } } };
+A.eq(R.willPropose(), false, 'a recipe launched 3× and rated 👎 3× is NOT offered a schedule');
+launchCounts = { 'morning-brief': { n: 5, lastAt: 1, rated: { great: 0, miss: 1 } } };
+A.eq(R.willPropose(), true, 'ONE bad run is not a verdict — the offer stands');
+launchCounts = { 'morning-brief': { n: 6, lastAt: 1, rated: { great: 3, miss: 2 } } };
+A.eq(R.willPropose(), true, '…nor is a recipe that was mostly liked');
+launchCounts = { 'morning-brief': { n: 6, lastAt: 1, rated: { great: 2, miss: 2 } } };
+A.eq(R.willPropose(), false, 'an even split with 2+ misses is not a habit worth automating');
+launchCounts = { 'morning-brief': { n: 6, lastAt: 1, rated: { great: 'x', miss: null } } };
+A.eq(R.willPropose(), true, 'malformed counters read as zero and change nothing');
+// …and the exclusion is per-recipe: a miss-heavy recipe steps aside for an eligible one rather than silencing the beat
+launchCounts = { 'morning-brief': { n: 9, lastAt: 1, rated: { miss: 4 } }, 'price-watch': { n: 3, lastAt: 2 } };
+A.eq(R._pick().id, 'price-watch', 'the miss-heavy recipe is dropped and the clean one takes the slot');
+
 launchCounts = { 'morning-brief': { n: 4, lastAt: 1 }, 'price-watch': { n: 7, lastAt: 2 } };   // restore the two-recipe fixture
 
 // a live routine for the recipe (cron meta.recipeId) suppresses its offer

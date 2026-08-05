@@ -91,6 +91,18 @@ const RoutineNudgeStore = (() => {
       const u = launches[id];
       const n = (u && typeof u === 'object') ? u.n : u;
       if (!Number.isFinite(n) || n < LAUNCH_FLOOR) continue;
+      /* ⛔ LAUNCH COUNT IS NOT THE ONLY COUNTER ON RECORD (2026-08-05). This read `u.n` and nothing else, so a
+         recipe the Commander ran three times and rated 👎 all three times still earned "want this every day?" —
+         the station reading repetition as approval while its own rate-the-work verdicts said the opposite. The
+         usage store already keeps `rated.great` / `rated.miss` beside `n` (the FOR YOU ranker spends them).
+         A MISMATCH OF KIND MUST EXCLUDE, NOT DOWN-RANK (repo law): this offer is binary, so a miss-heavy
+         recipe is dropped outright rather than sorted below — there is no "slightly less" schedule to propose.
+         Miss-heavy = at least two misses AND no more praise than misses; one bad run, or a recipe that was
+         mostly liked, still qualifies. Malformed counters read as zero and change nothing. */
+      const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
+      const miss = (rated && Number.isFinite(rated.miss) && rated.miss > 0) ? Math.floor(rated.miss) : 0;
+      const great = (rated && Number.isFinite(rated.great) && rated.great > 0) ? Math.floor(rated.great) : 0;
+      if (miss >= 2 && miss >= great) continue;                       // the Commander already said this one misses
       if (scheduled[id]) continue;                                    // already a live routine
       const off = offers[id];
       if (off && (off.dismissed || (off.n || 0) >= OFFER_MAX)) continue;   // durably waved off / offered enough
