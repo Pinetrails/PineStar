@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5310a5cb450dae8ee18ee00ca544f6dc793a9920",
+    "sourceCommit": "e1594fb0100aeacedcb285ef8850c1e0ac4ca2f7",
     "pathSetSha256": "67b3f0df0ace2d6e273f3018ed6d520ec8f1858fe011dfc43b615afff886d695",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 526138,
-        "sha256": "fc331c91e39cbcb6ceaeeb7906d0db818936358030c6e9a4295b1a8bc425e83b"
+        "bytes": 526670,
+        "sha256": "02fa6f3ac571e2fee980ffd638670e8f66ccff51a511bc20580a921785b26b3c"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 25172,
-        "sha256": "8be3a8bd907df8576a6284544a239ca1530e65e3f8125a2a498bc26623d8a6b0"
+        "bytes": 25526,
+        "sha256": "b7ee12eff832bd3089a4d23ad53fae3af0c76c2c16eb772ed5fe083cbe88701b"
       },
       {
         "path": "frontend/app/harness.js",
@@ -553,18 +553,18 @@
       },
       {
         "path": "frontend/app/recommend.js",
-        "bytes": 17953,
-        "sha256": "3c01699d51325d351516a1a760da098604fc03ed8846cdc72a426b557d163dde"
+        "bytes": 19844,
+        "sha256": "144763c6b6dc1548964988168c30442e09fa022aa7e63c9615c11f4fcfa718a9"
       },
       {
         "path": "frontend/app/recquality.js",
-        "bytes": 12427,
-        "sha256": "c3baa14364f80bcff288a2c2508a4be8f1e1dc5864c81a4b0e8a5de04deb2b15"
+        "bytes": 12994,
+        "sha256": "2f50b353701fe0449a0275188879e1c94fd3808126486f188602d6cd36c8b82f"
       },
       {
         "path": "frontend/app/recqualitystore.js",
-        "bytes": 15449,
-        "sha256": "7c744363c87194b0658be215ff97e24f3c2a8d2125ea8bda618c5f0f004a7a73"
+        "bytes": 16353,
+        "sha256": "a691980fb11761b9974785c321cd7654d5d277d61a5e5b3cddba8907b0c1baf9"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 21747,
-        "sha256": "bc18115978f2057dd80bbc55247e59005da31c085a6d7b95665dd5f0edcabe0c"
+        "bytes": 22404,
+        "sha256": "d60f649488b5d8debbfc042a176813fbaf50843dc5eb84b295eb8c1a44a6b2e8"
       },
       {
         "path": "frontend/app/terrain.js",
