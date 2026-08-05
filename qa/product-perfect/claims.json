@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5f2fc379ceb6ae45c4ec2bfa888f09bf863ee623",
+    "sourceCommit": "075366cedfc6a956f94454cf5ee19066864fe0fb",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -703,8 +703,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 467294,
-        "sha256": "9a737ecdc91d60d5d461014eba4d29438e06c5202006d849c80f182ee9c75c70"
+        "bytes": 467715,
+        "sha256": "cec65f040d769515ea96f932651cb7cce94b427fb616afe51b0a202d1f360141"
       },
       {
         "path": "frontend/app/study.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 82174,
-        "sha256": "c0521175af04efefcec24f609891c28ce64f62866a1fd559d927176a1f135220"
+        "bytes": 95785,
+        "sha256": "7ff8c6976fe123008524f55a725b7e6df4614cc57a84a3ca8463c533699c30dd"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -933,8 +933,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 272168,
-        "sha256": "2f6edd777b8456d6d8176b40c3e1c569f086b8e452ca9b9b6b067817127d5221"
+        "bytes": 279908,
+        "sha256": "e028d040457250905bdbddf9a1ba18aaf31c53d5b1575fbb45874e15aba08d0f"
       },
       {
         "path": "frontend/css/asciifx.css",
