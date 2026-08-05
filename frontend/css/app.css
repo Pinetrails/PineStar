@@ -3213,10 +3213,15 @@ body.crew-rail-off #screen-game.active {
 /* The build panel — a full-height left sidebar in the station's premium window chrome.
    MODE (tool grid) is fixed at the top, OPTIONS is the ONE scroll region (the palette can
    grow forever — room kinds, the whole prop gallery), the hint is pinned at the foot. */
+/* Sized off the OVERLAY (100%), never the viewport (vh/vw): TEXT SIZE is a body zoom and a
+   vh length inside the zoomed subtree still computes against the REAL viewport — at AUTO
+   (115%) a vh-sized dock rendered ~15% past the glass and hid every palette's tail. The
+   overlay is inset:0, so 100% IS the glass in the dock's own (zoomed) coordinate space —
+   identical to 100vh at textScale 100. */
 .refit-dock {
   position: absolute; left: 14px; top: 54px; z-index: 2;
   display: flex; flex-direction: column; align-items: stretch;
-  width: min(306px, calc(100vw - 28px)); max-height: calc(100vh - 68px);
+  width: min(306px, calc(100% - 28px)); max-height: calc(100% - 68px);
   padding: 0; border-radius: 9px; overflow: hidden;
   background: var(--panel);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
@@ -3383,8 +3388,8 @@ body.crew-rail-off #screen-game.active {
    a recipe is not). Sized so six tiles of the bake fit at 1:1 — pixel art is never scaled. */
 /* FIXED 66px tracks (the prop gallery's idiom), sized so the 60px patch sits in its cell with no
    dead air — four across keeps ten materials to three rows, which is what stops the dock from
-   growing past the bottom of the screen. The dock's max-height is in `vh` but the whole overlay is
-   uiZoom-scaled, so a palette that merely fits on paper can still run off the glass. */
+   growing past the bottom of the screen. (The dock's max-height is now %-of-overlay, so it caps
+   correctly at every TEXT SIZE — but a short palette still beats a scrollbar.) */
 .refit-matgrid { display: grid; grid-template-columns: repeat(auto-fill, 66px); gap: 6px; width: 100%; }
 .refit-mattile {
   display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0;
@@ -3524,7 +3529,7 @@ body.crew-rail-off #screen-game.active {
 
 /* narrow screens: the panel becomes a bottom sheet — same zones, same single scroll region */
 @media (max-width: 760px) {
-  .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48vh, 380px); }
+  .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48%, 380px); }  /* % of the overlay, not vh — same zoom law as the desktop dock */
   .refit-dock-section { gap: 5px; padding: 7px 8px; }
   .refit-section-label { font-size: 10px; }
   .refit-tool { min-width: 0; font-size: 13px; }
