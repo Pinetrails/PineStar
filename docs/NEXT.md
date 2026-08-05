@@ -19,7 +19,7 @@ Live proof used the real seeded app and a local fake Bot API: the rendered DOM r
 the blocked status above, an active pairing challenge, and the intact one-time command after poll-up; browser
 warnings/errors were empty. The real-sidecar fixture proved a pre-pair DM is refused, `/pair` is acknowledged,
 `acceptingDms` flips false → true, and the owner/operational state survives restart (12 assertions). Focused
-frontend truth is 7/7; `npm run test:fast` is **518/518 GREEN**; `npm run test:http` is **57/57 GREEN**.
+frontend truth is 7/7; `npm run test:fast` is **531/531 GREEN**; `npm run test:http` is **62/62 GREEN**.
 No real Telegram message, provider spend, credential mutation, integration-tree edit, push, PR, deploy, or
 publication occurred.
 
