@@ -37,6 +37,16 @@ function reg(fail) {
   r.register({ name: 'verify_run', schema: { type: 'object', properties: {} }, run: async () => 'PASS 12 passing' });
   return r;
 }
+function externalReg(fail) {
+  const r = makeRegistry();
+  r.register({ name: 'mcp__parity_fixture_eval__fixture_action', schema: { type: 'object', properties: {} }, run: async () => {
+    if (fail) throw new Error('remote failure');
+    return 'changed';
+  } });
+  r.register({ name: 'mcp__parity_fixture_eval__fixture_verify_file', schema: { type: 'object', properties: {} }, run: async () => 'verified' });
+  r.register({ name: 'mcp__other__read_status', schema: { type: 'object', properties: {} }, run: async () => 'other state' });
+  return r;
+}
 async function run(o) {
   const { emit } = setup();
   const provider = makeReplayProvider(o.fixture);
@@ -49,7 +59,8 @@ async function run(o) {
     dispatch: (c, ctx) => r.dispatch(c, ctx), capCtx: openCtx()
   });
   const nudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<verify_before_done>') === 0);
-  return { res, messages, nudges };
+  const externalNudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<verify_external_before_done>') === 0);
+  return { res, messages, nudges, externalNudges };
 }
 
 (async () => {
@@ -121,7 +132,7 @@ async function run(o) {
 
   // ---- 7. the pure classifiers, directly ----
   {
-    const { vosIsCodePath, vosIsCheckCommand, vosKey } = _internals;
+    const { vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole } = _internals;
     A.eq(vosIsCodePath('src/a.js'), true, '.js is code');
     A.eq(vosIsCodePath('a.md'), false, '.md is prose');
     A.eq(vosIsCodePath('Makefile'), true, 'an extension-less build file is code');
@@ -132,6 +143,43 @@ async function run(o) {
     A.eq(vosIsCheckCommand({ command: 'ls -la' }), false, 'ls is not a check');
     A.eq(vosIsCheckCommand({ command: 'cat package.json' }), false, 'reading a file is not a check');
     A.eq(vosKey('fs.write'), 'fs_write', 'dotted registry names and underscored wire names collapse to one key');
+    A.eq(vosExternalRole('mcp__parity_fixture_eval__fixture_action'), 'mutate', 'an external action arms read-back enforcement');
+    A.eq(vosExternalRole('mcp__parity_fixture_eval__fixture_verify_file'), 'observe', 'an external verifier is classified as read-back');
+    A.eq(vosExternalRole('fs_write'), '', 'native tools stay outside the external-effect classifier');
+  }
+
+  // ---- 8. EXTERNAL EFFECTS: connector mutation -> one read-back nudge; a later verifier disarms it ----
+  {
+    const action = 'mcp__parity_fixture_eval__fixture_action';
+    const verify = 'mcp__parity_fixture_eval__fixture_verify_file';
+    const actionOnly = await run({
+      fixture: fixture(action, { action: 'set_workbook_input' }),
+      tools: toolDefs(action, verify), registry: externalReg()
+    });
+    A.eq(actionOnly.externalNudges.length, 1, 'an external mutation cannot stop as independently verified without read-back');
+    A.ok(/NOT independently verified/.test(actionOnly.externalNudges[0].content), 'the nudge always permits a truthful unverified disclosure');
+
+    const actionThenVerify = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: action }, { type: 'tool_args', index: 0, chunk: '{"action":"set_workbook_input"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'tool_start', index: 0, id: 'c2', name: verify }, { type: 'tool_args', index: 0, chunk: '{"path":"book.xlsx"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'Verified.' }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    A.eq((await run({ fixture: actionThenVerify, tools: toolDefs(action, verify), registry: externalReg() })).externalNudges.length, 0, 'a successful connector read-back disarms the external guard');
+
+    const wrongConnector = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: action }, { type: 'tool_args', index: 0, chunk: '{"action":"set_workbook_input"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'tool_start', index: 0, id: 'c2', name: 'mcp__other__read_status' }, { type: 'tool_args', index: 0, chunk: '{}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'Verified.' }, { type: 'done', finishReason: 'stop' }],
+      [{ type: 'text', delta: 'Still done.' }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    A.eq((await run({ fixture: wrongConnector, tools: toolDefs(action, verify, 'mcp__other__read_status'), registry: externalReg() })).externalNudges.length, 1,
+      'reading a different connector cannot verify this connector\'s mutation');
+
+    A.eq((await run({ fixture: fixture(action, { action: 'set_workbook_input' }), tools: toolDefs(action), registry: externalReg() })).externalNudges.length, 0,
+      'a connector with no read-back tool does not spend an impossible turn');
+
+    A.eq((await run({ fixture: fixture(action, { action: 'set_workbook_input' }), tools: toolDefs(action, verify), registry: externalReg(true) })).externalNudges.length, 0,
+      'a failed external action changed no proven state and arms nothing');
   }
 
   A.report('loop.verify-on-stop.test');

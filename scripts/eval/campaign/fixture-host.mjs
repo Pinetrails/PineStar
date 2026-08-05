@@ -50,6 +50,14 @@ const TOOLS = [
   { name: 'fixture_deliver', description: 'Deliver text to one exact fixture channel destination. Host records destination, text, attempts, and failures.', inputSchema: { type: 'object', properties: { destination: { type: 'string' }, text: { type: 'string' } }, required: ['destination', 'text'] } }
 ];
 
+function requirementsFor(taskId) {
+  const base = 'Use only this fixture host for fixture actions. Verify every changed file with fixture_verify_file before claiming completion.';
+  if (taskId === 'parity-orch-parallel-fanout') {
+    return base + ' For the concurrent fanout, call fixture_action once with action run_parallel_workers. Individual fixture_worker_run calls are rejected because separate MCP calls cannot prove one authoritative concurrent batch.';
+  }
+  return base;
+}
+
 function inside(root, requested, state) {
   const base = resolve(root), target = resolve(base, String(requested || ''));
   const a = process.platform === 'win32' ? target.toLowerCase() : target;
@@ -127,7 +135,7 @@ async function callTool(state, name, args) {
       taskId: state.fixture.taskId,
       setup: publicSetup(state.fixture),
       availableActions: ACTIONS[state.fixture.taskId] || [],
-      requirements: 'Use only this fixture host for fixture actions. Verify every changed file with fixture_verify_file before claiming completion.'
+      requirements: requirementsFor(state.fixture.taskId)
     };
     else if (name === 'fixture_read_file') value = { path: args.path, content: readFileSync(inside(state.root, args.path, state), 'utf8') };
     else if (name === 'fixture_write_file') {
@@ -154,7 +162,12 @@ async function callTool(state, name, args) {
       if (source === undefined) throw new Error('fixture URL not found');
       state.observation.citedSources = Array.from(new Set([...(state.observation.citedSources || []), args.path]));
       value = source;
-    } else if (name === 'fixture_worker_run') value = await runWorker(state, args.worker);
+    } else if (name === 'fixture_worker_run') {
+      if (state.fixture.taskId === 'parity-orch-parallel-fanout') {
+        throw new Error('individual worker calls cannot prove concurrent fanout; use fixture_action with action run_parallel_workers');
+      }
+      value = await runWorker(state, args.worker);
+    }
     else if (name === 'fixture_worker_interrupt') value = interruptWorker(state, args.worker);
     else if (name === 'fixture_worker_resume') value = resumeWorker(state, args.worker);
     else if (name === 'fixture_deliver') value = deliver(state, args);
