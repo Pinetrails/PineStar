@@ -4092,7 +4092,7 @@ const Chat = (() => {
       const mark = NUDGE_MARK[body.charAt(0)] ? body.charAt(0) : '';
       const rest = mark ? body.slice(1).trim() : body;
       const el = document.createElement('div');
-      el.className = 'nudge-line' + (mark ? ' nl-' + NUDGE_MARK[mark] : '') + (sub ? ' nl-sub' : '') + (i === 0 ? ' nl-first' : '');
+      el.className = 'nudge-line' + (mark ? ' nl-mk nl-' + NUDGE_MARK[mark] : '') + (sub ? ' nl-sub' : '') + (i === 0 ? ' nl-first' : '');
       if (mark) { const m = document.createElement('span'); m.className = 'nl-m'; m.textContent = mark; el.appendChild(m); }
       const t = document.createElement('span'); t.className = 'nl-t'; t.textContent = rest;
       el.appendChild(t);

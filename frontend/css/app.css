@@ -980,11 +980,14 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    at the left margin. Width is set in px, never derived from font-size: ✓ ✗ ⚒ render from the fallback
    face under VT323 and the two faces disagree (the symbol-glyph law). */
 .nudge-lines { display: flex; flex-direction: column; gap: 4px; }
-.nudge-line { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 0 8px; align-items: start; line-height: 1.42; }
+/* one column by default — an UNMARKED line is just a row of prose. The marker column is opt-in via .nl-mk,
+   which chat.js sets only when it actually rendered a marker; keying it off the marker CLASSES instead let a
+   nested-but-unmarked line claim the 14px column and crushed its text to one character per line. */
+.nudge-line { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 8px; align-items: start; line-height: 1.42; }
+.nudge-line.nl-mk { grid-template-columns: 14px minmax(0, 1fr); }
 .nudge-line .nl-m { display: inline-flex; align-items: center; justify-content: center;
   width: 14px; height: 1.42em; flex: 0 0 14px; font-size: 12px; line-height: 1; letter-spacing: 0; color: var(--gold); }
 .nudge-line .nl-t { min-width: 0; overflow-wrap: anywhere; }
-.nudge-line:not(.nl-head):not(.nl-yes):not(.nl-no):not(.nl-build):not(.nl-file):not(.nl-sub) { grid-template-columns: minmax(0, 1fr); }
 /* the opening line is the claim the whole beat makes — it reads first */
 .nl-first .nl-t, .nl-head .nl-t { color: var(--ph-bright); }
 .nl-first, .nl-head { margin-bottom: 2px; }
