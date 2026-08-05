@@ -3600,7 +3600,16 @@ body.crew-rail-off #screen-game.active {
 .ts-desc { font-size: 12px; }
 .ts-tag { font-size: 10px; letter-spacing: 1px; color: var(--warn); border: 1px solid var(--warn);
   border-radius: 3px; padding: 0 4px; }
-.ts-inert { display: block; font-size: 11px; color: var(--gold); margin-top: 3px; letter-spacing: .3px; }
+/* the inert notice now carries its own cure button, so it is a flex line rather than a bare block */
+.ts-inert { display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  font-size: 11px; color: var(--gold); margin-top: 3px; letter-spacing: .3px; }
+.ts-place { flex: 0 0 auto; }
+/* "+28 more" — a chip that reads as the continuation of the chip row it ends, not as a command button.
+   Dashed so it never competes with the real `.bb` actions elsewhere on the row. */
+.ts-more { font-family: inherit; font-size: 11px; letter-spacing: .5px; cursor: pointer;
+  color: var(--ph-dim); background: rgba(0,0,0,.4); border: 1px dashed var(--ph-dim);
+  border-radius: 4px; padding: 1px 6px; transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out); }
+.ts-more:hover { color: var(--ph-bright); border-color: var(--ph); }
 .ts-tools { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
 .ts-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px;
   padding: 1px 5px; background: rgba(0,0,0,.4); }
@@ -3689,14 +3698,71 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
   border-radius: 3px; padding: 0 4px; margin-right: 4px; text-transform: uppercase;
 }
 
+/* ===== ABILITIES front door: "what are you trying to connect?" =====
+   Six routes above the panes. Styled as pressable rows rather than the card grid so it reads as a
+   MENU (pick one and move on), not as more content to study — the whole point is to be left behind. */
+.ab-router { margin: 0 0 16px; padding: 0 0 14px; border-bottom: 1px dashed var(--ph-faint); }
+.ab-router-q { color: var(--ph-bright); letter-spacing: 2px; font-size: 15px; margin: 0 0 8px; }
+.ab-router-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 6px; }
+.ab-route {
+  display: flex; align-items: flex-start; gap: 9px; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 13px; letter-spacing: .5px; padding: 8px 10px;
+  color: var(--ph); background: rgba(0,0,0,.32); border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out),
+              transform var(--t-fast) var(--ease-out);
+  animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms);
+}
+.ab-route:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+.ab-route:active { transform: translateY(1px); }
+.ab-route:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+.ab-route-glyph { flex: 0 0 auto; font-size: 15px; line-height: 1.35; opacity: .9; }
+.ab-route-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.ab-route-title { color: var(--ph-bright); letter-spacing: .5px; }
+.ab-route-blurb { font-size: 11px; line-height: 1.4; letter-spacing: .2px; }
+.ab-route-blurb b { color: var(--ph); font-weight: normal; }
+/* the affordance carries the DESTINATION: › stays in this console, ↗ opens another window */
+.ab-route-go { flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; line-height: 1.3; }
+.ab-route:hover .ab-route-go { color: var(--ph-bright); }
+/* Searching means the Commander already named the thing — the results are the answer, so the
+   question stops taking up the top of the pane. */
+.con-searching .ab-router { display: none; }
+
 /* ===== CONNECTOR CATALOG: one-click, vetted MCP servers (browse-and-add cards) ===== */
 /* setup-type legend — color-coded to the per-card auth chips (green no-setup · gold key · dim OAUTH). Single-weight
    font, so no faux-bold; the color carries the emphasis. */
+/* tier filter — the legend's own vocabulary turned into controls. Each chip wears the colour of the
+   tier it selects, so the row reads as the legend it replaces rather than as a new set of buttons. */
+.cc-filters { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 8px; }
+.cc-filter {
+  font-family: inherit; font-size: 11px; letter-spacing: 1px; cursor: pointer; text-transform: uppercase;
+  color: var(--ph-dim); background: rgba(0,0,0,.35); border: 1px solid var(--ph-dim);
+  border-radius: 3px; padding: 2px 9px;
+  transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out);
+}
+.cc-filter:hover { color: var(--ph-bright); border-color: var(--ph); }
+.cc-filter:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+/* the selected chip inverts — the same "this one is live" grammar the console rail uses */
+.cc-filter.active { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; }
+/* each tier chip carries its own tier colour (the `.cc-lg-*` rules below are scoped to `.cc-legend`,
+   so the filter row states them again rather than inheriting from prose it is not inside) */
+.cc-filter.cc-lg-none { color: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-lg-none.active { color: var(--ink); background: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-lg-key { color: var(--gold); border-color: var(--gold); }
+.cc-filter.cc-lg-key.active { color: var(--ink); background: var(--gold); border-color: var(--gold); }
+.cc-filter.cc-f-on { color: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-f-on.active { color: var(--ink); background: var(--ok); border-color: var(--ok); }
+
 .cc-legend .cc-lg-none { color: var(--ok); font-weight: normal; }
 .cc-legend .cc-lg-key { color: var(--gold); font-weight: normal; }
 .cc-legend .cc-lg-oauth { color: var(--ph-dim); font-weight: normal; letter-spacing: .5px; }
 .cc-list { display: flex; flex-direction: column; gap: 14px; margin: 4px 0 10px; }
 .cc-group { display: flex; flex-direction: column; gap: 8px; }
+/* ⛔ A CLASS THAT SETS `display` DEFEATS THE `hidden` ATTRIBUTE. The UA sheet's `[hidden]{display:none}`
+   is a bare type-less rule, so the `display:flex` on `.cc-card`/`.cc-group` outranks it: the tier filter
+   set `.hidden = true` on 28 of 37 cards and every one of them stayed painted. It read as working only
+   because the first category happens to be entirely one tier. Restate the rule at class specificity. */
+.cc-group[hidden], .cc-card[hidden] { display: none; }
 .cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 8px; }
 .cc-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
   padding: 9px 11px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
@@ -3717,6 +3783,33 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 /* "VIA <name>" jump landing: the aggregator card flashes gold — a MOMENT (same 2.4s gold-flash
    vocabulary as q-celebrate), never a lingering state. */
 .cc-card.cc-jump { border-color: var(--gold); animation: q-celebrate 2.4s ease-out 1; }
+
+/* ---- KEYS "PICK A PLATFORM" cards ----
+   These three classes shipped with NO RULE AT ALL. `.cc-top` is the KEYS directory's head row, and with
+   no `display:flex` its <b> and its tier chip collapsed together into one run of text: every card in the
+   directory rendered its name welded to its badge — "EtsyAPI key", "PrintfulAPI key". The cards also sat
+   in a bare `.cc-group` (no `.cc-grid`), so eleven of them stacked full-width down the pane while the
+   CATALOG's identical cards tiled three-up. Same card family, two different unstyled fates.
+   `.cc-top` mirrors `.cc-head` rather than aliasing it: the KEYS chip is a bordered tier badge that sits
+   hard right, where the catalog's `.cc-chip` is plain colour-coded text. */
+.cc-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cc-top b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
+.cc-tier { margin-left: auto; font-size: 10px; letter-spacing: .5px; white-space: nowrap;
+  border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+.cc-tier.cc-lg-none { color: var(--ok); }
+.cc-tier.cc-lg-key { color: var(--gold); }
+.cc-tier.cc-lg-oauth { color: var(--ph-dim); }
+/* an already-keyed platform is context, not an offer — it recedes and stops reading as clickable */
+.cc-card.added { border-color: var(--ok); opacity: .72; cursor: default; }
+.cc-card.added:hover { opacity: .86; }
+/* the directory's own category strip. The CATALOG uses the full `.sec` rule here; KEYS emits a bare
+   label, so it gets the same engraved-label grammar without the rule/diamond furniture. */
+.cc-cat { color: var(--ph); letter-spacing: 2px; font-size: 12px; text-transform: uppercase;
+  margin: 2px 0 1px; opacity: .85; }
+/* the KEYS directory card is a PICK, so it must read as pressable — the catalog card is a container
+   whose button does the pressing. Hover lifts it the way the shared card language lifts everything else. */
+[data-ky-pick] { cursor: pointer; transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out); }
+[data-ky-pick]:hover:not(.added) { border-color: var(--ph); background: rgba(0,0,0,.5); }
 
 .rt-agent-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 5px; }
 .rt-agent-btn {
@@ -3932,10 +4025,15 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .con-sec-hidden { display: none; }
 .con-sec-head { margin-top: 2px; }
 /* the section's one-line self-explanatory description under its header */
+/* 86ch, not 62ch: a section desc sat in a ~50-character column while the `.set-about` paragraphs
+   directly beneath it ran the full pane width. Two prose blocks stacked against the same left margin
+   disagreeing about their measure is what read as broken layout — not the measure itself. Both are
+   capped together below so the column edge is consistent down the pane. */
 .con-sec-desc {
   color: var(--ph-dim); font-size: var(--fs-1); letter-spacing: var(--ls-1);
-  margin: -4px 0 12px; line-height: 1.4; max-width: 62ch;
+  margin: -4px 0 12px; line-height: 1.4; max-width: 86ch;
 }
+.con-sec-body .set-about { max-width: 86ch; }
 /* the section head is a click target only while searching (jump-to-section) */
 .con-searching .con-sec-head { cursor: pointer; }
 .con-searching .con-sec-head:hover .sec-l { color: var(--ph-bright); }

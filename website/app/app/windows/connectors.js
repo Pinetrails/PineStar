@@ -38,20 +38,23 @@
         '</div>' +
         '<div id="sp-msg" class="msg"></div>' +
       '</div>';
+    // NO LEAD PARAGRAPH HERE. mountConsole already prints this section's `desc` as `.con-sec-desc`
+    // directly above, and this pane used to follow it with a second sentence saying the same thing in
+    // different words ("Every capability your agents can use, grouped and switchable…" then "Every
+    // capability your agents can use, grouped into toolsets…"). Every pane in this console had the same
+    // stutter. The `desc` is the one that stays — it is also what the search box matches on.
     const secToolsets =
-      '<p class="set-about">Every capability your agents can use, grouped into <b>toolsets</b>. A switch is a ' +
-        'kill-switch: a toolset is available only when its <b>prop is placed</b> on the station <i>and</i> the switch ' +
-        'is on. <span class="dim">Turning one off instantly removes those tools from every agent’s next turn.</span></p>' +
       '<div class="ts-core set-row"><span class="ts-glyph" aria-hidden="true">◉</span>' +
         '<span class="ts-main"><span class="ts-name">COMPUTE <span class="ts-core-tag">CORE</span></span>' +
         '<span class="ts-desc dim">The compute gate — an agent can always think. Always on.</span></span></div>' +
       '<div id="ts-list"><span class="loading pulse">loading toolsets…</span></div>';
     // ---- CONNECTORS pane markup (unchanged generic MCP manager) ----
+    // The lead sentence that used to open this pane restated the section `desc` verbatim; only the two
+    // asides were load-bearing, so only they remain. The CHANNELS pointer earns its place because
+    // "connect Slack" is genuinely ambiguous — tools-INTO-the-agent lives here, chat-FROM-Slack does not.
     const secMcp =
-      '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
-        'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
-        '<span class="dim">(Looking to chat with your agent FROM Slack or Telegram instead? That’s ✉ CHANNELS.)</span> ' +
-        '<span class="dim">(Remote http(s) MCP servers. Secrets are stored locally by the sidecar and never displayed.)</span></p>' +
+      '<p class="set-about dim">Remote http(s) servers only — secrets are stored locally by the sidecar and never displayed. ' +
+        'Looking to chat with your agent <i>from</i> Slack or Telegram instead? That’s <b>✉ CHANNELS</b>.</p>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div class="sec"><span class="sec-l" id="mc-form-h">ADD A CONNECTOR</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form" id="mc-form">' +
@@ -101,7 +104,18 @@
     //      GET /api/connectors/catalog. Installing reuses the SAME POST /api/connectors upsert the manual form uses. ----
     // The pane copy is JUST the setup-type legend now — the "browse vetted MCP servers and add them" sentence lived
     // here AND verbatim in the section desc below (mountConsole), so it read twice. CRT glyphs, not emoji.
+    // The legend doubles as the FILTER: it already taught the three setup tiers, so making those same
+    // words the control costs no new vocabulary. "What can I add without any setup right now?" is the
+    // first question a newcomer has and 37 cards in one scroll could not answer it; "which of these am
+    // I already on?" was equally unanswerable without reading every card.
     const secCatalog =
+      '<div class="cc-filters" id="cc-filters" role="group" aria-label="Filter connectors by setup type">' +
+        '<button type="button" class="cc-filter active" data-cc-filter="all">ALL</button>' +
+        '<button type="button" class="cc-filter cc-lg-none" data-cc-filter="none">▸ no setup</button>' +
+        '<button type="button" class="cc-filter cc-lg-key" data-cc-filter="apikey">API key</button>' +
+        '<button type="button" class="cc-filter cc-lg-oauth" data-cc-filter="oauth">OAUTH</button>' +
+        '<button type="button" class="cc-filter cc-f-on" data-cc-filter="installed">✓ connected</button>' +
+      '</div>' +
       '<p class="set-about"><span class="cc-legend"><b class="cc-lg-none">▸ no setup</b> connects instantly · ' +
         '<b class="cc-lg-key">API key</b> you paste a key · <b class="cc-lg-oauth">OAUTH</b> a secure browser sign-in.</span></p>' +
       '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
@@ -188,14 +202,84 @@
     const lanes = (window.AbilityLanes || []).map(fn => { try { return fn(body); } catch (_) { return null; } }).filter(l => l && Array.isArray(l.sections));
     // TOOLSETS first (audit finding 5): the dock button says TOOLSETS, so the panel must open on the tab it's
     // named for — a first click used to land on the CATALOG storefront, which read as "TOOLSETS = connectors".
-    mountConsole(body, 'connectors', [
+    /* ---- THE FRONT DOOR ----
+       This console's five tabs are five MECHANISMS (curated MCP server · platform API key · MCP server by
+       URL · hook/plugin · built-in toolset), and picking the right one is a question a newcomer cannot
+       answer — they know the NAME of the thing they want, not which of six subsystems implements it.
+       Landing on TOOLSETS and reading a rail of jargon is where that user stops.
+
+       So the console opens with the question they CAN answer ("what are you trying to connect?") and each
+       answer is a real jump to the tab that handles it. Two of the answers leave this window entirely —
+       chat-FROM-Slack is CHANNELS and model providers are SETTINGS — because the honest answer to "how do
+       I connect Telegram" is a different window, and silence there is exactly what sends people hunting.
+       Nothing here gates anything: every tab remains one click away in the rail. */
+    const ROUTES = [
+      { glyph: '⊞', to: 'catalog', title: 'Pick a ready-made service',
+        blurb: 'Notion, GitHub, Linear, Stripe… Vetted servers that connect in one click or one sign-in. <b>Start here.</b>' },
+      { glyph: '⊟', to: 'keys', title: 'Paste an API key',
+        blurb: 'For a platform with an API but no MCP server — Printify, Shopify, Resend. Your agent calls it directly.' },
+      { glyph: '⧉', to: 'mcp', title: 'Add a server by URL',
+        blurb: 'You already have an MCP endpoint and want to point the station at it.' },
+      { glyph: '▤', to: 'toolsets', title: 'Switch a built-in on or off',
+        blurb: 'Web, files, terminal, memory — the powers that come from props on your station.' },
+      // cross-window, and deliberately so: naming the wrong window is worse than naming none.
+      { glyph: '✉', term: 'messaging', title: 'Message your agent from Telegram or Slack',
+        blurb: 'That is a <b>channel</b>, not a connector — it opens the CHANNELS window.' },
+      { glyph: '◈', term: 'settings', section: 'providers', title: 'Add an AI model provider',
+        blurb: 'Anthropic, OpenAI, OpenRouter keys and sign-ins live in SETTINGS › PROVIDERS.' }
+    ];
+    const secRouter =
+      '<div class="ab-router" id="ab-router">' +
+        '<div class="ab-router-q">What are you trying to connect?</div>' +
+        '<div class="ab-router-grid">' +
+          ROUTES.map((r, i) =>
+            '<button type="button" class="ab-route" style="--ci:' + i + '"' +
+              (r.to ? ' data-ab-to="' + esc(r.to) + '"' : '') +
+              (r.term ? ' data-ab-term="' + esc(r.term) + '"' : '') +
+              (r.section ? ' data-ab-section="' + esc(r.section) + '"' : '') + '>' +
+              '<span class="ab-route-glyph" aria-hidden="true">' + esc(r.glyph) + '</span>' +
+              '<span class="ab-route-main"><span class="ab-route-title">' + esc(r.title) + '</span>' +
+                '<span class="ab-route-blurb dim">' + r.blurb + '</span></span>' +
+              '<span class="ab-route-go" aria-hidden="true">' + (r.term ? '↗' : '›') + '</span>' +
+            '</button>').join('') +
+        '</div>' +
+      '</div>';
+
+    const host = mountConsole(body, 'connectors', [
       { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
       { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted services (docs, search, automation, payments…) and plug them in as agent tools.', build: frag(secCatalog) },
       { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'Every platform API key your agents hold, in one place — and a safe drop for any service the catalog doesn’t list.', build: frag(secKeys) },
       { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) },
-      { id: 'extensions', label: 'EXTENSIONS', glyph: '⌥', desc: 'Your own hooks and plugins — code the station runs at fixed moments. Nothing runs until you approve it here.', build: frag(secExt) }
-    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), { search: true, searchPlaceholder: 'search toolsets, connectors, skills & extensions…' });
+      // shortened: the pane's own opening paragraph is the RICHER copy here (concrete moments, the
+      // hook-vs-plugin distinction, the sandbox reason) — unusually, this is the one pane where the
+      // lead earns its place and the `desc` was the redundant half. So the desc yields instead.
+      { id: 'extensions', label: 'EXTENSIONS', glyph: '⌥', desc: 'Your own hooks and plugins — the code you write, run by the station.', build: frag(secExt) }
+    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), { search: true, searchPlaceholder: 'search a platform, tool or skill — try “notion”…' });
     lanes.forEach(l => { try { if (typeof l.wire === 'function') l.wire(); } catch (_) {} });
+
+    /* Mount the front door ABOVE the panes, inside the scrolling content column: it is the first thing
+       read on every tab, and it scrolls away once you are working — permanent chrome for a question you
+       only ask once would be worse than no answer. It hides itself while the search box is active
+       (`.con-searching`), because then the Commander has already named the thing and the results ARE the
+       answer. */
+    const routerEl = document.createElement('div');
+    routerEl.innerHTML = secRouter;
+    const routerNode = routerEl.firstChild;
+    if (host && routerNode) host.insertBefore(routerNode, host.firstChild);
+    if (routerNode) routerNode.addEventListener('click', ev => {
+      const btn = ev.target.closest('.ab-route'); if (!btn) return;
+      sfx('click');
+      // in-console jump: click the REAL rail button so the console's own selection + persistence run.
+      const to = btn.dataset.abTo;
+      if (to) {
+        const tab = body.querySelector('#con-tab-connectors-' + to);
+        if (tab) { tab.click(); host.scrollTop = 0; }
+        return;
+      }
+      // cross-window jump: openTerm is idempotent (restores a minimized window rather than duplicating).
+      const term = btn.dataset.abTerm;
+      if (term && typeof H.openTerm === 'function') H.openTerm(term, btn.dataset.abSection || undefined);
+    });
 
     /* ===== EXTENSIONS: hooks + plugins, straight off /api/hooks and /api/plugins =====
        TRUTHFUL TELEMETRY, strictly: every badge here reads a state the sidecar can prove. "active" means the
@@ -373,16 +457,33 @@
     // station-wide placed object types (the same source SKILLS uses) so a row can say "no prop on station" honestly.
     let placedTypes = [];
     try { placedTypes = (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps().map(c => c.objectType) : []; } catch (_) {}
+    // How many tool chips a row shows before folding the rest behind a count. WEB & BROWSER grants 36:
+    // unfolded they ran seven lines deep and pushed every other toolset below the fold, so the pane's
+    // first screen was a wall of `browser.*` instead of the seven families it exists to present. The
+    // full list is still one click away — this hides nothing, it just stops one row eating the pane.
+    const TS_TOOLS_SHOWN = 8;
     function tsRowHTML(t, ri) {
       const off = !t.enabled;
       const inert = !t.placed;
+      // A DIAGNOSIS WITHOUT A CURE. This span named the exact missing prop and offered nothing to click,
+      // so the one row that knows what is wrong was the one row you could not act on. The button hands
+      // off to the same REFIT deep-link the SKILLS library's PLACE uses (arms the palette on the prop),
+      // which is the honest path: the prop still lands where the Commander puts it.
       const hint = inert
-        ? '<span class="ts-inert">no ' + esc(t.object || 'prop') + ' on station — place one to grant these tools</span>'
+        ? '<span class="ts-inert">no ' + esc(t.object || 'prop') + ' on station — place one to grant these tools' +
+            (t.object ? '<button class="bb xs ts-place" type="button" data-ts-place="' + esc(t.object) + '">⚒ PLACE ONE</button>' : '') +
+          '</span>'
         : '';
       const consent = t.consentGated ? '<span class="ts-tag">asks first</span>' : '';
       const isJuke = t.id === 'jukebox';
-      const tools = (t.tools && t.tools.length)
-        ? '<div class="ts-tools">' + t.tools.map(n => '<code>' + esc(n) + '</code>').join('') + '</div>' : '';
+      const all = (t.tools && t.tools.length) ? t.tools : [];
+      const rest = all.length - TS_TOOLS_SHOWN;
+      const tools = all.length
+        ? '<div class="ts-tools">' + all.map((n, i) =>
+            '<code' + (i >= TS_TOOLS_SHOWN ? ' class="ts-tool-more" hidden' : '') + '>' + esc(n) + '</code>').join('') +
+            (rest > 0 ? '<button class="ts-more" type="button" data-ts-more="' + esc(t.id) + '">+' + rest + ' more</button>' : '') +
+          '</div>'
+        : '';
       return '<div class="set-row ts-row' + (off ? ' ts-off' : '') + (inert ? ' ts-inert-row' : '') + '" data-id="' + esc(t.id) + '" style="--ci:' + (ri || 0) + '">' +
           '<input type="checkbox" data-ts-toggle="' + esc(t.id) + '"' + (t.enabled ? ' checked' : '') + ' aria-label="Enable ' + esc(t.label) + '">' +
           '<span class="ts-glyph" aria-hidden="true">' + esc(t.glyph || '▪') + '</span>' +
@@ -414,6 +515,25 @@
       } catch (e) { cb.checked = !enabled; sfx('bad'); notify('✕ ' + ((e && e.message) || 'request failed')); }
       cb.disabled = false;
       tsRefresh();
+    });
+    // The two non-toggle controls on a toolset row: unfold the rest of the tool chips, and cure an
+    // inert row by deep-linking its missing prop into REFIT.
+    tsListEl.addEventListener('click', ev => {
+      const more = ev.target.closest('button[data-ts-more]');
+      if (more) {
+        const wrap = more.parentElement;
+        if (wrap) wrap.querySelectorAll('.ts-tool-more').forEach(c => { c.hidden = false; });
+        more.remove(); sfx('tick'); return;
+      }
+      const place = ev.target.closest('button[data-ts-place]');
+      if (place) {
+        sfx('click');
+        // H.placeGearForSkill minimizes this console, opens REFIT and arms the palette on the prop.
+        // No mapping for this objectType still opens REFIT + names the gear in a toast, which is the
+        // floor of acceptable — never a silent no-op.
+        if (typeof H.placeGearForSkill === 'function') H.placeGearForSkill(place.dataset.tsPlace);
+        else notify('Open ⚒ BUILD and place a ' + place.dataset.tsPlace + ' to grant these tools', 'warn');
+      }
     });
     tsRefresh();
 
@@ -696,7 +816,11 @@
       // Commander typing "google drive" reaches the Google Workspace card even though those words are only in
       // its blurb by luck. Off-screen matching text only — never rendered.
       const alias = (Array.isArray(e.aliases) && e.aliases.length) ? ' data-search="' + esc(e.aliases.join(' ')) + '"' : '';
-      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '"' + alias + ' style="--ci:' + (ci || 0) + '">' +
+      // data-auth / data-installed drive the tier filter above. They mirror the chip the card already
+      // shows, so the filter can never disagree with what is printed on the card.
+      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '"' + alias +
+          ' data-auth="' + esc(e.authType || 'none') + '" data-installed="' + (e.installed ? '1' : '0') + '"' +
+          ' style="--ci:' + (ci || 0) + '">' +
           '<div class="cc-head"><b>' + esc(e.name) + '</b> ' + origin +
             '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + (chip[0] ? chip[0] + ' ' : '') + esc(chip[1]) + '</span></div>' +
           '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + keyField +
@@ -715,8 +839,52 @@
         ccCache = (j && j.connectors) || [];
         const groups = (j && j.groups) || [];
         ccListEl.innerHTML = groups.map(ccGroupHTML).join('') || '<div class="mc-detail">catalog is empty.</div>';
+        ccApplyFilter();   // a refresh re-renders every card, so re-assert the active tier filter
       } catch (_) { ccListEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to browse the catalog.</div>'; }
     }
+    /* Tier filter. Hides cards, then hides any category group left with nothing visible — a category
+       heading over an empty grid reads as a broken render. The per-group count re-states what is SHOWN
+       rather than the authored total, because a header claiming "7" above three cards is exactly the kind
+       of small lie this project treats as a bug. */
+    let ccFilter = 'all';
+    const ccFiltersEl = body.querySelector('#cc-filters');
+    function ccApplyFilter() {
+      if (!ccListEl) return;
+      let shown = 0;
+      ccListEl.querySelectorAll('.cc-group').forEach(g => {
+        let vis = 0;
+        g.querySelectorAll('.cc-card').forEach(c => {
+          const hit = ccFilter === 'all' ? true
+            : ccFilter === 'installed' ? c.dataset.installed === '1'
+            : c.dataset.auth === ccFilter;
+          c.hidden = !hit;
+          if (hit) vis++;
+        });
+        g.hidden = vis === 0;
+        const tag = g.querySelector('.sec-tag');
+        if (tag) tag.textContent = String(vis);
+        shown += vis;
+      });
+      // An empty result is a real answer and must say which filter produced it — never a blank pane.
+      let none = ccListEl.querySelector('.cc-nores');
+      if (!shown && ccFilter !== 'all') {
+        if (!none) {
+          none = document.createElement('div');
+          none.className = 'mc-detail cc-nores';
+          ccListEl.appendChild(none);
+        }
+        none.hidden = false;
+        none.textContent = ccFilter === 'installed'
+          ? 'Nothing connected from the catalog yet — pick ALL and add one.'
+          : 'No catalog entry uses that setup type.';
+      } else if (none) none.hidden = true;
+    }
+    if (ccFiltersEl) ccFiltersEl.addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-cc-filter]'); if (!b) return;
+      ccFilter = b.dataset.ccFilter;
+      ccFiltersEl.querySelectorAll('.cc-filter').forEach(x => x.classList.toggle('active', x === b));
+      ccApplyFilter(); sfx('tick');
+    });
     async function ccInstall(id, token) {
       const e = ccCache.find(x => x.id === id);
       if (!e || !e.url) { sfx('bad'); return; }
@@ -964,18 +1132,21 @@
         const groups = (j && j.groups) || [];
         // Only reachable now when the station genuinely served an empty directory — a real (if odd) answer.
         if (!groups.length) { kyCatEl.innerHTML = '<div class="mc-detail">no platform directory available.</div>'; return; }
+        // `.cc-grid` (not a bare `.cc-group`): these are the SAME `.cc-card` the CATALOG renders, and
+        // without the grid they stacked one-per-row full width while the catalog's tiled three-up.
         kyCatEl.innerHTML = groups.map(g =>
-          '<div class="cc-group"><div class="cc-cat">' + esc(g.category) + '</div>' +
-          g.platforms.map(p =>
+          '<div class="cc-group"><div class="cc-cat">' + esc(g.category) + '</div><div class="cc-grid">' +
+          g.platforms.map((p, i) =>
             '<div class="cc-card' + (p.installed ? ' added' : '') + '" data-ky-pick="' + esc(p.id) + '"' +
-              ((Array.isArray(p.aliases) && p.aliases.length) ? ' data-search="' + esc(p.aliases.join(' ')) + '"' : '') + '>' +
+              ((Array.isArray(p.aliases) && p.aliases.length) ? ' data-search="' + esc(p.aliases.join(' ')) + '"' : '') +
+              ' style="--ci:' + i + '">' +
               '<div class="cc-top"><b>' + esc(p.name) + '</b>' +
                 (p.installed ? '<span class="cc-tier cc-lg-none">✓ ADDED</span>' : '<span class="cc-tier cc-lg-key">API key</span>') + '</div>' +
               '<div class="cc-blurb dim">' + esc(p.blurb || '') + '</div>' +
               (p.note ? '<div class="mc-hint">' + esc(p.note) + '</div>' : '') +
               '<div class="mc-url dim"><code>' + esc(p.envVar) + '</code>' +
                 (p.docsUrl ? ' · <a class="dim" href="' + esc(p.docsUrl) + '" target="_blank" rel="noopener">docs ↗</a>' : '') + '</div>' +
-            '</div>').join('') + '</div>').join('');
+            '</div>').join('') + '</div></div>').join('');
       } catch (_) { kyCatEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to browse platforms.</div>'; }
     }
     if (kyCatEl) kyCatEl.addEventListener('click', async ev => {

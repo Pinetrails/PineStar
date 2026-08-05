@@ -6427,6 +6427,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     esc, mkEl, sfx, clock, ts, fmtRel,
     // hud + window plumbing
     notify, toast, mountConsole, rerender, openTerm, openSignIn,
+    // deep-link a missing capability object into the REAL placement surface (minimize this console,
+    // open REFIT, arm its palette on the exact prop). The TOOLSETS pane's inert rows use it, so a row
+    // that diagnoses "no dish on station" can also cure it. Shared, never re-implemented: an auto-place
+    // that skipped REFIT would be a fake placement, and the honest path already exists.
+    placeGearForSkill,
     // shared window fragments (roster switcher for the per-agent windows; dossier memory loader)
     rosterSwitchHtml, wireRosterSwitch, loadMemoryCore,
     // workstream + persistence seams
