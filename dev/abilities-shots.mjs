@@ -276,6 +276,62 @@ async function main() {
       await sleep(500);
     }
 
+    // ---- A REAL CONNECT, end to end. Everything above is layout + wiring; this is the only probe that
+    //      proves the installed path. Clicks a genuine no-setup catalog card, waits for the sidecar to
+    //      really connect, then asserts the card flips to the installed state AND that the "connected"
+    //      filter — which reported 0 on a cold station — now finds it. Runs against the throwaway seeded
+    //      workspace this script creates, never the Commander's real station. Needs public internet;
+    //      reports SKIPPED-OFFLINE rather than failing, so a boxed run stays honest.
+    if (!ONLY || ONLY === 'connect') {
+      await evalJS(cdp, `StationUI.openTerm('connectors')`);
+      await sleep(400);
+      await evalJS(cdp, `document.querySelector('#con-tab-connectors-catalog').click()`);
+      await sleep(500);
+      const started = await evalJS(cdp, `(() => {
+        const btn = document.querySelector('#cc-list .cc-card[data-auth="none"][data-installed="0"] button[data-cc-act="add"]');
+        if (!btn) return 'no-add-button';
+        const card = btn.closest('.cc-card');
+        btn.click();
+        return { id: card.dataset.id };
+      })()`);
+      console.log('REAL CONNECT start', JSON.stringify(started));
+      let connected = null;
+      for (let i = 0; i < 20; i++) {
+        await sleep(1500);
+        connected = await evalJS(cdp, `(() => {
+          const msg = (document.querySelector('#cc-msg').textContent || '');
+          const card = document.querySelector('.cc-card[data-id="' + ${JSON.stringify(started.id || '')} + '"]');
+          return { msg: msg.slice(0, 90), installed: card ? card.dataset.installed : '?',
+                   ccOn: card ? card.classList.contains('cc-on') : false };
+        })()`);
+        if (connected.installed === '1' || /✕/.test(connected.msg)) break;
+      }
+      console.log('REAL CONNECT result', JSON.stringify(connected));
+      if (connected && connected.installed === '1') {
+        const after = await evalJS(cdp, `(() => {
+          document.querySelector('.cc-filter[data-cc-filter="installed"]').click();
+          const cards = [...document.querySelectorAll('#cc-list .cc-card')];
+          const painted = cards.filter(c => c.offsetParent !== null);
+          const r = { connectedFilterFinds: painted.length, ids: painted.map(c => c.dataset.id),
+                      groupsPainted: [...document.querySelectorAll('#cc-list .cc-group')].filter(g => g.offsetParent !== null).length };
+          document.querySelector('.cc-filter[data-cc-filter="all"]').click();
+          return r;
+        })()`);
+        console.log('CONNECTED-FILTER PROBE', JSON.stringify(after));
+        // and the MCP CONNECTORS pane must now show the same server as a live row
+        await evalJS(cdp, `document.querySelector('#con-tab-connectors-mcp').click()`);
+        await sleep(900);
+        console.log('shot', await capture(cdp, OUT, 'abilities-connected'));
+        const rowProbe = await evalJS(cdp, `(() => {
+          const row = document.querySelector('#mc-list .mc-row');
+          return row ? { id: row.dataset.id, state: (row.querySelector('.mc-state') || {}).textContent } : 'no-row';
+        })()`);
+        console.log('MCP ROW PROBE', JSON.stringify(rowProbe));
+      } else {
+        console.log('REAL CONNECT: SKIPPED-OFFLINE or refused — installed path NOT proven this run');
+      }
+    }
+
     // ---- NO WHITE HTML CONTROLS (standing order). The three OS-paint signatures are a white/near-white
     //      buttonface, the grey ButtonBorder, and black Arial. Sweep every control this console renders.
     if (!ONLY) {
