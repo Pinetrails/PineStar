@@ -49,15 +49,26 @@
   };
   function laneWord(lane) { return LANE_WORD[lane] || String(lane || '').toLowerCase(); }
 
-  // tokenize belief/goal text the same way marketplace.specGoalScore does (words >=3 chars, deduped).
+  /* THE ONE GOAL MATCHER (2026-08-05) — Recipes.goalKeywordHits, the same function the FOR YOU row and the bay's
+     specialist shelf now call. This file used to carry its own tokenizer with NO stoplist and a bare `indexOf`,
+     so a dossier sentence scored the W_DOSSIER term on function words ("you", "with", "want") and on fragments
+     buried inside longer words. The shared matcher is word-wise, stoplisted, suffix-aware, and reads only the
+     class's READABLE text (name + tagline + blurb) — never its tag keys, which are internal lane vocabulary.
+     Resolved LAZILY, never captured at load: index.html loads recruiter.js BEFORE recipes.js, so a load-time
+     binding would be null forever in the browser. No matcher available → NO dossier term (0), never a second
+     local matcher — a divergent fallback is exactly the drift this unification exists to end. */
+  const RECIPES_NODE = (typeof module !== 'undefined' && module.exports)
+    ? (() => { try { return require('./recipes.js'); } catch (_) { return null; } })()
+    : null;
+  function goalMatcher() {
+    const R = RECIPES_NODE || ((typeof globalThis !== 'undefined' && globalThis.Recipes) || null);
+    return (R && R.goalKeywordHits) ? R.goalKeywordHits : null;
+  }
   function keywordHits(cls, text) {
     if (!cls || !text) return 0;
-    const words = String(text).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
-    if (!words.length) return 0;
-    const seen = {}; let hits = 0;
-    const hay = ((cls.name || '') + ' ' + (cls.tagline || '') + ' ' + (cls.blurb || '') + ' ' + Object.keys(cls.tags || {}).join(' ')).toLowerCase();
-    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits++; }
-    return hits;
+    const hits = goalMatcher();
+    if (!hits) return 0;
+    return hits({ name: cls.name || '', tagline: cls.tagline || '', blurb: cls.blurb || '' }, text).length;
   }
 
   // the dominant interest tag of a class (its heaviest kit-agnostic tag weight) — for the coverage-gap test.

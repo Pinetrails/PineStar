@@ -1241,22 +1241,28 @@ const Marketplace = (() => {
      When BOTH signals are silent (cold start) we fall back to an HONEST lane spread — the first class of each
      distinct interest lane in catalog order — under a header that says so (never a fake "recommended"). This
      shelf now renders in the summon/pick flow too: recruiting a NEW agent is exactly when guidance matters. */
-  // common words carry no topic signal — matching a goal on "the" or "with" is noise, and (now that the WHY chip
-  // NAMES the hit) reads as a nonsense reason. Skipping them makes both the rank and the reason more honest.
-  const GOAL_STOP = new Set(['the', 'and', 'for', 'you', 'your', 'with', 'that', 'this', 'from', 'are', 'was', 'has',
-    'have', 'will', 'can', 'all', 'any', 'out', 'get', 'got', 'its', 'our', 'but', 'not', 'who', 'how', 'why', 'what',
-    'when', 'into', 'over', 'more', 'most', 'some', 'than', 'then', 'them', 'they', 'use', 'using', 'need', 'want',
-    'like', 'just', 'also', 'one', 'two', 'per', 'via']);
-  // the ACTUAL goal keywords a class matched (the persisted GOALS belief text ∩ the class's searchable text). The
+  /* ONE GOAL MATCHER FOR THE WHOLE STATION (2026-08-05). This file used to carry its own: a plain substring
+     scan over a haystack that INCLUDED `Object.keys(s.tags)`. Two artifacts followed, and both were visible on
+     the card. (a) the tag lanes are internal vocabulary — 'code'/'research'/'general' — so a goal containing the
+     word "general" scored a point against every general-lane class in the catalog and the WHY chip then quoted
+     it back as «it matches your goal: “general”». (b) a bare `indexOf` matched a FRAGMENT buried inside a longer
+     word ("for" inside "performance"). recipes.js:goalKeywordHits already fixed exactly this — word-wise tokens,
+     a stoplist, an explicit suffix set, and a READABLE-TEXT haystack (name + tagline + blurb, never tag keys) —
+     and its merge note recorded the unification as intended. So this delegates rather than duplicating: the bay
+     and the FOR YOU row can never again disagree about what "matches your goal" means.
+     Resolved LAZILY (never captured at load): recipes.js loads AFTER marketplace.js's dependencies are wired. */
+  function goalMatcher() {
+    return (typeof Recipes !== 'undefined' && Recipes && Recipes.goalKeywordHits) ? Recipes.goalKeywordHits : null;
+  }
+  // the ACTUAL goal keywords a class matched (the persisted GOALS belief text ∩ the class's READABLE text). The
   // WHY chip names hits[0] so it says WHY truthfully ("matches your goal: X") instead of ×3 boilerplate.
   function specGoalHits(s, gt) {
     if (!s || !gt) return [];
-    const words = String(gt).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !GOAL_STOP.has(w));
-    if (!words.length) return [];
-    const seen = {}; const hits = [];
-    const hay = ((s.name || '') + ' ' + (s.tagline || '') + ' ' + Object.keys(s.tags || {}).join(' ')).toLowerCase();
-    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits.push(w); }
-    return hits;
+    const hits = goalMatcher();
+    // no matcher loaded → NO goal term at all. Never a local fallback: a second matcher is how the two surfaces
+    // drifted in the first place, and a silent term is honest where a divergent one is not.
+    if (!hits) return [];
+    return hits({ name: s.name || '', tagline: s.tagline || '', blurb: s.blurb || '' }, gt);
   }
   function specGoalScore(s, gt) { return specGoalHits(s, gt).length; }
   function dominantLane(s) {
