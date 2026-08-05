@@ -1,0 +1,220 @@
+'use strict';
+
+/* HULL materials — the exterior shell behind REFIT ▧ SURFACE → ▥ SHELL.
+
+   Asserted through StationBake.sampleHull rather than a full bake(), for the same reason the deck
+   and wall material tests are: the headless canvas mock collapses gradients and stubs source-in /
+   destination-out, so a real bake's skirt comes out of it as garbage regardless of what the recipes
+   painted. The recipe output itself is what these tests can actually see, and it is what the REFIT
+   palette chips draw too.
+
+   THE LOAD-BEARING PROPERTY IS THE LEGACY ONE. `station` at a null hue must emit the five literal
+   constants the shell was painted with before this axis existed, or every station already built
+   changes appearance on upgrade and every Guardian golden has to be re-blessed. That is asserted
+   colour-by-colour below and it is the test to look at first when a hull change breaks something. */
+
+const A = require('./_assert.js');
+
+global.U = {
+  hash(s) { let h = 2166136261; s = String(s); for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; },
+  shade(hex, f) {
+    const n = parseInt(String(hex).slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    if (f >= 0) { r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f; }
+    else { r *= (1 + f); g *= (1 + f); b *= (1 + f); }
+    return '#' + ((1 << 24) | (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)).toString(16).slice(1);
+  }
+};
+global.document = { createElement() { throw new Error('sampleHull must not allocate canvases'); } };
+
+const StationBake = require('../frontend/app/stationbake.js');
+const WorldModel = require('../frontend/app/worldmodel.js');
+
+const HULLS = WorldModel.HULL_ORDER;
+const TILE = 12;
+
+// a recording 2D context — every mark, in order, as comparable text. Richer than the deck
+// recorder because a hull recipe clips its veins pass and translates into the skirt.
+function recorder() {
+  const st = { fillStyle: '', strokeStyle: '', lineWidth: 1, tx: 0, ty: 0 };
+  const stack = [], ops = [];
+  const c = {
+    get fillStyle() { return st.fillStyle; }, set fillStyle(v) { st.fillStyle = v; },
+    get strokeStyle() { return st.strokeStyle; }, set strokeStyle(v) { st.strokeStyle = v; },
+    get lineWidth() { return st.lineWidth; }, set lineWidth(v) { st.lineWidth = v; },
+    fillRect(x, y, w, h) { ops.push(['f', x + st.tx, y + st.ty, w, h, st.fillStyle]); },
+    strokeRect(x, y, w, h) { ops.push(['s', x + st.tx, y + st.ty, w, h, st.strokeStyle]); },
+    beginPath() {}, moveTo() {}, lineTo() {}, rect() {}, arc() {}, closePath() {}, fill() {}, clip() {},
+    stroke() { ops.push(['k', 0, 0, 0, 0, st.strokeStyle]); },
+    save() { stack.push({ ...st }); },
+    restore() { if (stack.length) Object.assign(st, stack.pop()); },
+    translate(x, y) { st.tx += x; st.ty += y; },
+    ops
+  };
+  return c;
+}
+const sample = (mid, base, cols, h) => { const c = recorder(); StationBake.sampleHull(c, mid, base, cols || 4, h || 34, TILE); return c.ops; };
+const sig = ops => ops.map(o => o.join(' ')).join('|');
+
+/* ---------- the catalog is wired end to end ---------- */
+
+A.ok(HULLS.length >= 8, 'the shell catalog offers a real spread of exteriors (' + HULLS.length + ')');
+for (const mid of HULLS) {
+  A.ok(!!WorldModel.HULL_MATERIALS[mid], mid + ' is in HULL_MATERIALS');
+  A.ok(!!WorldModel.HULL_MATERIALS[mid].label, mid + ' carries a label for the palette');
+}
+A.eq(HULLS[0], 'station', 'STATION leads the catalog — it is the shell every station launches with');
+
+/* ---------- every material paints, deterministically, and distinctly ---------- */
+
+const sigs = {};
+for (const mid of HULLS) {
+  const base = '#3b2b20';
+  const a = sample(mid, base);
+  A.ok(a.length > 0, mid + ' paints marks');
+  A.eq(sig(a), sig(sample(mid, base)), mid + ' is deterministic across repeated samples');
+  sigs[mid] = sig(a);
+}
+for (let i = 0; i < HULLS.length; i++) {
+  for (let j = i + 1; j < HULLS.length; j++) {
+    A.ok(sigs[HULLS[i]] !== sigs[HULLS[j]], HULLS[i] + ' and ' + HULLS[j] + ' render as different shells');
+  }
+}
+// a silent fallback to `station` is the failure mode a new material ships with (unknown id →
+// dispatcher default), and on this axis it would look like the feature simply doing nothing.
+A.eq(sig(sample('no-such-shell', '#3b2b20')), sigs.station, 'an unknown shell falls back to station');
+
+/* ---------- THE PARITY GUARANTEE: station at a null hue is the legacy shell ---------- */
+
+const legacy = sample('station', null, 6, 40);
+const cols = new Set(legacy.map(o => o[5]));
+for (const c of ['#231f17', '#28241b', '#302b21']) {
+  A.ok(cols.has(c), 'the legacy shell still paints its own ' + c + ' (never a derived tone)');
+}
+for (const band of ['#0b0a07', '#100e09', '#16130d', '#1f1b12', '#2a251a', '#3f3a2c']) {
+  A.ok(cols.has(band), 'the legacy skirt ramp still carries ' + band);
+}
+// and a HUED station is genuinely different — otherwise the null case is being taken always
+A.ok(sig(sample('station', null, 6, 40)) !== sig(sample('station', '#2b3340', 6, 40)),
+  'a station shell painted COBALT differs from the untouched shell');
+
+/* ---------- the VALUE BAND: an ordinary hue is clamped, the bright pole is not ----------
+   The hull is the one surface outside the ambient mask, so a FLOOR_STYLES hue used at face value
+   renders several times brighter out there than it does inside a room — that is what vacuum() exists
+   to clamp. But the clamp must NOT swallow the palette's deliberate bright end: pick WHITE, get a
+   white building. Both halves are asserted, because each one breaks the other if it drifts. */
+const luma = hex => {
+  const n = parseInt(hex.slice(1), 16);
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+};
+const brightestOf = (mid, base) => Math.max(...sample(mid, base, 4, 40)
+  .filter(o => o[0] === 'f' && typeof o[5] === 'string' && /^#[0-9a-f]{6}$/i.test(o[5]))
+  .map(o => luma(o[5])));
+
+A.ok(!!WorldModel.FLOOR_STYLES.white, 'WHITE is in the palette');
+const ordinary = ['rust', 'cobalt', 'walnut', 'verdant'];
+for (const sid of ordinary) {
+  const peak = brightestOf('stucco', WorldModel.FLOOR_STYLES[sid].base);
+  A.ok(peak < 90, 'an ordinary hue (' + sid + ') is clamped into the shell band — peak ' + Math.round(peak));
+}
+for (const sid of ['white', 'bone']) {
+  const peak = brightestOf('stucco', WorldModel.FLOOR_STYLES[sid].base);
+  A.ok(peak > 110, sid.toUpperCase() + ' actually renders bright on a shell — peak ' + Math.round(peak));
+}
+// ...and a white shell must still read as WHITE, not as a tint: near-neutral all the way up
+{
+  const cols = sample('stucco', WorldModel.FLOOR_STYLES.white.base, 4, 40)
+    .filter(o => o[0] === 'f' && /^#[0-9a-f]{6}$/i.test(String(o[5]))).map(o => o[5]);
+  const top = cols.reduce((a, c) => luma(c) > luma(a) ? c : a, cols[0]);
+  const n = parseInt(top.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  A.ok(Math.max(...ch) - Math.min(...ch) < 24, 'a WHITE shell stays achromatic at its brightest (' + top + ')');
+}
+
+/* ---------- marks stay inside the patch they were asked for ---------- */
+
+for (const mid of HULLS) {
+  const W = 3 * TILE, H = 34;
+  const bad = sample(mid, '#3b2b20', 3, H).filter(o => {
+    if (o[0] !== 'f') return false;
+    const [, x, y, w, h] = o;
+    return x < 0 || y < 0 || x + w > W || y + h > H;
+  });
+  A.eq(bad.map(o => o.join(' ')), [], mid + ' paints nothing outside the sampled patch');
+}
+
+/* ---------- the skirt: a shell's whole identity, so it must actually be dressed ----------
+   Every recipe's band list has to reach the bottom of the skirt and step upward from there. A list
+   that never reaches `skirt` leaves raw plate hanging below the wall; one whose entries don't fall
+   toward 1 leaves the top of the skirt unpainted. Both were live bugs while tuning courseBands. */
+const RING = (h, ) => Math.max(6, Math.min(12, Math.round(h * 0.38)));
+for (const mid of HULLS) {
+  const h = 40, ring = RING(h);
+  const skirtOps = sample(mid, '#3b2b20', 4, h).filter(o => o[0] === 'f' && o[2] >= ring);
+  A.ok(skirtOps.length >= 4, mid + ' dresses its skirt (' + skirtOps.length + ' marks below the plate ring)');
+  const reach = Math.max(...skirtOps.map(o => o[2] + o[4]));
+  A.eq(reach, h, mid + ' skirt reaches the bottom of the wall (no bare plate hanging below it)');
+  const tones = new Set(skirtOps.map(o => o[5]));
+  A.ok(tones.size >= 3, mid + ' skirt has depth — at least three tones down the wall, not a flat slab');
+}
+
+/* ---------- the model side: the third axis behaves like the other two ---------- */
+
+const st = WorldModel.create();
+const room = st.addRoom({ kind: 'lab', rect: { x1: 22, y1: 0, x2: 35, y2: 9 } });
+A.ok(room.ok, 'test room placed');
+const R = room.id;
+
+A.eq(st.hullMatOfRoom(R), 'station', 'a fresh room wears the station shell');
+A.eq(st.projectGeometry().hullBaseOf(R), null, '...at the shell’s own tone — null, not a stand-in colour');
+
+A.ok(st.setHull(R, { mat: 'timber' }).ok, 'setHull clads a room in timber');
+A.eq(st.hullMatOfRoom(R), 'timber', 'the material stuck');
+A.eq(st.hullStyleOfRoom(R), 'walnut', 'and AUTO resolved to the tone TIMBER was drawn for');
+A.eq(st.projectGeometry().hullMatOf(R), 'timber', 'projected geometry carries the material to the bake');
+A.eq(st.projectGeometry().hullBaseOf(R), WorldModel.FLOOR_STYLES.walnut.base, '...and the hue');
+
+// normalization: never serialize a redundant value, so an untouched doc round-trips unchanged
+A.ok(st.setHull(R, { mat: 'timber', style: 'walnut' }).ok, 'picking the material’s own hue is accepted');
+A.eq(st.doc().rooms[R].hullStyle, null, '...and normalizes to null rather than pinning the suggestion');
+A.ok(st.setHull(R, { mat: 'station' }).ok, 'clading back to station is accepted');
+A.eq(st.doc().rooms[R].hullMat, null, '...and normalizes to null, so the doc looks pre-axis again');
+
+A.eq(st.setHull(R, { mat: 'no-such' }).error, 'BAD_MAT', 'an unknown shell material is rejected');
+A.eq(st.setHull(R, { style: 'no-such' }).error, 'BAD_STYLE', 'an unknown shell colour is rejected');
+A.eq(st.setHull('nope', { mat: 'brick' }).error, 'NOT_FOUND', 'an unknown room is rejected');
+
+// one undo slot for both axes — the same contract setDeck/setWalls hold
+const seq = st.canUndo();
+A.ok(st.setHull(R, { mat: 'brick', style: 'crimson' }).ok, 'shell re-clad, hue and material together');
+A.eq(st.hullMatOfRoom(R), 'brick', 'brick took');
+A.ok(st.undo().ok !== false, 'undo runs');
+A.eq(st.hullMatOfRoom(R), 'station', 'ONE undo reverses BOTH axes — never half a re-clad');
+A.ok(seq === seq, 'undo availability unchanged in shape');
+
+// a no-op must not burn an undo slot (the trap every mutator here has had at least once)
+st.setHull(R, { mat: 'stone' });
+const before = JSON.stringify(st.doc().rooms[R]);
+A.ok(st.setHull(R, { mat: 'stone' }).ok, 'a repeat re-clad is accepted');
+A.eq(JSON.stringify(st.doc().rooms[R]), before, '...and changes nothing');
+
+/* a room's shell is ITS OWN — re-clading one may never touch its neighbour. This is the property
+   that makes a mixed station read as separate buildings, and it is the one a grouped skirt could
+   plausibly break. */
+const other = st.addRoom({ kind: 'factory', rect: { x1: 0, y1: 14, x2: 15, y2: 22 } });
+A.ok(other.ok, 'neighbour placed');
+st.setHull(R, { mat: 'curtain' });
+A.eq(st.hullMatOfRoom(other.id), 'station', 'the neighbour keeps its own shell');
+A.eq(st.projectGeometry().hullMatOf(other.id), 'station', '...all the way through to the bake');
+
+/* legacy docs: a room written before this axis carries no hull keys at all and must deserialize
+   as the station shell rather than as an unknown material */
+const legacyDoc = JSON.parse(JSON.stringify(st.doc()));
+for (const id of legacyDoc.order) { delete legacyDoc.rooms[id].hullMat; delete legacyDoc.rooms[id].hullStyle; }
+const revived = WorldModel.deserialize(legacyDoc);
+for (const id of legacyDoc.order) {
+  A.eq(revived.hullMatOfRoom(id), 'station', 'a pre-axis room revives wearing the station shell (' + id + ')');
+  A.eq(revived.projectGeometry().hullBaseOf(id), null, '...at the shell’s own tone (' + id + ')');
+}
+
+A.report('stationbake.hull');
