@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1dc4e43d4b22e4b9cbd70c3f2cb19a344d47b919",
+    "sourceCommit": "59489852041eb173124f0e548917c9735c03bf91",
     "pathSetSha256": "67b3f0df0ace2d6e273f3018ed6d520ec8f1858fe011dfc43b615afff886d695",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 527155,
-        "sha256": "f20b598c2686ea3d99a2519bd4b16b7f2906d2e3d06f0a733066a69ee2d9e3e4"
+        "bytes": 527306,
+        "sha256": "37bb9de7f8b5743b67918687978aa7f29ebb7934e2e30fd126688456b39dd8c7"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 22404,
-        "sha256": "d60f649488b5d8debbfc042a176813fbaf50843dc5eb84b295eb8c1a44a6b2e8"
+        "bytes": 22823,
+        "sha256": "d8c7797c30d8ebb0b8c91592511e71e69e9e522cf25153854a2525f21d8e72d6"
       },
       {
         "path": "frontend/app/terrain.js",
