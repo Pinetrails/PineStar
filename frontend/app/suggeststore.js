@@ -19,6 +19,8 @@
 const SuggestStore = (() => {
   const KEY = 'starnet.suggest.v1';
   const RECENT_CAP = 8;    // remember the last N pitched-idea fingerprints so the agent never re-pitches the same idea
+  const DECLINED_TITLE_CAP = 24;  // …and the readable titles behind them, for the directive's exclusion list
+  const TITLE_CHARS = 90;         // one clause each — the directive stays bounded no matter how long a title got
   let state = null;        // { v:1, lastFamiliarity, tasksSinceLast, recent:[fp], declined:[fp] }
   let deps = {};           // accessors/actions injected by app.js
   let sessionShown = 0;    // ideas shown THIS session (in-memory; resets each app run)
@@ -38,17 +40,42 @@ const SuggestStore = (() => {
     return Array.from(new Set(toks)).sort().join(' ');
   }
   function seenRecently(fp) { return !!fp && ((Array.isArray(state.recent) && state.recent.indexOf(fp) >= 0) || (Array.isArray(state.declined) && state.declined.indexOf(fp) >= 0)); }
-  function rememberIdea(fp) {
+  /* THE TITLES, ALONGSIDE THE FINGERPRINTS (2026-08-05). The fingerprint is a sorted token bag — perfect for the
+     dedup test, unreadable as prompt text. Keeping the human title beside it is what lets the exclusion list ride
+     the DIRECTIVE (see excludeTitles below) instead of only filtering the reply after the aux call is paid for.
+     Additive + bounded, and hydrate tolerates its absence, so an existing store upgrades in place. */
+  function pushBounded(arr, v, cap) {
+    if (!Array.isArray(arr)) return [v];
+    const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1);   // re-seen → move to the front of the eviction queue
+    arr.push(v);
+    while (arr.length > cap) arr.shift();
+    return arr;
+  }
+  function rememberIdea(fp, title) {
     if (!fp) return;
     if (!Array.isArray(state.recent)) state.recent = [];
     state.recent.push(fp);
     while (state.recent.length > RECENT_CAP) state.recent.shift();
+    const t = String(title == null ? '' : title).trim().slice(0, TITLE_CHARS);
+    if (t) state.recentTitles = pushBounded(state.recentTitles, t, RECENT_CAP);
   }
-  function rememberDeclined(fp) {
+  function rememberDeclined(fp, title) {
     if (!fp) return;
     if (!Array.isArray(state.declined)) state.declined = [];
     if (state.declined.indexOf(fp) < 0) state.declined.push(fp);
     while (state.declined.length > 200) state.declined.shift();
+    const t = String(title == null ? '' : title).trim().slice(0, TITLE_CHARS);
+    if (t) state.declinedTitles = pushBounded(state.declinedTitles, t, DECLINED_TITLE_CAP);
+  }
+  /* what the model must not propose again: everything already pitched, and everything explicitly refused. The
+     DECLINED half leads — "never suggest this" is a decision, and it is the one the Commander would be most
+     annoyed to see ignored. De-duped, newest-last, bounded by the directive's own cap. */
+  function excludeTitles() {
+    const dec = Array.isArray(state.declinedTitles) ? state.declinedTitles : [];
+    const rec = Array.isArray(state.recentTitles) ? state.recentTitles : [];
+    const out = []; const seen = {};
+    for (const t of dec.concat(rec)) { const k = t.toLowerCase(); if (!k || seen[k]) continue; seen[k] = 1; out.push(t); }
+    return out;
   }
   function ledgerPost(body) {
     try {
@@ -58,12 +85,16 @@ const SuggestStore = (() => {
   }
 
   function hydrate(raw) {
-    const s = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [], declined: [] };
+    const s = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [], declined: [], recentTitles: [], declinedTitles: [] };
     if (raw && typeof raw === 'object') {
       if (Number.isFinite(raw.lastFamiliarity)) s.lastFamiliarity = raw.lastFamiliarity;
       if (Number.isFinite(raw.tasksSinceLast) && raw.tasksSinceLast >= 0) s.tasksSinceLast = raw.tasksSinceLast;
       if (Array.isArray(raw.recent)) s.recent = raw.recent.filter(x => typeof x === 'string').slice(-RECENT_CAP);
       if (Array.isArray(raw.declined)) s.declined = raw.declined.filter(x => typeof x === 'string').slice(-200);
+      // additive (2026-08-05): absent in a pre-upgrade store, which simply means an empty exclusion list until
+      // the next idea fires — never a hydrate failure.
+      if (Array.isArray(raw.recentTitles)) s.recentTitles = raw.recentTitles.filter(x => typeof x === 'string').slice(-RECENT_CAP);
+      if (Array.isArray(raw.declinedTitles)) s.declinedTitles = raw.declinedTitles.filter(x => typeof x === 'string').slice(-DECLINED_TITLE_CAP);
     }
     return s;
   }
@@ -175,7 +206,7 @@ const SuggestStore = (() => {
       // with zero new asks). Fail-open: no UnderstandingStore / no sagging belief → the normal un-aimed idea.
       let probe = null;
       try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.probeTarget) probe = UnderstandingStore.probeTarget(); } catch (_) {}
-      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '', unlockedCapability: chain || '', probe: probe });
+      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '', unlockedCapability: chain || '', probe: probe, exclude: excludeTitles() });
       const system = deps.getSystem ? deps.getSystem() : '';
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
@@ -199,8 +230,20 @@ const SuggestStore = (() => {
       const line = '✦ a fresh idea — ' + Pitch.titleSentence(parsed.title) + why + credit + gap;   // shared title→sentence join (no double period)
       const recommendationId = 'suggest:' + fp + ':' + Date.now();
       let rd = null; try { rd = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null; } catch (_) {}
+      /* THE LEDGER MUST NOT CALL THE MODEL'S OWN PROSE A QUOTE (2026-08-05).
+         `parsed.why` is the WHY line the aux model wrote about its own pitch. It was posted as
+         `{ type: 'context', quote: parsed.why }` — the same shape the study and thread channels use for a
+         VERBATIM fragment they located in the Commander's words. Every downstream reader of this ledger
+         (evidenceCoverage, the preference fold, and the W2 evidence contract that will decide which citations
+         may be spoken as "because you said") then sees a quote-typed row that nobody ever said. Type it for what
+         it is: MODEL-AUTHORED RATIONALE. Nothing here is deleted — the text is still recorded, and a reader that
+         wants it can have it; it simply can never again be mistaken for evidence.
+         RESIDUAL, stated rather than hidden: recommendation-ledger.normalizeEntry stores `text` into its `quote`
+         column (`quote: clip(e.quote || e.text, 280)`), so the STRING still lands there. The `type` is what
+         discriminates, and typing it honestly is the whole fix available without reshaping the stored row —
+         which belongs to W2's evidence contract, not to this slice. */
       ledgerPost({ id: recommendationId, surface: 'suggest', kind: (parsed.build && parsed.build.kind) || 'idea', title: parsed.title,
-        target: (parsed.build && parsed.build.recipeId) || '', evidence: parsed.why ? [{ id: 'suggest-why', type: 'context', quote: parsed.why }] : [],
+        target: (parsed.build && parsed.build.recipeId) || '', evidence: parsed.why ? [{ id: 'suggest-rationale', type: 'rationale', text: parsed.why }] : [],
         readiness: rd ? { ready: !!rd.ready, reasons: rd.reasons || [] } : { ready: false, reasons: ['missing'] }, modelVersion: 'suggest-v2' });
       if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // G3a: the idea beat gets its soft chime (was mute)
       Chat.nudge(line, [{ label: 'let’s build it', value: 'build' }, { label: 'not now', value: 'no', skip: true }, { label: 'never suggest this', value: 'never', skip: true }], choice => {
@@ -246,14 +289,14 @@ const SuggestStore = (() => {
             if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, true); } catch (_) {} }
             try { if (typeof Chat !== 'undefined' && Chat.localLine) Chat.localLine('stream’s busy — ask me again after this run'); } catch (_) {}
           } }
-        else if (choice && choice.value === 'never') { rememberDeclined(fp); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' });
+        else if (choice && choice.value === 'never') { rememberDeclined(fp, parsed.title); save(); ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_thing' });
           if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, false); } catch (_) {} } }
         else { ledgerPost({ id: recommendationId, state: 'deferred', reason: 'wrong_time' });
           if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, true); } catch (_) {} } }
       });
 
       sessionShown++;                                   // spend this session's single idea (anti-nag)
-      rememberIdea(fp);                                 // record the idea so it's never re-pitched as a "fresh idea"
+      rememberIdea(fp, parsed.title);                   // record the idea so it's never re-pitched as a "fresh idea"
       const fam = familiarityNow();
       if (fam != null) state.lastFamiliarity = fam;     // advance the baseline so the NEXT idea needs further growth
       state.tasksSinceLast = 0;                         // restart the cooldown

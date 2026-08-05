@@ -1789,6 +1789,23 @@ function buildDeclinedIndex(agentId) {
   return DeclinedIndex.build(lists);
 }
 
+/* THE NIGHT SHIFT CONSULTS IT TOO (2026-08-05). Five propose-time sites already filter through the shared
+   declined index — reflection, thread mining, quest minting, the scout — and the night shift, the ONE surface
+   that acts while the Commander is asleep, went parseCandidates → scoreAndSelect → record with no read at all.
+   So an idea explicitly declined in the daylight could be picked overnight, BUILT, and be waiting on the desk
+   in the morning: the single most expensive place in the product to re-propose a rejected thing.
+   Same discipline as every other site: EXACT normalized-title match only (declinedindex.js's own law — a false
+   suppression is worse than an occasional duplicate), and fail-open, because a store hiccup must never silence
+   the night rather than merely fail to filter it. */
+function nightshiftUndeclined(agentId, candidates) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (!list.length) return list;
+  let dIdx = null;
+  try { dIdx = buildDeclinedIndex(agentId); } catch (_) { return list; }
+  if (!dIdx || !dIdx.size) return list;
+  return list.filter(c => c && !dIdx.has(c.title));
+}
+
 // fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
 async function runReflection(o) {
   const { agentId, runId, messages, provider, model, cost } = o;
@@ -1999,8 +2016,13 @@ async function runThreadMine(o) {
     // known fingerprints = every live (non-declined) thread + the permanent declined denylist — so a duplicate or a
     // previously-declined idea is deduped AT THE SOURCE and never even stashed again (parity with study's declined).
     let known = {}; try { known = threadsStore.knownFingerprints(); } catch (_) { known = {}; }
+    // …and the READABLE half of that same set, so the model is told what is already on the board BEFORE the paid
+    // call instead of having its duplicates thrown away after it. Live threads only: the declined denylist keeps
+    // fingerprints with no title, so it stays post-hoc-only — which is where it was already doing its job.
+    let knownTitles = [];
+    try { knownTitles = (threadsStore.read().threads || []).filter(t => t && t.state !== 'declined').map(t => String(t.title || '')).filter(Boolean); } catch (_) { knownTitles = []; }
     const out = await threadmine.mine({ agentId, runId, streamId, messages }, {
-      propose, redact, clock: { now: () => Date.now() }, known, max: threadmine.DEFAULT_MAX
+      propose, redact, clock: { now: () => Date.now() }, known, knownTitles, max: threadmine.DEFAULT_MAX
     });
     let proposals = (out && out.proposals) || [];
     // CROSS-WIRE: mine() already deduped vs the thread ledger's own fingerprints; drop anything the Commander
@@ -4558,7 +4580,7 @@ async function runNightshiftBeat(opts) {
   //    veto's evidence pool = beliefs + activity + thread texts (a thread-tag citation is the preferred grounding).
   const cRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, threads, eligible, focusHeader, priorTonight }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
+  const candidates = nightshiftUndeclined(agentId, Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads }));
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
@@ -4665,7 +4687,7 @@ async function runNightshiftActShift(opts) {
   // veto — while still-invented grounding dies. The snapshot is harness-read truth, never model improv, so it is
   // honest evidence to ground in. Bounded already (projectscan caps it).
   const vetoActivity = projectSnapshot ? activity.concat(projectSnapshot.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) : activity;
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity: vetoActivity, threads });
+  const candidates = nightshiftUndeclined(agentId, Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity: vetoActivity, threads }));
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // NS-6 writeback: a build grounded on an open thread marks it PICKED now; a later keep/discard verdict (return
