@@ -1501,10 +1501,17 @@ const Build = (() => {
     const sx = w => r.left + (w * zoom + panX) * (r.width / cv.width);
     const sy = w => r.top + (w * zoom + panY) * (r.height / cv.height);
     const w = finCardEl.offsetWidth || 232, h = finCardEl.offsetHeight || 118;
-    let x = sx((c.bbox.x2 + 1 + o.tx) * t) + 14;
-    let y = sy((c.bbox.y1 + o.ty) * t) - 4;
-    if (x + w > window.innerWidth - 8) x = sx((c.bbox.x1 + o.tx) * t) - w - 14;   // flip to the left edge
-    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    // NEVER over the tool dock (the never-blocks-editing law): a left-sidebar dock raises the floor x
+    const dock = root.querySelector('.refit-dock');
+    let minX = 8;
+    if (dock) { const d = dock.getBoundingClientRect(); if (d.width < window.innerWidth * 0.6 && d.left < window.innerWidth / 2) minX = Math.max(minX, d.right + 10); }
+    const rightX = sx((c.bbox.x2 + 1 + o.tx) * t) + 14;
+    const leftX = sx((c.bbox.x1 + o.tx) * t) - w - 14;
+    let x, y;
+    if (rightX + w <= window.innerWidth - 8) { x = rightX; y = sy((c.bbox.y1 + o.ty) * t) - 4; }          // beside, to the right
+    else if (leftX >= minX) { x = leftX; y = sy((c.bbox.y1 + o.ty) * t) - 4; }                            // beside, to the left
+    else { x = sx((c.bbox.x2 + 1 + o.tx) * t) - w; y = sy((c.bbox.y2 + 1 + o.ty) * t) + 12; }             // no side room — under the line
+    x = Math.max(minX, Math.min(x, window.innerWidth - w - 8));
     y = Math.max(56, Math.min(y, window.innerHeight - h - 8));
     finCardEl.style.left = Math.round(x) + 'px';
     finCardEl.style.top = Math.round(y) + 'px';
