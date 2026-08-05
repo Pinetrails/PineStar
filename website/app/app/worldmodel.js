@@ -137,6 +137,14 @@ const WorldModel = (() => {
     meadow:   { base: '#374024', label: 'MEADOW' },
     // value poles — the bright + near-black ends of the range (stark, deliberate)
     bone:     { base: '#e7e3d9', label: 'BONE' },
+    /* WHITE — bone's neutral twin, added 2026-08-05 for the SHELL axis (Andrew: "lets add white as a
+       colour for the shell"). BONE is a warm cream; this is the achromatic pole, which is what reads
+       as PAINT rather than as stone. It matters most on a hull: the exterior is the one surface with
+       no ambient over it, so it is the only place a white actually stays white — and a whitewashed
+       STUCCO or CLAPBOARD building is the point of having it. See the bright-pole band in
+       stationbake's vacuum(), which is what keeps it from being clamped into the dark shell band
+       along with every ordinary hue. */
+    white:    { base: '#f2f0ea', label: 'WHITE' },
     onyx:     { base: '#0e0e12', label: 'ONYX' },
   };
 

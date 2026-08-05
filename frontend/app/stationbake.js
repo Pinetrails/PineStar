@@ -191,12 +191,23 @@ const StationBake = (() => {
      hues (ONYX) so a shell never goes pure void, and the cap is what keeps BONE from painting a
      blazing white building — the same standing law that killed light mode three times. */
   const HULL_LUMA_CAP = 28, HULL_LUMA_FLOOR = 13;
+  /* ...EXCEPT AT THE BRIGHT POLE. The clamp above exists to stop a hue picked as a FLOOR SUBSTRATE
+     from accidentally glowing when it is used on the one surface ambient never touches. But BONE and
+     WHITE are not accidents — they are the palette's deliberate bright end, and nobody lands on them
+     by mistake. Flattening them to 28 alongside RUST and COBALT does not make the station cohesive,
+     it just makes the palette lie: you pick WHITE and get another dark grey wall.
+     So a hue that is already unambiguously bright (luma over the pole) clamps to its own, much
+     higher ceiling instead. A white building then really is the brightest thing outside — above the
+     lit wall crown at 79, below the ceiling lamps at 127 — which is exactly what a whitewashed wall
+     looks like at night, and it stays strictly OPT-IN: you have to go and choose it. */
+  const HULL_BRIGHT_POLE = 150, HULL_BRIGHT_CAP = 85;
   const vacuum = hex => {
     const n = parseInt(String(hex).slice(1), 16);
     const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
     const l = 0.299 * r + 0.587 * g + 0.114 * b;
     if (l < 1) return '#0d0d0d';
-    const k = l > HULL_LUMA_CAP ? HULL_LUMA_CAP / l : (l < HULL_LUMA_FLOOR ? HULL_LUMA_FLOOR / l : 1);
+    const cap = l > HULL_BRIGHT_POLE ? HULL_BRIGHT_CAP : HULL_LUMA_CAP;
+    const k = l > cap ? cap / l : (l < HULL_LUMA_FLOOR ? HULL_LUMA_FLOOR / l : 1);
     if (k === 1) return hex;
     const c = v => Math.max(0, Math.min(255, Math.round(v * k)));
     return '#' + ((1 << 24) | (c(r) << 16) | (c(g) << 8) | c(b)).toString(16).slice(1);

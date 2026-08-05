@@ -98,6 +98,39 @@ for (const band of ['#0b0a07', '#100e09', '#16130d', '#1f1b12', '#2a251a', '#3f3
 A.ok(sig(sample('station', null, 6, 40)) !== sig(sample('station', '#2b3340', 6, 40)),
   'a station shell painted COBALT differs from the untouched shell');
 
+/* ---------- the VALUE BAND: an ordinary hue is clamped, the bright pole is not ----------
+   The hull is the one surface outside the ambient mask, so a FLOOR_STYLES hue used at face value
+   renders several times brighter out there than it does inside a room — that is what vacuum() exists
+   to clamp. But the clamp must NOT swallow the palette's deliberate bright end: pick WHITE, get a
+   white building. Both halves are asserted, because each one breaks the other if it drifts. */
+const luma = hex => {
+  const n = parseInt(hex.slice(1), 16);
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+};
+const brightestOf = (mid, base) => Math.max(...sample(mid, base, 4, 40)
+  .filter(o => o[0] === 'f' && typeof o[5] === 'string' && /^#[0-9a-f]{6}$/i.test(o[5]))
+  .map(o => luma(o[5])));
+
+A.ok(!!WorldModel.FLOOR_STYLES.white, 'WHITE is in the palette');
+const ordinary = ['rust', 'cobalt', 'walnut', 'verdant'];
+for (const sid of ordinary) {
+  const peak = brightestOf('stucco', WorldModel.FLOOR_STYLES[sid].base);
+  A.ok(peak < 90, 'an ordinary hue (' + sid + ') is clamped into the shell band — peak ' + Math.round(peak));
+}
+for (const sid of ['white', 'bone']) {
+  const peak = brightestOf('stucco', WorldModel.FLOOR_STYLES[sid].base);
+  A.ok(peak > 110, sid.toUpperCase() + ' actually renders bright on a shell — peak ' + Math.round(peak));
+}
+// ...and a white shell must still read as WHITE, not as a tint: near-neutral all the way up
+{
+  const cols = sample('stucco', WorldModel.FLOOR_STYLES.white.base, 4, 40)
+    .filter(o => o[0] === 'f' && /^#[0-9a-f]{6}$/i.test(String(o[5]))).map(o => o[5]);
+  const top = cols.reduce((a, c) => luma(c) > luma(a) ? c : a, cols[0]);
+  const n = parseInt(top.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  A.ok(Math.max(...ch) - Math.min(...ch) < 24, 'a WHITE shell stays achromatic at its brightest (' + top + ')');
+}
+
 /* ---------- marks stay inside the patch they were asked for ---------- */
 
 for (const mid of HULLS) {
