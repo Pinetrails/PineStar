@@ -2737,7 +2737,9 @@ const Chat = (() => {
     // the message rides the decision as a REAL user turn in THIS session — its id is the shift's durable
     // streamId, so the agent replies with the build's actual transcript behind it (server-side resume seed).
     const msgInput = document.createElement('input'); msgInput.className = 'turnin-edit ws-msg'; msgInput.type = 'text';
-    msgInput.placeholder = 'tell ' + who + ' anything about this (optional)';
+    // the placeholder must FIT: at the card's own type scale the long form clipped mid-word in a
+    // COMMS column, which reads as a broken field rather than an optional one.
+    msgInput.placeholder = 'message ' + who + ' (optional)';
     msgInput.setAttribute('aria-label', 'Optional message to the agent, sent with your decision');
     acts.appendChild(msgInput);
 
@@ -4064,6 +4066,40 @@ const Chat = (() => {
       onLeave: () => { if (typeof CuriosityStore !== 'undefined') CuriosityStore.markDismissed(dim); }
     });
   }
+  /* A MULTI-LINE NUDGE IS A LIST, NOT A PARAGRAPH (2026-08-04).
+     The night-shift report composes a real ledger — a headline, the acts that fired, the acts it DECLINED, the
+     builds waiting — hands it to nudge() as one '\n'-joined string, and `white-space: pre-wrap` turned it into a
+     wall. Two things broke. Every wrapped continuation fell back to the left margin, so "✓ drafted the note —
+     waiting in your outbox" read as two separate items; and the sub-items' leading spaces were the only thing
+     expressing nesting, which a narrow COMMS column eats. Worse for a truthfulness surface: a DECLINED act
+     rendered identically to a completed one.
+     Each marked line now gets its own row — marker in its own box (the symbol-glyph law: ✓ ✗ ⚒ come from the
+     fallback face, so they are BOX-centred and never sized off the text's metrics) and the prose in a
+     minmax(0,1fr) column, which is what buys the hanging indent. A refusal is its own rank. A single-line nudge
+     — every other caller — still renders as plain text, unchanged. */
+  const NUDGE_MARK = { '✓': 'yes', '✗': 'no', '✘': 'no', '×': 'no', '⚒': 'build', '▤': 'file', '·': 'sub', '✦': 'head', '◈': 'head' };
+  function renderNudgeBody(host, text) {
+    const raw = String(text == null ? '' : text);
+    if (!host) return;
+    host.textContent = '';
+    const lines = raw.split('\n');
+    if (lines.length < 2) { host.textContent = raw; return; }
+    const wrap = document.createElement('div'); wrap.className = 'nudge-lines';
+    lines.forEach((line, i) => {
+      const sub = /^\s+/.test(line);                       // a leading-space row is nested under the one above
+      const body = line.trim();
+      if (!body) return;
+      const mark = NUDGE_MARK[body.charAt(0)] ? body.charAt(0) : '';
+      const rest = mark ? body.slice(1).trim() : body;
+      const el = document.createElement('div');
+      el.className = 'nudge-line' + (mark ? ' nl-' + NUDGE_MARK[mark] : '') + (sub ? ' nl-sub' : '') + (i === 0 ? ' nl-first' : '');
+      if (mark) { const m = document.createElement('span'); m.className = 'nl-m'; m.textContent = mark; el.appendChild(m); }
+      const t = document.createElement('span'); t.className = 'nl-t'; t.textContent = rest;
+      el.appendChild(t);
+      wrap.appendChild(el);
+    });
+    host.appendChild(wrap);
+  }
   // a reusable GENTLE post-run beat (used by the ongoing-suggestion engine, suggeststore.js) — the same quiet
   // register as the curiosity nudge: a .nudge aside, never the lit .reply headline. text = the line; options =
   // [{label,value,skip}]; onPick(item) fires on a choice (the choice row removes itself on pick).
@@ -4072,7 +4108,7 @@ const Chat = (() => {
     if (taskQuestionLive()) return null;   // a pending task question owns the moment
     clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');
-    r.body.textContent = String(text == null ? '' : text);
+    renderNudgeBody(r.body, text);
     autoscroll();
     const choiceRow = choices(options || [], item => {
       const a = activeNudge; activeNudge = null;
