@@ -492,6 +492,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/brand-wordmark-mask.test.js
 test/personalization-authority-wiring.test.js
 test/sprite-loading.test.js
 test/textsize-screen-space.test.js

@@ -1,6 +1,11 @@
-// dev/logo-field-sheet.mjs — TEMP: look at the perceived-density field before tracing anything.
+// dev/logo-field-sheet.mjs — look at the perceived-density field before tracing anything.
+//
+// KEEP THIS: dev/trace-logo.mjs cites it as where its (sigma, iso) constants come from, and it is
+// the fastest way to re-answer "what would a different threshold give?" without touching the tracer.
 // Emits one stacked contact sheet: the raw field on top, then the same field thresholded at a
 // sweep of (sigma, iso) so the letterform that will be traced is visible as a shape, not a guess.
+// The sigma=0 rows are the raw ASCII-dash mosaic — that is the texture the shipped `mosaic` preset
+// keeps, and seeing it here is what led to it.
 //   node dev/logo-field-sheet.mjs [outPath]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

@@ -1,7 +1,12 @@
-// dev/probe-logo-alpha.mjs — TEMP probe: what does the master brand art's alpha actually look like?
-// Answers the only question that decides the trace algorithm: are the letters SOLID (alpha~255
-// across the body, dark digits painted IN colour) or a MOSAIC of separate opaque digit glyphs
-// (alpha punched out between them)? Solid -> trace the silhouette. Mosaic -> morphological close first.
+// dev/probe-logo-alpha.mjs — what does the master brand art's alpha actually look like?
+//
+// KEEP THIS: dev/trace-logo.mjs cites it as the provenance of its whole approach. It answers the
+// question that decides the algorithm — are the letters SOLID (alpha~255 across the body, dark
+// digits painted IN colour) or a SPARSE MOSAIC of separate opaque glyphs? The answer is mosaic:
+// only ~4.5% of pixels clear alpha 96, and a mid-height scanline is 2-8px strokes separated by
+// 50-200px voids, because the letters are hollow outlines drawn out of scattered digits. That is
+// why the tracer works on a perceived-density field and never thresholds raw alpha. Re-run it
+// before trusting any claim about the master art's structure.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
