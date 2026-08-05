@@ -34,6 +34,10 @@ try {
 
   const inspect = await call('fixture_inspect');
   check(!inspect.isError && inspect.content[0].text.includes('Verify every changed file'), 'inspection carries host requirements');
+  check(inspect.content[0].text.includes('run_parallel_workers'), 'fanout inspection names the one authoritative aggregate route');
+
+  const ambiguousFanout = await call('fixture_worker_run', { worker: 'alpha' });
+  check(ambiguousFanout.isError && ambiguousFanout.content[0].text.includes('cannot prove concurrent fanout'), 'low-level calls cannot masquerade as one concurrent batch');
 
   const write = await call('fixture_write_file', { path: 'dist/result.txt', content: 'DONE\n' });
   check(!write.isError && readFileSync(join(root, 'dist/result.txt'), 'utf8') === 'DONE\n', 'bounded write reaches fixture root');
