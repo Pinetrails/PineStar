@@ -81,6 +81,9 @@ const Build = (() => {
     if (!station) return;
     spaceHeld = false; drag = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
     ridePending = false;   // the auto first-ride re-arms from THIS session's compile, never a stale one
+    // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
+    finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
+    probeSampleSeam();
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
@@ -115,6 +118,7 @@ const Build = (() => {
     propThumbs.length = 0; lastThumbTs = 0;   // free the preview tiles' canvases
     if (unsub) unsub(), unsub = null;
     if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
+    finCardEl = null; finComp = null; finSig = '';   // the card's DOM dies with root below
     document.body.classList.remove('refit-on');
     document.body.style.removeProperty('--refit-dock-clearance');
     if (root && root.parentNode) root.parentNode.removeChild(root);
@@ -851,6 +855,7 @@ const Build = (() => {
     const o = lineOrigin(bp, w.tx, w.ty);
     const res = station.stampBlueprint(bp.id, o.x, o.y);   // ONE undoable action — see worldmodel.stampBlueprint
     if (res && res.ok) {
+      lastStampIds = res.ids || null;   // the finish-the-line card adopts this line on the next recompile
       pushFlash(bp.props.map(p => ({ x1: o.x + p.x, y1: o.y + p.y, x2: o.x + p.x + p.w - 1, y2: o.y + p.y + p.h - 1 })), false);
       sfx('chime');
       flashTip(ev, bp.label + ' STAMPED — now click each BAY to assign an agent', true);
@@ -933,6 +938,21 @@ const Build = (() => {
      that agent. Sourced from the app's agent list (opts.agents()) when present, plus a free-text agent id. */
   // is this prop a COMPUTER (PC)? — sourced from the station's CAP_PROP_MAP so the type list never drifts.
   const isPcProp = t => !!(station && typeof station.capForProp === 'function' && station.capForProp(t) === 'computer');
+  /* ONE-CLICK CREW (guided workflows Phase 1): create a real agent for a role-carrying dock through
+     the EXISTING creation seam — App.summonAgent, the same door the Recruitment Bay and the backend's
+     crew.summon.request walk through (single source of agents; never a parallel mint). The spec rides
+     the role's real Specialties class (loadout: model tier pin, effort, skill package), with the
+     purpose LED by the dock's own duty line (the roleDesc) so the agent knows which station line it
+     crews. Model: summonAgent inherits the hero's/station-default model unless the Commander pinned
+     the class tier in SETTINGS — exactly the summon default everywhere else. */
+  function summonForRole(role, ri) {
+    if (typeof App === 'undefined' || !App.summonAgent) return null;
+    const cls = (ri && ri.cls && typeof Specialties !== 'undefined' && Specialties.get) ? Specialties.get(ri.cls) : null;
+    const duty = 'You crew this station line as its ' + role + ' — you ' + ((ri && ri.desc) || 'work this dock') + '.';
+    const spec = Object.assign({}, cls || { name: role, model: 'balanced' });
+    spec.purpose = duty + (cls && cls.purpose ? '\n\n' + cls.purpose : '');
+    try { return App.summonAgent(spec, { activate: false, desk: true }); } catch (e) { return null; }
+  }
   function openBayPicker(bayId, ev) {
     if (!root || root.querySelector('.refit-bay-picker')) return;
     const p = station.propById(bayId); if (!p || !(p.t === 'bay' || isPcProp(p.t))) return;
@@ -941,6 +961,9 @@ const Build = (() => {
     const strip = isPc ? '' : flowStripHTML('bay');
     const cur = p.agentId || '';
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
+    // role-carrying dock + a live creation seam -> the picker LEADS with the one-click summon
+    const roleInfo = (!isPc && p.role && typeof App !== 'undefined' && App.summonAgent
+      && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
     const g = document.createElement('div');
     g.className = 'refit-guide refit-bay-picker';
@@ -952,7 +975,8 @@ const Build = (() => {
           ? '<ul><li>This computer becomes the chosen agent\'s <b>dedicated PC</b> — its compute.</li><li><b>Every agent needs its own PC</b>; roommates can share one room, not one computer.</li></ul>'
           : '<ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li><li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>'}
         <div class="refit-form">
-        ${agents.length ? '<div class="refit-sec">YOUR AGENTS — click to assign</div><div class="refit-agents refit-bay-agents">' + rows + '</div>' : ''}
+        ${roleInfo ? '<div class="refit-sec">THIS DOCK WANTS A ' + esc(p.role) + ' — ' + esc(roleInfo.desc) + '</div><button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
+        ${agents.length ? '<div class="refit-sec">' + (roleInfo ? 'OR PICK ONE OF YOUR AGENTS' : 'YOUR AGENTS — click to assign') + '</div><div class="refit-agents refit-bay-agents">' + rows + '</div>' : ''}
         <div class="refit-sec">${agents.length ? 'OR TYPE AN AGENT ID' : 'AGENT ID'}</div>
         <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}" />
         <div class="refit-error" id="bay-err">unknown agent — pick one above, or check the id</div>
@@ -968,6 +992,16 @@ const Build = (() => {
     const input = g.querySelector('#bay-aid');
     const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    // ⊕ SUMMON A <ROLE> HERE — one click: real summon (existing seam) + bind to THIS dock. On any
+    // failure the button re-arms and the manual pick below stays fully available (never a dead end).
+    const sumBtn = g.querySelector('#bay-summon');
+    if (sumBtn) sumBtn.onclick = () => {
+      sumBtn.disabled = true;
+      const a = summonForRole(p.role, roleInfo);
+      const res = a && station.assignPropAgent(bayId, a.id);
+      if (res && res.ok) { sfx('chime'); flashTip(ev, a.name + ' summoned → crews this dock', true); closeP(); }
+      else { sumBtn.disabled = false; sfx('bad'); flashTip(ev, a ? 'summoned, but the dock refused the bind' : 'summon failed — pick an agent below', false); }
+    };
     // ONE CLICK: choosing a roster agent IS the assignment. The old behavior (click only filled the id
     // into the input, ▸ ASSIGN still required) read as "nothing happened" and got dialogs closed half-done.
     g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => {
@@ -1288,11 +1322,14 @@ const Build = (() => {
      fire from the frame loop once the coach clears — a deferred ride must not need another edit
      to re-trigger. A blueprint stamp alone can never fire this: its bays stamp unbound, so reach
      stays false until an agent is truly bound. */
-  const RIDE_KEY = () => {
+  // one per-station localStorage key root, shared by the first-ride flag and the finish-the-line
+  // registry (same doc.meta.createdAt derivation — a UI one-shot never rides the save schema).
+  function stationKeyOf(st) {
     let k = 'default';
-    try { const d = station && station.doc && station.doc(); if (d && d.meta && d.meta.createdAt) k = String(d.meta.createdAt); } catch (e) {}
-    return 'starnet.refit.firstride.' + k;
-  };
+    try { const d = st && st.doc && st.doc(); if (d && d.meta && d.meta.createdAt) k = String(d.meta.createdAt); } catch (e) {}
+    return k;
+  }
+  const RIDE_KEY = () => 'starnet.refit.firstride.' + stationKeyOf(station);
   function rideSeen() { try { return !!localStorage.getItem(RIDE_KEY()); } catch (e) { return true; } }   // broken storage → never risk a repeat
   function markRide() { try { localStorage.setItem(RIDE_KEY(), '1'); } catch (e) {} }
   let ridePending = false, rideTimer = 0;
@@ -1324,6 +1361,178 @@ const Build = (() => {
       ctx.fillText(n.text, (n.x + 0.5) * t, n.y * t - 3 - rise);
     }
     ctx.restore();
+  }
+
+  /* ---------- FINISH THE LINE (guided workflows Phase 2, 2026-08-05) ----------
+     A compact checklist card anchored beside a stamped/incomplete line, derived ONLY from provable
+     state: the COMPILED plan (crew count = its UNBOUND_BAY warns over this line's docks), the
+     server-proven feed truth (World.feedState — the exact NO FEED source), and the sample-job seam
+     (feature-detected, below). LAWS: never blocks editing (a floating side card, no backdrop),
+     dismissible, stands down while the tutorial coaches (Tutorial.isCoaching / .refit-firstrun —
+     same gate as the first ride), and retires PERMANENTLY per line when that line's first real
+     product crate delivers (world.js's delivery seam calls noteLineDelivered — event-driven).
+     Line identity + membership come from Pipeline.lineComponents (key = smallest member prop id,
+     stable in the save); retirement/dismissal persist in localStorage beside the first-ride flag. */
+  const FIN_KEY = st => 'starnet.refit.finline.' + stationKeyOf(st || station);
+  function finRead(st) {
+    try { const o = JSON.parse(localStorage.getItem(FIN_KEY(st)) || '{}'); return (o && typeof o === 'object') ? o : {}; }
+    catch (e) { return {}; }
+  }
+  function finMark(st, key, field) {
+    try {
+      const o = finRead(st);
+      o[key] = Object.assign({}, o[key]); o[key][field] = 1;
+      localStorage.setItem(FIN_KEY(st), JSON.stringify(o));
+    } catch (e) {}
+  }
+  /* SAMPLE-JOB seam detection (Phase 4 lands in parallel — never hardcode its presence): the card
+     asks `GET /api/routing/sample` once per REFIT session. Present = any real answer that isn't a
+     route-miss (404/405); absent = the router's static 404. An OPTIONS probe is useless here — the
+     sidecar 204s OPTIONS on EVERY /api/* path before dispatch (index.js preflight branch). A POST
+     probe is forbidden: when the seam exists a POST IS the paid sample dispatch. Fails SAFE: on any
+     doubt the button renders disabled ("coming online soon") and no request can spend anything. */
+  let finSample = null;   // null = unprobed/in flight · false = absent · true = present
+  const finApi = p => ((typeof window !== 'undefined' && window.__STARNET_API__) ? window.__STARNET_API__ : '') + p;
+  function probeSampleSeam() {
+    if (finSample !== null || typeof fetch === 'undefined') return;
+    try {
+      fetch(finApi('/api/routing/sample'))
+        .then(r => { finSample = !!(r && r.status !== 404 && r.status !== 405); renderFinCard(); })
+        .catch(() => { finSample = false; renderFinCard(); });
+    } catch (e) { finSample = false; }
+  }
+  let valComps = null;          // Pipeline.lineComponents of the CURRENT compiled geometry (set in rebake)
+  let lastStampIds = null;      // prop ids of the line stamped this session → the card adopts that line
+  let finKeySel = null;         // the line key the card is focused on (session-scoped)
+  let finCardEl = null, finComp = null, finSig = '', finPollTs = 0;
+  function finState(c) {
+    const unbound = c.bays.filter(b => !b.agentId);
+    const feed = (opts && opts.world && opts.world.feedState) ? opts.world.feedState() : { known: false, fed: false };
+    const hasIntake = c.intakes.length > 0;
+    const feedDone = hasIntake && feed.known && feed.fed;
+    return { unbound, crewLeft: unbound.length, hasIntake, feed, feedDone,
+      todo: unbound.length > 0 || (hasIntake && feed.known && !feed.fed) };
+  }
+  function finPick() {
+    if (!valComps || !valComps.length) return null;
+    const reg = finRead(station);
+    const live = valComps.filter(c => c.bays.length && c.beltCount && !(reg[c.key] && (reg[c.key].done || reg[c.key].dis)));
+    if (!live.length) return null;
+    const sel = live.find(c => c.key === finKeySel);
+    if (sel) return sel;
+    // otherwise: the first line with something left to DO. A fully-crewed+fed veteran line that was
+    // never stamped this session stays quiet (its remaining step is the sample, offered only in the
+    // stamp session) — the card guides work, it doesn't haunt finished floors.
+    const next = live.find(c => finState(c).todo) || null;
+    if (next) finKeySel = next.key;
+    return next;
+  }
+  function renderFinCard() {
+    if (!root || !running) return;
+    const c = finPick();
+    if (!c) { if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl); finCardEl = null; finComp = null; finSig = ''; return; }
+    finComp = c;
+    const st = finState(c);
+    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample].join('|');
+    if (!finCardEl) {
+      finCardEl = document.createElement('div');
+      finCardEl.className = 'refit-finline';
+      root.appendChild(finCardEl);
+    } else if (sig === finSig) return;
+    finSig = sig;
+    const crewDone = st.crewLeft === 0;
+    const crewTxt = crewDone ? '✓ DOCKS CREWED' : '① CREW THE DOCKS — ' + st.crewLeft + ' TO GO';
+    const feedTxt = !st.hasIntake ? '② FEED IT — TASK THE AGENT, OR WIRE A ROUTINE'
+      : !st.feed.known ? '② FEED THE INBOX — CHECKING THE WIRES…'
+      : st.feed.fed ? '✓ INBOX FED' : '② FEED THE INBOX — CONNECT A CHANNEL OR ROUTINE';
+    const sampleOn = finSample === true && crewDone;
+    const sampleTip = finSample !== true ? 'coming online soon' : (crewDone ? 'feed ONE real, clearly-labeled sample job through the whole line' : 'crew the docks first');
+    finCardEl.innerHTML = `
+      <div class="fl-head"><span class="fl-title">▸ FINISH THE LINE</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
+      <button type="button" class="bb fl-step${crewDone ? ' done' : ''}" data-act="crew"${crewDone ? ' disabled' : ''}>${esc(crewTxt)}</button>
+      <button type="button" class="bb fl-step${st.feedDone ? ' done' : ''}" data-act="feed"${st.feedDone ? ' disabled' : ''}>${esc(feedTxt)}</button>
+      <button type="button" class="bb fl-step${sampleOn ? '' : ' off'}" data-act="sample" title="${esc(sampleTip)}">③ RUN A SAMPLE JOB</button>`;
+    finCardEl.querySelector('.fl-x').onclick = () => { finMark(station, c.key, 'dis'); sfx('click'); renderFinCard(); };
+    const bCrew = finCardEl.querySelector('[data-act="crew"]');
+    if (bCrew && !crewDone) bCrew.onclick = () => finFocusCrew(c);
+    const bFeed = finCardEl.querySelector('[data-act="feed"]');
+    if (bFeed && !st.feedDone) bFeed.onclick = () => finOpenFeed();
+    const bSample = finCardEl.querySelector('[data-act="sample"]');
+    if (bSample) bSample.onclick = () => { if (sampleOn) finRunSample(c); };
+  }
+  // ① — center the camera on the next unbound dock and open the SAME picker a direct click opens
+  function finFocusCrew(c) {
+    const b = finState(c).unbound[0];
+    if (!b || !cacheGeo) return;
+    const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
+    panX = cv.width / 2 - (b.x + o.tx + b.w / 2) * t * zoom;
+    panY = cv.height / 2 - (b.y + o.ty + b.h / 2) * t * zoom;
+    sfx('click');
+    openBayPicker(b.propId, null);
+  }
+  // ② — the real feed surfaces (channels + routines) live in the CHANNELS panel outside REFIT: finish
+  // + save (the ✓ DONE path), then open the exact surface the live world's NO FEED nag click opens.
+  function finOpenFeed() {
+    sfx('click');
+    close();
+    if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('messaging');
+  }
+  // ③ — Phase 4's seam, fired only when detected present + docks crewed. The card claims nothing the
+  // harness didn't answer: success/refusal both surface as the server's own verdict.
+  function finRunSample(c) {
+    sfx('click');
+    try {
+      fetch(finApi('/api/routing/sample'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: c.key }) })
+        .then(r => { if (r && r.ok) flashTip(null, 'sample job dispatched — watch the line', true); else flashTip(null, 'sample refused (HTTP ' + (r ? r.status : '?') + ')', false); })
+        .catch(() => flashTip(null, 'sample failed — sidecar unreachable', false));
+    } catch (e) {}
+  }
+  // per-frame: hide while anything coach-like is up (same gate family as the first ride), else pin
+  // the card beside the line's bounding box in screen space (the flashTip/clientX coordinate basis).
+  function positionFinCard() {
+    if (!finCardEl) return;
+    if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) { finCardEl.style.display = 'none'; return; }
+    const c = finComp;
+    if (!c || !c.bbox || !cacheGeo || !cv) return;
+    finCardEl.style.display = '';
+    const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
+    const r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const sx = w => r.left + (w * zoom + panX) * (r.width / cv.width);
+    const sy = w => r.top + (w * zoom + panY) * (r.height / cv.height);
+    const w = finCardEl.offsetWidth || 232, h = finCardEl.offsetHeight || 118;
+    // NEVER over the tool dock (the never-blocks-editing law): a left-sidebar dock raises the floor x
+    const dock = root.querySelector('.refit-dock');
+    let minX = 8;
+    if (dock) { const d = dock.getBoundingClientRect(); if (d.width < window.innerWidth * 0.6 && d.left < window.innerWidth / 2) minX = Math.max(minX, d.right + 10); }
+    const rightX = sx((c.bbox.x2 + 1 + o.tx) * t) + 14;
+    const leftX = sx((c.bbox.x1 + o.tx) * t) - w - 14;
+    let x, y;
+    if (rightX + w <= window.innerWidth - 8) { x = rightX; y = sy((c.bbox.y1 + o.ty) * t) - 4; }          // beside, to the right
+    else if (leftX >= minX) { x = leftX; y = sy((c.bbox.y1 + o.ty) * t) - 4; }                            // beside, to the left
+    else { x = sx((c.bbox.x2 + 1 + o.tx) * t) - w; y = sy((c.bbox.y2 + 1 + o.ty) * t) + 12; }             // no side room — under the line
+    x = Math.max(minX, Math.min(x, window.innerWidth - w - 8));
+    y = Math.max(56, Math.min(y, window.innerHeight - h - 8));
+    finCardEl.style.left = Math.round(x) + 'px';
+    finCardEl.style.top = Math.round(y) + 'px';
+  }
+  /* the delivery-retirement hook — world.js calls this (WORLD tiles) when a real product crate sinks
+     at an outbox mouth. Works with REFIT closed: resolves the station via opts and maps the tile to
+     its line in a fresh geometry frame. First delivery wins; done is forever (per station+line). */
+  function noteLineDelivered(wtx, wty) {
+    const st = station || (opts && typeof opts.getStation === 'function' ? opts.getStation() : null);
+    if (!st || typeof Pipeline === 'undefined' || !Pipeline.lineComponents) return;
+    let geo = null;
+    try { geo = st.projectGeometry(); } catch (e) { return; }
+    const o = (geo && geo.origin) || { tx: 0, ty: 0 };
+    const k = (wtx - o.tx) + ',' + (wty - o.ty);
+    for (const c of Pipeline.lineComponents(geo)) {
+      if (!c.tiles[k]) continue;
+      const reg = finRead(st);
+      if (!(reg[c.key] && reg[c.key].done)) finMark(st, c.key, 'done');
+      if (running) renderFinCard();
+      return;
+    }
   }
 
   /* ---------- AIRLOCK door-state picker: cycle a room's SPATIAL seal (floor containment, NOT capability
@@ -1857,6 +2066,15 @@ const Build = (() => {
       }
       planDirty = false;
       maybeFirstRide();   // a floor edit just recompiled the plan — the line may have just powered on
+      // finish-the-line: regroup the floor's physical lines from the SAME geometry the plan compiled
+      valComps = (typeof Pipeline !== 'undefined' && Pipeline.lineComponents) ? Pipeline.lineComponents(cacheGeo) : [];
+      if (lastStampIds) {   // a stamp just landed — the card adopts the stamped line
+        const set = {}; for (const id of lastStampIds) set[id] = 1;
+        const c = valComps.find(cc => cc.props.some(id => set[id]));
+        if (c) finKeySel = c.key;
+        lastStampIds = null;
+      }
+      renderFinCard();
     }
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
@@ -1870,6 +2088,9 @@ const Build = (() => {
     if (bakeDirty || !cache) rebake();
     // an armed first ride waits out the tutorial + the first-run card (.refit-firstrun, never .refit-guide)
     if (ridePending && !tutorialCoaching() && !(root && root.querySelector('.refit-firstrun'))) fireFirstRide();
+    // finish-the-line card: slow re-derive (feed truth changes on the world's poll, not on edits) + per-frame pin
+    if (finCardEl && now - finPollTs > 2000) { finPollTs = now; renderFinCard(); }
+    positionFinCard();
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -2030,6 +2251,14 @@ const Build = (() => {
     placed.push({ x: cx - w / 2, y, w, h });
     return y;
   }
+  // the role placard for an UNBOUND role-carrying dock: "RESEARCHER — DIGS SOURCES… — CLICK".
+  // One string builder shared by REFIT's validation callout and the live world's nag (world.js
+  // mirrors it through the same WorldModel.bayRoleInfo source so the two never drift).
+  function roleLabelFor(p) {
+    if (!p || !p.role || p.agentId) return null;
+    const ri = (typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
+    return ri ? p.role + ' — ' + ri.desc.toUpperCase() + ' — CLICK' : null;
+  }
   function drawRoutingValidation(t, now) {
     if (!cacheGeo) return;
     const o = cacheGeo.origin || { tx: 0, ty: 0 };
@@ -2065,7 +2294,10 @@ const Build = (() => {
         let rect = null;
         if (e.tile) rect = { x1: e.tile.x, y1: e.tile.y, x2: e.tile.x, y2: e.tile.y };
         else if (e.propId && propById[e.propId]) { const p = propById[e.propId]; rect = { x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }; }
-        if (rect) mark(rect, e.warn ? '#ffbe3c' : '#ff5046', VAL_LABEL[e.code] || e.code);   // amber warn vs red blocker
+        let label = VAL_LABEL[e.code] || e.code;
+        // a ROLE-carrying unbound dock says WHO it wants, not a bare NO AGENT (guided workflows Phase 1)
+        if (e.code === 'UNBOUND_BAY' && e.propId) { const rl = roleLabelFor(propById[e.propId]); if (rl) label = rl; }
+        if (rect) mark(rect, e.warn ? '#ffbe3c' : '#ff5046', label);   // amber warn vs red blocker
       }
     }
     // B5 cost-safety: a BOUND bay whose room has no dedicated PC can't run routed work — the compute gate
@@ -2127,7 +2359,9 @@ const Build = (() => {
     const isPc = isPcProp(p.t), isBay = p.t === 'bay';
     if (!isPc && !isBay) return;
     const bound = !!p.agentId;
-    const txt = (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : 'unassigned');
+    // a role-carrying dock's glance names the role it wants while unbound ("BAY · needs a RESEARCHER")
+    const ri = (!bound && p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
+    const txt = (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : (ri ? 'needs a ' + p.role + ' — ' + ri.desc : 'unassigned'));
     ctx.font = (8 / zoom) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     const cx = (p.x + (p.w || 1) / 2) * t, topY = p.y * t - 2 / zoom;
     const pad = 5 / zoom, bw = ctx.measureText(txt).width + pad * 2, bh = 11 / zoom;
@@ -2356,6 +2590,18 @@ const Build = (() => {
       onUp(__test__._tileEvent(tiles[tiles.length - 1]));
       return { ok: true, before, after: station.belts().length };
     },
+    // finish-the-line card readout for CDP proof scripts: the EXACT DOM state the card renders
+    finCard: () => (finCardEl ? {
+      key: finComp && finComp.key,
+      display: finCardEl.style.display !== 'none',
+      left: finCardEl.style.left, top: finCardEl.style.top,
+      steps: [...finCardEl.querySelectorAll('.fl-step')].map(b => ({
+        act: b.dataset.act, txt: b.textContent.trim(),
+        done: b.classList.contains('done'), off: b.classList.contains('off'), disabled: b.disabled,
+        tip: b.getAttribute('title') || b.getAttribute('data-tip') || null,
+      })),
+    } : null),
+    finRegistry: () => finRead(station),
     // run the REAL hover path over a tile and report what the reclaim highlight would target
     // (a belt tile lights the belt, not the room under it).
     hoverAt: (tile) => {
@@ -2397,7 +2643,7 @@ const Build = (() => {
     openPropEditor(propId, p.t, { clientX: (window.innerWidth / 2) | 0, clientY: 120 });   // synthetic anchor for the action tip
   }
 
-  const api = { init, open, close, toggle, isOpen, requisition, openAssign };
+  const api = { init, open, close, toggle, isOpen, requisition, openAssign, noteLineDelivered };
   if (typeof window !== 'undefined' && window.__STARNET_DEV__) api.__test__ = __test__;
   return api;
 })();

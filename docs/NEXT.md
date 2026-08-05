@@ -1,5 +1,25 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-05 — TELEGRAM OGG/OPUS VOICE TRANSCRIPTION (`agent/telegram-voice-ogg`)
+
+READY TO MERGE. Telegram already normalized voice notes as `voice-message.ogg` and routed them through the
+shared STT ladder, but its keyless local floor decoded WAV only. A station with the shipped offline speech
+engine therefore saved the attachment and told the agent `local engine needs wav (got ogg)` instead of
+delivering the spoken words. The media service now lazily loads a bundled in-process Ogg/Opus decoder,
+downmixes/resamples the result to 16 kHz mono Float32 PCM, and feeds the same local Whisper path used by WAV.
+No machine-global ffmpeg install and no cloud credential is required. The decoder is a declared production
+dependency, survives the desktop voice-dependency staging closure, and its third-party license notice is
+recorded in `NOTICE.md`.
+
+Verification: a real libopus Ogg fixture decodes and reaches the local ASR boundary in the fast gate; focused
+Telegram group/voice coverage is green (98 assertions); `npm run test:fast` is 526/526 green; full
+`npm run test:http` is 60/60 green, including four Telegram E2E suites. A real seeded sidecar on `:18743`
+received a spoken `audio/ogg` request through `/api/stt` and returned HTTP 200 in 3.3s with
+`Telegram Voice Messages Now Work Offline.` from the keyless local model; the seed was stopped and the port
+released. The Windows desktop staging simulation retained and resolved `OggOpusDecoder`. A live external
+Telegram Bot API delivery was not sent from this isolated lane; network ingress remains covered by the fake
+Bot API E2E plus the live shared STT route.
+
 ## 2026-08-04 — COMPLETE STATION DISASTER RECOVERY P0 (`agent/disaster-recovery-p0`)
 
 READY TO MERGE. StarNet now has a versioned, offline complete-station recovery bundle and operator CLI.

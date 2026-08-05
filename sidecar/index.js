@@ -246,6 +246,7 @@ const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser W
 const { makeStationBridge } = require('./station-bridge.js');   // page-side command channel for station tools
 const { makeNativeStt } = require('./native-stt.js');                // keyless Windows dictation fallback for OAuth Live voice
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
+const Pipeline = require('../frontend/app/pipeline.js');   // the ONE routing-plan compiler/resolver (router.js loads the same module) — used here for a side-effect-free dispatch peek
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
 // the specialist classes as {id, tagline}, composed from the shared catalog so team.summon's class list +
 // the [ORCHESTRATION] teamNote never drift from the Recruitment Bay (single source of truth).
@@ -6911,6 +6912,9 @@ const ROUTES = [
   { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
   { m: 'POST', exact: '/api/routing', h: handleRouting },
   { m: 'GET', qsplit: '/api/routing/chain', h: handleRoutingChain },   // qsplit, not exact: `exact` compares the FULL url and this route always carries a query
+  // PROOF (guided workflow Phase 4): run ONE real, labeled sample job through the armed line. Refusals are
+  // 409, never 404 — the finish-the-line card feature-detects the route by exactly that difference.
+  { m: 'POST', exact: '/api/routing/sample', h: handleRoutingSample },
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
   { m: 'POST', exact: '/api/budget/caps', h: handleBudgetCaps },
@@ -7351,6 +7355,136 @@ function handleRoutingChain(req, res) {
   try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ next: next || null }));
+}
+
+/* ---- POST /api/routing/sample — PROOF: feed ONE real, clearly-labeled work item through the armed line.
+
+   Guided-workflow Phase 4 (docs/CONVEYOR_GUIDED_WORKFLOW_PLAN.md): the button that answers "does my system
+   work?". The sample is a REAL run on the REAL unaddressed dispatch path — the same hub mechanics as the DEV
+   inject seam (handleDevInbound), but a first-class production route: router.resolveTarget picks the dock
+   (filter/splitter engage), the run goes through runOnce (budget governor, ledger, real cost), and the shared
+   chain runner advances the rest of the drawn line. First-class ≠ wider: the run is surface:'autonomous' with
+   NO unattendedGrants (the chain-grants law) — an ungranted mutation default-denies exactly like any headless
+   channel run, and the request body cannot smuggle authority (only {text} is read).
+
+   Contract (the finish-the-line card feature-detects this endpoint):
+     · every refusal is 409 {ok:false,error} — never 404, so "route exists but refuses" is distinguishable
+       from "old sidecar without the route" (400 only for unparseable JSON);
+     · ONE sample in flight per station (the lock is taken synchronously before the first await);
+     · 200 answers only after the line DELIVERED: { replies, runs, delivered, streamId, totalUsd } are the
+       real recorded outcomes (runs.jsonl rows scoped by the sample's own streamId — never synthesized).
+   The workitem events carry an additive `sample:true` marker (obj() stanzas in shared/events.js set no
+   additionalProperties:false — re-proven by validate() in test/routing.sample.e2e.test.js). ---- */
+const SAMPLE_CHAT = 'sample';
+const SAMPLE_TEXT = 'SAMPLE JOB: summarize what this work line does, in three sentences.';
+const SAMPLE_PERSONA = 'You are an agent aboard the STARNET station. This is a clearly-labeled SAMPLE JOB — a small test '
+  + 'crate the Commander sent through the work line to prove it runs end to end. Do the small task directly and '
+  + 'report the result clearly, in a few sentences.';
+let sampleHub = null;        // lazy singleton, one per station — mirrors getDevHub
+let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
+let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
+const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
+function getSampleHub() {
+  if (sampleHub) return sampleHub;
+  sampleHub = makeChannelHub({
+    channel: 'sample', maxMessageLength: 4000, agentPrefix: 'smp_', textBatchWaitMs: 0,
+    runOnce: runOnce, store: channelStore,
+    send: (chatId, text) => { sampleReplies.push(String(text == null ? '' : text)); if (sampleReplies.length > 20) sampleReplies.shift(); return Promise.resolve({ ok: true }); },
+    secrets: devHubSecrets,   // the ONE headless resolution rule (see handleRuntimeAgent) — a second rule would drift
+    persona: SAMPLE_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+    newId: () => crypto.randomUUID(), now: () => Date.now(),
+    resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
+    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
+    resolveStation: (agentId) => router.stationFor(agentId),
+    onResolved: (info) => { sampleResolved = info; },
+    // every run of the line (entry dock + hops) records under the sample's OWN workstream, so the recorded
+    // rows in runs.jsonl are scoped exactly and the OUTBOX crate opens a readable transcript session.
+    streamId: () => (sampleInFlight && sampleInFlight.streamId) || undefined
+  });
+  return sampleHub;
+}
+async function handleRoutingSample(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  // ONE PER STATION — the lock is claimed in this synchronous slice (before any await), so two concurrent
+  // posts can never both dispatch. Refusal paths below release it before answering.
+  if (sampleInFlight) {
+    const age = Math.max(0, Math.round((Date.now() - sampleInFlight.startedAt) / 1000));
+    return json(409, { ok: false, error: 'a sample job is already riding the line (started ' + age + 's ago) — wait for it to deliver.' });
+  }
+  sampleInFlight = { streamId: 'sample-' + crypto.randomUUID().slice(0, 8), workitemId: '', startedAt: Date.now() };
+  try {
+    let body = {};
+    try { const raw = await readBody(req, 1 << 16); body = raw && raw.trim() ? (JSON.parse(raw) || {}) : {}; }
+    catch (_) { return json(400, { ok: false, error: 'bad json' }); }   // the finally releases the lock on every exit
+    const text = String(body.text == null ? '' : body.text).trim().slice(0, 2000) || SAMPLE_TEXT;
+    // the armed plan is the precondition — a sample with no line to ride is a lie, not a fallback run.
+    const plan = router.getPlan();
+    if (!plan) {
+      return json(409, { ok: false, error: 'no work line is armed — draw a complete line (INBOX → belts → a crewed dock) and it arms itself.' });
+    }
+    /* side-effect-free dispatch peek: would the armed plan route THIS text to a dock at all? Asked of the
+       SAME compiled plan through the same Pipeline resolver, but with a static lane picker — the router's
+       round-robin counters belong to real dispatch, and the hub's own resolveAgent call below must stay the
+       one and only counter-advancing resolution (one-resolver law). */
+    let peek = null;
+    try { peek = Pipeline.resolveTarget(plan, { tag: (Classify.getTag ? Classify.getTag(text) : undefined), chatId: SAMPLE_CHAT, text: text }, () => 0); } catch (_) { peek = null; }
+    if (!peek) {
+      return json(409, { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
+    }
+    const sec = devHubSecrets();
+    if (!sec.model || (!sec.configured && !sec.key)) {
+      return json(409, { ok: false, error: 'no provider/model is configured for headless runs — connect a provider and set a default model first.' });
+    }
+
+    const t0 = Date.now();
+    const streamId = sampleInFlight.streamId;
+    sampleReplies.length = 0;
+    const hub = getSampleHub();
+    sampleResolved = null;
+    // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
+    // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
+    const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
+      .catch(e => { console.warn('[routing-sample] error:', (e && e.message) || e); return { error: (e && e.message) || String(e) }; });
+    let agentId = '', workitemId = '', isTask = false;
+    try {
+      if (sampleResolved && String(sampleResolved.chatId) === SAMPLE_CHAT && sampleResolved.agentId) {
+        agentId = String(sampleResolved.agentId);
+        isTask = !!sampleResolved.isTask;
+        if (isTask) {
+          workitemId = crypto.randomUUID();
+          sampleInFlight.workitemId = workitemId;
+          const depth = bumpQueue(agentId, +1);
+          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'sample', sample: true, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
+          chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+        }
+      }
+    } catch (e) { console.warn('[routing-sample] intercept error:', (e && e.message) || e); }
+    sampleResolved = null;
+    await settled;
+    if (workitemId) {
+      const d = bumpQueue(agentId, -1);
+      chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
+      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+    }
+    // the REAL recorded outcomes: runs.jsonl rows carrying this sample's streamId (newest-first from the
+    // store, so [0] is the LAST stage that ran — the one whose reply the line delivered).
+    let runs = [];
+    try {
+      runs = (runStore.list(null, { limit: 50 }) || [])
+        .filter(r => r && String(r.streamId || '') === streamId)
+        .map(r => ({ runId: r.runId, agentId: r.agentId, reason: r.reason, usd: r.usd, ts: r.ts, title: r.title, streamId: r.streamId, turns: r.turns }));
+    } catch (_) { runs = []; }
+    const delivered = runs.length ? runs[0] : null;
+    const totalUsd = runs.reduce((s, r) => s + ((typeof r.usd === 'number' && isFinite(r.usd)) ? r.usd : 0), 0);
+    return json(200, {
+      ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
+      agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,
+      replies: sampleReplies.slice(), runs: runs, delivered: delivered, totalUsd: totalUsd
+    });
+  } finally {
+    sampleInFlight = null;
+  }
 }
 
 /* ---- GET /api/budget/status — the live spend pools (day + global) vs their caps, plus session resume headroom.
