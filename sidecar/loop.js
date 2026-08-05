@@ -306,6 +306,19 @@
   const vosKey = (n) => String(n == null ? '' : n).toLowerCase().replace(/\./g, '_');
   const VOS_MUTATORS = new Set(['fs_write', 'fs_edit', 'fs_patch', 'fs_append']);
   const VOS_VERIFIERS = new Set(['verify_run']);
+  // Custom-connector tools are namespaced by the host as mcp__<connector>__<tool>. The server's own
+  // annotations are deliberately NOT trusted here: this classifier only decides whether to spend one bounded
+  // follow-up turn, never whether a call is safe or whether an effect is proven. Unknown MCP verbs therefore
+  // lean conservative (external mutation); familiar observation verbs are eligible read-back tools.
+  const VOS_EXTERNAL_OBSERVE_RE = /(^|_)(verify|verification|check|confirm|read|get|list|fetch|status|inspect|search|show|lookup|query|describe|retrieve)(_|$)/i;
+  function vosExternalEffect(name) {
+    const n = String(name == null ? '' : name).toLowerCase();
+    if (!/^mcp__.+__.+$/.test(n)) return null;
+    const split = n.lastIndexOf('__');
+    const leaf = n.slice(split + 2);
+    return { connector: n.slice(5, split), role: VOS_EXTERNAL_OBSERVE_RE.test(leaf) ? 'observe' : 'mutate' };
+  }
+  const vosExternalRole = name => { const effect = vosExternalEffect(name); return effect ? effect.role : ''; };
   // A check is a command whose whole job is to PASS or FAIL. `git status`, `ls`, `cat` are not evidence.
   const VOS_CHECK_RE = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|build|lint|typecheck|check)|\b(pytest|tox|jest|vitest|mocha|ava|tsc|eslint|ruff|mypy|flake8|rubocop|clippy|gradle|mvn|make)\b|\b(cargo|go|dotnet|swift)\s+(test|build|vet)\b|\bnode\s+[^|;&]*\btest\b/i;
   function vosIsCodePath(p) {
@@ -459,7 +472,9 @@
     const _vos = limits.verifyOnStop;
     const VOS_MAX = (_vos === false) ? 0 : (_vos && _vos.max != null ? _vos.max : 1);
     const vosUnverified = new Set();
+    const vosExternalUnverified = new Map();
     let vosUsed = 0;
+    let vosExternalUsed = 0;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -943,6 +958,22 @@
           messages.push({ role: 'system', content: '<verify_before_done>You changed code in this run (' + touched + ') and are ending without running anything against it. Code that compiles is not code that works, and an unverified claim of "done" is the one thing this station never ships. Run the narrowest real check that proves the change — the project\'s own test/build command via verify_run, or shell_exec if that fits better — then report what it actually returned. If you genuinely cannot run a check here, say so plainly and state what you did NOT verify.</verify_before_done>' });
           continue;
         }
+        // EXTERNAL VERIFY-ON-STOP: a successful custom-connector mutation is not proof that the requested
+        // state now exists. When that same connector exposes a plausible observation/read-back tool, spend one
+        // bounded turn asking the model to use it. Tool names and server annotations are untrusted, so this can
+        // only cause a conservative nudge; it never clears consent, changes scope, or marks evidence as valid.
+        const externalObserverConnectors = new Set(tools.map(t => vosExternalEffect(t && t.function && t.function.name))
+          .filter(effect => effect && effect.role === 'observe').map(effect => effect.connector));
+        const externalTouched = [];
+        for (const [connector, names] of vosExternalUnverified) {
+          if (externalObserverConnectors.has(connector)) externalTouched.push(...names);
+        }
+        if (!empty && !graceUsed && vosExternalUsed < VOS_MAX && externalTouched.length) {
+          vosExternalUsed++;
+          const touched = externalTouched.slice(0, 8).join(', ');
+          messages.push({ role: 'system', content: '<verify_external_before_done>You used an external connector action in this run (' + touched + ') and are ending without a later read-back or verification call. A successful action response is not independent proof that the requested state persisted. Use the connector\'s narrowest read/check/verify tool now, then report only what that result proves. If no meaningful read-back can verify this action, say plainly that the external state was NOT independently verified instead of claiming it was.</verify_external_before_done>' });
+          continue;
+        }
         const continuedTextExists = continuationParts.some(m => String((m && m.content) || '').trim());
         if ((empty || duplicate) && !continuedTextExists && refundsUsed < REFUND_MAX) {
           refundsUsed++;
@@ -1021,6 +1052,12 @@
           const k = vosKey(c.name);
           if (VOS_VERIFIERS.has(k) || (k === 'shell_exec' && vosIsCheckCommand(c.args))) { vosUnverified.clear(); continue; }
           if (VOS_MUTATORS.has(k)) { const p = vosPathOf(c.args); if (vosIsCodePath(p)) vosUnverified.add(p); }
+          const externalEffect = vosExternalEffect(c.name);
+          if (externalEffect && externalEffect.role === 'observe') vosExternalUnverified.delete(externalEffect.connector);
+          else if (externalEffect && externalEffect.role === 'mutate') {
+            if (!vosExternalUnverified.has(externalEffect.connector)) vosExternalUnverified.set(externalEffect.connector, new Set());
+            vosExternalUnverified.get(externalEffect.connector).add(String(c.name));
+          }
         }
       }
 
@@ -1092,5 +1129,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, parallelizable, applyTurnBudget, squeeze } };
 });
