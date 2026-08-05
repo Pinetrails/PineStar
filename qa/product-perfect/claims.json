@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "6bf9e22dcf2ffcce5b068ef2aaa4a55cedd23038",
+    "sourceCommit": "89c49c595587b737818f78d708e508bdf29fd85a",
     "pathSetSha256": "3c76d976b6571a75b7071f817196faa721d37cce0d9639716ba23587d1560b15",
     "files": [
       {
@@ -673,8 +673,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 192408,
-        "sha256": "4537dbedae59545024f9519973fe61e8f181d7809bbb8cade26d08b55b51a833"
+        "bytes": 193395,
+        "sha256": "1d6757d820b979d79009e93f4f233e2b5e1414b0d5c7e5f2cf1c7a0baf4fa78e"
       },
       {
         "path": "frontend/app/stationcommands.js",
@@ -903,8 +903,8 @@
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 94426,
-        "sha256": "4c48ff095c4a2cbf14e650f6a544730b5e28ccfbeababe4fe712d2c8c69ba32f"
+        "bytes": 95117,
+        "sha256": "85743fa963116ca74ff7603486b83525ef2b3a710c411a5747725716d3aa4e42"
       },
       {
         "path": "frontend/app/xp.js",
