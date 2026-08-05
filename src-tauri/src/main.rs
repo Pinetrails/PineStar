@@ -677,9 +677,16 @@ fn migrate_workspace_data(
     let expected = match expected_migration_inventory(&sources) {
         Ok(files) => files,
         Err(error) => {
+            let source_roots = sources
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             log_startup(
                 startup_log,
-                format!("workspace-migration: RETRY required; source inventory failed: {error}"),
+                format!(
+                    "workspace-migration: RETRY required; source inventory failed for {source_roots}: {error}"
+                ),
             );
             return migrated;
         }
