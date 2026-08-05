@@ -113,6 +113,14 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 DEALINGS IN THE SOFTWARE.
 ```
 
+## Bundled Ogg/Opus decoder
+
+StarNet uses [`ogg-opus-decoder`](https://github.com/eshaz/wasm-audio-decoders/tree/main/src/ogg-opus-decoder)
+(Copyright Ethan Halsall, MIT) to decode Telegram voice notes for the local speech-recognition engine. Its
+transitive [`codec-parser`](https://github.com/eshaz/codec-parser) component is provided under the GNU Lesser
+General Public License v3.0 or later. The unmodified packages, their license files, and their corresponding
+source locations are preserved in the bundled `node_modules` tree.
+
 ## StarNet's own name and artwork
 
 The credits above cover third-party work bundled with StarNet. StarNet's own code is released
