@@ -438,6 +438,7 @@ test/conveyor.test.js
 test/pipeline.test.js
 test/blueprints.test.js
 test/guidedline.test.js
+test/ghostline.test.js
 test/routing.b5.test.js
 test/plan-poster.test.js
 test/chain.test.js

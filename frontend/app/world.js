@@ -21,6 +21,7 @@ const World = (() => {
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
   let deskPropId = null, deskFace = 'north';           // set when the hero's desk is a PLACED workstation prop assigned to it (its id + the seat's facing)
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
+  let ghost = null;    // GHOST PROJECTION (guided workflows Phase 3): its own dedicated engine — never mixes with convey
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
   let routingPlan = null;                        // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
   let beltLiveSet = null;                        // { "x,y": true } belt tiles on a complete INTAKE→bound-BAY route (energized render)
@@ -3660,6 +3661,14 @@ const World = (() => {
       // stops = bound-bay hookup tiles (crate-physics truth: an inbound crate is CONSUMED at its dock,
       // never riding past it toward the outbox — an addressed crate stops only at its OWNER's dock)
       convey.tick(dt, now, geo.belts, junctions, routingPlan ? routingPlan.bayTileToAgent : null);
+      /* GHOST PROJECTION (Phase 3): stands down while the tutorial coaches and the INSTANT any
+         real crate rides (real telemetry owns the belt); resumes when the line goes incomplete
+         again. Same belts + junction decisions as the real sim, on its own dedicated engine. */
+      if (ghost) {
+        const coaching = !!(typeof Tutorial !== 'undefined' && Tutorial.isCoaching && Tutorial.isCoaching());
+        ghost.tick(dt, now, geo.belts, junctions, { blocked: coaching || convey.boxCount() > 0,
+          feed: { known: feedState.known, fed: feedState.fed } });
+      }
       convey.drawBelts(ctx, now, T, geo.belts, beltLiveSet);
     }
 
@@ -3726,6 +3735,7 @@ const World = (() => {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
+    if (ghost) ghost.draw(ctx, now, T, 8);       // the projection + its WOULD-captions (NAG_FONT size)
     drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
     drawShippedPallet(now);   // SHIPPED TODAY: completed jobs stack as product crates at the OUTBOX (server-truth count)
@@ -5188,6 +5198,14 @@ const World = (() => {
     beltTileSet = new Set(((geo && geo.belts) || []).map(b => b.x + ',' + b.y));
     routeTagCache = null; hoverBeltTile = null;   // the floor changed — every cached hover answer is stale
     routingNags = buildRoutingNags();
+    /* GHOST PROJECTION (Phase 3): re-derive its route data from the SAME plan + geometry this
+       recompile produced. The live world runs it too (not just REFIT): between REFIT sessions this
+       is the view the user stares at their half-built line in, and the existing nags say what's
+       broken while the ghost shows what the line WOULD do — same local frame, offset {0,0}. */
+    if (typeof GhostLine !== 'undefined' && typeof Pipeline !== 'undefined' && Pipeline.lineComponents && geo) {
+      ghost = ghost || GhostLine.create();
+      ghost.setContext({ plan: routingPlan, comps: Pipeline.lineComponents(geo), offset: { tx: 0, ty: 0 } });
+    }
     // B5: enrich each bay with the capability objectTypes in its room, so the sidecar can isolate that agent's
     // tools to exactly what the floor placed there (the bay->agent binding decides WHO; the room decides WHAT).
     // dockBays too — a LONE bay (no belt) is a complete dock and isolates identically (sense pass 2026-07-05).
@@ -6467,6 +6485,7 @@ const World = (() => {
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
+    ghost: ghost ? ghost.peek() : null,        // the projection's own state (never mixed into `boxes` — dedicated engine)
     work: (() => { const o = {}; for (const [k, v] of runWork) o[k] = { tools: v.tools, dels: v.dels }; return o; })(),   // proven-work tally per in-flight run
     routeAt: (x, y) => routeTagFor(x, y),
     outboundAt: aid => outboundBeltTile(aid),   // where would this agent's product crate spawn (verify hook)
