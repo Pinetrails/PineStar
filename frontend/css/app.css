@@ -3315,26 +3315,51 @@ body.crew-rail-off #screen-game.active {
 .refit-hue-auto .refit-matname { font-size: 11px; letter-spacing: 1.2px; }
 
 /* STARTER LINES — one-click pre-wired layouts (the beginner onramp) + the belt tool's intro line.
-   Tiles speak the same dark-inset chip language as the prop/material galleries above; the intro is
-   THE ONE SENTENCE (the flowchart model) and doubles as the belt palette's idle state. */
+   v2: a single column of UNIFORM cards, each the same anatomy top-to-bottom — schematic viewport
+   (a fixed-height dark stage so every card is the same size no matter the blueprint's footprint),
+   NAME + a derived footprint/dock chip, one dim purpose line. Hover speaks the gallery's phosphor
+   hover language (.refit-proptile), not a private green. The intro stays THE ONE SENTENCE and
+   doubles as the belt palette's idle state. */
 .refit-lineintro {
   width: 100%; margin: 2px 0 4px; font-size: 12px; line-height: 1.35; letter-spacing: .6px;
   color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
 }
-.refit-linegrid { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.refit-linegrid { display: flex; flex-direction: column; gap: 7px; width: 100%; }
 .refit-linetile {
-  display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0;
-  padding: 5px 6px 4px; cursor: pointer; border-radius: 5px; font-family: inherit;
-  background: rgba(0,0,0,.34); border: 1.5px solid rgba(123,200,138,.30); color: #9fd9be;
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; min-width: 0;
+  padding: 5px 6px 6px; cursor: pointer; border-radius: 5px; font-family: inherit; text-align: left;
+  background: rgba(0,0,0,.34); border: 1.5px solid var(--ph-faint); color: var(--ph);
 }
-.refit-linetile:hover { border-color: var(--ok); color: #cfffe0; background: rgba(123,200,138,.07); }
+.refit-linetile:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); }
 .refit-linetile.active {
-  border-color: var(--ok); color: #cfffe0;
-  box-shadow: 0 0 10px rgba(123,200,138,.30), inset 0 0 14px rgba(0,0,0,.55);
+  border-color: var(--ph-bright); color: var(--ph-bright);
+  box-shadow: 0 0 10px var(--ph-glow), inset 0 0 14px rgba(0,0,0,.55);
+}
+/* the schematic stage: fixed height = uniform cards; the canvas centres inside at 1:1 */
+.refit-linetile-view {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 70px;
+  border-radius: 3px; background: #0b0f0e; box-shadow: inset 0 0 0 1px rgba(0,0,0,.55);
 }
 .refit-linetile-cv { display: block; max-width: 100%; image-rendering: pixelated; pointer-events: none; }
+.refit-linetile-hd { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
+.refit-linetile .refit-matname { font-size: 12px; letter-spacing: 1.1px; text-align: left; }
+/* the stat chip mixes VT323 with fallback-font glyphs ('×' '·') — BOX-centred, never padded by
+   font metrics (the symbol-glyph law) */
+.refit-linetile-stat {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  padding: 1px 5px; border: 1px solid var(--ph-faint); border-radius: 3px;
+  font-size: 10.5px; letter-spacing: 1px; line-height: 1.4;
+  color: var(--ph-dim); background: rgba(0,0,0,.3); white-space: nowrap;
+}
+/* one line of WHAT IT DOES; 2-line floor keeps every card the same height when a purpose wraps */
+.refit-linetile-why {
+  font-size: 11px; line-height: 1.3; letter-spacing: .4px; min-height: 29px;
+  color: var(--ph-dim); opacity: .9;
+}
+/* the operational footing sits INSIDE the shelf, directly under the cards */
 .refit-linenote {
-  width: 100%; margin-top: 4px; font-size: 10.5px; letter-spacing: 1.2px; line-height: 1.3;
+  width: 100%; margin-top: 2px; padding-top: 5px; border-top: 1px solid var(--ph-faint);
+  font-size: 10.5px; letter-spacing: 1.2px; line-height: 1.3;
   font-family: 'VT323', monospace; color: var(--ph-dim); opacity: .85;
 }
 /* the guide card's lead — THE ONE SENTENCE above the three beats */
