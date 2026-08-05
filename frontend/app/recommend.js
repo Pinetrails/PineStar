@@ -54,7 +54,10 @@
   /* The one priority order. Its head is beatcard.js's DEFAULT_PRIORITY (memory > study > arc > trust >
      thread > rate > nudge); its tail expands the single 'nudge' slot family into the five gentle channels
      in the EXACT precedence the old wireCuriosity if/return ladder used (suggestion → seed → routine →
-     recruitment → curiosity), so consolidating the ladder changes who can speak, never the pecking order. */
+     recruitment → curiosity). That order is the TIE-BIAS — what decides when the station knows nothing about
+     either channel — NOT a wall: since the band restructure, evidence really does reorder same-band kinds, which
+     is the point of measuring it. (This comment used to claim consolidating the ladder "changes who can speak,
+     never the pecking order". That was true only while the scorer was inert; it is exactly what got fixed.) */
   const BANDS = [
     ['memory'],                                                 // the run reporting back — never an interruption
     ['study', 'arc', 'trust', 'thread'],                        // the turn-ins: real evidence the run just produced
@@ -90,6 +93,11 @@
   const STREAK_MAX = 20;   // …bounded
   const DECLINE_STEP = 15; // per recent decline…
   const DECLINE_MAX = 45;  // …bounded
+  /* MOD_CAP is a SLACK INVARIANT CAP, not a working limit — it is never reached and is not meant to be. It exists
+     so the band wall is enforced STRUCTURALLY (2 × MOD_CAP < BAND_GAP_MIN, asserted below and in recommend.test),
+     which keeps the guarantee true for any future modifier someone adds without re-deriving the arithmetic.
+     The really achievable range today is much smaller: VOI 0..+60, streak 0..+20, declines 0..−45, strength
+     −15..0, quality −15..+7.5 → mod ∈ [−75 .. +87.5]. So the clamp below is inert at present, deliberately. */
   const MOD_CAP = 240;     // the TOTAL modifier budget, ± — see BAND_GAP_MIN below
 
   // the base score of every kind, derived from the band table. Higher band + earlier inside it = higher base.
@@ -118,7 +126,9 @@
      that abstain do so because there is genuinely nothing to read (curiosity asks rather than asserts, thread has
      no dim and no age, the re-confirm ask asserts nothing). The residual edge is bounded by STRENGTH_MAX/2 —
      under two rank steps, never a band — and fabricating a reading to erase it would cost more than it buys. */
-  const STRENGTH_MAX = 30;      // the within-BAND swing thin evidence may cost a candidate (3 rank steps)
+  // STRENGTH_MAX is the SCALE, not the swing: the multiplier band is [0.5 .. 1], so the real term is −15 .. 0 —
+  // i.e. thin evidence costs at most 1.5 rank steps, and strong evidence is worth exactly nothing (by design).
+  const STRENGTH_MAX = 30;
   const STRENGTH_FLOOR = 0.5;   // strength 0 → ×0.5 → −STRENGTH_MAX/2 = −15.
   /* QUALITY OUTRANKS RANK, NOT EVERYTHING (measured live 2026-08-04). Its swing comfortably clears a RANK_STEP,
      so a channel's real outcome record reorders it against its band siblings — which is the whole point. It does
@@ -126,18 +136,23 @@
      valuable thing the station can ask about. That is deliberate and it is this module's stated law — silencing a
      channel is the job of the per-channel caps and the Commander's own explicit "never", not of a number the
      station computed. Raising this until quality could veto VOI was tried and reverted. */
-  const QUALITY_MAX = 30;       // the within-BAND swing a channel's real outcome history may move it
+  // …and the same SCALE-not-swing reading: the multiplier band is [0.5 .. 1.25], so the real term is −15 .. +7.5.
+  // A dud channel loses 1.5 rank steps; a proven one gains under one. Both clear a tie, neither clears a band.
+  const QUALITY_MAX = 30;
   const QUALITY_FLOOR = 0.5;    // matches recquality.js Q_FLOOR — a dud channel is quieter, NEVER silent
   const QUALITY_CAP = 1.25;     // matches recquality.js Q_CAP — a proven channel earns a small, bounded edge
 
   /* A READING THE STATION CANNOT PARSE IS NO READING AT ALL (fail-open, explicit). `Number('')`, `Number(false)`
      and `Number(null)` are all a perfectly finite 0 — which used to hand an empty string or a `false` the FULL
-     thin-evidence penalty, i.e. the station punished a channel for a field it had failed to read. Anything that
-     is not a real, finite number reads NEUTRAL here, exactly like an absent field. */
+     thin-evidence penalty, i.e. the station punished a channel for a field it had failed to read.
+     ALLOWLIST, NOT DENYLIST (2026-08-04). The denylist version ('' / null / boolean) still let `' '`, `[]` and
+     `[0]` through as a hard 0 — the same bug, a shape further out. Only a real finite number, or a string that
+     actually spells one, is a reading; EVERY other shape is neutral. recquality.js num() is the same predicate,
+     deliberately duplicated because that module is pure and imports nothing. */
   function reading(v) {
-    if (v == null || v === '' || typeof v === 'boolean') return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'string') { const t = v.trim(); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? n : null; }
+    return null;   // null / undefined / boolean / array / object / Date → no reading at all
   }
   // an unreadable / absent multiplier is NEUTRAL (1) — the station never invents a reading it does not have.
   function damp(v, floor, cap) {
@@ -172,7 +187,9 @@
   // the only leading words whyLine may de-capitalize: sentence-starter pronouns/determiners that carry no
   // identity of their own. Never a proper noun, a language, a product, or a person's name.
   const STARTER = /^(You|It|This|That|These|Those|We|They|There|I)\b/;
-  function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
+  // streak / declines are COUNTS: an absent or unparseable one is zero of them. Routed through reading() so the
+  // "what counts as a number" question has exactly one answer in this module.
+  function num(v) { const n = reading(v); return n == null ? 0 : n; }
   function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
 
   // a candidate may speak only if it can cite. This is the evidence-or-silence law in one predicate.

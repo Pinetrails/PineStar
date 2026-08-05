@@ -214,6 +214,12 @@ const SuggestStore = (() => {
         // THE STAMP IS ARMED OFF THE LAUNCH, NOT OFF THE CLICK (fixed 2026-08-04): doBuild refuses while the
         // agent is mid-run, and arming first left the stamp waiting for a run this offer never started — the
         // Commander's next unrelated manual run then claimed it. Arm only when a run really kicked off.
+        /* ⚠ AN ORDERING DEPENDENCY THIS RELIES ON, NAMED SO IT IS NOT BROKEN BY ACCIDENT: arming AFTER the launch
+           is only safe because the run's id arrives ASYNCHRONOUSLY. chat.js claims the pending stamp inside the
+           stream's `onRunId` callback (RUN_META, recClaimRun), which fires after the network round-trip — well
+           after doBuild() has returned and the noteAccept below has run. If onRunId ever became synchronous with
+           Chat.send(), claimForRun would run against a still-empty `pending` and every suggestion-spawned run
+           would silently lose its attribution. Locked by recqualitystore.test §10. */
         const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
         if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' });
           const launched = doBuild(parsed);

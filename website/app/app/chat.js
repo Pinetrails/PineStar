@@ -3707,11 +3707,16 @@ const Chat = (() => {
            signal, the mildest thing the loop records. */
         if (decision.action === 'confirm') {
           const g = GoalStore.confirm(res.belief, decision.path);
+          /* THE FOLD IS GATED ON THE REAL RESULT. GoalStore.confirm returns null when the path was edited down to
+             something Goals.makeGoal will not build — no goal tree was created, so recording an ACCEPT would be
+             the loop crediting this channel for an offer that produced nothing. It is not a decline either (the
+             Commander did not refuse; their edit was unusable), so it folds NOTHING at all — the same silence the
+             loop keeps for every outcome the harness cannot name. */
           if (g) {
             if (typeof SFX !== 'undefined' && SFX.quest) { try { SFX.quest(); } catch (_) {} }
             if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◇ goal path set — track it under ⚑ QUESTS', 'gold');
+            recAccept('arc', 'goals', false);
           }
-          recAccept('arc', 'goals', false);
         } else {
           GoalStore.declineDecomposition(res.belief);   // not-now / rejected edit: re-offer only when the belief changes (never nag)
           recDecline('arc', 'goals', true);

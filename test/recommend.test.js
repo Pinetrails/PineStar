@@ -56,6 +56,33 @@ A.eq(Recommend.sameBand('suggest', 'curiosity'), true, 'two gentle channels shar
 A.eq(Recommend.sameBand('arc', 'curiosity'), false, 'a turn-in and a nudge never do');
 A.ok(Recommend.MOD_CAP * 2 < Recommend.BAND_GAP_MIN,
   'the TOTAL modifier budget is strictly under the smallest gap between adjacent bands (' + Recommend.MOD_CAP + '×2 < ' + Recommend.BAND_GAP_MIN + ')');
+/* MOD_CAP is a SLACK INVARIANT, not a working limit — the comment beside it says so, and this proves it. The
+   real achievable range is VOI 0..+60, streak 0..+20, declines 0..−45, strength −15..0, quality −15..+7.5. */
+{
+  const base = Recommend.BASE.curiosity;
+  const hottest = Recommend.score({ kind: 'curiosity', why: 'x', dim: 'goals', streak: 99, strength: 1, quality: Recommend.QUALITY_CAP },
+    { dims: { goals: { weight: 1, conf: 0 } } }) - base;
+  const coldest = Recommend.score({ kind: 'curiosity', why: 'x', declines: 99, strength: 0, quality: Recommend.QUALITY_FLOOR }) - base;
+  A.eq(Math.round(hottest * 10) / 10, 87.5, 'the largest modifier stack the scorer can actually build is +87.5');
+  A.eq(Math.round(coldest * 10) / 10, -75, '…and the smallest is −75');
+  A.ok(Math.max(Math.abs(hottest), Math.abs(coldest)) < Recommend.MOD_CAP,
+    'so the ±' + Recommend.MOD_CAP + ' clamp is inert today — it is the structural guard for a FUTURE modifier, not a live limit');
+}
+/* ── 4a. A READING IS A NUMBER OR IT IS NOTHING (fail-open for EVERY non-numeric shape, 2026-08-04) ──
+   The old denylist ('' / null / boolean) still let `' '`, `[]` and `[0]` through Number() as a hard 0 — the
+   identical bug one shape further out, and a hard 0 in `strength` is the FULL thin-evidence penalty applied to a
+   field the station simply failed to read. recquality.js num() is the same predicate. */
+{
+  const flat = { kind: 'seed', why: 'x' };
+  for (const junk of [' ', '', '  \n', [], [0], [1], {}, false, true, null, undefined, NaN, Infinity, new Date(0), 'abc'])
+    A.eq(Recommend.score(Object.assign({ strength: junk }, flat)), Recommend.score(flat),
+      'an unreadable strength (' + JSON.stringify(junk) + ') is NEUTRAL, never a penalty');
+  for (const real of ['0', ' 0.25 ', 0.25])
+    A.ok(Recommend.score(Object.assign({ strength: real }, flat)) < Recommend.score(flat),
+      'a real numeric reading (' + JSON.stringify(real) + ') — including one spelled as a string — still discounts');
+  A.eq(Recommend.score(Object.assign({ streak: [] }, flat)), Recommend.score(flat), 'and an unreadable COUNT is zero of them, not a fabricated one');
+  A.eq(Recommend.score(Object.assign({ quality: ' ' }, flat)), Recommend.score(flat), 'the same predicate guards the quality multiplier');
+}
 const hotCuriosity = { kind: 'curiosity', why: 'x', dim: 'goals', streak: 99, strength: 1, quality: Recommend.QUALITY_CAP };
 const coldTrust = { kind: 'trust', why: 'y', declines: 99, strength: 0, quality: Recommend.QUALITY_FLOOR };
 A.eq(Recommend.pick([hotCuriosity, coldTrust], uRead).kind, 'trust',
@@ -251,8 +278,11 @@ A.ok(/kind === 'confirmed'\) return 'you confirmed/.test(citeBody),
   'recCite gives the affirmation its own verb: “you confirmed …”, never “you said …”');
 for (const fn of ['function arcCandidate(', 'function reconfirmCard(']) {
   A.ok(/recCite\((?:text|prop\.text), beliefCiteKind\(belief\)\)/.test(A.fnBody(chatSrc, fn)),
-    fn.replace(/^function |\($/g, '') + ' cites its belief by that provenance, never a blanket recQuote');
+    fn.replace(/^function |\($/g, '') + ' cites its belief by that provenance, never a blanket "you said"');
 }
+// …and the blanket composer both call sites moved off is GONE, not left lying around to be reached for again.
+A.eq(/function recQuote\b/.test(chatSrc), false, 'the dead blanket recQuote() composer is deleted');
+A.eq(/\brecQuote\(/.test(chatSrc), false, 'and nothing calls it');
 // …and the producer stamps that discrimination in the first place
 A.ok(/speaker: \(nq && spoken\.indexOf\(nq\) >= 0\) \? 'user' : 'other'/.test(fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'threadmine.js'), 'utf8')),
   'threadmine stamps WHO said the quote it mined');

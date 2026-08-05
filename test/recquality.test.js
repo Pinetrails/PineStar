@@ -146,6 +146,21 @@ A.eq(RQ.beliefFingerprint('goals', null), '', 'no belief, no fingerprint');
   A_.ok(/n > 100 \? 1 : n \/ 100/.test(pctBody), 'and a 0..100 percentage maps onto the 0..1 strength band, clamped');
 }
 
+/* ── 6c. THE SAME "a reading is a number or it is nothing" PREDICATE (2026-08-04) ──
+   num() is the gate every read in this module passes through, and it used to DENYLIST the bad shapes — so `' '`,
+   `[]` and `[0]` still reached Number() and came back a hard, finite 0. In dimStrength/staleness a hard 0 is
+   CONFIDENCE ZERO, which marks a belief stale and asks the Commander to re-confirm it on a field the station
+   merely failed to read. Mirrors recommend.js reading() exactly. */
+for (const junk of [' ', '', '  \n', [], [0], [1], {}, false, true, null, undefined, NaN, 'abc']) {
+  A.eq(RQ.dimStrength({ dims: { goals: { conf: junk } } }, 'goals'), null,
+    'an unreadable confidence (' + JSON.stringify(junk) + ') is NO reading — never confidence zero');
+  A.eq(RQ.staleness(old, NOW, { dims: { goals: { weight: 3, conf: junk } } }, 'goals').stale, false,
+    '…so it never marks a belief stale (' + JSON.stringify(junk) + ')');
+  A.eq(RQ.countStrength(junk), null, 'and an unreadable count is no reading either (' + JSON.stringify(junk) + ')');
+}
+A.eq(RQ.dimStrength({ dims: { goals: { conf: '0.4' } } }, 'goals'), 0.4, 'a number spelled as a string IS a reading');
+A.eq(RQ.dimStrength({ dims: { goals: { conf: 0 } } }, 'goals'), 0, 'and a REAL zero still reads as zero');
+
 /* ── 7. the module is pure ── */
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'frontend', 'app', 'recquality.js'), 'utf8');
 A.eq(/\bdocument\b/.test(src), false, 'recquality.js touches no DOM');

@@ -9,7 +9,8 @@
    HOW AN OUTCOME IS ATTRIBUTED (and why it can't be faked):
      1. The Commander ACCEPTS an offer, AND the launch that accept triggers really starts. Only then does the
         channel arm a PENDING stamp ({ channel, dim, id, at }) — an accept whose launch no-opped (a busy stream)
-        arms nothing, because there is no work to attribute.
+        arms nothing, because there is no work to attribute. It is not silent either: the caller settles that
+        refusal as `deferred` on the spot (right idea, wrong moment) and tells the Commander why.
      2. The very next hero run START claims it (chat.js, at the same point it writes RUN_META) — so the stamp is
         visible on the run's own meta, and the run is the provable link between "the offer" and "the work". The
         stamp EXPIRES after PENDING_TTL_MS: past that window the next run is not this offer's work, and saying it
@@ -171,7 +172,14 @@ const RecQualityStore = (() => {
      happened stayed armed indefinitely and the Commander's next unrelated manual run, minutes or hours later,
      was recorded as the work that offer produced. An expired stamp settles as `deferred`: the offer was accepted
      and no work followed it, which is a real, mild signal about this channel — and it is the ONLY thing the
-     harness can honestly say about it. */
+     harness can honestly say about it.
+     EXPIRY IS LAZY, AND THAT IS THE HONEST SCOPE OF IT. Nothing runs on a timer: an armed stamp is only ever
+     examined here, so it folds its `deferred` when (and only when) a LATER HERO RUN STARTS. A session where the
+     Commander accepts an offer, the launch never happens, and they then start no further run records nothing —
+     and `pending` is memory-only, so a reload drops it entirely. Both are deliberate: the alternative is a timer
+     that writes a verdict about an offer while the Commander is away from the keyboard, on no new evidence.
+     A run REFUSED at the moment of accept is a different case and is settled eagerly at the call site
+     (suggeststore.js), because there the refusal is observed rather than merely un-observed. */
   function claimForRun(runId, agentId) {
     if (!ready() || !pending || !runId) return null;
     if ((agentId || 'agent') !== 'agent') return null;

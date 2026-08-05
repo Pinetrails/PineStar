@@ -38,11 +38,15 @@
   /* NULL IS NOT ZERO (fixed 2026-08-04). `Number(null)`, `Number('')` and `Number(false)` are all a perfectly
      finite 0, so an explicit `conf: null` used to read as CONFIDENCE ZERO — which marked the belief stale and
      asked the Commander to re-confirm it — while an ABSENT conf correctly failed open to neutral. The same
-     unreadable state has to fail open the same way whichever shape it arrives in. */
+     unreadable state has to fail open the same way whichever shape it arrives in.
+     ALLOWLIST, NOT DENYLIST (2026-08-04). Listing the bad shapes ('' / null / boolean) still let `' '`, `[]` and
+     `[0]` through as a hard 0 — the identical bug one shape further out. Only a real finite number, or a string
+     that actually spells one, is a reading. Kept byte-identical to recommend.js reading(); duplicated rather than
+     shared because this module is pure and imports nothing. */
   function num(v) {
-    if (v == null || v === '' || typeof v === 'boolean') return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'string') { const t = v.trim(); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? n : null; }
+    return null;   // null / undefined / boolean / array / object / Date → no reading at all
   }
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 

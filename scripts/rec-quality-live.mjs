@@ -5,8 +5,10 @@
 
      1. Both halves are loaded and read the LIVE understanding/dossier state (no injected fakes).
      2. THE SCORER CHANGES A REAL OUTCOME: two REAL agent.run.end passes, the gentle-band field the pass itself
-        stages captured each time, real outcomes folded through the store's own API in between — and the
-        same-band winner moves off the one pure priority order would have named.
+        stages captured each time (projected to kind/dim/why/strength/quality — base, streak and declines are
+        dropped), real outcomes folded through the store's own API in between — and the same-band winner moves
+        off the one pure priority order would have named. NB slice 2 WRITES: it trains the station's mint,
+        prospect and quality stores, which slices 3/5 then read. It is not a read-only measurement.
      3. The QUALITY WEIGHT reaches the live pass: Recommend.pick is wrapped, a real agent.run.end is emitted,
         and the candidates the REAL recommendPass hands the spine are inspected for their earned `quality`.
      4. The ATTRIBUTION STAMP lands on the spawned work's meta: an accepted offer is armed, a real run is
@@ -76,11 +78,25 @@ try {
      could actually produce ever ranked differently from pure priority order.
      The honest proof: drive TWO real agent.run.end passes, capture the REAL gentle-band field each one stages,
      apply REAL outcomes through the store's own API in between, and watch the same-band winner change. The first
-     pass's pick is SUPPRESSED (returns null) so no card fires and no session/channel cap is spent — the field
-     the pass staged is the measurement, and nothing about the station's state is disturbed by taking it. */
+     pass's pick is SUPPRESSED (returns null) so no card fires and no session/channel cap is spent.
+
+     WHAT THIS SLICE REALLY DOES TO THE STATION, stated plainly (it is NOT read-only, and an earlier version of
+     this comment claimed it was). Suppressing pick() only stops a CARD rendering. To earn the candidates it
+     measures, the block below writes real state that later slices then run against: four MintStore.observe
+     directives, four ProspectStore.noteLaunch records, CuriosityStore.noteWork ticks, and — between the two
+     passes — SIXTY real RecQualityStore.noteOutcome folds (30 'miss' on the cold winner, 30 'great' on the
+     runner-up). Slices 3/5 deliberately re-read that same store afterwards, so the ordering here is load-bearing:
+     the two channels this slice trains are gentle-band ones it picks at runtime, and slice 3 trains 'curiosity'
+     separately for exactly that reason. Move this slice and the later ones measure a different station.
+
+     WHAT THE CAPTURE KEEPS is also less than the whole candidate: the field is projected to
+     {kind, dim, why, strength, quality} — `base`, `streak` and `declines` are DROPPED. That is sound for the
+     pair measured here (dim-less gentle channels carry none of the three) but it means the re-scoring printed
+     below is the score of the PROJECTION, not necessarily of the original candidate. The winner assertions
+     themselves are computed by the real Recommend.pick on the same projection, so they compare like with like. */
   // PASS 1 — the field as the station stages it COLD (every channel neutral). pick() is SUPPRESSED for both
-  // passes: nothing fires, no session/channel cap is spent, no nudge lands in the feed to disturb the slices
-  // below. The field the pass staged and the arbiter that ranks it are the real ones; only rendering is skipped.
+  // passes: no card fires, no session/channel cap is spent, no nudge lands in the feed. The field the pass staged
+  // and the arbiter that ranks it are the real ones; only rendering is skipped (see the caveats above).
   const staged = await evalJS(cdp, `(() => {
     const GENTLE = Recommend.BANDS[Recommend.BANDS.length - 1];
     const orig = Recommend.pick;

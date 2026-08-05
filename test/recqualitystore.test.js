@@ -165,7 +165,15 @@ S.noteAccept({ channel: 'routine', spawnsWork: true, id: 'second' });
 A.eq(S._pending().id, 'second', 'the newest accept holds the pending slot');
 A.ok(S.weightFor('seed') < NEUTRAL, 'and the accept it displaced is SETTLED (deferred), never dropped on the floor');
 A.eq(S.weightFor('routine'), NEUTRAL, 'the new accept itself still credits nothing yet');
-// (c) the caller-side gate: an accept that launched nothing must never reach noteAccept at all (source-lock in §10)
+/* (c) the caller-side gate, proved at the STORE level: when the launch is refused the caller never calls
+   noteAccept at all (source-lock in §10), and this is the state that leaves behind — nothing armed, so the
+   Commander's next manual run claims nothing and no weight moves off a click that started no work. */
+S.reset(); CLOCK = 1780000000000; S.init({ now: () => CLOCK });
+A.eq(S._pending(), null, 'a refused launch arms NOTHING (the accept never reaches the store)');
+A.eq(S.claimForRun('run-unrelated', 'agent'), null, 'so the Commander’s next manual run claims no attribution');
+A.eq(S.stampFor('run-unrelated'), null, 'and carries no stamp of its own');
+bus.emit('agent.run.end', { runId: 'run-unrelated', reason: 'done' });
+A.eq(S.weightFor('suggest'), NEUTRAL, 'its clean finish credits no channel — the click that started nothing moved nothing');
 S.reset(); S.init({});
 
 /* ── 9. the store is a READ-ONLY citizen of the event spine ── */
@@ -330,8 +338,24 @@ A.ok(deferIdx > 0 && cardBody.indexOf('recAccept', deferIdx) > cardBody.indexOf(
 A.ok(/if \(confirmed\) recAccept\('arc', dim, false\); else recDecline\('arc', dim, false\);/.test(cardBody),
   'the re-confirm folds POSITIVE on confirm and a real DECLINE on deny (it used to fold "engaged" on both)');
 const offerArcBody = A.fnBody(chatSrc, 'async function offerArc(');
+// fnBody does not parse regex literals, so a quote inside a regex character class can run the slice long (see
+// test/_assert.js). Guard every extraction that matters: non-empty, and nowhere near the whole file.
+A.ok(offerArcBody.length > 400 && offerArcBody.length < 12000, 'the offerArc extraction is a real function body, not a mis-scan (' + offerArcBody.length + ' chars)');
+A.ok(cardBody.length > 400 && cardBody.length < 12000, 'and so is the reconfirmCard one (' + cardBody.length + ' chars)');
+A.ok(arcBody.length > 200 && arcBody.length < 8000, 'and the arcCandidate one (' + arcBody.length + ' chars)');
 A.ok(/recAccept\('arc', 'goals', false\);/.test(offerArcBody) && /recDecline\('arc', 'goals', true\);/.test(offerArcBody),
   'and the arc’s REAL confirm flow trains the channel too — it recorded nothing at all before');
+/* …but only when a goal tree really got built. GoalStore.confirm returns null on a path edited down to
+   something Goals.makeGoal will not build — crediting the channel for that is the loop rewarding an offer that
+   produced nothing. It is not a decline either (the Commander did not refuse), so it folds NOTHING. */
+{
+  const iG = offerArcBody.indexOf('const g = GoalStore.confirm(');
+  const iAccept = offerArcBody.indexOf("recAccept('arc', 'goals', false)");
+  const iElse = offerArcBody.indexOf('} else {', iG);
+  A.ok(iG > 0 && iAccept > iG && iAccept < iElse, 'the accept fold sits INSIDE the if (g) branch…');
+  A.ok(/if \(g\) \{[\s\S]*recAccept\('arc', 'goals', false\);\s*\n\s*\}/.test(offerArcBody),
+    '…gated on the real confirm result, so an unusable edited path credits nothing');
+}
 // F5: deny's real consequence is disclosed, in the house's short-aside voice
 A.ok(/i won’t re-learn it from your work/.test(cardBody),
   'the note discloses what DENY really does: forget() also denylists the text against being re-learned from work');
