@@ -176,8 +176,19 @@ A.ok(/app\.path\(\)\s*\.app_data_dir\(\)/.test(mainRs) && /join\("workspaces"\)/
   'Windows and macOS use the stable bundle app-data directory for the live workspace');
 A.ok(/cfg\(windows\)[\s\S]*?to_lowercase\(\)[\s\S]*?cfg\(not\(windows\)\)[\s\S]*?a == b/.test(mainRs),
   'Windows path identity is case-insensitive while macOS/non-Windows path identity is exact');
-A.ok(/MIGRATION_PENDING_MARKER[\s\S]*?write\(&pending[\s\S]*?copy_missing_dir[\s\S]*?write\(&marker/.test(mainRs),
-  'workspace migration writes pending before copy and completion only after copy');
+const migrationStart = mainRs.indexOf('fn migrate_workspace_data(');
+const migrationEnd = mainRs.indexOf('\n#[cfg(test)]', migrationStart);
+const migrationRs = mainRs.slice(migrationStart, migrationEnd);
+const pendingStage = migrationRs.indexOf('std::fs::write(stage.join(MIGRATION_PENDING_MARKER)');
+const copyToStage = migrationRs.indexOf('copy_missing_dir(source, &stage)');
+const sealStage = migrationRs.indexOf('std::fs::write(stage.join(MIGRATION_MARKER)');
+const revalidateStage = migrationRs.lastIndexOf('validate_staged_generation(&stage, &receipt)');
+const activateStage = migrationRs.lastIndexOf('activate_staged_generation(current, &stage)');
+A.ok(migrationStart >= 0 && migrationEnd > migrationStart, 'workspace migration implementation is present');
+A.ok(pendingStage >= 0 && pendingStage < copyToStage,
+  'workspace migration marks the sibling stage pending before copying user state');
+A.ok(copyToStage < sealStage && sealStage < revalidateStage && revalidateStage < activateStage,
+  'workspace migration seals and revalidates the copied generation before atomic activation');
 A.ok(/if let Err\(e\) = install_result[\s\S]*?\*guard = Some\(update\)/.test(mainRs),
   'a failed native update restores the verified pending update for retry');
 A.ok(/UpdateInstallEvent::Installing[\s\S]*?app\.restart\(\)/.test(mainRs),
