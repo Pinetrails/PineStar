@@ -2858,6 +2858,40 @@ mod sidecar_reap_tests {
     use super::*;
 
     #[test]
+    fn desktop_owned_env_replaces_poisoned_brand_aliases() {
+        fn explicit_env(command: &Command, name: &str) -> Option<String> {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new(name))
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        }
+
+        let mut command = Command::new("node");
+        command.env("STARNET_PORT", "poisoned-parent-value");
+        set_sidecar_branded_env(&mut command, "SKYNET_PORT", "60874");
+        assert_eq!(
+            explicit_env(&command, "SKYNET_PORT").as_deref(),
+            Some("60874")
+        );
+        assert_eq!(
+            explicit_env(&command, "STARNET_PORT").as_deref(),
+            Some("60874")
+        );
+
+        command.env("SKYNET_API_TOKEN", "stale-legacy-value");
+        set_sidecar_branded_env(&mut command, "STARNET_API_TOKEN", "fresh-launch-token");
+        assert_eq!(
+            explicit_env(&command, "SKYNET_API_TOKEN").as_deref(),
+            Some("fresh-launch-token")
+        );
+        assert_eq!(
+            explicit_env(&command, "STARNET_API_TOKEN").as_deref(),
+            Some("fresh-launch-token")
+        );
+    }
+
+    #[test]
     fn dev_path_fallback_is_never_reapable() {
         // node_binary()'s dev fallback is a bare relative "node" resolved via PATH. Reaping by
         // it would match EVERY node.exe on the machine — must be refused.
