@@ -192,6 +192,40 @@ const WorldModel = (() => {
   };
   const WALL_ORDER = ['bulkhead', 'courses', 'service', 'plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
 
+  /* the HULL material catalog — THE THIRD SURFACE AXIS (2026-08-05, Andrew, circling the outside
+     edges of five rooms in a screenshot: "the outer walls are not customizable... for users who
+     want to put their station in the forest, and want a more cabin feel").
+
+     DECK and WALLS dress the INSIDE of a room. The hull is everything you see of it from OUTSIDE:
+     the plate that surrounds the footprint, the texture over that plate, the framed rim + bolts,
+     the rounded corner arcs, and — the surface that actually reads at a glance — the SKIRT, the
+     tall face extruded below the station's silhouette. All five were painted from five hardcoded
+     constants, so every room in every station had the identical dark riveted shell. Now the shell
+     is per room, which is what makes a mixed station read as a CITY of separate buildings rather
+     than one hull with seams in it.
+
+     `suggest` is the hue a material defaults to when the room carries no explicit hullStyle. Unlike
+     the wall axis — where `suggest` is only a UI convenience — this one binds in the MODEL, because
+     a hull's default has to be a tone the material was drawn for: TIMBER at the station's own
+     #191712 is black wood, which is nobody's cabin. `station` alone suggests null, meaning "keep
+     the shell's own tone" — the literal legacy constants, so every station already built renders
+     pixel-identical until someone paints it.
+
+     Adding one here is the whole job: give it a recipe in stationbake's HULL_RECIPES and it appears
+     in the REFIT SURFACE palette's HULL target automatically. */
+  const HULL_MATERIALS = {
+    station:   { label: 'STATION',   suggest: null,     blurb: 'riveted hull plate — the shell you launched with' },
+    timber:    { label: 'TIMBER',    suggest: 'walnut', blurb: 'stacked log courses — the cabin' },
+    clapboard: { label: 'CLAPBOARD', suggest: 'ash',    blurb: 'lapped siding boards — the farmhouse' },
+    shingle:   { label: 'SHINGLE',   suggest: 'oak',    blurb: 'overlapping shingles — a pitched roof from above' },
+    brick:     { label: 'BRICK',     suggest: 'rust',   blurb: 'staggered courses + mortar — the townhouse' },
+    stone:     { label: 'STONE',     suggest: 'ash',    blurb: 'irregular rubble masonry — the cottage' },
+    stucco:    { label: 'STUCCO',    suggest: 'amber',  blurb: 'rendered plaster + corner quoins — adobe' },
+    curtain:   { label: 'CURTAIN',   suggest: 'indigo', blurb: 'glass curtain wall + mullions — the tower' },
+    hedge:     { label: 'HEDGE',     suggest: 'fern',   blurb: 'clipped hedge — the garden wall' },
+  };
+  const HULL_ORDER = ['station', 'timber', 'clapboard', 'shingle', 'brick', 'stone', 'stucco', 'curtain', 'hedge'];
+
   /* room categories — a capability-zone label + a default floor (hue + material). kind drives
      nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
      look. `mat` is the DEFAULT deck material a room of this kind is built with — a room whose
@@ -244,6 +278,19 @@ const WorldModel = (() => {
     if (rm && FLOOR_STYLES[rm.floorStyle]) return rm.floorStyle;
     return 'hull';
   };
+  /* THE AUTHORITY on a room's exterior shell (stationbake's HULL_RECIPES fallback is only for
+     geometry arriving without one). Defaults to `station` so nothing already built moves. */
+  const hullMatOfRoom = rm => (rm && HULL_MATERIALS[rm.hullMat]) ? rm.hullMat : 'station';
+  /* A HULL'S HUE, or null for "the shell's own tone". Explicit paint wins; otherwise the material's
+     own suggested hue (see the HULL_MATERIALS note on why this binds in the model and the wall
+     axis's `suggest` does not). A CORRIDOR follows the room it connects only in spirit — it takes
+     its own hull like any other footprint, because a covered walkway between a cabin and a brick
+     house is a real architectural choice and forcing it either way would take that away. */
+  const hullStyleOfRoom = rm => {
+    if (rm && FLOOR_STYLES[rm.hullStyle]) return rm.hullStyle;
+    const def = HULL_MATERIALS[hullMatOfRoom(rm)];
+    return (def && def.suggest) || null;
+  };
   const KIND_ORDER = ['hab', 'bridge', 'lab', 'factory', 'quarters', 'storage'];
 
   /* ---------- pure geometry helpers ---------- */
@@ -270,7 +317,7 @@ const WorldModel = (() => {
     doc.rooms[id] = {
       id, kind: 'hab', name: 'HAB-01',
       rects: [{ x1: 0, y1: 0, x2: 17, y2: 10 }],
-      floorStyle: 'hull', floorMat: null, wallStyle: null, wallMat: null, tier: 0, floorPaint: {}
+      floorStyle: 'hull', floorMat: null, wallStyle: null, wallMat: null, hullStyle: null, hullMat: null, tier: 0, floorPaint: {}
     };
     doc.order.push(id);
     doc.meta.spawnRoomId = id;
@@ -464,7 +511,7 @@ const WorldModel = (() => {
       const label = ROOM_KINDS[kind].label;
       doc.rooms[id] = {
         id, kind, name: opts.name || (label + '-' + pad2(doc._nid - 1)),
-        rects, floorStyle, floorMat, wallStyle: null, wallMat: null, tier: 0, floorPaint: {}
+        rects, floorStyle, floorMat, wallStyle: null, wallMat: null, hullStyle: null, hullMat: null, tier: 0, floorPaint: {}
       };
       doc.order.push(id);
       if (!doc.meta.spawnRoomId && kind !== 'corridor') doc.meta.spawnRoomId = id;
@@ -575,6 +622,32 @@ const WorldModel = (() => {
       snapshot();
       rm.wallStyle = nextStyle;
       rm.wallMat = nextMat;
+      emit(rm.rects.slice());
+      return { ok: true };
+    }
+
+    /* HULL — the exterior shell, third axis, same shape as setWalls: hue AND material in ONE undo
+       slot. `{style: 'follow'}` clears back to the material's own default tone; `{style: null}` (or
+       omitting it) leaves that axis alone. Picking `station` normalizes the material back to null so
+       a doc that was never re-clad serializes exactly as it did before this axis existed. */
+    function setHull(id, opts) {
+      const rm = doc.rooms[id];
+      if (!rm) return fail('NOT_FOUND', 'no such room');
+      const o = opts || {};
+      const wantStyle = o.style === 'follow' ? null : (o.style == null ? undefined : o.style);
+      const wantMat = o.mat == null ? undefined : o.mat;
+      if (wantStyle !== undefined && wantStyle !== null && !FLOOR_STYLES[wantStyle]) return fail('BAD_STYLE', 'unknown hull colour');
+      if (wantMat !== undefined && !HULL_MATERIALS[wantMat]) return fail('BAD_MAT', 'unknown hull material');
+      const nextMat = wantMat === undefined ? (rm.hullMat || null) : (wantMat === 'station' ? null : wantMat);
+      // picking the material's OWN suggested hue IS "follow" — normalize so it never serializes
+      // redundantly (and so a later catalog re-tune reaches rooms that never chose a tone).
+      const suggested = (HULL_MATERIALS[nextMat || 'station'] || {}).suggest || null;
+      const nextStyle = wantStyle === undefined ? (rm.hullStyle || null)
+        : (wantStyle === suggested ? null : wantStyle);
+      if ((rm.hullStyle || null) === nextStyle && (rm.hullMat || null) === nextMat) return { ok: true };
+      snapshot();
+      rm.hullStyle = nextStyle;
+      rm.hullMat = nextMat;
       emit(rm.rects.slice());
       return { ok: true };
     }
@@ -1147,7 +1220,12 @@ const WorldModel = (() => {
         // own wall hue when set, else its floor hue — so walls harmonize with the deck by default)
         wallMatOf: id => wallMatOfRoom(doc.rooms[id]),
         wallBaseOf: id => styleBase(wallStyleOfRoom(doc.rooms[id])),
-        FLOOR_STYLES, FLOOR_MATERIALS, WALL_MATERIALS
+        // the exterior shell: effective material, and the hue to derive its palette from. NULL base
+        // is meaningful and must be passed through as null — it means "the shell's own tone", which
+        // the bake answers with its literal legacy constants rather than a derived ramp.
+        hullMatOf: id => hullMatOfRoom(doc.rooms[id]),
+        hullBaseOf: id => { const s = hullStyleOfRoom(doc.rooms[id]); return s ? styleBase(s) : null; },
+        FLOOR_STYLES, FLOOR_MATERIALS, WALL_MATERIALS, HULL_MATERIALS
       };
     }
 
@@ -1365,10 +1443,12 @@ const WorldModel = (() => {
       // reads
       doc: () => doc, rooms, roomById, roomAt, bounds, spawnRoomId,
       props, propById, propAt, belts, beltAt,
-      getSeq: () => seq, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
+      getSeq: () => seq, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, HULL_MATERIALS, HULL_ORDER, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
       matOfRoom: id => matOfRoom(doc.rooms[id]),   // the room's effective deck material (for the palette's active state)
       wallMatOfRoom: id => wallMatOfRoom(doc.rooms[id]),
       wallStyleOfRoom: id => wallStyleOfRoom(doc.rooms[id]),
+      hullMatOfRoom: id => hullMatOfRoom(doc.rooms[id]),
+      hullStyleOfRoom: id => hullStyleOfRoom(doc.rooms[id]),
       // validation (no mutation — for ghost previews)
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun, canPlaceBlueprint,
       // mount rules: injected so the model never imports the prop catalog (see MOUNT RULES).
@@ -1397,7 +1477,7 @@ const WorldModel = (() => {
         return surfaceHostFor(propFootprint(propById(p.id) || p), p.id) ? 'surface' : null;
       },
       // mutations
-      addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, paintTiles, renameRoom,
+      addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, setHull, paintTiles, renameRoom,
       addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
       setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt, stampBlueprint,
       // agent-bay binding queries
@@ -1435,6 +1515,10 @@ const WorldModel = (() => {
       if (!('wallMat' in rm)) rm.wallStyle = null;
       if (!FLOOR_STYLES[rm.wallStyle]) rm.wallStyle = null;
       if (!WALL_MATERIALS[rm.wallMat]) rm.wallMat = null;
+      // the hull axis is additive the same way — absent means `station` at the shell's own tone,
+      // which is exactly what every pre-axis room already renders as.
+      if (!FLOOR_STYLES[rm.hullStyle]) rm.hullStyle = null;
+      if (!HULL_MATERIALS[rm.hullMat]) rm.hullMat = null;
     }
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
@@ -1467,7 +1551,7 @@ const WorldModel = (() => {
   }
 
   return {
-    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, ROOM_KINDS, KIND_ORDER,
+    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, HULL_MATERIALS, HULL_ORDER, ROOM_KINDS, KIND_ORDER,
     create: doc => makeStation(doc),
     deserialize: doc => makeStation(clone(doc)),
     defaultDoc: freshDoc,
