@@ -172,20 +172,53 @@ const StationBake = (() => {
     lit: '#3f3a2c', dk: '#0b0a07',
     bands: ['#0b0a07', '#100e09', '#16130d', '#1f1b12', '#2a251a', '#3f3a2c']
   };
+  /* ---- THE VACUUM CLAMP: why a hull hue cannot be used at face value ----
+     Every other surface in this bake is painted UNDER the ambient mask, which multiplies it down by
+     0.77 before you ever see it. The hull is the one surface deliberately left OUTSIDE that mask —
+     the skirt hangs in void and renders at its raw baked tones. So the FLOOR_STYLES palette, whose
+     hues were chosen to sit in a dark substrate band *once ambient has taken them down*, renders
+     roughly four times brighter out there than the same hue does inside the room.
+
+     Measured on the shipped bake, down the middle of a south wall: the station's own shell tops out
+     at luma 37, TIMBER at 51, STONE at 55, BRICK at 58 — and brick's mortar spiked to 86, brighter
+     than the lit wall crown (79) and the brightest thing on the whole exterior. That is exactly the
+     "doesn't look right, needs to be more cohesive" read (Andrew, 2026-08-05): a building glowing
+     harder than the station it is bolted to.
+
+     So a chosen hue is clamped into the shell's own value band before anything derives from it.
+     Scaling all three channels by one factor preserves the hue exactly — it is a pure exposure
+     change, which is the honest model for "this surface gets no light". The floor lifts near-black
+     hues (ONYX) so a shell never goes pure void, and the cap is what keeps BONE from painting a
+     blazing white building — the same standing law that killed light mode three times. */
+  const HULL_LUMA_CAP = 28, HULL_LUMA_FLOOR = 13;
+  const vacuum = hex => {
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (l < 1) return '#0d0d0d';
+    const k = l > HULL_LUMA_CAP ? HULL_LUMA_CAP / l : (l < HULL_LUMA_FLOOR ? HULL_LUMA_FLOOR / l : 1);
+    if (k === 1) return hex;
+    const c = v => Math.max(0, Math.min(255, Math.round(v * k)));
+    return '#' + ((1 << 24) | (c(r) << 16) | (c(g) << 8) | c(b)).toString(16).slice(1);
+  };
+
   /* A DERIVED SHELL. Same discipline as WALL_TONE: every mark is a U.shade off the room's one hue,
      so any material renders in any colour coherently. The skirt ramp darkens DOWNWARD (away from
      the deck lights, into the void) — that gradient is what gives the station its height, and a
      material that flattens it reads as a sticker rather than a standing wall. */
-  const derivedHullPal = base => ({
-    base,
-    seam: U.shade(base, -0.26),
-    rim:  U.shade(base, 0.12),
-    bolt: U.shade(base, 0.30),
-    arc:  U.shade(base, -0.14),
-    lit:  U.shade(base, 0.24),
-    dk:   U.shade(base, -0.58),
-    bands: [U.shade(base, -0.74), U.shade(base, -0.64), U.shade(base, -0.50), U.shade(base, -0.32), U.shade(base, -0.12), U.shade(base, 0.14)]
-  });
+  const derivedHullPal = raw => {
+    const base = vacuum(raw);
+    return {
+      base,
+      seam: U.shade(base, -0.26),
+      rim:  U.shade(base, 0.12),
+      bolt: U.shade(base, 0.30),
+      arc:  U.shade(base, -0.14),
+      lit:  U.shade(base, 0.24),
+      dk:   U.shade(base, -0.58),
+      bands: [U.shade(base, -0.74), U.shade(base, -0.64), U.shade(base, -0.50), U.shade(base, -0.32), U.shade(base, -0.12), U.shade(base, 0.14)]
+    };
+  };
   let hullPalCache = null;
   function hullPal(z) {
     let p = hullPalCache && hullPalCache.get(z);
@@ -260,6 +293,19 @@ const StationBake = (() => {
   // how wide a run of equal wall height has to be before it is worth drawing a course on — see the
   // grazing-angle note in wallRuns. 3 clears the steepest third of a corner arc.
   const COURSE_MIN_RUN = 3;
+
+  /* THE SHARED PANEL JOINT — a faint vertical shadow every 28px, on EVERY shell, run after the
+     material's own veins. It was the station shell's private detail; making it common is what ties
+     the family together, because underneath the cladding it is all still one station, and a row of
+     buildings that share one structural rhythm reads as a street rather than as swatches parked next
+     to each other. Kept well under the material's own contrast so it never competes with the
+     coursing — station keeps its original 0.35 (parity), everything else gets a whisper. */
+  const SHARED_SEAM = 0.16;
+  const panelSeam = (fg, w, h, vx, alpha) => {
+    if (!alpha) return;
+    fg.fillStyle = 'rgba(0,0,0,' + alpha + ')';
+    for (let x = 5 - (vx % 28); x < w; x += 28) fg.fillRect(x, 0, 1, h);
+  };
 
   const coursedVein = (fg, w, h, vx, vy, o, topOf) => {
     const px = boxed(fg, 0, 0, w, h);
@@ -1432,7 +1478,10 @@ const StationBake = (() => {
       for (let y = y1 + 6; y < y2; y += 18) { b.fillRect(x1 + 2, y, 2, 2); b.fillRect(x2 - 4, y, 2, 2); }
     },
     bands: rampBands,
-    veins(fg, pal, w, h, vx) { fg.fillStyle = 'rgba(0,0,0,0.35)'; for (let x = 5 - (vx % 28); x < w; x += 28) fg.fillRect(x, 0, 1, h); }
+    // the shell's panel joint is now the SHARED pass every material gets (see panelSeam) — station
+    // keeps its original 0.35, which is what holds its pixels identical to the pre-axis bake
+    seam: 0.35,
+    veins: null
   };
 
   /* TIMBER — stacked log courses. The Stardew cabin, and the material this whole axis was asked for.
@@ -1472,7 +1521,7 @@ const StationBake = (() => {
     // a log reads from a lit crest and a HARD undercut, nothing else. The undercut carries most of
     // the weight — take it out and the wall goes back to being a flat brown band.
     veins(fg, pal, w, h, vx, vy, topOf) {
-      coursedVein(fg, w, h, vx, vy, { ch: LOG, crest: 'rgba(255,240,214,0.20)', bed: 'rgba(0,0,0,0.52)', bedH: 2 }, topOf);
+      coursedVein(fg, w, h, vx, vy, { ch: LOG, crest: 'rgba(255,240,214,0.18)', bed: 'rgba(0,0,0,0.52)', bedH: 2 }, topOf);
       const px = boxed(fg, 0, 0, w, h);
       fg.fillStyle = 'rgba(0,0,0,0.40)';
       wallRuns(topOf, w, (rx, rw, top) => {          // knots ride their own log, so they turn the corner too
@@ -1507,7 +1556,7 @@ const StationBake = (() => {
     bands: (pal, skirt) => ramp6(pal, skirt, -0.56, 0.20),
     // tighter pitch than TIMBER and a thinner shadow: a board is a plank, not a log
     veins(fg, pal, w, h, vx, vy, topOf) {
-      coursedVein(fg, w, h, vx, vy, { ch: LAP, crest: 'rgba(255,250,238,0.16)', bed: 'rgba(0,0,0,0.44)' }, topOf);
+      coursedVein(fg, w, h, vx, vy, { ch: LAP, crest: 'rgba(255,250,238,0.20)', bed: 'rgba(0,0,0,0.44)' }, topOf);
     }
   };
 
@@ -1558,7 +1607,7 @@ const StationBake = (() => {
       coursedVein(fg, w, h, vx, vy, {
         ch: SHG, uw: SHW, bedH: 2, bed: 'rgba(0,0,0,0.60)',
         joint: 'rgba(0,0,0,0.55)', jointFrom: 0,
-        crest: 'rgba(255,248,228,0.13)'   // the sliver of sky each tab catches — layers, not a grid
+        crest: 'rgba(255,248,228,0.12)'   // the sliver of sky each tab catches — layers, not a grid
       }, topOf);
     }
   };
@@ -1609,7 +1658,7 @@ const StationBake = (() => {
     veins(fg, pal, w, h, vx, vy, topOf) {
       coursedVein(fg, w, h, vx, vy, {
         ch: BRK, uw: BRW, bedH: 1,
-        bed: 'rgba(255,246,226,0.22)', joint: 'rgba(255,246,226,0.18)'
+        bed: 'rgba(255,238,214,0.17)', joint: 'rgba(255,238,214,0.13)'
       }, topOf);
     }
   };
@@ -1658,7 +1707,7 @@ const StationBake = (() => {
             const r = h2(wx, k, 'stnj');
             if (r % 5 === 0) continue;                       // not every cell carries a joint
             fg.fillStyle = 'rgba(0,0,0,0.44)'; px(wx - vx + (r % 7), yTop, 1, 6 - drop);
-            if (r % 4 === 0) { fg.fillStyle = 'rgba(255,250,240,0.11)'; px(wx - vx + 2, yTop + 1, 3, 1); }
+            if (r % 4 === 0) { fg.fillStyle = 'rgba(255,250,240,0.10)'; px(wx - vx + 2, yTop + 1, 3, 1); }
           }
         }
       }, COURSE_MIN_RUN);
@@ -1715,7 +1764,7 @@ const StationBake = (() => {
     veins(fg, pal, w, h, vx) {
       const px = boxed(fg, 0, 0, w, h);
       // mullions catch what light there is — the ONE place a hull material paints brighter than base
-      fg.fillStyle = 'rgba(210,224,255,0.20)';
+      fg.fillStyle = 'rgba(210,224,255,0.15)';
       for (let x = 6 - (vx % 6); x < w; x += 6) px(x, 0, 1, h);
       fg.fillStyle = 'rgba(0,0,0,0.30)';
       for (let x = 3 - (vx % 6); x < w; x += 6) px(x, 0, 2, h);
@@ -1745,7 +1794,7 @@ const StationBake = (() => {
       for (let gy = 0; gy < h; gy++) for (let gx = 0; gx < w; gx += 2) {
         const r = h2(gx + vx, gy + vy, 'hdgv');
         if (r % 4 === 0) { fg.fillStyle = 'rgba(0,0,0,0.34)'; px(gx, gy, 2, 1); }
-        else if (r % 11 === 0) { fg.fillStyle = 'rgba(190,255,190,0.10)'; px(gx, gy, 1, 1); }
+        else if (r % 11 === 0) { fg.fillStyle = 'rgba(190,255,190,0.07)'; px(gx, gy, 1, 1); }
       }
     }
   };
@@ -2230,11 +2279,12 @@ const StationBake = (() => {
       };
       for (const [dy, c] of (recipe.bands || rampBands)(pal, skirt)) stamp(dy, c);
       fg.globalCompositeOperation = 'destination-out'; fg.drawImage(sil, 0, 0);
-      if (recipe.veins) {
+      if (recipe.veins || recipe.seam) {
         fg.globalCompositeOperation = 'source-atop';
         // world-coord keying: the canvas' top-left is world (VX, VY - M), so a recipe adding these
         // offsets gets marks that land on the same world pixel in every chunk that shows them
-        recipe.veins(fg, pal, CW, CH2, VX, VY - M, skirtTops(sil, CW, CH2));
+        if (recipe.veins) recipe.veins(fg, pal, CW, CH2, VX, VY - M, skirtTops(sil, CW, CH2));
+        panelSeam(fg, CW, CH2, VX, recipe.seam == null ? SHARED_SEAM : recipe.seam);
       }
       fg.globalCompositeOperation = 'source-over';
       b.globalCompositeOperation = 'destination-over';
