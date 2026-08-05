@@ -14,9 +14,10 @@
    corruption). All git failures FAIL-OPEN (a snapshot/restore problem must never crash a run); the host decides
    whether a missing checkpoint should block a dangerous tool.
 
-   makeCheckpointStore({ fs, pathMod, root, runGit, clock, keep? }) -> { snapshot, restore, list, isValidId }
+   makeCheckpointStore({ fs, pathMod, root, runGit, clock, keep?, scopeIdOf?, allowWorkTree? })
+     -> { snapshot, restore, list, isValidId }
      runGit(args:string[], { cwd }) -> Promise<{ code:int|string, stdout, stderr }>   // resolves, never rejects
-     snapshot(agentId, { runId, turn, label }) -> Promise<{ id, created:bool, files, bytes } | null>
+     snapshot(agentId, { runId, turn, label, workTree? }) -> Promise<{ id, created:bool, files, bytes } | null>
      restore(agentId, snapshotId)              -> Promise<bool>   // only restores an id IN this agent's index
      list(agentId)                             -> { version, snapshots } */
 'use strict';
@@ -37,6 +38,7 @@
     : function (deps, file, data) { const f = deps.fs; const tmp = file + '.' + (typeof process !== 'undefined' ? process.pid : 'p') + '.tmp'; f.writeFileSync(tmp, data); f.renameSync(tmp, file); };
 
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;            // the notebook/fs-jail agentId grammar
+  const SCOPE_RE = /^[a-f0-9]{16,64}$/;               // host-derived digest of one canonical project root
   const KEEP_DEFAULT = 50;                            // snapshots retained per agent (prune oldest beyond this)
   const MAX_REPO_BYTES_DEFAULT = 500 * 1024 * 1024;   // shadow-repo size ceiling (500MB) before a gc/re-init sweep
 
@@ -44,21 +46,74 @@
     const d = deps || {};
     const fs = d.fs, pathMod = d.pathMod, root = d.root, runGit = d.runGit;
     const clock = d.clock || { now: function () { return 0; } };
+    const scopeIdOf = typeof d.scopeIdOf === 'function' ? d.scopeIdOf : null;
+    const allowWorkTree = typeof d.allowWorkTree === 'function' ? d.allowWorkTree : function () { return false; };
     const keep = d.keep != null ? d.keep : KEEP_DEFAULT;
     const maxRepoBytes = d.maxRepoBytes != null ? d.maxRepoBytes : MAX_REPO_BYTES_DEFAULT;
     if (!fs || !pathMod || !root || typeof runGit !== 'function') throw new Error('checkpoint-store: fs/pathMod/root/runGit are required');
 
-    const gitDirFor = (aid) => pathMod.join(root, '.checkpoints', aid, 'git');
-    const workTreeFor = (aid) => pathMod.join(root, aid);
+    const defaultWorkTreeFor = (aid) => pathMod.join(root, aid);
+    const scopeBaseFor = (aid, scopeId) => scopeId
+      ? pathMod.join(root, '.checkpoints', aid, 'roots', scopeId)
+      : pathMod.join(root, '.checkpoints', aid);
+    const gitDirFor = (aid, scope) => pathMod.join(scopeBaseFor(aid, scope && scope.id), 'git');
+    const workTreeFor = (aid, scope) => (scope && scope.workTree) || defaultWorkTreeFor(aid);
     const indexFileFor = (aid) => pathMod.join(root, '.checkpoints', aid, 'index.json');
+    const scopeFileFor = (aid, scopeId) => pathMod.join(scopeBaseFor(aid, scopeId), 'scope.json');
+
+    function samePath(a, b) {
+      let x = pathMod.resolve(String(a || '')), y = pathMod.resolve(String(b || ''));
+      if (pathMod.sep === '\\') { x = x.toLowerCase(); y = y.toLowerCase(); }
+      return x === y;
+    }
+    function canonicalWorkTree(p) {
+      let out = pathMod.resolve(String(p || ''));
+      try { if (typeof fs.realpathSync === 'function') out = fs.realpathSync(out); } catch (_) {}
+      return out;
+    }
+    function externalScope(aid, requested, authorized) {
+      if (!requested) return { id: '', workTree: defaultWorkTreeFor(aid), prefix: '' };
+      const workTree = canonicalWorkTree(requested);
+      if (samePath(workTree, defaultWorkTreeFor(aid))) return { id: '', workTree: defaultWorkTreeFor(aid), prefix: '' };
+      if (!scopeIdOf || (authorized !== true && allowWorkTree(workTree, aid) !== true)) return null;
+      const id = String(scopeIdOf(workTree) || '').toLowerCase();
+      if (!SCOPE_RE.test(id)) return null;
+      return { id: id, workTree: workTree, prefix: id + ':' };
+    }
+    function readScopeSaved(aid, scopeId) {
+      if (!scopeId) return { id: '', workTree: defaultWorkTreeFor(aid), prefix: '' };
+      if (!SCOPE_RE.test(String(scopeId || ''))) return null;
+      try {
+        const saved = JSON.parse(fs.readFileSync(scopeFileFor(aid, scopeId), 'utf8'));
+        if (!saved || saved.scopeId !== scopeId || !saved.workTree) return null;
+        const workTree = canonicalWorkTree(saved.workTree);
+        if (!samePath(workTree, saved.workTree)) return null;
+        return { id: scopeId, workTree: workTree, prefix: scopeId + ':' };
+      } catch (_) { return null; }
+    }
+    function readScope(aid, scopeId) {
+      const scope = readScopeSaved(aid, scopeId);
+      return scope && allowWorkTree(scope.workTree, aid) === true ? scope : null;
+    }
+    function saveScope(aid, scope) {
+      if (!scope || !scope.id) return true;
+      const file = scopeFileFor(aid, scope.id);
+      try {
+        const prior = readScopeSaved(aid, scope.id);
+        if (prior) return samePath(prior.workTree, scope.workTree);
+        fs.mkdirSync(pathMod.dirname(file), { recursive: true });
+        writeFileDurable({ fs: fs, path: pathMod }, file, JSON.stringify({ version: 1, scopeId: scope.id, workTree: scope.workTree }));
+        return true;
+      } catch (_) { return false; }
+    }
 
     // the leading git args that pin the shadow git-dir + work-tree and force byte-exact, identity-stable commits.
-    function base(aid) {
-      return ['--git-dir', gitDirFor(aid), '--work-tree', workTreeFor(aid),
+    function base(aid, scope) {
+      return ['--git-dir', gitDirFor(aid, scope), '--work-tree', workTreeFor(aid, scope),
         '-c', 'core.autocrlf=false', '-c', 'core.safecrlf=false',
         '-c', 'user.email=starnet@local', '-c', 'user.name=starnet'];
     }
-    const git = (aid, args) => runGit(base(aid).concat(args), { cwd: workTreeFor(aid) });
+    const git = (aid, scope, args) => runGit(base(aid, scope).concat(args), { cwd: workTreeFor(aid, scope) });
 
     // read the index file into a tagged result so the caller can distinguish a genuinely-empty index (no
     // snapshots recorded) from a torn/corrupt one that should trigger a git-log rebuild.
@@ -99,8 +154,21 @@
     }
 
     // does this agent have a real shadow git repo on disk? (its commits are the ground truth for a rebuild.)
-    function repoExists(aid) {
-      try { return fs.existsSync(pathMod.join(gitDirFor(aid), 'HEAD')); } catch (_) { return false; }
+    function repoExists(aid, scope) {
+      try { return fs.existsSync(pathMod.join(gitDirFor(aid, scope), 'HEAD')); } catch (_) { return false; }
+    }
+    function recordedScopes(aid) {
+      const scopes = [{ id: '', workTree: defaultWorkTreeFor(aid), prefix: '' }];
+      let names = [];
+      try { names = fs.readdirSync(pathMod.join(root, '.checkpoints', aid, 'roots')); } catch (_) {}
+      for (const name of names) {
+        // Rebuilding the index reads only the station-owned shadow git + scope metadata. Keep revoked roots in
+        // the list as unavailable restore points; do not erase their recoverable history just because authority
+        // is currently absent. Actual restore still re-checks readScope() and fails closed.
+        const scope = readScopeSaved(aid, String(name));
+        if (scope) scopes.push(scope);
+      }
+      return scopes;
     }
     /* rebuildIndexFromGit — the shadow git COMMITS are the truth; the index.json is just a cache of them. When
        the index is empty/corrupt but the repo has commits, reconstruct the index by walking `git log`. The
@@ -108,13 +176,19 @@
        back empty/0 (rollback-by-run degrades, but per-id restore + the list view are fully restored). Oldest-
        first so lineage (parentId defaults to the prior snapshot) threads correctly through cp.record. */
     async function rebuildIndexFromGit(aid) {
-      if (!repoExists(aid)) return cp.toIndex([]);
-      // %H = full sha, %ct = committer unix seconds, %s = subject (the snapshot label). tab-separated, reverse
-      // so the oldest commit is first (matches append order + parent lineage).
-      const r = await git(aid, ['log', '--reverse', '--format=%H%x09%ct%x09%s']);
-      if (!r || r.code !== 0 || !r.stdout) return cp.toIndex([]);
-      let index = cp.toIndex([]);
-      for (const line of r.stdout.split('\n')) {
+      const rows = [];
+      for (const scope of recordedScopes(aid)) {
+        if (!repoExists(aid, scope)) continue;
+        // %H = full sha, %ct = committer unix seconds, %s = subject. Cross-root rows are sorted by timestamp
+        // below, while parentId remains scoped to the prior commit in this exact root.
+        const r = await git(aid, scope, ['log', '--reverse', '--format=%H%x09%ct%x09%s']);
+        if (!r || r.code !== 0 || !r.stdout) continue;
+        for (const line of r.stdout.split('\n')) rows.push({ line: line, scope: scope });
+      }
+      if (!rows.length) return cp.toIndex([]);
+      const parsed = [];
+      for (const row of rows) {
+        const line = row.line;
         if (!line.trim()) continue;
         const tab1 = line.indexOf('\t'); if (tab1 < 0) continue;
         const tab2 = line.indexOf('\t', tab1 + 1);
@@ -122,9 +196,20 @@
         const ctSec = Number(line.slice(tab1 + 1, tab2 < 0 ? undefined : tab2).trim());
         const label = tab2 < 0 ? '' : line.slice(tab2 + 1);
         if (!cp.isValidId(sha)) continue;
+        parsed.push({ sha: sha, ts: isFinite(ctSec) ? ctSec * 1000 : clock.now(), label: label, scope: row.scope });
+      }
+      parsed.sort(function (a, b) { return a.ts - b.ts; });
+      let index = cp.toIndex([]);
+      const heads = {};
+      for (const row of parsed) {
+        const fullId = row.scope.prefix + row.sha;
         try {
-          index = cp.record(index, { id: sha, runId: '', turn: 0, label: label, files: 0, bytes: 0 },
-            { now: isFinite(ctSec) ? ctSec * 1000 : clock.now(), keep: keep });
+          index = cp.record(index, {
+            id: fullId, runId: '', turn: 0, label: row.label, files: 0, bytes: 0,
+            parentId: heads[row.scope.id] || null, scopeId: row.scope.id,
+            workTree: row.scope.id ? row.scope.workTree : '', gitCommit: row.sha
+          }, { now: row.ts, keep: keep });
+          heads[row.scope.id] = fullId;
         } catch (_) { /* skip a record git surfaced that cp rejects */ }
       }
       return index;
@@ -148,12 +233,12 @@
     }
 
     // best-effort size of the snapshot (cosmetic, for the event) — tracked file count + summed bytes.
-    async function measure(aid) {
+    async function measure(aid, scope) {
       try {
-        const r = await git(aid, ['ls-files']);
+        const r = await git(aid, scope, ['ls-files']);
         const files = r.stdout.split('\n').map(s => s.trim()).filter(Boolean);
         let bytes = 0;
-        for (const rel of files) { try { bytes += fs.statSync(pathMod.join(workTreeFor(aid), rel)).size; } catch (_) {} }
+        for (const rel of files) { try { bytes += fs.statSync(pathMod.join(workTreeFor(aid, scope), rel)).size; } catch (_) {} }
         return { files: files.length, bytes: bytes };
       } catch (e) { return { files: 0, bytes: 0 }; }
     }
@@ -185,16 +270,16 @@
           sacrifices the older in-index rollback points to keep disk bounded — a disclosed, honest tradeoff, taken
           ONLY past the ceiling. Fail-open: any git failure leaves the repo as-is (never crash a run).
        Returns { swept, reinit, bytesBefore, bytesAfter } for tests/telemetry. */
-    async function enforceSizeCeiling(aid) {
-      if (!(maxRepoBytes > 0) || !repoExists(aid)) return { swept: false, reinit: false };
-      const gitDir = gitDirFor(aid);
+    async function enforceSizeCeiling(aid, scope) {
+      if (!(maxRepoBytes > 0) || !repoExists(aid, scope)) return { swept: false, reinit: false };
+      const gitDir = gitDirFor(aid, scope);
       const before = dirBytes(gitDir);
       if (before <= maxRepoBytes) return { swept: false, reinit: false, bytesBefore: before, bytesAfter: before };
-      try { await git(aid, ['gc', '--prune=now', '-q']); } catch (_) {}
+      try { await git(aid, scope, ['gc', '--prune=now', '-q']); } catch (_) {}
       let after = dirBytes(gitDir);
       let reinit = false;
       if (after > maxRepoBytes) {
-        reinit = await reinitFromCurrentTree(aid);
+        reinit = await reinitFromCurrentTree(aid, scope);
         after = dirBytes(gitDir);
       }
       try { console.warn('[checkpoint] shadow repo for ' + aid + ' over ceiling (' + before + 'B) -> ' + (reinit ? 're-init' : 'gc') + ' -> ' + after + 'B'); } catch (_) {}
@@ -202,20 +287,26 @@
     }
     // wipe the shadow git-dir and re-create a single baseline commit of the CURRENT worktree, then re-stamp the
     // index to that one snapshot. Returns true on success. Fail-open (false) leaves the repo untouched on error.
-    async function reinitFromCurrentTree(aid) {
+    async function reinitFromCurrentTree(aid, scope) {
       try {
-        const gitDir = gitDirFor(aid);
+        const gitDir = gitDirFor(aid, scope);
         try { fs.rmSync(gitDir, { recursive: true, force: true }); } catch (_) { return false; }
         fs.mkdirSync(gitDir, { recursive: true });
-        if ((await git(aid, ['init', '-q'])).code !== 0) return false;
-        if ((await git(aid, ['add', '-A'])).code !== 0) return false;
-        const com = await git(aid, ['commit', '-q', '--allow-empty', '-m', 'baseline (repo re-init: size ceiling)']);
+        if ((await git(aid, scope, ['init', '-q'])).code !== 0) return false;
+        if ((await git(aid, scope, ['add', '-A'])).code !== 0) return false;
+        const com = await git(aid, scope, ['commit', '-q', '--allow-empty', '-m', 'baseline (repo re-init: size ceiling)']);
         if (com.code !== 0) return false;
-        const sha = (await git(aid, ['rev-parse', 'HEAD'])).stdout.trim();
+        const sha = (await git(aid, scope, ['rev-parse', 'HEAD'])).stdout.trim();
         if (!cp.isValidId(sha)) return false;
         try {
-          const size = await measure(aid);
-          saveIndex(aid, cp.record(cp.toIndex([]), { id: sha, runId: '', turn: 0, label: 'baseline (re-init)', files: size.files, bytes: size.bytes }, { now: clock.now(), keep: keep }));
+          const size = await measure(aid, scope);
+          const existing = await loadIndexResilient(aid);
+          const others = existing.snapshots.filter(function (s) { return String((s && s.scopeId) || '') !== String((scope && scope.id) || ''); });
+          const fullId = (scope && scope.prefix || '') + sha;
+          saveIndex(aid, cp.record(cp.toIndex(others), {
+            id: fullId, runId: '', turn: 0, parentId: null, label: 'baseline (re-init)', files: size.files, bytes: size.bytes,
+            scopeId: (scope && scope.id) || '', workTree: scope && scope.id ? scope.workTree : '', gitCommit: sha
+          }, { now: clock.now(), keep: keep }));
         } catch (_) {}
         return true;
       } catch (_) { return false; }
@@ -228,32 +319,39 @@
       meta = meta || {};
       if (!AID_RE.test(String(agentId || ''))) return null;
       const aid = String(agentId);
+      const scope = externalScope(aid, meta.workTree, meta.authorizedWorkTree === true);
+      if (!scope || !saveScope(aid, scope)) return null;
       try {
-        fs.mkdirSync(workTreeFor(aid), { recursive: true });
-        fs.mkdirSync(gitDirFor(aid), { recursive: true });
+        fs.mkdirSync(workTreeFor(aid, scope), { recursive: true });
+        fs.mkdirSync(gitDirFor(aid, scope), { recursive: true });
         // init the shadow repo once (idempotent: re-running init on an existing repo is harmless).
-        if (!fs.existsSync(pathMod.join(gitDirFor(aid), 'HEAD'))) {
-          const ini = await git(aid, ['init', '-q']);
+        if (!fs.existsSync(pathMod.join(gitDirFor(aid, scope), 'HEAD'))) {
+          const ini = await git(aid, scope, ['init', '-q']);
           if (ini.code !== 0) return null;
         }
-        const add = await git(aid, ['add', '-A']);
+        const add = await git(aid, scope, ['add', '-A']);
         if (add.code !== 0) return null;
-        const hasHead = (await git(aid, ['rev-parse', '--verify', '-q', 'HEAD'])).code === 0;
+        const hasHead = (await git(aid, scope, ['rev-parse', '--verify', '-q', 'HEAD'])).code === 0;
         if (hasHead) {
-          const diff = await git(aid, ['diff', '--cached', '--quiet', 'HEAD']);   // code 0 => nothing staged changed
+          const diff = await git(aid, scope, ['diff', '--cached', '--quiet', 'HEAD']);   // code 0 => nothing staged changed
           if (diff.code === 0) {
-            const head = (await git(aid, ['rev-parse', 'HEAD'])).stdout.trim();
-            return cp.isValidId(head) ? { id: head, created: false, files: 0, bytes: 0 } : null;
+            const head = (await git(aid, scope, ['rev-parse', 'HEAD'])).stdout.trim();
+            const fullId = scope.prefix + head;
+            return cp.isValidId(head) && cp.isValidId(fullId)
+              ? { id: fullId, created: false, files: 0, bytes: 0, workTree: scope.id ? scope.workTree : '' }
+              : null;
           }
         }
         const label = meta.label != null ? String(meta.label) : 'snapshot';
         const commitArgs = ['commit', '-q', '-m', label];
         if (!hasHead) commitArgs.push('--allow-empty');                          // baseline even for an empty workspace
-        const com = await git(aid, commitArgs);
+        const com = await git(aid, scope, commitArgs);
         if (com.code !== 0) return null;
-        const sha = (await git(aid, ['rev-parse', 'HEAD'])).stdout.trim();
+        const sha = (await git(aid, scope, ['rev-parse', 'HEAD'])).stdout.trim();
         if (!cp.isValidId(sha)) return null;
-        const size = await measure(aid);
+        const fullId = scope.prefix + sha;
+        if (!cp.isValidId(fullId)) return null;
+        const size = await measure(aid, scope);
         try {
           /* THE RESILIENT LOADER, not the sync one. `loadIndex` reads only index.json + index.json.bak and returns
              an EMPTY index on failure — it deliberately never rebuilds, because git is async. snapshot() IS async,
@@ -267,14 +365,20 @@
              surviving commit, permanently. The header's law is "the shadow git COMMITS are the truth; index.json
              is just a cache of them", and this was the one writer that did not honour it. It also made the catch
              below false: a commit missing from a NON-empty index is not restorable via restore() at all. */
-          const index = cp.record(await loadIndexResilient(aid),
-            { id: sha, runId: meta.runId, turn: meta.turn, label: label, files: size.files, bytes: size.bytes },
+          const prior = await loadIndexResilient(aid);
+          const priorInScope = prior.snapshots.slice().reverse().find(function (s) {
+            return String((s && s.scopeId) || '') === scope.id;
+          });
+          const index = cp.record(prior,
+            { id: fullId, runId: meta.runId, turn: meta.turn, parentId: priorInScope ? priorInScope.id : null,
+              label: label, files: size.files, bytes: size.bytes, scopeId: scope.id,
+              workTree: scope.id ? scope.workTree : '', gitCommit: sha },
             { now: clock.now(), keep: keep });
           saveIndex(aid, index);
         } catch (e) { /* index persistence failed — the git commit still exists + is restorable; don't crash */ }
         // bound the shadow repo's on-disk footprint after each real commit (no-op unless past the ceiling).
-        try { await enforceSizeCeiling(aid); } catch (_) { /* size sweep is best-effort; never fail the snapshot */ }
-        return { id: sha, created: true, files: size.files, bytes: size.bytes };
+        try { await enforceSizeCeiling(aid, scope); } catch (_) { /* size sweep is best-effort; never fail the snapshot */ }
+        return { id: fullId, created: true, files: size.files, bytes: size.bytes, workTree: scope.id ? scope.workTree : '' };
       } catch (e) { return null; }                                               // fail-open
     }
 
@@ -282,24 +386,41 @@
        snapshotId that is RECORDED in this agent's index — never an arbitrary ref. Returns false on any failure. */
     async function restore(agentId, snapshotId) {
       if (!AID_RE.test(String(agentId || '')) || !cp.isValidId(String(snapshotId || ''))) return false;
-      const aid = String(agentId), sha = String(snapshotId);
+      const aid = String(agentId), fullId = String(snapshotId);
       // resilient load: if index.json was wiped but the commit still exists, a git-log rebuild re-admits it so
       // a rollback target survives an index loss (the commits are the truth).
-      if (!cp.findById(await loadIndexResilient(aid), sha)) return false;         // refuse an id we didn't record
+      const record = cp.findById(await loadIndexResilient(aid), fullId);
+      if (!record) return false;                                                  // refuse an id we didn't record
+      const scope = record.scopeId ? readScope(aid, String(record.scopeId))
+        : { id: '', workTree: defaultWorkTreeFor(aid), prefix: '' };
+      if (!scope) return false;                                                   // revoked/missing/mismatched project root
+      const sha = record.gitCommit || fullId;
+      if (!cp.isValidId(String(sha || ''))) return false;
+      if (scope.id && fullId !== scope.prefix + sha) return false;               // root identity is part of the id
       try {
-        const reset = await git(aid, ['reset', '--hard', '-q', sha]);
+        const reset = await git(aid, scope, ['reset', '--hard', '-q', sha]);
         if (reset.code !== 0) return false;
-        await git(aid, ['clean', '-fd', '-q']);                                  // drop files added after the snapshot
+        await git(aid, scope, ['clean', '-fd', '-q']);                           // drop files added after the snapshot
         return true;
       } catch (e) { return false; }
     }
 
-    function list(agentId) { return AID_RE.test(String(agentId || '')) ? loadIndex(String(agentId)) : cp.toIndex([]); }
+    function withAvailability(aid, index) {
+      return cp.toIndex((index && index.snapshots || []).map(function (s) {
+        return Object.assign({}, s, { restoreAvailable: !s.scopeId || !!readScope(aid, String(s.scopeId)) });
+      }));
+    }
+    function list(agentId) {
+      if (!AID_RE.test(String(agentId || ''))) return cp.toIndex([]);
+      const aid = String(agentId);
+      return withAvailability(aid, loadIndex(aid));
+    }
     // async list that rebuilds from the shadow git commits when the index.json is empty/corrupt but the repo
     // has history — so the "rewind" UI repopulates after an index loss. The route awaits this.
     async function listResilient(agentId) {
       if (!AID_RE.test(String(agentId || ''))) return cp.toIndex([]);
-      return await loadIndexResilient(String(agentId));
+      const aid = String(agentId);
+      return withAvailability(aid, await loadIndexResilient(aid));
     }
 
     return { snapshot: snapshot, restore: restore, list: list, listResilient: listResilient, rebuild: rebuildIndexFromGit, enforceSizeCeiling: enforceSizeCeiling, isValidId: cp.isValidId };

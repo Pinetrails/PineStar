@@ -81,6 +81,11 @@
         }
       }
     }
+    async function checkpointResolvedRoot(base, opts) {
+      const ctx = opts && opts.ctx;
+      if (!ctx || typeof ctx.checkpointMutation !== 'function' || (opts && opts.scope) !== 'write') return;
+      try { await ctx.checkpointMutation(base, 'fs mutation', { resolvedRoot: true }); } catch (_) {}
+    }
     // Resolve a path and PROVE it is reachable: a RELATIVE path must stay inside the agent's workspace
     // jail (the historic invariant); an ABSOLUTE path is illegal UNLESS a pathTrust guard is wired, in
     // which case it is mediated against the station's blessed project roots (NS-5). opts.scope ('read' |
@@ -94,7 +99,9 @@
       const isAbs = P.win32.isAbsolute(rel) || P.posix.isAbsolute(rel) || /^[A-Za-z]:/.test(rel);
       if (isAbs) {
         if (!pathTrust) throw new Error('illegal path: ' + rel);
-        return await pathTrust(rel, { scope: opts.scope === 'write' ? 'write' : 'read', agentId: agentId, ctx: opts.ctx });
+        const resolved = await pathTrust(rel, { scope: opts.scope === 'write' ? 'write' : 'read', agentId: agentId, ctx: opts.ctx });
+        await checkpointResolvedRoot(resolved && resolved.base, opts);
+        return resolved;
       }
       if (/(^|[\\/])\.\.([\\/]|$)/.test(rel)) throw new Error('illegal path: ' + rel);
       const base = await workspaceRoot(agentId);
@@ -104,6 +111,7 @@
       const existing = await deepestExisting(abs, base);
       const existingReal = await realpathOrSelf(existing);
       if (!pathInside(existingReal, baseReal)) throw new Error('path escapes workspace via symlink');
+      await checkpointResolvedRoot(base, opts);
       return { base, abs };
     }
 

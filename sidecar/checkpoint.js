@@ -8,7 +8,10 @@
    lint-determinism.js and is headless-testable exactly like cron-store.js / loop.js.
 
    A snapshot record (the snapshotId is a content hash minted by the ambient git layer):
-     { id, runId, turn:int, parentId:string|null, ts:int, files:int, bytes:int, label }
+     { id, runId, turn:int, parentId:string|null, ts:int, files:int, bytes:int, label,
+       scopeId?:string, workTree?:string, gitCommit?:string }
+   The optional scope fields bind a restore point to an explicitly-authorized external project root. They are
+   ambient metadata only: the pure reducer preserves them, while checkpoint-store owns validation + access.
    The persisted index envelope (one per agent, fail-closed on load):
      { version:1, snapshots:[ ... ] }
 
@@ -55,7 +58,10 @@
       ts: ctx.now || 0,
       files: Number.isFinite(meta.files) ? (meta.files | 0) : 0,
       bytes: Number.isFinite(meta.bytes) ? (meta.bytes | 0) : 0,
-      label: meta.label != null ? String(meta.label) : ''
+      label: meta.label != null ? String(meta.label) : '',
+      scopeId: meta.scopeId != null ? String(meta.scopeId) : '',
+      workTree: meta.workTree != null ? String(meta.workTree) : '',
+      gitCommit: meta.gitCommit != null ? String(meta.gitCommit) : ''
     };
   }
 
