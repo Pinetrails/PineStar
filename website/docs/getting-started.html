@@ -43,7 +43,7 @@
 <p class="doc-sub">// from download to your first working agent</p>
 
 <h2>1. Download and install</h2>
-<p><b>Windows and macOS installers are fully supported from day one.</b> Grab the right build
+<p><b>The public release train targets Windows and macOS.</b> Grab the right build
 from the
 <a href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a>:</p>
 <table>
@@ -56,18 +56,18 @@ from the
 Apple Silicon; "Intel" means Intel. The wrong one won't run.</p>
 
 <h3>Windows first run</h3>
-<p>The installer is Authenticode code-signed. While the certificate is new, SmartScreen may
-still show <i>"Windows protected your PC"</i> — click <b>More info</b> &rarr; <b>Run anyway</b>.
-The installer then runs normally.</p>
+<p>The public train requires a valid Authenticode publisher and trusted timestamp. SmartScreen
+  can still show <i>"Windows protected your PC"</i> while a certificate builds reputation.
+  Open <b>More info</b>, verify the publisher matches the release notes, and proceed only then.</p>
 
 <h3>macOS first run</h3>
 <ol>
 <li>Open the <code>.dmg</code> and drag <b>StarNet</b> into <b>Applications</b>.</li>
-<li>Open StarNet once — macOS blocks it the first time (the app isn't notarized yet).</li>
-<li>Approve it: <b>System Settings &rarr; Privacy &amp; Security</b>, scroll to Security,
-click <b>Open Anyway</b> — or on older macOS, right-click the app &rarr; <b>Open</b> &rarr; <b>Open</b>.</li>
+<li>Open StarNet from Applications. The public train requires Developer ID signing and a
+stapled Apple notarization ticket, so Gatekeeper should accept the release normally.</li>
 </ol>
-<p>You only do this once; afterwards StarNet opens normally.</p>
+<p>If Gatekeeper reports an unknown developer, missing notarization, or a damaged app, stop and
+report the release tag and asset name. Do not clear quarantine for a purported public release.</p>
 
 <h2>2. Connect a provider</h2>
 <p>On first launch StarNet asks for one model provider. An
@@ -81,9 +81,10 @@ COMMS window. When it uses a real tool you'll see it move to the workstation tha
 tool — the animation is driven by the actual run, not a script.</p>
 
 <h2>4. Updates</h2>
-<p>StarNet updates itself (System &rarr; Updates). Every update is cryptographically verified
-against a key baked into the app before it installs — on every platform, independent of OS
-code-signing. You never need to re-download installers for routine updates.</p>
+<p>The public train produces signed updater artifacts for Windows and both Mac architectures.
+The Update Center verifies downloads against a key baked into the app before installation,
+independently of OS signing. This is the supported path, not proof that a specific candidate was
+installed and updated; use the matching release installer if an update cannot complete.</p>
 
 <h2>Run from source</h2>
 <p>The sidecar runs on Node core modules alone — no <code>npm install</code> needed:</p>
