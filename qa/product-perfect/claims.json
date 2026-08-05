@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "130f97c03a7039047889677c638b97ca9c23fa47",
+    "sourceCommit": "1ec8539a89c06773e1efc90da5c01fcb88fc303e",
     "pathSetSha256": "3c76d976b6571a75b7071f817196faa721d37cce0d9639716ba23587d1560b15",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 133657,
-        "sha256": "fb2520af88f40b61f3f4b3b605f9258e5165aebd73ee934e0bc858da0e6b0c49"
+        "bytes": 144381,
+        "sha256": "a56fb344a4840ec550549555a7d074eb9e9d9700dd1e9f7d80c84b691cda85b5"
       },
       {
         "path": "frontend/app/channels.js",
@@ -463,8 +463,8 @@
       },
       {
         "path": "frontend/app/propsprites.js",
-        "bytes": 563894,
-        "sha256": "6c55a4d8a8c63bbb736ed317521bf078ffafa1ed6f2f2be26842266e3efafadc"
+        "bytes": 564126,
+        "sha256": "80f96ef6dccf5784e05f75e9967c2c477be33e2577c1e76d25012ced77f61db3"
       },
       {
         "path": "frontend/app/prospect.js",
@@ -768,8 +768,8 @@
       },
       {
         "path": "frontend/app/tutorial.js",
-        "bytes": 72437,
-        "sha256": "95004bf2685f41574c72bfbd2f0e9a941d6cb6ff550c39e86883e79ca7e5c2da"
+        "bytes": 72709,
+        "sha256": "316ddafe03093f1e3602e367eb008c5237d8bfc302610142c2a8dbf1b553068d"
       },
       {
         "path": "frontend/app/understanding.js",
@@ -903,8 +903,8 @@
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 81246,
-        "sha256": "87775a1c14a74812b3622b9fe5f68f8b8a9513bf9e26538ba90f408c14aff535"
+        "bytes": 87987,
+        "sha256": "501f7f90a9018cd0a9d22140241ca418e66f23dce8fe74f0b1ca1aba42f149be"
       },
       {
         "path": "frontend/app/xp.js",
@@ -923,8 +923,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 261909,
-        "sha256": "569ede1562b2fd2732f1981190d1e84039b77b6775bd9bedaea8061b1d734c63"
+        "bytes": 263439,
+        "sha256": "e373fa9807e9c1dd5540e44369731b74878e0dea86f85be110c1060143ec437f"
       },
       {
         "path": "frontend/css/asciifx.css",
