@@ -172,6 +172,28 @@ async function main() {
       console.log('shot', await capture(cdp, OUT, 'abilities-place-refit'));
     }
 
+    // ---- NO WHITE HTML CONTROLS (standing order). The three OS-paint signatures are a white/near-white
+    //      buttonface, the grey ButtonBorder, and black Arial. Sweep every control this console renders.
+    if (!ONLY) {
+      const paint = await evalJS(cdp, `(() => {
+        const OS_BG = ['rgb(255, 255, 255)', 'rgb(239, 239, 239)'];
+        const OS_BORDER = 'rgb(118, 118, 118)';
+        const bad = [];
+        const scope = document.querySelector('#terms .term');
+        if (!scope) return 'no-console-open';
+        scope.querySelectorAll('button, select, textarea, input, summary, details').forEach(el => {
+          const cs = getComputedStyle(el);
+          const hits = [];
+          if (OS_BG.includes(cs.backgroundColor)) hits.push('bg:' + cs.backgroundColor);
+          if (cs.borderTopColor === OS_BORDER) hits.push('border:' + cs.borderTopColor);
+          if (/arial|sans-serif/i.test(cs.fontFamily) && !/VT323/i.test(cs.fontFamily)) hits.push('font:' + cs.fontFamily);
+          if (hits.length) bad.push({ sel: el.tagName.toLowerCase() + '.' + (el.className || '(none)'), hits });
+        });
+        return { scanned: scope.querySelectorAll('button, select, textarea, input, summary, details').length, offenders: bad.slice(0, 12) };
+      })()`);
+      console.log('OS-PAINT SWEEP', JSON.stringify(paint));
+    }
+
     if (diag.exceptions.length) console.log('PAGE EXCEPTIONS:', diag.exceptions);
     const errs = diag.consoleMsgs.filter(m => m.type === 'error');
     if (errs.length) console.log('CONSOLE ERRORS:', errs.slice(0, 10));
