@@ -136,12 +136,36 @@
     return lines.join('\n');
   }
 
+  /* THE GROUNDING VETO (2026-08-05) — the same engine the night shift uses (autopilot.js grounded/flattenBeliefs).
+
+     This parse used to accept ANY non-empty GROUNDS line: presence-only. That is not a grounding gate, it is a
+     format gate. A model that invented "you mentioned wanting a weekly competitor digest" cleared it word for
+     word, and the proposal did not merely get shown — approving it WRITES A CRON JOB that wakes unattended
+     forever, under a beat whose whole copy is "now that i KNOW you". The sibling engine already refuses this:
+     autopilot.js vetoes a candidate whose GROUNDS shares no significant token with anything the station knows.
+     The evidence pool is the caller's obligation and the whole basis of the check — so, exactly like
+     parseCandidates, a caller that supplies NO pool grounds NOTHING and every proposal dies. Fail-closed is the
+     point: the failure mode this replaces was inventing standing work, not missing some.
+     Resolved LAZILY — index.html loads autojobs.js BEFORE autopilot.js, so a load-time capture would be null. */
+  const AUTOPILOT_NODE = (typeof module !== 'undefined' && module.exports)
+    ? (() => { try { return require('./autopilot.js'); } catch (_) { return null; } })()
+    : null;
+  function veto() {
+    const A = AUTOPILOT_NODE || ((typeof globalThis !== 'undefined' && globalThis.Autopilot) || null);
+    return (A && A.grounded && A.flattenBeliefs) ? A : null;
+  }
+
   // read the agent's reply into proposal objects, tolerantly. Splits on JOB: markers; each block keeps a proposal
-  // only if it has BOTH a title and a non-empty GROUNDS (the grounding gate) and a RUN instruction. CADENCE is
-  // validated against the menu (unknown → the default). Returns at most `max` proposals.
+  // only if it has a title, a RUN instruction, and a GROUNDS line that is BOTH non-empty AND actually anchored in
+  // the evidence pool (opts.beliefs — the {dim: [text]} map the store already holds). CADENCE is validated against
+  // the menu (unknown → the default). Returns at most `max` proposals.
   function parseProposals(text, opts) {
     const raw = String(text == null ? '' : text);
     const max = (opts && Number.isFinite(opts.max)) ? opts.max : MAX_PROPOSALS;
+    const V = veto();
+    // the evidence pool: every belief text the station actually holds, flattened. No engine → no veto is possible,
+    // and a parse that cannot check its grounding must not pretend it did (see the fail-closed note above).
+    const pool = V ? V.flattenBeliefs(opts && opts.beliefs) : null;
     const grab = (block, label) => {
       const m = new RegExp('^\\s*' + label + '\\s*:\\s*(.+?)\\s*$', 'im').exec(block);
       return m ? m[1].trim() : '';
@@ -154,6 +178,7 @@
       const grounds = grab(block, 'GROUNDS');
       const run = grab(block, 'RUN');
       if (!title || !grounds || !run) continue;   // grounding + a real instruction are mandatory
+      if (!V || !V.grounded(grounds, pool)) continue;   // …and INVENTED grounding dies here, not on the schedule
       const cadRaw = grab(block, 'CADENCE').toLowerCase();
       const cad = CADENCES.filter(c => c.id === cadRaw)[0] ? cadRaw : DEFAULT_CADENCE;
       out.push({ title: title.slice(0, NAME_CHARS), why: grab(block, 'WHY'), grounds, cadenceId: cad, prompt: run });

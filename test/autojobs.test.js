@@ -53,7 +53,16 @@ A.ok(/JOB:/.test(dir) && /WHY:/.test(dir) && /GROUNDS:/.test(dir) && /CADENCE:/.
 for (const c of J.CADENCES) A.ok(dir.indexOf(c.id) >= 0, 'the directive lists cadence id "' + c.id + '"');
 A.eq(J.buildProposalDirective({ beliefs: {} }), J.buildProposalDirective({ beliefs: {} }), 'buildProposalDirective is deterministic');
 
-/* ---------- parseProposals(): grounding gate + cadence clamp + cap ---------- */
+/* ---------- parseProposals(): grounding VETO + cadence clamp + cap ----------
+   The evidence pool is the caller's obligation (autojobstore passes the SAME belief map it grounded the directive
+   with). A parse with no pool grounds nothing and every proposal dies — fail-closed, exactly like the night
+   shift's parseCandidates, because the failure this gate replaces was INVENTING standing work. */
+const POOL = {
+  goals: ['ship the invoice rewrite this quarter', 'a real goal'],
+  pain: ['loses time to manual standups', 'a goal'],
+  ambition: ['write a book someday'],
+  stack: ['prometheus dashboards', 'kubernetes cluster', 'postgres backups', 'terraform modules']
+};
 const reply = [
   'JOB: Standup draft',
   'WHY: kills the manual standup pain',
@@ -67,7 +76,7 @@ const reply = [
   'CADENCE: weekly',
   'RUN: Draft one concrete next step toward the book.'
 ].join('\n');
-const props = J.parseProposals(reply);
+const props = J.parseProposals(reply, { beliefs: POOL });
 A.eq(props.length, 2, 'parses every well-formed block');
 A.eq(props[0].title, 'Standup draft', 'reads the job title');
 A.eq(props[0].cadenceId, 'morning', 'reads a valid cadence');
@@ -76,17 +85,34 @@ A.eq(props[1].cadenceId, 'weekly', 'reads the second cadence');
 
 // grounding gate: a block with no GROUNDS (or no RUN) is dropped
 const ungrounded = 'JOB: Vague thing\nWHY: seems nice\nCADENCE: morning\nRUN: do something';
-A.eq(J.parseProposals(ungrounded).length, 0, 'a block missing GROUNDS is dropped (no grounding, no candidate)');
+A.eq(J.parseProposals(ungrounded, { beliefs: POOL }).length, 0, 'a block missing GROUNDS is dropped (no grounding, no candidate)');
 const noRun = 'JOB: Titled\nGROUNDS: a real goal\nCADENCE: morning';
-A.eq(J.parseProposals(noRun).length, 0, 'a block missing RUN is dropped');
+A.eq(J.parseProposals(noRun, { beliefs: POOL }).length, 0, 'a block missing RUN is dropped');
 // unknown cadence clamps to default
 const badCad = 'JOB: X\nGROUNDS: a goal\nCADENCE: yearly\nRUN: think about X';
-A.eq(J.parseProposals(badCad)[0].cadenceId, J.DEFAULT_CADENCE, 'an unknown cadence clamps to the default');
+A.eq(J.parseProposals(badCad, { beliefs: POOL })[0].cadenceId, J.DEFAULT_CADENCE, 'an unknown cadence clamps to the default');
 // tolerant of chatter + case; caps at max
-const messy = 'sure! here you go:\n\njob: one\ngrounds: g1\nrun: r1\n\nJOB: two\nGROUNDS: g2\nRUN: r2\n\nJOB: three\nGROUNDS: g3\nRUN: r3\n\nJOB: four\nGROUNDS: g4\nRUN: r4';
-A.eq(J.parseProposals(messy, { max: 3 }).length, 3, 'parse is case-insensitive, ignores chatter, and caps at max');
-A.eq(J.parseProposals('no jobs here'), [], 'an unparseable reply → [] (caller handles gracefully)');
-A.eq(J.parseProposals(''), [], 'empty reply → []');
+const messy = ['sure! here you go:', '', 'job: one', 'grounds: prometheus dashboards', 'run: r1', '',
+  'JOB: two', 'GROUNDS: the kubernetes cluster', 'RUN: r2', '',
+  'JOB: three', 'GROUNDS: postgres backups', 'RUN: r3', '',
+  'JOB: four', 'GROUNDS: terraform modules', 'RUN: r4'].join('\n');
+A.eq(J.parseProposals(messy, { max: 3, beliefs: POOL }).length, 3, 'parse is case-insensitive, ignores chatter, and caps at max');
+A.eq(J.parseProposals('no jobs here', { beliefs: POOL }), [], 'an unparseable reply → [] (caller handles gracefully)');
+A.eq(J.parseProposals('', { beliefs: POOL }), [], 'empty reply → []');
+
+/* THE VETO ITSELF — a perfectly-formatted block whose GROUNDS the station has never heard of. This is the whole
+   point: the block below is INDISTINGUISHABLE from a good one by shape, and approving it would have written a
+   cron job that wakes unattended forever under a beat that says "now that i know you". */
+const invented = ['JOB: Competitor digest', 'WHY: keeps you ahead',
+  'GROUNDS: you mentioned tracking competitor pricing announcements weekly',
+  'CADENCE: weekly', 'RUN: Draft a competitor digest from what you know.'].join('\n');
+A.eq(J.parseProposals(invented, { beliefs: POOL }).length, 0, 'invented grounding is VETOED, not scheduled');
+A.eq(J.parseProposals(reply, { beliefs: {} }).length, 0, 'an EMPTY evidence pool grounds nothing — fail-closed');
+A.eq(J.parseProposals(reply).length, 0, 'and a caller that supplies no pool at all gets nothing (never a silent pass)');
+// …and a paraphrase of something real still survives: the veto is a structural floor, not a semantic judge.
+const paraphrase = ['JOB: Standup helper', 'GROUNDS: the manual standups that eat their time',
+  'CADENCE: morning', 'RUN: Draft the standup.'].join('\n');
+A.eq(J.parseProposals(paraphrase, { beliefs: POOL }).length, 1, 'a paraphrase of a REAL belief is not vetoed');
 
 /* ---------- toCronBody(): a valid POST /api/cron body ---------- */
 const body = J.toCronBody({ title: 'Standup draft', prompt: 'Draft the standup.', cadenceId: 'morning' });

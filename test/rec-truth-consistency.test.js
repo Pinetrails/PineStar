@@ -78,4 +78,22 @@ A.ok(/function goalMatcher\(\)/.test(read('frontend/app/recruiter.js')) &&
      /function goalMatcher\(\)/.test(read('frontend/app/marketplace.js')),
   'both resolve the matcher through a call-time getter, never a module-scope binding');
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   2. THE AUTOJOBS GROUNDING VETO IS WIRED (the engine's own behaviour lives in autojobs.test.js)
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   The veto only protects anything if the LIVE caller hands it the pool, and hands it the SAME beliefs it
+   grounded the directive with. A store that reads beliefs twice, or forgets the second argument, restores the
+   presence-only gate silently — the proposals still render, they are just unchecked again. */
+const storeSrc = read('frontend/app/autojobstore.js');
+A.ok(/const known = beliefs\(\);/.test(storeSrc), 'autojobstore reads the belief map ONCE');
+A.ok(/buildProposalDirective\(\{ beliefs: known,/.test(storeSrc), '…grounds the directive with it');
+A.ok(/parseProposals\(res\.text, \{ beliefs: known \}\)/.test(storeSrc), '…and vetoes the reply against that same set');
+A.eq(/parseProposals\(res\.text\)/.test(storeSrc), false, 'the unchecked one-argument parse is gone from the live path');
+// the veto engine is the night shift's, not a second copy
+const jobsSrc = read('frontend/app/autojobs.js');
+A.ok(/A\.grounded && A\.flattenBeliefs/.test(jobsSrc), 'autojobs borrows autopilot’s grounded()/flattenBeliefs');
+A.ok(/if \(!V \|\| !V\.grounded\(grounds, pool\)\) continue;/.test(jobsSrc), '…and drops the block when it does not clear');
+A.ok(idx.indexOf('app/autojobs.js') < idx.indexOf('app/autopilot.js'),
+  'autojobs.js loads before autopilot.js — which is why the veto engine is resolved at call time');
+
 A.report('rec truth & consistency (W3)');

@@ -132,7 +132,10 @@ const AutoJobStore = (() => {
     try {
       let existing = [];
       try { existing = deps.getExistingJobs ? (await deps.getExistingJobs()) || [] : []; } catch (_) { existing = []; }
-      const directive = AutoJobs.buildProposalDirective({ beliefs: beliefs(), existingJobs: existing });
+      // ONE read of the beliefs, used TWICE: it grounds the directive, and it is the evidence pool the parse
+      // vetoes against. Reading it once is what makes those two the same set — a second read could drift.
+      const known = beliefs();
+      const directive = AutoJobs.buildProposalDirective({ beliefs: known, existingJobs: existing });
       const system = deps.getSystem ? deps.getSystem() : '';
       const name = deps.getName ? deps.getName() : 'AGENT';
 
@@ -140,7 +143,9 @@ const AutoJobStore = (() => {
       Dialogue.open({ name });
       await Dialogue.say('give me a second — let me think about what would be worth running for you on a schedule…', { auto: true });   // latency patter — never gate a wait on a click
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
-      const proposals = (res && !res.error) ? AutoJobs.parseProposals(res.text) : [];
+      // THE GROUNDING VETO runs here: a proposal whose GROUNDS shares nothing with `known` is dropped, so an
+      // invented rationale can never become a cron job the station wakes to forever.
+      const proposals = (res && !res.error) ? AutoJobs.parseProposals(res.text, { beliefs: known }) : [];
       if (!proposals.length) {   // model hiccup / nothing groundable → say nothing useful, leave the flag UNSET so a later run can retry
         if (Dialogue.isOpen()) Dialogue.close();
         return { scheduled: 0 };
