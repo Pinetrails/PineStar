@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5f2fc379ceb6ae45c4ec2bfa888f09bf863ee623",
+    "sourceCommit": "ba8fbe58ced3a03bf64ea616e0439055d5c91632",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -218,8 +218,8 @@
       },
       {
         "path": "frontend/app/dialogue.js",
-        "bytes": 20127,
-        "sha256": "bd5bc1213994e65fe50d50ea8827fb67617e2add5568b3ca7922064932046d52"
+        "bytes": 21337,
+        "sha256": "0481646acd843976e8a831ba3c68db097a62a300c488bf98012be1cf947e9d42"
       },
       {
         "path": "frontend/app/dockglow.js",
@@ -393,8 +393,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 70984,
-        "sha256": "b1e9d49776931b4455e52876eea0ade3375ef9405625238ae796185b6e43ddb2"
+        "bytes": 76434,
+        "sha256": "0f2c721ab62db4d52752a138b5dbdc4617cc8548f70d1044d6d361ad506df366"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -818,8 +818,8 @@
       },
       {
         "path": "frontend/app/wakemind.js",
-        "bytes": 28975,
-        "sha256": "816366a11ac74b3a7e546416541c84cbdd02e2db10e51116ce730190a012a964"
+        "bytes": 33553,
+        "sha256": "a460989925dd0549881ac44c72035a753fc6d489412e8772905caa8754c102f4"
       },
       {
         "path": "frontend/app/warroom.js",
@@ -933,8 +933,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 272168,
-        "sha256": "2f6edd777b8456d6d8176b40c3e1c569f086b8e452ca9b9b6b067817127d5221"
+        "bytes": 272642,
+        "sha256": "ec16a67f3b3fc4051e4b346c5bc20939f5df340803ea02c7f15a0cdf8093b0e6"
       },
       {
         "path": "frontend/css/asciifx.css",
