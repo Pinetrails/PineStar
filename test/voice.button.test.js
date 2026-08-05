@@ -33,16 +33,17 @@ class MockSR {
   fireFinal(t) { if (this.onresult) this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: t }], { isFinal: true })] }); if (this.started) { this.started = false; liveRecs--; } this.onend && this.onend(); }
 }
 
-let gumMode = 'ok', gumPending = [];
+let gumMode = 'ok', gumPending = [], gumCalls = 0;
 function fakeStream() { return { getTracks: () => [{ stop() {} }] }; }
 function makeGum() {
   return () => new Promise((res, rej) => {
+    gumCalls++;
     if (gumMode === 'ok') res(fakeStream());
     else if (gumMode === 'deny') { const e = new Error('denied'); e.name = 'NotAllowedError'; rej(e); }
     else gumPending.push({ res, rej });   // 'hang'
   });
 }
-let mrInstances = [];
+let mrInstances = [], processorInstances = [];
 class MockMR {
   static isTypeSupported() { return true; }
   constructor(stream, opts) { this.stream = stream; this.mimeType = (opts && opts.mimeType) || 'audio/webm'; this.state = 'inactive'; this.ondataavailable = this.onstop = this.onerror = null; mrInstances.push(this); }
@@ -50,6 +51,14 @@ class MockMR {
   stop() { if (this.state !== 'inactive') { this.state = 'inactive'; const s = this; setTimeout(() => { s.onstop && s.onstop(); }, 0); } }
 }
 class MockAnalyser { constructor() { this.fftSize = 2048; } getFloatTimeDomainData(b) { for (let i = 0; i < b.length; i++) b[i] = 0; } }
+class MockProcessor {
+  constructor() { this.onaudioprocess = null; processorInstances.push(this); }
+  connect() {} disconnect() {}
+  fire(samples) {
+    const data = Float32Array.from(samples || [0.25, -0.25, 0.1, -0.1]);
+    if (this.onaudioprocess) this.onaudioprocess({ inputBuffer: { getChannelData: () => data } });
+  }
+}
 /* canSpeak() is `typeof Audio !== 'undefined' && typeof fetch !== 'undefined'`, and without it init() HIDES
    the speaker toggle and never calls reflectToggle — so any test of the tooltip's reflect path is vacuous.
    Opt in with boot({ audio: true }). Only ever constructed on a SUCCESSFUL synth, so a degrade test never
@@ -59,7 +68,14 @@ class MockAudio {
   play() { return Promise.resolve(); }
   pause() {} load() {} addEventListener() {} removeEventListener() {}
 }
-class MockAC { constructor() { this.state = 'running'; this.sampleRate = 48000; } createMediaStreamSource() { return { connect() {} }; } createAnalyser() { return new MockAnalyser(); } createGain() { return { connect() {}, gain: { value: 0 } }; } close() {} resume() {} }
+class MockAC {
+  constructor() { this.state = 'running'; this.sampleRate = 48000; this.destination = {}; }
+  createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+  createAnalyser() { return new MockAnalyser(); }
+  createScriptProcessor() { return new MockProcessor(); }
+  createGain() { return { connect() {}, disconnect() {}, gain: { value: 0 } }; }
+  close() {} resume() {}
+}
 
 function mkEl(id) {
   const cls = new Set();
@@ -71,10 +87,12 @@ function mkEl(id) {
   return e;
 }
 
-// Build a fresh voice.js instance in its own sandbox. `recorder` = force the desktop recorder path.
+// Build a fresh voice.js instance in its own sandbox. `recorder` force-selects the recorder path;
+// `desktop` exposes the same mic/MediaRecorder surface without overriding production provider selection.
 function boot(opts) {
   opts = opts || {};
-  liveRecs = 0; srInstances = []; gumMode = 'ok'; gumPending = []; mrInstances = [];
+  liveRecs = 0; srInstances = []; gumMode = 'ok'; gumPending = []; gumCalls = 0; mrInstances = []; processorInstances = [];
+  const hasRecorder = !!(opts.recorder || opts.desktop);
   const nodes = {}; ['chat-input', 'chat-status', 'chat-mic', 'voice-toggle', 'voice-mode'].forEach(id => nodes[id] = mkEl(id));
   const statusLog = [];
   const win = {};
@@ -85,11 +103,11 @@ function boot(opts) {
   const sandbox = {
     window: win,
     document: { getElementById: id => nodes[id] || null, addEventListener() {} },
-    navigator: opts.recorder ? { mediaDevices: { getUserMedia: makeGum() } } : { mediaDevices: undefined },
+    navigator: hasRecorder ? { mediaDevices: { getUserMedia: makeGum() } } : { mediaDevices: undefined },
     location: { search: opts.recorder ? '?stt=recorder' : '' },
     localStorage: (() => { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => m[k] = String(v), removeItem: k => delete m[k] }; })(),
-    SpeechRecognition: opts.recorder ? undefined : MockSR,
-    MediaRecorder: opts.recorder ? MockMR : undefined,
+    SpeechRecognition: hasRecorder ? undefined : MockSR,
+    MediaRecorder: hasRecorder ? MockMR : undefined,
     AudioContext: MockAC,
     Audio: opts.Audio || (opts.audio ? MockAudio : undefined),
     requestAnimationFrame: cb => st(() => cb(Date.now()), 16), cancelAnimationFrame: clearTimeout,
@@ -106,12 +124,19 @@ function boot(opts) {
     __busy: false, __sent: []
   };
   // speechSynthesis is DELETED from the speak path; a test may inject a spy to prove it's never invoked.
-  sandbox.globalThis = sandbox; win.SpeechRecognition = MockSR; win.speechSynthesis = opts.speechSynthesis || undefined;
+  sandbox.globalThis = sandbox;
+  win.SpeechRecognition = hasRecorder ? undefined : MockSR;
+  win.AudioContext = MockAC;
+  win.speechSynthesis = opts.speechSynthesis || undefined;
   vm.createContext(sandbox);
   vm.runInContext(SRC + '\nthis.__Voice = Voice;', sandbox, { filename: 'voice.js' });
   const Voice = sandbox.__Voice;
   Voice.init({ name: 'Tester' });
-  return { Voice, nodes, statusLog, sandbox, micRec: () => nodes['chat-mic'].classList.contains('rec') };
+  return {
+    Voice, nodes, statusLog, sandbox,
+    micRec: () => nodes['chat-mic'].classList.contains('rec'),
+    gumCalls: () => gumCalls
+  };
 }
 
 // a /api/tts endpoint that always FAILS with a given reason (→ neural voice degrades to the browser
@@ -154,6 +179,53 @@ async function opensWithin(t, ms) {
 }
 
 (async () => {
+  // --- regular push-to-talk selects a proven desktop STT engine; Local Live remains separate ----
+  {
+    const calls = [];
+    const fetch = (url) => {
+      calls.push(String(url));
+      if (url === '/api/stt/status') return Promise.resolve({ ok: true, json: () => Promise.resolve({ available: true, preferred: 'native' }) });
+      if (url === '/api/stt/native') return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, text: 'windows dictation' }) });
+      return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+    };
+    const t = boot({ desktop: true, fetch });
+    await tick();
+    t.Voice.startListening();
+    await until(() => t.sandbox.__sent.length === 1, 1000);
+    A.eq(t.Voice.sttEngine(), 'native', 'Windows push-to-talk selects the available native dictation engine');
+    A.eq(t.sandbox.__sent[0], 'windows dictation', 'Windows native dictation is sent as a regular typed message');
+    A.eq(t.gumCalls(), 0, 'Windows native dictation does not also open the MediaRecorder microphone path');
+    A.ok(calls.includes('/api/stt/native') && !calls.includes('/api/local-voice/transcribe'), 'regular dictation stays separate from Local Live transcription');
+    A.ok(t.Voice.inVoiceMode() === false, 'regular dictation does not enable hands-free/live voice mode');
+  }
+
+  {
+    const calls = [];
+    let pcmBody = null;
+    const fetch = (url, init) => {
+      calls.push(String(url));
+      if (url === '/api/stt/status') return Promise.resolve({ ok: true, json: () => Promise.resolve({ available: true, preferred: 'local' }) });
+      if (url === '/api/local-voice/transcribe') {
+        pcmBody = init && init.body;
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, text: 'mac local dictation' }) });
+      }
+      return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+    };
+    const t = boot({ desktop: true, fetch });
+    await tick();
+    t.Voice.startListening(); await tick(30);
+    A.ok(processorInstances.length > 0, 'local push-to-talk captures PCM alongside the level meter');
+    processorInstances[processorInstances.length - 1].fire();
+    t.Voice.stopListening();
+    await until(() => t.sandbox.__sent.length === 1, 1000);
+    A.eq(t.Voice.sttEngine(), 'recorder', 'macOS/local push-to-talk keeps the one-shot recorder UI');
+    A.eq(t.sandbox.__sent[0], 'mac local dictation', 'macOS local dictation is sent as a regular typed message');
+    A.ok(pcmBody && typeof pcmBody.byteLength === 'number' && pcmBody.byteLength > 0 && pcmBody.byteLength % 4 === 0,
+      'local push-to-talk posts decoded Float32 PCM, never WebM/MP4 bytes');
+    A.ok(calls.includes('/api/local-voice/transcribe') && !calls.includes('/api/stt/native'), 'local dictation does not invoke the native/live provider');
+    A.ok(t.Voice.inVoiceMode() === false, 'local push-to-talk remains separate from hands-free/live voice mode');
+  }
+
   // --- webSpeech: recognition.start() throws (double-start / InvalidStateError) -----------------
   {
     const t = boot(); srStartMode = 'throw';

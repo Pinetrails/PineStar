@@ -910,8 +910,8 @@ const Voice = (() => {
        • webSpeechProvider — browser-native SpeechRecognition (real interim results, but Google-censored).
                              The FALLBACK: no MediaRecorder, `?stt=web`, or a keyless sidecar (the 'no key'
                              latch).
-     `activeStt` is chosen once at module load and used everywhere; nothing else in this file references SR
-     or MediaRecorder directly. */
+     The sidecar capability probe selects the classic provider; Local Live may temporarily install its own
+     coordinator provider, then restores the classic choice on teardown. */
   const webSpeechProvider = {
     name: 'web-speech',
     start(cbs) {
@@ -982,6 +982,7 @@ const Voice = (() => {
   const GUM_TIMEOUT_MS = 12000;
   const recorderProvider = (() => {
     let stream = null, mr = null, chunks = [], ac = null, analyser = null, rafId = null;
+    let pcmProcessor = null, pcmSink = null, pcmFrames = [], pcmRate = 0, takeSttMode = 'cloud';
     let cb = null, mime = '', startedAt = 0, floor = null, lastVoiceAt = 0, calibrateUntil = 0, silenceTimer = null;
     let aborted = false, delivered = false, hardCapTimer = null;
 
@@ -1001,6 +1002,9 @@ const Voice = (() => {
       if (rafId) { try { cancelAnimationFrame(rafId); } catch (_) {} rafId = null; }
       if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
       if (hardCapTimer) { clearTimeout(hardCapTimer); hardCapTimer = null; }
+      try { if (pcmProcessor) pcmProcessor.disconnect(); } catch (_) {}
+      try { if (pcmSink) pcmSink.disconnect(); } catch (_) {}
+      pcmProcessor = pcmSink = null;
       if (ac) { try { ac.close(); } catch (_) {} ac = null; }
       analyser = null;
       if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (_) {} stream = null; }
@@ -1030,7 +1034,40 @@ const Voice = (() => {
       };
       rafId = requestAnimationFrame(tick);
     }
+    function mono16k(frames, fromRate) {
+      let total = 0;
+      for (const frame of frames) total += frame.length;
+      if (!total) return new Float32Array(0);
+      const input = new Float32Array(total);
+      let offset = 0;
+      for (const frame of frames) { input.set(frame, offset); offset += frame.length; }
+      if (fromRate === 16000) return input;
+      const ratio = fromRate / 16000;
+      const output = new Float32Array(Math.floor(input.length / ratio));
+      for (let i = 0; i < output.length; i++) {
+        const start = Math.floor(i * ratio), end = Math.min(input.length, Math.floor((i + 1) * ratio));
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += input[j];
+        output[i] = sum / Math.max(1, end - start);
+      }
+      return output;
+    }
+    async function transcribeLocalPcm() {
+      const pcm = mono16k(pcmFrames, pcmRate || 48000);
+      pcmFrames = [];
+      if (!pcm.length) return { text: '', reason: 'local microphone capture produced no audio', failed: true };
+      const r = await fetch('/api/local-voice/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: pcm.buffer
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return { text: '', reason: (j && (j.error || j.reason)) || ('local transcription unreachable (HTTP ' + r.status + ')'), failed: true };
+      return { text: String((j && j.text) || ''), reason: j && (j.error || j.reason) };
+    }
     async function transcribe(blob) {
+      // The bundled macOS/local engine consumes mono Float32 PCM. MediaRecorder emits WebM/MP4, so sending
+      // its container bytes guarantees an honest but useless "local engine needs wav" response. Capture PCM
+      // from the same stream and use the local endpoint only when the sidecar proved that is the selected leg.
+      if (takeSttMode === 'local') return transcribeLocalPcm();
       const fmt = fmtFromMime(mime || blob.type || '');
       // desktop: apiKey() is '' (key is in the sidecar env) — send it as a header when we DO have one (browser).
       const key = apiKey();
@@ -1057,7 +1094,10 @@ const Voice = (() => {
     }
     function finish() {
       if (delivered) return; delivered = true;
-      const blob = chunks.length ? new Blob(chunks, { type: mime || 'audio/webm' }) : null;
+      // Local STT consumes the parallel PCM capture, so a WebView that withholds its final MediaRecorder
+      // chunk must not discard audio we demonstrably captured through WebAudio.
+      const blob = chunks.length ? new Blob(chunks, { type: mime || 'audio/webm' })
+        : (takeSttMode === 'local' && pcmFrames.length ? new Blob([new Uint8Array(1)], { type: 'audio/wav' }) : null);
       chunks = [];
       if (aborted || !blob || !blob.size) { cb && cb.onEnd && cb.onEnd(); return; }
       transcribe(blob).then(({ text, reason }) => {
@@ -1074,7 +1114,8 @@ const Voice = (() => {
       });
     }
     async function start(cbs) {
-      cb = cbs; chunks = []; aborted = false; delivered = false; floor = null; lastVoiceAt = 0;
+      cb = cbs; chunks = []; pcmFrames = []; pcmRate = 0; takeSttMode = classicSttMode;
+      aborted = false; delivered = false; floor = null; lastVoiceAt = 0;
       try {
         // DEAD-BUTTON GUARD: getUserMedia can hang forever if the mic-permission prompt is DISMISSED (not
         // answered) — WebView2 and some browsers never settle the promise. Without a ceiling, `listening`
@@ -1108,6 +1149,18 @@ const Voice = (() => {
           const AC = window.AudioContext || window.webkitAudioContext;
           ac = new AC(); const src = ac.createMediaStreamSource(stream);
           analyser = ac.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
+          // ScriptProcessor remains available in the embedded WebViews we support and is already the proven
+          // capture seam used by Local Live. A silent gain keeps it clocked without feeding the mic to output.
+          if (ac.createScriptProcessor) {
+            pcmProcessor = ac.createScriptProcessor(2048, 1, 1);
+            pcmSink = ac.createGain(); pcmSink.gain.value = 0;
+            pcmProcessor.onaudioprocess = e => {
+              const samples = e && e.inputBuffer && e.inputBuffer.getChannelData(0);
+              if (samples && samples.length) pcmFrames.push(new Float32Array(samples));
+            };
+            src.connect(pcmProcessor); pcmProcessor.connect(pcmSink); pcmSink.connect(ac.destination);
+            pcmRate = ac.sampleRate || 48000;
+          }
         } catch (_) { ac = null; analyser = null; }
         startedAt = Date.now(); calibrateUntil = startedAt + REC.CALIBRATE_MS; lastVoiceAt = 0;
         mr.start();
@@ -1162,16 +1215,38 @@ const Voice = (() => {
     return { name: 'native', start, stop, abort };
   })();
 
-  /* provider selection: prefer the RECORDER (server Whisper via /api/stt) wherever the mic can be recorded.
-     Browser-native SpeechRecognition (Chrome) is Google-served and CENSORS profanity to asterisks with no
-     opt-out — the station must transcribe what you actually said, so web-speech is only the fallback:
-     no MediaRecorder, `?stt=web`, or a sidecar with no STT credential (see the 'no key' latch below —
-     keyless voice keeps working through the browser engine). `let`, not `const`: the latch swaps it. */
-  let sttProvider =
+  /* Classic provider selection starts with browser feature detection, then the sidecar's truthful capability
+     snapshot chooses cloud recorder, local PCM, or native Windows dictation. Browser SpeechRecognition is the
+     fallback for a keyless browser. `?stt=recorder` and `?stt=web` remain explicit diagnostic overrides. */
+  let classicSttProvider =
     forceRecorder  ? (canRecordMic ? recorderProvider : webSpeechProvider) :
     forceWebSpeech ? webSpeechProvider :
     (canRecordMic ? recorderProvider : webSpeechProvider);
-  const usingRecorder = () => sttProvider === recorderProvider;
+  let sttProvider = classicSttProvider;
+  let classicSttMode = 'cloud';
+  let classicProviderReady = !!(forceRecorder || forceWebSpeech);
+  let classicProviderProbe = null;
+  let startAfterProbe = false;
+  function applyClassicSttStatus(status) {
+    const preferred = String((status && status.preferred) || '');
+    if (!forceRecorder && !forceWebSpeech) {
+      if (preferred === 'native') { classicSttProvider = nativeSpeechProvider; classicSttMode = 'native'; }
+      else if (preferred === 'local' && canRecordMic) { classicSttProvider = recorderProvider; classicSttMode = 'local'; }
+      else if (preferred === 'cloud' && canRecordMic) { classicSttProvider = recorderProvider; classicSttMode = 'cloud'; }
+      else if (preferred === 'none' && SR) { classicSttProvider = webSpeechProvider; classicSttMode = 'web'; }
+    }
+    classicProviderReady = true;
+    if (!coordinator && !listening) sttProvider = classicSttProvider;
+  }
+  function probeClassicStt() {
+    if (forceRecorder || forceWebSpeech || typeof fetch === 'undefined') { classicProviderReady = true; return Promise.resolve(); }
+    classicProviderReady = false;
+    classicProviderProbe = fetch('/api/stt/status', { method: 'GET' })
+      .then(r => r.ok ? r.json() : null)
+      .then(applyClassicSttStatus)
+      .catch(() => { classicProviderReady = true; });
+    return classicProviderProbe;
+  }
   /* the 'no key' latch: /api/stt fail-opens with {text:'', reason:'no key'} when the sidecar has NO
      transcription credential (no Groq/OpenAI/OpenRouter key). A keyless browser session would otherwise
      get silent empty listens forever — fall back to browser-native SR (censored, but working) for the
@@ -1180,14 +1255,25 @@ const Voice = (() => {
   function maybeFallbackToWebSpeech(reason) {
     if (String(reason || '') !== 'no key') return;
     if (forceRecorder || !SR || sttProvider !== recorderProvider) return;
-    sttProvider = webSpeechProvider;
+    classicSttProvider = webSpeechProvider; classicSttMode = 'web';
+    if (!coordinator) sttProvider = classicSttProvider;
     console.warn('[voice] server STT has no credential — falling back to browser speech recognition (it censors profanity; add a Groq/OpenAI/OpenRouter key for verbatim transcripts)');
   }
 
   function busyNow() { return typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy(); }
 
   function startListening() {
+    // init probes the sidecar in the background. If the first click wins that race, preserve the click and
+    // begin as soon as the truthful provider snapshot arrives instead of guessing from WebView browser APIs.
+    if (!coordinator && !classicProviderReady && classicProviderProbe) {
+      if (!startAfterProbe) {
+        startAfterProbe = true;
+        classicProviderProbe.finally(() => { startAfterProbe = false; startListening(); });
+      }
+      return;
+    }
     if (!canListen() || listening) return;
+    if (!coordinator) sttProvider = classicSttProvider;
     if (busyNow() && !coordinator) { setStatus('busy — wait for the reply'); return; }  // classic mode stays half-duplex
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
@@ -1303,6 +1389,7 @@ const Voice = (() => {
   function stopCoordinator() {
     if (convoMode) stopConvo();
     coordinator = null;
+    sttProvider = classicSttProvider;
   }
   // The downloaded local speech surface owns its persistent microphone/VAD loop, but still needs the mature
   // reply-stream hooks (captions, speaking state, barge-in) from this module.
@@ -1429,6 +1516,9 @@ const Voice = (() => {
     // awakening, which owns the COMMS input). Never auto-starts; the click is the required mic-permission gesture.
     if (opts.resumeCue !== false && canListen() && loadPref(LS_CONVO, false)) showResumeCue();
     else clearResumeCue();
+    // Browser feature detection cannot tell whether compressed cloud STT, bundled local PCM, or native
+    // Windows dictation is the working leg. Ask the sidecar once per init; the mic still waits for a click.
+    probeClassicStt();
     // if the speaker is already on for this agent AND the harness is configured, warm the stock lines now
     // (background, fire-and-forget) so the very first mutter/sample plays from cache. No key → no-op.
     prewarmedFor = null;   // new agent/persona → allow a fresh warm

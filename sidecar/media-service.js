@@ -471,6 +471,22 @@ function makeMediaService(options) {
     return { ok: true, text: String((json && json.text) || '').trim() };
   }
 
+  // One truthful capability snapshot for the classic push-to-talk button. The client cannot infer these
+  // from browser APIs: desktop WebViews have MediaRecorder even when the only usable engine is native
+  // Windows dictation, while the bundled local engine accepts PCM rather than the recorder's WebM/MP4.
+  // Return booleans only — never provider credentials or paths.
+  function sttStatus() {
+    const cloud = !!(
+      providerRuntimeKey('groq', '') ||
+      providerRuntimeKey('openai', '') ||
+      (typeof o.getRuntimeKey === 'function' ? o.getRuntimeKey() : '')
+    );
+    const local = (() => { try { return !!localVoice.status().available; } catch (_) { return false; } })();
+    const native = (() => { try { return !!nativeStt.status().available; } catch (_) { return false; } })();
+    const preferred = cloud ? 'cloud' : local ? 'local' : native ? 'native' : 'none';
+    return { available: preferred !== 'none', preferred, cloud, local, native };
+  }
+
   async function transcribeAudioBuffer(audioBuf, format, apiKey) {
     if (!audioBuf || !audioBuf.length) return { ok: false, reason: 'no audio' };
     const key = String(apiKey || (typeof o.getRuntimeKey === 'function' ? o.getRuntimeKey() : '') || '');
@@ -577,6 +593,11 @@ function makeMediaService(options) {
     return result.ok ? ok(result.text) : degrade(result.reason);
   }
 
+  function handleSttStatus(req, res) {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(sttStatus()));
+  }
+
   function handleNativeSttStatus(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(nativeStt.status()));
@@ -639,9 +660,11 @@ function makeMediaService(options) {
 
   return {
     synthesizeForAgent,
+    sttStatus,
     transcribeAudioBuffer,
     transcribeForMime,
     handleTts,
+    handleSttStatus,
     handleStt,
     handleNativeSttStatus,
     handleNativeStt,

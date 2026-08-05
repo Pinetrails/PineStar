@@ -87,7 +87,15 @@ async function make(overrides) {
   // No credentials and no local engine is an honest terminal capability result.
   const keyless = await make();
   assert.deepEqual(await keyless.transcribeAudioBuffer(Buffer.from('audio'), 'webm'), { ok: false, reason: 'no key' });
+  assert.deepEqual(keyless.sttStatus(), {
+    available: false, preferred: 'none', cloud: false, local: false, native: false
+  });
   assert.match((await keyless.synthesizeForAgent({ text: 'hello' })).reason, /edge: disabled/);
+
+  const nativeOnly = await make({ nativeStt: { status: () => ({ available: true }), recognize: async () => ({ ok: true, text: 'native' }) } });
+  assert.deepEqual(nativeOnly.sttStatus(), {
+    available: true, preferred: 'native', cloud: false, local: false, native: true
+  });
 
   // A keyed TTS failure falls through to the free Edge floor instead of committing a hard failure.
   let ttsFetches = 0;
@@ -135,6 +143,9 @@ async function make(overrides) {
     }
   });
   assert.deepEqual(await local.transcribeAudioBuffer(wav, 'wav'), { ok: true, text: 'local words' });
+  assert.deepEqual(local.sttStatus(), {
+    available: true, preferred: 'local', cloud: false, local: true, native: false
+  });
   assert.equal(localPcm.length, decoded.length * 4);
   localPcm = null;
   assert.deepEqual(await local.transcribeAudioBuffer(OGG_OPUS, 'ogg'), { ok: true, text: 'local words' });

@@ -7065,6 +7065,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/station/ack', h: handleStationAck },
   { m: 'GET', qsplit: '/api/realtime/status', h: handleRealtimeStatus },
   { m: 'POST', qsplit: '/api/realtime/session', h: handleRealtimeSession },
+  { m: 'GET', exact: '/api/stt/status', h: media.handleSttStatus },
   { m: 'GET', exact: '/api/stt/native/status', h: media.handleNativeSttStatus },
   { m: 'POST', exact: '/api/stt/native', h: media.handleNativeStt },
   { m: 'GET', exact: '/api/local-voice/status', h: media.handleLocalVoiceStatus },

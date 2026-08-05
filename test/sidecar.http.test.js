@@ -878,6 +878,11 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
        the wrong cause: the station HAS ears, this clip was just undecodable. So ask the station what it can
        actually do and hold it to the matching truth — asserting one fixed string would force a lie in whichever
        world it was not written for, and dropping to "some reason exists" would guard nothing. */
+    const sttStatus = await j('GET', '/api/stt/status');
+    A.eq(sttStatus.status, 200, 'GET /api/stt/status -> 200');
+    A.ok(['cloud', 'local', 'native', 'none'].includes(sttStatus.body.preferred), 'STT status names one supported classic provider leg');
+    A.eq(sttStatus.body.available, sttStatus.body.preferred !== 'none', 'STT status availability agrees with its preferred leg');
+    A.ok(['cloud', 'local', 'native'].every(k => typeof sttStatus.body[k] === 'boolean'), 'STT status exposes capability booleans without credentials');
     const localVoice = await j('GET', '/api/local-voice/status');
     const canHearKeyless = !!(localVoice.body && localVoice.body.available);
     if (canHearKeyless) {
