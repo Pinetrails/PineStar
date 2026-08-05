@@ -5635,7 +5635,17 @@ const World = (() => {
     // when a bay disappears) — while the manifest/dossier still list it. The law this restores: a roster
     // agent ALWAYS has a live floor body; its bay decides where it homes, never whether it exists (2026-07-07).
     const ex = crew.find(b => b.agentId === a.id);
-    if (ex) { ex.summoned = true; return; }
+    if (ex) {
+      ex.summoned = true;
+      // loadStation derives bay-bound bodies from the floor plan before App replays the saved roster. The plan
+      // knows only the agent id, so that provisional body carries the default skin/id label/synthetic color.
+      // Rehydrate the roster-owned display identity here too; returning with only `summoned` restored made every
+      // bay-bound agent LOOK reset after relaunch even though its dossier still held the chosen skin.
+      if (a.name) ex.name = a.name;
+      if (a.color) ex.color = a.color;
+      if (a.skin && typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[a.skin]) ex.skin = a.skin;
+      return;
+    }
     const f = geo ? workerFoot() : { x: 0, y: 0 };                        // pre-geo: parked at origin, re-footed on first syncCrewFromPlan
     const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y, a.skin);
     b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple

@@ -17,7 +17,11 @@ global.World = {
 };
 
 const notices = [];
-global.StationUI = { notify: (text, kind) => notices.push({ text, kind }) };
+const rosterSnapshots = [];
+global.StationUI = {
+  notify: (text, kind) => notices.push({ text, kind }),
+  setRoster: list => rosterSnapshots.push(list.map(a => ({ id: a.id, level: a.stats && a.stats.level })))
+};
 let sfx = 0;
 global.SFX = { level: () => { sfx++; } };
 global.Tutorial = { onLevelUp: () => {} };
@@ -32,6 +36,7 @@ let persists = 0;
 
 XpStore.init({
   getAgent: (id) => agents.get(id || (focused && focused.id) || 'agent') || null,
+  agents: () => Array.from(agents.values()),
   station: Xp.fresh(),
   persist: () => { persists++; }
 });
@@ -57,7 +62,10 @@ A.eq(researcher.stats.xp, 0, 'run completions alone award no xp');
 A.eq(researcher.stats.counters.tasksDone, 4, 'run completions still update researcher task counters');
 A.eq(world.pulse.length, 0, 'no level pulse fires from run completions alone');
 
-for (let i = 1; i <= 3; i++) approve('researcher', i);
+approve('researcher', 1);
+approve('researcher', 2);
+A.eq(rosterSnapshots.length, 0, 'ordinary XP ticks do not rebuild the crew manifest before its displayed level changes');
+approve('researcher', 3);
 
 A.eq(overseer.stats.level, 1, 'researcher feedback does not level the overseer');
 A.eq(researcher.stats.level, 2, 'researcher owns its feedback-driven level-up stats');
@@ -68,6 +76,7 @@ A.ok(notices.some(n => /RESEARCHER reached Level 2/.test(n.text)), 'toast names 
 A.ok(!notices.some(n => /OVERSEER reached Level 2/.test(n.text)), 'toast does not name the overseer');
 A.ok(world.setXp.some(x => x.agentId === 'researcher' && x.xp && x.xp.level === 2), 'world XP snapshot is stored under researcher');
 A.ok(!world.setXp.some(x => x.agentId === 'agent' && x.xp && x.xp.level === 2), 'researcher XP snapshot is not stored under overseer');
+A.ok(rosterSnapshots.some(list => list.some(a => a.id === 'researcher' && a.level === 2)), 'the left crew manifest receives the new researcher level immediately');
 A.eq(sfx, 1, 'agent level-up sound fires once');
 A.ok(persists >= 1, 'level-up persists the owning agent stats');
 

@@ -69,6 +69,17 @@ const XpStore = (() => {
     if (el) el.textContent = 'Lv ' + Xp.compute(station).level;
   }
 
+  // The canvas HUD and top-bar chip have direct setters, but the left crew manifest renders its "Lv N" text
+  // from the roster snapshot handed to StationUI. Refresh that snapshot only when the displayed level changes;
+  // ordinary run/XP events stay cheap and do not rebuild the rail.
+  function refreshCrewLevel() {
+    if (!allAgents || typeof StationUI === 'undefined' || !StationUI.setRoster) return;
+    try {
+      const list = allAgents();
+      if (Array.isArray(list)) StationUI.setRoster(list);
+    } catch (_) {}
+  }
+
   function celebrateAgent(a, level) {
     if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(a && a.id ? a.id : 'agent', level);
     if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
@@ -132,7 +143,7 @@ const XpStore = (() => {
     pushToWorld(a);
     pushTopbar();
 
-    if (ra.awards.levelUp) celebrateAgent(a, ra.awards.levelTo);
+    if (ra.awards.levelUp) { refreshCrewLevel(); celebrateAgent(a, ra.awards.levelTo); }
     for (const id of ra.awards.milestones) announceMilestone(id);   // agent-scoped milestones
     if (rs.awards.levelUp) celebrateStation(rs.awards.levelTo);
 
