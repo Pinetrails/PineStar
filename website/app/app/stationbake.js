@@ -271,28 +271,47 @@ const StationBake = (() => {
      begins (see skirtTops). Along a straight edge it is constant, so the whole wall is one rect;
      it only steps where the hull curves. Calling back per RUN rather than per column keeps a flat
      wall at a handful of fills while still letting a corner staircase down one pixel at a time. */
-  const wallRuns = (topOf, w, cb, minRun) => {
-    if (!topOf) { cb(0, w, 0); return; }          // no geometry (headless / swatch): one flat wall
-    const min = minRun || 1;
+  const runsOf = (topOf, w) => {
+    if (!topOf) return [[0, w, 0]];               // no geometry (headless / swatch): one flat wall
+    const out = [];
     let x0 = 0;
     while (x0 < w) {
       const t = topOf[x0];
       let x1 = x0 + 1;
       while (x1 < w && topOf[x1] === t) x1 += 1;
-      /* WHERE THE WALL TURNS TOO STEEPLY TO SHOW A COURSE, SHOW NONE. Around the tightest part of a
-         corner arc every run is one pixel wide, so each column lands its own course line and they
-         stack into a bright ragged strip — the exact edge artefact this whole fix was meant to
-         remove, just rotated 90°. Dropping sub-`min` runs lets the material fade into the plain
-         depth ramp there, which is both what the untextured station shell already does and what
-         real masonry does at a grazing angle. */
-      if (t >= 0 && x1 - x0 >= min) cb(x0, x1 - x0, t);
+      if (t >= 0) out.push([x0, x1 - x0, t]);
       x0 = x1;
     }
+    return out;
   };
+  const wallRuns = (topOf, w, cb) => { for (const r of runsOf(topOf, w)) cb(r[0], r[1], r[2]); };
 
-  // how wide a run of equal wall height has to be before it is worth drawing a course on — see the
-  // grazing-angle note in wallRuns. 3 clears the steepest third of a corner arc.
-  const COURSE_MIN_RUN = 3;
+  /* ONE COURSE, DRAWN AS A CONNECTED CONTOUR OF THE WALL TOP.
+
+     THE BRIDGE BETWEEN RUNS IS THE WHOLE THING (2026-08-05, Andrew, circling the bare strip at a
+     corner: "do you see how it doesn't continue? it just cuts off at the corner. what I am looking
+     for is perfect continuation with the proper curve"). Drawing a flat rect per run is the easy
+     half and it is NOT a curve — it is a staircase of disconnected dashes, because between two runs
+     the course jumps a row with nothing joining them. Filling that step with a one-pixel column is
+     what turns the dashes into a line that sweeps round the arc.
+
+     A previous pass tried to hide the staircase by simply not drawing courses on narrow runs. That
+     is what left the bare vertical band Andrew circled — the cladding visibly quitting at the
+     corner. There is no width below which a course should vanish; it just has to be CONNECTED.
+     Runs that are not touching (`nx[0] !== rx + rw`) are a genuine gap in the wall — a doorway, a
+     neighbouring footprint — and must NOT be bridged, or the line leaps across open space. */
+  const courseLine = (px, runs, k, ch, off, thick) => {
+    for (let i = 0; i < runs.length; i++) {
+      const rx = runs[i][0], rw = runs[i][1];
+      const y = runs[i][2] + k * ch + off;
+      px(rx, y, rw, thick);
+      const nx = runs[i + 1];
+      if (!nx || nx[0] !== rx + rw) continue;
+      const y2 = nx[2] + k * ch + off;
+      const a = Math.min(y, y2), b = Math.max(y, y2);
+      px(rx + rw - 1, a, 1, (b - a) + thick);
+    }
+  };
 
   /* THE SHARED PANEL JOINT — a faint vertical shadow every 28px, on EVERY shell, run after the
      material's own veins. It was the station shell's private detail; making it common is what ties
@@ -311,22 +330,22 @@ const StationBake = (() => {
     const px = boxed(fg, 0, 0, w, h);
     const bedH = o.bedH || 1, from = o.jointFrom || 0, run = o.ch - from - bedH;
     const rows = Math.ceil(h / o.ch) + 2;
-    wallRuns(topOf, w, (rx, rw, top) => {
-      for (let k = 0; k < rows; k++) {
-        const yTop = top + k * o.ch;
-        if (yTop > h) break;
-        if (o.crest) { fg.fillStyle = o.crest; px(rx, yTop, rw, 1); }
-        if (o.bed) { fg.fillStyle = o.bed; px(rx, yTop + o.ch - bedH, rw, bedH); }
-        if (o.joint && o.uw > 1 && run > 0) {
-          fg.fillStyle = o.joint;
-          // the stagger is keyed on the course's index DOWN THE WALL, so it stays consistent around
-          // a corner; the joint's x stays keyed on ABSOLUTE world coords, so two buildings in the
-          // same skin still line up and a chunk bake lands identically to a monolithic one.
-          const off = (k & 1) ? (o.uw >> 1) : 0;
-          for (let wx = courseAt(vx + rx - off, o.uw) + off; wx < vx + rx + rw; wx += o.uw) px(wx - vx, yTop + from, 1, run);
+    const runs = runsOf(topOf, w);
+    for (let k = 0; k < rows; k++) {
+      if (o.crest) { fg.fillStyle = o.crest; courseLine(px, runs, k, o.ch, 0, 1); }
+      if (o.bed) { fg.fillStyle = o.bed; courseLine(px, runs, k, o.ch, o.ch - bedH, bedH); }
+      if (o.joint && o.uw > 1 && run > 0) {
+        fg.fillStyle = o.joint;
+        // the stagger is keyed on the course's index DOWN THE WALL, so it stays consistent around
+        // a corner; the joint's x stays keyed on ABSOLUTE world coords, so two buildings in the
+        // same skin still line up and a chunk bake lands identically to a monolithic one.
+        const off = (k & 1) ? (o.uw >> 1) : 0;
+        for (const r of runs) {
+          const y = r[2] + k * o.ch + from;
+          for (let wx = courseAt(vx + r[0] - off, o.uw) + off; wx < vx + r[0] + r[1]; wx += o.uw) px(wx - vx, y, 1, run);
         }
       }
-    }, COURSE_MIN_RUN);
+    }
   };
 
   const CORNER = {
@@ -1531,7 +1550,7 @@ const StationBake = (() => {
           for (let wx = courseAt(vx + rx, 19); wx < vx + rx + rw; wx += 19)
             if (h2(wx, k, 'knotv') % 3 === 0) px(wx - vx, y, 2, 2);
         }
-      }, COURSE_MIN_RUN);
+      });
     }
   };
 
@@ -1697,20 +1716,20 @@ const StationBake = (() => {
        desynchronises across chunk seams. Fixed pitch, hashed OFFSET — parity-safe irregularity. */
     veins(fg, pal, w, h, vx, vy, topOf) {
       const px = boxed(fg, 0, 0, w, h);
-      wallRuns(topOf, w, (rx, rw, top) => {
-        for (let k = 0; k < Math.ceil(h / 7) + 2; k++) {
-          const yTop = top + k * 7;
-          if (yTop > h) break;
-          const drop = h2(0, k, 'stnh') % 3;                 // the bed wanders 0..2 inside its course
-          fg.fillStyle = 'rgba(0,0,0,0.46)'; px(rx, yTop + 6 - drop, rw, 1);
-          for (let wx = courseAt(vx + rx, 9); wx < vx + rx + rw; wx += 9) {
+      const runs = runsOf(topOf, w);
+      for (let k = 0; k < Math.ceil(h / 7) + 2; k++) {
+        const drop = h2(0, k, 'stnh') % 3;                   // the bed wanders 0..2 inside its course
+        fg.fillStyle = 'rgba(0,0,0,0.46)'; courseLine(px, runs, k, 7, 6 - drop, 1);
+        for (const rr of runs) {
+          const yTop = rr[2] + k * 7;
+          for (let wx = courseAt(vx + rr[0], 9); wx < vx + rr[0] + rr[1]; wx += 9) {
             const r = h2(wx, k, 'stnj');
             if (r % 5 === 0) continue;                       // not every cell carries a joint
             fg.fillStyle = 'rgba(0,0,0,0.44)'; px(wx - vx + (r % 7), yTop, 1, 6 - drop);
             if (r % 4 === 0) { fg.fillStyle = 'rgba(255,250,240,0.10)'; px(wx - vx + 2, yTop + 1, 3, 1); }
           }
         }
-      }, COURSE_MIN_RUN);
+      }
     }
   };
 
