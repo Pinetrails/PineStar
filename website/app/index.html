@@ -556,13 +556,15 @@
       </div>
     </div>
     <div class="bb-group" data-group="system">
-      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Station systems — manual, settings, notifications"><span class="bb-gi">▣</span>SYSTEM<span id="bb-sys-badge" class="bb-grp-badge" aria-label="unread notifications" hidden></span></button>
+      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Station systems — manual, settings, updates, notifications"><span class="bb-gi">▣</span>SYSTEM<span id="bb-sys-badge" class="bb-grp-badge" aria-label="unread notifications" hidden></span></button>
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">▣ SYSTEM — the station itself</div>
-        <!-- NAV CONDENSE 2: UPDATES lives in SETTINGS ▸ UPDATES; LOGBOOK + RESTORE are per-agent and live
-             in the AGENTS dossier (LOGBOOK / RESTORE tabs). openTerm keeps the old keys as deep links. -->
+        <!-- NAV CONDENSE 2: LOGBOOK + RESTORE are per-agent and live in the AGENTS dossier
+             (LOGBOOK / RESTORE tabs); openTerm keeps the old keys as deep links. UPDATES stays
+             its own window (Andrew's call — check-it-now, not a setting). -->
         <button class="bb" data-term="manual"><span class="bb-i">§</span><span class="bb-tx"><b>FIELD MANUAL</b><small>every prop &amp; mechanic, explained</small></span></button>
-        <button class="bb" data-term="settings"><span class="bb-i">⚙</span><span class="bb-tx"><b>SETTINGS</b><small>keys, models, voice, updates, data</small></span></button>
+        <button class="bb" data-term="settings"><span class="bb-i">⚙</span><span class="bb-tx"><b>SETTINGS</b><small>keys, models, voice, data</small></span></button>
+        <button class="bb" data-term="updates"><span class="bb-i">↑</span><span class="bb-tx"><b>UPDATES</b><small>version &amp; release notes</small></span></button>
         <button class="bb" data-term="notifs"><span class="bb-i">▲</span><span class="bb-tx"><b>NOTIFICATIONS</b><small>alerts &amp; unread events</small></span><span id="nf-badge" class="badge"></span></button>
       </div>
     </div>

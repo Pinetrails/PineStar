@@ -67,9 +67,7 @@ const Updates = (() => {
     return Object.assign({}, state, { prefs: Object.assign({}, prefs) });
   }
   function emit() {
-    // NAV CONDENSE 2: the update center is a SETTINGS section now — repaint that window (the
-    // rerender is a no-op unless SETTINGS is open, same guard the old 'updates' key had).
-    try { rerender('settings'); } catch (_) {}
+    try { rerender('updates'); } catch (_) {}
   }
 
   async function init(opts) {

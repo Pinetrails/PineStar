@@ -4627,10 +4627,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
       // dock read as a loop.
       { id: 'notifs', label: 'ALERTS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
-      // NAV CONDENSE 2: the UPDATE CENTER window folded in here — version, release notes and the
-      // update check are settings-shaped reads, and the SYSTEM dock slims to manual/settings/inbox.
-      // build, not frag: Updates.render owns the pane's DOM and wires its own controls.
-      { id: 'updates', label: 'UPDATES', glyph: '↑', desc: 'Version, release notes, and the update check.', build: el => buildUpdates(el) },
       { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, and station backup.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
@@ -6280,10 +6276,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '760px' }],
-    // NAV CONDENSE 2 (2026-08-04): 'skills' and 'updates' are no longer window keys — the skill
-    // library/agent-skills sections live in the ABILITIES (connectors) console via AbilityLanes,
-    // per-agent capabilities live in the dossier's SKILLS tab, and the update center is a SETTINGS
-    // section. openTerm keeps the old keys alive as aliases (TERM_ALIAS).
+    // NAV CONDENSE 2 (2026-08-04): 'skills' is no longer a window key — the skill library/agent-
+    // skills sections live in the ABILITIES (connectors) console via AbilityLanes, and per-agent
+    // capabilities live in the dossier's SKILLS tab. openTerm keeps the old keys alive as aliases
+    // (TERM_ALIAS). UPDATES stays its own SYSTEM-dock window (Andrew's call — an update is a
+    // check-it-now surface, not a setting).
+    updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { w: '760px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
@@ -6342,12 +6340,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const TERM_ALIAS = {
     routines: { term: 'automation', section: 'routines', map: { active: 'routines', create: 'routines-create' } },
     loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } },
-    // NAV CONDENSE 2: four more retired window keys live on as deep links. 'skills' lands on the
+    // NAV CONDENSE 2: three more retired window keys live on as deep links. 'skills' lands on the
     // ABILITIES skill library (its per-agent CAPABILITIES grid moved to the dossier SKILLS tab, so
-    // the old 'caps' section maps to the dossier); 'updates' is a SETTINGS section; 'logbook' and
-    // 'rewind' are dossier sections of the selected agent.
+    // the old 'caps' section maps to the toolsets home); 'logbook' and 'rewind' are dossier
+    // sections of the selected agent. ('updates' is still a real window — no alias needed.)
     skills:   { term: 'connectors', section: 'library', map: { library: 'library', agent: 'agent', caps: 'toolsets' } },
-    updates:  { term: 'settings',   section: 'updates', map: {} },
     logbook:  { term: 'agents',     section: 'logbook', map: { runs: 'logbook', slag: 'logbook', insights: 'logbook' } },
     rewind:   { term: 'agents',     section: 'restore', map: {} }
   };
