@@ -57,11 +57,11 @@ const ProspectStore = (() => {
       if (typeof localStorage === 'undefined') return {};
       const o = JSON.parse(localStorage.getItem(SHOWN_KEY) || 'null');
       const rows = (o && typeof o === 'object' && o.rows && typeof o.rows === 'object') ? o.rows : {};
-      const out = {}; const t = now();
+      const out = {};
       for (const k of Object.keys(rows)) {
         const r = rows[k];
-        // drop anything expired or malformed on the way IN, so a corrupt file can never resurrect a stale id
-        if (r && typeof r === 'object' && typeof r.id === 'string' && Number.isFinite(r.at) && (t - r.at) < SHOWN_TTL_MS) out[k] = { id: r.id, at: r.at };
+        // drop anything malformed on the way IN, so a corrupt file can never resurrect a garbage id
+        if (r && typeof r === 'object' && typeof r.id === 'string' && Number.isFinite(r.at)) out[k] = { id: r.id, at: r.at };
       }
       return out;
     } catch (_) { return {}; }
@@ -75,12 +75,25 @@ const ProspectStore = (() => {
       localStorage.setItem(SHOWN_KEY, JSON.stringify({ v: 1, rows: rows }));
     } catch (_) {}
   }
-  // the live id for a shelf key, or '' when this really is a fresh impression (absent, or aged past the window).
+  /* ⛔ THE WINDOW GATES THE MINT, NOT THE LOOKUP (2026-08-05). These were one function, and the TTL applied to
+     every caller — so `recommendationVerdict` / `recommendationOutcome` ALSO went blind at T+24h and returned
+     false without POSTing anything. A Commander who left the bay open overnight, or came back to a card whose
+     impression row was older than the window, could accept or decline it and have the verdict SILENTLY DROPPED
+     while the `shown` row it belonged to sat on the ledger forever unanswered. That depresses acceptanceRate in
+     exactly the direction the reload fix was made to stop.
+     The impression is a FACT about a row that exists; the window is a statement about when a re-render counts as
+     a NEW impression. Only the second is time-bounded. The store is bounded by SHOWN_CAP FIFO on save (and load
+     no longer age-drops, for the same reason: a decision made after a restart must still land). */
+  // the stored id for a shelf key, whatever its age — '' only when no impression was ever recorded.
   function shownId(key) {
     const r = recommendationIds[key];
+    return (r && r.id) ? r.id : '';
+  }
+  // the id ONLY while it is still the same impression window; '' means a re-render is genuinely new exposure.
+  function freshShownId(key) {
+    const r = recommendationIds[key];
     if (!r) return '';
-    if ((now() - r.at) >= SHOWN_TTL_MS) { delete recommendationIds[key]; return ''; }
-    return r.id;
+    return ((now() - r.at) < SHOWN_TTL_MS) ? r.id : '';
   }
   // the token-carrying fetch (Harness.apiFetch); injectable for tests.
   const api = (u, init) => (deps.fetch ? deps.fetch(u, init)
@@ -174,7 +187,7 @@ const ProspectStore = (() => {
     const lane = String(surface || 'scout');
     if (!target) return '';
     const key = lane + ':' + target;
-    const already = shownId(key);
+    const already = freshShownId(key);   // MINT-side only: the window decides what counts as a new impression
     if (already) return already;     // same card, same window → the impression is already on the ledger
     const id = 'ui:' + lane + ':' + target.slice(0, 60) + ':' + now() + ':' + (++recommendationSeq);
     recommendationIds[key] = { id: id, at: now() };

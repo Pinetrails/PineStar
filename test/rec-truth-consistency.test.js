@@ -317,10 +317,24 @@ A.ok(/function invalidateFit\(\) \{ fitProjects = null; fitChannels = null; \}/.
   // …and the verdict now lands on that row, which the in-memory-only map could not do after a reload
   A.eq(reloaded.recommendationVerdict('recruit', 'researcher', 'declined', 'wrong_thing'), true,
     'a decline made after the reload records against the impression that actually happened');
-  // past the window it IS a new impression — suppressing that would understate real exposure
+  /* ⛔ THE WINDOW GATES THE MINT, NOT THE LOOKUP. The TTL used to apply to the verdict/outcome read too, so a
+     decision made past the window was SILENTLY DROPPED — no POST, `false` returned, and the `shown` row left on
+     the ledger forever unanswered. That depresses acceptanceRate in the exact direction this section fixed. */
   clock += 25 * 60 * 60 * 1000;
+  const postsBefore = posted.filter(p => String(p.u).indexOf('/api/recommendations') >= 0).length;
+  A.eq(reloaded.recommendationVerdict('recruit', 'researcher', 'accepted', ''), true,
+    'an ACCEPT at T+25h still records against the impression that actually happened');
+  A.eq(reloaded.recommendationOutcome('recruit', 'researcher', { ok: true }), true,
+    '…and so does the outcome that follows it');
+  A.eq(posted.filter(p => String(p.u).indexOf('/api/recommendations') >= 0).length, postsBefore + 2,
+    '…both really left the building — an aged row is answered, not swallowed');
+  A.eq(reloaded.recommendationVerdict('recruit', 'never-shown', 'accepted', ''), false,
+    'a target with NO impression on record still records nothing (there is no row to answer)');
+  // past the window a re-render IS a new impression — suppressing that would understate real exposure
   const id3 = reloaded.noteRecommendation('recruit', CARD, { why: 'because you have launched this 3×' });
   A.ok(id3 && id3 !== id1, 'the same card a day later is a genuinely new impression');
+  const id4 = reloaded.noteRecommendation('recruit', CARD, { why: 'because you have launched this 3×' });
+  A.eq(id4, id3, '…and the re-mint suppression inside the window is untouched');
   reloaded.reset();
   A.eq(mem['starnet.prospects.shown.v1'], undefined, 'reset clears the impression memory with everything else');
 }
