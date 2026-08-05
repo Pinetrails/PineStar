@@ -2826,7 +2826,8 @@ const App = (() => {
       api: {
         load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { ok: false, reason: 'permissions service unavailable' }).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
         grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission grant failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
-        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
+        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        bypass: (on) => fetch('/api/permissions/bypass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: on === true }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'bypass switch failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
       }
     });
     // GROWTH Tier 3 — EARNED AUTONOMY (track record → trust): folds the SAME run outcomes xpstore folds into a
