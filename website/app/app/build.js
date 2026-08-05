@@ -528,8 +528,10 @@ const Build = (() => {
       intro.textContent = LINE_SENTENCE;
       pal.appendChild(intro);
     } else if (tool === 'line') {
-      /* STARTER LINES — one-click whole layouts (the beginner onramp). Mirrors the prop-gallery
-         card idiom: a grid of dark inset tiles, each drawing a live schematic of its blueprint. */
+      /* STARTER LINES v2 — one-click whole layouts (the beginner onramp). Uniform full-width
+         cards, every card the same anatomy: a schematic MINIATURE of what will stamp (drawn in
+         the floor's own colour economy), the NAME + a footprint/dock chip, and a one-line
+         purpose — so the shelf teaches what each line DOES before the first click. */
       paletteLabel = 'STARTER LINES';
       const intro = document.createElement('div');
       intro.className = 'refit-lineintro';
@@ -544,9 +546,22 @@ const Build = (() => {
         b.dataset.line = bp.id;
         b.setAttribute('aria-pressed', bp.id === lineType ? 'true' : 'false');
         b.title = bp.desc;   // adopted by tooltip.js into the station card (never the OS bubble)
-        b.appendChild(lineSchematic(bp));
+        const view = document.createElement('span'); view.className = 'refit-linetile-view';
+        view.appendChild(lineSchematic(bp));
+        b.appendChild(view);
+        const hd = document.createElement('span'); hd.className = 'refit-linetile-hd';
         const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = bp.label;
-        b.appendChild(nm);
+        hd.appendChild(nm);
+        // footprint + dock count, derived from the catalog (never hand-kept). Mixed VT323 glyphs
+        // ('×', '·') fall back fonts, so the chip is BOX-centred in CSS — never padded by font math.
+        const docks = bp.props.filter(p => p.t === 'bay').length;
+        const stat = document.createElement('span'); stat.className = 'refit-linetile-stat';
+        stat.textContent = bp.w + '×' + bp.h + ' · ' + docks + (docks === 1 ? ' DOCK' : ' DOCKS');
+        hd.appendChild(stat);
+        b.appendChild(hd);
+        const why = document.createElement('span'); why.className = 'refit-linetile-why';
+        why.textContent = LINE_PURPOSE[bp.id] || '';
+        b.appendChild(why);
         b.onclick = () => { lineType = bp.id; renderPalette(); setHint(); sfx('click'); };
         grid.appendChild(b);
       }
@@ -691,34 +706,133 @@ const Build = (() => {
   const blueprintOf = id => { for (const b of blueprints()) if (b.id === id) return b; return null; };
   // stamp centered under the cursor (a 17-tile line hung off the click point reads as a misfire)
   const lineOrigin = (bp, tx, ty) => ({ x: tx - (bp.w >> 1), y: ty - (bp.h >> 1) });
-  // machine colours keyed to the roles the floor already teaches: intake amber, bay green, outbox
-  // bright green, junctions cyan — same family as the endpoint glow + validation callouts.
-  const LINE_COL = { intake: '#e8c860', bay: '#7ee2a8', outbox: '#3fd08a', filter: '#5ad0ff', splitter: '#5ad0ff', merger: '#5ad0ff' };
+  // one-line purposes for the shelf cards — what each line DOES, in station voice
+  const LINE_PURPOSE = {
+    research_line: 'two agents in a row — one digs, the next writes it up',
+    sorting_office: 'sorts arriving work by content to the right specialist',
+    parallel_crew: 'splits one stream across three agents working at once',
+    ship_out: 'one agent, straight to the outbox — the minimal line',
+  };
+  /* schematic v2 — the card draws a MINIATURE of what will stamp, in the floor's own colour
+     economy (hex families lifted from propsprites.js RAMP.steel/ACC and conveyor.js's belt bed)
+     so the schematic teaches the real floor: the INBOX feeds amber, a BAY is a steel berth with
+     the green nameplate pip, the OUTBOX is the dark dispatch chute, a FILTER's out-lanes tint
+     like its route tips (cyan coded lane / neutral default), a SPLITTER fans teal. */
+  const SCHEME = {
+    line: '#06090c',                                                       // universal silhouette outline
+    steel: { top: '#3f4b53', face: '#303a41', lit: '#515e67', dk: '#242e35' },  // RAMP.steel, pre-dimmed
+    bed: '#161c1a', rail: '#46544c', chev: '#7a8a80',                      // conveyor bed + rails
+    amber: '#ffd34a', amberDk: '#caa84a', throat: '#1a1410',               // INBOX feed (ACC.flow family)
+    green: '#5ad1b3', greenHot: '#7df0c8',                                 // BAY pip / dispatch family
+    chute: '#08130f', chuteBody: '#101614', chuteTop: '#1c2420',           // OUTBOX dark chute
+    plate: '#0e1c16',                                                      // bay nameplate inset
+    cyan: '#4ad9ff', violet: '#b44aff', violetHot: '#d8b8ff', neutral: '#8a9a90', merge: '#e0a45a',
+  };
+  const LINE_DIR = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
+  // follow each junction's out-lanes belt-by-belt so the schematic can tint them — derived from
+  // the catalog's belts + routes, never hand-authored per blueprint.
+  function traceLanes(bp) {
+    const at = {}; for (const b of bp.belts) at[b.x + ',' + b.y] = b;
+    const tint = {}, fans = [];
+    const paint = (sx, sy, d, col) => {
+      let dx = LINE_DIR[d][0], dy = LINE_DIR[d][1], x = sx + dx, y = sy + dy, b = at[x + ',' + y], guard = 0;
+      while (b && guard++ < 64) {
+        if (!tint[x + ',' + y]) tint[x + ',' + y] = col;
+        dx = LINE_DIR[b.d][0]; dy = LINE_DIR[b.d][1]; x += dx; y += dy; b = at[x + ',' + y];
+      }
+    };
+    for (const p of bp.props) {
+      if (p.t === 'filter') {
+        const dirs = [];
+        for (const k of Object.keys(p.routes || {})) { paint(p.x, p.y, p.routes[k], SCHEME.cyan); dirs.push({ d: p.routes[k], col: SCHEME.cyan }); }
+        if (p.def) { paint(p.x, p.y, p.def, SCHEME.neutral); dirs.push({ d: p.def, col: SCHEME.neutral }); }
+        fans.push({ p, dirs });
+      } else if (p.t === 'splitter' || p.t === 'merger') {
+        const col = p.t === 'splitter' ? SCHEME.green : SCHEME.merge, dirs = [];
+        for (const d of ['N', 'E', 'S', 'W']) {
+          const b = at[(p.x + LINE_DIR[d][0]) + ',' + (p.y + LINE_DIR[d][1])];
+          if (b && b.d === d) { paint(p.x, p.y, d, col); dirs.push({ d, col }); }   // points AWAY = out-lane
+        }
+        fans.push({ p, dirs });
+      }
+    }
+    return { tint, fans };
+  }
+  // a direction chevron (">" turned to d) built from u-sized blocks — belts must say WHICH WAY
+  function lineChev(x2, cx, cy, d, col, u) {
+    const E = [[-1, -2], [0, -1], [1, 0], [0, 1], [-1, 2]];
+    x2.fillStyle = col;
+    for (const o of E) {
+      let ox = o[0], oy = o[1];
+      if (d === 'W') ox = -o[0];
+      else if (d === 'S') { ox = o[1]; oy = o[0]; }
+      else if (d === 'N') { ox = o[1]; oy = -o[0]; }
+      x2.fillRect(cx + ox * u, cy + oy * u, u, u);
+    }
+  }
+  // the oblique-kit body in miniature: silhouette ring, face, lit top band — reads "machine"
+  function lineBody(x2, X, Y, W, H, top, face, lit, dk) {
+    x2.fillStyle = SCHEME.line; x2.fillRect(X - 1, Y - 1, W + 2, H + 2);
+    x2.fillStyle = face; x2.fillRect(X, Y, W, H);
+    x2.fillStyle = top; x2.fillRect(X, Y, W, Math.max(2, Math.round(H * 0.42)));
+    x2.fillStyle = lit; x2.fillRect(X, Y, W, 1);
+    x2.fillStyle = dk; x2.fillRect(X, Y + H - 1, W, 1);
+  }
   function lineSchematic(bp) {
-    const S = 7, PAD = 4;   // 7px per tile — the widest blueprint (17 tiles) still fits the dock
+    // per-blueprint tile scale: fill the card's fixed viewport without ever scaling the canvas
+    const S = Math.max(4, Math.min(14, Math.floor(236 / bp.w), Math.floor(64 / bp.h)));
+    const PAD = 2, u = S >= 12 ? 2 : 1;
     const c = document.createElement('canvas');
     c.className = 'refit-linetile-cv';
     c.width = bp.w * S + PAD * 2; c.height = bp.h * S + PAD * 2;
+    c.style.width = c.width + 'px'; c.style.height = c.height + 'px';   // 1:1 — pixel art is never scaled
     const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
     x.translate(PAD, PAD);
-    for (const b of bp.belts) {   // belts first (floor machinery), a dim tread + a flow tick
-      x.fillStyle = 'rgba(140,180,200,0.28)';
-      x.fillRect(b.x * S, b.y * S + 1, S, S - 2);
-      x.fillStyle = 'rgba(200,235,255,0.65)';
-      const cx = b.x * S + S / 2, cy = b.y * S + S / 2;
-      if (b.d === 'E') x.fillRect(cx, cy - 1, 2, 2);
-      else if (b.d === 'W') x.fillRect(cx - 2, cy - 1, 2, 2);
-      else if (b.d === 'S') x.fillRect(cx - 1, cy, 2, 2);
-      else x.fillRect(cx - 1, cy - 2, 2, 2);
+    const lanes = traceLanes(bp);
+    for (const b of bp.belts) {              // belts first (floor machinery): bed, rails, chevron
+      const bx = b.x * S, by = b.y * S, horiz = b.d === 'E' || b.d === 'W';
+      x.fillStyle = SCHEME.bed; x.fillRect(bx, by, S, S);
+      const t = lanes.tint[b.x + ',' + b.y];
+      if (t) { x.globalAlpha = 0.16; x.fillStyle = t; x.fillRect(bx, by, S, S); x.globalAlpha = 1; }
+      x.fillStyle = SCHEME.rail;
+      if (horiz) { x.fillRect(bx, by, S, 1); x.fillRect(bx, by + S - 1, S, 1); }
+      else { x.fillRect(bx, by, 1, S); x.fillRect(bx + S - 1, by, 1, S); }
+      lineChev(x, bx + (S >> 1), by + (S >> 1), b.d, t || SCHEME.chev, u);
     }
     for (const p of bp.props) {
-      const col = LINE_COL[p.t] || '#9adcb0';
-      x.fillStyle = 'rgba(10,18,14,0.9)';
-      x.fillRect(p.x * S, p.y * S, p.w * S, p.h * S);
-      x.strokeStyle = col; x.lineWidth = 1;
-      x.strokeRect(p.x * S + 0.5, p.y * S + 0.5, p.w * S - 1, p.h * S - 1);
-      x.fillStyle = col;
-      x.fillRect(p.x * S + 2, p.y * S + 2, Math.max(1, p.w * S - 4), 1);   // a lit top edge — enough to read "machine"
+      const X = p.x * S, Y = p.y * S, W = p.w * S, H = p.h * S;
+      const m = Math.max(2, S >> 2), st = SCHEME.steel;
+      if (p.t === 'intake') {                // INBOX — steel casing around the amber feed throat
+        lineBody(x, X, Y, W, H, st.top, st.face, st.lit, st.dk);
+        x.fillStyle = SCHEME.throat; x.fillRect(X + m, Y + m, W - m * 2, H - m * 2);
+        x.fillStyle = SCHEME.amberDk; x.fillRect(X + m + 1, Y + m + 1, W - m * 2 - 2, H - m * 2 - 2);
+        x.fillStyle = SCHEME.amber; x.fillRect(X + m + 1, Y + m + 1, W - m * 2 - 2, u);
+      } else if (p.t === 'bay') {            // BAY — steel berth, green nameplate pip, amber berth ticks
+        lineBody(x, X, Y, W, H, st.top, st.face, st.lit, st.dk);
+        const nh = Math.max(2, Math.round(H * 0.30));
+        x.fillStyle = SCHEME.plate; x.fillRect(X + m, Y + m, W - m * 2, nh);
+        x.fillStyle = SCHEME.green; x.fillRect(X + (W >> 1) - u, Y + m + (nh >> 1) - (u >> 1), u * 2, u);
+        x.fillStyle = SCHEME.greenHot; x.fillRect(X + (W >> 1), Y + m + (nh >> 1) - (u >> 1), u, u);
+        x.fillStyle = SCHEME.amberDk;
+        for (let i = X + m; i < X + W - m; i += 3) x.fillRect(i, Y + H - m - 1, 1, 1);
+      } else if (p.t === 'outbox') {         // OUTBOX — the dark dispatch chute, green lamp
+        lineBody(x, X, Y, W, H, SCHEME.chuteTop, SCHEME.chuteBody, '#2a352e', '#0a0f0c');
+        x.fillStyle = SCHEME.chute; x.fillRect(X + m, Y + m, W - m * 2, H - m * 2);
+        x.fillStyle = SCHEME.greenHot; x.fillRect(X + W - m - u * 2, Y + m + 1, u * 2, u);
+        x.fillStyle = SCHEME.green; x.fillRect(X + m + 1, Y + H - m - u - 1, u * 2, u);
+      } else {                               // junction (filter/splitter/merger) — node + tinted arms
+        const core = p.t === 'filter' ? SCHEME.violet : (p.t === 'splitter' ? SCHEME.green : SCHEME.merge);
+        const hot = p.t === 'filter' ? SCHEME.violetHot : (p.t === 'splitter' ? '#c8f4e6' : '#ffd488');
+        lineBody(x, X + 1, Y + 1, W - 2, H - 2, st.top, st.face, st.lit, st.dk);
+        const cx = X + (W >> 1), cy = Y + (H >> 1);
+        const fan = lanes.fans.find(f => f.p === p);
+        if (fan) for (const a of fan.dirs) {   // an arm toward every out-lane, in that lane's colour
+          x.fillStyle = a.col;
+          for (let k = 1; k <= (S >> 1); k++) x.fillRect(cx + LINE_DIR[a.d][0] * k, cy + LINE_DIR[a.d][1] * k, 1, 1);
+        }
+        x.fillStyle = core; x.fillRect(cx - u, cy - u, u * 2, u * 2);
+        x.fillStyle = hot; x.fillRect(cx - (u >> 1), cy - (u >> 1), Math.max(1, u), Math.max(1, u));
+      }
     }
     return c;
   }
