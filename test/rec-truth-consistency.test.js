@@ -185,4 +185,99 @@ if (gaps && gaps.items && gaps.items.length) {
     'the UNCOVERED shelf composes its receipt through the shared helper (no catalog class covered the fixture topic)');
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   5. THE RECRUIT BEAT SPENDS THE STRENGTH THE RECRUITER ALREADY COMPUTED (source-lock: chat.js is DOM-flow)
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+const chatSrc = read('frontend/app/chat.js');
+const recruitBody = A.fnBody(chatSrc, 'function recruitCandidate(');
+A.ok(recruitBody.length > 0, 'chat.js still has the recruit candidate');
+A.ok(/strength: strength/.test(recruitBody), 'the recruit candidate carries a strength into the spine');
+A.ok(/Number\(pick\.confidence\)/.test(recruitBody), '…the recruiter’s OWN evidence-volume confidence, not a new number');
+A.ok(/conf > 1 \? 1 : conf/.test(recruitBody) && /Number\.isFinite\(conf\) && conf > 0/.test(recruitBody),
+  '…clamped into the 0..1 band recommend.js documents, and ABSENT rather than 0 when unreadable');
+// the value really is the recruiter's, end to end: matcher → store → beat
+const warmPick = Recruiter.recommend({ worksignal: dishSig, roster: [], catalog: CAT, dossier: {}, now: 0 });
+A.ok(warmPick.items.length && warmPick.items[0].confidence > 0 && warmPick.items[0].confidence <= 1,
+  'the matcher emits a 0..1 confidence for the beat to spend');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   7. A HAND-LAUNCHED RECIPE WITH NO AUTHORED CADENCE CAN STILL EARN THE ROUTINE OFFER
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   (behaviour is exercised in routinenudgestore.test.js; this pins the STRUCTURAL dead end that made it
+   unreachable — the station's own minting path stamps cadence:null.) */
+A.eq(Recipes.draft({}).cadence, null, 'a station-minted draft carries NO cadence (recipes.js draft)');
+const nudgeSrc = read('frontend/app/routinenudgestore.js');
+A.eq(/if \(!r \|\| !r\.cadence\) continue;/.test(nudgeSrc), false, 'the cadence gate that excluded every seed-born recipe is gone');
+A.ok(/if \(!r\) continue;/.test(nudgeSrc), '…replaced by "the recipe still exists", which is the only real precondition');
+A.ok(/LAUNCH_FLOOR/.test(nudgeSrc), 'the offer is still earned by REAL hand-launches');
+// nothing invents a schedule: the nudge copy states the count and defers the cadence to the confirm form
+const proposeBody = A.fnBody(nudgeSrc, 'function propose(');
+A.ok(/times by hand/.test(proposeBody), 'the nudge cites the launch count');
+A.eq(/every morning|every 6 hours|weekly|0 9 \* \* \*/.test(proposeBody), false,
+  'and NEVER names a cadence — the Commander picks it in the SCHEDULE IT form the accept opens');
+A.ok(/App\.openRecipeLaunch\(c\.id, 'routine'\)/.test(proposeBody), 'accept deep-links to that form (propose-and-confirm)');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   8. THE NIGHT SHIFT CONSULTS THE DECLINED INDEX
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+const DeclinedIndex = require('../sidecar/declinedindex.js');
+const sidecarSrc = read('sidecar/index.js');
+A.ok(/function nightshiftUndeclined\(agentId, candidates\)/.test(sidecarSrc), 'the sidecar has one night-shift declined filter');
+A.eq((sidecarSrc.match(/nightshiftUndeclined\(agentId, Autopilot\.parseCandidates\(/g) || []).length, 2,
+  'BOTH night-shift propose paths (draft beat + act shift) run candidates through it');
+const filterBody = A.fnBody(sidecarSrc, 'function nightshiftUndeclined(');
+A.ok(/catch \(_\) \{ return list; \}/.test(filterBody), 'a store hiccup fails OPEN — it never silences the night');
+A.ok(/dIdx\.has\(c\.title\)/.test(filterBody), '…and matches on the candidate title, the key every other site uses');
+// the shared index really is exact-match only (the law the filter relies on)
+const dIdx = DeclinedIndex.build([['Weekly competitor digest']]);
+A.eq(dIdx.has('weekly  competitor   digest!'), true, 'normalized-exact titles match');
+A.eq(dIdx.has('Weekly competitor digest for pricing'), false, '…and a genuinely different title is NOT suppressed');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   9. THE FIT CACHES STAY RETRYABLE
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+A.eq(/fitProjects = fitProjects \|\| \[\]/.test(mkt), false, 'a failed /api/projects no longer caches [] (truthy) forever');
+A.eq(/fitChannels = fitChannels \|\| \[\]/.test(mkt), false, '…nor does /api/connectors');
+A.ok(/\.catch\(\(\) => \{ fitProjectsPending = null; return fitProjects \|\| \[\]; \}\)/.test(mkt),
+  'the failure clears the in-flight marker and leaves the cache NULL — the same shape loadSkillCatalog documents');
+A.ok(/\.catch\(\(\) => \{ fitChannelsPending = null; return fitChannels \|\| \[\]; \}\)/.test(mkt), '…on both loaders');
+A.ok(/function invalidateFit\(\) \{ fitProjects = null; fitChannels = null; \}/.test(mkt) && /invalidateFit\(\);\s+\/\//.test(mkt),
+  'and re-opening the bay drops both, so a folder granted or a channel connected elsewhere lands');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   10. A RELOAD DOES NOT RE-MINT THE SAME `shown` LEDGER ROW
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+{
+  const mem = {};
+  global.localStorage = { getItem: k => (Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null),
+    setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; } };
+  delete require.cache[require.resolve('../frontend/app/prospectstore.js')];
+  const { ProspectStore } = require('../frontend/app/prospectstore.js');
+  const posted = [];
+  let clock = 1_750_000_000_000;
+  const mkDeps = () => ({ now: () => clock, fetch: (u, init) => { posted.push({ u, init }); return Promise.reject(new Error('offline')); } });
+  const CARD = { id: 'researcher', name: 'Researcher', tags: {} };
+  ProspectStore.init(mkDeps());
+  const id1 = ProspectStore.noteRecommendation('recruit', CARD, { why: 'because you have launched this 3×' });
+  A.ok(id1, 'the first impression mints a ledger id');
+  const postCount = posted.filter(p => String(p.u).indexOf('/api/recommendations') >= 0).length;
+  // …now RELOAD: a brand-new module instance over the same localStorage, exactly like a browser refresh.
+  delete require.cache[require.resolve('../frontend/app/prospectstore.js')];
+  const reloaded = require('../frontend/app/prospectstore.js').ProspectStore;
+  reloaded.init(mkDeps());
+  const id2 = reloaded.noteRecommendation('recruit', CARD, { why: 'because you have launched this 3×' });
+  A.eq(id2, id1, 'after a reload the SAME card reports the SAME impression — no second `shown` row');
+  A.eq(posted.filter(p => String(p.u).indexOf('/api/recommendations') >= 0).length, postCount,
+    '…and nothing was POSTed: acceptanceRate cannot decay because a tab was refreshed');
+  // …and the verdict now lands on that row, which the in-memory-only map could not do after a reload
+  A.eq(reloaded.recommendationVerdict('recruit', 'researcher', 'declined', 'wrong_thing'), true,
+    'a decline made after the reload records against the impression that actually happened');
+  // past the window it IS a new impression — suppressing that would understate real exposure
+  clock += 25 * 60 * 60 * 1000;
+  const id3 = reloaded.noteRecommendation('recruit', CARD, { why: 'because you have launched this 3×' });
+  A.ok(id3 && id3 !== id1, 'the same card a day later is a genuinely new impression');
+  reloaded.reset();
+  A.eq(mem['starnet.prospects.shown.v1'], undefined, 'reset clears the impression memory with everything else');
+}
+
 A.report('rec truth & consistency (W3)');
