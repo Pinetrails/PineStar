@@ -69,6 +69,22 @@ const Chat = (() => {
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
   const receiptRunsSeen = new Set();    // runIds whose SILENT auto-saved receipts already rendered (memory.write triggers once per run)
   const clarificationRuns = new Set();  // an intent-question turn is a continuation, not completed work
+  /* Deliverable titles this run ALREADY announced inline, as they happened. The recap card is the run's
+     ledger and must stay complete, but on a short run the same filename landed three times in a row — the
+     live "▤ saved x.md [folder]" line, the reply's prose, then the recap's own "▤ wrote x.md [⧉][folder]".
+     The ledger row keeps the name and the size; it drops the duplicate ACTIONS, because the affordance was
+     already offered a few lines up. FIFO-capped like runWork. */
+  const runShownDeliv = new Map();   // runId -> Set(title)
+  function noteShownDeliverable(runId, title) {
+    if (!runId || !title) return;
+    if (!runShownDeliv.has(runId)) runShownDeliv.set(runId, new Set());
+    runShownDeliv.get(runId).add(String(title));
+    if (runShownDeliv.size > 60) runShownDeliv.delete(runShownDeliv.keys().next().value);
+  }
+  function deliverableAlreadyShown(runId, path) {
+    const set = runId ? runShownDeliv.get(runId) : null;
+    return !!(set && set.has(String(path || '')));
+  }
   const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
                                 // beat's HONEST, un-farmable size + the delivery gate (real tools/deliverables only). FIFO-capped.
   // P3.2 CREW ATTRIBUTION: a lead run that dispatched crew gets each worker's PROVABLE spend so a 👍 on the run
@@ -1823,10 +1839,12 @@ const Chat = (() => {
     return U.usd(v);                                         // canonical spend formatter (util.js)
   }
   function fmtBytes(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
-  function recapArtifactLine(a, agentId) {
+  function recapArtifactLine(a, agentId, runId) {
     const d = document.createElement('div'); d.className = 'recap-line';
     if (a.kind === 'message') { d.textContent = '✉ sent to ' + (a.target || 'a channel'); return d; }
     const path = String(a.path || '');
+    // already announced inline a few lines up → this is the LEDGER entry, not a second action row.
+    const echo = deliverableAlreadyShown(runId, path);
     d.appendChild(document.createTextNode(a.kind === 'image' ? '▤ made ' : '▤ wrote '));
     const link = document.createElement('a');
     wireFileOpen(link, path, agentId);                       // the same jailed /api/file open every deliverable row uses
@@ -1835,6 +1853,7 @@ const Chat = (() => {
     link.title = path;
     d.appendChild(link);
     if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
+    if (echo) return d;   // the copy + folder buttons are already on the inline row above — one set, not two
     // click-to-copy of the deliverable's own (relative) path — kept for quick reference.
     const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
     cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
@@ -1852,7 +1871,7 @@ const Chat = (() => {
     const head = document.createElement('div'); head.className = 'recap-line recap-head';
     head.textContent = (done ? '◈ delivered' : '◈ ended: ' + entry.reason) + (entry.title ? ' — ' + brief(entry.title) : '');
     r.body.appendChild(head);
-    for (const a of arts.slice(0, RECAP_MAX_ROWS)) r.body.appendChild(recapArtifactLine(a, agentId));
+    for (const a of arts.slice(0, RECAP_MAX_ROWS)) r.body.appendChild(recapArtifactLine(a, agentId, runId));
     if (arts.length > RECAP_MAX_ROWS) {
       const more = document.createElement('div'); more.className = 'recap-line';
       more.textContent = '… +' + (arts.length - RECAP_MAX_ROWS) + ' more';
@@ -2379,7 +2398,7 @@ const Chat = (() => {
       const btns = document.createElement('span'); btns.className = 'consent-btns';
       item.appendChild(text); item.appendChild(btns);
       openWorkBtn(btns, rw, opts && opts.openWork);   // SEE the output first — rating blind was the confusion
-      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'rate it';
+      const b = document.createElement('button'); b.className = 'consent-btn quiet'; b.textContent = 'rate it';
       b.onclick = () => {   // swap the review affordance for the real rate control, in place
         btns.remove();
         const rate = document.createElement('div'); rate.className = 'turnin-rate';
@@ -6486,6 +6505,7 @@ const Chat = (() => {
               if (mk === 'image') imageDeliverableLine(ev.title, ev.agentId);
               else if (mk === 'video' || mk === 'audio') mediaPlayerLine(ev.title, ev.agentId, mk);
               else deliverableLine(ev.title, ev.agentId);
+              noteShownDeliverable(Channels.runIdOf(ws.id), ev.title);
             }
             // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock.
             // record the rendered media kind so a future history/replay surface can re-render the same way.

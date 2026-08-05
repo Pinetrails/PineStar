@@ -711,6 +711,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--ph-bright); border-color: var(--gold); box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
   background: linear-gradient(180deg, rgba(var(--gold-rgb),.30), rgba(var(--gold-rgb),.20));
 }
+/* QUIET SECONDARY — the third rank, below the ghost default. Named friction: the away digest put two
+   equally-weighted pills on every row, so three runs arrived as six identical buttons and the rows stopped
+   being distinguishable. The card's copy already states the order ("read each one, THEN rate it"), so the
+   later step recedes until it is earned. Chrome only — the control keeps its full hit area. */
+.consent-btn.quiet {
+  color: var(--ph-dim); border-color: rgba(var(--ph-rgb), .28); background: none;
+  box-shadow: none; text-shadow: none;
+}
+.consent-btn.quiet:hover, .consent-btn.quiet:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: none;
+}
 .consent-btn.danger { color: var(--gold); border-color: var(--gold); }
 .consent-btn.danger:hover { color: var(--ph-bright); background: rgba(var(--gold-rgb), 0.12); }
 .consent-btn.deny { color: var(--bad); border-color: var(--bad); }
