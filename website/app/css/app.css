@@ -1254,6 +1254,14 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .fnv-dialogue.no-anim .fnv-more.show { animation: none; }
 .fnv-dialogue.fnv-wait { cursor: pointer; }
 @keyframes fnv-more-blink { 50% { opacity: .3; } }
+/* the ink stamp: a quiet receipt that an answer just landed in the operating file. Dim phosphor,
+   smaller than the beat line, fades in/out — a ledger note, never a toast. */
+.fnv-ink {
+  flex: 0 0 auto; color: var(--ph-dim); font-size: 13px; letter-spacing: .5px; user-select: none;
+  opacity: 0; transition: opacity .5s ease; min-height: 1.2em; text-shadow: 0 0 4px var(--ph-glow2);
+}
+.fnv-ink.show { opacity: 1; }
+.fnv-dialogue.no-anim .fnv-ink { transition: none; }
 .fnv-opts { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; }
 .fnv-opt {
   display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;

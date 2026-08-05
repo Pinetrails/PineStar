@@ -433,6 +433,16 @@ const Onboarding = (() => {
     'hold on — i’m lining up what i could actually take off you.',
     'almost. i only want to offer what i can genuinely do.'
   ];
+  const BENCH_PATTER = [
+    '…live projects. that’s the real map — give me a second with it.',
+    'still looking at your bench. this is where my work lands first.'
+  ];
+  // ADAPTIVE FOLLOW-UPS (Andrew, 2026-08-05): the mind decides per answer whether a follow-up is EARNED
+  // (ASK: NONE when the answer is thin or complete — wakemind's askOrNoneSpec), and this budget bounds the
+  // TOTAL generated digs across the meeting so depth chases the rich answers without blowing the ceremony's
+  // runtime. Each presented generated follow-up spends one; a NONE spends nothing. The scripted spine
+  // (tuesday/pain/stack/bench/lost/year themselves) is never budget-gated — only the digs on top.
+  const FOLLOWUP_BUDGET = 3;
   // reason-only + internal — no tools reachable (placed:[]), no run.start/end on the bus (the awakening
   // thinking about you is not a shipped task; XP/telemetry stay honest), cost still counted.
   function llmCall(directive) {
@@ -540,7 +550,7 @@ const Onboarding = (() => {
       if (!isSkip && commit) { const patch = s.build(text); if (patch) commit(patch); }
       // a beat that targets a dossier dimension (not a config .md) writes its answer STRAIGHT to the station-wide
       // dossier — same authoring path the COMMANDER panel uses (recomposes the live prompt + persists at the edge).
-      if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert(s.dossierDim, { text, source: 'onboarding', weight: 'stated' });   // V3: always the Commander's own words now (steer chips can't write)
+      if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert(s.dossierDim, { text, source: 'onboarding', weight: 'stated' }); ink(s.dossierDim, text); }   // V3: always the Commander's own words now (steer chips can't write); the ink stamp shows the write landing
       // the autonomy cadence beat writes the chosen OPENING posture straight to AutonomyStore (the option value is a
       // cadence-preset id). Skipping ('Decide later') leaves the safe floor — fully wait-for-me.
       if (!isSkip && s.posturePreset && typeof AutonomyStore !== 'undefined' && AutonomyStore.applyPreset) AutonomyStore.applyPreset(text);
@@ -569,11 +579,30 @@ const Onboarding = (() => {
     }
   }
 
+  // THE INK (Andrew, 2026-08-05): every answer that lands in the operating file is SHOWN landing — a quiet
+  // stamp under the dialogue line ("» filed · pain: …"). Pure payoff loop, and pure truthful telemetry: it
+  // fires ONLY beside a real DossierStore write, carrying the exact text that was stored (clipped for the
+  // one-line stamp). Seeds (mechanical notes, weight 'seed') are never inked — nothing was learned.
+  const INK_LABEL = { pain: 'pain', ambition: 'ambition', identity: 'identity', goals: 'projects & goals', stack: 'stack', style: 'style', standing_orders: 'standing orders', people: 'people', schedule: 'schedule' };
+  function ink(dim, text) {
+    try {
+      if (typeof Dialogue === 'undefined' || !Dialogue.ink) return;
+      const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+      if (!t) return;
+      Dialogue.ink((INK_LABEL[dim] || dim) + ': ' + (t.length > 72 ? t.slice(0, 71).replace(/\s+\S*$/, '') + '…' : t));
+    } catch (_) {}
+  }
+
   // V3 helpers — synthesized beliefs from a mind reply land as weight 'synth' (grounded, counts toward
   // readiness) through the one store chokepoint; a quiet store is a no-op, never a crash.
   function upsertSynthBeliefs(beliefs) {
     if (!Array.isArray(beliefs) || typeof DossierStore === 'undefined' || !DossierStore.upsert) return;
-    for (const b of beliefs) { if (b && b.dim && b.text) DossierStore.upsert(b.dim, { text: b.text, source: 'onboarding', weight: 'synth' }); }
+    let inked = 0;
+    for (const b of beliefs) {
+      if (!(b && b.dim && b.text)) continue;
+      DossierStore.upsert(b.dim, { text: b.text, source: 'onboarding', weight: 'synth' });
+      if (!inked++) ink(b.dim, b.text);   // the stamp shows the first learned line; the file holds them all
+    }
   }
   // one generated follow-up ask → the Commander's typed words (steer-chip law: generated chips are
   // plausible answers, but tapping one still asks for their own words — nothing canned ever lands).
@@ -639,7 +668,10 @@ const Onboarding = (() => {
         if (!running) return;
       }
     }
-    beatTotal = loose ? 4 : 10;   // loose: pain, year, read, cadence · deep adds tuesday/dig/stack/lost/dream
+    beatTotal = loose ? 4 : 11;   // loose: pain, year, read, cadence · deep adds tuesday/dig/stack/bench/lost/dream
+    // the adaptive follow-up wallet: generated digs land only while this holds out (the mind's ASK: NONE
+    // spends nothing), so depth chases rich answers and the ceremony's runtime stays what Andrew set.
+    let followupsLeft = FOLLOWUP_BUDGET;
 
     // B2 + B3 (deep only). THE TUESDAY — the scene that contains the identity — then THE DIG: the mind's
     // own next question, grounded in their exact words. The dig also pre-authors B4/B6 chips for THIS person.
@@ -675,7 +707,8 @@ const Onboarding = (() => {
           upsertSynthBeliefs(digReply.beliefs);
           await Dialogue.say([seg(digReply.ack, 44, 360)]);
           if (!running) return;
-          if (digReply.ask) {
+          if (digReply.ask && followupsLeft > 0) {
+            followupsLeft--;
             digT = await askGenerated(digReply.ask, digReply.chips, 'type your answer', 'your answer — it goes in my file…');
             if (!running) return;
             if (digT) { bumpTruth(); await Dialogue.say([seg('good. the picture’s forming.', 44, 320)]); if (!running) return; }
@@ -704,7 +737,8 @@ const Onboarding = (() => {
       if (reply) upsertSynthBeliefs(reply.beliefs);
       await Dialogue.say([seg(reply ? reply.ack : (typeof painStep.ack === 'function' ? painStep.ack(painT) : painStep.ack), 44, 360)]);
       if (!running) return;
-      if (reply && reply.ask) {
+      if (reply && reply.ask && followupsLeft > 0) {
+        followupsLeft--;
         const f = await Dialogue.node({
           lines: [seg(reply.ask, 46, 0)],
           options: [{ label: 'Skip for now', value: '', skip: true }],
@@ -716,7 +750,7 @@ const Onboarding = (() => {
         if (aboutT) {
           // their own words land as a GROUNDED identity belief FIRST (weight 'stated' → counts toward
           // readiness); the context.md doc-seed that follows dedupes against it (seed weight never counts).
-          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('identity', { text: aboutT, source: 'onboarding', weight: 'stated' });
+          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('identity', { text: aboutT, source: 'onboarding', weight: 'stated' }); ink('identity', aboutT); }
           if (commit) commit({ context: aboutT });
           bumpTruth();
           await Dialogue.say([seg('good — now i can see the ground i’m standing on.', 44, 360)]);
@@ -740,6 +774,49 @@ const Onboarding = (() => {
         ack: t => t ? 'noted — that’s where i’ll learn to work.' : 'fine — i’ll see them soon enough.'
       })).text;
       if (!running) return;
+    }
+
+    // B4c. THE BENCH (deep only, Andrew 2026-08-05) — the projects actually in flight RIGHT NOW. The meeting
+    // asked about chores and ambitions but never about what the Commander is building — the single richest
+    // context for aiming recommendations, recipes, and the first pitch. Direct question, honestly askable on
+    // a quiet mind (verbatim → stated `goals` belief via askStep's chokepoint); a live mind reacts and, if
+    // the answer earned it (and the follow-up wallet holds), digs once for the live wire in the bench.
+    let projT = '', benchT = '';
+    if (!loose) {
+      projT = (await askStep({
+        dossierDim: 'goals', optional: true,
+        prompt: 'what are you actually building or working on right now? name the projects on your bench.',
+        options: [{ label: 'Skip for now', value: '', skip: true }],
+        custom: true, customLabel: 'type your answer', placeholder: 'the real projects — names, not categories…',
+        build: () => null, ack: () => ''
+      }, { quietAck: true })).text;
+      if (!running) return;
+      if (projT) {
+        bumpTruth();   // the truth lands the moment they answer — the mind composes over it, never dead air
+        const pending = brainReady() ? llmCall(WakeMind.buildProjectsReply({ projects: projT, tuesday: tuesdayT, dig: digT, pain: painT, stack: stackT, name: NAME })) : null;
+        const reply = await mindWait(pending, WakeMind.parseProjectsReply, BENCH_PATTER, PAIN_REPLY_MS);
+        if (!running) return;
+        if (reply) upsertSynthBeliefs(reply.beliefs);
+        await Dialogue.say([seg(reply ? reply.ack : 'the bench — noted. that’s where my work lands first.', 44, 360)]);
+        if (!running) return;
+        if (reply && reply.ask && followupsLeft > 0) {
+          followupsLeft--;
+          const f = await Dialogue.node({
+            lines: [seg(reply.ask, 46, 0)],
+            options: [{ label: 'Skip for now', value: '', skip: true }],
+            allowCustom: true, customLabel: 'type your answer', customPlaceholder: 'the live one — straight into my file…',
+            skipOnEmpty: true
+          });
+          if (!running) return;
+          benchT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
+          if (benchT) {
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: benchT, source: 'onboarding', weight: 'stated' }); ink('goals', benchT); }
+            bumpTruth();
+            await Dialogue.say([seg('good — now i know where the current is running.', 44, 360)]);
+            if (!running) return;
+          }
+        }
+      }
     }
 
     // B5. LOST TIME (deep only) — where the hours go WILLINGLY: effortless to answer, and it mines what
@@ -790,15 +867,16 @@ const Onboarding = (() => {
         yearT = String(yq.value).trim();
       }
       if (yearT) {
-        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: yearT, source: 'onboarding', weight: 'stated' });
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('ambition', { text: yearT, source: 'onboarding', weight: 'stated' }); ink('ambition', yearT); }
         bumpTruth();
-        const pending = brainReady() ? llmCall(WakeMind.buildYearReply({ year: yearT, tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, lost: lostT, name: NAME })) : null;
+        const pending = brainReady() ? llmCall(WakeMind.buildYearReply({ year: yearT, tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, projects: projT, bench: benchT, lost: lostT, name: NAME })) : null;
         const reply = await mindWait(pending, WakeMind.parseYearReply, AMBITION_PATTER, PAIN_REPLY_MS);
         if (!running) return;
         if (reply) upsertSynthBeliefs(reply.beliefs);
         await Dialogue.say([seg(reply ? reply.ack : (typeof yearStep.ack === 'function' ? yearStep.ack(yearT) : yearStep.ack), 44, 360)]);
         if (!running) return;
-        if (reply && reply.ask) {
+        if (reply && reply.ask && followupsLeft > 0) {
+          followupsLeft--;
           const f = await Dialogue.node({
             lines: [seg(reply.ask, 46, 0)],
             options: [{ label: 'Skip for now', value: '', skip: true }],
@@ -808,7 +886,7 @@ const Onboarding = (() => {
           if (!running) return;
           dreamT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
           if (dreamT) {
-            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding', weight: 'stated' });
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding', weight: 'stated' }); ink('ambition', dreamT); }
             bumpTruth();
             await Dialogue.say([seg('that’s the version i’m keeping — the real one.', 44, 360)]);
             if (!running) return;
@@ -822,7 +900,7 @@ const Onboarding = (() => {
     // first move; a redirect is premium signal (their own words → a stated goals belief). A quiet mind
     // SKIPS this beat entirely — a canned offer would be fake listening.
     let grabbedMove = '';
-    if (!loose && brainReady() && (tuesdayT || painT || yearT || lostT)) {
+    if (!loose && brainReady() && (tuesdayT || painT || projT || yearT || lostT)) {
       // the agent's REAL hands: live placed caps (object=capability), labeled with the same power-words the
       // palette uses. Empty on a fresh awakening (honest — the kit-out is still ahead, and the mirror's
       // directive now teaches CONDITIONAL offers for that case); populated on a deferred interview whose
@@ -834,7 +912,7 @@ const Onboarding = (() => {
           return ids.map(c => ({ id: String(c), label: L[c] || String(c) }));
         } catch (_) { return []; }
       })();
-      const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, lost: lostT, year: yearT, dream: dreamT, capabilities: liveCaps, name: NAME };
+      const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, projects: projT, bench: benchT, lost: lostT, year: yearT, dream: dreamT, capabilities: liveCaps, name: NAME };
       let mir = await mindWait(llmCall(WakeMind.buildMirror(mirrorCtx)), WakeMind.parseMirror, MIRROR_PATTER, SYNTHESIS_MS);
       if (!running) return;
       let askedElse = false;
@@ -850,7 +928,7 @@ const Onboarding = (() => {
         if (!running) return;
         if (pick && /^o\d$/.test(String(pick.value))) {
           grabbedMove = mir.offers[Number(String(pick.value).slice(1))] || '';
-          if (grabbedMove && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: 'Wants the station to: ' + grabbedMove, source: 'onboarding', weight: 'synth' });
+          if (grabbedMove && typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: 'Wants the station to: ' + grabbedMove, source: 'onboarding', weight: 'synth' }); ink('goals', 'Wants the station to: ' + grabbedMove); }
           bumpTruth();
           await Dialogue.say([seg('then that’s the one i keep my eye on.', 44, 340)]);
           break;
@@ -872,7 +950,7 @@ const Onboarding = (() => {
           const t = (!f.skip && f.value != null) ? String(f.value).trim() : '';
           if (t) {
             grabbedMove = t;
-            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: t, source: 'onboarding', weight: 'stated' });
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: t, source: 'onboarding', weight: 'stated' }); ink('goals', t); }
             bumpTruth();
             await Dialogue.say([seg('even better — your words beat my guesses. it’s in the file.', 44, 340)]);
           }
@@ -887,9 +965,9 @@ const Onboarding = (() => {
     //    time, the year, the grabbed offer), and on a thin/loose run the directive makes the read OWN the
     //    thinness — "i barely know you yet" is the honest read, never faked familiarity.
     let purposeDone = false;
-    const gaveAnything = !!(tuesdayT || digT || painT || aboutT || stackT || lostT || yearT || dreamT || grabbedMove);
+    const gaveAnything = !!(tuesdayT || digT || painT || aboutT || stackT || projT || benchT || lostT || yearT || dreamT || grabbedMove);
     const synPending = brainReady()
-      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, stack: stackT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
+      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, stack: stackT, projects: projT, bench: benchT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
     if (synPending) {
       await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)], { auto: true });   // covers the synthesis wait — never gate it on a click
       if (!running) return;
@@ -916,7 +994,7 @@ const Onboarding = (() => {
         // 'stated' when they put it their own way, 'synth' when they confirmed the agent's synthesis.
         // A THIN run's confirmed synthesis is grounded in NOTHING the Commander said — it lands as 'seed'
         // (purpose.md still exists; the readiness gate stays honestly shut until real words arrive).
-        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: purposeT, source: 'onboarding', weight: (purposeT !== syn.purpose ? 'stated' : (gaveAnything ? 'synth' : 'seed')) });
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: purposeT, source: 'onboarding', weight: (purposeT !== syn.purpose ? 'stated' : (gaveAnything ? 'synth' : 'seed')) }); if (purposeT !== syn.purpose || gaveAnything) ink('goals', purposeT); }   // a seed-weight thin purpose is never inked — nothing was learned
         if (commit) commit({ purpose: purposeT });
         // the one durable belief only this conversation could surface: the stack/domain they live in.
         if (syn.stack && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('stack', { text: syn.stack, source: 'onboarding', weight: 'synth' });
