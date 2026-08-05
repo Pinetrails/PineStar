@@ -3943,9 +3943,11 @@ const PropSprites = (() => {
   };
 
   F.couch = (x, y, w, h, f) => {   // v4 sofa (5x1) — MATERIAL pass only. The BACK VIEW is locked: the sofa faces
-    const r = RAMP.fabric;         // north (the TV), the tall rear panel occludes a sitter, heads peek over the cap.
-    // Geometry — cap line, panel height, arm extents, cushion seams — is untouched on purpose: the renderer
-    // y-sorts a seated body against this silhouette (seat foot at (y+h)*T-2), so moving any of it breaks sitting.
+    const r = RAMP.fabric;         // north (the TV), so it reads as a sofa seen from behind.
+    // Geometry — cap line, panel height, arm extents, cushion seams — is untouched on purpose. It USED to be
+    // load-bearing: a couch seated a body and the renderer y-sorted that sitter against this silhouette.
+    // Under the SEAT LAW (2026-08-04) nothing sits here any more, so the occlusion contract is gone; the
+    // geometry is held only because this was a material pass, not a redraw.
     shadow2(x + 1, y + h - 1, w - 2);                             // floor contact; lounge tier stays freestanding
     // throw-pillow tops leaning on the far seat, just proud of the back line. Same 7x4 boxes as ever
     // (their columns are part of the locked occlusion silhouette) — v6 only gives them PATTERN and a
