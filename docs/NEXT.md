@@ -1,5 +1,23 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-04 — AUTHORIZED PROJECT-ROOT REWIND (`agent/hermes-project-rollback`)
+
+READY TO MERGE. Checkpoints now bind their shadow Git history to the exact
+mutation root instead of always snapshotting the agent workspace. Relative workspace writes retain the
+existing IDs and layout; commands and writes in an authorized external project use a digest-scoped repo
+under the station checkpoint store, never the project's own `.git`. Restore rechecks current root authority
+and fails closed after revocation while keeping the checkpoint visible for later exact-root reauthorization.
+The Rewind UI names the affected root and cannot offer a restore while its authority is revoked.
+
+Focused real-filesystem proof covers external-root mutation, revocation, reauthorization, byte-exact
+restore, removal of newly created files, preservation of a project's existing `.git`, checkpoint-index
+rebuild, scope identity, and path-jail containment. Tool wiring proof covers filesystem writes plus shell and
+verification commands at their effective host working directory. The focused suites are 247 assertions green;
+canonical `npm run test:fast` is 524/524 green and canonical `npm run test:http` is 60/60 green, including the
+real sidecar suite and checkpoint-store execution on actual filesystem and Git subprocesses. This entry makes
+no station-wide readiness claim; final integration still requires the normal merge-current-trunk review and
+post-merge gates.
+
 ## 2026-08-04 — COMPLETE STATION DISASTER RECOVERY P0 (`agent/disaster-recovery-p0`)
 
 READY TO MERGE. StarNet now has a versioned, offline complete-station recovery bundle and operator CLI.

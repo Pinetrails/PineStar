@@ -18,8 +18,8 @@
     const agentId = a.id || 'agent';
     const nm = a.name || agentId;   // display NAME, never the raw id
     const secRestore =
-      '<p class="set-about">A snapshot of <b>' + esc(nm) + '</b>\'s workspace is auto-saved <b>before every command it runs</b> ' +
-      '(and before file edits when checkpoints are on). Restoring rolls the workspace back and removes anything ' +
+      '<p class="set-about">A snapshot of the exact workspace or authorized project <b>' + esc(nm) + '</b> is changing is auto-saved <b>before every command it runs</b> ' +
+      '(and before file edits when checkpoints are on). Restoring rolls that named root back and removes anything ' +
       'created since. <span class="dim">Use it to undo a bad change.</span></p>' +
       '<div class="mc-acts" style="margin:0 0 8px"><button class="bb xs" id="rw-refresh" title="re-read this agent\'s restore points">↻ REFRESH</button></div>' +
       '<div id="rw-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
@@ -32,10 +32,16 @@
     const listEl = body.querySelector('#rw-list'), msgEl = body.querySelector('#rw-msg');
     function row(s) {
       const when = s.ts ? esc(fmtRel(new Date(s.ts).toISOString())) : '';
-      return '<div class="mc-row" data-id="' + esc(s.id) + '" data-when="' + when + '">' +
+      const target = s.workTree ? String(s.workTree) : (nm + '\'s agent workspace');
+      const targetKind = s.workTree ? 'PROJECT ROOT' : 'AGENT WORKSPACE';
+      const available = s.restoreAvailable !== false;
+      return '<div class="mc-row" data-id="' + esc(s.id) + '" data-when="' + when + '" data-root="' + esc(target) + '">' +
         '<div class="mc-top"><b>' + esc(s.label || 'snapshot') + '</b> <span class="dim">' + when + '</span></div>' +
+        '<div class="mc-url"><b>' + targetKind + '</b> · ' + esc(target) + '</div>' +
         '<div class="mc-url dim">' + esc(String(s.id).slice(0, 12)) + ' · turn ' + (s.turn || 0) + (s.files ? (' · ' + s.files + ' file' + (s.files === 1 ? '' : 's')) : '') + '</div>' +
-        '<div class="mc-acts"><button class="bb xs danger" data-act="restore">↶ RESTORE</button></div>' +
+        '<div class="mc-acts">' + (available
+          ? '<button class="bb xs danger" data-act="restore">↶ RESTORE</button>'
+          : '<span class="dim">PROJECT ACCESS REVOKED · REAUTHORIZE THIS ROOT TO RESTORE</span>') + '</div>' +
         '</div>';
     }
     async function refresh() {
@@ -58,7 +64,8 @@
         // arm + STATE THE STAKES: name what a restore removes (everything created since this point's time).
         btn.dataset.armed = '1'; btn.textContent = '↶ CONFIRM'; sfx('bad');
         const when = rowEl.dataset.when || 'this point';
-        msgEl.className = 'msg'; msgEl.innerHTML = '<span class="dim">removes anything <b>' + esc(nm) + '</b> created since <b>' + esc(when) + '</b> — CONFIRM to roll back</span>';
+        const root = rowEl.dataset.root || (nm + '\'s agent workspace');
+        msgEl.className = 'msg'; msgEl.innerHTML = '<span class="dim">rolls back <b>' + esc(root) + '</b> and removes anything created there since <b>' + esc(when) + '</b> — CONFIRM to continue</span>';
         clearTimeout(armTimer);
         armTimer = setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = '↶ RESTORE'; msgEl.innerHTML = ''; } }, 5000);
         return;
@@ -67,7 +74,7 @@
       sfx('bad'); btn.disabled = true; msgEl.className = 'msg'; msgEl.textContent = 'restoring…';
       try {
         const r = (await Harness.api.post('/api/checkpoint/restore', { agentId: agentId, snapshotId: id })).j;
-        if (r && r.ok) { notify('rewound ' + nm + ' to an earlier restore point', 'warn'); msgEl.className = 'msg ok'; msgEl.textContent = '✓ restored.'; }
+        if (r && r.ok) { notify('restored ' + (rowEl.dataset.root || nm + '\'s workspace') + ' to an earlier point', 'warn'); msgEl.className = 'msg ok'; msgEl.textContent = '✓ restored.'; }
         else { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((r && r.error) || 'restore failed') + '</span>'; sfx('bad'); }
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'restore failed') + '</span>'; sfx('bad'); }
       btn.disabled = false; refresh();
