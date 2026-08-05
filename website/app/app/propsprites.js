@@ -2779,9 +2779,9 @@ const PropSprites = (() => {
   };
 
   F.merger = (x, y, w, h, f) => {
-    // MERGER (1x1) — buffers K inbound boxes and emits ONE combined box (a join / map-reduce barrier).
-    // The exact silhouette INVERSE of the splitter: two horns on the west, one fat outlet east. Its one
-    // emissive idea is the join itself — two packets ride in, the buffer fills, one bigger packet leaves.
+    // MERGER (1x1) — a LANE FUNNEL: several lanes converge into one, every crate rides straight on
+    // (the buffer-K/map-reduce mechanic was removed 2026-07-26 — see conveyor.js chooseExit).
+    // The exact silhouette INVERSE of the splitter: two horns on the west, one fat outlet east.
     const r = RAMP.steel, on = !!(f && f.work), c = '#e0a45a', ph = (f && f.x) || 0;
     shadow2(x + 1, y + h - 1, w - 2);
     for (const ny of [y + 2, y + 6]) {                          // twin intake horns, west

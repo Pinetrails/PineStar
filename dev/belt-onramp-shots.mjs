@@ -152,6 +152,12 @@ async function main() {
     console.log('ride setup:', JSON.stringify(rideSetup));
     const coaching = await evalJS(cdp, `(typeof Tutorial !== 'undefined' && Tutorial.isCoaching) ? Tutorial.isCoaching() : 'no-tutorial'`);
     console.log('tutorial coaching (ride defers while true):', JSON.stringify(coaching));
+    if (coaching === true) {
+      // the ride correctly STOOD DOWN while a coach bubble was live (the tutorial-audit law).
+      // Dismiss the coach the way a user would move on, and the armed ride must then fire.
+      await evalJS(cdp, `(typeof Tutorial !== 'undefined' && Tutorial.clearCoach) ? (Tutorial.clearCoach(), Tutorial.isCoaching()) : null`);
+      console.log('coach dismissed; ride should now fire from the frame loop');
+    }
     // the auto ride arms on the recompile and fires ~700ms later; catch it mid-narration
     await sleep(2000);
     const rideProof = await evalJS(cdp, `(() => {
