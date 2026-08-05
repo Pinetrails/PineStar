@@ -69,6 +69,22 @@ const Chat = (() => {
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
   const receiptRunsSeen = new Set();    // runIds whose SILENT auto-saved receipts already rendered (memory.write triggers once per run)
   const clarificationRuns = new Set();  // an intent-question turn is a continuation, not completed work
+  /* Deliverable titles this run ALREADY announced inline, as they happened. The recap card is the run's
+     ledger and must stay complete, but on a short run the same filename landed three times in a row — the
+     live "▤ saved x.md [folder]" line, the reply's prose, then the recap's own "▤ wrote x.md [⧉][folder]".
+     The ledger row keeps the name and the size; it drops the duplicate ACTIONS, because the affordance was
+     already offered a few lines up. FIFO-capped like runWork. */
+  const runShownDeliv = new Map();   // runId -> Set(title)
+  function noteShownDeliverable(runId, title) {
+    if (!runId || !title) return;
+    if (!runShownDeliv.has(runId)) runShownDeliv.set(runId, new Set());
+    runShownDeliv.get(runId).add(String(title));
+    if (runShownDeliv.size > 60) runShownDeliv.delete(runShownDeliv.keys().next().value);
+  }
+  function deliverableAlreadyShown(runId, path) {
+    const set = runId ? runShownDeliv.get(runId) : null;
+    return !!(set && set.has(String(path || '')));
+  }
   const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
                                 // beat's HONEST, un-farmable size + the delivery gate (real tools/deliverables only). FIFO-capped.
   // P3.2 CREW ATTRIBUTION: a lead run that dispatched crew gets each worker's PROVABLE spend so a 👍 on the run
@@ -1823,10 +1839,12 @@ const Chat = (() => {
     return U.usd(v);                                         // canonical spend formatter (util.js)
   }
   function fmtBytes(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
-  function recapArtifactLine(a, agentId) {
+  function recapArtifactLine(a, agentId, runId) {
     const d = document.createElement('div'); d.className = 'recap-line';
     if (a.kind === 'message') { d.textContent = '✉ sent to ' + (a.target || 'a channel'); return d; }
     const path = String(a.path || '');
+    // already announced inline a few lines up → this is the LEDGER entry, not a second action row.
+    const echo = deliverableAlreadyShown(runId, path);
     d.appendChild(document.createTextNode(a.kind === 'image' ? '▤ made ' : '▤ wrote '));
     const link = document.createElement('a');
     wireFileOpen(link, path, agentId);                       // the same jailed /api/file open every deliverable row uses
@@ -1835,6 +1853,7 @@ const Chat = (() => {
     link.title = path;
     d.appendChild(link);
     if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
+    if (echo) return d;   // the copy + folder buttons are already on the inline row above — one set, not two
     // click-to-copy of the deliverable's own (relative) path — kept for quick reference.
     const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
     cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
@@ -1852,7 +1871,7 @@ const Chat = (() => {
     const head = document.createElement('div'); head.className = 'recap-line recap-head';
     head.textContent = (done ? '◈ delivered' : '◈ ended: ' + entry.reason) + (entry.title ? ' — ' + brief(entry.title) : '');
     r.body.appendChild(head);
-    for (const a of arts.slice(0, RECAP_MAX_ROWS)) r.body.appendChild(recapArtifactLine(a, agentId));
+    for (const a of arts.slice(0, RECAP_MAX_ROWS)) r.body.appendChild(recapArtifactLine(a, agentId, runId));
     if (arts.length > RECAP_MAX_ROWS) {
       const more = document.createElement('div'); more.className = 'recap-line';
       more.textContent = '… +' + (arts.length - RECAP_MAX_ROWS) + ' more';
@@ -1871,7 +1890,7 @@ const Chat = (() => {
     const wrap = document.createElement('div'); wrap.className = 'rt-run';
     const calls = runCallCount(entry);
     const head = document.createElement('div'); head.className = 'rt-run-head';
-    head.textContent = [role, entry.agentId || '', entry.model && entry.model !== '(unknown)' ? entry.model : '', entry.reasoningEffort || '', Number(entry.durationMs) > 0 ? fmtMs(Number(entry.durationMs)) : '', calls + (calls === 1 ? ' call' : ' calls')].filter(Boolean).join(' · ');
+    head.textContent = [role, entry.agentId || '', entry.model && entry.model !== '(unknown)' ? entry.model : '', (entry.reasoningEffort && entry.reasoningEffort !== 'none') ? entry.reasoningEffort : '', Number(entry.durationMs) > 0 ? fmtMs(Number(entry.durationMs)) : '', calls + (calls === 1 ? ' call' : ' calls')].filter(Boolean).join(' · ');
     wrap.appendChild(head);
     for (const t of (Array.isArray(entry.toolTrace) ? entry.toolTrace : [])) {
       const line = document.createElement('div'); line.className = 'rt-tool' + (t.isError ? ' err' : '');
@@ -1895,7 +1914,7 @@ const Chat = (() => {
       if (Number(entry.durationMs) > 0) bits.push(fmtMs(Number(entry.durationMs)));
       bits.push(leadCalls + ' lead ' + (leadCalls === 1 ? 'call' : 'calls'));
       if (children.length) bits.push(workerCalls + ' worker ' + (workerCalls === 1 ? 'call' : 'calls'));
-      const identity = [entry.model && entry.model !== '(unknown)' ? entry.model : '', entry.reasoningEffort || ''].filter(Boolean).join(' ');
+      const identity = [entry.model && entry.model !== '(unknown)' ? entry.model : '', (entry.reasoningEffort && entry.reasoningEffort !== 'none') ? entry.reasoningEffort : ''].filter(Boolean).join(' ');
       if (identity) bits.push(identity);
       sum.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
     }
@@ -2216,7 +2235,7 @@ const Chat = (() => {
       b.onclick = () => settle(verdict, flash, isDeny); btns.appendChild(b);
     }
     // CRT glyphs, not color emoji: ▲ nailed it · ◆ close · ▼ missed (semantics preserved, phosphor-themed)
-    mk('▲ nailed it', '', 'great', '★ +XP', false);
+    mk('▲ nailed it', 'primary', 'great', '★ +XP', false);
     mk('◆ close', '', 'ok', 'noted', false);
     mk('▼ missed', 'deny', 'miss', 'noted', true);
   }
@@ -2335,7 +2354,7 @@ const Chat = (() => {
   // honestly in place — never a dead click.
   function openWorkBtn(host, rw, openWork) {
     if (!openWork) return;
-    const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = '↗ read the work';
+    const b = document.createElement('button'); b.className = 'consent-btn primary'; b.textContent = '↗ read the work';
     b.onclick = () => {
       b.disabled = true; b.textContent = 'opening…';
       Promise.resolve().then(() => openWork(rw)).then(ok => {
@@ -2379,7 +2398,7 @@ const Chat = (() => {
       const btns = document.createElement('span'); btns.className = 'consent-btns';
       item.appendChild(text); item.appendChild(btns);
       openWorkBtn(btns, rw, opts && opts.openWork);   // SEE the output first — rating blind was the confusion
-      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'rate it';
+      const b = document.createElement('button'); b.className = 'consent-btn quiet'; b.textContent = 'rate it';
       b.onclick = () => {   // swap the review affordance for the real rate control, in place
         btns.remove();
         const rate = document.createElement('div'); rate.className = 'turnin-rate';
@@ -2718,7 +2737,9 @@ const Chat = (() => {
     // the message rides the decision as a REAL user turn in THIS session — its id is the shift's durable
     // streamId, so the agent replies with the build's actual transcript behind it (server-side resume seed).
     const msgInput = document.createElement('input'); msgInput.className = 'turnin-edit ws-msg'; msgInput.type = 'text';
-    msgInput.placeholder = 'tell ' + who + ' anything about this (optional)';
+    // the placeholder must FIT: at the card's own type scale the long form clipped mid-word in a
+    // COMMS column, which reads as a broken field rather than an optional one.
+    msgInput.placeholder = 'message ' + who + ' (optional)';
     msgInput.setAttribute('aria-label', 'Optional message to the agent, sent with your decision');
     acts.appendChild(msgInput);
 
@@ -2799,7 +2820,7 @@ const Chat = (() => {
     const patchSaveOnly = !!(plan && m.kind === 'patch' && plan.action !== 'apply');
     // gold PRIMARY when the click really implements; a fallback save stays neutral so the gold always means "accept"
     const implBtn = document.createElement('button'); implBtn.className = 'consent-btn' + (patchSaveOnly ? '' : ' ws-primary');
-    implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
+    implBtn.classList.add('primary'); implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
     implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
       : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'
       : ('saves the files to ' + ((plan && plan.dest) || 'your StarNet deliverables folder'));
@@ -2979,7 +3000,7 @@ const Chat = (() => {
       }
       function renderChoices() {
         btns.innerHTML = '';
-        mkBtn(prop.kind === 'skill' ? 'Save skill' : 'Keep', '', () => submit('keep', null, prop.kind === 'skill' ? 'saved as skill' : 'kept in memory', false));
+        mkBtn(prop.kind === 'skill' ? 'Save skill' : 'Keep', 'primary', () => submit('keep', null, prop.kind === 'skill' ? 'saved as skill' : 'kept in memory', false));
         mkBtn('Edit', '', enterEdit);
         mkBtn('Discard', 'deny', () => submit('discard', null, '✕ discarded', true));
       }
@@ -3485,18 +3506,26 @@ const Chat = (() => {
     // — the agent's own name (which the old per-channel card titles carried) had been dropped on the floor. It is
     // derived exactly as the rest of the card's copy derives it: the live hero name, upper-cased.
     const who = String(spec.eyebrow || (name ? String(name).toUpperCase() + ' NOTICED' : 'NOTICED'));
-    title.appendChild(document.createTextNode(who));
+    // THE KIND LEADS. It used to sit below the evidence as a chip in the item grid's first column, which
+    // both hid what kind of decision this was until line four AND squeezed the proposal into a narrow
+    // second column. In the eyebrow it identifies the card immediately and frees the full width below.
+    const kind = document.createElement('span'); kind.className = 'rec-kind';
+    kind.textContent = String(spec.label == null ? '' : spec.label).toUpperCase();
+    if (kind.textContent) {
+      title.appendChild(kind);
+      title.appendChild(document.createTextNode('·'));
+    }
+    const whoEl = document.createElement('span'); whoEl.className = 'rec-who'; whoEl.textContent = who;
+    title.appendChild(whoEl);
     const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
     r.body.appendChild(title); r.body.appendChild(slotEl);
     const item = document.createElement('div'); item.className = 'turnin-item rec-item';
     const ev = String(spec.evidence == null ? '' : spec.evidence).trim();
     if (ev) { const e = document.createElement('div'); e.className = 'rec-evidence'; e.textContent = ev; item.appendChild(e); }
-    const kind = document.createElement('span'); kind.className = 'turnin-kind';
-    kind.textContent = String(spec.label == null ? '' : spec.label).toUpperCase();
     const text = document.createElement('span'); text.className = 'turnin-text';
     text.textContent = String(spec.proposal == null ? '' : spec.proposal);
     const btns = document.createElement('span'); btns.className = 'consent-btns';
-    item.appendChild(kind); item.appendChild(text);
+    item.appendChild(text);
     // the note is CONSEQUENCE, not evidence ("raises the dial to FREE") — a dim aside between the
     // proposal and the buttons, so the card still ENDS on the two taps.
     const note = String(spec.note == null ? '' : spec.note).trim();
@@ -3573,7 +3602,7 @@ const Chat = (() => {
     function renderChoices() {
       btns.innerHTML = '';
       const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
-      mk(prop.kind === 'retire' ? 'Retire it' : 'Keep', '', () => commit('keep'));
+      mk(prop.kind === 'retire' ? 'Retire it' : 'Keep', 'primary', () => commit('keep'));
       if (prop.kind !== 'retire') mk('Edit', '', enterEdit);
       mk('Discard', 'deny', () => commit('discard'));
     }
@@ -3793,7 +3822,7 @@ const Chat = (() => {
       TrustStore.decline(offer); settle('✕ not yet', true);
     }
     const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
-    mk('Accept', '', () => commit('accept'));
+    mk('Accept', 'primary', () => commit('accept'));
     mk('Not yet', 'deny', () => commit('decline'));
     autoscroll();
     return true;
@@ -3893,7 +3922,7 @@ const Chat = (() => {
     function renderChoices() {
       btns.innerHTML = '';
       const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
-      mk('Keep', '', () => commit('keep'));
+      mk('Keep', 'primary', () => commit('keep'));
       mk('Edit', '', enterEdit);
       mk('Discard', 'deny', () => commit('discard'));
     }
@@ -4037,6 +4066,40 @@ const Chat = (() => {
       onLeave: () => { if (typeof CuriosityStore !== 'undefined') CuriosityStore.markDismissed(dim); }
     });
   }
+  /* A MULTI-LINE NUDGE IS A LIST, NOT A PARAGRAPH (2026-08-04).
+     The night-shift report composes a real ledger — a headline, the acts that fired, the acts it DECLINED, the
+     builds waiting — hands it to nudge() as one '\n'-joined string, and `white-space: pre-wrap` turned it into a
+     wall. Two things broke. Every wrapped continuation fell back to the left margin, so "✓ drafted the note —
+     waiting in your outbox" read as two separate items; and the sub-items' leading spaces were the only thing
+     expressing nesting, which a narrow COMMS column eats. Worse for a truthfulness surface: a DECLINED act
+     rendered identically to a completed one.
+     Each marked line now gets its own row — marker in its own box (the symbol-glyph law: ✓ ✗ ⚒ come from the
+     fallback face, so they are BOX-centred and never sized off the text's metrics) and the prose in a
+     minmax(0,1fr) column, which is what buys the hanging indent. A refusal is its own rank. A single-line nudge
+     — every other caller — still renders as plain text, unchanged. */
+  const NUDGE_MARK = { '✓': 'yes', '✗': 'no', '✘': 'no', '×': 'no', '⚒': 'build', '▤': 'file', '·': 'sub', '✦': 'head', '◈': 'head' };
+  function renderNudgeBody(host, text) {
+    const raw = String(text == null ? '' : text);
+    if (!host) return;
+    host.textContent = '';
+    const lines = raw.split('\n');
+    if (lines.length < 2) { host.textContent = raw; return; }
+    const wrap = document.createElement('div'); wrap.className = 'nudge-lines';
+    lines.forEach((line, i) => {
+      const sub = /^\s+/.test(line);                       // a leading-space row is nested under the one above
+      const body = line.trim();
+      if (!body) return;
+      const mark = NUDGE_MARK[body.charAt(0)] ? body.charAt(0) : '';
+      const rest = mark ? body.slice(1).trim() : body;
+      const el = document.createElement('div');
+      el.className = 'nudge-line' + (mark ? ' nl-mk nl-' + NUDGE_MARK[mark] : '') + (sub ? ' nl-sub' : '') + (i === 0 ? ' nl-first' : '');
+      if (mark) { const m = document.createElement('span'); m.className = 'nl-m'; m.textContent = mark; el.appendChild(m); }
+      const t = document.createElement('span'); t.className = 'nl-t'; t.textContent = rest;
+      el.appendChild(t);
+      wrap.appendChild(el);
+    });
+    host.appendChild(wrap);
+  }
   // a reusable GENTLE post-run beat (used by the ongoing-suggestion engine, suggeststore.js) — the same quiet
   // register as the curiosity nudge: a .nudge aside, never the lit .reply headline. text = the line; options =
   // [{label,value,skip}]; onPick(item) fires on a choice (the choice row removes itself on pick).
@@ -4045,7 +4108,7 @@ const Chat = (() => {
     if (taskQuestionLive()) return null;   // a pending task question owns the moment
     clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');
-    r.body.textContent = String(text == null ? '' : text);
+    renderNudgeBody(r.body, text);
     autoscroll();
     const choiceRow = choices(options || [], item => {
       const a = activeNudge; activeNudge = null;
@@ -6478,6 +6541,7 @@ const Chat = (() => {
               if (mk === 'image') imageDeliverableLine(ev.title, ev.agentId);
               else if (mk === 'video' || mk === 'audio') mediaPlayerLine(ev.title, ev.agentId, mk);
               else deliverableLine(ev.title, ev.agentId);
+              noteShownDeliverable(Channels.runIdOf(ws.id), ev.title);
             }
             // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock.
             // record the rendered media kind so a future history/replay surface can re-render the same way.
