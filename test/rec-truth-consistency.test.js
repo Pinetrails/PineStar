@@ -144,4 +144,45 @@ A.eq(Recipes.rankRecipes(catalog, { limit: 3 }).map(r => r.id).join(','), cold.i
 A.ok(/const head = \(ready && ranked\.personalized\)/.test(mkt),
   'the shelf gates its header on BOTH readiness and what the ranker actually did');
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   4. THE INTEREST EVIDENCE IS SHOWN, NOT SWALLOWED — and it claims no speaker
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+const TopicMatch = require('../frontend/app/topicmatch.js');
+const TOPICS = [{ label: 'gpu price tracking', weight: 2.4, count: 4,
+  evidence: ['  check 4090 prices across the usual retailers  '] }];
+const m = TopicMatch.match(TOPICS, 'GPU price watch — track gpu prices daily and report movement');
+A.ok(m && m.top, 'the topic matches its recipe (precondition)');
+A.eq(TopicMatch.reason(m), 'you keep working on gpu price tracking (seen 4×) — e.g. “check 4090 prices across the usual retailers”',
+  'the reason SHOWS the verbatim fragment the topic was earned on, whitespace-normalized');
+/* It must NOT say "you said". interests quotes an ACTIVITY LINE, and contextpack's activity pool mixes chat
+   openings (speech) with run titles (often machine-composed: a recipe launch, a scheduled brief) and LANDED
+   DELIVERABLE titles (the station's own words). Authorship is unknown, so the frame claims none — the same
+   answer chat.js recCite already gives an unlabelled quote. */
+A.eq(/you said|you told|your words/i.test(TopicMatch.reason(m)), false,
+  'the citation never puts the quote in the Commander’s mouth — the activity pool is not all speech');
+const tmSrc = read('frontend/app/topicmatch.js');
+A.eq(/'because you said/.test(tmSrc) || /you said “/.test(tmSrc), false, 'and no such phrasing exists in the module');
+// a topic with no evidence renders exactly as it always did (nothing is invented to fill the slot)
+const bare = TopicMatch.match([{ label: 'gpu price tracking', weight: 2.4, count: 4 }], 'track gpu prices daily');
+A.eq(TopicMatch.reason(bare), 'you keep working on gpu price tracking (seen 4×)', 'no evidence → no receipt, never a filler');
+// a long quote is VISIBLY cut, so it can never read as a sentence the Commander never finished
+const longQ = TopicMatch.evidenceLine('x'.repeat(400));
+A.eq(longQ.length, TopicMatch.QUOTE_MAX + 7, 'a clipped quote fits the cap plus its “e.g. “…”” frame (6 + 1 chars)');
+A.ok(longQ.indexOf('…”') > 0, '…and ends in an ellipsis INSIDE the quote marks — visibly truncated');
+A.eq(TopicMatch.evidenceLine('   '), '', 'an empty/blank quote yields nothing at all');
+// the FOR YOU row and the specialist shelf both inherit it, because both go through reason()
+const withEv = Recipes.forYouReason({ id: 'gpu', name: 'GPU price watch', tagline: 'track gpu prices daily', tags: {} },
+  { topics: TOPICS });
+A.ok(withEv.indexOf('e.g. “check 4090 prices') > 0, 'Recipes.forYouReason carries the receipt onto the FOR YOU card');
+// …and so does the UNCOVERED shelf, which composes its own gap clause but shares the ONE quote helper
+const gaps = Recruiter.interestGaps({ topics: TOPICS, roster: [], catalog: CAT });
+if (gaps && gaps.items && gaps.items.length) {
+  A.ok(/e\.g\. “check 4090 prices/.test(gaps.items[0].why), 'the UNCOVERED shelf cites the same receipt');
+  A.ok(gaps.items[0].why.indexOf('nobody on the crew covers it') > gaps.items[0].why.indexOf('e.g.'),
+    '…with the gap clause still last — it is the point of that shelf');
+} else {
+  A.ok(/TopicMatch\.evidenceLine\(topic\.evidence\[0\]\)/.test(read('frontend/app/recruiter.js')),
+    'the UNCOVERED shelf composes its receipt through the shared helper (no catalog class covered the fixture topic)');
+}
+
 A.report('rec truth & consistency (W3)');

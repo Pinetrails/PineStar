@@ -225,7 +225,13 @@
       taken.add(best.cls.id);
       items.push({
         classId: best.cls.id,
-        why: 'you keep working on ' + String(topic.label) + (topic.count > 0 ? ' (seen ' + Math.floor(topic.count) + '×)' : '') + ' — nobody on the crew covers it',
+        // the same receipt the other topic-backed shelves now show, composed by the ONE helper that owns the
+        // clip and the speaker-neutral frame (TopicMatch.evidenceLine). The gap clause keeps the last word —
+        // it is the point of this shelf — so the quote sits behind the count it corroborates.
+        why: 'you keep working on ' + String(topic.label) + (topic.count > 0 ? ' (seen ' + Math.floor(topic.count) + '×)' : '') +
+             ((TopicMatch && TopicMatch.evidenceLine && Array.isArray(topic.evidence) && topic.evidence[0])
+               ? (' — ' + TopicMatch.evidenceLine(topic.evidence[0])) : '') +
+             ' — nobody on the crew covers it',
         topic: { label: String(topic.label), count: Math.floor(Number(topic.count) || 0), weight: round(topic.weight) },
         coverage: round(best.cov),
         evidence: (Array.isArray(topic.evidence) ? topic.evidence.slice(0, 1) : [])
