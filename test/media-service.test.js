@@ -6,8 +6,15 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const {
-  makeMediaService, pcmToWav, wavToMono16kFloat32, sttMultipartBody
+  makeMediaService, pcmToWav, wavToMono16kFloat32, oggOpusToMono16kFloat32, sttMultipartBody
 } = require('../sidecar/media-service.js');
+
+// 80 ms mono Opus tone in a real Ogg container. Generated once with libopus; checked in as text so the
+// test proves the shipped WASM decoder without requiring ffmpeg on a developer or release machine.
+const OGG_OPUS = Buffer.from(
+  'T2dnUwACAAAAAAAAAAC36uPZAAAAACvBgEwBE09wdXNIZWFkAQE4AYC7AAAAAABPZ2dTAAAAAAAAAAAAALfq49kBAAAAq9xArgE+T3B1c1RhZ3MNAAAATGF2ZjYyLjEyLjEwMQEAAAAdAAAAZW5jb2Rlcj1MYXZjNjIuMjguMTAxIGxpYm9wdXNPZ2dTAAQ4EAAAAAAAALfq49kCAAAABkcHRAVFOzI3H3iCAbdsRyTqAkZv+rYDjIE01uheAesbsV7vyXgY8gqzIUHM0aaf4Yqbhp1rgeoEnutAiitHUCgJ0EZTAHRNtp96w/QA+XijP/esmIUDXCYKV5+K8o09bIVMwBPqQbZh53f7dxTMWHWvNRLH9wshBXhb4UZ4svXifY+1ePppKdPLeJujElFFAKzjUZtzIbzvkYf9xoYkZjRJyLfYYOyuGQ16hsiSDl+FlUmChd1GPvaUKYt4m6MRtBy/UiiBezmWuWR9rnAX1N7fcFaVORBbFQ/O0UoSEsPPQg+XUCym9WlXzffTW861RJUCeAZq5oQF8SsdLTmsuzQSGw7LXdkN4omo7g5at9f8/g==',
+  'base64'
+);
 
 const roots = [];
 
@@ -63,6 +70,10 @@ async function make(overrides) {
   assert.ok(decoded[0] > 0.99);
   assert.equal(decoded[1], -1);
   assert.equal(wavToMono16kFloat32(Buffer.from('not wav')), null);
+
+  const decodedOgg = await oggOpusToMono16kFloat32(OGG_OPUS);
+  assert.ok(decodedOgg.length >= 1200 && decodedOgg.length <= 1500, 'real Ogg/Opus is decoded and resampled to 16 kHz');
+  assert.ok(decodedOgg.some(sample => Math.abs(sample) > 0.01), 'decoded Ogg/Opus contains audible PCM');
 
   // Multipart construction preserves the audio byte-for-byte and names the Whisper model/file parts.
   const audio = Buffer.from([0, 1, 2, 255, 13, 10]);
@@ -125,9 +136,12 @@ async function make(overrides) {
   });
   assert.deepEqual(await local.transcribeAudioBuffer(wav, 'wav'), { ok: true, text: 'local words' });
   assert.equal(localPcm.length, decoded.length * 4);
-  assert.match((await local.transcribeAudioBuffer(Buffer.from('compressed'), 'ogg')).reason, /local engine needs wav/);
+  localPcm = null;
+  assert.deepEqual(await local.transcribeAudioBuffer(OGG_OPUS, 'ogg'), { ok: true, text: 'local words' });
+  assert.equal(localPcm.length, decodedOgg.length * 4, 'Telegram Ogg/Opus reaches local ASR as 16 kHz Float32 PCM');
+  assert.match((await local.transcribeAudioBuffer(Buffer.from('compressed'), 'webm')).reason, /local engine cannot decode webm/);
 
-  console.log('media-service: OK (25 assertions)');
+  console.log('media-service: OK (29 assertions)');
 })().finally(async () => {
   for (const root of roots) await fsp.rm(root, { recursive: true, force: true });
 }).catch(error => {

@@ -215,6 +215,20 @@ const made = W.importTasks([
 A.eq(made.map(w => w.lane), ['todo', 'active', 'shipped', 'todo'], 'col->lane map (unknown col -> todo)');
 A.ok(made.every(w => w.history.length === 0), 'imported cards start with empty history');
 A.ok(W.list().some(w => w.title === 'doing card'), 'imported cards become real workstreams in the store');
+// every legacy kanban card was a BOARD card — without an explicit kind, make()'s lane inference read
+// the 'doing' (active-lane) card as a chat and silently dropped it off the board it was imported onto.
+A.ok(made.every(w => w.kind === 'task'), 'ALL imported kanban cards are kind:task (a doing card must not vanish from the board)');
+
+/* ---------- ensureGeneral never adopts a board task as the chat home ---------- */
+const gBefore = W.generalId();
+W.init({
+  workstreams: [{ id: 'orphan_task', title: null, lane: 'todo', kind: 'task' }],
+  activeId: null, generalId: null   // no General in the slice — ensureGeneral must MINT one
+});
+A.ok(W.generalId() !== 'orphan_task', 'an untitled board task is never adopted as General');
+A.eq(W.get(W.generalId()).kind, 'chat', 'the minted General is a chat');
+A.ok(W.get('orphan_task') && W.get('orphan_task').kind === 'task', 'the orphan task survives as a normal task');
+void gBefore;
 
 /* ---------- serialize round-trips ---------- */
 W.reset(); W.create('round trip');

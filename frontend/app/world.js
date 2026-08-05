@@ -21,6 +21,7 @@ const World = (() => {
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
   let deskPropId = null, deskFace = 'north';           // set when the hero's desk is a PLACED workstation prop assigned to it (its id + the seat's facing)
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
+  let ghost = null;    // GHOST PROJECTION (guided workflows Phase 3): its own dedicated engine — never mixes with convey
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
   let routingPlan = null;                        // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
   let beltLiveSet = null;                        // { "x,y": true } belt tiles on a complete INTAKE→bound-BAY route (energized render)
@@ -72,7 +73,7 @@ const World = (() => {
   let fitW = 0, fitH = 0;   // canvas size the last fitCamera() framed against — a fit on a hidden/degenerate stage doesn't count as a real view
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, onIntakeFeed = null, wakeAt = 0;
+  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, onIntakeFeed = null, onIntakeSample = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -270,8 +271,10 @@ const World = (() => {
     terra: ['sealed and content', 'it grows without us', 'a whole world in there', 'still alive'],
     bed: ['powering down', 'somewhere soft, for once', 'a few cycles', 'wake me if it matters'],
     bookshelf: ['spines i have not read', 'someone kept these', 'paper, still', 'a good shelf'],
-    beanbag: ['this is undignified', 'it holds the shape', 'i may not get up', 'acceptable'],
+    // SEAT LAW: the body STANDS at a beanbag now, so the old "i may not get up" line would be a lie
+    beanbag: ['this is undignified', 'it holds the shape of the last one', 'nobody sat here in a while', 'acceptable'],
     pinball: ['tilt', 'the ball obeys physics, not me', 'high score is mine', 'one more ball'],
+    seat: ['taking the weight off', 'a seat is a seat', 'i will sit a moment', 'this one is mine for now'],   // stool/chair: the ONE prop a body actually sits on
   };
   /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
@@ -886,7 +889,7 @@ const World = (() => {
       hoverBeltTile = null;
       if (!hit && beltTileSet) { const bt = tileOf(wp.x, wp.y); if (beltTileSet.has(bt.x + ',' + bt.y)) hoverBeltTile = bt; }
       hoverOutbox = hit ? null : outboxAt(wp);   // arm the hover-glance crate tag (a glance, never a window)
-      cv.style.cursor = (hit || hoverOutbox || arcadeAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp) || intakeFeedAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY + a starved INTAKE are clickable too
+      cv.style.cursor = (hit || hoverOutbox || arcadeAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp) || intakeSampleAt(wp) || intakeFeedAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY + a complete-line INBOX + a starved INTAKE are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -913,6 +916,11 @@ const World = (() => {
       // an UNBOUND bay's nag says CLICK — the click opens the assign flow (REFIT bay picker), closing the loop
       const ub = unboundBayAt(wp);
       if (ub && onBayAssign) { onBayAssign(ub.id); return; }
+      // an INBOX on a COMPLETE line offers the sample-job card (PROOF: run one real job through the line).
+      // Checked first: when the NO-FEED nag is also up (which needs the same live line), the card carries the
+      // CHANNELS door itself, so the nag's promised click-through is never lost — see intakeSampleAt.
+      const ismp = intakeSampleAt(wp);
+      if (ismp && onIntakeSample) { onIntakeSample({ propId: ismp.id, fed: feedState.known ? !!feedState.fed : null }); return; }
       // a NO-FEED intake's nag says CLICK — the click opens the CHANNELS panel (the fix is wiring a feed)
       const inf = intakeFeedAt(wp);
       if (inf && onIntakeFeed) onIntakeFeed(inf.id);
@@ -1318,16 +1326,18 @@ const World = (() => {
       else if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now);
     }
     else if (self.goal === 'lounge') {
-      // settled ON the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
-      self.sitting = true; self.working = false; self.dir = self.useFace; self.state = 'idle';
+      // settled AT the couch, watching the paired TV — face the screen, a longer dwell than a one-off prop.
+      // SEAT LAW: standing. A couch is not a chair, and the sit pose on a cushion read as a body parked upright on it.
+      self.sitting = false; self.working = false; self.dir = self.useFace; self.state = 'idle';
       self.useUntil = now + U.irnd(18000, 30000); self.glanceCd = 0; self.nextFidget = now + U.irnd(1500, 3500);
       takeSeat(); curiositySay(self.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
     else if (self.goal === 'sleep') {
-      // reached a BED (planBedSleep walked it here) — lie down and go dormant ON the mattress. The
-      // bedless fallback in sleep() still powers down standing, so the eerie "is it off?" beat is
-      // unchanged for a station with no bed; this is only what happens when one is reachable.
-      self.sitting = true; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
+      // reached a BED (planBedSleep walked it here) — power down AT the bunk. SEAT LAW: standing, and
+      // rendered on the tile it actually walked to. The old version pasted the chair-sit pose on the
+      // mattress, which is exactly the "agent sitting on the bed" bug. The bedless fallback in sleep()
+      // is now the same pose; the bed only changes WHERE the body goes dormant, not how it looks.
+      self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
       self.glance = null; self.glanceCd = 0;                       // frozen: maybeGlance skips goal==='sleep'
       self.studyUntil = now + U.irnd(26000, 62000);                // a bed is worth a longer dormancy than standing
       takeSeat(); curiositySay(USE_LINE.bed, 0.4, now);
@@ -1774,9 +1784,14 @@ const World = (() => {
     if (self.seatKey) occupiedSeats.delete(self.seatKey);
     self.seatKey = null; self.seated = false; self.pendSeat = null;
   }
-  /* on arrival, snap the render position onto the cushion claimed at plan time (logical pos stays put) */
+  /* on arrival, snap the render position onto the seat claimed at plan time (logical pos stays put).
+     SEAT LAW: the ELSE branch is load-bearing. Only planSeat sets a pendSeat now — a couch/bed claim is a
+     "nobody else take this spot" reservation with no cushion to render on — so without the reset a body
+     that got up off a stool and walked to a bunk kept `seated` true and went on drawing itself back at the
+     stool. `seated` must mean exactly "there is a seat under me, right now". */
   function takeSeat() {
     if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
+    else self.seated = false;
   }
   /* B2: drop ANY body's idle/leisure latch (couch cushion claim + the engine goal bookkeeping) when a task SEIZES
      it — the crew analogue of the hero summon-seize's releaseSeat()+goal-clear (tick ~1614). Without this, a crew
@@ -1792,15 +1807,32 @@ const World = (() => {
     if (chaseId === b.agentId) chaseId = null; b.chase = null; b.mimic = null;   // TIER D · D4: a summon seizes the body → drop any live chase/mimic + free the station chaser lock (G2)
   }
 
-  /* v7 sit-ON-the-couch: a couch is a blocking prop (you can't path onto it), so the agent walks to
-     a tile ADJACENT to a free cushion, then RENDERS on that cushion while the couch (drawn as the sofa's
-     BACK — it faces north) y-sorts just in front, so the sitter peeks over the backrest. Seats are the inner footprint columns (an arm
-     is skipped at each end on a wide couch). Each cushion is reserved in occupiedSeats so a second
-     agent takes a different one (or, when the couch is full, planProp moves on to another couch).
-     tvId != null → goal 'lounge' (watch + light the TV); else a plain couch sit. */
+  /* ---------- SEAT LAW (2026-08-04) ----------
+     A body may be drawn in the SIT pose in exactly two places: its own workstation chair (goal 'work',
+     drawSeatChair puts a real chair under it) and a single-tile seat prop — STOOL / CHAIR — which planSeat
+     renders the body ON TOP OF. Nothing else. The sit sprite is a chair pose; the old catalog let it fire
+     on a couch cushion, a beanbag and (worst) a BED, where the body read as parked bolt-upright on the
+     mattress instead of lying in it. Those props are now walk-to-and-STAND-at destinations: same routine,
+     same dwell, standing body. The switch lives in the catalog (`use.sit` in propsprites.js) — this file
+     only ever mirrors it, except where a goal used to hardcode `sitting = true`. */
+
+  /* v7 couch dwell: a couch is a blocking prop (you can't path onto it), so the agent walks to a tile
+     ADJACENT to a free cushion and stands there. Cushions are the inner footprint columns (an arm is
+     skipped at each end on a wide couch). Each cushion is reserved in occupiedSeats so a second agent
+     takes a different one (or, when the couch is full, planProp moves on to another couch) — the claim
+     is what keeps two bodies from crowding the same stretch of sofa.
+     tvId != null → goal 'lounge' (watch + light the TV); else a plain couch dwell.
+     SEAT LAW: no pendSeat and no useSit — the body stands at the couch, it does not sit on it. */
   const LOUNGE_MAXT = 7;
   const SEAT_NB = [[0, 1], [0, -1], [1, 0], [-1, 0]];   // approach a cushion from any walkable neighbour
   function planCouchSit(now, couch, tvId, faceDir, zone) {
+    /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
+       new destination means it is leaving the old seat regardless, and an inherited `pendSeat` is worse than
+       a leaked key — takeSeat() would consume the PREVIOUS seat's cushion on THIS goal's arrival and draw the
+       body on furniture it never walked to. Only planSeat sets a pendSeat now, so a stale one is rare enough
+       to be invisible until it isn't. Safe to release before the plan can fail: every caller is the idle
+       decision, which only runs when the body is free to move. */
+    releaseSeat();
     const w = couch.w || 1, h = couch.h || 1;
     const lo = w >= 3 ? 1 : 0, hi = w >= 3 ? w - 2 : w - 1;   // skip an arm tile each end when wide
     const slots = [];
@@ -1817,17 +1849,43 @@ const World = (() => {
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(couch.id + ':' + slot); self.seatKey = couch.id + ':' + slot;
-        self.pendSeat = { px: (sx + 0.5) * T, py: (couch.y + h) * T - 2 };   // render foot at the cushion front
+        self.pendSeat = null;                                // SEAT LAW: the body renders where it WALKED, not on the cushion
         self.goal = tvId ? 'lounge' : 'use'; self.usingProp = couch.id; self.watchProp = tvId || null;
-        self.useSit = true; self.useFace = faceDir || 'south';
-        if (!self.target) arrive(now);                       // already adjacent → sit immediately
+        self.useSit = false; self.useFace = faceDir || 'south';
+        if (!self.target) arrive(now);                       // already adjacent → settle immediately
         return true;
       }
     }
     return false;
   }
 
-  /* couch + a TV nearby → sit on the couch and watch it. The pairing is derived live (gen has no
+  /* THE ONLY REAL SIT (SEAT LAW): a single-tile seat prop — STOOL / CHAIR. Like a couch it BLOCKS, so
+     the body walks to an adjacent tile and then renders on the seat's own tile (pendSeat), which is what
+     makes the sit pose honest: there is a seat under the body. One occupant per seat (occupiedSeats),
+     released by the same releaseSeat()/seizeFromIdle() paths as every other claim. */
+  function planSeat(now, p, zone) {
+    releaseSeat();                                            // STALE-CLAIM RULE (see planCouchSit)
+    const key = p.id + ':0';
+    if (occupiedSeats.has(key)) return false;                 // taken — planProp tries the next candidate
+    if (!tileInZone(zone, p.x, p.y)) return false;            // P1: the seat the body RENDERS on must be in-zone
+    for (const [dx, dy] of SEAT_NB) {
+      const ax = p.x + dx, ay = p.y + dy;
+      if (!tileInZone(zone, ax, ay)) continue;                // P1: and so must the tile it WALKS to
+      if (!geo.walkable(ax, ay, blocked)) continue;
+      if (!setPathTo({ x: ax, y: ay })) continue;
+      occupiedSeats.add(key); self.seatKey = key;
+      // foot on the seat tile's floor line: the sit sprite's legs then hang off the front of the seat,
+      // and the draw pass sorts the seat art just BEHIND this body so the body sits IN it, not under it.
+      self.pendSeat = { px: (p.x + 0.5) * T, py: (p.y + 1) * T - 1 };
+      self.goal = 'use'; self.usingProp = p.id; self.watchProp = null;
+      self.useSit = true; self.useFace = 'south';             // a stool has no front — face the viewer
+      if (!self.target) arrive(now);                          // already adjacent → sit immediately
+      return true;
+    }
+    return false;
+  }
+
+  /* couch + a TV nearby → dwell at the couch and watch it. The pairing is derived live (gen has no
      authored couch/TV pairs): for each couch, the nearest TV within range, faced from the couch. */
   function tryLounge(now) {
     const zone = zoneFor(self);   // P1: only lounge on a couch INSIDE the body's zone (the body sits there)
@@ -1861,6 +1919,7 @@ const World = (() => {
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
       if (use.kind === 'couch') { cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
+      if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // SEAT LAW: a stool/chair is claimed + rendered ON by planSeat, not approached
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
@@ -1868,7 +1927,8 @@ const World = (() => {
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
-      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) return true; continue; }   // lone couch → sit on it facing UP (back to the viewer)
+      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) return true; continue; }   // lone couch → stand at it facing UP (back to the viewer)
+      if (c.seat) { if (planSeat(now, c.seat, zone)) return true; continue; }                        // stool/chair → the one honest sit
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         self.goal = 'use'; self.usingProp = c.id; self.useFace = c.a.face; self.useSit = c.a.sit;
         if (!self.target) arrive(now);   // already standing on the approach tile
@@ -2977,11 +3037,12 @@ const World = (() => {
   /* A BED is the one leisure prop a dormant body should actually occupy, and until 2026-07-29 nothing
      ever did: sleep() powered down on the spot even with a bunk two tiles away, because the bed had no
      `use` row and sleep() had no walk. This claims the mattress the same way planCouchSit claims a
-     cushion (occupiedSeats + pendSeat), so two bodies never stack on one bed and the claim is released
-     by the same releaseSeat() paths. Returns false when there is no reachable in-zone bed, which is
-     what keeps the standing fallback intact. */
+     cushion (occupiedSeats), so two bodies never stack on one bed and the claim is released by the same
+     releaseSeat() paths. Returns false when there is no reachable in-zone bed, which is what keeps the
+     standing fallback intact. SEAT LAW: no pendSeat — the body powers down standing BESIDE the bunk. */
   function planBedSleep(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
+    releaseSeat();                                             // STALE-CLAIM RULE (see planCouchSit)
     const zone = zoneFor(self);
     const beds = geo.props.filter(p => { const u = propUse(p); return u && u.kind === 'bed'; });
     if (!beds.length) return false;
@@ -2989,8 +3050,8 @@ const World = (() => {
     for (let k = 0; k < beds.length; k++) {
       const bed = beds[(order + k) % beds.length];
       if (occupiedSeats.has(bed.id + ':0')) continue;              // one sleeper per bed — it is not a couch
-      const w = bed.w || 1, h = bed.h || 1;
-      const sx = bed.x + ((w - 1) >> 1), sy = bed.y;               // the mattress tile the body renders on
+      const w = bed.w || 1;
+      const sx = bed.x + ((w - 1) >> 1), sy = bed.y;               // the mattress tile the walk is anchored to
       if (!tileInZone(zone, sx, sy)) continue;                     // P1: render tile must be in-zone
       for (const [dx, dy] of SEAT_NB) {
         const ax = sx + dx, ay = sy + dy;
@@ -2998,10 +3059,10 @@ const World = (() => {
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(bed.id + ':0'); self.seatKey = bed.id + ':0';
-        self.pendSeat = { px: (bed.x + w / 2) * T, py: (bed.y + h) * T - 3 };   // lying on the mattress, not at its foot
+        self.pendSeat = null;                                      // SEAT LAW: dormant BESIDE the bunk, not posed on the mattress
         self.goal = 'sleep'; self.usingProp = bed.id; self.studyKey = null; self.quirkKind = null;
-        self.useSit = true; self.useFace = 'south'; self.working = false;
-        if (!self.target) arrive(now);                             // already beside the bed → lie down now
+        self.useSit = false; self.useFace = 'south'; self.working = false;
+        if (!self.target) arrive(now);                             // already beside the bed → power down now
         return true;
       }
     }
@@ -3011,7 +3072,7 @@ const World = (() => {
     if (planBedSleep(now)) return true;                    // a bed is always preferred to the deck
     releaseSeat();   // going dormant ON FOOT: whatever seat this body still held, it is not in it now (a stale claim here would block that cushion/mattress for the session)
     self.goal = 'sleep'; self.usingProp = null; self.studyKey = null; self.quirkKind = null;
-    self.sitting = false; self.working = false; self.state = 'idle';   // dormant STANDING where it stands — never seated: a sit pose on a chairless tile reads as "sitting on air"; the sit anim is reserved for an actual seat (desk/couch/BED)
+    self.sitting = false; self.working = false; self.state = 'idle';   // dormant STANDING where it stands — never seated: a sit pose on a chairless tile reads as "sitting on air"; the sit anim is reserved for an actual seat (SEAT LAW: the desk chair, or a stool/chair prop)
     self.glance = null;                                      // frozen: maybeGlance skips goal==='sleep', so no lingering cooldown to leak
     self.studyUntil = now + U.irnd(20000, 55000);
     curiositySay(SLEEP_LINE, 0.3, now);
@@ -3600,6 +3661,14 @@ const World = (() => {
       // stops = bound-bay hookup tiles (crate-physics truth: an inbound crate is CONSUMED at its dock,
       // never riding past it toward the outbox — an addressed crate stops only at its OWNER's dock)
       convey.tick(dt, now, geo.belts, junctions, routingPlan ? routingPlan.bayTileToAgent : null);
+      /* GHOST PROJECTION (Phase 3): stands down while the tutorial coaches and the INSTANT any
+         real crate rides (real telemetry owns the belt); resumes when the line goes incomplete
+         again. Same belts + junction decisions as the real sim, on its own dedicated engine. */
+      if (ghost) {
+        const coaching = !!(typeof Tutorial !== 'undefined' && Tutorial.isCoaching && Tutorial.isCoaching());
+        ghost.tick(dt, now, geo.belts, junctions, { blocked: coaching || convey.boxCount() > 0,
+          feed: { known: feedState.known, fed: feedState.fed } });
+      }
       convey.drawBelts(ctx, now, T, geo.belts, beltLiveSet);
     }
 
@@ -3617,13 +3686,14 @@ const World = (() => {
         // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
         // (deskProgFor — a live harness run has none and renders none).
         const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
-        // a couch with a seated agent (hero OR crew) sorts JUST IN FRONT of its sitter: the couch art is the
-        // BACK of the sofa (it faces north, toward the TV wall), so the tall rear panel occludes the sitter's
-        // body and only head/shoulders peek over the cap. Any body lounging on THIS prop counts. All cushions
-        // share one seatPy ((couch.y+h)*T-2), so any sitter's seatPy+1 places the couch in front of them all.
+        // SEAT LAW: `seated` now means exactly one thing — a body rendered ON a stool/chair prop. That seat
+        // must sort JUST BEHIND its sitter (seatPy - 1), so the body sits IN the seat instead of the seat art
+        // being painted over its legs. (Pre-2026-08-04 this ran the other way, +1, because `seated` then meant
+        // a couch/bed occupant and the sofa's tall BACK panel was supposed to occlude the sitter. Couch and bed
+        // no longer seat anyone, so that inversion would now just hide a body behind a stool.)
         const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
           : crew.find(b => b.seated && b.usingProp === p.id);
-        let sy = sitter ? sitter.seatPy + 1 : (p.y + (p.h || 1)) * T;
+        let sy = sitter ? sitter.seatPy - 1 : (p.y + (p.h || 1)) * T;
         // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
         // table while the table is actually under it. Reclaim the table and the prop drops back to the
         // deck instead of floating — which is why no saved station ever needs migrating for this.
@@ -3665,6 +3735,7 @@ const World = (() => {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
+    if (ghost) ghost.draw(ctx, now, T, 8);       // the projection + its WOULD-captions (NAG_FONT size)
     drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
     drawShippedPallet(now);   // SHIPPED TODAY: completed jobs stack as product crates at the OUTBOX (server-truth count)
@@ -4523,6 +4594,7 @@ const World = (() => {
   function setOnOutbox(fn) { onOutbox = fn; }
   function setOnBayAssign(fn) { onBayAssign = fn; }   // click an UNBOUND bay → open the assign flow (app wires to REFIT's picker)
   function setOnIntakeFeed(fn) { onIntakeFeed = fn; } // click a NO-FEED intake → open the CHANNELS panel (app wires it)
+  function setOnIntakeSample(fn) { onIntakeSample = fn; } // click an INBOX on a COMPLETE line → the sample-job card (guided workflow Phase 4)
 
   /* ---------- BELT LEGIBILITY: the floor teaches its own routing ----------
      The single failure this layer kills: a user lays belts, sees crates or dead machinery, and cannot tell
@@ -4551,8 +4623,15 @@ const World = (() => {
     const byId = {};
     for (const p of geo.props) byId[p.id] = p;
     for (const e of routingPlan.errors) {
-      const label = NAG_LABEL[e.code];
+      let label = NAG_LABEL[e.code];
       if (!label) continue;
+      // a ROLE-carrying unbound dock names WHO it wants ("RESEARCHER — DIGS SOURCES… — CLICK") instead
+      // of the bare NO AGENT (guided workflows Phase 1; same WorldModel.BAY_ROLES source REFIT reads).
+      if (e.code === 'UNBOUND_BAY' && e.propId) {
+        const rp = byId[e.propId];
+        const ri = (rp && rp.role && !rp.agentId && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(rp.role) : null;
+        if (ri) label = rp.role + ' — ' + ri.desc.toUpperCase() + ' — CLICK';
+      }
       if (e.tile) out.push({ x: e.tile.x, y: e.tile.y, w: 1, h: 1, label, warn: !!e.warn });
       else { const p = e.propId != null && byId[e.propId]; if (p) out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label, warn: !!e.warn }); }
     }
@@ -4598,6 +4677,20 @@ const World = (() => {
       feedState = next;
       if (changed) routingNags = buildRoutingNags();   // feed truth changed → refresh the callouts
     });
+  }
+  /* hit-test: an INBOX (intake) on a floor with a COMPLETE line — an energized intake→bound-bay route exists
+     (beltLiveSet is derived from the SAME compiled plan the sidecar routes by, so "clickable" here means the
+     sample genuinely has a line to ride). Its click offers the RUN-A-SAMPLE-JOB card. Checked BEFORE
+     intakeFeedAt in the click handler; the card itself carries the CHANNELS door when the feed is missing,
+     so the NO-FEED nag's promised click-through stays one tap away. */
+  function intakeSampleAt(wp) {
+    if (!onIntakeSample || !geo || !geo.props || !beltLiveSet || !Object.keys(beltLiveSet).length) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'intake') continue;
+      const x0 = p.x * T, y0 = p.y * T - 10, x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 2;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
   }
   // hit-test: an INTAKE currently showing the NO FEED nag (its click-through opens the CHANNELS panel)
   function intakeFeedAt(wp) {
@@ -5105,6 +5198,14 @@ const World = (() => {
     beltTileSet = new Set(((geo && geo.belts) || []).map(b => b.x + ',' + b.y));
     routeTagCache = null; hoverBeltTile = null;   // the floor changed — every cached hover answer is stale
     routingNags = buildRoutingNags();
+    /* GHOST PROJECTION (Phase 3): re-derive its route data from the SAME plan + geometry this
+       recompile produced. The live world runs it too (not just REFIT): between REFIT sessions this
+       is the view the user stares at their half-built line in, and the existing nags say what's
+       broken while the ghost shows what the line WOULD do — same local frame, offset {0,0}. */
+    if (typeof GhostLine !== 'undefined' && typeof Pipeline !== 'undefined' && Pipeline.lineComponents && geo) {
+      ghost = ghost || GhostLine.create();
+      ghost.setContext({ plan: routingPlan, comps: Pipeline.lineComponents(geo), offset: { tx: 0, ty: 0 } });
+    }
     // B5: enrich each bay with the capability objectTypes in its room, so the sidecar can isolate that agent's
     // tools to exactly what the floor placed there (the bay->agent binding decides WHO; the room decides WHAT).
     // dockBays too — a LONE bay (no belt) is a complete dock and isolates identically (sense pass 2026-07-05).
@@ -5639,6 +5740,13 @@ const World = (() => {
     const p = (bx && bx.payload) || {};
     if (p.outbound) {
       lastOutboxFlash = fnow;   // box reached the OUTBOX -> flash the chute
+      // GUIDED WORKFLOWS: a line's FIRST real product delivery permanently retires its finish-the-line
+      // card. This is THE delivery seam (the crate that actually sank at the chute) — event-driven, and
+      // product-only: slag (an unproductive run) finishes nothing. World tiles ride over so Build maps
+      // the mouth tile to its line in its own geometry frame.
+      if (p.box === 'product' && geo && geo.origin && typeof Build !== 'undefined' && Build.noteLineDelivered) {
+        try { Build.noteLineDelivered(bx.x + geo.origin.tx, bx.y + geo.origin.ty); } catch (_) {}
+      }
       // slag is NOT a satisfying delivery — skip the relaxed exhale; the post-mortem already fired at run.end
       if (p.box !== 'slag' && agent && !agent.unplaced && activity === 'idle') {   // EXHALE: watch the reply leave, satisfied, then relax (downtime clock resets)
         const ob = geo && geo.props && geo.props.find(q => q.t === 'outbox');
@@ -6326,6 +6434,17 @@ const World = (() => {
     try { ok = planProp(t); } finally { self = prev; }
     return Object.assign({ planned: ok }, _dbgLeisure());
   };
+  /* run the ARRIVAL beat for the hero's CURRENT goal right now, skipping the walk. _dbgSleep/_dbgUseProp
+     only prove the PLAN; the pose (sitting/seated + where the body renders) is decided in arrive(), and a
+     verify script cannot wait for the walk when the rAF loop is frozen (an undisplayed tab composites no
+     frames, so the engine never ticks). Same code path the engine runs on arrival — no pose is faked. */
+  const _dbgArrive = () => {
+    if (!agent) return _dbgLeisure();
+    const t = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    const prev = self; self = agent;
+    try { agent.target = null; agent.pathPts = null; arrive(t); } finally { self = prev; }
+    return _dbgLeisure();
+  };
   const _dbgLeisure = () => ({
     goal: agent ? agent.goal : null,
     usingProp: agent ? agent.usingProp : null,
@@ -6333,9 +6452,25 @@ const World = (() => {
     sitting: !!(agent && agent.sitting),
     seatKey: (agent && agent.seatKey) || null,
     seated: !!(agent && agent.seated),
+    // where the body actually DRAWS: seated bodies render on the claimed seat tile, everyone else on their own
+    renderPx: agent ? (agent.seated ? { x: agent.seatPx, y: agent.seatPy } : { x: agent.px, y: agent.py }) : null,
     walkingTo: (agent && agent.target) ? { x: agent.target.x, y: agent.target.y } : null,
     seats: [...occupiedSeats],
   });
+  /* CDP-verify hook: CLIENT (mouse-event) coordinates for the centre of the first prop of type `t` — the
+     exact inverse of toWorld/toCanvas, so a shot script can dispatch a REAL canvas click on a prop (the
+     sample-card INBOX proof) instead of faking the handler call. Read-only; null when absent/unbaked. */
+  const _dbgPropClientPoint = (t) => {
+    const p = geo && geo.props && geo.props.find(q => q.t === t);
+    if (!p || !cv) return null;
+    const wx = (p.x + (p.w || 1) / 2) * T, wy = (p.y + (p.h || 1) / 2) * T;
+    const r = cv.getBoundingClientRect();
+    return {
+      id: p.id,
+      clientX: r.left + ((wx * scale + panX) * (r.width / cv.width)),
+      clientY: r.top + ((wy * scale + panY) * (r.height / cv.height))
+    };
+  };
   // E1 verification: report the live link predicate, and force the real chanES closed (a genuine dropped socket)
   // so the DOWN branch can be observed against a real non-OPEN readyState without killing the whole process.
   const _dbgLinkState = () => ({ es: !!chanES, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round(((typeof performance !== 'undefined') ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) });
@@ -6350,6 +6485,7 @@ const World = (() => {
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
+    ghost: ghost ? ghost.peek() : null,        // the projection's own state (never mixed into `boxes` — dedicated engine)
     work: (() => { const o = {}; for (const [k, v] of runWork) o[k] = { tools: v.tools, dels: v.dels }; return o; })(),   // proven-work tally per in-flight run
     routeAt: (x, y) => routeTagFor(x, y),
     outboundAt: aid => outboundBeltTile(aid),   // where would this agent's product crate spawn (verify hook)
@@ -6357,7 +6493,11 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgSleep, _dbgUseProp, _dbgLeisure,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []),
+    // FEED TRUTH accessor (guided workflows): the exact server-proven state the NO FEED nag keys on —
+    // REFIT's finish-the-line card reads THIS, never a parallel poll, so the two can never disagree.
+    feedState: () => ({ known: feedState.known, fed: feedState.fed }),
+    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

@@ -2779,9 +2779,9 @@ const PropSprites = (() => {
   };
 
   F.merger = (x, y, w, h, f) => {
-    // MERGER (1x1) — buffers K inbound boxes and emits ONE combined box (a join / map-reduce barrier).
-    // The exact silhouette INVERSE of the splitter: two horns on the west, one fat outlet east. Its one
-    // emissive idea is the join itself — two packets ride in, the buffer fills, one bigger packet leaves.
+    // MERGER (1x1) — a LANE FUNNEL: several lanes converge into one, every crate rides straight on
+    // (the buffer-K/map-reduce mechanic was removed 2026-07-26 — see conveyor.js chooseExit).
+    // The exact silhouette INVERSE of the splitter: two horns on the west, one fat outlet east.
     const r = RAMP.steel, on = !!(f && f.work), c = '#e0a45a', ph = (f && f.x) || 0;
     shadow2(x + 1, y + h - 1, w - 2);
     for (const ny of [y + 2, y + 6]) {                          // twin intake horns, west
@@ -3943,9 +3943,11 @@ const PropSprites = (() => {
   };
 
   F.couch = (x, y, w, h, f) => {   // v4 sofa (5x1) — MATERIAL pass only. The BACK VIEW is locked: the sofa faces
-    const r = RAMP.fabric;         // north (the TV), the tall rear panel occludes a sitter, heads peek over the cap.
-    // Geometry — cap line, panel height, arm extents, cushion seams — is untouched on purpose: the renderer
-    // y-sorts a seated body against this silhouette (seat foot at (y+h)*T-2), so moving any of it breaks sitting.
+    const r = RAMP.fabric;         // north (the TV), so it reads as a sofa seen from behind.
+    // Geometry — cap line, panel height, arm extents, cushion seams — is untouched on purpose. It USED to be
+    // load-bearing: a couch seated a body and the renderer y-sorted that sitter against this silhouette.
+    // Under the SEAT LAW (2026-08-04) nothing sits here any more, so the occlusion contract is gone; the
+    // geometry is held only because this was a material pass, not a redraw.
     shadow2(x + 1, y + h - 1, w - 2);                             // floor contact; lounge tier stays freestanding
     // throw-pillow tops leaning on the far seat, just proud of the back line. Same 7x4 boxes as ever
     // (their columns are part of the locked occlusion silhouette) — v6 only gives them PATTERN and a
@@ -7737,10 +7739,10 @@ const PropSprites = (() => {
     // excludes every prop footprint), so nothing needs to stand ON them — agents route around.
     // The 1×1 junctions below stay blocks:false: they sit ON a belt line (belt tile underneath),
     // and belts are walkable floor machinery by contract.
-    { id: "intake", label: "INBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "INBOX — where OUTSIDE work (a DM, a routine) arrives on the floor and drops onto a belt. Orders you give in COMMS skip it — they land straight at the agent's BAY. You don't need one for an agent to work — a BAY alone is enough; the inbox is for watching outside work ride in." },
+    { id: "intake", label: "INBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "Your floor is a flowchart — work arrives at the INBOX, every BAY is an agent doing one step, and the belts you draw are the order the work flows. OUTSIDE work (a DM, a routine) arrives here and drops onto a belt. Orders you give in COMMS skip it — they land straight at the agent's BAY. You don't need one for an agent to work — a BAY alone is enough; the inbox is for watching outside work ride in." },
     { id: "bay", label: "BAY", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "BAY — the agent dock. Click it, assign an agent — done: work for that agent lands here, no belts required. Add belts to watch work ride in from an INBOX (and finished work ride out to an OUTBOX). The props in its room become its powers." },
     { id: "filter", label: "FILTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "FILTER — sorts UNADDRESSED work by its content, sending each kind down a different belt lane. Work already bound to an agent rides straight home past it. Click it to set the routes." },
-    { id: "merger", label: "MERGER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "MERGER — buffers K incoming boxes, then emits one combined box. A join / map-reduce barrier." },
+    { id: "merger", label: "MERGER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "MERGER — a lane funnel: several belt lanes converge into one, and every crate rides straight on (K in, K out). It tidies the lanes — it never combines the jobs riding them; each still runs on its own. Nothing to configure." },
     { id: "splitter", label: "SPLITTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "SPLITTER — fans one work stream across its lanes to run several agents in parallel (load-balance)." },
     { id: "outbox", label: "OUTBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "OUTBOX — the dispatch chute where an agent's finished reply leaves the station. Click it to read and rate every finished run waiting for you." },
     // NOTE: the old "CONVEYOR" palette prop (beltH) is retired — it was inert scenery that LOOKED like the
@@ -7822,13 +7824,17 @@ const PropSprites = (() => {
     { id: "speaker", label: "SPEAKER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "bar", label: "BAR", cat: "lounge", tier: "cosmetic", w: 4, h: 1, animated: true, blocks: true, use: { kind: 'bar', sit: false, approach: 'south' } },
     { id: "tv", label: "TV", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'tv', sit: false, approach: 'south' } },
-    { id: "couch", label: "COUCH", cat: "lounge", tier: "cosmetic", w: 5, h: 1, animated: true, blocks: true, use: { kind: 'couch', sit: true, approach: 'south' } },
+    // SEAT LAW (2026-08-04): `sit: true` is reserved for props a body can credibly be ON — its own
+    // workstation chair and the single-tile seats (STOOL/CHAIR). A couch/bed/beanbag is a place a body
+    // walks to and STANDS at: the sit sprite is a chair pose, and pasting it on a mattress or a cushion
+    // read as a body parked upright on the furniture. Changing `sit` here is the whole switch.
+    { id: "couch", label: "COUCH", cat: "lounge", tier: "cosmetic", w: 5, h: 1, animated: true, blocks: true, use: { kind: 'couch', sit: false, approach: 'south' } },
     { id: "arcade", label: "ARCADE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "arcade2", label: "ARCADE II", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "jukebox", label: "JUKEBOX", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'juke', sit: false, approach: 'south' } },
-    // BED — `sit` is the pose; world.js planBedSleep is what actually walks a dormant agent here and
-    // lies it ON the mattress (the couch seat machinery), so this row is also the sleep target.
-    { id: "bunk", label: "BED", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true, use: { kind: 'bed', sit: true, approach: 'south' } },
+    // BED — the sleep target: world.js planBedSleep walks a dormant agent here and powers it down
+    // BESIDE the mattress. `sit: false` per the SEAT LAW above (a bed is not a chair).
+    { id: "bunk", label: "BED", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true, use: { kind: 'bed', sit: false, approach: 'south' } },
     { id: "quarters_pooltable", label: "POOL TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true, use: { kind: 'pool', sit: false, approach: 'south' } },
     { id: "quarters_vending", label: "VENDING", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'vend', sit: false, approach: 'south' } },
     { id: "quarters_lockerbank", label: "LOCKERS", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'locker', sit: false, approach: 'south' } },
@@ -7840,8 +7846,11 @@ const PropSprites = (() => {
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_ladder", label: "LADDER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "stool", label: "STOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "chair", label: "CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    // THE ONLY SITTABLE FURNITURE (SEAT LAW, see the couch row): a single-tile seat. world.js planSeat
+    // claims it, walks the body to an adjacent tile, then RENDERS the body on the seat's own tile — the
+    // one case where a sit pose is true, because there is a seat underneath it.
+    { id: "stool", label: "STOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
+    { id: "chair", label: "CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     // TABLES (2026-07-26) — the catalog had hero surfaces and nothing in between, so every small object
     // had to be parked on the deck. `surface: true` is what a mount:"surface" / stack:true prop may be
     // placed ON. See the MOUNT AXIS note above the catalog for what those two flags mean.
@@ -7876,7 +7885,7 @@ const PropSprites = (() => {
     { id: "pokertable", label: "POKER TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true, use: { kind: 'poker', sit: false, approach: 'south' } },
     // FREESTANDING LOUNGE SET (2026-07-29) — floor pieces that are DESTINATIONS, not scenery.
     { id: "bookshelf", label: "BOOKSHELF", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, use: { kind: 'bookshelf', sit: false, approach: 'south' } },
-    { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: true, approach: 'auto' } },
+    { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: false, approach: 'auto' } },
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
   ];
   const BY_ID = {};

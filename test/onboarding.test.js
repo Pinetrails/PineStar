@@ -241,4 +241,26 @@ A.ok(/else if \(!opts\.wake\)[\s\S]{0,700}reignite\(\)/.test(src),
     'the re-wake never replays the flood/contact/mandate birth monologue');
 }
 
+/* ---------- THE BENCH + ADAPTIVE FOLLOW-UPS + THE INK (Andrew 2026-08-05) ---------- */
+// B4c the bench: a plain direct question about the projects actually in flight — honestly askable on a
+// quiet mind — whose answer lands verbatim as a stated `goals` belief through askStep's chokepoint.
+A.ok(/dossierDim:\s*'goals'[\s\S]{0,200}what are you actually building or working on right now\?/.test(src),
+  'the bench question exists and writes through the dossier chokepoint');
+A.ok(/let projT = '', benchT = '';\s*\n\s*if \(!loose\) \{/.test(src), 'the bench ask is deep-path only');
+A.ok(/projects:\s*projT/.test(src) && /bench:\s*benchT/.test(src), 'the bench rides into the year/mirror/synthesis contexts');
+// the follow-up wallet: generated digs are budget-gated at EVERY site (dig/pain/bench/year), so the
+// mind's judgment (ASK: NONE) plus the wallet keep depth adaptive without blowing the runtime.
+A.ok(/const FOLLOWUP_BUDGET = \d/.test(src), 'the follow-up budget exists');
+{
+  const gates = (src.match(/followupsLeft > 0/g) || []).length;
+  const spends = (src.match(/followupsLeft--/g) || []).length;
+  A.ok(gates >= 4 && spends >= 4, 'all four generated-follow-up sites are wallet-gated and spend on use (' + gates + '/' + spends + ')');
+}
+// the ink: every REAL dossier write beside the ceremony shows its receipt — and only real writes do.
+A.ok(/function ink\(dim, text\)/.test(src) && /Dialogue\.ink\(/.test(src), 'the ink helper exists and drives Dialogue.ink');
+A.ok(/DossierStore\.upsert\(s\.dossierDim[\s\S]{0,120}ink\(s\.dossierDim, text\)/.test(src),
+  'the askStep chokepoint inks the stated write');
+A.ok(!/ink\('identity', 'Chose to be figured out/.test(src) && /never inked/.test(src),
+  'seed-weight mechanical notes are never inked (nothing was learned)');
+
 A.report('onboarding.test');

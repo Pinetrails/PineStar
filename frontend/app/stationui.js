@@ -79,7 +79,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // independent bloom dial that also tames the hand-tuned presets. 100 = the shipped look, untouched.
   // `backdrop` is what the station floats in (SpaceBG's registry). 'void' is the shipped sky, so
   // every save that predates this key merges to the exact look it already had.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, textScale: 0, flicker: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  // panelBright (0–100, default 0) is the tube's BRIGHTNESS knob: it lifts the panel glass's black
+  // level toward the phosphor colour (never toward white). 0 = the shipped look, untouched.
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
   // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
   // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
@@ -189,6 +191,32 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const base = PRESET_GLOW[s.theme] || [0.45, 0.14];
         document.body.style.setProperty('--ph-glow', 'rgba(' + rgb + ', ' + (base[0] * gm).toFixed(3) + ')');
         document.body.style.setProperty('--ph-glow2', 'rgba(' + rgb + ', ' + (base[1] * gm).toFixed(3) + ')');
+      }
+    }
+    // BRIGHTNESS — the knob a real tube has. Raising it lifts the BLACK LEVEL of the panel glass:
+    // the three ground tokens (--panel/--panel2/--ph-faint) mix toward the phosphor in force, so
+    // the panels brighten in the theme's own light and can never trend toward white (the mix is
+    // capped at 16% of the way to the accent). The page (--bg) and the station feed stay dark —
+    // separation is what the dark room is for. At 0 no inline override is written, so an untouched
+    // station remains byte-identical to the shipped look. Reads the palette IN FORCE (preset class
+    // or custom inline) and writes on <body> — the bezel-var-trap side of the line; THEME_VARS
+    // clears these on the next pass so theme switches always re-derive from clean class values.
+    const lift = clampN(s.panelBright, 0, 100, 0) / 100 * 0.16;
+    if (lift > 0.001) {
+      const cs = getComputedStyle(document.body);
+      const phRgb = (cs.getPropertyValue('--ph-rgb') || '255, 170, 51').split(',').map(Number);
+      const parseCol = str => {
+        str = (str || '').trim();
+        const m = /rgba?\(([^)]+)\)/.exec(str);
+        if (m) { const p = m[1].split(',').map(Number); return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : null }; }
+        if (/^#[0-9a-fA-F]{6}$/.test(str)) return { rgb: hexRgb(str), a: null };
+        return null;
+      };
+      for (const tok of ['--panel', '--panel2', '--ph-faint']) {
+        const c = parseCol(cs.getPropertyValue(tok));
+        if (!c) continue;
+        const rgb = c.rgb.map((v, i) => Math.round(v + (phRgb[i] - v) * lift));
+        document.body.style.setProperty(tok, c.a == null ? rgbHex(rgb) : 'rgba(' + rgb.join(', ') + ', ' + c.a + ')');
       }
     }
     // WHERE THE STATION IS. One saved value spans two layers that work opposite ways: a SKY is
@@ -1478,17 +1506,32 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function agSkills(agentId) {
     const skills = skillsFor(agentId);
     const on = skills.filter(s => s.on).length;
+    // NAV CONDENSE 2: this tab is now the ONE per-agent capabilities home (the standalone SKILLS
+    // window is gone), so it inherits that panel's honest affordances: a locked card names the
+    // missing gear and deep-links into REFIT (data-perk-cap → placeGearForSkill, wired in
+    // buildAgents), and the toolset-off honesty pass dims families switched off in ABILITIES.
+    const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
     return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
+      '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
       '<div class="perk-grid">' +
-      skills.map((s, i) => '<div class="perk ' + (s.on ? 'on' : '') + '" style="--ci:' + i + '">' +
-        '<div class="perk-icon">' + s.icon + '</div>' +
-        '<div class="perk-name">' + s.name + '</div>' +
-        '<div class="perk-desc">' + s.tools + '</div>' +
-        '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
-        (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
+      skills.map((s, i) => {
+        const lockable = !s.on && s.cap;
+        return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
+          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place ' + skArt(SK_OBJ_NAME[s.cap] || s.cap) + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
+          ' style="--ci:' + i + '">' +
+          '<div class="perk-icon">' + s.icon + '</div>' +
+          '<div class="perk-name">' + s.name + '</div>' +
+          '<div class="perk-desc">' + s.tools + '</div>' +
+          '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
+          (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : capLockedText(s)) + '</div>' +
+          (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
+      }).join('') +
       '</div>' +
-      '<p class="sk-note">Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS. ' +
-      'Browse &amp; toggle pre-installed <b>skill recipes</b> in the <b>SKILLS</b> panel (BUILD dock).</p>';
+      '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
+      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
+      '<b>notebook</b> saves freely.</p>' +
+      '<p class="sk-note">This view is <b>read-only</b> — the on/off switches for these tool families, and the ' +
+      'station’s <b>skill library</b>, live in <b>⇄ ABILITIES</b> on the bottom bar.</p>';
   }
 
   function fileCard(a, f) {
@@ -1779,11 +1822,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     skillsLiveWired = true;
     U.bus.on('deliverable', p => {
       if (!p || p.kind !== 'skill') return;
-      if (!open['skills'] || !$('#sk-agent')) return;                 // the AGENT SKILLS host lives in the standalone SKILLS panel
+      if (!open['connectors'] || !$('#sk-agent')) return;             // the AGENT SKILLS host lives in the ABILITIES console (skills lane)
       const a = present[sel]; const shownId = (a && a.id) || 'agent';
       if ((p.agentId || 'agent') !== shownId) return;                 // only refresh the agent the panel is actually showing
       clearTimeout(skillsRefreshTimer);
-      skillsRefreshTimer = setTimeout(() => { if (open['skills'] && $('#sk-agent')) loadAgentSkills(shownId); }, 400);
+      skillsRefreshTimer = setTimeout(() => { if (open['connectors'] && $('#sk-agent')) loadAgentSkills(shownId); }, 400);
     });
   }
 
@@ -2233,6 +2276,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // pane is built up-front (mountConsole keeps them all in the DOM), so the single wire pass below reaches
     // every control — wireHead (header, all sections), wireConfig (CONFIG pane), loadMemoryCore (MEMORY pane).
     const frag = html => (elx => { elx.innerHTML = html; });
+    // NAV CONDENSE 2: per-agent windows that used to live on the SYSTEM dock (LOGBOOK, RESTORE)
+    // register as dossier lanes — windows/logbook.js + windows/rewind.js push (body)=>({sections,wire})
+    // onto window.DossierLanes at load time, and every rerender rebuilds them against the CURRENT
+    // selected agent (they read H.present/H.sel), so the roster rail drives them like any other tab.
+    const lanes = (window.DossierLanes || []).map(fn => { try { return fn(body); } catch (_) { return null; } }).filter(l => l && Array.isArray(l.sections));
     const host = mountConsole(body, 'agents', [
       { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is right now — identity, level, purpose, and live status.',
         build: frag(agHead(a, act) + agBrief(a)) },
@@ -2244,7 +2292,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         build: frag(agSkills(a && a.id)) },
       { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'The markdown files that compose this agent’s prompt, plus its per-agent model pin.',
         build: frag(agConfig(a)) }
-    ], {
+    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), {
       // tabsTop: the five section tabs (BRIEF/GROWTH/MEMORY/SKILLS/CONFIG) render as a horizontal strip at the
       // top of the right pane; the left rail becomes the agent roster full-height (railTop below).
       tabsTop: true,
@@ -2276,6 +2324,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     loadMemoryCore(a);
     loadPractice(a && a.id ? a.id : 'agent');   // S5: fill the GROWTH tab's B3 meter from the agent's real skillbase
     drawPortrait(host.querySelector('#ag-portrait'), a);
+    lanes.forEach(l => { try { if (typeof l.wire === 'function') l.wire(); } catch (_) {} });
+    // SKILLS tab: a locked capability card deep-links into REFIT to place its missing gear (same
+    // honest path the retired SKILLS window carried — moved here with the grid, NAV CONDENSE 2).
+    const agentName = (a && a.name) || (a && a.id) || 'agent';
+    host.querySelectorAll('.perk-locked[data-perk-cap]').forEach(p => {
+      const go = () => { sfx('click'); placeGearForSkill(p.dataset.perkCap, agentName); };
+      p.addEventListener('click', go);
+      p.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
+    });
+    // TOOLSET honesty: a family switched OFF in ABILITIES → TOOLSETS must read as OFF here too, so
+    // the two surfaces can't tell different stories. Best-effort; a fetch miss leaves perks as-is.
+    Harness.api.get('/api/toolsets').then(j => {
+      const disabledObjs = {};
+      (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
+      const skills = skillsFor((a && a.id) || 'agent');
+      const perks = host.querySelectorAll('.perk-grid .perk');
+      skills.forEach((s, i) => {
+        if (s.cap && disabledObjs[s.cap] && perks[i]) {
+          perks[i].classList.remove('on'); perks[i].classList.add('ts-disabled');
+          const stat = perks[i].querySelector('.perk-stat'); if (stat) { stat.textContent = '○ OFF — switch it on in ⇄ ABILITIES'; stat.classList.remove('ask'); }
+        }
+      });
+    }).catch(() => {});
   }
   function drawPortrait(cv, a) {
     if (!cv) return;
@@ -2378,48 +2449,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     try { caps = (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(agentId).map(c => c.objectType) : []; } catch (e) {}
     return SKILLS.map(s => ({ ...s, on: s.cap === null || caps.indexOf(s.cap) !== -1 }));
   }
-  function buildSkills(body) {
+  /* NAV CONDENSE 2 (2026-08-04): the standalone SKILLS window is gone. Its per-agent CAPABILITIES
+     grid lives in the dossier's SKILLS tab (agSkills — same truth, one per-agent home), and the two
+     procedure sections below register as an ABILITIES lane: windows/connectors.js reads
+     window.AbilityLanes at build time and mounts these sections in its own console, so one window
+     owns the whole "what agents can do" axis. Same two-part lane shape as windows/automation.js
+     ({sections, wire}); wire() runs after the shared mountConsole call. */
+  function abilitySkillsLane(body) {
     const a = present[sel];
     const agentId = (a && a.id) || 'agent';
-    const skills = skillsFor(agentId);
-    const on = skills.filter(s => s.on).length;
-    // CONSOLE MODE: CAPABILITIES · SKILL LIBRARY · AGENT SKILLS as three sections instead of one long scroll.
-    // The library categories stay as sub-headers inside the LIBRARY section (renderSkillLibrary emits them);
-    // its async loaders target #sk-lib / #sk-agent which live inside the panes below.
-    // locked copy is OBJECT-TRUTHFUL: not a disabled toggle, but "no DISH at the desk" — it points at the furniture.
-    const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
-    // a LOCKED-for-missing-gear card (a real cap whose prop isn't on the floor) becomes a one-click deep-link into
-    // REFIT to place that prop — the honest fix, never a fake auto-grant. COMPUTE (cap:null) is always on and never
-    // locked. data-perk-cap carries the capability objectType so the wiring below routes it to placeGearForSkill.
-    const secCaps =
-      '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
-      '<div class="perk-grid">' +
-      skills.map((s, i) => {
-        const lockable = !s.on && s.cap;
-        return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
-          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place ' + skArt(SK_OBJ_NAME[s.cap] || s.cap) + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
-          ' style="--ci:' + i + '">' +
-          '<div class="perk-icon">' + s.icon + '</div>' +
-          '<div class="perk-name">' + s.name + '</div>' +
-          '<div class="perk-desc">' + s.tools + '</div>' +
-          '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
-          (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : capLockedText(s)) + '</div>' +
-          (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
-      }).join('') +
-      '</div>' +
-      '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
-      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
-      '<b>notebook</b> saves freely.</p>' +
-      // Audit finding 1: this readout and TOOLSETS are the SAME tool families under two names, and this panel
-      // never said where the switches live. One honest pointer closes the loop.
-      '<p class="sk-note">This view is <b>read-only</b> — the on/off switches for these same tool families live in ' +
-      'the <b>⇄ TOOLSETS</b> panel on the bottom bar.</p>';
     const secLibrary =
       // "recipes" here collided with the ❒ RECIPES dock feature (audit finding 2) — these are PROCEDURES: how-to
       // guides an agent follows mid-task, not launchable jobs.
       '<p class="sk-note sk-lib-intro">Pre-installed <b>procedures</b> your agents follow when a task matches ' +
       '(not the same as ❒ RECIPES — those are launchable jobs; these are how-to guides). Each one ' +
-      'rides on the capabilities above — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
+      'rides on the agent’s capabilities (the TOOLSETS section here; per-agent, the dossier’s SKILLS tab) — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
       'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
       '<div id="sk-lib" class="sk-lib"><div class="sk-loading"><span class="loading pulse">loading the skill library…</span></div></div>';
     const secAgent =
@@ -2431,37 +2475,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        because a live session cannot switch voice mid-call. */
 
     const frag = html => (el => { el.innerHTML = html; });
-    mountConsole(body, 'skills', [
-      { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
+    const sections = [
       { id: 'library', label: 'SKILL LIBRARY', glyph: '▤', desc: 'Pre-installed procedures your agents follow when a task matches, grouped by kind.', build: frag(secLibrary) },
       { id: 'agent', label: 'AGENT SKILLS', glyph: '✎', desc: 'Procedures this agent created or learned itself.', build: frag(secAgent) }
-    ], { search: true, searchPlaceholder: 'search skills…' });
-    loadSkillLibrary(agentId);
-    loadAgentSkills(agentId);
-    wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
-    // LOCKED capability card → the real REFIT placement surface (same deep-link the SKILL LIBRARY's PLACE uses).
-    // A ts-disabled card (gear IS placed, toolset just off) is not locked-for-gear, so it never gets this wiring.
-    const agentName = (a && a.name) || agentId;
-    body.querySelectorAll('.perk-locked[data-perk-cap]').forEach(p => {
-      const go = () => { sfx('click'); placeGearForSkill(p.dataset.perkCap, agentName); };
-      p.addEventListener('click', go);
-      p.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
-    });
-    // TOOLSET honesty: a family switched OFF in the TOOLSETS console must read as OFF here too, so the two
-    // surfaces can't tell different stories. Cheap best-effort: fetch the toolset state and dim matching perks
-    // (mapped by the granting objectType == SKILLS[].cap). Never blocks the panel; a fetch miss leaves perks as-is.
-    Harness.api.get('/api/toolsets').then(j => {
-      const disabledObjs = {};
-      (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
-      const perks = body.querySelectorAll('.perk-grid .perk');
-      skills.forEach((s, i) => {
-        if (s.cap && disabledObjs[s.cap] && perks[i]) {
-          perks[i].classList.remove('on'); perks[i].classList.add('ts-disabled');
-          const stat = perks[i].querySelector('.perk-stat'); if (stat) { stat.textContent = '○ OFF — switch it on in ⇄ TOOLSETS'; stat.classList.remove('ask'); }
-        }
-      });
-    }).catch(() => {});
+    ];
+    function wire() {
+      loadSkillLibrary(agentId);
+      loadAgentSkills(agentId);
+      wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
+    }
+    return { sections, wire };
   }
+  window.AbilityLanes = window.AbilityLanes || [];
+  window.AbilityLanes.push(abilitySkillsLane);
 
   // async: fetch the bundled recipe catalog (with THIS agent's placed objects, so the active/locked readout is
   // truthful) and render it into #sk-lib. Mirrors loadMemoryCore — re-query the host after the await so a panel
@@ -2476,14 +2502,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const h = $('#sk-lib');
         if (h) {
           renderSkillLibrary(h, (d && d.skills) || [], agentId, placed);
-          requestAnimationFrame(() => fitTermInViewport(open.skills));
+          requestAnimationFrame(() => fitTermInViewport(open.connectors));
         }
       })
       .catch(() => {
         const h = $('#sk-lib');
         if (h) {
           h.innerHTML = '<div class="sk-loading">Could not load the skill library — is the sidecar running?</div>';
-          requestAnimationFrame(() => fitTermInViewport(open.skills));
+          requestAnimationFrame(() => fitTermInViewport(open.connectors));
         }
       });
   }
@@ -2512,7 +2538,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (typeof Build === 'undefined' || !(Build.open || Build.toggle)) {
       notify('Open ⚒ BUILD and place ' + skArt(label) + label + ' to unlock this skill', 'warn'); return;
     }
-    try { if (open.skills) minimizeTerm('skills'); } catch (_) {}
+    // the caller may sit in the ABILITIES console (skill library PLACE) or the dossier's SKILLS tab
+    // (locked capability card) — clear whichever is open so REFIT isn't buried under it.
+    try { if (open.connectors) minimizeTerm('connectors'); } catch (_) {}
+    try { if (open.agents) minimizeTerm('agents'); } catch (_) {}
     try {
       if (Build.isOpen && Build.isOpen()) { /* already in REFIT */ }
       else if (Build.open) Build.open();
@@ -2789,6 +2818,48 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   function reopenTask(id) { const w = WS(); if (!w) return; w.setLane(id, 'active'); persistWS(); sync(); }
   function archiveCard(id) { const w = WS(); if (!w) return; w.archive(id, true); persistWS(); sync(); }
+  // deliberate human re-queue (ACTIVE -> TO DO). Hybrid-honest lanes are untouched: the next real run
+  // auto-advances it right back, and an active card never claimed backend state a demote could falsify.
+  function demoteTask(id) { const w = WS(); if (!w) return; w.setLane(id, 'todo'); persistWS(); sync(); }
+  // pin = prioritize: list() sorts pinned first, and the per-lane filter preserves that order, so a
+  // pinned card rises to the top of its column (and of the COMMS rail — same record, same flag).
+  function togglePin(id) {
+    const w = WS(); if (!w) return;
+    const s = w.get(id); if (!s) return;
+    w.pin(id, !s.pinned); persistWS(); sync();
+  }
+  // inline rename ON the card (no native prompt — station law). Enter commits through
+  // Workstreams.rename (which locks titleAuto so no auto-title ever stomps it), Esc/blur cancels.
+  // While the editor is open, kbRenaming holds the id and refreshBoardLive stands down — a background
+  // data poke must not rebuild the DOM out from under a half-typed title.
+  let kbRenaming = null;
+  function beginCardRename(cardEl, id) {
+    const w = WS(); const s = w && w.get(id); if (!s) return;
+    const titleEl = cardEl.querySelector('.kb-title');
+    if (!titleEl || titleEl.querySelector('input')) return;
+    const inp = document.createElement('input');
+    inp.className = 'kb-rename'; inp.maxLength = 80; inp.value = s.title || '';
+    titleEl.textContent = ''; titleEl.appendChild(inp);
+    kbRenaming = id;
+    let settled = false;
+    const done = commit => {
+      if (settled) return; settled = true;
+      kbRenaming = null;
+      if (commit) {
+        const t = inp.value.trim();
+        if (t && t !== s.title) { w.rename(id, t); persistWS(); }
+      }
+      sync();   // re-render restores the title row either way
+    };
+    inp.addEventListener('keydown', ev => {
+      ev.stopPropagation();   // the card's own Enter/Space open handler must not fire
+      if (ev.key === 'Enter') { ev.preventDefault(); done(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); done(false); }
+    });
+    inp.addEventListener('blur', () => done(false));
+    inp.addEventListener('click', ev => ev.stopPropagation());
+    inp.focus(); inp.select();
+  }
   // a card IS a directive: open its conversation and, if it hasn't started yet, hand the agent its title
   function assignTask(id) {
     const w = WS(); if (!w) return;
@@ -2861,14 +2932,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function card(s, i) {
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
     const dv = (s.deliverables && s.deliverables.length) || 0;   // real produced artifacts (workstreams.recordDeliverable)
+    // shared tail: rename + pin + archive on every lane (title= is adopted into the station tooltip).
+    // One .kb-meta-keys unit so the housekeeping cluster right-aligns AND wraps as a whole — never
+    // a stranded ⌫ on its own row (the raggedness the keycap restyle made visible).
+    const tail = '<span class="kb-meta-keys">' +
+      '<button data-act="rename" title="rename this task">✎</button>' +
+      '<button data-act="pin" title="' + (s.pinned ? 'unpin' : 'pin to the top of its column') + '">' + (s.pinned ? '★' : '☆') + '</button>' +
+      '<button data-act="arch" title="archive — recover from the COMMS rail&#39;s ARCHIVED toggle">⌫</button></span>';
     const acts = s.lane === 'todo'
-      ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
+      ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button>' + tail
       : s.lane === 'active'
-        ? '<button data-act="ship">✓ SHIP</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
-        : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>';
-    return '<div class="kb-card" data-id="' + s.id + '" role="button" tabindex="0" aria-label="' + esc(s.title || 'untitled') + ' — open conversation" style="--ci:' + (i || 0) + '">' +
+        ? '<button data-act="ship">✓ SHIP</button><button data-act="queue" title="send back to TO DO">↩ QUEUE</button><button data-act="open">↗ OPEN</button>' + tail
+        : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button>' + tail;
+    return '<div class="kb-card' + (s.pinned ? ' pinned' : '') + '" draggable="true" data-id="' + s.id + '" role="button" tabindex="0" aria-label="' + esc(s.title || 'untitled') + ' — open conversation" style="--ci:' + (i || 0) + '">' +
       '<div class="kb-title">' + esc(s.title || 'untitled') + '</div>' +
-      '<div class="kb-meta">' + agentChip(s) + '<span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
+      '<div class="kb-meta">' + agentChip(s) + '<span class="kb-time" data-t="' + (s.lastActiveAt || s.createdAt) + '">' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
       (runs ? '<span>' + runs + '</span>' : '') +
       (dv ? '<span class="kb-deliv">' + dv + ' deliverable' + (dv === 1 ? '' : 's') + '</span>' : '') + '</div>' +
       stateChip(s) +
@@ -2884,6 +2962,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   let kbLive = false;
   function refreshBoardLive() {
     if (!open.tasks) return;
+    if (kbRenaming) return;   // an inline title editor is open — a rebuild would destroy the half-typed name; the next poke re-renders
     kbLive = true;
     try { open.tasks._render(false); } finally { kbLive = false; }   // swap=false: no crossfade on a data poke
   }
@@ -2959,6 +3038,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         else if (act === 'open') openStream(id);
         else if (act === 'ship') shipTask(id);
         else if (act === 'reopen') reopenTask(id);
+        else if (act === 'queue') demoteTask(id);
+        else if (act === 'pin') togglePin(id);
+        else if (act === 'rename') beginCardRename(c, id);
         else if (act === 'arch') archiveCard(id);
       }));
       c.addEventListener('click', () => openStream(id));   // clicking the card body opens its conversation
@@ -2967,6 +3049,30 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       c.addEventListener('keydown', ev => {
         if (ev.target !== c) return;
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); sfx('click'); openStream(id); }
+      });
+      // drag a card between lanes. A drop is the same deliberate human act as the lane buttons
+      // (setLane), so hybrid-honest lanes hold: SHIPPED via drag IS a turn-in, and the buttons stay
+      // as the keyboard path. dataTransfer carries the id; the column handlers below do the move.
+      c.addEventListener('dragstart', ev => {
+        if (kbRenaming) { ev.preventDefault(); return; }   // don't drag a card mid-rename
+        ev.dataTransfer.setData('text/plain', id);
+        ev.dataTransfer.effectAllowed = 'move';
+        c.classList.add('dragging');
+      });
+      c.addEventListener('dragend', () => c.classList.remove('dragging'));
+    });
+    body.querySelectorAll('.kb-col').forEach((col, ci) => {
+      const lane = COLS[ci][0];
+      col.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; col.classList.add('drop'); });
+      col.addEventListener('dragleave', ev => { if (!col.contains(ev.relatedTarget)) col.classList.remove('drop'); });
+      col.addEventListener('drop', ev => {
+        ev.preventDefault(); col.classList.remove('drop');
+        const wid = ev.dataTransfer.getData('text/plain');
+        const w = WS(); const s = w && wid ? w.get(wid) : null;
+        if (!s || s.lane === lane || !w.setLane(wid, lane)) return;
+        sfx('click');
+        if (lane === 'shipped') { notify('shipped ' + (s.title || 'workstream'), 'gold'); sfx('notify'); }   // same beat as ✓ SHIP
+        persistWS(); sync();
       });
     });
   }
@@ -4230,6 +4336,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const out = { settings: {
         theme: store.settings.theme, themeHue: store.settings.themeHue,
         themeSat: store.settings.themeSat, themeGlow: store.settings.themeGlow,
+        panelBright: store.settings.panelBright,
         flicker: store.settings.flicker,
         sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
@@ -4389,24 +4496,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
       '<div id="ns-report"></div>';
     const secPermissions =
-      // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
-      // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
-      // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
-      '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
-      '<p class="set-about" id="perm-desc"></p>' +
-      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
+      // PERMISSIONS — reorganized (2026-08-05): ONE pane answers the three questions users kept hunting across
+      // surfaces. 1 · WHO asks first — the per-agent ASK/FULL ACCESS switch (previously reachable only via each
+      // dossier CONFIG card or /yolo) plus a whole-station switch. 2 · HOW FAR it may go unattended — the
+      // WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here). 3 · WHAT is pre-blessed — the standing-grant
+      // ledger. No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
+      // ── 0 · FULL BYPASS — the master switch, above everything it outranks ──
+      '<div class="set-row"><span class="dim">FULL BYPASS — the master switch</span></div>' +
+      '<div class="key-list" id="perm-bypass"><p class="set-about">checking the bypass switch…</p></div>' +
+      // ── 1 · APPROVAL ──
+      '<div class="set-row"><span class="dim">1 · APPROVAL — who stops to ask you first</span></div>' +
+      '<p class="set-about">Each crew member either <b>ASKS</b> — a permission card pauses its run until you answer — or holds <b>FULL ACCESS</b> and runs everything itself, no prompts. Same switch as the dossier CONFIG card and <code>/yolo</code> in COMMS.</p>' +
+      '<div class="key-list" id="perm-approval"></div>' +
+      '<div class="mc-acts">' +
+        '<button class="bb sm danger" id="perm-full-all">⚡ FULL ACCESS — WHOLE STATION</button>' +
+        '<button class="bb sm" id="perm-ask-all">✋ EVERYONE ASKS FIRST</button>' +
+      '</div>' +
+      '<div class="mc-hint">full access skips the prompts, not the floor: a hard safety floor still blocks the most dangerous host actions, and unattended runs (night shift, routines) never inherit it — those follow the level and approvals below.</div>' +
+      // ── 2 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
       // (test-pinned, and it says the stakes plainly).
-      '<div class="set-row"><span class="dim">LEVEL — the same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY</span></div>' +
+      '<div class="set-row"><span class="dim">2 · UNATTENDED LEVEL — how far it may go while you’re away (the same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place)</span></div>' +
+      '<p class="set-about" id="perm-desc"></p>' +
+      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       '<div class="set-themes" id="perm-level">' +
         '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">WAIT</button>' +
         '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
         '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
-      '<div class="set-row"><span class="dim">STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
+      // ── 3 · STANDING APPROVALS ──
+      '<div class="set-row"><span class="dim">3 · STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
       '<div class="key-list" id="perm-grants"></div>';
     const secBudget =
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
@@ -4476,10 +4598,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // CUSTOM PHOSPHOR — hue + saturation derive a full palette live (moving either switches to CUSTOM);
       // GLOW is independent and scales the bloom on EVERY theme, presets included. All instant-save.
       '<h4 class="ms-h">CUSTOM PHOSPHOR <span class="dim">— dial in any colour</span></h4>' +
-      '<p class="set-about">Drag <b>HUE</b> or <b>SATURATION</b> to derive your own phosphor — the whole station recolours live. <b>GLOW</b> tames or boosts the CRT bloom on any theme, including the presets. 100% is the shipped look.</p>' +
+      '<p class="set-about">Drag <b>HUE</b> or <b>SATURATION</b> to derive your own phosphor — the whole station recolours live. <b>GLOW</b> tames or boosts the CRT bloom on any theme, including the presets. <b>BRIGHTNESS</b> is the knob on the tube: it lifts the black level of the panel glass, so the panels brighten in your phosphor&rsquo;s own light — never toward white. 100% GLOW / 0% BRIGHTNESS is the shipped look.</p>' +
       '<label class="set-slider"><span class="set-slider-name">HUE</span><input type="range" id="set-hue" class="set-hue-track" min="0" max="359" step="1" value="' + clampN(s.themeHue, 0, 359, 35) + '"><span class="set-slider-val" id="set-hue-val">' + clampN(s.themeHue, 0, 359, 35) + '°</span></label>' +
       '<label class="set-slider"><span class="set-slider-name">SATURATION</span><input type="range" id="set-sat" min="0" max="100" step="1" value="' + clampN(s.themeSat, 0, 100, 100) + '"><span class="set-slider-val" id="set-sat-val">' + clampN(s.themeSat, 0, 100, 100) + '%</span></label>' +
       '<label class="set-slider"><span class="set-slider-name">GLOW</span><input type="range" id="set-glow" min="0" max="150" step="5" value="' + clampN(s.themeGlow, 0, 150, 100) + '"><span class="set-slider-val" id="set-glow-val">' + clampN(s.themeGlow, 0, 150, 100) + '%</span></label>' +
+      '<label class="set-slider"><span class="set-slider-name">BRIGHTNESS</span><input type="range" id="set-bright" min="0" max="100" step="5" value="' + clampN(s.panelBright, 0, 100, 0) + '"><span class="set-slider-val" id="set-bright-val">' + clampN(s.panelBright, 0, 100, 0) + '%</span></label>' +
       // THE BACKDROP — what the station floats in. Swatches are painted by the REAL backdrop
       // renderer below (SpaceBG.paintSample), never by a stand-in gradient, so a preview can
       // not promise a sky the station won't deliver — the same law the deck/wall swatches follow.
@@ -4614,7 +4737,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
       { id: 'nightshift', label: 'NIGHT SHIFT', glyph: '☾', desc: 'What the station is doing unattended right now, and its recent decision trail.', build: frag(secNightShift) },
-      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
+      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'Who asks first (per-agent FULL ACCESS), how far it may go unattended, and every standing approval — grant or revoke each one.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
       // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
@@ -4626,7 +4749,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
       // dock read as a loop.
       { id: 'notifs', label: 'ALERTS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
-      { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
+      { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, and station backup.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
 
@@ -4643,7 +4766,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireDiagnostics(host);
     const appMsg = () => host.querySelector('#appearance-msg');
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
-    const hueIn = host.querySelector('#set-hue'), satIn = host.querySelector('#set-sat'), glowIn = host.querySelector('#set-glow');
+    const hueIn = host.querySelector('#set-hue'), satIn = host.querySelector('#set-sat'), glowIn = host.querySelector('#set-glow'), brightIn = host.querySelector('#set-bright');
     const sliderVal = (id, txt) => { const e = host.querySelector(id); if (e) e.textContent = txt; };
     const syncCustomChip = () => { const c = host.querySelector('#set-theme-custom'); if (c) c.style.setProperty('--sw', deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph']); };
     const syncThemeSelection = theme => host.querySelectorAll('[data-t]').forEach(x => {
@@ -4677,6 +4800,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireSlider(hueIn, v => { s.theme = 'custom'; s.themeHue = clampN(v, 0, 359, 35); sliderVal('#set-hue-val', s.themeHue + '°'); selCustom(); syncCustomChip(); });
     wireSlider(satIn, v => { s.theme = 'custom'; s.themeSat = clampN(v, 0, 100, 100); sliderVal('#set-sat-val', s.themeSat + '%'); selCustom(); syncCustomChip(); });
     wireSlider(glowIn, v => { s.themeGlow = clampN(v, 0, 150, 100); sliderVal('#set-glow-val', s.themeGlow + '%'); });
+    wireSlider(brightIn, v => { s.panelBright = clampN(v, 0, 100, 0); sliderVal('#set-bright-val', s.panelBright + '%'); });
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
     bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
     // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
@@ -5236,6 +5360,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         return rows.join('');
       };
+      /* ── 1 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
+         (not copies), so approvalMode read here is the same truth pushRoster ships to the sidecar; a flip goes
+         through access.config.setApproval — the identical path the dossier CONFIG card and /yolo use — so the
+         per-run consent gate follows it. Escalation (→ FULL ACCESS) keeps the house two-press confirm; taking
+         power BACK (→ ask) applies on first click, never armed. */
+      const apWrap = host.querySelector('#perm-approval');
+      const paintApproval = () => {
+        if (!apWrap) return;
+        const can = !!(access.config && access.config.setApproval);
+        if (!present.length) { apWrap.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
+        apWrap.innerHTML = present.map(a => {
+          const full = !!(a && a.approvalMode === 'full');
+          return '<div class="set-row"><span>' + (full ? '⚡ ' : '✋ ') + '<b>' + esc(a.name || a.id) + '</b> <span class="dim">— ' + (full ? 'full access: runs everything itself, no prompts' : 'asks before it writes, runs, or reaches out') + '</span></span>' +
+            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? '✋ MAKE IT ASK' : '⚡ FULL ACCESS') + '</button>' : '') +
+            '</div>';
+        }).join('');
+        apWrap.querySelectorAll('[data-ap-flip]').forEach(b => {
+          const id = b.getAttribute('data-ap-flip'), to = b.getAttribute('data-ap-to');
+          const apply = () => { if (access.config.setApproval(id, to)) paintApproval(); };
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: '⚡ SURE? NO PROMPTS', restLabel: '⚡ FULL ACCESS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          else b.addEventListener('click', () => { sfx('click'); apply(); });
+        });
+      };
+      const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
+      if (fullAll) ArmConfirm.wire(fullAll, {
+        armedLabel: '⚡ SURE? EVERY AGENT, NO PROMPTS', restLabel: '⚡ FULL ACCESS — WHOLE STATION', timeoutMs: 4000,
+        onArm: () => sfx('bad'),
+        onConfirm: () => {
+          if (!(access.config && access.config.setApproval)) return;
+          present.forEach(a => access.config.setApproval(a.id, 'full'));
+          sfx('bad'); paintApproval();
+          notify('⚡ whole station on FULL ACCESS — no approval prompts (the hard safety floor still applies)', 'warn');
+        }
+      });
+      if (askAll) askAll.addEventListener('click', () => {
+        if (!(access.config && access.config.setApproval)) return;
+        present.forEach(a => access.config.setApproval(a.id, 'ask'));
+        sfx('click'); paintApproval();
+        notify('✋ every agent will ask before risky moves again', 'good');
+      });
+      paintApproval();
       const wireGrants = () => {
         if (!grantsWrap) return;
         grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
@@ -5247,8 +5412,38 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           onConfirm: () => { sfx('bad'); Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm); }
         }));
       };
+      /* ── 0 · FULL BYPASS switch — painted from SERVER truth (snap.masterBypass / snap.envFullAccess), never a
+         local guess. Turning it ON is the broadest action in the product → house two-press confirm; turning it
+         OFF is taking power back → first click. When the boot env forces it, the panel says WHY the switch is
+         pinned instead of rendering a toggle that appears to do nothing (truthful telemetry). */
+      const bypassWrap = host.querySelector('#perm-bypass');
+      const paintBypass = (snap) => {
+        if (!bypassWrap) return;
+        if (!snap.loaded) { bypassWrap.innerHTML = '<p class="set-about">The bypass switch is unavailable until the local permission service confirms it.</p>'; return; }
+        const floorNote = 'Still standing either way: the protected-file floor (.env / .git) and real mouse &amp; screen control (desktop pairing only).';
+        if (snap.envFullAccess) {
+          bypassWrap.innerHTML = '<div class="set-row"><span>⚡⚡ <b>FULL BYPASS</b> — forced ON by the <code>SKYNET_FULL_ACCESS</code> environment variable. Remove it and restart the station to hand control back to this switch.</span></div>' +
+            '<div class="mc-hint">' + floorNote + '</div>';
+          return;
+        }
+        bypassWrap.innerHTML = snap.masterBypass
+          ? ('<div class="set-row"><span>⚡⚡ <b>FULL BYPASS IS ON</b> <span class="dim">— every agent, every surface (chat, Telegram, routines, night shift) runs everything without asking — shell included. Survives restarts until you turn it off.</span></span>' +
+             '<button class="bb sm" id="perm-bypass-off">✕ TURN OFF</button></div>' +
+             '<div class="mc-hint">' + floorNote + '</div>')
+          : ('<div class="set-row"><span>⚡⚡ <b>FULL BYPASS</b> <span class="dim">— one switch, no permission prompts anywhere: every agent, every surface (chat, Telegram, routines, night shift), shell included. Persists until you turn it off.</span></span>' +
+             '<button class="bb sm danger" id="perm-bypass-on">⚡⚡ TURN ON</button></div>' +
+             '<div class="mc-hint">' + floorNote + '</div>');
+        const onBtn = bypassWrap.querySelector('#perm-bypass-on'), offBtn = bypassWrap.querySelector('#perm-bypass-off');
+        if (onBtn) ArmConfirm.wire(onBtn, {
+          armedLabel: '⚡⚡ SURE? EVERYTHING, EVERYWHERE, NO PROMPTS', restLabel: '⚡⚡ TURN ON', timeoutMs: 4000,
+          onArm: () => sfx('bad'),
+          onConfirm: () => { sfx('bad'); Promise.resolve(PermissionsStore.setBypass(true)).then(s => { repaintPerm(); if (!s.error) notify('⚡⚡ FULL BYPASS ON — nothing asks for approval anywhere until you turn it off', 'warn'); }); }
+        });
+        if (offBtn) offBtn.addEventListener('click', () => { sfx('click'); Promise.resolve(PermissionsStore.setBypass(false)).then(s => { repaintPerm(); if (!s.error) notify('✋ FULL BYPASS off — approvals apply again', 'good'); }); });
+      };
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();
+        paintBypass(snap);
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
         if (permStatus) {
@@ -5507,6 +5702,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function tick() {
     crewTick();
     ctxTick();
+    // TASK BOARD: age the card "last worked" stamps in place while the window is open. The board's
+    // live refresh only fires on rail pokes, so between them a "2m" stamp froze at render time (P6).
+    // Change-detected text writes on the existing spans — no rebuild, no focus/scroll impact.
+    if (open.tasks) {
+      document.querySelectorAll('.kb-time[data-t]').forEach(elm => {
+        const t = +elm.dataset.t; if (!t) return;
+        const txt = clock(t);
+        if (elm.textContent !== txt) elm.textContent = txt;
+      });
+    }
     // G1b: resolve station-gap quests against the live floor + re-evaluate the standing OUTBOX candidate
     // FIRST, so a gap that just closed (a prop placed) is already flipped done in the projection when the
     // durable quest memory folds it below — the open→done edge then rides G1a's celebration for free.
@@ -6275,10 +6480,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '760px' }],
-    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { console: true }],
+    // NAV CONDENSE 2 (2026-08-04): 'skills' is no longer a window key — the skill library/agent-
+    // skills sections live in the ABILITIES (connectors) console via AbilityLanes, and per-agent
+    // capabilities live in the dossier's SKILLS tab. openTerm keeps the old keys alive as aliases
+    // (TERM_ALIAS). UPDATES stays its own SYSTEM-dock window (Andrew's call — an update is a
+    // check-it-now surface, not a setting).
+    updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { w: '760px' }],
-    updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
@@ -6334,7 +6543,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // ('create' → 'routines-create', 'start'/'active' → 'loops-start'/'loops').
   const TERM_ALIAS = {
     routines: { term: 'automation', section: 'routines', map: { active: 'routines', create: 'routines-create' } },
-    loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } }
+    loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } },
+    // NAV CONDENSE 2: three more retired window keys live on as deep links. 'skills' lands on the
+    // ABILITIES skill library (its per-agent CAPABILITIES grid moved to the dossier SKILLS tab, so
+    // the old 'caps' section maps to the toolsets home); 'logbook' and 'rewind' are dossier
+    // sections of the selected agent. ('updates' is still a real window — no alias needed.)
+    skills:   { term: 'connectors', section: 'library', map: { library: 'library', agent: 'agent', caps: 'toolsets' } },
+    logbook:  { term: 'agents',     section: 'logbook', map: { runs: 'logbook', slag: 'logbook', insights: 'logbook' } },
+    rewind:   { term: 'agents',     section: 'restore', map: {} }
   };
   function openTerm(key, section) {
     const al = TERM_ALIAS[key];

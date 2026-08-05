@@ -200,15 +200,22 @@ const GoalStore = (() => {
     state.goals.push(goal);
     while (state.goals.length > GOAL_CAP) state.goals.shift();
     markOffered(belief);
+    // NB the double save(): markOffered persists on its own (its null-path caller has no other save), so this one
+    // is redundant for the offered set — it is kept because it is THIS function's save of the pushed goal, and
+    // localStorage.setItem of one small object is cheaper than a subtle ordering dependency between the two.
     save(); pushToSidecar(); poke();
     return goal;
   }
   // NOT-NOW: mark this belief state offered so it re-surfaces only after the belief changes (never nags). The
   // Commander can still return to the arc anytime; this just stops the proactive confirm beat for this belief.
-  function declineDecomposition(belief) { if (ready() && belief) { markOffered(belief); save(); } }
+  function declineDecomposition(belief) { if (ready() && belief) { markOffered(belief); } }   // markOffered saves
   // record the belief state as decided (FIFO-capped, mirrors studystore's resolved set) + drop the spend-once cache
   // for it — a decided belief's cached path can never leak into a later, different offer.
+  // PUBLIC (2026-08-04): the re-confirm card's "not now" chip records the belief state as decided through this
+  // same door, so a question the Commander deferred re-surfaces only when the belief itself changes — one
+  // not-now discipline for every proactive ask about a goals belief, not two.
   function markOffered(belief) {
+    if (!ready() || !belief) return;
     const fp = beliefFingerprint(belief);
     if (!fp) return;
     if (cachedProposal && cachedProposal.fp === fp) cachedProposal = null;
@@ -217,6 +224,7 @@ const GoalStore = (() => {
       state.offeredOrder.push(fp);
       while (state.offeredOrder.length > OFFERED_CAP) { const old = state.offeredOrder.shift(); delete state.offered[old]; }
     }
+    save();   // a decision this durable is never left in memory only (confirm()'s null-path used to drop it)
   }
 
   /* ---------- THE MILESTONE → WORK-QUEST BINDING ---------- */
@@ -385,7 +393,7 @@ const GoalStore = (() => {
 
   return {
     init, reset, sync, quests, activeGoal, pushToSidecar,
-    willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition,
+    willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition, markOffered,
     acceptMilestone, reconcile, syncDrift, setFiring, isFiring, beliefFingerprint, questLive,
     _state: () => state, _onRunEnd: onRunEnd
   };

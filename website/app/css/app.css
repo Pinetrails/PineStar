@@ -696,6 +696,32 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .consent-btn:active { transform: translateY(1px); }
 .consent-btn:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .consent-btn:focus-visible { outline: none; color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: 0 0 8px var(--ph-glow2); }
+/* PRIMARY ACTION — at most ONE per card. Named friction (2026-08-04): every decision card rendered
+   its affirmative, its editor and its refusal as three identical outlined pills, so the eye had to
+   READ all three to find the "yes". The primary now carries a matte gold fill and reads first.
+   Matte law: the gradient spans 8% of the base tone, the top inset is .14, and hover is a FILL
+   change — never an outer glow. */
+.consent-btn.primary {
+  color: var(--ph-bright); border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+}
+.consent-btn.primary:hover,
+.consent-btn.primary:focus-visible {
+  color: var(--ph-bright); border-color: var(--gold); box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.30), rgba(var(--gold-rgb),.20));
+}
+/* QUIET SECONDARY — the third rank, below the ghost default. Named friction: the away digest put two
+   equally-weighted pills on every row, so three runs arrived as six identical buttons and the rows stopped
+   being distinguishable. The card's copy already states the order ("read each one, THEN rate it"), so the
+   later step recedes until it is earned. Chrome only — the control keeps its full hit area. */
+.consent-btn.quiet {
+  color: var(--ph-dim); border-color: rgba(var(--ph-rgb), .28); background: none;
+  box-shadow: none; text-shadow: none;
+}
+.consent-btn.quiet:hover, .consent-btn.quiet:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: none;
+}
 .consent-btn.danger { color: var(--gold); border-color: var(--gold); }
 .consent-btn.danger:hover { color: var(--ph-bright); background: rgba(var(--gold-rgb), 0.12); }
 .consent-btn.deny { color: var(--bad); border-color: var(--bad); }
@@ -799,7 +825,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   padding-bottom: 6px; margin-bottom: 1px;
   border-bottom: 1px solid rgba(var(--gold-rgb), .18);
 }
-.rec-item { gap: 5px 8px; }
+.rec-item { gap: 5px 8px; grid-template-columns: minmax(0, 1fr); }
+/* THE KIND RIDES THE EYEBROW. Named friction (2026-08-04): study / trust / thread all opened with the
+   same "◈ NOVA NOTICED" line, and the one word that says WHICH decision this is (WORKING STYLE / GRANT /
+   THREAD) sat four lines down as a chip in the item's first grid column — where it also crushed the
+   proposal into a narrow second column that wrapped mid-phrase. Lifted into the eyebrow it identifies
+   the card at a glance AND hands the proposal the card's full width. */
+.rec-kind { color: var(--gold); opacity: 1; letter-spacing: 2.2px; }
+.rec-who { opacity: .62; }
+.rec-eyebrow { opacity: 1; }
 /* the note ("raises the dial to FREE") is consequence, not evidence — it stays the dim aside it was. */
 .rec-item > .turnin-evidence { margin-top: 1px; }
 /* the ask itself carries the weight of a headline without any glow — matte CRT, not a web toast. */
@@ -816,56 +850,63 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* W3 — THE DELIVERY CARD (rendered inside the deliverable's OWN session, 2026-07-15). Rides the gold-inset
    turn-in family (.cmsg.turnin.workshop-return); a flat stack — headline, verify line, what/how lines, the
    Open-it action, the files pane, and one action row (optional message + Implement / Later / Discard). */
-.ws-verline { display:block; font-size:12px; letter-spacing:.3px; margin-top:-2px; }
+.ws-verline { display:block; font-size:13.5px; line-height:1.4; letter-spacing:.3px; margin-top:1px; }
 .ws-verline.ok { color:var(--gold); }
 .ws-verline.dim { color:var(--ph-dim); }
 /* the flat delivery card (2026-07-15, premium pass 2026-07-16): labeled sections in the dossier grammar —
    a gold uppercase micro-label over a bright value (the same ws-k/ws-v voice the config cards speak). */
-.workshop-return .ws-line { display:block; margin-top:2px; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
-.workshop-return .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1.2px; text-transform:uppercase; opacity:.92; margin-bottom:1px; }
+.workshop-return .ws-line { display:block; margin-top:4px; font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+.workshop-return .ws-k { display:block; color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; opacity:.92; margin-bottom:2px; }
 .workshop-return .ws-v { display:block; color:var(--ph-bright); }
-.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v, .workshop-return .ws-because .ws-v { color:var(--ph-dim); font-size:12.5px; }
+.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v, .workshop-return .ws-because .ws-v { color:var(--ph-dim); font-size:13.5px; line-height:1.45; }
 .workshop-return .ws-because .ws-v { font-style:italic; }   /* provenance reads as a quoted aside, not a claim */
 /* honest-brevity furniture (2026-07-17): verbose legacy manifests FOLD instead of walling — a quiet
    inline "+ more" reveal, and one gold-marked row per check-yourself item (the old semicolon join). */
-.workshop-return .ws-more { background:none; border:0; padding:0; margin-left:2px; font:inherit; font-size:11px;
+.workshop-return .ws-more { background:none; border:0; padding:0; margin-left:2px; font:inherit; font-size:12px;
   letter-spacing:.5px; color:var(--gold); cursor:pointer; opacity:.85; }
 .workshop-return .ws-more:hover { opacity:1; text-shadow:0 0 6px var(--ph-glow); }
-.workshop-return .ws-nvitem { display:block; padding-left:11px; position:relative; }
+.workshop-return .ws-nvitem { display:block; padding-left:13px; position:relative; }
 .workshop-return .ws-nvitem::before { content:'▸'; position:absolute; left:0; color:var(--gold); opacity:.7; }
 /* honest kind chip beside the headline — cf-badge vocabulary, gold edge */
-.ws-kindchip { margin-left:8px; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--gold);
+.ws-kindchip { margin-left:8px; font-size:11px; letter-spacing:1.4px; text-transform:uppercase; color:var(--gold);
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:2px; padding:0 5px; background:rgba(var(--gold-rgb),.06);
   vertical-align:2px; white-space:nowrap; }
 .ws-pane { min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
   border-radius:3px; padding:7px 8px; box-sizing:border-box; margin-top:7px; }
 /* disk-proven input-capture notice (validateWorkshopManifest.capturesInput) — shown above the Open-it action */
-.ws-capture-warn { display:block; margin-top:6px; font-size:12px; line-height:1.35; color:var(--gold);
+.ws-capture-warn { display:block; margin-top:6px; font-size:13px; line-height:1.42; color:var(--gold);
   background:rgba(var(--gold-rgb),.07); border:1px solid rgba(var(--gold-rgb),.35); border-radius:3px; padding:4px 7px; }
 .ws-try { margin-top:7px; }
 /* the HERO action — the one click that runs the deliverable. Gold, bloomed, unmistakably primary. */
-.consent-btn.ws-openit { color:var(--gold); border-color:var(--gold); font-size:13px; padding:4px 14px;
-  background:rgba(var(--gold-rgb),.07); box-shadow:0 0 10px rgba(var(--gold-rgb),.16);
-  transition:box-shadow var(--t-fast) var(--ease-soft), background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft); }
-.consent-btn.ws-openit:hover { color:var(--ph-bright); border-color:var(--gold); background:rgba(var(--gold-rgb),.16);
-  box-shadow:0 0 16px rgba(var(--gold-rgb),.34); }
+.consent-btn.ws-openit { color:var(--ph-bright); border-color:var(--gold); font-size:14px; padding:6px 16px;
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.22), rgba(var(--gold-rgb),.13));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.15), 0 1px 0 rgba(0,0,0,.35);
+  transition:background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft); }
+.consent-btn.ws-openit:hover { color:var(--ph-bright); border-color:var(--gold);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.32), rgba(var(--gold-rgb),.21));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.15), 0 1px 0 rgba(0,0,0,.35); }
 /* the ACCEPT action — gold means "this really implements"; a fallback save stays neutral by design */
-.consent-btn.ws-primary { color:var(--gold); border-color:var(--gold); background:rgba(var(--gold-rgb),.06);
-  box-shadow:0 0 8px rgba(var(--gold-rgb),.12); }
-.consent-btn.ws-primary:hover { color:var(--ph-bright); background:rgba(var(--gold-rgb),.15); box-shadow:0 0 12px rgba(var(--gold-rgb),.28); }
-.ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
-.ws-flist { display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
+.consent-btn.ws-primary { color:var(--ph-bright); border-color:var(--gold);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35); }
+.consent-btn.ws-primary:hover { color:var(--ph-bright);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.30), rgba(var(--gold-rgb),.20));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35); }
+.ws-fhead { color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; margin-bottom:6px; }
+.ws-flist { display:flex; flex-direction:column; gap:3px; margin-bottom:7px; }
 .ws-filerow { display:flex; align-items:center; gap:6px; }
 .ws-file { flex:1 1 auto; text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
-  font-family:inherit; font-size:12px; padding:2px 5px; cursor:pointer; overflow-wrap:anywhere; }
+  font-family:inherit; font-size:13.5px; padding:3px 5px; cursor:pointer; overflow-wrap:anywhere; }
 .ws-file:hover { border-color:var(--ph-glow2); color:var(--ph-bright); }
 .ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(var(--gold-rgb),.06); }
 /* W7: "view source" is the demoted, opt-in code reader — small and dim beside the primary open action. */
-.ws-viewsrc { flex:0 0 auto; background:none; border:none; color:var(--ph-glow2); font-family:inherit;
-  font-size:10px; letter-spacing:.5px; padding:2px 4px; cursor:pointer; opacity:.75; }
+/* demoted, but still READABLE — at .75 opacity on --ph-glow2 it had faded to near-invisible beside the
+   larger filenames, which is a hidden control, not a quiet one. */
+.ws-viewsrc { flex:0 0 auto; background:none; border:none; color:var(--ph-dim); font-family:inherit;
+  font-size:11px; letter-spacing:.5px; padding:2px 4px; cursor:pointer; opacity:.9; }
 .ws-viewsrc:hover { color:var(--ph-bright); opacity:1; text-decoration:underline; }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
-  border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
+  border-radius:2px; padding:7px 8px; color:var(--ph-bright); font-size:12.5px; line-height:1.45; white-space:pre-wrap;
   overflow-wrap:anywhere; }
 /* the decide row — separated from the evidence above by a gold hairline; it is the card's consent moment */
 .workshop-return .ws-acts { margin-top:9px; padding-top:9px; border-top:1px solid rgba(var(--gold-rgb),.22);
@@ -875,20 +916,20 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-msg { flex:1 1 200px; min-width:160px; width:auto; max-width:100%; }
 /* the pre-click consequence line ("implement → applies to a new branch in …") — an inset gold consent strip,
    the same left-edge voice as .cmsg.consent: this line IS the consent copy */
-.workshop-return .ws-plan { color:var(--gold); font-size:12px; line-height:1.4; margin-top:7px;
+.workshop-return .ws-plan { color:var(--gold); font-size:13px; line-height:1.45; margin-top:8px;
   border-left:2px solid var(--gold); border-radius:0 3px 3px 0; padding:5px 8px;
   background:rgba(var(--gold-rgb),.07); }
 /* copy-path / open-folder chips on the decided outcome line */
 .ws-destchips { display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle; }
 /* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
 .ws-verdetail { margin-top:6px; }
-.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
-.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; margin-bottom:4px; }
+.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
 .ws-vcmd .ws-vmark { flex:0 0 auto; }
 .ws-vcmd.ok  .ws-vmark { color:var(--gold); }
 .ws-vcmd.bad .ws-vmark { color:var(--bad); }
 .ws-vcmdtext { color:var(--ph-bright); font-family:inherit; }
-.ws-vexit { color:var(--bad); font-size:11px; }
+.ws-vexit { color:var(--bad); font-size:11.5px; }
 
 /* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
@@ -933,7 +974,31 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   padding: 8px 11px; margin: 6px 0 2px; border-radius: 0 5px 5px 0;
 }
 .cmsg.agent.nudge .who { display: none; }
-.cmsg.agent.nudge .body { color: var(--ph-bright); font-size: 14.5px; }
+.cmsg.agent.nudge .body { color: var(--ph-bright); font-size: 15px; }
+/* A MULTI-LINE NUDGE IS A LIST. The marker owns a fixed box so the prose column can hang — a wrapped
+   "✓ drafted the note — waiting in your outbox" now stays visibly ONE item instead of splitting into two
+   at the left margin. Width is set in px, never derived from font-size: ✓ ✗ ⚒ render from the fallback
+   face under VT323 and the two faces disagree (the symbol-glyph law). */
+.nudge-lines { display: flex; flex-direction: column; gap: 4px; }
+/* one column by default — an UNMARKED line is just a row of prose. The marker column is opt-in via .nl-mk,
+   which chat.js sets only when it actually rendered a marker; keying it off the marker CLASSES instead let a
+   nested-but-unmarked line claim the 14px column and crushed its text to one character per line. */
+.nudge-line { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 8px; align-items: start; line-height: 1.42; }
+.nudge-line.nl-mk { grid-template-columns: 14px minmax(0, 1fr); }
+.nudge-line .nl-m { display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 1.42em; flex: 0 0 14px; font-size: 12px; line-height: 1; letter-spacing: 0; color: var(--gold); }
+.nudge-line .nl-t { min-width: 0; overflow-wrap: anywhere; }
+/* the opening line is the claim the whole beat makes — it reads first */
+.nl-first .nl-t, .nl-head .nl-t { color: var(--ph-bright); }
+.nl-first, .nl-head { margin-bottom: 2px; }
+/* a completed act and a REFUSED one must never look alike on a truthfulness surface */
+.nl-yes .nl-m { color: var(--gold); }
+.nl-no .nl-m { color: var(--bad); }
+.nl-no .nl-t { color: var(--ph-dim); }
+.nl-build .nl-m, .nl-file .nl-m { color: var(--gold); }
+/* nested rows sit under their parent's PROSE column, not under its marker */
+.nudge-line.nl-sub { padding-left: 22px; }
+.nudge-line.nl-sub .nl-t { color: var(--ph); }
 
 /* RETIRING A SETTLED BEAT (chat.js vanish()): a decided memory card / answered nudge fades and collapses to
    nothing, then drops from the DOM — so the COMMS feed only ever holds the conversation and PENDING prompts,
@@ -1182,6 +1247,21 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   text-shadow: 0 0 6px var(--ph-glow2); white-space: pre-wrap; min-height: 2.4em;
   display: flex; align-items: center;
 }
+/* the read-gate cue: hidden until a narration beat finishes typing; the beat then waits for the
+   Commander, so the blink is an invitation, not a countdown. Blink dies under reduced motion. */
+.fnv-more { display: none; flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; user-select: none; }
+.fnv-more.show { display: block; animation: fnv-more-blink 1.2s steps(2, start) infinite; }
+.fnv-dialogue.no-anim .fnv-more.show { animation: none; }
+.fnv-dialogue.fnv-wait { cursor: pointer; }
+@keyframes fnv-more-blink { 50% { opacity: .3; } }
+/* the ink stamp: a quiet receipt that an answer just landed in the operating file. Dim phosphor,
+   smaller than the beat line, fades in/out — a ledger note, never a toast. */
+.fnv-ink {
+  flex: 0 0 auto; color: var(--ph-dim); font-size: 13px; letter-spacing: .5px; user-select: none;
+  opacity: 0; transition: opacity .5s ease; min-height: 1.2em; text-shadow: 0 0 4px var(--ph-glow2);
+}
+.fnv-ink.show { opacity: 1; }
+.fnv-dialogue.no-anim .fnv-ink { transition: none; }
 .fnv-opts { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; }
 .fnv-opt {
   display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
@@ -2229,12 +2309,45 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* TASK BOARD — add-row + per-card actions (new controls over v7 .kb-* cards) */
 .kb-add { display: flex; gap: 8px; margin-bottom: 10px; }
 .kb-add input { flex: 1; font-size: 15px; padding: 5px 8px; }
-.kb-acts { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+.kb-acts { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; align-items: center; }
+/* the meta glyphs (rename/pin/archive) are ONE right-aligned cluster (.kb-meta-keys) that wraps as
+   a unit: verbs read left, housekeeping right, and a narrow card gets two structured rows — never a
+   stranded ⌫. Glyph-only keys sit in a tighter, equal box (single fallback-font symbols —
+   box-centred, never padded from font metrics). */
+.kb-acts .kb-meta-keys { margin-left: auto; display: inline-flex; gap: 4px; }
+.kb-acts .kb-meta-keys button { padding: 1px 0; min-width: 24px; }
+/* the card keys wear the SAME molded matte keycap as the console's .bb.sm/.bb.xs (the app.css:100
+   material block): top light, phosphor body, shaded base, contact shadow, press sink. Only the
+   surface + radius — the compact metrics stay exactly as they were so no card reflows. The base
+   shade is 1px (not the sm key's 2px): these keys are ~20px tall and a 2px base reads as a ledge. */
 .kb-acts button {
-  font-family: inherit; background: transparent; color: var(--ph-dim);
+  font-family: inherit; color: var(--ph-dim);
   border: 1px solid var(--ph-faint); cursor: pointer; font-size: 12px; padding: 1px 7px; letter-spacing: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 3px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 6%, var(--panel2)) 0%,
+    var(--panel2) 58%,
+    color-mix(in srgb, #000 20%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .08),
+    inset 0 -1px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45);
 }
-.kb-acts button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+.kb-acts button:hover {
+  color: var(--ph-bright); border-color: var(--ph);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 11%, var(--panel2)) 0%,
+    var(--panel2) 62%,
+    color-mix(in srgb, #000 16%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .12),
+    inset 0 -1px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45),
+    0 0 10px var(--ph-glow2);
+}
+/* pressed = the key is DOWN: the seat sinks and the base light goes out (same verb as .bb.sm) */
+.kb-acts button:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,.42); }
 .kb-acts .assign { color: var(--gold); border-color: var(--ph-dim); }
 /* empty-state wrapper: NO dimming — the .empty-state component (glyph + copy + CTA) is already designed at the
    right strength; the old opacity:0.4 ghosted even the + ADD ONE call-to-action. */
@@ -3313,6 +3426,57 @@ body.crew-rail-off #screen-game.active {
 .refit-hue-auto:hover { color: var(--ph-bright); }
 .refit-hue-auto.active { color: var(--ph-bright); }
 .refit-hue-auto .refit-matname { font-size: 11px; letter-spacing: 1.2px; }
+
+/* STARTER LINES — one-click pre-wired layouts (the beginner onramp) + the belt tool's intro line.
+   v2: a single column of UNIFORM cards, each the same anatomy top-to-bottom — schematic viewport
+   (a fixed-height dark stage so every card is the same size no matter the blueprint's footprint),
+   NAME + a derived footprint/dock chip, one dim purpose line. Hover speaks the gallery's phosphor
+   hover language (.refit-proptile), not a private green. The intro stays THE ONE SENTENCE and
+   doubles as the belt palette's idle state. */
+.refit-lineintro {
+  width: 100%; margin: 2px 0 4px; font-size: 12px; line-height: 1.35; letter-spacing: .6px;
+  color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
+}
+.refit-linegrid { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+.refit-linetile {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; min-width: 0;
+  padding: 5px 6px 6px; cursor: pointer; border-radius: 5px; font-family: inherit; text-align: left;
+  background: rgba(0,0,0,.34); border: 1.5px solid var(--ph-faint); color: var(--ph);
+}
+.refit-linetile:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); }
+.refit-linetile.active {
+  border-color: var(--ph-bright); color: var(--ph-bright);
+  box-shadow: 0 0 10px var(--ph-glow), inset 0 0 14px rgba(0,0,0,.55);
+}
+/* the schematic stage: fixed height = uniform cards; the canvas centres inside at 1:1 */
+.refit-linetile-view {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 70px;
+  border-radius: 3px; background: #0b0f0e; box-shadow: inset 0 0 0 1px rgba(0,0,0,.55);
+}
+.refit-linetile-cv { display: block; max-width: 100%; image-rendering: pixelated; pointer-events: none; }
+.refit-linetile-hd { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
+.refit-linetile .refit-matname { font-size: 12px; letter-spacing: 1.1px; text-align: left; }
+/* the stat chip mixes VT323 with fallback-font glyphs ('×' '·') — BOX-centred, never padded by
+   font metrics (the symbol-glyph law) */
+.refit-linetile-stat {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  padding: 1px 5px; border: 1px solid var(--ph-faint); border-radius: 3px;
+  font-size: 10.5px; letter-spacing: 1px; line-height: 1.4;
+  color: var(--ph-dim); background: rgba(0,0,0,.3); white-space: nowrap;
+}
+/* one line of WHAT IT DOES; 2-line floor keeps every card the same height when a purpose wraps */
+.refit-linetile-why {
+  font-size: 11px; line-height: 1.3; letter-spacing: .4px; min-height: 29px;
+  color: var(--ph-dim); opacity: .9;
+}
+/* the operational footing sits INSIDE the shelf, directly under the cards */
+.refit-linenote {
+  width: 100%; margin-top: 2px; padding-top: 5px; border-top: 1px solid var(--ph-faint);
+  font-size: 10.5px; letter-spacing: 1.2px; line-height: 1.3;
+  font-family: 'VT323', monospace; color: var(--ph-dim); opacity: .85;
+}
+/* the guide card's lead — THE ONE SENTENCE above the three beats */
+.refit-guide-lead { margin: 2px 0 8px; font-size: 13px; line-height: 1.4; color: var(--ph-dim); }
 
 /* DECK / WALLS target toggle — the same lit-frame treatment the prop TIER toggle uses */
 .refit-painttarget.active {

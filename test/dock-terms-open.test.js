@@ -42,7 +42,7 @@ for (const t of TERMS) {
 
 // (4) openTerm (the deep-link door the mission board / quest-review rows use to reach the SAME window) also
 // routes through BUILDERS, so a beginner reaches the QUEST LOG from either the dock OR a projection click.
-A.ok(/function openTerm\(key, section\)[\s\S]{0,200}const def = BUILDERS\[key\]/.test(sui),
+A.ok(/function openTerm\(key, section\)[\s\S]{0,300}const def = BUILDERS\[key\]/.test(sui),
   'openTerm(key) resolves the SAME BUILDERS map (dock button + projection deep-links share one open path)');
 
 A.report('dock-terms-open.test');

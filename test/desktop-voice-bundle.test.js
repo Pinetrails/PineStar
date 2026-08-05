@@ -15,6 +15,12 @@ const desktopCi = read('.github/workflows/desktop-build.yml');
 const releaseCi = read('.github/workflows/release-train.yml');
 const canary = read('scripts/update-canary.mjs');
 
+assert.equal(
+  pkg.dependencies['ogg-opus-decoder'],
+  '^1.7.3',
+  'the packaged sidecar carries an in-process Telegram Ogg/Opus decoder'
+);
+
 assert.match(
   pkg.scripts['desktop:build'],
   /prepare-node\.mjs[\s\S]*stage-voice-deps\.mjs[\s\S]*tauri build/,

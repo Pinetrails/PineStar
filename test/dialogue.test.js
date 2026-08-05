@@ -50,4 +50,31 @@ const dlgSrc = require('fs').readFileSync(require('path').join(__dirname, '../fr
 A.ok(/keyHandler = e => \{[\s\S]{0,600}(INPUT|TEXTAREA)[\s\S]{0,200}isContentEditable[\s\S]{0,60}return;/.test(dlgSrc),
   'keyHandler ignores keys originating from INPUT/TEXTAREA/contentEditable targets');
 
+/* ---- the READ GATE (2026-08-05): onboarding text used to type out and roll on before anyone could finish
+   reading — and a beat REPLACES the previous one, so the unread words were simply destroyed. The law now:
+   a narration beat WAITS for the Commander (space / enter / click) by default; only an explicit
+   { auto: true } (transient latency-cover lines like "give me a second…") keeps the timed auto-advance.
+   The gate is DOM-bound, so these are source-level locks like the keyHandler guard above. */
+A.ok(/function say\(lines, opts\)/.test(dlgSrc), 'say() accepts opts — the auto escape hatch exists');
+A.ok(/const auto = !!\(opts && opts\.auto\);/.test(dlgSrc), 'the gate is the DEFAULT: only an explicit auto:true opts out');
+A.ok(/if \(auto\) \{ setTimeout\(finish, \d+\); return; \}\s*\n\s*armGate\(finish\);/.test(dlgSrc),
+  'a finished narration beat arms the read gate; only auto beats resolve on a timer');
+A.ok(/function closePanel\(\) \{[\s\S]{0,300}clearGate\(true\)/.test(dlgSrc),
+  'closePanel flushes a waiting gate (fire=true) — a flow awaiting say() can never hang on teardown');
+A.ok(/function closePanel\(\) \{[\s\S]{0,400}flushSay\(\)/.test(dlgSrc),
+  'closePanel also flushes a say() still MID-TYPE (cancelType drops onDone, so the gate never arms) — proven live: without this the awaiting flow hangs');
+A.ok(/const onKey = e => \{\s*if \(fromTextField\(e\)\) return;/.test(dlgSrc),
+  'gate keys ignore keystrokes that belong to a real text field (composer guard)');
+A.ok(/onSkipKey = e => \{ if \(fromTextField\(e\)\) return;/.test(dlgSrc),
+  'mid-type skip keys honour the same text-field guard');
+A.ok(/skipNow = \(\) => \{[\s\S]{0,220}done\(\);/.test(dlgSrc),
+  'an impatient tap mid-type reveals the FULL beat and still fires done (never a dropped continuation)');
+
+/* ---- THE INK STAMP (2026-08-05): a dossier write shows its receipt in the panel. DOM-bound → source locks. */
+A.ok(typeof Dialogue.ink === 'function', 'ink() is exported (onboarding stamps real dossier writes)');
+A.notThrows(() => Dialogue.ink('pain: test line'), 'ink() with no panel mounted is a safe no-op');
+A.ok(/inkEl\.textContent = '» filed · ' \+ t;/.test(dlgSrc), 'the stamp is a ledger receipt (» filed · …)');
+A.ok(/function closePanel\(\) \{[\s\S]{0,600}clearTimeout\(inkTimer\)/.test(dlgSrc),
+  'closePanel clears the ink fade timer (no dangling timeout after teardown)');
+
 A.report('dialogue.test');
