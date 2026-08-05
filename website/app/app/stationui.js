@@ -2789,6 +2789,48 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   function reopenTask(id) { const w = WS(); if (!w) return; w.setLane(id, 'active'); persistWS(); sync(); }
   function archiveCard(id) { const w = WS(); if (!w) return; w.archive(id, true); persistWS(); sync(); }
+  // deliberate human re-queue (ACTIVE -> TO DO). Hybrid-honest lanes are untouched: the next real run
+  // auto-advances it right back, and an active card never claimed backend state a demote could falsify.
+  function demoteTask(id) { const w = WS(); if (!w) return; w.setLane(id, 'todo'); persistWS(); sync(); }
+  // pin = prioritize: list() sorts pinned first, and the per-lane filter preserves that order, so a
+  // pinned card rises to the top of its column (and of the COMMS rail — same record, same flag).
+  function togglePin(id) {
+    const w = WS(); if (!w) return;
+    const s = w.get(id); if (!s) return;
+    w.pin(id, !s.pinned); persistWS(); sync();
+  }
+  // inline rename ON the card (no native prompt — station law). Enter commits through
+  // Workstreams.rename (which locks titleAuto so no auto-title ever stomps it), Esc/blur cancels.
+  // While the editor is open, kbRenaming holds the id and refreshBoardLive stands down — a background
+  // data poke must not rebuild the DOM out from under a half-typed title.
+  let kbRenaming = null;
+  function beginCardRename(cardEl, id) {
+    const w = WS(); const s = w && w.get(id); if (!s) return;
+    const titleEl = cardEl.querySelector('.kb-title');
+    if (!titleEl || titleEl.querySelector('input')) return;
+    const inp = document.createElement('input');
+    inp.className = 'kb-rename'; inp.maxLength = 80; inp.value = s.title || '';
+    titleEl.textContent = ''; titleEl.appendChild(inp);
+    kbRenaming = id;
+    let settled = false;
+    const done = commit => {
+      if (settled) return; settled = true;
+      kbRenaming = null;
+      if (commit) {
+        const t = inp.value.trim();
+        if (t && t !== s.title) { w.rename(id, t); persistWS(); }
+      }
+      sync();   // re-render restores the title row either way
+    };
+    inp.addEventListener('keydown', ev => {
+      ev.stopPropagation();   // the card's own Enter/Space open handler must not fire
+      if (ev.key === 'Enter') { ev.preventDefault(); done(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); done(false); }
+    });
+    inp.addEventListener('blur', () => done(false));
+    inp.addEventListener('click', ev => ev.stopPropagation());
+    inp.focus(); inp.select();
+  }
   // a card IS a directive: open its conversation and, if it hasn't started yet, hand the agent its title
   function assignTask(id) {
     const w = WS(); if (!w) return;
@@ -2827,18 +2869,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (s.lane !== 'active') return '';
     const running = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
     if (running) return '<div class="kb-state running"><span class="kb-live"></span>RUNNING</div>';
-    if (s.runIds && s.runIds.length) return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
+    if (s.runIds && s.runIds.length) {
+      // a run that DIED must never read as DONE (truthful telemetry): lastRunOk=false is settled by
+      // chat.js's in-band error branch. null (no outcome recorded — legacy save / delegated run) keeps
+      // the DONE chip: we only claim FAILED when the failure is provable, never by inference.
+      if (s.lastRunOk === false) return '<div class="kb-state failed">✗ RUN FAILED — REVIEW</div>';
+      return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
+    }
     return '';
   }
   function activeAggregate(items) {
-    let running = 0, ready = 0;
+    let running = 0, ready = 0, failed = 0;
     items.forEach(s => {
       const busy = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
       if (busy) running++;
-      else if (s.runIds && s.runIds.length) ready++;
+      else if (s.runIds && s.runIds.length) { if (s.lastRunOk === false) failed++; else ready++; }
     });
     const parts = [];
     if (running) parts.push(running + ' RUNNING');
+    if (failed) parts.push(failed + ' FAILED');
     if (ready) parts.push(ready + ' READY TO REVIEW');
     return parts.length ? '<small class="kb-col-state">' + parts.join(' · ') + '</small>' : '';
   }
@@ -2854,20 +2903,55 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function card(s, i) {
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
     const dv = (s.deliverables && s.deliverables.length) || 0;   // real produced artifacts (workstreams.recordDeliverable)
+    // shared tail: rename + pin + archive on every lane (title= is adopted into the station tooltip).
+    // One .kb-meta-keys unit so the housekeeping cluster right-aligns AND wraps as a whole — never
+    // a stranded ⌫ on its own row (the raggedness the keycap restyle made visible).
+    const tail = '<span class="kb-meta-keys">' +
+      '<button data-act="rename" title="rename this task">✎</button>' +
+      '<button data-act="pin" title="' + (s.pinned ? 'unpin' : 'pin to the top of its column') + '">' + (s.pinned ? '★' : '☆') + '</button>' +
+      '<button data-act="arch" title="archive — recover from the COMMS rail&#39;s ARCHIVED toggle">⌫</button></span>';
     const acts = s.lane === 'todo'
-      ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
+      ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button>' + tail
       : s.lane === 'active'
-        ? '<button data-act="ship">✓ SHIP</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
-        : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>';
-    return '<div class="kb-card" data-id="' + s.id + '" role="button" tabindex="0" aria-label="' + esc(s.title || 'untitled') + ' — open conversation" style="--ci:' + (i || 0) + '">' +
+        ? '<button data-act="ship">✓ SHIP</button><button data-act="queue" title="send back to TO DO">↩ QUEUE</button><button data-act="open">↗ OPEN</button>' + tail
+        : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button>' + tail;
+    return '<div class="kb-card' + (s.pinned ? ' pinned' : '') + '" draggable="true" data-id="' + s.id + '" role="button" tabindex="0" aria-label="' + esc(s.title || 'untitled') + ' — open conversation" style="--ci:' + (i || 0) + '">' +
       '<div class="kb-title">' + esc(s.title || 'untitled') + '</div>' +
-      '<div class="kb-meta">' + agentChip(s) + '<span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
+      '<div class="kb-meta">' + agentChip(s) + '<span class="kb-time" data-t="' + (s.lastActiveAt || s.createdAt) + '">' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
       (runs ? '<span>' + runs + '</span>' : '') +
       (dv ? '<span class="kb-deliv">' + dv + ' deliverable' + (dv === 1 ? '' : 's') + '</span>' : '') + '</div>' +
       stateChip(s) +
       '<div class="kb-acts">' + acts + '</div></div>';
   }
+  // LIVE board refresh (P1, 2026-08-04): renderRail pokes the board on EVERY rail change (run start/end,
+  // cron polls, background approvals). The old path was rerender('tasks') — a full rebuild that replayed
+  // the swap-in crossfade + card entrance stagger (flicker), wiped the add-input's half-typed text, reset
+  // column scroll, and buildTasks's trailing focus() STOLE the keyboard from wherever the Commander was
+  // typing (chat composer included). kbLive tells buildTasks this rebuild is a background data refresh:
+  // preserve input value/selection, focus and per-column scroll, suppress entrance motion (.kb-live-refresh),
+  // and never move focus that wasn't already inside the board.
+  let kbLive = false;
+  function refreshBoardLive() {
+    if (!open.tasks) return;
+    if (kbRenaming) return;   // an inline title editor is open — a rebuild would destroy the half-typed name; the next poke re-renders
+    kbLive = true;
+    try { open.tasks._render(false); } finally { kbLive = false; }   // swap=false: no crossfade on a data poke
+  }
   function buildTasks(body) {
+    const live = kbLive;
+    // capture the volatile bits a rebuild destroys (live refresh only — a user open starts clean)
+    const prevInp = live ? body.querySelector('#kb-in') : null;
+    const keepVal = prevInp ? prevInp.value : '';
+    const ae = live ? document.activeElement : null;
+    const focusIn = !!(ae && body.contains(ae));
+    const keepFocus = focusIn
+      ? (ae.id === 'kb-in'
+        ? { kind: 'input', s: ae.selectionStart, e: ae.selectionEnd }
+        : (ae.closest && ae.closest('.kb-card')
+          ? { kind: 'card', id: ae.closest('.kb-card').dataset.id }
+          : { kind: 'other' }))
+      : null;
+    const keepScroll = live ? Array.from(body.querySelectorAll('.kb-col')).map(c => c.scrollTop) : null;
     const streams = boardStreams();
     body.innerHTML =
       '<div class="kb-add"><input id="kb-in" maxlength="80" placeholder="add a workstream for your agent…" autocomplete="off">' +
@@ -2885,8 +2969,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
       // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
       (streams.length ? '' : '<div class="win-note" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
+    // entrance motion belongs to USER-initiated opens only — a background data poke must not re-animate.
+    // (body persists across rebuilds, so the class must be actively toggled both ways.)
+    body.classList.toggle('kb-live-refresh', live);
     const inp = body.querySelector('#kb-in');
-    const submit = () => { addTask(inp.value); };
+    // capture-then-clear BEFORE addTask: its sync() triggers a live rebuild which would otherwise
+    // capture (and faithfully restore) the just-submitted text back into the input.
+    const submit = () => { const t = inp.value; inp.value = ''; addTask(t); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
     // empty-state CTA (TO DO column): focus the add-a-workstream input — no new behaviour, just focus.
@@ -2894,7 +2983,23 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       b.addEventListener('click', () => { sfx('click'); inp.focus(); }));
     const obLink = body.querySelector('#kb-outbox-link');
     if (obLink) obLink.addEventListener('click', () => { sfx('click'); openTerm('outbox'); });
-    inp.focus();
+    if (live) {
+      // restore what the rebuild destroyed. Focus is restored ONLY if it already lived inside the board —
+      // a refresh may never steal the keyboard from the chat composer (the original P1 bug).
+      if (keepVal) inp.value = keepVal;
+      if (keepScroll) body.querySelectorAll('.kb-col').forEach((c, i) => { if (keepScroll[i]) c.scrollTop = keepScroll[i]; });
+      if (keepFocus) {
+        if (keepFocus.kind === 'card') {
+          const c2 = Array.from(body.querySelectorAll('.kb-card')).find(x => x.dataset.id === keepFocus.id);
+          if (c2) c2.focus(); else inp.focus();   // the focused card left the board (shipped/archived) → nearest home
+        } else {
+          inp.focus();
+          if (keepFocus.kind === 'input') { try { inp.setSelectionRange(keepFocus.s, keepFocus.e); } catch (_) {} }
+        }
+      }
+    } else {
+      inp.focus();
+    }
     body.querySelectorAll('.kb-card').forEach(c => {
       const id = c.dataset.id;
       c.querySelectorAll('.kb-acts button').forEach(b => b.addEventListener('click', ev => {
@@ -2904,6 +3009,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         else if (act === 'open') openStream(id);
         else if (act === 'ship') shipTask(id);
         else if (act === 'reopen') reopenTask(id);
+        else if (act === 'queue') demoteTask(id);
+        else if (act === 'pin') togglePin(id);
+        else if (act === 'rename') beginCardRename(c, id);
         else if (act === 'arch') archiveCard(id);
       }));
       c.addEventListener('click', () => openStream(id));   // clicking the card body opens its conversation
@@ -2912,6 +3020,30 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       c.addEventListener('keydown', ev => {
         if (ev.target !== c) return;
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); sfx('click'); openStream(id); }
+      });
+      // drag a card between lanes. A drop is the same deliberate human act as the lane buttons
+      // (setLane), so hybrid-honest lanes hold: SHIPPED via drag IS a turn-in, and the buttons stay
+      // as the keyboard path. dataTransfer carries the id; the column handlers below do the move.
+      c.addEventListener('dragstart', ev => {
+        if (kbRenaming) { ev.preventDefault(); return; }   // don't drag a card mid-rename
+        ev.dataTransfer.setData('text/plain', id);
+        ev.dataTransfer.effectAllowed = 'move';
+        c.classList.add('dragging');
+      });
+      c.addEventListener('dragend', () => c.classList.remove('dragging'));
+    });
+    body.querySelectorAll('.kb-col').forEach((col, ci) => {
+      const lane = COLS[ci][0];
+      col.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; col.classList.add('drop'); });
+      col.addEventListener('dragleave', ev => { if (!col.contains(ev.relatedTarget)) col.classList.remove('drop'); });
+      col.addEventListener('drop', ev => {
+        ev.preventDefault(); col.classList.remove('drop');
+        const wid = ev.dataTransfer.getData('text/plain');
+        const w = WS(); const s = w && wid ? w.get(wid) : null;
+        if (!s || s.lane === lane || !w.setLane(wid, lane)) return;
+        sfx('click');
+        if (lane === 'shipped') { notify('shipped ' + (s.title || 'workstream'), 'gold'); sfx('notify'); }   // same beat as ✓ SHIP
+        persistWS(); sync();
       });
     });
   }
@@ -4566,8 +4698,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
       { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
-      { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
-      { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
+      // NAV CONDENSE (2026-08-04) — two label renames, ids untouched (remembered-section keys + wiring
+      // bind to the id): 'NOTIFICATIONS' collided with the SYSTEM-dock NOTIFICATIONS panel (inbox vs
+      // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
+      // dock read as a loop.
+      { id: 'notifs', label: 'ALERTS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
+      { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
 
@@ -5448,6 +5584,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function tick() {
     crewTick();
     ctxTick();
+    // TASK BOARD: age the card "last worked" stamps in place while the window is open. The board's
+    // live refresh only fires on rail pokes, so between them a "2m" stamp froze at render time (P6).
+    // Change-detected text writes on the existing spans — no rebuild, no focus/scroll impact.
+    if (open.tasks) {
+      document.querySelectorAll('.kb-time[data-t]').forEach(elm => {
+        const t = +elm.dataset.t; if (!t) return;
+        const txt = clock(t);
+        if (elm.textContent !== txt) elm.textContent = txt;
+      });
+    }
     // G1b: resolve station-gap quests against the live floor + re-evaluate the standing OUTBOX candidate
     // FIRST, so a gap that just closed (a prop placed) is already flipped done in the projection when the
     // durable quest memory folds it below — the open→done edge then rides G1a's celebration for free.
@@ -6268,7 +6414,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // OPEN (never toggle-closed) a dock term by key — used by deep links like the COMMS error chip that
   // points a beginner at Settings (fix your model key) or SKILLS (enable a capability). No-op if unknown;
   // if the panel is already open it's left as-is rather than closed.
+  // NAV CONDENSE (2026-08-04): ROUTINES + LOOPS merged into the one AUTOMATION window. The old term
+  // keys live on as deep-link aliases so every existing openTerm('routines'|'loops') caller (and any
+  // future one) lands on its old content — the matching SECTION of the merged console. An explicit
+  // section arg from a caller is honored by namespacing it the way the lanes now name their panes
+  // ('create' → 'routines-create', 'start'/'active' → 'loops-start'/'loops').
+  const TERM_ALIAS = {
+    routines: { term: 'automation', section: 'routines', map: { active: 'routines', create: 'routines-create' } },
+    loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } }
+  };
   function openTerm(key, section) {
+    const al = TERM_ALIAS[key];
+    if (al) { section = (section && al.map[section]) || al.section; key = al.term; }
     const def = BUILDERS[key]; if (!def) return;
     // optional section arg (Lane A error-door routing): land the console rail on a specific section — same
     // mechanism as the dossier's "jump to CONFIG" (consoleSection is what mountConsole reads at render).
@@ -6322,7 +6479,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (sel >= present.length) sel = 0;
     crewRender();
     if (open.agents) rerender('agents');
-    if (open.routines) rerender('routines');
+    if (open.automation) rerender('automation');   // the ROUTINES lane's create form shows the roster
   }
 
   /* ============== ARCADE CABINET ==============
@@ -6360,7 +6517,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // GROWTH Tier 3: repaint the Settings AUTONOMY panel's EARNED badge if it is open (no-op otherwise — the paint fn
   // queries its own (possibly detached) host nodes, so a closed panel costs nothing). Called after a trust accept.
   const repaintAutonomy = () => { try { if (repaintAutonomyDial) repaintAutonomyDial(); } catch (_) {} };
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy, registerWindow, h };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: refreshBoardLive, pokeQuests, setTheme, getTheme, repaintAutonomy, registerWindow, h };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect, clampTerminalSize };

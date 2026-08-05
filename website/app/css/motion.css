@@ -531,6 +531,11 @@ button:active {
     background-color var(--t-fast) var(--ease-soft),
     transform var(--t-fast) var(--ease-out);
 }
+/* live task-board refresh (stationui refreshBoardLive): a background data poke rebuilds the board
+   in place — replaying the entrance stagger on every rail refresh reads as a full-board flicker.
+   Entrance motion belongs to user-initiated opens only. */
+.kb-live-refresh .kb-card, .kb-live-refresh .empty-state { animation: none; }
+
 /* hover lift — transform + border brighten + glow. Scoped to the interactive
    cards (crew/agent/kanban/quest/perk rows); .mc-row etc. inherit the entrance
    but a lift is applied only where the whole row is clickable. */

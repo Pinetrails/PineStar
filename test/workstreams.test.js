@@ -215,6 +215,20 @@ const made = W.importTasks([
 A.eq(made.map(w => w.lane), ['todo', 'active', 'shipped', 'todo'], 'col->lane map (unknown col -> todo)');
 A.ok(made.every(w => w.history.length === 0), 'imported cards start with empty history');
 A.ok(W.list().some(w => w.title === 'doing card'), 'imported cards become real workstreams in the store');
+// every legacy kanban card was a BOARD card — without an explicit kind, make()'s lane inference read
+// the 'doing' (active-lane) card as a chat and silently dropped it off the board it was imported onto.
+A.ok(made.every(w => w.kind === 'task'), 'ALL imported kanban cards are kind:task (a doing card must not vanish from the board)');
+
+/* ---------- ensureGeneral never adopts a board task as the chat home ---------- */
+const gBefore = W.generalId();
+W.init({
+  workstreams: [{ id: 'orphan_task', title: null, lane: 'todo', kind: 'task' }],
+  activeId: null, generalId: null   // no General in the slice — ensureGeneral must MINT one
+});
+A.ok(W.generalId() !== 'orphan_task', 'an untitled board task is never adopted as General');
+A.eq(W.get(W.generalId()).kind, 'chat', 'the minted General is a chat');
+A.ok(W.get('orphan_task') && W.get('orphan_task').kind === 'task', 'the orphan task survives as a normal task');
+void gBefore;
 
 /* ---------- serialize round-trips ---------- */
 W.reset(); W.create('round trip');
@@ -347,5 +361,30 @@ A.eq(W.get('kept_chat').kind, 'chat', 'kind survives a serialize/init round-trip
   W.init(dumpedRoot);
   A.eq(W.get(anchored.id).projectRoot, 'C:\\proj\\repo', 'projectRoot survives a serialize/init round-trip');
 }
+
+/* ---------- lastRunOk: a run that DIED can never read as DONE on the board (truthful telemetry) ---------- */
+W.reset();
+const fr = W.create('failing task', { kind: 'task' });
+A.eq(fr.lastRunOk, null, 'a fresh stream has no run outcome (null = unknown)');
+W.appendRun(fr.id, 'run_f1');
+A.eq(fr.lastRunOk, null, 'a run in flight has no outcome yet');
+A.ok(W.noteRunEnd(fr.id, 'run_f1', false) === true, 'noteRunEnd settles the failure');
+A.eq(fr.lastRunOk, false, 'the failed outcome is stored');
+W.appendRun(fr.id, 'run_f2');
+A.eq(fr.lastRunOk, null, 'a NEW run resets the outcome to unknown (a retry must not inherit the old failure)');
+A.ok(W.noteRunEnd(fr.id, 'run_f1', true) === false, 'a STALE runId cannot settle the current run');
+A.eq(fr.lastRunOk, null, 'the stale callback was refused — outcome still unknown');
+A.ok(W.noteRunEnd(fr.id, 'run_f2', true) === true, 'the current run settles ok');
+A.eq(fr.lastRunOk, true, 'the success outcome is stored');
+A.ok(W.appendRun(fr.id, 'run_f2') === true && fr.lastRunOk === true, 'a dup re-file of the SAME run does not erase a settled outcome');
+A.ok(W.noteRunEnd(fr.id, 'run_never', false) === false, 'a runId that was never filed is refused (unanchored outcome)');
+A.ok(W.noteRunEnd('ws_no_such', 'run_f2', false) === false, 'unknown stream refused');
+const noRun = W.create('never ran', { kind: 'task', activate: false });
+A.ok(W.noteRunEnd(noRun.id, 'run_x', true) === false, 'a stream with NO filed runs cannot take an outcome');
+W.noteRunEnd(fr.id, 'run_f2', false);   // flip to failed, then prove it survives persistence
+const dumpedRun = JSON.parse(JSON.stringify(W.serialize()));
+W.init(dumpedRun);
+A.eq(W.get(fr.id).lastRunOk, false, 'lastRunOk survives a serialize/init round-trip');
+A.eq(W.get(noRun.id).lastRunOk, null, 'a never-ran stream round-trips as unknown (null), never invented');
 
 A.report('workstreams.test');

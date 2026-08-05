@@ -76,6 +76,11 @@
       projectRoot: opts.projectRoot != null ? String(opts.projectRoot) : null,
       history: Array.isArray(opts.history) ? opts.history.slice() : [],
       runIds: Array.isArray(opts.runIds) ? opts.runIds.slice() : [],
+      // outcome of the stream's MOST RECENT run: true = it completed (in-band stream finished, even via a
+      // stop/cut-short), false = it DIED in flight (chat.js's in-band `error` branch), null = unknown — no
+      // run yet, a run currently in flight (appendRun resets it), or a pre-upgrade save. The board's DONE
+      // chip reads this so a run that died can never wear "DONE — REVIEW & SHIP" (truthful telemetry).
+      lastRunOk: opts.lastRunOk === true ? true : (opts.lastRunOk === false ? false : null),
       deliverables: Array.isArray(opts.deliverables) ? opts.deliverables.slice() : [],
       cost: { tokens: +c.tokens || 0, usd: +c.usd || 0, calls: +c.calls || 0 },
       pinned: !!opts.pinned,
@@ -102,9 +107,12 @@
 
   // ---------- lifecycle ----------
   // adopt or mint the General default; guarantees there is always exactly one home for casual chat.
+  // Only a CHAT may be adopted as General: an untitled board task (e.g. a legacy kanban import that
+  // never got a title) is a directive, not the chat home — adopting one would drag a task card into
+  // the never-archivable, never-deletable General slot forever.
   function ensureGeneral() {
     let g = generalId ? find(generalId) : null;
-    if (!g) g = ws.filter(w => w.title == null && !w.archived)[0] || null;
+    if (!g) g = ws.filter(w => w.title == null && !w.archived && w.kind !== 'task')[0] || null;
     if (!g) { g = make({ title: null, lane: 'active' }); ws.push(g); }
     generalId = g.id;
     return g;
@@ -350,10 +358,22 @@
   // the rail's "last worked" stamp never reads as boot/poll time (timestamp-honesty law, 2026-07-19).
   function appendRun(id, runId, at) {
     const w = find(id); if (!w || !runId) return false;
-    if (w.runIds.indexOf(runId) < 0) w.runIds.push(runId);   // tolerate dup / no-op runs (e.g. the no-tool-support early error)
+    // tolerate dup / no-op runs (e.g. the no-tool-support early error); only a NEW run resets the
+    // outcome to unknown — a dup re-file of an already-settled run must not erase its truth.
+    if (w.runIds.indexOf(runId) < 0) { w.runIds.push(runId); w.lastRunOk = null; }
     if (w.lane === 'todo') w.lane = 'active';                // hybrid-honest: a REAL run fired
     w.lastActiveAt = Number(at) > 0 ? Number(at) : now();
     if (id === activeId) w.lastReadAt = w.lastActiveAt;      // the open stream is being watched, not unread
+    return true;
+  }
+  // settle the REAL outcome of a finished run (chat.js's two terminal branches call this): ok=false only
+  // when the run errored in flight, ok=true when the stream completed. Only the stream's CURRENT (last-filed)
+  // run may settle the flag — a stale callback from an older run is refused so it can never overwrite the
+  // newer run's truth, and an outcome with no filed run is unanchored and refused too.
+  function noteRunEnd(id, runId, ok) {
+    const w = find(id); if (!w || !runId) return false;
+    if (!w.runIds.length || w.runIds[w.runIds.length - 1] !== runId) return false;
+    w.lastRunOk = ok === true;
     return true;
   }
   function recordDeliverable(id, d) {
@@ -512,10 +532,14 @@
 
   // one-shot import of the legacy station kanban tasks[] into real workstreams (col -> lane,
   // empty history). The caller (slice 3) guards this to run exactly once, then clears tasks[].
+  // Every legacy kanban card was a BOARD card, so kind is passed explicitly: without it, make()'s
+  // lane inference read a 'doing' card (lane active) as kind:'chat' and silently dropped it off
+  // the board it was being imported onto.
   function importTasks(tasks) {
     const created = (Array.isArray(tasks) ? tasks : []).map(tk => make({
       title: (tk && tk.title) || null,
       lane: LANE_OF_COL[tk && tk.col] || 'todo',
+      kind: 'task',
       createdAt: (tk && tk.t) || now(), lastActiveAt: (tk && tk.t) || now()
     }));
     for (const w of created) ws.push(w);
@@ -529,7 +553,7 @@
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markUnread, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle, needsModelTitle, isLowSignal, titleBasis,
-    appendRun, recordDeliverable, addCost, costOf,
+    appendRun, noteRunEnd, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
     LANES
   };

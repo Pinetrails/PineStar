@@ -20,6 +20,8 @@ const Marketplace = (() => {
   let root = null, ctx = null, view = 'grid';   // 'grid' | 'save' | 'recipesave' | 'launch'
   let opener = null;
   let editingId = null, editingRecipeId = null, launchId = null;
+  // context-derived launch values from the READY shelf, keyed by recipe id (see readyShelfHTML/launchFormHTML)
+  let readySeeds = {};
   let pendingMintKey = null, pendingMintTemplate = null;
   // SCOUT handoff: the station-drafted recipe being reviewed in the editor. pendingScoutRecipeId is consumed on a
   // successful save (accept — retires the staged draft server-side, never denylists); scoutSeedDraft prefills the
@@ -79,18 +81,25 @@ const Marketplace = (() => {
   // the gear objectTypes a recipe editor offers (same pickable set as the class builder — dish/cabinet/notebook/
   // workbench/studio; computer/connector are per-agent binds, not advisory recipe gear). Labels from the live source.
   const RECIPE_GEAR_PICK = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
-  // the category buckets the EDITOR offers as authorable browse buckets (the R6 discovery-rail personas).
-  const RECIPE_CATEGORIES = ['developer', 'research', 'creator', 'ops', 'general'];
-  const CAT_LABEL = { developer: 'DEVELOPER', research: 'RESEARCH', creator: 'CREATOR', ops: 'OPS', general: 'GENERAL',
+  // the category buckets the EDITOR offers as authorable browse buckets (the discovery-rail personas).
+  const RECIPE_CATEGORIES = ['developer', 'research', 'creator', 'ops', 'business', 'money', 'data', 'general'];
+  const CAT_LABEL = { developer: 'DEVELOPER', research: 'RESEARCH', writing: 'CREATOR', creator: 'CREATOR',
+    ops: 'WORK', business: 'BUSINESS', money: 'MONEY', data: 'DATA', general: 'GENERAL',
     // legacy aliases older customs may still carry — labeled so a dossier chip never shows a raw slug.
-    code: 'DEVELOPER', writing: 'CREATOR', planning: 'OPS' };
-  // R6 discovery-rail buckets (in rail order) + how a recipe's raw category maps into one. The catalog authors
-  // developer/research/creator/ops/general; legacy customs may carry code/writing/planning — fold those in so the
-  // rail groups every recipe under exactly one visible bucket (never a stray slug, never an uncounted recipe).
-  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'ops', 'general'];
-  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', creator: 'creator',
-    writing: 'creator', ops: 'ops', planning: 'ops', general: 'general' };
-  function railBucket(r) { return CAT_TO_RAIL[(r && r.category) || 'general'] || 'general'; }
+    code: 'DEVELOPER', planning: 'WORK' };
+  /* Discovery-rail buckets (in rail order) + the fold from a raw category onto one — BOTH owned by recipes.js
+     and delegated to here. They used to be a second copy living in this file, which is a standing invitation
+     for the rail and the recommender to disagree about what "one per category" means (they did: the FOR-YOU
+     spread walked raw categories while the rail folded them). ORDER IS THE SCAN ORDER: the rail is how a
+     Commander who cannot yet name their use case finds one, so it runs work-shaped buckets first, then the
+     life domains. `.mkt-lanes` wraps (flex-wrap), so a rail this long lays out as two tidy rows.
+
+     Read LAZILY, never at module scope: this file is written to survive `Recipes` being absent entirely
+     (see hasRecipes()), and a top-level `Recipes.RAIL_BUCKETS` would throw on load and take the whole bay
+     down instead of just the recipes tab. Fall back to the bare bucket when it is not there. */
+  const RAIL_BUCKETS_FALLBACK = ['developer', 'research', 'creator', 'ops', 'business', 'money', 'data', 'general'];
+  const railBuckets = () => (hasRecipes() && Recipes.RAIL_BUCKETS) || RAIL_BUCKETS_FALLBACK;
+  const railBucket = (r) => (hasRecipes() && Recipes.railBucket) ? Recipes.railBucket(r) : 'general';
 
   /* ---------- personalization (the recommender's read surface) ---------- */
   const FAM_TAGS = ['code', 'research', 'general'];
@@ -99,6 +108,17 @@ const Marketplace = (() => {
   // “because matches your focus on code” was not a sentence — the leading “it” is what makes it one.
   const BECAUSE = { code: 'it matches your focus on code', research: 'it matches your focus on research', general: 'it fits your day-to-day ops' };
   const ACK_KEY = 'starnet.profile.ack.v1';
+  /* The cold-start row's rotation seed: a REAL count of how many times this Commander has opened the recipes
+     tab, persisted so it survives a reload. With 12 browse buckets and a 3-card shelf, a fixed spread would
+     show the same three corners of the library forever and the other nine would only ever be found by
+     browsing. This ONLY selects which bucket the varied lineup starts from — it is not a ranking signal, it
+     asserts nothing about the recipes it picks, and the shelf is labelled as a varied lineup rather than as
+     popular or recommended, so rotating it stays inside the truthful-telemetry law. */
+  const VISITS_KEY = 'starnet.recipes.visits.v1';
+  function recipeVisits() { try { return parseInt(localStorage.getItem(VISITS_KEY), 10) || 0; } catch (_) { return 0; } }
+  function bumpRecipeVisits() {
+    try { const n = recipeVisits() + 1; localStorage.setItem(VISITS_KEY, String(n)); return n; } catch (_) { return 0; }
+  }
   const profileApi = () => (typeof ProfileStore !== 'undefined' && ProfileStore.summary) ? ProfileStore : null;
   function acked() { try { return typeof localStorage !== 'undefined' && !!localStorage.getItem(ACK_KEY); } catch (_) { return true; } }
   function setAcked() { try { if (typeof localStorage !== 'undefined') localStorage.setItem(ACK_KEY, '1'); } catch (_) {} }
@@ -210,6 +230,9 @@ const Marketplace = (() => {
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
+    // count the VISIT, not the render — forYouShelfHTML re-runs on every filter and search keystroke, and
+    // seeding the rotation from that would reshuffle the shelf under the Commander's cursor as they type.
+    if (tab === 'recipes') bumpRecipeVisits();
     glassOpen = !acked();
     summonConfigOpen = false;
     scoutLogOpen = false;
@@ -364,7 +387,10 @@ const Marketplace = (() => {
     if (!(ctx && ctx.mode === 'pick') && hasRecipes()) {
       const t = (id, label) => '<button class="mkt-tab' + (tab === id ? ' on' : '') + '" role="tab" aria-selected="' +
         (tab === id ? 'true' : 'false') + '" data-tab="' + id + '">' + label + '</button>';
-      html += '<div class="mkt-tabs" role="tablist">' + t('agents', '☰ AGENTS') + t('recipes', '❒ RECIPES') + '</div>';
+      // NAV CONDENSE (2026-08-04): the tab is labelled CLASSES, not AGENTS — 'AGENTS' already names the
+      // CREW dossier of the crew you HAVE; this tab is the catalog of classes you can summon. The tab id
+      // ('agents') is untouched: deep-links (openSummonBay/openDeployBay) and the persisted tab bind to it.
+      html += '<div class="mkt-tabs" role="tablist">' + t('agents', '☰ CLASSES') + t('recipes', '❒ RECIPES') + '</div>';
     }
     if (tab === 'recipes' && hasRecipes()) {
       // R6 CATEGORY RAIL — persona buckets (developer/research/creator/ops/general) + ALL + MINE, each with a
@@ -373,12 +399,12 @@ const Marketplace = (() => {
       const builtins = Recipes.builtins(), customs = Recipes.customs();
       const all = builtins.concat(customs);
       const counts = { all: all.length, mine: customs.length };
-      RAIL_BUCKETS.forEach(b => counts[b] = 0);
+      railBuckets().forEach(b => counts[b] = 0);
       all.forEach(r => { const rb = railBucket(r); counts[rb] = (counts[rb] || 0) + 1; });
       const cat = (id, label) => '<button class="mkt-lane' + (catFilter === id ? ' on' : '') + '" data-cat="' + id + '">' +
         label + '<span class="ct">' + (counts[id] || 0) + '</span></button>';
       let rail = cat('all', 'ALL');
-      RAIL_BUCKETS.forEach(b => { if (counts[b] > 0 || b === 'general') rail += cat(b, CAT_LABEL[b] || b); });
+      railBuckets().forEach(b => { if (counts[b] > 0 || b === 'general') rail += cat(b, CAT_LABEL[b] || b); });
       rail += cat('mine', 'MINE');
       html += '<span class="mkt-lanes-lbl">BROWSE</span><div class="mkt-lanes">' + rail + '</div>' +
         '<button class="mkt-import bb sm" title="import a recipe from a JSON file">⇪ IMPORT</button>' +
@@ -410,6 +436,7 @@ const Marketplace = (() => {
     bar.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.tab; if (!next || next === tab) return;
       tab = next; view = 'grid'; laneFilter = 'all'; catFilter = 'all'; sfx('click');
+      if (next === 'recipes') bumpRecipeVisits();   // arriving via the tab IS a visit (open() only sees ctx.tab)
       pendingCardAnim = true;   // a tab switch is a fresh context — animate; a filter/search rebuild is not
       renderBar(); renderStage(); syncSub(); syncFoot();
     }));
@@ -464,7 +491,7 @@ const Marketplace = (() => {
     paintDossierAccent();
     decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
-    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); }   // "● live as a routine" + the last-run line, once their reads land
+    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); hydrateReadyShelf(); }   // "● live as a routine" + the last-run line, once their reads land
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
   }
   function renderDossier() {
@@ -474,7 +501,7 @@ const Marketplace = (() => {
     paintDossierAccent();
     decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
-    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); }   // refresh the live-routine + last-run lines for the focused recipe
+    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); hydrateReadyShelf(); }   // refresh the live-routine + last-run lines for the focused recipe
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
     root.querySelectorAll('.mkt-card').forEach(c => c.classList.toggle('sel', c.dataset.id === fid));
   }
@@ -648,7 +675,17 @@ const Marketplace = (() => {
       '<span class="mkt-hint">pick a recipe, fill in the blanks, and ' + esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
     if (!filtering && consentFirst) html += consentStripHTML();
     if (suggestedHasCards) html += suggestedShelfHTML();
-    html += forYouShelfHTML();
+    // READY ON THIS STATION sits ABOVE the generic row on purpose: a card bound to a real project root the
+    // Commander granted outranks a varied lineup chosen because we know nothing. It renders '' when the
+    // station has no context, and then FOR YOU is the top shelf exactly as before.
+    // READY and FOR YOU do the SAME job — propose what to run next — and READY is strictly better evidenced,
+    // so rendering both stacks two recommendation rows above the library and repeats the idea. Worse, the
+    // cold-start header reads "while the station gets to know you" directly beneath a shelf proving it
+    // already does. When READY fires, it IS the recommendation row; FOR YOU stays the honest cold-start
+    // surface for a station with no context.
+    const ready = readyShelfHTML();
+    html += ready;
+    if (!ready) html += forYouShelfHTML();
 
     const builtins = filtRecipes(Recipes.builtins());
     const customs = filtRecipes(Recipes.customs());
@@ -1393,7 +1430,11 @@ const Marketplace = (() => {
     // two rows above the library is the thing that pushed the catalog off screen. Three also matches the
     // specialists shelf next door, so both tabs speak the same visual language.
     const preferenceModel = (typeof ProspectStore !== 'undefined' && ProspectStore.preferenceModel) ? ProspectStore.preferenceModel() : null;
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3 });
+    // Stride by the ROW SIZE, not by 1: a stride of 1 slides the window one bucket per visit, so consecutive
+    // visits repeat two of three cards and it takes twelve visits to see the whole library. Striding by 3
+    // makes each visit a disjoint set and surfaces all twelve buckets in four. This shelf exists for someone
+    // who cannot yet name a use case, so three NEW domains beats one new and two they already skipped.
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 });
     if (!items || !items.length) return '';
     // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
     // shelf blends four real signals and used to explain NONE of them — every other shelf in the bay names its
@@ -1410,6 +1451,128 @@ const Marketplace = (() => {
     items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));
     return '<div class="mkt-sect-h mkt-foryou-sect">' + head + '</div><div class="mkt-rec-rail">' +
       items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
+  }
+
+  /* ---------- READY ON THIS STATION — the context-bound shelf ----------
+     The library below is the same 98 cards for everybody. THIS shelf is not: it binds catalog recipes to
+     what this station actually has — granted project roots, connected channels, learned topics, and what
+     is already running as a routine — and states the evidence on every card. RecipeFit does the deciding
+     (pure, node-tested); everything here is gathering and painting.
+
+     ⛔ IT RENDERS NOTHING WHEN THERE IS NO CONTEXT. A station with no project granted and no channel
+     connected knows nothing about its Commander, and a "ready for you" shelf on top of that is theatre.
+     RecipeFit.offers returns [] and the Commander sees the honest library instead.
+
+     ⛔ AND IT NEVER BLOCKS THE PAINT. Every input is read from an already-cached best-effort fetch; a
+     sidecar that is down means a smaller shelf or none, never a stalled tab. */
+  let fitProjects = null, fitProjectsPending = null, fitChannels = null, fitChannelsPending = null;
+  function loadFitProjects() {
+    if (fitProjects) return Promise.resolve(fitProjects);
+    if (fitProjectsPending) return fitProjectsPending;
+    fitProjectsPending = fetch('/api/projects', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { projects: [] })
+      .then(d => {
+        fitProjects = (Array.isArray(d && d.projects) ? d.projects : []).map(p => ({
+          root: String((p && (p.root || p.path)) || ''),
+          name: String((p && (p.name || p.label)) || '') || basenameOf(String((p && (p.root || p.path)) || '')),
+          // REAL evidence about what KIND of folder this is — the projects API already computes it. Without it
+          // the shelf cannot tell a code repo from a folder of invoices and offers 'PR Sweep' against either.
+          git: !!(p && p.isGitRepo)
+        })).filter(p => p.root);
+        fitProjectsPending = null; return fitProjects;
+      })
+      .catch(() => { fitProjects = fitProjects || []; fitProjectsPending = null; return fitProjects; });
+    return fitProjectsPending;
+  }
+  function loadFitChannels() {
+    if (fitChannels) return Promise.resolve(fitChannels);
+    if (fitChannelsPending) return fitChannelsPending;
+    fitChannelsPending = fetch('/api/connectors', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { connectors: [] })
+      .then(d => {
+        const rows = Array.isArray(d && d.connectors) ? d.connectors : (Array.isArray(d && d.items) ? d.items : []);
+        // CONNECTED only — a configured-but-broken connector cannot be cited as a reason the station is ready.
+        fitChannels = rows.filter(c => c && c.connected !== false && c.status !== 'error')
+          .map(c => ({ id: String((c && c.id) || ''), label: String((c && (c.label || c.name || c.kind || c.id)) || '') }))
+          .filter(c => c.label);
+        fitChannelsPending = null; return fitChannels;
+      })
+      .catch(() => { fitChannels = fitChannels || []; fitChannelsPending = null; return fitChannels; });
+    return fitChannelsPending;
+  }
+  function basenameOf(p) { const s = String(p || '').replace(/[\\/]+$/, ''); const i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\')); return i >= 0 ? s.slice(i + 1) : s; }
+
+  // the context RecipeFit reasons over — every field is real, already-fetched station truth or [].
+  function fitContext() {
+    let launches = null;
+    try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {}
+    // a live cron job carries its recipe provenance in meta.recipeId (the R3 spine) — that is how we know
+    // a recipe is ALREADY running and must not be offered again.
+    const scheduled = (cronJobs || []).map(j => ({
+      recipeId: String((j && j.meta && j.meta.recipeId) || (j && j.recipeId) || '')
+    })).filter(j => j.recipeId);
+    return {
+      projects: fitProjects || [],
+      channels: fitChannels || [],
+      topics: learnedTopics(),
+      scheduled: scheduled,
+      launches: launches
+    };
+  }
+
+  function readyShelfHTML() {
+    if (!hasRecipes() || typeof RecipeFit === 'undefined') return '';
+    if (catFilter !== 'all' || query) return '';        // only in the clean top-level view
+    const ctx = fitContext();
+    let offers = [];
+    // SIX, not three: READY now replaces the cold-start row rather than stacking above it, so it can spend the
+    // two rows that row was using. Kept to a multiple of the 3-column rail so the grid never leaves an orphan.
+    try { offers = RecipeFit.offers(Recipes.list(), ctx, { limit: 6 }) || []; } catch (_) { offers = []; }
+    if (!offers.length) return '';
+    // stash the context-derived values by id so the launch form can prefill from them (see launchFormHTML).
+    // Rebuilt from scratch on every shelf render, so a stale binding can never outlive the context that made it.
+    readySeeds = {}; offers.forEach(o => { if (o.values && Object.keys(o.values).length) readySeeds[o.recipe.id] = o.values; });
+    const basis = RecipeFit.basis(ctx);
+    offers.forEach((o, i) => trackRecommendation('recipe', o.recipe, o.why, i + 1));
+    // the basis strip is the audit trail: it names exactly what was looked at to produce the cards below it.
+    const head = '<div class="mkt-sect-h mkt-ready-sect">▲ READY ON THIS STATION' +
+      (basis ? '<span class="mkt-ready-basis">read: ' + esc(basis) + '</span>' : '') + '</div>';
+    const deep = offers.length > 3 ? ' mkt-rail-deep' : '';
+    return head + '<div class="mkt-rec-rail' + deep + '">' + offers.map(readyCardHTML).join('') + '</div>';
+  }
+
+  /* One context-bound card. Deliberately the SAME `.mkt-rec[data-id]` markup the other shelves use, so it
+     inherits their styling, focus behaviour and the one click handler at the bottom of renderStage —
+     a bespoke card here would need its own binding and would drift from the rest of the bay's look.
+     What it adds: the evidence line, the cadence chip, and — when the station pre-filled something — the
+     line saying what it filled. A form that silently arrives filled is one that gets launched unread. */
+  function readyCardHTML(o) {
+    const r = o.recipe;
+    const cad = r.cadence ? ' <span class="mkt-badge mkt-ready-cad">↻ ' + esc(cadenceLabelOf(r.cadence)) + '</span>' : '';
+    const fill = (o.bound || []).length
+      ? '<div class="mkt-ready-fill">↳ fills in ' + esc((o.bound || []).map(b => b.key + ': ' + b.label).join(' · ')) + '</div>' : '';
+    return '<button class="mkt-rec mkt-foryou mkt-ready-card" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      '<div class="mkt-rec-top">' + sealHTML(r, false) +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
+      '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + cad +
+        ' <span class="mkt-foryou-why mkt-ready-why">' + esc(o.why) + '</span></div>' + fill + '</button>';
+  }
+  function cadenceLabelOf(c) {
+    const m = { morning: 'every morning', weekly: 'weekly', sixhourly: 'every 6h', hourly: 'hourly' };
+    return m[String(c || '')] || String(c || '');
+  }
+
+  /* Re-derive the shelf when the context it is built from actually lands. The fetches are best-effort and
+     resolve after the first paint, so without this the shelf would be permanently empty on a cold open and
+     only appear on the SECOND visit — which reads as broken. Repaints once, only if something changed. */
+  function hydrateReadyShelf() {
+    if (!hasRecipes() || typeof RecipeFit === 'undefined') return;
+    const before = JSON.stringify(fitContext());
+    Promise.all([loadFitProjects(), loadFitChannels(), loadCronJobs()]).then(() => {
+      if (!root || tab !== 'recipes') return;
+      if (JSON.stringify(fitContext()) === before) return;   // nothing new landed — no repaint
+      renderStage();
+    }).catch(() => {});
   }
   // the station's LEARNED interest topics (server truth: GET /api/scout, cached in ProspectStore). Empty until a
   // read lands or the histogram warms — and an empty list makes every topic term exactly 0, so the shelves rank
@@ -1451,7 +1614,9 @@ const Marketplace = (() => {
     const cands = suggestedMissions();
     const drafts = scoutRecipeDrafts();
     if (!cands.length && !drafts.length) return scoutColdStateHTML();
-    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div><div class="mkt-rec-rail">' +
+    // a rail deeper than one row SCROLLS sideways instead of wrapping — see the .mkt-rail-deep note in the CSS.
+    const deep = (cands.length + drafts.length) > 3 ? ' mkt-rail-deep' : '';
+    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div><div class="mkt-rec-rail' + deep + '">' +
       cands.map(suggestCardHTML).join('') + drafts.map(scoutRecipeCardHTML).join('') + '</div>';
   }
   /* ---------- the SUGGESTED shelf's honest COLD STATE ----------
@@ -2378,7 +2543,11 @@ const Marketplace = (() => {
     // lane C: prefill each field with the value this recipe launched with LAST time (LaunchMemory, own local key).
     // Confirm-by-sight safety: the values sit visibly in the form and nothing runs until the button — plus the
     // hint below names the mechanism. esc() covers the content (U.esc escapes & < > " ', so </textarea> can't break out).
-    const lastVals = (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {};
+    // CONTEXT BEATS MEMORY: a value the station just derived from a granted project root is fresher and more
+    // specific than whatever this recipe was launched with last time, so the READY shelf's binding wins. Both
+    // are visible in the form and nothing runs until the button — the confirm-by-sight safety is unchanged.
+    const seedVals = (readySeeds && readySeeds[r.id]) ? readySeeds[r.id] : {};
+    const lastVals = Object.assign({}, (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {}, seedVals);
     let prefilled = false;
     const fields = (r.params || []).map(p => {
       const val = (typeof lastVals[p.key] === 'string' && lastVals[p.key].trim()) ? lastVals[p.key] : (p.default || '');

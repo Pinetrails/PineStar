@@ -138,6 +138,40 @@
       task: 'Write release notes for {version} from {changes}. Lead with the two or three changes a user actually FEELS, written as benefits, not commit prose. Then the fuller list grouped sensibly, then upgrade steps and breaking changes spelled out with exact before/after. Find our previous release notes if you can and match their voice, so the series reads consistent. Draft only — do not publish anything.',
       category: 'developer', gear: ['cabinet'], skills: [], cadence: null,
       source: 'builtin', forkedFrom: null
+    },
+    {
+      id: 'docs-vs-code', name: 'Docs vs Reality', emoji: '◭', tagline: 'Where the README lies about the code',
+      accent: '#cf8a7d',
+      blurb: 'Reads the docs against the actual code and finds every place they have silently drifted apart.',
+      tags: { code: 0.8, general: 0.2 },
+      params: [{ key: 'repo', label: 'The repository', type: 'folder', placeholder: 'the project folder' }],
+      task: 'Read the documentation in {repo} against what the code ACTUALLY does, and find where they disagree. Docs rot silently because nothing fails when they go stale, and the person who notices is a new contributor or a user — both of whom conclude the whole project is unmaintained. Check the concrete, checkable things: setup and install steps run in the order given, commands and flags that still exist with the names shown, configuration keys and their real defaults, environment variables actually read by the code, example snippets that would still run, endpoints and signatures matching the implementation, and version or dependency claims. For each mismatch: where the doc says it, what the code actually does, and how badly it would break someone following along — a wrong install command is fatal, a stale screenshot is cosmetic. Rank by that. Then the reverse pass, which is the one nobody runs: things the code does that the docs never mention at all, especially anything a user would need to know. Compare against your memory so a mismatch I already fixed is not raised twice. Deliver the corrections as a patch I can review. If the docs are accurate, say so in one line.',
+      category: 'developer', gear: ['cabinet', 'workbench', 'notebook'], skills: ['codebase-inspection'], cadence: 'weekly',
+      source: 'builtin', forkedFrom: null
+    },
+    {
+      id: 'todo-debt', name: 'TODO Debt', emoji: '◓', tagline: 'The notes you left yourself and never came back to',
+      accent: '#d9a85a',
+      blurb: 'Sweeps the repo for TODO, FIXME and HACK markers, ages them, and ranks by what they actually risk.',
+      tags: { code: 0.8, general: 0.2 },
+      params: [{ key: 'repo', label: 'The repository', type: 'folder', placeholder: 'the project folder' }],
+      task: 'Sweep {repo} for the markers I left myself — TODO, FIXME, HACK, XXX, "temporary", "for now", "come back to this" — and turn them into something I can act on. A raw grep is worthless because it returns two hundred hits with no ordering; the value is in the triage. For each: what it is actually asking for, how OLD it is (check when the line was introduced, not when the file was touched), and what it risks if it stays — a note about naming is not a note about a race condition or an unhandled failure path, and treating them alike is why these lists get ignored. Cluster the ones that are really the same underlying problem. Then rank by risk times age, because an old marker on a dangerous path is the most likely thing in the codebase to bite. Call out the ones that are already DONE and should just be deleted, and the ones that are really feature requests wearing a comment and belong in a tracker instead. Compare against your memory: report what is new, what got fixed, and what has now survived several runs untouched — that last group is a decision I am avoiding, and I want it named. If nothing changed, one line.',
+      category: 'developer', gear: ['cabinet', 'workbench', 'notebook'], skills: ['codebase-inspection'], cadence: 'weekly',
+      source: 'builtin', forkedFrom: null
+    },
+    {
+      id: 'shipped-digest', name: 'What Actually Shipped', emoji: '◕', tagline: 'The week, read from the repo not memory',
+      accent: '#7bc88a',
+      blurb: 'Reads the real commit history and diffs to report what landed, what stalled, and what nobody finished.',
+      tags: { code: 0.7, general: 0.3 },
+      params: [
+        { key: 'repo', label: 'The repository', type: 'folder', placeholder: 'the project folder' },
+        { key: 'window', label: 'Period', required: false, type: 'choice', default: 'the last week',
+          options: ['the last day', 'the last week', 'the last month'] }
+      ],
+      task: 'Read the real history in {repo} over {window} and tell me what actually shipped. Work from the commits and the diffs, never from what I remember doing — recollection is generous about finished work and silent about abandoned work, which is exactly the asymmetry this is here to correct. Report: what genuinely landed, described as the change in behaviour rather than a list of commit subjects, since nobody can read intent from a subject line. Then the honest half — work that was STARTED and left partway, branches that went quiet, a refactor applied to some call sites and not others, tests added for one path of a change and not the rest. That inconsistent-half state is the most expensive thing in a codebase and it is invisible unless someone reads the whole window at once. Note anything that looks risky: a large diff with no test change, a hurried-looking fix late in the day, a revert. Compare against your memory of the last run so I can see the direction of travel. Finish with the single unfinished thing most worth closing before starting anything new, and offer the digest as a file I can paste into an update.',
+      category: 'developer', gear: ['cabinet', 'workbench', 'notebook'], skills: ['codebase-inspection'], cadence: 'weekly',
+      source: 'builtin', forkedFrom: null
     }
   ];
 

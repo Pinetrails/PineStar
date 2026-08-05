@@ -6489,9 +6489,10 @@ const Chat = (() => {
      three agents doing three pieces of work, and collapsing it to one reply would hide who wrote what. The
      LAST stage's text is the answer (returned to the caller, which re-points voice/title at it).
 
-     Bounded exactly like the sidecar executor: LINE_MAX_HOPS, an agent never runs twice, and a stop / stream
-     switch / empty stage ends the line keeping the last good text. */
-  const LINE_MAX_HOPS = 6;   // mirrors MAX_HOPS in sidecar/routing/chain.js — these two must not drift
+     Bounded exactly like the sidecar executor: LINE_MAX_HOPS, a $ ceiling on the whole line, an agent never
+     runs twice, and a stop / stream switch / empty stage ends the line keeping the last good text. */
+  const LINE_MAX_HOPS = 6;    // mirrors MAX_HOPS in sidecar/routing/chain.js — these two must not drift
+  const LINE_MAX_USD = 2.00;  // mirrors MAX_CHAIN_USD in sidecar/routing/chain.js — these two must not drift
 
   function lineTag(t) { return (typeof Classify !== 'undefined' && Classify.getTag) ? Classify.getTag(t) : 'general'; }
 
@@ -6512,7 +6513,7 @@ const Chat = (() => {
      (the seed text unchanged when no stage ran). Never throws: a work line is an enhancement to a reply the
      caller already has, exactly like the sidecar's. */
   async function runWorkLine(ws, seed) {
-    const out = { text: seed.text, agentId: seed.fromAgentId, hops: 0 };
+    const out = { text: seed.text, agentId: seed.fromAgentId, hops: 0, usd: 0 };
     if (!seed.fromAgentId || !String(seed.text || '').trim()) return out;
     const visited = {}; visited[seed.fromAgentId] = true;
     let cur = seed.fromAgentId;
@@ -6521,6 +6522,13 @@ const Chat = (() => {
       if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
       const nx = await nextStageOf(cur, lineTag(out.text));
       if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
+      // THE LINE'S SPEND CEILING — the same pre-hop check as the sidecar executor (chain.js: out.usd >= maxUsd
+      // before the next stage buys a run). out.usd is REAL reconciled spend: each hop's agent.run.end carries
+      // the run's reconciled total (loop.js), never an estimate — so this cap measures what was actually billed.
+      if (out.usd >= LINE_MAX_USD) {
+        if (isActiveWs(ws)) toolLine('⚠ the work line stopped early — the line reached its $' + LINE_MAX_USD.toFixed(2) + ' limit.', true);
+        return out;
+      }
       const sys = (typeof App !== 'undefined' && App.systemFor) ? App.systemFor(nx) : null;
       if (!sys) return out;                                         // a dock bound to an agent this roster doesn't have
       visited[nx] = true;
@@ -6528,8 +6536,10 @@ const Chat = (() => {
       const who = (typeof App !== 'undefined' && App.agentName && App.agentName(nx)) || nx;
       const wiHop = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
       const hopStart = Date.now();
-      // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next
-      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
+      // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next.
+      // `from` = the PRODUCER dock (mirrors chain.js's placed event — must not drift): world.js spawns the
+      // crate at THIS dock instead of guessing the upstream dock from the compiled plan.
+      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', from: cur, preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
       if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
 
       const prompt = (typeof Pipeline !== 'undefined' && Pipeline.handoffPrompt)
@@ -6538,16 +6548,26 @@ const Chat = (() => {
       if (hopRow) activeLiveRow = hopRow;
       let hopAcc = '';
       let res = null;
+      // THIS HOP'S REAL COST: the sidecar's agent.run.end carries the run's reconciled usd total (the same
+      // number the channel hub's hop sink reads) and Harness re-emits every stream event onto U.bus before
+      // chat() resolves — latch it by the hop's own runId so a forwarded worker's end can't be mistaken for it.
+      let hopUsd = 0, hopRunId = null;
+      const onHopEnd = p => { if (p && hopRunId && p.runId === hopRunId && typeof p.usd === 'number' && isFinite(p.usd) && p.usd > 0) hopUsd = p.usd; };
+      const busOk = (typeof U !== 'undefined' && U.bus && U.bus.on && U.bus.off);
+      if (busOk) { try { U.bus.on('agent.run.end', onHopEnd); } catch (_) {} }
       try {
         res = await Harness.chat({
           system: sys, messages: [{ role: 'user', content: prompt }], agentId: nx, isTask: true,
           signal: seed.signal, streamId: ws.id,
           placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(nx) : [],
           stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],
+          onRunId: id => { hopRunId = id; },
           onToken: d => { hopAcc += d; if (hopRow) hopRow.append(d); App.refreshUsage(); },
           onToolCall: ev => { if (isActiveWs(ws)) { if (hopRow && hopRow.breakSeg) hopRow.breakSeg(); toolChip(ev); } }
         });
       } catch (e) { res = { error: e }; }
+      if (busOk) { try { U.bus.off('agent.run.end', onHopEnd); } catch (_) {} }
+      out.usd += hopUsd;   // billed whether the stage's text survives or not — a failed hop still spent it
       if (hopRow) hopRow.done();
       const hopText = String((res && res.text) || hopAcc || '').trim();
 
@@ -6836,11 +6856,17 @@ const Chat = (() => {
         persistPartial(ws, acc);
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // so the failure survives a switch-back, not just a transient notify
+        // the run DIED in flight — settle its outcome (task-board truth: a dead run can never wear the DONE
+        // chip). Guarded on thisRunId: no run started → nothing was filed, nothing to settle.
+        if (thisRunId && typeof Workstreams !== 'undefined' && Workstreams.noteRunEnd) Workstreams.noteRunEnd(ws.id, thisRunId, false);
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
         if (isActiveWs(ws)) resolvePresence(ws, { error: true });   // COMMS-PREMIUM: presence card resolves red
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
         }
       } else {
+        // the run COMPLETED (cleanly, or via a stop / cut-short — either way the stream did not die):
+        // settle the outcome so the board's DONE chip is anchored to a real finished run.
+        if (thisRunId && typeof Workstreams !== 'undefined' && Workstreams.noteRunEnd) Workstreams.noteRunEnd(ws.id, thisRunId, true);
         let replyText = reply || acc;
         const taskQuestion = (isTask && typeof TaskIntent !== 'undefined' && TaskIntent.parse) ? TaskIntent.parse(replyText) : null;
         if (taskQuestion) {

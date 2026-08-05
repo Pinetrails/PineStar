@@ -663,7 +663,7 @@ const Tutorial = (() => {
     setTimeout(() => {
       if (typeof PitchStore !== 'undefined' && PitchStore.offerStarter) PitchStore.offerStarter();
       showCoach('quests', '.bb-group[data-group="work"] .bb-grp',
-        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ⏱ ROUTINES (any job on a schedule). nothing in there is ever gated.');
+        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ∞ AUTOMATION (routines & loops — standing work). nothing in there is ever gated.');
     }, skipped ? 900 : 1400);
   }
 
@@ -773,7 +773,7 @@ const Tutorial = (() => {
   function onBuildOpen() {
     if (kitMode) return;   // during the guided kit-out, kitTick drives REFIT — don't stack the generic coachmark on top
     showCoach('build', '#refit-tools',
-      'this is REFIT — the floor isn’t decoration. where you put things changes what i can do. keys 1–7 up top: 6 places gear, 7 lays belts.');
+      'this is REFIT — your floor is a flowchart: work arrives at the INBOX, every BAY is an agent doing one step, and the belts you draw are the order the work flows. keys 1–9 up top: 6 places gear, 7 lays belts, 9 stamps a whole starter line.');
   }
   /* WORKFLOW COACHES (2026-07-05 belt-teach): each routing prop teaches ITS role in the two-trip story the
      first time it's placed — one line, at the moment of need, in the agent's voice. Each has its own
@@ -784,7 +784,8 @@ const Tutorial = (() => {
     outbox: 'the OUTBOX is the loading dock — every job we actually FINISH ships a crate here onto the pallet. hit ▸ TEST to watch the whole loop once.',
     filter: 'a FILTER sorts UNOWNED work by what it is — code down one lane, research down another. work that already belongs to someone rides straight home past it. click it to set the lanes.',
     splitter: 'a SPLITTER spreads unowned work across its lanes — several agents working the same stream in parallel. it needs at least two out-going lanes.',
-    merger: 'a MERGER holds crates until it has a full batch, then sends ONE combined crate on — a join point for fan-in work.'
+    // truthful telemetry (2026-07-26 mechanic removal): a merger is a LANE FUNNEL — it never batches or combines
+    merger: 'a MERGER is a lane funnel — several lanes converge into one and every crate rides straight on, K in K out. it tidies the lanes; it never combines the jobs riding them.'
   };
   function onPropPlaced(propType) {
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(propType) : null;
