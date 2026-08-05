@@ -2536,13 +2536,18 @@ const Chat = (() => {
         if (!res.ok) return fail(String((res.j && res.j.error) || ('the station refused (http ' + res.status + ')')));   // the server's reason, VERBATIM
         const j = res.j || {};
         btns.remove();
-        // fold the DELIVERING run's real recorded row into the OUTBOX pending ledger — the crate is collectable
+        // TRUTHFUL VERDICT: "delivered" may only be claimed for a run that finished clean ('done' is the
+        // recorded reason in runs.jsonl). An errored stage still replies honestly (the ⚠ text below), but the
+        // card must not stamp a checkmark on it — and no OUTBOX crate: the finished-work ledger is 'done'-only
+        // (the same SLAG rule the away digest applies).
+        const clean = !!(j.delivered && j.delivered.reason === 'done');
         let folded = false;
-        try { if (typeof ReturnStore !== 'undefined' && ReturnStore.foldRow && j.delivered) folded = ReturnStore.foldRow(j.delivered); } catch (_) {}
+        if (clean) { try { if (typeof ReturnStore !== 'undefined' && ReturnStore.foldRow) folded = ReturnStore.foldRow(j.delivered); } catch (_) {} }
         const who = (j.delivered && j.delivered.agentId) || j.agentId || 'agent';
         const cost = (+j.totalUsd > 0 && typeof U !== 'undefined' && U.usd) ? (' · ' + U.usd(+j.totalUsd)) : '';
-        text.textContent = '✔ sample delivered — ' + who + ' shipped it' + cost + '.'
-          + (folded ? ' the crate is on the OUTBOX.' : '');
+        text.textContent = clean
+          ? ('✔ sample delivered — ' + who + ' shipped it' + cost + '.' + (folded ? ' the crate is on the OUTBOX.' : ''))
+          : ('⚠ the sample rode the line, but the run did not finish clean — the reply below says why.');
         const reply = (j.replies && j.replies.length) ? String(j.replies[j.replies.length - 1]).replace(/\s+/g, ' ').trim() : '';
         if (reply) {
           const out = document.createElement('div'); out.className = 'turnin-text';

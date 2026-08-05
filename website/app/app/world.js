@@ -6425,6 +6425,20 @@ const World = (() => {
     walkingTo: (agent && agent.target) ? { x: agent.target.x, y: agent.target.y } : null,
     seats: [...occupiedSeats],
   });
+  /* CDP-verify hook: CLIENT (mouse-event) coordinates for the centre of the first prop of type `t` — the
+     exact inverse of toWorld/toCanvas, so a shot script can dispatch a REAL canvas click on a prop (the
+     sample-card INBOX proof) instead of faking the handler call. Read-only; null when absent/unbaked. */
+  const _dbgPropClientPoint = (t) => {
+    const p = geo && geo.props && geo.props.find(q => q.t === t);
+    if (!p || !cv) return null;
+    const wx = (p.x + (p.w || 1) / 2) * T, wy = (p.y + (p.h || 1) / 2) * T;
+    const r = cv.getBoundingClientRect();
+    return {
+      id: p.id,
+      clientX: r.left + ((wx * scale + panX) * (r.width / cv.width)),
+      clientY: r.top + ((wy * scale + panY) * (r.height / cv.height))
+    };
+  };
   // E1 verification: report the live link predicate, and force the real chanES closed (a genuine dropped socket)
   // so the DOWN branch can be observed against a real non-OPEN readyState without killing the whole process.
   const _dbgLinkState = () => ({ es: !!chanES, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round(((typeof performance !== 'undefined') ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) });
@@ -6446,7 +6460,7 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
