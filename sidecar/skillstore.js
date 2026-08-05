@@ -22,7 +22,11 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const NAME_MAX = 80, SUMMARY_MAX = 280, CATEGORY_MAX = 80, BODY_MAX = 20000;
+  // Open Agent Skills recommend keeping SKILL.md lean, but real production procedures commonly exceed
+  // 20k characters. Truncating one while retaining its upstream digest made provenance lie: "up to date"
+  // could describe a locally chopped document. Match the package byte ceiling so accepted source bytes
+  // round-trip intact; progressive disclosure still keeps bodies out of the always-on prompt index.
+  const NAME_MAX = 80, SUMMARY_MAX = 280, CATEGORY_MAX = 80, BODY_MAX = 256000;
   const DEFAULT_MAX_PER_AGENT = 100, SUPPORT_FILE_MAX = 64000;
   // A package is bounded by three numbers, not one. Per-file content was always clamped
   // (SUPPORT_FILE_MAX), but nothing bounded HOW MANY files or the package total — so a review
@@ -50,6 +54,13 @@
   function stateOf(v) {
     const s = str(v || 'active').toLowerCase();
     return STATES.has(s) ? s : 'active';
+  }
+  function trustSource(createdBy) {
+    const source = str(createdBy).trim().toLowerCase();
+    if (source === 'user') return 'user';
+    if (source === 'community' || source === 'skill-exchange') return 'community';
+    if (source === 'builtin' || source === 'trusted') return source;
+    return 'agent-created';
   }
   function cleanName(v) {
     const name = str(v).trim().replace(/\s+/g, ' ').slice(0, NAME_MAX);
@@ -116,6 +127,12 @@
       pinned: bool(r.pinned),
       createdBy: str(r.createdBy || 'agent'),
       sourceRunId: r.sourceRunId ? str(r.sourceRunId) : null,
+      sourceUrl: r.sourceUrl ? str(r.sourceUrl) : '',
+      sourceDigest: r.sourceDigest ? str(r.sourceDigest) : '',
+      sourceFetchedAt: num(r.sourceFetchedAt),
+      sourceVersion: r.sourceVersion ? str(r.sourceVersion) : '',
+      sourceAuthor: r.sourceAuthor ? str(r.sourceAuthor) : '',
+      sourceLicense: r.sourceLicense ? str(r.sourceLicense) : '',
       createdAt: num(r.createdAt) || updatedAt,
       updatedAt: updatedAt,
       lastUsedAt: r.lastUsedAt == null ? null : num(r.lastUsedAt),
@@ -143,6 +160,8 @@
       category: s.category, setup: s.setup || '',
       requires: (s.requires || []).slice(), platforms: (s.platforms || []).slice(), state: s.state, pinned: !!s.pinned,
       createdBy: s.createdBy, sourceRunId: s.sourceRunId || null,
+      sourceUrl: s.sourceUrl || '', sourceDigest: s.sourceDigest || '', sourceFetchedAt: s.sourceFetchedAt || 0,
+      sourceVersion: s.sourceVersion || '', sourceAuthor: s.sourceAuthor || '', sourceLicense: s.sourceLicense || '',
       createdAt: s.createdAt || 0, updatedAt: s.updatedAt || 0, lastUsedAt: s.lastUsedAt || null,
       viewCount: s.viewCount || 0, useCount: s.useCount || 0, patchCount: s.patchCount || 0,
       packagePath: s.packagePath || '', scan: s.scan || null, guardAction: s.guardAction || '',
@@ -199,7 +218,7 @@
         if (guard && typeof guard.scanSkillRecord === 'function') {
           // 'user' (the Commander's own typing) is its own trust tier — see the TRUST table in
           // skills/guard.js for why it asks rather than blocks now that verdicts are enforced.
-          const scan = guard.scanSkillRecord(projected, { source: entry.createdBy === 'user' ? 'user' : 'agent-created' });
+          const scan = guard.scanSkillRecord(projected, { source: trustSource(entry.createdBy) });
           entry.scan = scan;
           if (guard && typeof guard.shouldAllow === 'function') {
             const policy = guard.shouldAllow(scan, { allowAsk: true });
@@ -268,6 +287,12 @@
         pinned: e.pinned != null ? !!e.pinned : !!(existing && existing.pinned),
         createdBy: str(e.createdBy || (existing && existing.createdBy) || 'agent'),
         sourceRunId: e.sourceRunId ? str(e.sourceRunId) : ((existing && existing.sourceRunId) || null),
+        sourceUrl: e.sourceUrl != null ? str(e.sourceUrl) : ((existing && existing.sourceUrl) || ''),
+        sourceDigest: e.sourceDigest != null ? str(e.sourceDigest) : ((existing && existing.sourceDigest) || ''),
+        sourceFetchedAt: e.sourceFetchedAt != null ? num(e.sourceFetchedAt) : ((existing && existing.sourceFetchedAt) || 0),
+        sourceVersion: e.sourceVersion != null ? str(e.sourceVersion) : ((existing && existing.sourceVersion) || ''),
+        sourceAuthor: e.sourceAuthor != null ? str(e.sourceAuthor) : ((existing && existing.sourceAuthor) || ''),
+        sourceLicense: e.sourceLicense != null ? str(e.sourceLicense) : ((existing && existing.sourceLicense) || ''),
         createdAt: existing ? existing.createdAt : t,
         updatedAt: t,
         lastUsedAt: existing ? existing.lastUsedAt : null,
@@ -535,7 +560,7 @@
       write, manage, list, view, markUsed, curate, compact,
       all() { return Array.from(latest.values()).map(s => projectSkill(s, true)); },
       count() { return latest.size; },
-      _internals: { slug, keyOf, supportPath, cleanName, normalizeEntry, bumpView }
+      _internals: { slug, keyOf, supportPath, cleanName, normalizeEntry, bumpView, trustSource }
     };
   }
 

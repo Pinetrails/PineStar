@@ -949,6 +949,19 @@ const Harness = (() => {
       return { ok: false, error: (j && j.error) || 'could not record that decision' };
     } catch (e) { return { ok: false, error: 'the station did not answer' }; }
   }
+  async function skillExchangePost(path, body) {
+    try {
+      const r = await fetch('/api/skill-exchange/' + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok) return j || { ok: true };
+      return { ok: false, error: (j && j.error) || 'the skill exchange refused that request' };
+    } catch (e) { return { ok: false, error: 'the station did not answer' }; }
+  }
+  function skillExchangeInspect(url) { return skillExchangePost('inspect', { url }); }
+  function skillExchangeInstall(o) { return skillExchangePost('install', o); }
+  function skillExchangeCheck(o) { return skillExchangePost('check', o); }
 
   async function memoryRecords(agentId) {
     try {
@@ -1064,6 +1077,7 @@ const Harness = (() => {
     studyProposals,
     threadProposals, threadTurnin,
     agentSkills, agentSkillsRead, agentSkillManage, agentSkillAllow,
+    skillExchangeInspect, skillExchangeInstall, skillExchangeCheck,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

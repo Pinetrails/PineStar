@@ -2449,11 +2449,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const frag = html => (el => { el.innerHTML = html; });
     const sections = [
       { id: 'library', label: 'SKILL LIBRARY', glyph: '▤', desc: 'Pre-installed procedures your agents follow when a task matches, grouped by kind.', build: frag(secLibrary) },
-      { id: 'agent', label: 'AGENT SKILLS', glyph: '✎', desc: 'Procedures this agent created or learned itself.', build: frag(secAgent) }
+      { id: 'agent', label: 'AGENT SKILLS', glyph: '✎', desc: 'Procedures this agent created or learned itself.', build: frag(secAgent) },
+      { id: 'exchange', label: 'SKILL EXCHANGE', glyph: '⇩', desc: 'Inspect and install open SKILL.md procedures with provenance and guard review.', build: frag(secExchange) }
     ];
     function wire() {
       loadSkillLibrary(agentId);
       loadAgentSkills(agentId);
+      wireSkillExchange(agentId);
       wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
     }
     return { sections, wire };

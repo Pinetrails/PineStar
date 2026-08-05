@@ -2343,6 +2343,32 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .sk-card.held .sk-toggle { color: var(--warn); border-color: var(--warn); }
 .sk-attr.sk-held { opacity: 0.95; font-style: normal; color: var(--warn); letter-spacing: 0.3px; line-height: 1.4; }
 
+/* SKILL EXCHANGE — inspect-first distribution. Provenance is allowed to wrap instead of truncating:
+   the URL and digest are the evidence that the preview and installed bytes are the same artifact. */
+.sk-exchange-form { margin: 12px 0 10px; }
+.sk-exchange-form label { display: block; margin-bottom: 5px; color: var(--gold); font-size: 10px; letter-spacing: 1.8px; }
+.sk-exchange-row { display: flex; align-items: stretch; gap: 7px; }
+.sk-exchange-row input[type=url] { min-width: 0; font-size: 14px; padding: 7px 9px; }
+.sk-exchange-row .consent-btn { flex: 0 0 auto; margin: 0; }
+.sk-exchange-preview { margin-top: 8px; }
+.sk-prov { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; margin: 0 0 6px; font-size: 10.5px; line-height: 1.35; }
+.sk-prov > span { color: var(--gold); letter-spacing: 0.8px; }
+.sk-prov a, .sk-prov code { color: var(--ph); font: inherit; overflow-wrap: anywhere; word-break: break-word; }
+.sk-prov a:hover { color: var(--ph-bright); }
+.sk-prov + .sk-body pre, .sk-prov ~ pre { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--ph-faint); }
+.sk-exchange-note { margin-top: 9px; padding: 7px 8px; border: 1px solid var(--ph-faint); background: rgba(0,0,0,.22); font-size: 11px; line-height: 1.4; }
+.sk-exchange-note.ok, .sk-exchange-done { color: var(--ok); border-color: var(--ok); }
+.sk-exchange-note.warn { color: var(--warn); border-color: var(--warn); }
+.sk-exchange-note.bad { color: var(--danger); border-color: var(--danger); }
+.sk-exchange-done { padding: 10px; border: 1px solid; font-size: 12px; letter-spacing: .4px; }
+.sk-update-slot:empty { display: none; }
+.sk-update-slot:not(:empty) { margin-top: 10px; }
+.sk-update-slot .sk-card { margin: 0; }
+@media (max-width: 620px) {
+  .sk-exchange-row { flex-direction: column; }
+  .sk-prov { grid-template-columns: 1fr; gap: 2px; }
+}
+
 /* SKILLS redesign (legibility) — a real ON/OFF pill SWITCH (the user's choice) + a SEPARATE readiness chip (the
    floor's grant), so the two axes never collapse into one ambiguous string. State sections group the library by
    READY / NEEDS GEAR / OFF; the PLACE button deep-links a locked card's missing gear into the real REFIT surface. */

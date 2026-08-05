@@ -41,6 +41,13 @@
     return Object.prototype.hasOwnProperty.call(ACTION_RANK, k) ? ACTION_RANK[k] : ACTION_RANK.block;
   }
   function worseAction(a, b) { return rankOf(a) >= rankOf(b) ? (str(a) || 'allow') : (str(b) || 'allow'); }
+  function trustSource(createdBy) {
+    const source = str(createdBy).trim().toLowerCase();
+    if (source === 'user') return 'user';
+    if (source === 'community' || source === 'skill-exchange') return 'community';
+    if (source === 'builtin' || source === 'trusted') return source;
+    return 'agent-created';
+  }
 
   /* digestOf — a stable content fingerprint over everything the guard actually scans (body,
      setup, and every support file), so an approval is bound to the content that was reviewed.
@@ -121,7 +128,7 @@
     function liveScan(skill) {
       try {
         if (!guard || typeof guard.scanSkillRecord !== 'function' || typeof guard.shouldAllow !== 'function') return null;
-        const scan = guard.scanSkillRecord(skill, { source: str(skill.createdBy) === 'user' ? 'user' : 'agent-created' });
+        const scan = guard.scanSkillRecord(skill, { source: trustSource(skill.createdBy) });
         const policy = guard.shouldAllow(scan, { allowAsk: true });
         return { action: (policy && policy.action) || 'allow', scan };
       } catch (_) { return null; }

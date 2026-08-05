@@ -1,5 +1,42 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-04 — SKILL ECOSYSTEM 9/10, S1 TRUSTWORTHY DIRECT DISTRIBUTION (`agent/skill-ecosystem-9`)
+
+IN PROGRESS CANDIDATE. The first execution slice of `docs/SKILL_ECOSYSTEM_9.md` adds the missing trusted
+ingress from an open `SKILL.md` into StarNet's existing learning lifecycle. A new SKILL EXCHANGE console
+accepts public HTTPS and GitHub file URLs, reuses the station's URL/DNS/redirect guards, parses the open
+Agent Skills shape, scans community content, and displays source, SHA-256, full instructions, and bounded
+finding summaries before any write. Inspection freezes exact bytes in a short-lived stage; installation
+cannot refetch different content. Dangerous packages are refused, cautions install quarantined, and the
+Commander's existing digest-bound approval gate remains the only path from quarantine into model context.
+
+Imported skills retain source URL/digest/version/author/license/fetch time in the ordinary durable skill
+record and inspectable package frontmatter. Agent Skills shows that provenance and can check the original
+source; changed bytes get a second full preview before an update edits in place. The live proof exposed a
+historical 20k body clamp that could pair an upstream digest with truncated local instructions. The store
+now matches the 256k package ceiling, and a regression pins intact long-document round trips.
+
+Focused proof is green: exchange core 24 assertions, skill lifecycle 128, gate 96, real authenticated
+sidecar exchange 20, the selected HTTP manifest 154, and website mirror 8. The first committed full-fast run
+correctly caught stale candidate-bound frontend hashes; `b8c25898` regenerated only the seven expected
+release-surface fields and the claims authority is now 64 assertions green. A full retry then passed steps
+1-517 and failed the code-mode nested-dispatch deadline at step 518; that suite passed 26 assertions alone,
+and the final two recovery steps passed 54 and 14 alone. The latest HTTP retry passed 24 suites before the
+LOOP E2E sidecar missed its 12-second boot deadline and reproduced that timeout alone. Earlier attempts also
+hit unrelated LOOP-git/parallel-tools/Codex-sign-in timing failures that passed alone. Canonical gates remain
+non-green on this heavily loaded host, so these isolated receipts are not treated as a waiver and the branch
+remains unmerged pending a clean run.
+
+Attended seeded proof installed Anthropic's official `skill-creator` from raw GitHub. The running UI showed
+the complete 32,624-character body, source SHA-256, bounded guard summary, quarantine status, source link,
+and update control; disk inspection after the real restart showed all 32,624 characters, the same upstream
+digest, `guardAction=ask`, and the preserved URL. No model/provider call, credential mutation, external
+message/write, integration-tree edit, push, PR, deploy, tag, or publication occurred.
+
+S1 materially improves the distribution score but does not claim the final 9/10. S2–S4 remain: complete
+multi-file package fidelity, well-known/registry discovery and taps, standards-compatible export/publish,
+generation rollback/local-fork truth, quality metrics, and the final ≥90 weighted certification.
+
 ## 2026-08-04 — COMPLETE STATION DISASTER RECOVERY P0 (`agent/disaster-recovery-p0`)
 
 READY TO MERGE. StarNet now has a versioned, offline complete-station recovery bundle and operator CLI.

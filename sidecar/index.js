@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
+const dns = require('node:dns');
 
 const { runAgentLoop } = require('./loop.js');
 const DomainTask = require('./domain-task.js');
@@ -231,6 +232,8 @@ const runtimeSkills = require('./skills/runtime.js');       // runtime-created s
 const skillPackages = require('./skills/package.js');       // package-backed SKILL.md mirror for runtime skills
 const skillGuard = require('./skills/guard.js');            // guard scanner for runtime/external skill packages
 const { makeSkillGate, digestOf: skillDigestOf } = require('./skills/gate.js');   // the CONSUMER of that verdict: may the model read this skill?
+const { makeSkillExchange } = require('./skills/exchange.js');
+const { makeSkillDocumentFetcher } = require('./skills/exchange-fetch.js');
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
@@ -1006,6 +1009,21 @@ function persistSkillApprovals(next) {
 const skillGate = makeSkillGate({
   guard: skillGuard,
   approvals: { get: (agentId, id) => skillApprovals[String(agentId) + '\x00' + String(id)] || null }
+});
+// SKILL EXCHANGE: the existing web guard owns public-host validation; the exchange adds HTTPS-only,
+// bounded markdown fetching and an inspect-before-install stage. No external bytes enter skillStore
+// until the Commander has received the exact digest + body + guard verdict.
+const skillWebInternals = makeWebTools({})._internals;
+const fetchSkillDocument = makeSkillDocumentFetcher({
+  fetchImpl: globalThis.fetch,
+  assertSafeUrl: skillWebInternals.assertSafeUrl,
+  assertResolvedSafe: skillWebInternals.assertResolvedSafe,
+  lookup: (host) => dns.promises.lookup(host, { all: true })
+});
+const skillExchange = makeSkillExchange({
+  fetchDocument: fetchSkillDocument, skillStore, guard: skillGuard,
+  hash: (text) => crypto.createHash('sha256').update(String(text), 'utf8').digest('hex'),
+  now: () => Date.now(), makeId: () => crypto.randomBytes(16).toString('hex')
 });
 // BOOT COMPACTION: when skills.jsonl has grown past a threshold, rewrite it to one line per (agentId,name) so
 // view-bump churn + repeated edits can't grow it without bound. Runs AFTER the store loaded `latest`, so the
@@ -7058,6 +7076,9 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/slash/catalog', h: serveSlashCatalog },
   { m: 'POST', exact: '/api/slash/dispatch', h: handleSlashDispatch },
   { m: 'POST', exact: '/api/skills/toggle', h: handleSkillToggle },
+  { m: 'POST', exact: '/api/skill-exchange/inspect', h: handleSkillExchangeInspect },
+  { m: 'POST', exact: '/api/skill-exchange/install', h: handleSkillExchangeInstall },
+  { m: 'POST', exact: '/api/skill-exchange/check', h: handleSkillExchangeCheck },
   { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
   { m: 'POST', exact: '/api/agent-skills/allow', h: handleAgentSkillAllow },   // the Commander's review decision on a guard-withheld skill
   { m: 'GET', prefix: '/api/agent-skills', h: serveAgentSkills },
@@ -10625,6 +10646,41 @@ async function handleSkillToggle(req, res) {
   const r = skillPrefs.set(slug, !!body.enabled);
   if (!r.ok) return json(400, { error: r.error || 'could not save' });
   json(200, { ok: true, slug: r.slug, enabled: r.enabled });
+}
+
+// The exchange is deliberately POST-only: inspecting a URL performs a bounded network read and creates
+// an expiring staged artifact. Installation consumes that artifact; it never re-fetches behind the review.
+async function handleSkillExchangeInspect(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res);
+  if (!body) return;
+  try { return json(200, { ok: true, preview: await skillExchange.inspect({ url: body.url }) }); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not inspect that skill' }); }
+}
+async function handleSkillExchangeInstall(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res);
+  if (!body) return;
+  const agentId = String(body.agentId || 'agent');
+  if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try {
+    const result = skillExchange.install({
+      agentId, inspectionId: body.inspectionId, sourceDigest: body.sourceDigest
+    });
+    const live = skillStore.view(agentId, result.skill.id, { includeArchived: true, bump: false }) || result.skill;
+    result.skill = skillGate.annotate([live], { verify: true })[0];
+    chanEmit('deliverable', { id: result.skill.id, agentId, kind: 'skill', title: result.skill.name });
+    return json(200, result);
+  } catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not install that skill' }); }
+}
+async function handleSkillExchangeCheck(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res);
+  if (!body) return;
+  const agentId = String(body.agentId || 'agent');
+  if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { return json(200, { ok: true, preview: await skillExchange.check({ agentId, id: body.id }) }); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not check for updates' }); }
 }
 
 // GET /api/agent-skills?agent=<id>&archived=1&body=1 - runtime-created skills for the selected agent.
