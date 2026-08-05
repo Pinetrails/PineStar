@@ -98,6 +98,9 @@ function stationWith(types) {
   A.ok(/function buildConnectors/.test(station), 'buildConnectors builder preserved');
   A.ok(/setupSpotify\(body\)/.test(station), 'Spotify wiring preserved');
   A.ok(/id="sp-connect"/.test(station) && /id="sp-status"/.test(station) && /id="sp-disconnect"/.test(station), 'Spotify ids preserved');
+  A.ok(/Harness\.api\.post\('\/api\/spotify\/disconnect'\)[\s\S]{0,500}!out\.ok/.test(station), 'Spotify disconnect UI requires a confirmed 2xx response');
+  A.ok(/Spotify was NOT disconnected/.test(station), 'Spotify disconnect UI names a refused change honestly');
+  A.ok(/handleSpotifyDisconnect[\s\S]{0,500}spotifyJson\(res, 500, \{ ok: false/.test(idx), 'Spotify disconnect route fails when durable clear fails');
   // mc-command/mc-args/mc-cwd/mc-env were withdrawn 2026-07-24 (stdio can never connect on this host —
   // see connectors-ui.test.js); this guard is about the form surviving a retitle/reorg, so it pins mc-url.
   A.ok(/id="mc-transport"/.test(station) && /id="mc-url"/.test(station) && /id="mc-timeout"/.test(station), 'MCP form ids preserved');

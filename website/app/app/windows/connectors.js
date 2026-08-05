@@ -1064,8 +1064,23 @@
       } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
     });
     disconnectBtn.addEventListener('click', async () => {
-      try { await Harness.api.post('/api/spotify/disconnect'); } catch (_) {}
-      clearInterval(pollTimer); msgEl.textContent = 'disconnected'; notify('Spotify disconnected'); sfx('click'); refreshStatus();
+      disconnectBtn.disabled = true;
+      try {
+        const out = await Harness.api.post('/api/spotify/disconnect');
+        if (!out.ok || !out.j || out.j.ok === false) {
+          const why = (out.j && out.j.error) || 'the station did not confirm the change';
+          msgEl.textContent = '✕ ' + why;
+          notify('Spotify was NOT disconnected', 'warn'); sfx('bad');
+          return;
+        }
+        clearInterval(pollTimer); msgEl.textContent = 'disconnected'; notify('Spotify disconnected'); sfx('click');
+      } catch (_) {
+        msgEl.textContent = '✕ could not reach the station — Spotify was not disconnected';
+        notify('Spotify was NOT disconnected', 'warn'); sfx('bad');
+      } finally {
+        disconnectBtn.disabled = false;
+        refreshStatus();
+      }
     });
     refreshStatus();
   }

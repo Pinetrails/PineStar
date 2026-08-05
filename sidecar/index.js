@@ -8284,8 +8284,12 @@ async function handleSpotifyStatus(req, res) {
 }
 
 async function handleSpotifyDisconnect(req, res) {
-  let st; try { st = await spotifyStore.clear(); } catch (_) { st = { connected: false }; }
-  spotifyJson(res, 200, Object.assign({ ok: true }, st));
+  try {
+    const st = await spotifyStore.clear();
+    spotifyJson(res, 200, Object.assign({ ok: true }, st));
+  } catch (_) {
+    spotifyJson(res, 500, { ok: false, error: 'Spotify could not be disconnected because the change was not saved. Your connection is unchanged; retry.' });
+  }
 }
 
 /* ----------------------------- /api/cron: the ROUTINES CRUD + preview + run-now -----------------------------
