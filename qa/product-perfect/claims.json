@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5f2fc379ceb6ae45c4ec2bfa888f09bf863ee623",
+    "sourceCommit": "a0d30616e75454410e0b50c177e004bfaeb7ebbf",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 151947,
-        "sha256": "04195ced1f85ab76f1b461ebbf105c5f9019d1c8465448a14d51bad764e68393"
+        "bytes": 168808,
+        "sha256": "6a6bf318015384bda998bad627f592ceb61060d01e6859f5924ee4b2a01574c5"
       },
       {
         "path": "frontend/app/channels.js",
@@ -413,8 +413,8 @@
       },
       {
         "path": "frontend/app/pipeline.js",
-        "bytes": 37761,
-        "sha256": "99f8dca63417c45a897264af164457c8d7536244bb53a791dda83cda7f4bce72"
+        "bytes": 41472,
+        "sha256": "6303d7fe3797b4a9470c1df80ead4d35779a58f42b61011c45ab3157e0217d28"
       },
       {
         "path": "frontend/app/pitch.js",
@@ -908,13 +908,13 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 502937,
-        "sha256": "cc6bde369e87f76ba20abae16874f9b7afb25228bdf80dbc788e2fcd6814748d"
+        "bytes": 504358,
+        "sha256": "71e6800cdee66229d51586ee6e4aa06f1bdffc0f91d8f3244e0e49cd33221bf7"
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 87987,
-        "sha256": "501f7f90a9018cd0a9d22140241ca418e66f23dce8fe74f0b1ca1aba42f149be"
+        "bytes": 89736,
+        "sha256": "f42315b358679573fb19fa43a38924210d83b49f8c9e8e7ca0318483dad32a26"
       },
       {
         "path": "frontend/app/xp.js",
@@ -963,8 +963,8 @@
       },
       {
         "path": "frontend/css/refit.css",
-        "bytes": 6094,
-        "sha256": "7ee2fb355b5d0845c5750e1f1e0f43256633333514647c6eadf66fe4f41c51d4"
+        "bytes": 7817,
+        "sha256": "62fd286b72090a862ff93b10493305edbf802c5d7739de78423b901f681ab302"
       },
       {
         "path": "frontend/css/safety.css",
