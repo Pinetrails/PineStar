@@ -85,15 +85,22 @@ and dwell there (`world.js planProp` → `PropAnchor.deriveAnchor` → `goal:'us
 scenery an agent will never touch, which is what 102 of the 108 props were until 2026-07-29 — the
 station was full of pool tables and vending machines nobody used.
 
-- `kind` is a free string. Only three values are special-cased anywhere: `couch`/`tv` (paired by
-  `tryLounge` into the sit-and-watch beat) and `arcade` (the clickable minigame hit-test). **Every
-  other kind needs no engine change at all** — `planProp` handles any of them generically, so adding a
-  leisure prop is a catalog edit. `world.js USE_LINE` optionally maps a kind to a flavour thought; a
-  kind with no entry simply says nothing.
-- `sit: true` seats the body; `approach` biases which edge it walks to (`'auto'` tries all four).
+- `kind` is a free string. Only four values are special-cased anywhere: `couch`/`tv` (paired by
+  `tryLounge` into the watch-the-screen beat), `seat` (`planSeat`, below) and `arcade` (the clickable
+  minigame hit-test). **Every other kind needs no engine change at all** — `planProp` handles any of
+  them generically, so adding a leisure prop is a catalog edit. `world.js USE_LINE` optionally maps a
+  kind to a flavour thought; a kind with no entry simply says nothing.
+- **SEAT LAW (2026-08-04): `sit: true` belongs to `kind: 'seat'` and nothing else.** The sit sprite is a
+  chair pose, so it may only fire where a seat is actually under the body: the agent's own workstation
+  chair (goal `work`) and the single-tile seat props, STOOL and CHAIR. `planSeat` claims one
+  (`occupiedSeats`), walks the body to an adjacent tile, then renders it ON the seat's tile and sorts the
+  seat art just *behind* it. Couch, bed and beanbag carried `sit: true` until 2026-08-04 and read as a
+  body parked bolt-upright on the furniture; they are now walk-to-and-STAND-at destinations. `approach`
+  biases which edge a non-seat prop walks to (`'auto'` tries all four).
 - **`kind: 'bed'` is also the power-down target.** `planBedSleep` claims the mattress through the same
-  `occupiedSeats` + `pendSeat` machinery a couch cushion uses (one sleeper per bed) and `sleep()` falls
-  back to going dormant standing when no bed is reachable in-zone. Anything that wakes a sleeper must
+  `occupiedSeats` machinery a couch cushion uses (one sleeper per bed) and `sleep()` falls back to going
+  dormant standing when no bed is reachable in-zone — the body now goes dormant **standing beside** the
+  bunk either way, so the bed changes only WHERE it powers down. Anything that wakes a sleeper must
   `releaseSeat()`/`seizeFromIdle()` or the bed is blocked for the session — there are four such sites.
 
 ## Drawing a new prop — the two things that bite

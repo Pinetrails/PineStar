@@ -491,7 +491,7 @@
         // this door opens the PROVIDERS section (there is no "store") — name it truthfully with a CRT glyph.
         return { label: '▸ OPEN PROVIDERS', run: () => openSettings('providers') };
       case 'skills':
-        return { label: '✦ Open SKILLS', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); } catch (_) {} } };
+        return { label: '✦ OPEN SKILL LIBRARY', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); } catch (_) {} } };   // 'skills' aliases into ABILITIES ▸ SKILL LIBRARY (NAV CONDENSE 2)
       default:
         return null;
     }

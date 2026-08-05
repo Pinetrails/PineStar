@@ -1,43 +1,41 @@
-/* STARNET — windows/logbook.js : the LOGBOOK window (extracted verbatim from stationui.js).
-   Loads AFTER stationui.js (see index.html) and registers itself via StationUI.registerWindow;
-   the only stationui internals it touches are the enumerated StationUI.h helper surface
-   (mountConsole, the shared per-agent roster switcher, and the live present/sel views). */
+/* STARNET — windows/logbook.js : the LOGBOOK lane of the AGENT DOSSIER (extracted from stationui.js).
+   NAV CONDENSE 2 (2026-08-04): the LOGBOOK is agent-scoped, so it lives where the agent lives — a
+   section of the dossier instead of a SYSTEM-dock window. This file registers a DossierLane
+   ((body)=>({sections,wire})); stationui's buildAgents mounts the section and runs wire() after its
+   own console mount. The dossier's roster rail drives agent switching (this lane reads the live
+   H.present/H.sel views on every rebuild), so the old rail-top roster switcher is gone. */
 'use strict';
 (() => {
-  if (typeof StationUI === 'undefined' || !StationUI.registerWindow) return;
+  if (typeof StationUI === 'undefined' || !StationUI.h) return;
   const H = StationUI.h;
-  const esc = H.esc, fmtRel = H.fmtRel, mountConsole = H.mountConsole;
-  const rosterSwitchHtml = H.rosterSwitchHtml, wireRosterSwitch = H.wireRosterSwitch;
+  const esc = H.esc, fmtRel = H.fmtRel;
 
   /* ============== LOGBOOK — the reviewable run-history + SLAG post-mortems (the durable record) ==============
      Two read-only surfaces the audit found were written-but-never-read: RUNS folds the append-only run-history
      logbook (GET /api/runs — every finished run's outcome/reason), and SLAG renders World.slagLog() — the
      unproductive-run post-mortems (cause + fix) that used to live only as a fading toast. (WIRING_AUDIT P7.) */
   const LB_REASON = { done: '✓ done', max_iters: '⟳ looped out', budget: 'over budget', cancelled: '⏹ cancelled', error: '✕ error', refusal: '⊘ refused' };
-  function buildLogbook(body) {
+  function logbookLane(body) {
     const a = H.present[H.sel] || {};   // live core state via the h getters
     const agentId = a.id || 'agent';
     const nm = a.name || agentId;   // the LOGBOOK is agent-scoped — name it, don't imply a station-wide record
-    // CONSOLE MODE: RUNS · SLAG · INSIGHTS as three sections instead of an inline tab strip. Each section owns its
-    // OWN list host (#lb-list / #lb-slag / #lb-insights) so a mid-fetch close of one can't overwrite another. The
-    // per-section desc carries the honest copy #lb-about used to hold. mountConsole appends its host to `body`, so
-    // the section-scoped body.querySelector loads below resolve against the mounted panes.
-    const frag = h => (el => { el.innerHTML = h; });
-    mountConsole(body, 'logbook', [
-      { id: 'runs', label: 'RUNS', glyph: '▦', desc: 'Real work by ' + nm + ', newest first — runs that used tools, produced files, or failed. Chat-only replies are folded at the bottom.',
-        build: frag('<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>') },
-      { id: 'slag', label: 'SLAG — DEAD RUNS', glyph: '⚠', desc: 'Post-mortems for ' + nm + ' runs that ended without a deliverable, diagnosed into a real, fixable cause.',
-        build: frag('<div id="lb-slag" class="mc-list"><span class="loading pulse">loading…</span></div>') },
-      { id: 'insights', label: 'INSIGHTS', glyph: '◨', desc: 'Run totals, success rate, and model distribution for ' + nm + '.',
-        build: frag('<div id="lb-insights" class="mc-list"><span class="loading pulse">loading…</span></div>') }
-    ], {
-      // name the agent + a compact switcher at the top of the rail (mirrors the dossier roster) so it's never
-      // mistaken for "the station's event record" — it's THIS agent's run history.
-      railTop: (top) => {
-        top.innerHTML = '<div class="lb-agent-h">LOGBOOK · <b>' + esc(nm) + '</b></div>' + rosterSwitchHtml(agentId);
-        wireRosterSwitch(top, 'logbook');
-      }
-    });
+    // ONE dossier section, three stacked blocks (RUNS · SLAG · INSIGHTS) under the sub-header
+    // vocabulary the SKILL LIBRARY uses. Each block keeps its OWN host (#lb-list / #lb-slag /
+    // #lb-insights) so a mid-fetch agent switch can't write into a sibling's list.
+    const secLogbook =
+      '<div class="sec"><span class="sec-l">RUNS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<p class="sk-note">Real work by <b>' + esc(nm) + '</b>, newest first — runs that used tools, produced files, or failed. Chat-only replies are folded at the bottom.</p>' +
+      '<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
+      '<div class="sec"><span class="sec-l">SLAG — DEAD RUNS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<p class="sk-note">Post-mortems for runs that ended without a deliverable, diagnosed into a real, fixable cause.</p>' +
+      '<div id="lb-slag" class="mc-list"><span class="loading pulse">loading…</span></div>' +
+      '<div class="sec"><span class="sec-l">INSIGHTS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div id="lb-insights" class="mc-list"><span class="loading pulse">loading…</span></div>';
+    const sections = [
+      { id: 'logbook', label: 'LOGBOOK', glyph: '▦', desc: 'Run history for ' + nm + ' — real work, dead-run post-mortems, and outcome insights.',
+        build: (el => { el.innerHTML = secLogbook; }) }
+    ];
+    function wire() {
     const listEl = body.querySelector('#lb-list');
     function runRow(r) {
       const when = r.ts ? esc(fmtRel(new Date(r.ts).toISOString())) : '';
@@ -154,9 +152,13 @@
         const h = body.querySelector('#lb-insights'); if (h) h.innerHTML = insightsHtml(j);
       } catch (_) { const h = body.querySelector('#lb-insights'); if (h) h.innerHTML = '<div class="mc-detail">sidecar offline — start it to see insights.</div>'; }
     }
-    // all three panes exist up-front (mountConsole keeps them all in the DOM), so load each once — no tab gating.
+    // all three hosts exist up-front in the one section, so load each once — no tab gating.
     loadRuns(); loadSlag(); loadInsights();
+    }
+
+    return { sections, wire };
   }
 
-  StationUI.registerWindow('logbook', 'LOGBOOK', buildLogbook, { console: true });
+  window.DossierLanes = window.DossierLanes || [];
+  window.DossierLanes.push(logbookLane);
 })();

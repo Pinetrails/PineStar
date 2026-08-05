@@ -1,32 +1,34 @@
-/* STARNET — windows/rewind.js : the RESTORE POINTS (REWIND) window (extracted verbatim from stationui.js).
-   Loads AFTER stationui.js (see index.html) and registers itself via StationUI.registerWindow;
-   the only stationui internals it touches are the enumerated StationUI.h helper surface
-   (incl. the shared per-agent roster switcher + the live present/sel views). */
+/* STARNET — windows/rewind.js : the RESTORE lane of the AGENT DOSSIER (was the RESTORE POINTS window).
+   NAV CONDENSE 2 (2026-08-04): restore points are agent-scoped, so they live in the dossier — this
+   file registers a DossierLane ((body)=>({sections,wire})) that stationui's buildAgents mounts as a
+   RESTORE section. The dossier roster rail drives agent switching (the lane reads H.present/H.sel
+   on every rebuild), so the old in-window roster switcher is gone. */
 'use strict';
 (() => {
-  if (typeof StationUI === 'undefined' || !StationUI.registerWindow) return;
+  if (typeof StationUI === 'undefined' || !StationUI.h) return;
   const H = StationUI.h;
   const esc = H.esc, sfx = H.sfx, fmtRel = H.fmtRel, notify = H.notify;
-  const rosterSwitchHtml = H.rosterSwitchHtml, wireRosterSwitch = H.wireRosterSwitch;
 
   /* ============== REWIND — restore points (the execution-spine checkpoint net) ==============
      Every command an agent runs auto-saves a workspace snapshot FIRST; this lists them per agent and
      restores one with a two-step confirm. Server-owned (GET/POST /api/checkpoint); honest — only real
      snapshots show, and it says plainly when there are none yet. */
-  function buildRewind(body) {
+  function rewindLane(body) {
     const a = H.present[H.sel] || {};   // live core state via the h getters
     const agentId = a.id || 'agent';
     const nm = a.name || agentId;   // display NAME, never the raw id
-    body.innerHTML =
-      '<h4 class="ms-h">RESTORE POINTS — ' + esc(nm) + '</h4>' +
-      rosterSwitchHtml(agentId) +
+    const secRestore =
       '<p class="set-about">A snapshot of <b>' + esc(nm) + '</b>\'s workspace is auto-saved <b>before every command it runs</b> ' +
       '(and before file edits when checkpoints are on). Restoring rolls the workspace back and removes anything ' +
       'created since. <span class="dim">Use it to undo a bad change.</span></p>' +
       '<div class="mc-acts" style="margin:0 0 8px"><button class="bb xs" id="rw-refresh" title="re-read this agent\'s restore points">↻ REFRESH</button></div>' +
       '<div id="rw-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div id="rw-msg" class="msg"></div>';
-    wireRosterSwitch(body, 'rewind');
+    const sections = [
+      { id: 'restore', label: 'RESTORE', glyph: '↶', desc: 'Workspace restore points for ' + nm + ' — roll back to before a bad change.',
+        build: (el => { el.innerHTML = secRestore; }) }
+    ];
+    function wire() {
     const listEl = body.querySelector('#rw-list'), msgEl = body.querySelector('#rw-msg');
     function row(s) {
       const when = s.ts ? esc(fmtRel(new Date(s.ts).toISOString())) : '';
@@ -73,7 +75,11 @@
     const refreshBtn = body.querySelector('#rw-refresh');
     if (refreshBtn) refreshBtn.addEventListener('click', () => { sfx('click'); listEl.innerHTML = '<span class="loading pulse">loading…</span>'; refresh(); });
     refresh();
+    }
+
+    return { sections, wire };
   }
 
-  StationUI.registerWindow('rewind', 'RESTORE POINTS', buildRewind, { w: '520px' });
+  window.DossierLanes = window.DossierLanes || [];
+  window.DossierLanes.push(rewindLane);
 })();

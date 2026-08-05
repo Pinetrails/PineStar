@@ -181,6 +181,11 @@
       '<div id="ext-msg" class="msg"></div>';
 
     const frag = h => (el => { el.innerHTML = h; });
+    // NAV CONDENSE 2 (2026-08-04): the standalone SKILLS window merged in here — one window owns
+    // the whole "what agents can do" axis. stationui.js pushes its skill-library/agent-skills lane
+    // onto window.AbilityLanes ((body)=>({sections,wire}), the windows/automation.js shape); the
+    // lanes' sections mount in THIS console and their wire() runs after ours, against the same body.
+    const lanes = (window.AbilityLanes || []).map(fn => { try { return fn(body); } catch (_) { return null; } }).filter(l => l && Array.isArray(l.sections));
     // TOOLSETS first (audit finding 5): the dock button says TOOLSETS, so the panel must open on the tab it's
     // named for — a first click used to land on the CATALOG storefront, which read as "TOOLSETS = connectors".
     mountConsole(body, 'connectors', [
@@ -189,7 +194,8 @@
       { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'Every platform API key your agents hold, in one place — and a safe drop for any service the catalog doesn’t list.', build: frag(secKeys) },
       { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) },
       { id: 'extensions', label: 'EXTENSIONS', glyph: '⌥', desc: 'Your own hooks and plugins — code the station runs at fixed moments. Nothing runs until you approve it here.', build: frag(secExt) }
-    ], { search: true, searchPlaceholder: 'search toolsets, connectors & extensions…' });
+    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), { search: true, searchPlaceholder: 'search toolsets, connectors, skills & extensions…' });
+    lanes.forEach(l => { try { if (typeof l.wire === 'function') l.wire(); } catch (_) {} });
 
     /* ===== EXTENSIONS: hooks + plugins, straight off /api/hooks and /api/plugins =====
        TRUTHFUL TELEMETRY, strictly: every badge here reads a state the sidecar can prove. "active" means the

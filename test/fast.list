@@ -431,6 +431,7 @@ test/stationbake.chunk.test.js
 test/stationbake.materials.test.js
 test/conveyor.test.js
 test/pipeline.test.js
+test/blueprints.test.js
 test/routing.b5.test.js
 test/plan-poster.test.js
 test/chain.test.js
