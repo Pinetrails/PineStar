@@ -24,6 +24,7 @@ const Build = (() => {
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
     { id: 'belt', key: '7', label: '⇶ BELT', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
     { id: 'dupe', key: '8', label: '⧉ DUPE', hint: 'click a room or prop to copy it · then every click stamps a copy — mirror your build fast', cursor: 'copy' },
+    { id: 'line', key: '9', label: '⇉ LINES', hint: 'pick a STARTER LINE below, then click the deck — a whole working layout stamps at once, yours to edit', cursor: 'copy' },
   ];
   const SEEN_KEY = 'starnet.refit.seen';
   // machines the BELT tool connects with two clicks (mirrors worldmodel CONNECTABLE)
@@ -48,6 +49,9 @@ const Build = (() => {
     CHAIN_CYCLE: 'WORK LINE LOOPS — CUT ONE HANDOFF'
   };
   const esc = s => U.esc(s == null ? '' : s);   // one complete impl (escapes & < > " ' — value="…" attrs here stay injection-safe)
+  // THE ONE SENTENCE (2026-08-04 onramp): every self-introduction of the belt system leads with this.
+  // It also leads the INBOX catalog desc (propsprites.js) and the first-run guide card — keep them aligned.
+  const LINE_SENTENCE = 'Your floor is a flowchart — work arrives at the INBOX, every BAY is an agent doing one step, and the belts you draw are the order the work flows.';
 
   // camera: screen = world*zoom + pan   (world = bake-pixel space, 1 tile = TILE px)
   let zoom = 2, panX = 0, panY = 0;
@@ -60,6 +64,7 @@ const Build = (() => {
   let paintTarget = 'floor', wallMat = 'plating', wallStyle = 'follow';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
+  let lineType = 'research_line';   // LINES tool: the armed starter-line blueprint (WorldModel.BLUEPRINTS id)
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
   let propQuery = '';                   // palette SEARCH text: non-empty = browse the whole catalog flat, ignoring tier/cat
@@ -75,6 +80,7 @@ const Build = (() => {
     station = opts.getStation();
     if (!station) return;
     spaceHeld = false; drag = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
+    ridePending = false;   // the auto first-ride re-arms from THIS session's compile, never a stale one
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
@@ -104,6 +110,7 @@ const Build = (() => {
     connectFrom = null;   // never carry a half-made connection across sessions
     if (raf) cancelAnimationFrame(raf), raf = 0;
     clearTimeout(tipTimer); tipTimer = 0;
+    clearTimeout(rideTimer); rideTimer = 0; ridePending = false;   // a ride can't fire into a closed REFIT
     if (convey) convey.reset(), convey = null;
     propThumbs.length = 0; lastThumbTs = 0;   // free the preview tiles' canvases
     if (unsub) unsub(), unsub = null;
@@ -512,6 +519,42 @@ const Build = (() => {
         hueGrid.appendChild(b);
       });
       pal.appendChild(hueGrid);
+    } else if (tool === 'belt') {
+      /* THE ONE SENTENCE (belt-tool idle state): this palette used to be empty, so the first time a
+         user armed the BELT tool the system introduced itself with nothing. Lead with the model. */
+      paletteLabel = 'THE LINE';
+      const intro = document.createElement('div');
+      intro.className = 'refit-lineintro';
+      intro.textContent = LINE_SENTENCE;
+      pal.appendChild(intro);
+    } else if (tool === 'line') {
+      /* STARTER LINES — one-click whole layouts (the beginner onramp). Mirrors the prop-gallery
+         card idiom: a grid of dark inset tiles, each drawing a live schematic of its blueprint. */
+      paletteLabel = 'STARTER LINES';
+      const intro = document.createElement('div');
+      intro.className = 'refit-lineintro';
+      intro.textContent = LINE_SENTENCE + ' Stamp a working line, then make it yours.';
+      pal.appendChild(intro);
+      const grid = document.createElement('div'); grid.className = 'refit-linegrid';
+      grid.setAttribute('aria-label', 'Starter lines');
+      for (const bp of blueprints()) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'refit-linetile' + (bp.id === lineType ? ' active' : '');
+        b.dataset.line = bp.id;
+        b.setAttribute('aria-pressed', bp.id === lineType ? 'true' : 'false');
+        b.title = bp.desc;   // adopted by tooltip.js into the station card (never the OS bubble)
+        b.appendChild(lineSchematic(bp));
+        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = bp.label;
+        b.appendChild(nm);
+        b.onclick = () => { lineType = bp.id; renderPalette(); setHint(); sfx('click'); };
+        grid.appendChild(b);
+      }
+      pal.appendChild(grid);
+      const note = document.createElement('div');
+      note.className = 'refit-linenote';
+      note.textContent = 'BAYS STAMP EMPTY — CLICK EACH ONE TO ASSIGN AN AGENT · ONE UNDO REMOVES THE WHOLE LINE';
+      pal.appendChild(note);
     }
     if (label) label.textContent = paletteLabel || 'OPTIONS';
     if (section) section.classList.toggle('is-empty', !pal.children.length);
@@ -641,6 +684,71 @@ const Build = (() => {
     return c;
   }
 
+  /* ---------- STARTER LINES (blueprints): palette schematics + ghost + stamp ----------
+     The catalog lives in WorldModel.BLUEPRINTS (pure, headless-tested); everything here is
+     presentation + the same ghost/commit shape every other tool uses. */
+  const blueprints = () => (typeof WorldModel !== 'undefined' && WorldModel.BLUEPRINTS) || [];
+  const blueprintOf = id => { for (const b of blueprints()) if (b.id === id) return b; return null; };
+  // stamp centered under the cursor (a 17-tile line hung off the click point reads as a misfire)
+  const lineOrigin = (bp, tx, ty) => ({ x: tx - (bp.w >> 1), y: ty - (bp.h >> 1) });
+  // machine colours keyed to the roles the floor already teaches: intake amber, bay green, outbox
+  // bright green, junctions cyan — same family as the endpoint glow + validation callouts.
+  const LINE_COL = { intake: '#e8c860', bay: '#7ee2a8', outbox: '#3fd08a', filter: '#5ad0ff', splitter: '#5ad0ff', merger: '#5ad0ff' };
+  function lineSchematic(bp) {
+    const S = 7, PAD = 4;   // 7px per tile — the widest blueprint (17 tiles) still fits the dock
+    const c = document.createElement('canvas');
+    c.className = 'refit-linetile-cv';
+    c.width = bp.w * S + PAD * 2; c.height = bp.h * S + PAD * 2;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.translate(PAD, PAD);
+    for (const b of bp.belts) {   // belts first (floor machinery), a dim tread + a flow tick
+      x.fillStyle = 'rgba(140,180,200,0.28)';
+      x.fillRect(b.x * S, b.y * S + 1, S, S - 2);
+      x.fillStyle = 'rgba(200,235,255,0.65)';
+      const cx = b.x * S + S / 2, cy = b.y * S + S / 2;
+      if (b.d === 'E') x.fillRect(cx, cy - 1, 2, 2);
+      else if (b.d === 'W') x.fillRect(cx - 2, cy - 1, 2, 2);
+      else if (b.d === 'S') x.fillRect(cx - 1, cy, 2, 2);
+      else x.fillRect(cx - 1, cy - 2, 2, 2);
+    }
+    for (const p of bp.props) {
+      const col = LINE_COL[p.t] || '#9adcb0';
+      x.fillStyle = 'rgba(10,18,14,0.9)';
+      x.fillRect(p.x * S, p.y * S, p.w * S, p.h * S);
+      x.strokeStyle = col; x.lineWidth = 1;
+      x.strokeRect(p.x * S + 0.5, p.y * S + 0.5, p.w * S - 1, p.h * S - 1);
+      x.fillStyle = col;
+      x.fillRect(p.x * S + 2, p.y * S + 2, Math.max(1, p.w * S - 4), 1);   // a lit top edge — enough to read "machine"
+    }
+    return c;
+  }
+  // the ghost's rect set + validity at a cursor tile — same {rects, v} contract every ghost uses
+  function lineGhost(tx, ty) {
+    const bp = blueprintOf(lineType);
+    if (!bp) return null;
+    const o = lineOrigin(bp, tx, ty);
+    const rects = bp.props.map(p => ({ x1: o.x + p.x, y1: o.y + p.y, x2: o.x + p.x + p.w - 1, y2: o.y + p.y + p.h - 1 }))
+      .concat(bp.belts.map(b => ({ x1: o.x + b.x, y1: o.y + b.y, x2: o.x + b.x, y2: o.y + b.y })));
+    return { rects, v: station.canPlaceBlueprint(bp.id, o.x, o.y), kind: 'line', label: bp.label };
+  }
+  function stampLine(w, ev) {
+    const bp = blueprintOf(lineType);
+    if (!bp) return;
+    const o = lineOrigin(bp, w.tx, w.ty);
+    const res = station.stampBlueprint(bp.id, o.x, o.y);   // ONE undoable action — see worldmodel.stampBlueprint
+    if (res && res.ok) {
+      pushFlash(bp.props.map(p => ({ x1: o.x + p.x, y1: o.y + p.y, x2: o.x + p.x + p.w - 1, y2: o.y + p.y + p.h - 1 })), false);
+      sfx('chime');
+      flashTip(ev, bp.label + ' STAMPED — now click each BAY to assign an agent', true);
+      if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }
+      // belts just landed — the same first-touch coach a hand-laid run earns (points at ▸ TEST)
+      if (typeof Tutorial !== 'undefined' && Tutorial.onBeltPlaced) Tutorial.onBeltPlaced();
+    } else {
+      sfx('bad');
+      flashTip(ev, (res && res.msg) || 'needs clear deck — every tile on a room, nothing in the way', false);
+    }
+  }
+
   function selectTool(id) {
     tool = id; drag = null; connectFrom = null; dupe = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
@@ -690,10 +798,12 @@ const Build = (() => {
     g.innerHTML = `
       <div class="refit-guide-card">
         <h3>▮ BUILD YOUR STATION</h3>
+        <p class="refit-guide-lead">Your floor is a flowchart — work arrives at the <b>INBOX</b>, every <b>BAY</b> is an agent doing one step, and the belts you draw are the order the work flows.</p>
         <ul>
           <li><b>Drag</b> on the grid to place a <b>ROOM</b> — your agent walks the rooms you build.</li>
           <li>Place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, <b>assign an agent</b> — work for that agent lands at its dock.</li>
           <li>Wire it with <b>BELT (7)</b>: click one machine, then another. <span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked · <b>UNDO</b> anything.</li>
+          <li>Or stamp a whole working <b>STARTER LINE (9)</b> and edit it into your own.</li>
         </ul>
         <p style="opacity:.7;font-size:12px;margin:8px 0 0">Every prop &amp; mechanic is spelled out in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
@@ -1039,13 +1149,52 @@ const Build = (() => {
   }
   let _testN = 0;
   // fire one box per content tag at the INTAKE so you watch them SORT through your FILTERs to the right bays
-  function sendTestBoxes(ev) {
+  function sendTestBoxes(ev, auto) {
     if (!convey) return;
     const t = intakeBeltTile();
-    if (!t) { flashTip(ev, 'place an INBOX on a belt first', false); sfx('bad'); return; }
+    if (!t) { if (!auto) { flashTip(ev, 'place an INBOX on a belt first', false); sfx('bad'); } return; }
     for (const tag of ['code', 'research', 'general']) convey.enqueueAt(t.x, t.y, { workitemId: 'test-' + (++_testN), tag, preview: 'test ' + tag, test: true });
     note(t.x, t.y, '① OUTSIDE WORK ENTERS HERE (DMs · routines)', '#e8c860');
-    flashTip(ev, 'test work riding — watch the loop', true); sfx('click');
+    flashTip(ev, auto ? 'LINE COMPLETE — the first crate rides itself. ▸ TEST replays this any time' : 'test work riding — watch the loop', true);
+    sfx('click');
+  }
+
+  /* ---------- THE FIRST CRATE NARRATES ITSELF (2026-08-04 onramp) ----------
+     The first time this station's floor compiles COMPLETE in REFIT — an INTAKE lane actually
+     reaching a BOUND bay (valPlan.reach), which is the moment liveTiles first energize a full
+     route — the narrated ▸ TEST ride auto-runs once, unprompted. That is exactly the teachable
+     moment: the user just bound the agent that powered the line on. Once per station, persisted
+     in localStorage keyed by the station doc's createdAt (doc.meta is whitelisted-fields
+     territory in migrate() — a save-schema field for a UI one-shot is the wrong tool; localStorage
+     mirrors the SEEN_KEY idiom above and survives reloads the same way).
+     LAW (tutorial-audit 2026-08-03): anything coach-like stands down while the tutorial is
+     coaching — gate on Tutorial.isCoaching() and the `.refit-firstrun` card, NEVER `.refit-guide`
+     (the bay/flow/junction editors share that class; suppressing on it would kill the ride the
+     moment the bay picker that caused it closed). Gated attempts stay ARMED (ridePending) and
+     fire from the frame loop once the coach clears — a deferred ride must not need another edit
+     to re-trigger. A blueprint stamp alone can never fire this: its bays stamp unbound, so reach
+     stays false until an agent is truly bound. */
+  const RIDE_KEY = () => {
+    let k = 'default';
+    try { const d = station && station.doc && station.doc(); if (d && d.meta && d.meta.createdAt) k = String(d.meta.createdAt); } catch (e) {}
+    return 'starnet.refit.firstride.' + k;
+  };
+  function rideSeen() { try { return !!localStorage.getItem(RIDE_KEY()); } catch (e) { return true; } }   // broken storage → never risk a repeat
+  function markRide() { try { localStorage.setItem(RIDE_KEY(), '1'); } catch (e) {} }
+  let ridePending = false, rideTimer = 0;
+  function maybeFirstRide() {
+    if (ridePending || !valPlan || !valPlan.reach) return;
+    if (rideSeen()) return;
+    let complete = false;
+    for (const a in valPlan.reach) if (valPlan.reach[a]) { complete = true; break; }
+    if (!complete || !intakeBeltTile()) return;   // complete = an intake lane reaches a bound bay
+    ridePending = true;   // armed — frame() fires it once nothing coach-like is up
+  }
+  function fireFirstRide() {
+    ridePending = false;
+    // a beat after the bind flash so the two tips don't stomp each other mid-read. The flag is
+    // consumed WHEN THE RIDE ACTUALLY RUNS — closing REFIT inside the beat keeps the one shot.
+    rideTimer = setTimeout(() => { rideTimer = 0; if (running && convey) { markRide(); sendTestBoxes(null, true); } }, 700);
   }
   // render the stage captions: VT323 phosphor, brief rise + fade, world coords (drawn after the boxes)
   function drawTestNotes(now, t) {
@@ -1202,6 +1351,10 @@ const Build = (() => {
     } else if (tool === 'dupe') {
       // click-only tool: first click COPIES what's under the cursor, every later click STAMPS a copy
       if (dupe) stampDupe(w, ev); else pickupDupe(w, ev);
+      return;
+    } else if (tool === 'line') {
+      // click-only tool: the armed starter line stamps under the cursor (the ghost already showed it)
+      stampLine(w, ev);
       return;
     } else if (tool === 'move') {
       const pid = station.propAt(w.tx, w.ty);   // props sit on top of rooms — move them first
@@ -1498,7 +1651,7 @@ const Build = (() => {
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'y' || ev.key === 'Y')) { ev.preventDefault(); sfx(station.redo().ok ? 'click' : 'bad'); return; }
     if (ev.key === 'f' || ev.key === 'F') { fitCamera(); return; }
-    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt', '8': 'dupe' };
+    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt', '8': 'dupe', '9': 'line' };
     if (map[ev.key]) selectTool(map[ev.key]);
   }
   function onKeyUp(ev) { if (ev.key === ' ') { spaceHeld = false; setCursor(); } }
@@ -1530,6 +1683,8 @@ const Build = (() => {
     if (!drag) {
       // DUPE armed: the copy ghosts under the cursor with no drag — every click stamps
       if (tool === 'dupe' && dupe && hoverTile) return dupeGhost(hoverTile.tx, hoverTile.ty);
+      // LINES armed: the whole blueprint ghosts under the cursor — click stamps, red stays red
+      if (tool === 'line' && hoverTile) return lineGhost(hoverTile.tx, hoverTile.ty);
       return null;
     }
     if (drag.mode === 'draw') {
@@ -1587,6 +1742,7 @@ const Build = (() => {
         for (const k in lv) { const p = k.split(','); valLive[(+p[0] + o.tx) + ',' + (+p[1] + o.ty)] = true; }
       }
       planDirty = false;
+      maybeFirstRide();   // a floor edit just recompiled the plan — the line may have just powered on
     }
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
@@ -1598,6 +1754,8 @@ const Build = (() => {
       bakeDirty = true; bakeVisibleOnly = true;
     }
     if (bakeDirty || !cache) rebake();
+    // an armed first ride waits out the tutorial + the first-run card (.refit-firstrun, never .refit-guide)
+    if (ridePending && !tutorialCoaching() && !(root && root.querySelector('.refit-firstrun'))) fireFirstRide();
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -1961,6 +2119,7 @@ const Build = (() => {
     // live readout: dimensions while placing/sizing; the reason when blocked
     const r0 = g.rects[0], w = r0.x2 - r0.x1 + 1, h = r0.y2 - r0.y1 + 1;
     let dims = g.belt ? ('belt → ' + g.dir + ' · ' + Math.max(w, h) + ' long')
+      : g.kind === 'line' ? (g.label + ' — click to stamp')
       : g.move ? ('move ' + (g.dx >= 0 ? '+' : '') + g.dx + ',' + (g.dy >= 0 ? '+' : '') + g.dy)
       : (tool === 'hall' ? (Math.max(w, h) + ' long × ' + Math.min(w, h)) : (w + '×' + h));
     showTip(ok ? dims : (dims + ' · ' + ((g.v && g.v.msg) || 'blocked')), ok);
@@ -1983,7 +2142,7 @@ const Build = (() => {
   function hideTip() { if (tip) tip.style.display = 'none'; }
   let tipTimer = 0;
   function flashTip(ev, text, ok) {
-    lastClient = { x: ev.clientX, y: ev.clientY };
+    if (ev) lastClient = { x: ev.clientX, y: ev.clientY };   // ev-less callers (the auto first ride) anchor at the last pointer spot
     showTip(text, ok); clearTimeout(tipTimer);
     tipTimer = setTimeout(hideTip, 1300);
   }
