@@ -172,6 +172,110 @@ async function main() {
       console.log('shot', await capture(cdp, OUT, 'abilities-place-refit'));
     }
 
+    // ---- the CROSS-WINDOW routes. These are the two front-door answers that leave ABILITIES, and
+    //      they take a different code path from the in-console tab jumps (openTerm, not a rail click),
+    //      so a passing in-console probe says nothing about them.
+    if (!ONLY) {
+      const crossProbe = await evalJS(cdp, `(() => {
+        const r = {};
+        const titleOf = () => { const t = document.querySelector('#terms .term:last-child .term-title, #terms .term:last-child .tt-label');
+          return t ? t.textContent.trim() : '(none)'; };
+        const openKeys = () => Object.keys(window.__ABIL_OPEN__ || {});
+        StationUI.openTerm('connectors');
+        document.querySelector('.ab-route[data-ab-term="messaging"]').click();
+        r.channels = { termCount: document.querySelectorAll('#terms .term').length, title: titleOf() };
+        StationUI.openTerm('connectors');
+        document.querySelector('.ab-route[data-ab-term="settings"]').click();
+        r.settings = { termCount: document.querySelectorAll('#terms .term').length, title: titleOf(),
+          // the section arg must land the settings rail ON providers, not just open the window
+          providersActive: !!document.querySelector('#con-tab-settings-providers.active') };
+        return r;
+      })()`);
+      console.log('CROSS-WINDOW PROBE', JSON.stringify(crossProbe));
+
+      // ---- KEYS pick-a-platform: the cards were re-gridded, so re-prove a click still PREFILLS.
+      await evalJS(cdp, `StationUI.openTerm('connectors')`);
+      await sleep(500);
+      const pickProbe = await evalJS(cdp, `(() => {
+        document.querySelector('#con-tab-connectors-keys').click();
+        const card = document.querySelector('#ky-catalog [data-ky-pick]');
+        if (!card) return 'no-card';
+        const id = card.dataset.kyPick;
+        card.click();
+        return new Promise(res => setTimeout(() => res({ picked: id,
+          name: document.querySelector('#ky-name').value,
+          docs: document.querySelector('#ky-docs').value ? 'set' : 'empty',
+          msg: (document.querySelector('#ky-msg').textContent || '').slice(0, 60),
+          focused: document.activeElement === document.querySelector('#ky-key') }), 400));
+      })()`);
+      console.log('KEYS PREFILL PROBE', JSON.stringify(pickProbe));
+    }
+
+    // ---- RESPONSIVE: this console is a DRAG-RESIZABLE window, so a media query cannot see it
+    //      ([[comms-composer-fit-lane]]). The router + card grids must reflow on container width alone.
+    if (!ONLY) {
+      // measure with the CATALOG pane actually VISIBLE — a hidden pane's grid never reflows, and the
+      // first #terms .term is not necessarily this console.
+      await evalJS(cdp, `StationUI.openTerm('connectors')`);
+      await sleep(400);
+      await evalJS(cdp, `document.querySelector('#con-tab-connectors-catalog').click()`);
+      await sleep(400);
+      const reflow = await evalJS(cdp, `(() => {
+        const pane = document.querySelector('#cc-list'); if (!pane) return 'no-catalog';
+        const term = pane.closest('.term'); if (!term) return 'no-term';
+        const cols = sel => { const g = term.querySelector(sel);
+          return g ? getComputedStyle(g).gridTemplateColumns.split(' ').length : 'missing'; };
+        const prev = term.style.width;
+        const at = w => { term.style.width = w; void term.offsetWidth;
+          return { px: Math.round(term.getBoundingClientRect().width),
+                   router: cols('.ab-router-grid'),
+                   cards: cols('#cc-list .cc-group:not([hidden]) .cc-grid') }; };
+        const out = { wide: at('1180px'), mid: at('820px'), narrow: at('560px') };
+        // nothing may overflow horizontally at the narrow width
+        const body = term.querySelector('.term-console-body');
+        out.narrowOverflow = body ? (body.scrollWidth - body.clientWidth) : 'no-body';
+        term.style.width = prev;
+        return out;
+      })()`);
+      console.log('REFLOW PROBE', JSON.stringify(reflow));
+
+      // ---- the INSTALLED card state (.cc-on / .added). Nothing is connected on a seeded station and
+      //      a real connect needs the public internet, so this is a CSS-ONLY check of the two states.
+      const stateProbe = await evalJS(cdp, `(() => {
+        const card = document.querySelector('#cc-list .cc-card'); if (!card) return 'no-card';
+        const base = getComputedStyle(card).borderTopColor;
+        card.classList.add('cc-on');
+        const on = getComputedStyle(card).borderTopColor;
+        card.classList.remove('cc-on');
+        // the KEYS "already added" state signals through BORDER + TITLE COLOUR (never opacity — the
+        // cardIn animation's retained final value outranks a normal opacity declaration).
+        const ky = document.querySelector('#ky-catalog [data-ky-pick]');
+        let added = 'no-ky-card';
+        if (ky) {
+          const t = ky.querySelector('.cc-top b');
+          const before = { border: getComputedStyle(ky).borderTopColor, title: t ? getComputedStyle(t).color : '?' };
+          ky.classList.add('added');
+          const after = { border: getComputedStyle(ky).borderTopColor, title: t ? getComputedStyle(t).color : '?' };
+          ky.classList.remove('added');
+          added = { before, after, borderChanged: before.border !== after.border, titleDimmed: before.title !== after.title };
+        }
+        return { baseBorder: base, connectedBorder: on, differs: base !== on, keyAdded: added };
+      })()`);
+      console.log('INSTALLED-STATE PROBE (css only)', JSON.stringify(stateProbe));
+
+      // ---- the other theme: every new rule uses theme vars, so green must repaint with no literals.
+      await evalJS(cdp, `StationUI.setTheme('green')`);
+      await sleep(700);
+      console.log('shot', await capture(cdp, OUT, 'abilities-green-theme'));
+      const themeProbe = await evalJS(cdp, `(() => {
+        const q = s => { const e = document.querySelector(s); return e ? getComputedStyle(e).color : 'missing'; };
+        return { routeTitle: q('.ab-route-title'), filterActive: q('.cc-filter.active'), more: q('.ts-more') };
+      })()`);
+      console.log('GREEN THEME PROBE', JSON.stringify(themeProbe));
+      await evalJS(cdp, `StationUI.setTheme('amber')`);
+      await sleep(500);
+    }
+
     // ---- NO WHITE HTML CONTROLS (standing order). The three OS-paint signatures are a white/near-white
     //      buttonface, the grey ButtonBorder, and black Arial. Sweep every control this console renders.
     if (!ONLY) {

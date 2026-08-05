@@ -3799,9 +3799,14 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .cc-tier.cc-lg-none { color: var(--ok); }
 .cc-tier.cc-lg-key { color: var(--gold); }
 .cc-tier.cc-lg-oauth { color: var(--ph-dim); }
-/* an already-keyed platform is context, not an offer — it recedes and stops reading as clickable */
-.cc-card.added { border-color: var(--ok); opacity: .72; cursor: default; }
-.cc-card.added:hover { opacity: .86; }
+/* An already-keyed platform is context, not an offer.
+   ⛔ NOT VIA `opacity`: `.cc-card` carries `animation: cardIn … both`, and cardIn's retained final
+   keyframe (`opacity:1`) BEATS any normal opacity declaration in the cascade — the rule computed to
+   1 and the state was invisible. Recede through colour + the same green edge `.cc-on` uses, which
+   are not animated, rather than adding an `!important` to out-shout the animation. */
+.cc-card.added { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); cursor: default; }
+.cc-card.added .cc-top b { color: var(--ph-dim); }
+.cc-card.added .cc-blurb, .cc-card.added .mc-url { color: var(--ph-dim); }
 /* the directory's own category strip. The CATALOG uses the full `.sec` rule here; KEYS emits a bare
    label, so it gets the same engraved-label grammar without the rule/diamond furniture. */
 .cc-cat { color: var(--ph); letter-spacing: 2px; font-size: 12px; text-transform: uppercase;
