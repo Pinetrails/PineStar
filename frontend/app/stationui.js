@@ -2790,6 +2790,48 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   function reopenTask(id) { const w = WS(); if (!w) return; w.setLane(id, 'active'); persistWS(); sync(); }
   function archiveCard(id) { const w = WS(); if (!w) return; w.archive(id, true); persistWS(); sync(); }
+  // deliberate human re-queue (ACTIVE -> TO DO). Hybrid-honest lanes are untouched: the next real run
+  // auto-advances it right back, and an active card never claimed backend state a demote could falsify.
+  function demoteTask(id) { const w = WS(); if (!w) return; w.setLane(id, 'todo'); persistWS(); sync(); }
+  // pin = prioritize: list() sorts pinned first, and the per-lane filter preserves that order, so a
+  // pinned card rises to the top of its column (and of the COMMS rail — same record, same flag).
+  function togglePin(id) {
+    const w = WS(); if (!w) return;
+    const s = w.get(id); if (!s) return;
+    w.pin(id, !s.pinned); persistWS(); sync();
+  }
+  // inline rename ON the card (no native prompt — station law). Enter commits through
+  // Workstreams.rename (which locks titleAuto so no auto-title ever stomps it), Esc/blur cancels.
+  // While the editor is open, kbRenaming holds the id and refreshBoardLive stands down — a background
+  // data poke must not rebuild the DOM out from under a half-typed title.
+  let kbRenaming = null;
+  function beginCardRename(cardEl, id) {
+    const w = WS(); const s = w && w.get(id); if (!s) return;
+    const titleEl = cardEl.querySelector('.kb-title');
+    if (!titleEl || titleEl.querySelector('input')) return;
+    const inp = document.createElement('input');
+    inp.className = 'kb-rename'; inp.maxLength = 80; inp.value = s.title || '';
+    titleEl.textContent = ''; titleEl.appendChild(inp);
+    kbRenaming = id;
+    let settled = false;
+    const done = commit => {
+      if (settled) return; settled = true;
+      kbRenaming = null;
+      if (commit) {
+        const t = inp.value.trim();
+        if (t && t !== s.title) { w.rename(id, t); persistWS(); }
+      }
+      sync();   // re-render restores the title row either way
+    };
+    inp.addEventListener('keydown', ev => {
+      ev.stopPropagation();   // the card's own Enter/Space open handler must not fire
+      if (ev.key === 'Enter') { ev.preventDefault(); done(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); done(false); }
+    });
+    inp.addEventListener('blur', () => done(false));
+    inp.addEventListener('click', ev => ev.stopPropagation());
+    inp.focus(); inp.select();
+  }
   // a card IS a directive: open its conversation and, if it hasn't started yet, hand the agent its title
   function assignTask(id) {
     const w = WS(); if (!w) return;
@@ -2862,14 +2904,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function card(s, i) {
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
     const dv = (s.deliverables && s.deliverables.length) || 0;   // real produced artifacts (workstreams.recordDeliverable)
+    // shared tail: rename + pin + archive on every lane (title= is adopted into the station tooltip).
+    // One .kb-meta-keys unit so the housekeeping cluster right-aligns AND wraps as a whole — never
+    // a stranded ⌫ on its own row (the raggedness the keycap restyle made visible).
+    const tail = '<span class="kb-meta-keys">' +
+      '<button data-act="rename" title="rename this task">✎</button>' +
+      '<button data-act="pin" title="' + (s.pinned ? 'unpin' : 'pin to the top of its column') + '">' + (s.pinned ? '★' : '☆') + '</button>' +
+      '<button data-act="arch" title="archive — recover from the COMMS rail&#39;s ARCHIVED toggle">⌫</button></span>';
     const acts = s.lane === 'todo'
-      ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
+      ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button>' + tail
       : s.lane === 'active'
-        ? '<button data-act="ship">✓ SHIP</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
-        : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>';
-    return '<div class="kb-card" data-id="' + s.id + '" role="button" tabindex="0" aria-label="' + esc(s.title || 'untitled') + ' — open conversation" style="--ci:' + (i || 0) + '">' +
+        ? '<button data-act="ship">✓ SHIP</button><button data-act="queue" title="send back to TO DO">↩ QUEUE</button><button data-act="open">↗ OPEN</button>' + tail
+        : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button>' + tail;
+    return '<div class="kb-card' + (s.pinned ? ' pinned' : '') + '" draggable="true" data-id="' + s.id + '" role="button" tabindex="0" aria-label="' + esc(s.title || 'untitled') + ' — open conversation" style="--ci:' + (i || 0) + '">' +
       '<div class="kb-title">' + esc(s.title || 'untitled') + '</div>' +
-      '<div class="kb-meta">' + agentChip(s) + '<span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
+      '<div class="kb-meta">' + agentChip(s) + '<span class="kb-time" data-t="' + (s.lastActiveAt || s.createdAt) + '">' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
       (runs ? '<span>' + runs + '</span>' : '') +
       (dv ? '<span class="kb-deliv">' + dv + ' deliverable' + (dv === 1 ? '' : 's') + '</span>' : '') + '</div>' +
       stateChip(s) +
@@ -2885,6 +2934,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   let kbLive = false;
   function refreshBoardLive() {
     if (!open.tasks) return;
+    if (kbRenaming) return;   // an inline title editor is open — a rebuild would destroy the half-typed name; the next poke re-renders
     kbLive = true;
     try { open.tasks._render(false); } finally { kbLive = false; }   // swap=false: no crossfade on a data poke
   }
@@ -2960,6 +3010,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         else if (act === 'open') openStream(id);
         else if (act === 'ship') shipTask(id);
         else if (act === 'reopen') reopenTask(id);
+        else if (act === 'queue') demoteTask(id);
+        else if (act === 'pin') togglePin(id);
+        else if (act === 'rename') beginCardRename(c, id);
         else if (act === 'arch') archiveCard(id);
       }));
       c.addEventListener('click', () => openStream(id));   // clicking the card body opens its conversation
@@ -2968,6 +3021,30 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       c.addEventListener('keydown', ev => {
         if (ev.target !== c) return;
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); sfx('click'); openStream(id); }
+      });
+      // drag a card between lanes. A drop is the same deliberate human act as the lane buttons
+      // (setLane), so hybrid-honest lanes hold: SHIPPED via drag IS a turn-in, and the buttons stay
+      // as the keyboard path. dataTransfer carries the id; the column handlers below do the move.
+      c.addEventListener('dragstart', ev => {
+        if (kbRenaming) { ev.preventDefault(); return; }   // don't drag a card mid-rename
+        ev.dataTransfer.setData('text/plain', id);
+        ev.dataTransfer.effectAllowed = 'move';
+        c.classList.add('dragging');
+      });
+      c.addEventListener('dragend', () => c.classList.remove('dragging'));
+    });
+    body.querySelectorAll('.kb-col').forEach((col, ci) => {
+      const lane = COLS[ci][0];
+      col.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; col.classList.add('drop'); });
+      col.addEventListener('dragleave', ev => { if (!col.contains(ev.relatedTarget)) col.classList.remove('drop'); });
+      col.addEventListener('drop', ev => {
+        ev.preventDefault(); col.classList.remove('drop');
+        const wid = ev.dataTransfer.getData('text/plain');
+        const w = WS(); const s = w && wid ? w.get(wid) : null;
+        if (!s || s.lane === lane || !w.setLane(wid, lane)) return;
+        sfx('click');
+        if (lane === 'shipped') { notify('shipped ' + (s.title || 'workstream'), 'gold'); sfx('notify'); }   // same beat as ✓ SHIP
+        persistWS(); sync();
       });
     });
   }
@@ -5508,6 +5585,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function tick() {
     crewTick();
     ctxTick();
+    // TASK BOARD: age the card "last worked" stamps in place while the window is open. The board's
+    // live refresh only fires on rail pokes, so between them a "2m" stamp froze at render time (P6).
+    // Change-detected text writes on the existing spans — no rebuild, no focus/scroll impact.
+    if (open.tasks) {
+      document.querySelectorAll('.kb-time[data-t]').forEach(elm => {
+        const t = +elm.dataset.t; if (!t) return;
+        const txt = clock(t);
+        if (elm.textContent !== txt) elm.textContent = txt;
+      });
+    }
     // G1b: resolve station-gap quests against the live floor + re-evaluate the standing OUTBOX candidate
     // FIRST, so a gap that just closed (a prop placed) is already flipped done in the projection when the
     // durable quest memory folds it below — the open→done edge then rides G1a's celebration for free.

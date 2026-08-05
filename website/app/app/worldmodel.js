@@ -278,6 +278,67 @@ const WorldModel = (() => {
     return doc;
   }
 
+  /* ---------- STARTER-LINE BLUEPRINT CATALOG (static, headless-testable) ----------
+     Four whole pre-wired lines. Coordinates are LOCAL to the blueprint's top-left; w/h is the
+     bounding footprint (for palette schematics + cursor centering). Machine footprints mirror the
+     PropSprites catalog exactly (docks 2×2 solid, junctions 1×1 walkable ON the line); every lane's
+     last tile aims INTO its destination footprint so the crate visibly sinks at the dock — the same
+     shape connectBelt lays by hand. Each blueprint must compile (pipeline.js compileRoutingPlan)
+     to UNBOUND_BAY warns ONLY — locked by test/blueprints.test.js. */
+  const BLUEPRINTS = [
+    { id: 'research_line', label: 'RESEARCH LINE', w: 17, h: 2,
+      desc: 'INBOX ▸ BAY ▸ BAY ▸ OUTBOX — work rides in, two agents work it in turn (a hand-off chain), the result ships out.',
+      props: [
+        { t: 'intake', x: 0, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 5, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 10, y: 0, w: 2, h: 2 },
+        { t: 'outbox', x: 15, y: 0, w: 2, h: 2 },
+      ],
+      belts: [
+        { x: 2, y: 1, d: 'E' }, { x: 3, y: 1, d: 'E' }, { x: 4, y: 1, d: 'E' },
+        { x: 7, y: 1, d: 'E' }, { x: 8, y: 1, d: 'E' }, { x: 9, y: 1, d: 'E' },
+        { x: 12, y: 1, d: 'E' }, { x: 13, y: 1, d: 'E' }, { x: 14, y: 1, d: 'E' },
+      ] },
+    { id: 'sorting_office', label: 'SORTING OFFICE', w: 9, h: 5,
+      desc: 'INBOX ▸ FILTER ▸ two BAYs — the filter reads each job and sends code one way, everything else the other.',
+      props: [
+        { t: 'intake', x: 0, y: 0, w: 2, h: 2 },
+        // pre-configured so a fresh stamp never nags FILTER_NO_DEFAULT: code → east lane, everything else → south
+        { t: 'filter', x: 4, y: 1, w: 1, h: 1, block: false, routes: { code: 'E' }, def: 'S' },
+        { t: 'bay', x: 7, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 7, y: 3, w: 2, h: 2 },
+      ],
+      belts: [
+        { x: 2, y: 1, d: 'E' }, { x: 3, y: 1, d: 'E' }, { x: 4, y: 1, d: 'E' },
+        { x: 5, y: 1, d: 'E' }, { x: 6, y: 1, d: 'E' },
+        { x: 4, y: 2, d: 'S' }, { x: 4, y: 3, d: 'S' }, { x: 4, y: 4, d: 'E' }, { x: 5, y: 4, d: 'E' }, { x: 6, y: 4, d: 'E' },
+      ] },
+    { id: 'parallel_crew', label: 'PARALLEL CREW', w: 10, h: 8,
+      desc: 'INBOX ▸ SPLITTER ▸ three BAYs — one stream of work spread across three agents working in parallel.',
+      props: [
+        { t: 'intake', x: 0, y: 3, w: 2, h: 2 },
+        { t: 'splitter', x: 4, y: 4, w: 1, h: 1, block: false },
+        { t: 'bay', x: 8, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 8, y: 3, w: 2, h: 2 },
+        { t: 'bay', x: 8, y: 6, w: 2, h: 2 },
+      ],
+      belts: [
+        { x: 2, y: 4, d: 'E' }, { x: 3, y: 4, d: 'E' }, { x: 4, y: 4, d: 'E' },
+        { x: 4, y: 3, d: 'N' }, { x: 4, y: 2, d: 'N' }, { x: 4, y: 1, d: 'E' }, { x: 5, y: 1, d: 'E' }, { x: 6, y: 1, d: 'E' }, { x: 7, y: 1, d: 'E' },
+        { x: 5, y: 4, d: 'E' }, { x: 6, y: 4, d: 'E' }, { x: 7, y: 4, d: 'E' },
+        { x: 4, y: 5, d: 'S' }, { x: 4, y: 6, d: 'S' }, { x: 4, y: 7, d: 'E' }, { x: 5, y: 7, d: 'E' }, { x: 6, y: 7, d: 'E' }, { x: 7, y: 7, d: 'E' },
+      ] },
+    { id: 'ship_out', label: 'SHIP-OUT LOOP', w: 7, h: 2,
+      desc: 'BAY ▸ OUTBOX — the smallest line: one agent, and every finished job ships a crate to the pallet.',
+      props: [
+        { t: 'bay', x: 0, y: 0, w: 2, h: 2 },
+        { t: 'outbox', x: 5, y: 0, w: 2, h: 2 },
+      ],
+      belts: [
+        { x: 2, y: 1, d: 'E' }, { x: 3, y: 1, d: 'E' }, { x: 4, y: 1, d: 'E' },
+      ] },
+  ];
+
   /* ============================================================= */
   function makeStation(doc) {
     doc = doc || freshDoc();
@@ -794,6 +855,61 @@ const WorldModel = (() => {
       return { ok: true, count: path.length, from: A.t, to: B.t };
     }
 
+    /* ---------- STARTER-LINE BLUEPRINTS (the beginner onramp, 2026-08-04) ----------
+       A blueprint stamps a whole pre-wired conveyor layout — machines + belts — as ONE mutation
+       behind ONE snapshot, so a single UNDO removes the entire line (per-piece stamping would
+       burn an undo slot per prop and leave half-lines on a mid-stamp failure). Editing a working
+       thing teaches; assembling from parts gatekeeps — so bays stamp UNBOUND (the existing amber
+       "NO AGENT — CLICK" nag is the built-in next step) and the FILTER stamps pre-configured
+       (routes + def) so a fresh stamp never introduces a warn the Commander didn't cause.
+       Placement is all-or-nothing and requires CLEAR DECK for every tile: each machine passes the
+       same checkProp a hand placement runs, each belt tile passes beltPlaceable, and nothing may
+       stamp over an existing belt (overwriting a laid lane, or burying one under a dock, would
+       corrupt a line the Commander already built — BELT_BURIED must never be stampable). */
+    function blueprintById(id) { for (const b of BLUEPRINTS) if (b.id === id) return b; return null; }
+    function checkBlueprint(bp, tx, ty) {
+      if (!bp) return fail('NOT_FOUND', 'no such blueprint');
+      tx |= 0; ty |= 0;
+      for (const s of bp.props) {
+        const x1 = tx + s.x, y1 = ty + s.y, x2 = x1 + s.w - 1, y2 = y1 + s.h - 1;
+        const v = checkProp({ x1, y1, x2, y2 }, null, s.t);
+        if (!v.ok) return v;
+        for (let yy = y1; yy <= y2; yy++) for (let xx = x1; xx <= x2; xx++)
+          if (doc.belts[beltKey(xx, yy)]) return fail('ON_BELT', 'a belt is already here');
+      }
+      for (const b of bp.belts) {
+        const x = tx + b.x, y = ty + b.y;
+        const v = beltPlaceable(x, y);
+        if (!v.ok) return v;
+        if (doc.belts[beltKey(x, y)]) return fail('ON_BELT', 'a belt is already here');
+      }
+      return { ok: true };
+    }
+    const canPlaceBlueprint = (id, tx, ty) => checkBlueprint(blueprintById(id), tx, ty);
+    function stampBlueprint(id, tx, ty) {
+      const bp = blueprintById(id);
+      const v = checkBlueprint(bp, tx, ty);
+      if (!v.ok) return v;
+      tx |= 0; ty |= 0;
+      snapshot();   // ONE undo slot for the whole line
+      const ids = [], dirty = [];
+      for (const s of bp.props) {
+        const prop = { id: 'p' + (doc._nid++), t: s.t, x: tx + s.x, y: ty + s.y, w: s.w, h: s.h };
+        if (s.block === false) prop.block = false;
+        applyJunctionCfg(prop, s);   // the FILTER's routes/def ride in pre-configured
+        doc.props.push(prop);
+        ids.push(prop.id);
+        dirty.push({ x1: prop.x, y1: prop.y, x2: prop.x + prop.w - 1, y2: prop.y + prop.h - 1 });
+      }
+      for (const b of bp.belts) {
+        const x = tx + b.x, y = ty + b.y;
+        doc.belts[beltKey(x, y)] = b.d;
+        dirty.push({ x1: x, y1: y, x2: x, y2: y });
+      }
+      emit(dirty);
+      return { ok: true, ids, props: bp.props.length, belts: bp.belts.length };
+    }
+
     function renameRoom(id, name) {
       const rm = doc.rooms[id];
       if (!rm) return fail('NOT_FOUND', 'no such room');
@@ -1254,7 +1370,7 @@ const WorldModel = (() => {
       wallMatOfRoom: id => wallMatOfRoom(doc.rooms[id]),
       wallStyleOfRoom: id => wallStyleOfRoom(doc.rooms[id]),
       // validation (no mutation — for ghost previews)
-      canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
+      canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun, canPlaceBlueprint,
       // mount rules: injected so the model never imports the prop catalog (see MOUNT RULES).
       // surfaceHostOf is the read surface the world layer uses to decide whether a placed prop is
       // ACTUALLY standing on a table right now — a prop whose table was reclaimed renders back on the
@@ -1283,7 +1399,7 @@ const WorldModel = (() => {
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, paintTiles, renameRoom,
       addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
-      setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt,
+      setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt, stampBlueprint,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
       capForProp: t => CAP_PROP_MAP[t] || null,   // a prop type's capability objectType (single source for the UI)
@@ -1361,6 +1477,8 @@ const WorldModel = (() => {
     setPropRules,
     // capability legibility — prop -> plain power word (WEB/FILES/…); one owned source for the palette tile + Field Manual
     CAP_PROP_MAP, CAP_LABEL, capForProp: t => CAP_PROP_MAP[t] || null, grantLabelForProp,
+    // starter-line blueprints — the static catalog the REFIT LINES palette + headless tests read
+    BLUEPRINTS,
   };
 })();
 
