@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "075366cedfc6a956f94454cf5ee19066864fe0fb",
+    "sourceCommit": "15b4b40acbb0fe3e49a38c34454b5c765ccc0af6",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -933,8 +933,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 279908,
-        "sha256": "e028d040457250905bdbddf9a1ba18aaf31c53d5b1575fbb45874e15aba08d0f"
+        "bytes": 280378,
+        "sha256": "5ed248e674403ad36f59470f06ab8f88994cfd00d79f1c38745735689d82925f"
       },
       {
         "path": "frontend/css/asciifx.css",
