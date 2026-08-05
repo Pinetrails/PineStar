@@ -171,7 +171,12 @@ const AutoJobStore = (() => {
         if (!Dialogue.isOpen()) break;
         if (existsAmong(pr.title, live)) continue;   // already a live routine with this name — don't offer a dup
         const rid = 'routine:' + nameFp(pr.title) + ':' + Date.now();
-        ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'dossier', quote: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
+        /* GROUNDS IS THE MODEL'S OWN PROSE, NOT A QUOTE (2026-08-05). It went to the ledger as
+           `type:'dossier', quote:` — the evidence type that means "this is a verbatim thing the Commander's
+           own record says". autojobs.js parses GROUNDS out of the aux reply and V.grounded only checks that it
+           OVERLAPS what the station knows; the words are still the model's. Same mis-typing the suggest ledger
+           carried one file over, same fix: rationale/text. Both ledgerPosts in this file (here and pinProposals). */
+        ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'rationale', text: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
         const choice = await Dialogue.node({ lines: AutoJobs.proposalLines(pr), options: AutoJobs.approveChoices(), dismissable: true, dismissLabel: 'leave it — not now' });
         if (choice && choice.dismissed) { ledgerPost({ id: rid, state: 'deferred', reason: 'wrong_time' }); break; }
         if (choice && choice.value === 'yes' && deps.scheduleJob) {
@@ -209,7 +214,7 @@ const AutoJobStore = (() => {
         id: 'ajp_' + (Date.now().toString(36)) + '_' + (++pinSeq),
         recommendationId: rid, title: pr.title, why: pr.why || '', grounds: pr.grounds || '', cadenceId: pr.cadenceId, prompt: pr.prompt || '', at: Date.now()
       });
-      ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'dossier', quote: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
+      ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'rationale', text: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
       added++;
     }
     return added;

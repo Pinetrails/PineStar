@@ -163,6 +163,10 @@
       // toward 1 as the sample count clears the floor. Honest 0..1 — never a fabricated high number on thin data.
       const share = clamp01(kitAff);                                    // 0..1 (the vector is normalized)
       const volume = clamp01(samples / (CAL_N * 4));                    // ramps to 1 at ~4x the floor
+      // 0.35 is an arbitrary FLOOR, chosen so a warm-but-thin read still reports something rather than ~0; the
+      // band it produces is 0.35..0.85, entirely below 1. recommend.js maps strength onto a [0.5..1] multiplier,
+      // so this number can only ever DISCOUNT the recruit candidate — it can never inflate one. That asymmetry
+      // is the honest reading and the reason the exact floor does not need defending.
       const confidence = clamp01(0.35 + 0.5 * share * (0.5 + 0.5 * volume));
 
       scored.push({ classId: cls.id, why, confidence,

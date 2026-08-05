@@ -63,9 +63,18 @@
     }
     let body = turns.join('\n');
     if (body.length > cap) body = body.slice(body.length - cap);   // keep the most recent exchange
+    /* ⛔ THIS ECHOES STORED BELIEF TEXT BACK INTO A DIRECTIVE — name the surface honestly. A belief reaches the
+       notebook from the model's own parse of a conversation the user drove, so its text is not trusted input,
+       and here it is replayed inside the instruction half of a later prompt. The BOUND on that: every belief is
+       collapsed to one line (\s+ → ' '), clipped to KNOWN_CHARS, capped at KNOWN_MAX entries, and rendered as a
+       '- ' item under a labelled data heading — so it cannot open a new prompt section or forge a role turn.
+       Line-leading directive markers are stripped for the same reason: a belief may be DATA in this block, never
+       a heading or a command in it. This is mitigation, not a guarantee — a prompt is guidance; the parse
+       (LINE tag required) and the post-hoc dedup are what actually protect the notebook. */
     // newest-first (the caller passes the store in its own order; the tail is the freshest), clipped both ways
     const known = (Array.isArray(knownTexts) ? knownTexts : [])
       .map(t => String(t == null ? '' : t).replace(/\s+/g, ' ').trim())
+      .map(t => t.replace(/^(?:[-*#>=+_`~]+\s*)+/, '').replace(/^(?:SYSTEM|USER|AGENT|ASSISTANT|INSTRUCTIONS?)\s*:\s*/i, '').trim())
       .filter(Boolean).slice(-KNOWN_MAX).reverse()
       .map(t => t.length > KNOWN_CHARS ? (t.slice(0, KNOWN_CHARS - 1) + '…') : t);
     const knownBlock = known.length

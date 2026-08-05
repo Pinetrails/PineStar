@@ -139,7 +139,9 @@
        familiar idea. A low-diversity model can do that every cooldown. Scout, quest-refresh, prospect and
        autojobs all hand their exclusions to the model instead; this is the same move. Post-hoc dedup stays as
        the backstop — a prompt is guidance, never a guarantee. */
-    const exclude = (Array.isArray(ctx.exclude) ? ctx.exclude : []).map(s => String(s == null ? '' : s).trim())
+    // whitespace-normalized exactly like reflect.js knownBlock and threadmine.js knownBlock: a title carrying a
+    // newline or a run of spaces would otherwise break the one-per-line shape of the block it lands in.
+    const exclude = (Array.isArray(ctx.exclude) ? ctx.exclude : []).map(s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim())
       .filter(Boolean).slice(0, MAX_EXCLUDE);
     if (exclude.length) {
       lines.push('- ALREADY SUGGESTED (or turned down). Do NOT propose any of these again, or a restatement of ' +
