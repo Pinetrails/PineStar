@@ -42,8 +42,14 @@ A.eq(R._pick().id, 'morning-brief', 'the pick is the eligible recipe');
 launchCounts = { 'morning-brief': { n: R.LAUNCH_FLOOR - 1, lastAt: 1 } };
 A.eq(R.willPropose(), false, 'below the launch floor → no offer');
 
+/* A RECIPE WITH NO AUTHORED CADENCE STILL EARNS THE OFFER (2026-08-05). The old gate required `r.cadence` — the
+   CATALOG AUTHOR's suggestion — which quietly excluded every recipe the station itself mints: seedstore →
+   Recipes.draft stamps `cadence: null`, so an agent-authored recipe the Commander launched nine times by hand
+   could never earn "want it on a schedule?". The evidence was always the launch count, and that is all the
+   nudge cites; the cadence is chosen by the Commander in the SCHEDULE IT form the accept opens. */
 launchCounts = { 'fix-bug': { n: 9, lastAt: 1 } };
-A.eq(R.willPropose(), false, 'a one-shot recipe (cadence null) is never nudged, however often it runs');
+A.eq(R.willPropose(), true, 'a recipe with NO authored cadence is nudged on its real hand-launch count');
+A.eq(R._pick().cadence, null, '…and the pick carries no cadence — nothing is fabricated for it');
 
 launchCounts = { 'ghost-recipe': { n: 9, lastAt: 1 } };
 A.eq(R.willPropose(), false, 'an unknown recipe id is never nudged');
@@ -51,6 +57,10 @@ A.eq(R.willPropose(), false, 'an unknown recipe id is never nudged');
 // the busiest eligible recipe wins
 launchCounts = { 'morning-brief': { n: 4, lastAt: 1 }, 'price-watch': { n: 7, lastAt: 2 } };
 A.eq(R._pick().id, 'price-watch', 'the most-launched eligible recipe is picked');
+// …and an EQUAL count breaks toward the one whose author declared a rhythm (ordering only, never admission)
+launchCounts = { 'fix-bug': { n: 6, lastAt: 2 }, 'morning-brief': { n: 6, lastAt: 1 } };
+A.eq(R._pick().id, 'morning-brief', 'on a tie, the recipe with a declared cadence wins the slot');
+launchCounts = { 'morning-brief': { n: 4, lastAt: 1 }, 'price-watch': { n: 7, lastAt: 2 } };   // restore the two-recipe fixture
 
 // a live routine for the recipe (cron meta.recipeId) suppresses its offer
 R._setCronForTest([{ id: 'j1', meta: { recipeId: 'price-watch' } }]);

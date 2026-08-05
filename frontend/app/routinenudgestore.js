@@ -1,8 +1,8 @@
 /* STARNET — routinenudgestore.js : the "you keep launching this — schedule it?" nudge (lane D).
 
    A recipe the Commander keeps hand-launching is a routine that hasn't been admitted yet. This store watches
-   the REAL per-recipe launch counters (ProspectStore.launches — the scout usage read) and, when a naturally-
-   recurring recipe (cadence != null) crosses the launch floor and has NO live routine, gently offers ONCE to
+   the REAL per-recipe launch counters (ProspectStore.launches — the scout usage read) and, when a recipe
+   crosses the launch floor and has NO live routine, gently offers ONCE to
    put it on a schedule. Accepting deep-links into the marketplace's SCHEDULE IT form (App.openRecipeLaunch:
    params prefilled by LaunchMemory, cadence preset, /api/cron/preview + the unattended-outbound warning all
    apply) — PROPOSE-AND-CONFIRM, never a silent cron write.
@@ -95,8 +95,26 @@ const RoutineNudgeStore = (() => {
       const off = offers[id];
       if (off && (off.dismissed || (off.n || 0) >= OFFER_MAX)) continue;   // durably waved off / offered enough
       const r = Recipes.get(id);
-      if (!r || !r.cadence) continue;                                 // only naturally-recurring recipes earn this
-      if (!best || n > best.n) best = { id: id, name: r.name || id, n: Math.floor(n), cadence: r.cadence };
+      if (!r) continue;                                               // the recipe is gone (deleted custom) → nothing to schedule
+      /* THE CADENCE GATE IS GONE (2026-08-05) — it was a dead end, not a filter.
+         This used to require `r.cadence` (the CATALOG AUTHOR's suggestion). But the station's own self-growing
+         path — seedstore → Recipes.draft → saveCustom — mints every recipe with `cadence: null` (recipes.js
+         draft()), so an agent-authored recipe the Commander went on to launch eight times by hand could NEVER
+         earn "want it on a schedule?". The one recipe shape that PROVES a habit was the one shape structurally
+         excluded from the habit nudge.
+         The evidence for the offer was never the author's suggestion anyway — it is LAUNCH_FLOOR real
+         hand-launches, which is exactly what the nudge cites. Nothing here fabricates a schedule: the offer
+         states the count and nothing else, and accepting opens the SCHEDULE IT form where the Commander picks
+         the cadence and sees the live next-fire preview before anything is written (propose-and-confirm).
+         Launch SPACING is deliberately not inferred: the usage store keeps `n` and a single `lastAt`, so there
+         is no interval to compute, and guessing one from a lone timestamp would be the fabricated schedule this
+         lane exists to prevent. */
+      const cadence = r.cadence || null;
+      // ties break toward the recipe whose author DID declare a rhythm — a real corroborating signal, used only
+      // to order equally-launched candidates, never to admit or exclude one.
+      if (!best || n > best.n || (n === best.n && cadence && !best.cadence)) {
+        best = { id: id, name: r.name || id, n: Math.floor(n), cadence: cadence };
+      }
     }
     return best;
   }
