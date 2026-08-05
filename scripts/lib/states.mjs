@@ -21,6 +21,10 @@ export const CLOSE = `(() => {
   // internal open{} map clears (nuking #terms.innerHTML leaves that map populated → corrupts the
   // single-vs-cascade placement logic).
   document.querySelectorAll('.term-x, #terms .x, #terms .close, #terms [data-close], .term-close, .panel-close, .win-close, .rb-close, .recruit-close').forEach(b => { try { b.click(); } catch {} });
+  // Dismiss the one-time grouped-dock coach (#nav-coach, index.html) with its own GOT-IT control:
+  // shoot runs on a fresh browser profile every time, so without this the coach pops mid-sweep on a
+  // timing-dependent frame (it dimmed work-automation on 2026-08-05) and poisons golden determinism.
+  const nc = document.getElementById('nav-coach-x'); if (nc) { try { nc.click(); } catch {} }
   // Escape as a backstop for panels that honor it (recruitment bay, etc.)
   ['keydown','keyup'].forEach(type => document.dispatchEvent(new KeyboardEvent(type, { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true })));
   return 'closed';
@@ -77,7 +81,12 @@ export const dismissRefitGuide = `(() => {
   return n;
 })()`;
 
-// Every key UI state: the floor at rest + each of the 17 dock panels.
+// Every key UI state: the floor at rest + each of the 15 dock panels.
+// Re-derived from the post-nav-condense dock (frontend/index.html #bottombar, 2026-08-05):
+// ROUTINES+LOOPS collapsed into AUTOMATION, SKILLS merged into ABILITIES (the connectors term),
+// REWIND+LOGBOOK joined the Commander dossier, UPDATES is its own SYSTEM window again, and
+// QUESTS gained a dock door. State names stay stable where the surface persisted (the atlas and
+// golden baselines key on them); only renamed/removed surfaces change names.
 export function buildStates() {
   return [
     { name: 'ingame',          drive: closeOnly,                                   wait: 900 },
@@ -89,24 +98,26 @@ export function buildStates() {
     { name: 'crew-commander',  drive: openSel('[data-term="commander"]', 'COMMANDER') },
     // WORK group
     { name: 'work-tasks',      drive: openSel('[data-term="tasks"]', 'TASKS') },
-    { name: 'work-recipes',    drive: openSel('#bb-missions', 'RECIPES') },
-    { name: 'work-routines',   drive: openSel('[data-term="routines"]', 'ROUTINES') },
-    // DELIVERABLES (WORK group): the backend-backed run-artifact + Workshop library. Its dock button
-    // carries [data-term="deliverables"] (frontend/index.html). Registered as state/work-deliverables in
-    // the Atlas; buildStates() previously omitted it, so every sweep false-flagged the entry missing
-    // (finding 206d3ceb). The panel fetches GET /api/deliverables on open, so give it a wait to let the
-    // async rows/toolbar settle before the enumerator probe runs.
+    // DELIVERABLES: the backend-backed run-artifact + Workshop library. The panel fetches
+    // GET /api/deliverables on open, so give it a wait to let the async rows/toolbar settle
+    // before the enumerator probe runs (finding 206d3ceb).
     { name: 'work-deliverables', drive: openSel('[data-term="deliverables"]', 'DELIVERABLES'), wait: 1200 },
+    { name: 'work-recipes',    drive: openSel('#bb-missions', 'RECIPES') },
+    // AUTOMATION replaced the ROUTINES door when ROUTINES+LOOPS merged into one window
+    // (nav-condense, 2026-08-04) — the old [data-term="routines"] selector kept Guardian's
+    // shoot/golden gates red until this rename.
+    { name: 'work-automation', drive: openSel('[data-term="automation"]', 'AUTOMATION') },
+    { name: 'work-quests',     drive: openSel('[data-term="quests"]', 'QUESTS') },
     // BUILD group
-    { name: 'build-station',   drive: openSel('#bb-build', 'BUILD STATION'),       wait: 2000 },
-    { name: 'build-manual',    drive: openSel('[data-term="manual"]', 'MANUAL') },
-    { name: 'build-skills',    drive: openSel('[data-term="skills"]', 'SKILLS') },
-    { name: 'build-connectors',drive: openSel('[data-term="connectors"]', 'CONNECTORS') },
+    { name: 'build-station',   drive: openSel('#bb-build', 'REFIT STATION'),       wait: 2000 },
+    // ABILITIES kept the stable connectors term when SKILLS folded into it (nav-condense2),
+    // so the state name stays build-connectors for atlas/golden continuity.
+    { name: 'build-connectors',drive: openSel('[data-term="connectors"]', 'ABILITIES') },
+    { name: 'sys-messaging',   drive: openSel('[data-term="messaging"]', 'CHANNELS') },
     // SYSTEM group
+    { name: 'build-manual',    drive: openSel('[data-term="manual"]', 'FIELD MANUAL') },
     { name: 'sys-settings',    drive: openSel('[data-term="settings"]', 'SETTINGS') },
-    { name: 'sys-messaging',   drive: openSel('[data-term="messaging"]', 'MESSAGING') },
-    { name: 'sys-rewind',      drive: openSel('[data-term="rewind"]', 'REWIND') },
-    { name: 'sys-logbook',     drive: openSel('[data-term="logbook"]', 'LOGBOOK') },
+    { name: 'sys-updates',     drive: openSel('[data-term="updates"]', 'UPDATES') },
     { name: 'sys-notifs',      drive: openStableNotifs },
   ];
 }
