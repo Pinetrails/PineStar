@@ -4607,8 +4607,15 @@ const World = (() => {
     const byId = {};
     for (const p of geo.props) byId[p.id] = p;
     for (const e of routingPlan.errors) {
-      const label = NAG_LABEL[e.code];
+      let label = NAG_LABEL[e.code];
       if (!label) continue;
+      // a ROLE-carrying unbound dock names WHO it wants ("RESEARCHER — DIGS SOURCES… — CLICK") instead
+      // of the bare NO AGENT (guided workflows Phase 1; same WorldModel.BAY_ROLES source REFIT reads).
+      if (e.code === 'UNBOUND_BAY' && e.propId) {
+        const rp = byId[e.propId];
+        const ri = (rp && rp.role && !rp.agentId && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(rp.role) : null;
+        if (ri) label = rp.role + ' — ' + ri.desc.toUpperCase() + ' — CLICK';
+      }
       if (e.tile) out.push({ x: e.tile.x, y: e.tile.y, w: 1, h: 1, label, warn: !!e.warn });
       else { const p = e.propId != null && byId[e.propId]; if (p) out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label, warn: !!e.warn }); }
     }
@@ -5695,6 +5702,13 @@ const World = (() => {
     const p = (bx && bx.payload) || {};
     if (p.outbound) {
       lastOutboxFlash = fnow;   // box reached the OUTBOX -> flash the chute
+      // GUIDED WORKFLOWS: a line's FIRST real product delivery permanently retires its finish-the-line
+      // card. This is THE delivery seam (the crate that actually sank at the chute) — event-driven, and
+      // product-only: slag (an unproductive run) finishes nothing. World tiles ride over so Build maps
+      // the mouth tile to its line in its own geometry frame.
+      if (p.box === 'product' && geo && geo.origin && typeof Build !== 'undefined' && Build.noteLineDelivered) {
+        try { Build.noteLineDelivered(bx.x + geo.origin.tx, bx.y + geo.origin.ty); } catch (_) {}
+      }
       // slag is NOT a satisfying delivery — skip the relaxed exhale; the post-mortem already fired at run.end
       if (p.box !== 'slag' && agent && !agent.unplaced && activity === 'idle') {   // EXHALE: watch the reply leave, satisfied, then relax (downtime clock resets)
         const ob = geo && geo.props && geo.props.find(q => q.t === 'outbox');
@@ -6426,7 +6440,11 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []),
+    // FEED TRUTH accessor (guided workflows): the exact server-proven state the NO FEED nag keys on —
+    // REFIT's finish-the-line card reads THIS, never a parallel poll, so the two can never disagree.
+    feedState: () => ({ known: feedState.known, fed: feedState.fed }),
+    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
