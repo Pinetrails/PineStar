@@ -56,7 +56,12 @@
       // No ✉ in the prose: a symbol glyph falls back to a non-VT323 face, and mid-sentence it took its
       // own line break with it ("That’s ✉ / CHANNELS."). Glyphs stay in glyph SLOTS (the front-door
       // column, the rail), never inside a running sentence.
-      '<p class="set-about dim">Remote http(s) servers only — secrets are stored locally by the sidecar and never displayed. ' +
+      // ⛔ "Remote http(s) MCP servers." is a SURFACE LOCATOR for the `manual-mcp-connect` claim in
+      // qa/product-perfect/claims.json — the ledger anchors that advertised claim to this exact sentence.
+      // A first pass at this paragraph reworded it and turned the claims audit BLOCKED. The claim is
+      // still true and still stated, so the honest repair is to keep the canonical phrase here rather
+      // than re-point the audit needle at whatever the copy happens to say now.
+      '<p class="set-about dim">Remote http(s) MCP servers. Secrets are stored locally by the sidecar and never displayed. ' +
         'Looking to chat with your agent <i>from</i> Slack or Telegram instead? That’s the <b>CHANNELS</b> window.</p>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div class="sec"><span class="sec-l" id="mc-form-h">ADD A CONNECTOR</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
