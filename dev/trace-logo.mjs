@@ -26,9 +26,10 @@
 // Smoothing the CONTOUR (never the field) fixes the edges and leaves the star at 11 loops, the same
 // topology the unsmoothed trace produced.
 //
-//   node dev/trace-logo.mjs [out.svg] [--fh=480] [--sigma=1.2] [--iso=0.30] [--eps=1.6]
-//                           [--smooth=24] [--corner=32] [--min-area=6]
-// Defaults ARE the shipped asset — a bare run reproduces frontend/assets/brand/starnet-wordmark.svg.
+//   node dev/trace-logo.mjs [out.svg] [--preset=mosaic|solid] [--fh=] [--sigma=] [--iso=]
+//                           [--eps=] [--smooth=] [--corner=] [--min-area=]
+// The preset defaults ARE the shipped asset — a bare run reproduces
+// frontend/assets/brand/starnet-wordmark.svg. Individual flags override the preset.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -43,13 +44,34 @@ const flag = (name, dflt) => {
 };
 const OUT = argv.find(a => !a.startsWith('--')) || path.join(REPO, 'frontend/assets/brand/starnet-wordmark.svg');
 
-const FH = flag('fh', 480);            // trace-field height; contour precision only
-const SIGMA100 = flag('sigma', 1.2);   // fuse radius EXPRESSED AT field height 100
-const ISO = flag('iso', 0.30);         // density threshold on the normalized field
-const EPS100 = flag('eps', 1.6);       // RDP tolerance, also expressed at field height 100
-const MIN_AREA100 = flag('min-area', 6); // drop loops smaller than this (field-100 px^2) — mosaic specks
-const SMOOTH = flag('smooth', 24);     // corner-preserving low-pass passes over each contour
-const CORNER_DEG = flag('corner', 32); // a turn sharper than this is a CORNER — never smoothed
+/* TWO RENDERING INTENTS, both traced from the same master, both legal (neither redraws anything).
+   They are presets rather than loose flags because each is a tuned SET — mixing one's sigma with
+   the other's min-area produces garbage, and this file has already been re-tuned twice.
+
+   mosaic — KEEP the ASCII-dash texture. Barely any fuse, low threshold, no contour smoothing, and a
+     min-area small enough to preserve individual dashes. The catch is SIZE: traced at the master's
+     own dash scale the texture is gorgeous from ~56px up and turns to dim mush by 30px, which is
+     the original placed-PNG problem. fh160 is the coarsening lever — averaging the field down to
+     160 rows merges neighbouring dashes into fewer, fatter ones that still read as a mosaic at the
+     topbar's 24-30px. Do NOT raise fh here expecting "more detail"; it buys finer dashes that the
+     topbar cannot resolve, which is exactly backwards.
+   solid — the smooth outline: fuse the mosaic into one stroke and smooth the contour. Kept because
+     it is the legible floor if the mark ever has to go smaller than 24px. */
+const PRESETS = {
+  mosaic: { fh: 160, sigma: 0.40, iso: 0.22, eps: 0.25, minArea: 0.12, smooth: 0, corner: 32 },
+  solid: { fh: 480, sigma: 1.2, iso: 0.30, eps: 1.6, minArea: 6, smooth: 24, corner: 32 },
+};
+const PRESET_NAME = (argv.find(a => a.startsWith('--preset=')) || '--preset=mosaic').split('=')[1];
+const P = PRESETS[PRESET_NAME];
+if (!P) throw new Error(`unknown --preset=${PRESET_NAME}; known: ${Object.keys(PRESETS).join(', ')}`);
+
+const FH = flag('fh', P.fh);              // trace-field height — for `mosaic` this is the dash scale
+const SIGMA100 = flag('sigma', P.sigma);  // fuse radius EXPRESSED AT field height 100
+const ISO = flag('iso', P.iso);           // density threshold on the normalized field
+const EPS100 = flag('eps', P.eps);        // RDP tolerance, also expressed at field height 100
+const MIN_AREA100 = flag('min-area', P.minArea); // drop loops smaller than this (field-100 px^2)
+const SMOOTH = flag('smooth', P.smooth);  // corner-preserving low-pass passes over each contour
+const CORNER_DEG = flag('corner', P.corner); // a turn sharper than this is a CORNER — never smoothed
 
 /* ---------- marching squares: isolines of a scalar field, linearly interpolated ----------
    Samples are pixel CENTRES, so the cell grid is (w-1) x (h-1). Saddle cases (5, 10) are resolved
@@ -202,10 +224,12 @@ const d = loops.map(l => 'M' + l.map(p => `${n(p[0])} ${n(p[1])}`).join('L') + '
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${FW} ${FH}" role="img" aria-label="STARNET">
 <title>STARNET</title>
-<!-- Traced from frontend/assets/brand/starnet-logo.png by dev/trace-logo.mjs
-     (field ${FW}x${FH}, sigma ${SIGMA100}@100, iso ${ISO}, rdp ${EPS100}@100). These are the master
-     art's OWN letterforms recovered from its perceived-density field - not a redraw. Regenerate,
-     never hand-edit; rerun the script if the master ever changes. -->
+<!-- Traced from frontend/assets/brand/starnet-logo.png by dev/trace-logo.mjs, preset ${PRESET_NAME}
+     (field ${FW}x${FH}, sigma ${SIGMA100}@100, iso ${ISO}, rdp ${EPS100}@100, smooth ${SMOOTH}).
+     These are the master art's OWN forms recovered from its perceived-density field, not a redraw.
+     Regenerate, never hand-edit; rerun the script if the master ever changes.
+     NB: no double hyphen anywhere in this comment. XML forbids it, an SVG that trips it fails to
+     parse, and a CSS mask whose image fails to parse renders the masked element INVISIBLE. -->
 <path fill="currentColor" fill-rule="evenodd" d="${d}"/>
 </svg>
 `;
