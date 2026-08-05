@@ -2548,6 +2548,94 @@ const Chat = (() => {
     autoscroll();
   }
 
+  /* THE INBOX SAMPLE CARD (guided workflow Phase 4 — PROOF: "does my system work?"). Opened by clicking the
+     INBOX prop on a floor whose drawn line is COMPLETE (world.js intakeSampleAt → app.js wiring). Offers ONE
+     real, clearly-labeled sample job through the REAL dispatch path (POST /api/routing/sample): the router
+     picks the dock, the run spends real budget through runOnce, the shared chain runner walks the drawn line,
+     and the reply lands on the OUTBOX as a collectable crate (ReturnStore.foldRow of the sidecar's real
+     recorded run row — never synthesized). Same Commander-initiated gold-inset card family as awayReview —
+     it renders immediately (the click asked for it) and never touches the shared post-run beat slot.
+     Honest states only: in-flight reads "riding the line…" while the request is genuinely open; a refusal
+     shows the SERVER's reason verbatim; success shows who delivered, the real cost, and a glance of the reply.
+     opts.fed === false (world feedState, server-proven) adds the CHANNELS door, so the NO-FEED nag's promised
+     click-through survives this card owning the intake click. */
+  let sampleCardEl = null;
+  function sampleCard(opts) {
+    opts = opts || {};
+    if (!log) return;
+    if (sampleCardEl && sampleCardEl.isConnected) { autoscroll(); return; }   // one live card at a time
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('sample-card');
+    sampleCardEl = r.d;
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ INBOX — prove the line: run one small, real job through it, end to end.';
+    r.body.appendChild(title);
+    const item = document.createElement('div'); item.className = 'turnin-item';
+    const text = document.createElement('span'); text.className = 'turnin-text';
+    text.textContent = 'a labeled test crate (“SAMPLE JOB…”) rides the real belts — the router picks the dock, the run spends real budget, and the reply lands on the OUTBOX.';
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(text); item.appendChild(btns);
+    r.body.appendChild(item);
+    const note = document.createElement('div');   // refusal / result area (below the action row)
+    r.body.appendChild(note);
+    const run = document.createElement('button'); run.className = 'consent-btn primary'; run.textContent = '▸ RUN A SAMPLE JOB';
+    const later = document.createElement('button'); later.className = 'consent-btn deny'; later.textContent = 'not now';
+    later.onclick = () => vanish(r.d);
+    btns.appendChild(run); btns.appendChild(later);
+    if (opts.fed === false && typeof StationUI !== 'undefined' && StationUI.openTerm) {
+      // the floor PROVABLY has no feed wired (server-answered, never guessed) — keep the promised door here
+      const feed = document.createElement('button'); feed.className = 'consent-btn'; feed.textContent = '▸ WIRE A REAL FEED — CHANNELS';
+      feed.onclick = () => StationUI.openTerm('messaging');
+      btns.appendChild(feed);
+    }
+    const fail = (msg) => {
+      const err = document.createElement('span'); err.className = 'consent-result err';
+      err.textContent = msg;
+      note.textContent = ''; note.appendChild(err);
+      run.disabled = false; later.disabled = false; run.textContent = '▸ RUN A SAMPLE JOB';
+      autoscroll();
+    };
+    run.onclick = () => {
+      run.disabled = true; later.disabled = true;
+      run.textContent = '⌛ the sample is riding the line…';   // honest: the POST is genuinely open until the line delivers
+      note.textContent = '';
+      Harness.api.post('/api/routing/sample', {}).then(res => {
+        if (!res.ok) return fail(String((res.j && res.j.error) || ('the station refused (http ' + res.status + ')')));   // the server's reason, VERBATIM
+        const j = res.j || {};
+        btns.remove();
+        // TRUTHFUL VERDICT: "delivered" may only be claimed for a run that finished clean ('done' is the
+        // recorded reason in runs.jsonl). An errored stage still replies honestly (the ⚠ text below), but the
+        // card must not stamp a checkmark on it — and no OUTBOX crate: the finished-work ledger is 'done'-only
+        // (the same SLAG rule the away digest applies).
+        const clean = !!(j.delivered && j.delivered.reason === 'done');
+        let folded = false;
+        if (clean) { try { if (typeof ReturnStore !== 'undefined' && ReturnStore.foldRow) folded = ReturnStore.foldRow(j.delivered); } catch (_) {} }
+        const who = (j.delivered && j.delivered.agentId) || j.agentId || 'agent';
+        const cost = (+j.totalUsd > 0 && typeof U !== 'undefined' && U.usd) ? (' · ' + U.usd(+j.totalUsd)) : '';
+        text.textContent = clean
+          ? ('✔ sample delivered — ' + who + ' shipped it' + cost + '.' + (folded ? ' the crate is on the OUTBOX.' : ''))
+          : ('⚠ the sample rode the line, but the run did not finish clean — the reply below says why.');
+        const reply = (j.replies && j.replies.length) ? String(j.replies[j.replies.length - 1]).replace(/\s+/g, ' ').trim() : '';
+        if (reply) {
+          const out = document.createElement('div'); out.className = 'turnin-text';
+          out.textContent = '“' + (reply.length > 220 ? reply.slice(0, 220).trimEnd() + '…' : reply) + '”';
+          note.appendChild(out);
+        }
+        const acts = document.createElement('div'); acts.className = 'turnin-rate';
+        if (folded && typeof StationUI !== 'undefined' && StationUI.openTerm) {
+          const ob = document.createElement('button'); ob.className = 'consent-btn'; ob.textContent = '▸ open the OUTBOX — read it all';
+          ob.onclick = () => StationUI.openTerm('outbox');
+          acts.appendChild(ob);
+        }
+        const done = document.createElement('button'); done.className = 'consent-btn quiet'; done.textContent = 'done';
+        done.onclick = () => vanish(r.d);
+        acts.appendChild(done);
+        note.appendChild(acts);
+        autoscroll();
+      }).catch(() => fail('the station didn’t answer — is the sidecar running?'));
+    };
+    autoscroll();
+  }
+
   /* W3 — THE DELIVERY CARD (reshaped 2026-07-15). WorkshopStore adopts one SESSION per idle-work
      deliverable ('workshop-<runId>', unread in the rail) and calls this ONLY when the Commander opens that
      session — opts.sessionId pins the card to it, so a delivery can never paint into an unrelated stream.
@@ -7397,5 +7485,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();
