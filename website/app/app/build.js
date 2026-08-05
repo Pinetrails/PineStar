@@ -1981,6 +1981,13 @@ const Build = (() => {
     feedback(res, ev, grant ? ('EQUIPPED · grants ' + grant) : ('placed ' + propType));
   }
   function commitBeltRun(d, ev) {
+    // CLICK-ON-MACHINE WINS: connectable machines were consumed by the connect flow in onDown; a
+    // plain click on any OTHER machine (a desk, decor) inspects it instead of a 1-tile invalid run.
+    if (!d.moved) {
+      const exist = station.propAt(d.cur.tx, d.cur.ty);
+      const ep = exist && station.propById(exist);
+      if (ep) { onInspect(ep, ev); return; }
+    }
     const res = station.placeBeltRun(d.start, d.cur);
     if (res && res.ok && res.count) {
       pushFlash([beltRunBox(d.start, d.cur)], false);
