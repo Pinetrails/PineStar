@@ -53,8 +53,11 @@
     // asides were load-bearing, so only they remain. The CHANNELS pointer earns its place because
     // "connect Slack" is genuinely ambiguous — tools-INTO-the-agent lives here, chat-FROM-Slack does not.
     const secMcp =
+      // No ✉ in the prose: a symbol glyph falls back to a non-VT323 face, and mid-sentence it took its
+      // own line break with it ("That’s ✉ / CHANNELS."). Glyphs stay in glyph SLOTS (the front-door
+      // column, the rail), never inside a running sentence.
       '<p class="set-about dim">Remote http(s) servers only — secrets are stored locally by the sidecar and never displayed. ' +
-        'Looking to chat with your agent <i>from</i> Slack or Telegram instead? That’s <b>✉ CHANNELS</b>.</p>' +
+        'Looking to chat with your agent <i>from</i> Slack or Telegram instead? That’s the <b>CHANNELS</b> window.</p>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div class="sec"><span class="sec-l" id="mc-form-h">ADD A CONNECTOR</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form" id="mc-form">' +
@@ -73,8 +76,6 @@
           '<div class="mc-hint">The server’s Streamable-HTTP endpoint. <code>http://</code> is allowed only for localhost.</div>' +
           '<input id="mc-token" type="password" class="key-input" placeholder="bearer token (optional)" autocomplete="off" spellcheck="false">' +
           '<div class="mc-hint">Sent as <code>Authorization: Bearer …</code>. Leave blank when editing to keep the saved token.</div>' +
-          '<textarea id="mc-headers" class="key-input mc-kv" placeholder="extra headers (optional), one per line:&#10;X-Api-Version: 2024-01" spellcheck="false" rows="2"></textarea>' +
-          '<div class="mc-hint">Custom request headers as <code>Name: value</code>, one per line.</div>' +
         '</div>' +
         // ---- STDIO fields ----
         // NO INPUTS HERE, DELIBERATELY. The installed app pins STARNET_MCP_STDIO=0 (src-tauri/src/main.rs) and
@@ -92,8 +93,17 @@
             'on the <b>KEYS</b> tab and give the agent a <b>workbench</b>; it can then call the API directly from its ' +
             'terminal, with the key supplied as an environment variable that never enters the prompt.</div>' +
         '</div>' +
-        '<input id="mc-timeout" class="key-input" type="number" min="1000" max="600000" placeholder="timeout ms (optional, default 30000)" autocomplete="off">' +
-        '<div class="mc-hint">How long to wait for the handshake / a tool call before giving up. Default 30s.</div>' +
+        // FOLDED, NOT REMOVED. Adding a server needs an id and a URL; custom headers and a hand-set
+        // timeout are power-user fields, and stacked open they made the common path look like a
+        // six-field form. Both keep their ids, so edit-prefill and the add handler are unchanged.
+        // (Deliberately NOT `open` by default — unlike the CHANNELS setup guide, which is instructions
+        // needed at exactly the moment it was folded away, these are settings almost nobody sets.)
+        '<details class="mc-adv"><summary>advanced — custom headers, timeout</summary>' +
+          '<textarea id="mc-headers" class="key-input mc-kv" placeholder="extra headers (optional), one per line:&#10;X-Api-Version: 2024-01" spellcheck="false" rows="2"></textarea>' +
+          '<div class="mc-hint">Custom request headers as <code>Name: value</code>, one per line.</div>' +
+          '<input id="mc-timeout" class="key-input" type="number" min="1000" max="600000" placeholder="timeout ms (optional, default 30000)" autocomplete="off">' +
+          '<div class="mc-hint">How long to wait for the handshake / a tool call before giving up. Default 30s.</div>' +
+        '</details>' +
         '<div class="mc-acts">' +
           '<button class="bb sm" id="mc-add">+ ADD &amp; CONNECT</button>' +
           '<button class="bb xs" id="mc-cancel" style="display:none">CANCEL EDIT</button>' +
@@ -266,8 +276,11 @@
     routerEl.innerHTML = secRouter;
     const routerNode = routerEl.firstChild;
     if (host && routerNode) host.insertBefore(routerNode, host.firstChild);
-    if (routerNode) routerNode.addEventListener('click', ev => {
-      const btn = ev.target.closest('.ab-route'); if (!btn) return;
+    // Delegated on the whole console body, not just the strip: `data-ab-to` is the jump CONTRACT for this
+    // window, and the empty states reuse it (KEYS' "no keyed platform yet" offers OPEN CATALOG). Binding
+    // to the strip alone would have left those buttons inert — a new dead end shipped beside a cured one.
+    body.addEventListener('click', ev => {
+      const btn = ev.target.closest('.ab-route, [data-ab-to], [data-ab-term]'); if (!btn) return;
       sfx('click');
       // in-console jump: click the REAL rail button so the console's own selection + persistence run.
       const to = btn.dataset.abTo;
@@ -579,6 +592,7 @@
       idInput.disabled = false;
       ['#mc-id', '#mc-label', '#mc-url', '#mc-token', '#mc-headers', '#mc-timeout']
         .forEach(s => { const el = body.querySelector(s); if (el) el.value = ''; });
+      const adv = body.querySelector('.mc-adv'); if (adv) adv.open = false;   // a cleared form is the simple form again
       setTransport('http');
     }
     cancelBtn.addEventListener('click', () => { resetForm(); msgEl.textContent = ''; sfx('click'); });
@@ -604,6 +618,10 @@
         body.querySelector('#mc-token').value = '';   // never round-trip the token
         const hKeys = Object.keys(c.headers || {});
         body.querySelector('#mc-headers').value = hKeys.map(k => k + ': ' + (c.headers[k] === '<redacted>' ? '' : c.headers[k])).join('\n');
+        // Unfold the advanced block when this connector actually HAS advanced settings — otherwise an
+        // edit would silently hide the headers/timeout it is about to re-save, which reads as data loss.
+        const adv = body.querySelector('.mc-adv');
+        if (adv) adv.open = hKeys.length > 0 || !!(c.timeoutMs && c.timeoutMs !== 30000);
       }
       formH.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       idInput.focus();
@@ -1030,7 +1048,10 @@
         const keyed = ((cj && cj.connectors) || []).filter(c => c.hasToken && !c.oauth);
         const n = body.querySelector('#ky-plat-n'); if (n) n.textContent = String(keyed.length);
         if (!keyed.length) {
-          kyPlatEl.innerHTML = '<div class="mc-detail">No keyed platform connected yet — add one from the CATALOG (the entries marked <b style="color:var(--gold)">API key</b>).</div>';
+          // The sentence named a destination and gave nothing to click — the same dead-end shape as the
+          // inert toolset row. `data-ab-to` is the front door's own jump contract, handled by the router.
+          kyPlatEl.innerHTML = '<div class="mc-detail">No keyed platform connected yet — add one from the CATALOG (the entries marked <b style="color:var(--gold)">API key</b>). ' +
+            '<button type="button" class="bb xs" data-ab-to="catalog">⊞ OPEN CATALOG</button></div>';
           return;
         }
         kyPlatEl.innerHTML = keyed.map((c, i) => {

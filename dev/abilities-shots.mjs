@@ -104,6 +104,43 @@ async function main() {
       await evalJS(cdp, `document.querySelector('.cc-filter[data-cc-filter="all"]').click()`);
     }
 
+    if (!ONLY || ONLY === 'mcp') {
+      // the front door must actually navigate, and the empty-state jump must use the same contract
+      await evalJS(cdp, clickTab('toolsets'));
+      await sleep(400);
+      const routeProbe = await evalJS(cdp, `(() => {
+        const active = () => (document.querySelector('.con-rail-item.active') || {}).dataset?.section || '?';
+        const r = {};
+        r.landedOn = active();
+        document.querySelector('.ab-route[data-ab-to="catalog"]').click();
+        r.afterCatalogRoute = active();
+        document.querySelector('.ab-route[data-ab-to="mcp"]').click();
+        r.afterMcpRoute = active();
+        // the advanced fold must exist, be shut by default, and still hold the two power fields
+        const adv = document.querySelector('.mc-adv');
+        // NB: a closed <details> in Chrome uses content-visibility, not display:none, so its children
+        // keep a non-null offsetParent. Height + checkVisibility are the honest "did it paint" probes.
+        const ta = adv && adv.querySelector('#mc-headers');
+        r.advanced = adv ? { open: adv.open,
+          holdsHeaders: !!ta, holdsTimeout: !!adv.querySelector('#mc-timeout'),
+          shutHeight: Math.round(ta.getBoundingClientRect().height),
+          shutVisible: ta.checkVisibility ? ta.checkVisibility({ contentVisibilityAuto: true }) : 'n/a' } : 'missing';
+        if (adv) { adv.open = true;
+          r.advanced.openHeight = Math.round(ta.getBoundingClientRect().height);
+          r.advanced.openVisible = ta.checkVisibility ? ta.checkVisibility({ contentVisibilityAuto: true }) : 'n/a';
+          adv.open = false; }
+        // KEYS empty-state jump — the button added beside a cured dead end must not be a new one
+        document.querySelector('#con-tab-connectors-keys').click();
+        const kb = document.querySelector('#ky-platforms [data-ab-to="catalog"]');
+        if (kb) { kb.click(); r.emptyStateJump = active(); } else r.emptyStateJump = 'no-button';
+        return r;
+      })()`);
+      console.log('ROUTER PROBE', JSON.stringify(routeProbe));
+      await evalJS(cdp, clickTab('mcp'));
+      await sleep(700);
+      console.log('shot', await capture(cdp, OUT, 'abilities-mcp-form'));
+    }
+
     if (!ONLY || ONLY === 'toolsets') {
       await evalJS(cdp, clickTab('toolsets'));
       await sleep(600);
