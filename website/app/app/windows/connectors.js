@@ -902,11 +902,23 @@
           : 'No catalog entry uses that setup type.';
       } else if (none) none.hidden = true;
     }
+    function ccSetFilter(f) {
+      ccFilter = f;
+      if (ccFiltersEl) ccFiltersEl.querySelectorAll('.cc-filter').forEach(x => x.classList.toggle('active', x.dataset.ccFilter === f));
+      ccApplyFilter();
+    }
     if (ccFiltersEl) ccFiltersEl.addEventListener('click', ev => {
       const b = ev.target.closest('button[data-cc-filter]'); if (!b) return;
-      ccFilter = b.dataset.ccFilter;
-      ccFiltersEl.querySelectorAll('.cc-filter').forEach(x => x.classList.toggle('active', x === b));
-      ccApplyFilter(); sfx('tick');
+      ccSetFilter(b.dataset.ccFilter); sfx('tick');
+    });
+    // SEARCH BEATS THE TIER FILTER. The console search (stationui doFilter) marks a matching card
+    // `.con-hit`, but a card this filter set `hidden` stays display:none — so searching "stripe" with
+    // "▸ no setup" active lit the CATALOG rail and showed NOTHING (probed live: hit:true, painted:false).
+    // The Commander who types a name has stated a stronger intent than a chip they clicked earlier, so
+    // entering search resets the filter to ALL rather than leaving two filters silently ANDed.
+    const ccSearchIn = body.querySelector('.con-search-in');
+    if (ccSearchIn) ccSearchIn.addEventListener('input', () => {
+      if ((ccSearchIn.value || '').trim() && ccFilter !== 'all') ccSetFilter('all');
     });
     async function ccInstall(id, token) {
       const e = ccCache.find(x => x.id === id);
