@@ -135,8 +135,25 @@ let ttsBusy = 0;
 let lastTtsMs = null;
 const monotonicMs = () => Number(process.hrtime.bigint() / 1000000n);
 
+// Transformers eagerly loads Sharp even though StarNet's offline voice paths are audio/text only. Sharp
+// <0.35 inherits vulnerable libvips loaders; upstream's documented compatible workaround is to disable
+// GIF, TIFF, and VIPS decoding. Apply it before either Transformers copy is imported so future call sites
+// cannot accidentally turn an unused image surface into an untrusted-input decoder.
+const BLOCKED_SHARP_LOADERS = Object.freeze([
+  'VipsForeignLoadNsgif',
+  'VipsForeignLoadTiff',
+  'VipsForeignLoadVips'
+]);
+function hardenSharpImageDecoders(sharpImpl = require('sharp')) {
+  if (!sharpImpl || typeof sharpImpl.block !== 'function') {
+    throw new Error('offline speech image-decoder hardening is unavailable');
+  }
+  sharpImpl.block({ operation: BLOCKED_SHARP_LOADERS.slice() });
+}
+
 async function transformers() {
   if (!transformersPromise) {
+    hardenSharpImageDecoders();
     transformersPromise = import('@huggingface/transformers').then(mod => {
       mod.env.cacheDir = path.join(cacheRoot, 'transformers');
       mod.env.allowLocalModels = true;
@@ -309,4 +326,4 @@ function status() {
   };
 }
 
-module.exports = { warm, transcribe, synthesize, status, voices: () => LOCAL_VOICES.slice(), defaultVoice: () => DEFAULT_LOCAL_VOICE, normalizeLocalVoice, edgeVoiceFor };
+module.exports = { warm, transcribe, synthesize, status, voices: () => LOCAL_VOICES.slice(), defaultVoice: () => DEFAULT_LOCAL_VOICE, normalizeLocalVoice, edgeVoiceFor, _hardenSharpImageDecoders: hardenSharpImageDecoders };
