@@ -115,11 +115,37 @@ for (const [glyph, was] of [['★', 'RECOMMENDED FOR YOU'], ['◆', 'CURATED FOR
 A.ok(/function noticedHead\(tail\)/.test(mkt) && /NOTICED' : 'NOTICED'/.test(mkt),
   'the bay composes its earned headers with the SAME eyebrow the COMMS offer card uses');
 // …and the noticer is claimed ONLY where something was noticed.
-A.ok(/res\.personalized\s*\n?\s*\? noticedHead\(/.test(mkt) || /personalized\s*$/m.test(mkt), 'the specialists shelf gates the eyebrow on its own personalized flag');
+/* ⛔ THIS LOCK BINDS THE REAL RENDER PATH. It used to carry a `|| /personalized$/m` fallback, which any file
+   mentioning the word satisfies — the assertion could not fail. The ternary below IS the specialists shelf. */
+A.ok(/const head = res\.personalized\s*\n\s*\? noticedHead\(/.test(mkt),
+  'the specialists shelf gates the eyebrow on its own personalized flag');
 A.ok(/coldHead\('STARTING LINEUP/.test(mkt) && /coldHead\('STARTING POINTS/.test(mkt),
   'both cold-start shelves keep the glyph and DROP the noticer claim — a spread noticed nothing');
-A.ok(/const coldHead = \(tail\) => '◈ ' \+ tail;/.test(mkt),
+A.ok(/const coldHead = \(tail\) => '◈ ' \+ esc\(tail\);/.test(mkt),
   '…structurally: coldHead composes the glyph and nothing else, so a cold shelf CANNOT wear the eyebrow');
+
+/* ── 3b. THE NOTICER NAME IS USER TEXT, AND THE HEADER GOES STRAIGHT INTO innerHTML ──────────────────────
+   `ctx.agentName` is whatever the Commander typed (app.js:521 does not HTML-escape it) and `.toUpperCase()`
+   neuters no tag. Five shelf headers compose through noticedHead. Behavioural, not a grep: the real
+   composition is lifted out of marketplace.js and run over a hostile name with the REAL U.esc. */
+{
+  const utilSrc = read('frontend/js/util.js');
+  const escAt = utilSrc.indexOf('  esc(s) {');
+  const escSrc = utilSrc.slice(escAt, utilSrc.indexOf('  },', escAt) + 4);
+  const escReal = new Function('return ({ ' + escSrc + ' }).esc;')();          // the SHIPPED escaper, not a copy
+  A.eq(escReal('<b>'), '&lt;b&gt;', 'precondition: the extracted escaper is the real one');
+  const headAt = mkt.indexOf('function noticedHead(tail)');
+  const headSrc = mkt.slice(headAt, mkt.indexOf('\n  }\n', headAt) + 4);
+  const mkHead = (agentName) => new Function('esc', 'ctx', headSrc + '\n return noticedHead;')(
+    s => escReal(s == null ? '' : s), { agentName });
+  const evil = mkHead('<img src=x onerror="alert(1)">')('picked from your real work');
+  A.eq(/[<>]/.test(evil), false, 'a tag in the agent name cannot reach the shelf header as markup');
+  A.ok(evil.indexOf('&lt;IMG SRC=X ONERROR=&quot;ALERT(1)&quot;&gt;') > 0,
+    '…it renders as the literal text the Commander typed');
+  A.ok(evil.indexOf('NOTICED — picked from your real work') > 0, '…and the rest of the eyebrow is unchanged');
+  A.eq(mkHead('"quoted" & \'apos\'')('x').indexOf('"'), -1, 'quotes escape too — the header is safe in an attribute context');
+  A.eq(mkHead('')('nothing noticed'), '◈ NOTICED — nothing noticed', 'an unnamed station still gets the bare eyebrow');
+}
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
    6. THE FOR YOU HEADER MAY NOT CLAIM A ROW THE RANKER DID NOT PERSONALIZE

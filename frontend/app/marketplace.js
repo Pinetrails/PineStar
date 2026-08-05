@@ -1235,12 +1235,17 @@ const Marketplace = (() => {
      ⛔ THE NOTICER CLAIM IS NOT DECORATION. A cold-start shelf noticed NOTHING — it is a lineup drawn in catalog
      order — so it keeps the glyph and does NOT get the eyebrow. Stamping "NOTICED" on a spread would be the
      header telling the same lie item 6 fixes one function below. `noticedHead` is for earned rows only. */
+  /* ⛔ THE NAME IS USER TEXT, AND THIS RETURN VALUE GOES STRAIGHT INTO innerHTML (2026-08-05). `ctx.agentName`
+     is whatever the Commander typed when they named the agent (app.js does not HTML-escape it on the way in),
+     and `.toUpperCase()` neuters nothing — `<img onerror=…>` uppercases to a tag that still parses. Five shelf
+     headers in this file compose through here; every sibling render around them already escapes. So does this
+     one now. The tails are literals today, but they ride esc() too so a future caller cannot re-open the hole. */
   function noticedHead(tail) {
     const n = String((ctx && ctx.agentName) || '').trim();
     // mirrors chat.js recCard: the name when the station has one, a bare NOTICED when it does not.
-    return '◈ ' + (n ? n.toUpperCase() + ' NOTICED' : 'NOTICED') + (tail ? ' — ' + tail : '');
+    return '◈ ' + (n ? esc(n.toUpperCase()) + ' NOTICED' : 'NOTICED') + (tail ? ' — ' + esc(tail) : '');
   }
-  const coldHead = (tail) => '◈ ' + tail;   // same glyph, no noticer claim
+  const coldHead = (tail) => '◈ ' + esc(tail);   // same glyph, no noticer claim
   function becauseText(s) {
     const ps = profileApi(); if (!ps || !ps.explain) return '';
     const t = ps.explain(s.tags || {});
