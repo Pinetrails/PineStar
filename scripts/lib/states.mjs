@@ -90,7 +90,9 @@ export function buildStates() {
     // WORK group
     { name: 'work-tasks',      drive: openSel('[data-term="tasks"]', 'TASKS') },
     { name: 'work-recipes',    drive: openSel('#bb-missions', 'RECIPES') },
-    { name: 'work-routines',   drive: openSel('[data-term="routines"]', 'ROUTINES') },
+    // ROUTINES and LOOPS now share the AUTOMATION dock entry. Keep the historical frame name so
+    // existing baselines compare the initial (ACTIVE ROUTINES) lane instead of becoming orphaned.
+    { name: 'work-routines',   drive: openSel('[data-term="automation"]', 'AUTOMATION') },
     // DELIVERABLES (WORK group): the backend-backed run-artifact + Workshop library. Its dock button
     // carries [data-term="deliverables"] (frontend/index.html). Registered as state/work-deliverables in
     // the Atlas; buildStates() previously omitted it, so every sweep false-flagged the entry missing
