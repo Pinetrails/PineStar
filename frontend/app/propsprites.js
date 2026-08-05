@@ -7822,13 +7822,17 @@ const PropSprites = (() => {
     { id: "speaker", label: "SPEAKER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "bar", label: "BAR", cat: "lounge", tier: "cosmetic", w: 4, h: 1, animated: true, blocks: true, use: { kind: 'bar', sit: false, approach: 'south' } },
     { id: "tv", label: "TV", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'tv', sit: false, approach: 'south' } },
-    { id: "couch", label: "COUCH", cat: "lounge", tier: "cosmetic", w: 5, h: 1, animated: true, blocks: true, use: { kind: 'couch', sit: true, approach: 'south' } },
+    // SEAT LAW (2026-08-04): `sit: true` is reserved for props a body can credibly be ON — its own
+    // workstation chair and the single-tile seats (STOOL/CHAIR). A couch/bed/beanbag is a place a body
+    // walks to and STANDS at: the sit sprite is a chair pose, and pasting it on a mattress or a cushion
+    // read as a body parked upright on the furniture. Changing `sit` here is the whole switch.
+    { id: "couch", label: "COUCH", cat: "lounge", tier: "cosmetic", w: 5, h: 1, animated: true, blocks: true, use: { kind: 'couch', sit: false, approach: 'south' } },
     { id: "arcade", label: "ARCADE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "arcade2", label: "ARCADE II", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "jukebox", label: "JUKEBOX", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'juke', sit: false, approach: 'south' } },
-    // BED — `sit` is the pose; world.js planBedSleep is what actually walks a dormant agent here and
-    // lies it ON the mattress (the couch seat machinery), so this row is also the sleep target.
-    { id: "bunk", label: "BED", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true, use: { kind: 'bed', sit: true, approach: 'south' } },
+    // BED — the sleep target: world.js planBedSleep walks a dormant agent here and powers it down
+    // BESIDE the mattress. `sit: false` per the SEAT LAW above (a bed is not a chair).
+    { id: "bunk", label: "BED", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true, use: { kind: 'bed', sit: false, approach: 'south' } },
     { id: "quarters_pooltable", label: "POOL TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true, use: { kind: 'pool', sit: false, approach: 'south' } },
     { id: "quarters_vending", label: "VENDING", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'vend', sit: false, approach: 'south' } },
     { id: "quarters_lockerbank", label: "LOCKERS", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'locker', sit: false, approach: 'south' } },
@@ -7840,8 +7844,11 @@ const PropSprites = (() => {
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_ladder", label: "LADDER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "stool", label: "STOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "chair", label: "CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    // THE ONLY SITTABLE FURNITURE (SEAT LAW, see the couch row): a single-tile seat. world.js planSeat
+    // claims it, walks the body to an adjacent tile, then RENDERS the body on the seat's own tile — the
+    // one case where a sit pose is true, because there is a seat underneath it.
+    { id: "stool", label: "STOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
+    { id: "chair", label: "CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     // TABLES (2026-07-26) — the catalog had hero surfaces and nothing in between, so every small object
     // had to be parked on the deck. `surface: true` is what a mount:"surface" / stack:true prop may be
     // placed ON. See the MOUNT AXIS note above the catalog for what those two flags mean.
@@ -7876,7 +7883,7 @@ const PropSprites = (() => {
     { id: "pokertable", label: "POKER TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true, use: { kind: 'poker', sit: false, approach: 'south' } },
     // FREESTANDING LOUNGE SET (2026-07-29) — floor pieces that are DESTINATIONS, not scenery.
     { id: "bookshelf", label: "BOOKSHELF", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, use: { kind: 'bookshelf', sit: false, approach: 'south' } },
-    { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: true, approach: 'auto' } },
+    { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: false, approach: 'auto' } },
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
   ];
   const BY_ID = {};
