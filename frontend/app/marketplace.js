@@ -1489,11 +1489,22 @@ const Marketplace = (() => {
       // the COMMS offer cards do (recommend.js whyLine). Fail-open — the raw reason if the spine isn't loaded.
       return whyGrammar(raw);
     };
-    // the header may claim this row is FOR THEM only when a real term produced it (and readiness still gates the
-    // whole personalized read, so both must hold).
-    const head = (ready && ranked.personalized)
-      ? noticedHead('picked from your real work')
-      : coldHead('STARTING POINTS — a varied lineup while the station gets to know you');
+    /* the header may claim this row is FOR THEM only when a real term produced it (and readiness still gates the
+       whole personalized read, so both must hold).
+
+       ⛔ AND THE CLAIM IS SIZED TO THE ROW, NOT TO THE BOOLEAN (2026-08-05). `personalized` goes true on ONE real
+       hit, and rankRecipesExplained then TOPS THE ROW UP from the same cold-start category spread — filler cards
+       that carry no why at all, because nothing about them is about this Commander. The plural whole-row claim
+       "picked from your real work" therefore sat over two catalog cards the station had never seen touched: the
+       honest-header fix, still overclaiming one path down. Three states, one per thing that actually happened. */
+    const scored = Number.isFinite(ranked.scored) ? ranked.scored : (ranked.personalized ? items.length : 0);
+    const head = !(ready && ranked.personalized)
+      ? coldHead('STARTING POINTS — a varied lineup while the station gets to know you')
+      : (scored >= items.length)
+        ? noticedHead('picked from your real work')
+        : noticedHead(scored === 1
+          ? 'one pick from your real work, plus starting points'
+          : scored + ' picks from your real work, plus starting points');
     items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));
     return '<div class="mkt-sect-h mkt-foryou-sect">' + head + '</div><div class="mkt-rec-rail">' +
       items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';

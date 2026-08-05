@@ -167,8 +167,27 @@ A.eq(earned.items[0].id, catalog[0].id, '…and puts that recipe first');
 // the old signature is untouched — every existing caller and test keeps working byte-for-byte
 A.eq(Recipes.rankRecipes(catalog, { limit: 3 }).map(r => r.id).join(','), cold.items.map(r => r.id).join(','),
   'rankRecipes still returns the plain array it always did');
-A.ok(/const head = \(ready && ranked\.personalized\)/.test(mkt),
-  'the shelf gates its header on BOTH readiness and what the ranker actually did');
+/* ── 6b. …AND THE CLAIM IS SIZED TO THE ROW ────────────────────────────────────────────────────────────────
+   `personalized` flips on ONE real hit and the ranker then TOPS THE ROW UP from the cold-start category
+   spread. Those filler cards render no why at all, so the plural whole-row claim was sitting over catalog
+   cards the station had never seen the Commander touch. Three states, and the ranker reports the count. */
+A.eq(cold.scored, 0, 'a pure spread reports zero earned cards');
+A.eq(silent.scored, 0, '…so does a ready-but-silent Commander');
+A.eq(earned.scored, 1, 'one launch counter earns exactly ONE card — the other two are top-up filler');
+A.eq(earned.items.length, 3, '…and the row is still full (the top-up is what makes the header a lie if unqualified)');
+const allEarned = Recipes.rankRecipesExplained(catalog, { limit: 3,
+  launches: { [catalog[0].id]: 4, [catalog[1].id]: 3, [catalog[2].id]: 2 } });
+A.eq(allEarned.scored, 3, 'three real launch counters earn the WHOLE row');
+A.eq(allEarned.scored, allEarned.items.length, '…scored === shown is the only shape that may wear the full claim');
+// the shelf spends that count: full claim only at scored >= shown, mixed phrasing otherwise, spread otherwise still.
+A.ok(/const head = !\(ready && ranked\.personalized\)/.test(mkt),
+  'the shelf still gates on BOTH readiness and what the ranker actually did');
+A.ok(/\(scored >= items\.length\)\s*\n\s*\? noticedHead\('picked from your real work'\)/.test(mkt),
+  '…the plural whole-row claim is reachable ONLY when every card was scored');
+A.ok(/one pick from your real work, plus starting points/.test(mkt) &&
+     /scored \+ ' picks from your real work, plus starting points'/.test(mkt),
+  '…a mixed row says so out loud, in the house voice, singular and plural');
+A.ok(/coldHead\('STARTING POINTS/.test(mkt), '…and a pure spread keeps STARTING POINTS');
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
    4. THE INTEREST EVIDENCE IS SHOWN, NOT SWALLOWED — and it claims no speaker
