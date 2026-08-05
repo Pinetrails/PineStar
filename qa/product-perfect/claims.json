@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1228cff9934f649b2f5e51374ad70c047364f098",
+    "sourceCommit": "97480086d7121cc644630c8a236ff7ad3c0e2519",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 312927,
-        "sha256": "18c06ef92535de8f9ac6678f2a265313a67167c962df005dd3b114d5add2d258"
+        "bytes": 312545,
+        "sha256": "2c70f14a6d5022994863de082297ad7b3362ce4f502a558b3cc6a00ee2934e84"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 168808,
-        "sha256": "6a6bf318015384bda998bad627f592ceb61060d01e6859f5924ee4b2a01574c5"
+        "bytes": 173035,
+        "sha256": "dc32d157822346e9a465c9e760c59c4aa6ed618e328ba823d8399aec113afd3f"
       },
       {
         "path": "frontend/app/channels.js",
@@ -403,8 +403,8 @@
       },
       {
         "path": "frontend/app/permissionsstore.js",
-        "bytes": 10551,
-        "sha256": "d0191c357407dc99c5faf60a1e660262838e81b50fdf50a8d111a6a5b256d56a"
+        "bytes": 8851,
+        "sha256": "817b412d9401d0a55ed47df3747daec707b9b3cf215808f14adc1fc6f573ec95"
       },
       {
         "path": "frontend/app/personas.js",
@@ -683,8 +683,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 148271,
-        "sha256": "4c42c6ed5d52f3591d134f07e02e0983ee98ac9c17f3a1f9bac3d9abc445a325"
+        "bytes": 193395,
+        "sha256": "1d6757d820b979d79009e93f4f233e2b5e1414b0d5c7e5f2cf1c7a0baf4fa78e"
       },
       {
         "path": "frontend/app/stationcommands.js",
@@ -703,8 +703,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 474952,
-        "sha256": "71170fc938f05ffad4d66eb3ffac456ec6a83eeb451a38ada8712312d3c2f664"
+        "bytes": 467294,
+        "sha256": "9a737ecdc91d60d5d461014eba4d29438e06c5202006d849c80f182ee9c75c70"
       },
       {
         "path": "frontend/app/study.js",
@@ -913,8 +913,8 @@
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 89736,
-        "sha256": "f42315b358679573fb19fa43a38924210d83b49f8c9e8e7ca0318483dad32a26"
+        "bytes": 96866,
+        "sha256": "c3a04d6bc698b952468af8619f94fe09abf8a99e9241495f086cad68e5b64ce3"
       },
       {
         "path": "frontend/app/xp.js",
