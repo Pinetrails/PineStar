@@ -1478,17 +1478,32 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function agSkills(agentId) {
     const skills = skillsFor(agentId);
     const on = skills.filter(s => s.on).length;
+    // NAV CONDENSE 2: this tab is now the ONE per-agent capabilities home (the standalone SKILLS
+    // window is gone), so it inherits that panel's honest affordances: a locked card names the
+    // missing gear and deep-links into REFIT (data-perk-cap → placeGearForSkill, wired in
+    // buildAgents), and the toolset-off honesty pass dims families switched off in ABILITIES.
+    const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
     return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
+      '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
       '<div class="perk-grid">' +
-      skills.map((s, i) => '<div class="perk ' + (s.on ? 'on' : '') + '" style="--ci:' + i + '">' +
-        '<div class="perk-icon">' + s.icon + '</div>' +
-        '<div class="perk-name">' + s.name + '</div>' +
-        '<div class="perk-desc">' + s.tools + '</div>' +
-        '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
-        (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
+      skills.map((s, i) => {
+        const lockable = !s.on && s.cap;
+        return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
+          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place ' + skArt(SK_OBJ_NAME[s.cap] || s.cap) + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
+          ' style="--ci:' + i + '">' +
+          '<div class="perk-icon">' + s.icon + '</div>' +
+          '<div class="perk-name">' + s.name + '</div>' +
+          '<div class="perk-desc">' + s.tools + '</div>' +
+          '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
+          (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : capLockedText(s)) + '</div>' +
+          (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
+      }).join('') +
       '</div>' +
-      '<p class="sk-note">Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS. ' +
-      'Browse &amp; toggle pre-installed <b>skill recipes</b> in the <b>SKILLS</b> panel (BUILD dock).</p>';
+      '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
+      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
+      '<b>notebook</b> saves freely.</p>' +
+      '<p class="sk-note">This view is <b>read-only</b> — the on/off switches for these tool families, and the ' +
+      'station’s <b>skill library</b>, live in <b>⇄ ABILITIES</b> on the bottom bar.</p>';
   }
 
   function fileCard(a, f) {
@@ -1779,11 +1794,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     skillsLiveWired = true;
     U.bus.on('deliverable', p => {
       if (!p || p.kind !== 'skill') return;
-      if (!open['skills'] || !$('#sk-agent')) return;                 // the AGENT SKILLS host lives in the standalone SKILLS panel
+      if (!open['connectors'] || !$('#sk-agent')) return;             // the AGENT SKILLS host lives in the ABILITIES console (skills lane)
       const a = present[sel]; const shownId = (a && a.id) || 'agent';
       if ((p.agentId || 'agent') !== shownId) return;                 // only refresh the agent the panel is actually showing
       clearTimeout(skillsRefreshTimer);
-      skillsRefreshTimer = setTimeout(() => { if (open['skills'] && $('#sk-agent')) loadAgentSkills(shownId); }, 400);
+      skillsRefreshTimer = setTimeout(() => { if (open['connectors'] && $('#sk-agent')) loadAgentSkills(shownId); }, 400);
     });
   }
 
@@ -2233,6 +2248,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // pane is built up-front (mountConsole keeps them all in the DOM), so the single wire pass below reaches
     // every control — wireHead (header, all sections), wireConfig (CONFIG pane), loadMemoryCore (MEMORY pane).
     const frag = html => (elx => { elx.innerHTML = html; });
+    // NAV CONDENSE 2: per-agent windows that used to live on the SYSTEM dock (LOGBOOK, RESTORE)
+    // register as dossier lanes — windows/logbook.js + windows/rewind.js push (body)=>({sections,wire})
+    // onto window.DossierLanes at load time, and every rerender rebuilds them against the CURRENT
+    // selected agent (they read H.present/H.sel), so the roster rail drives them like any other tab.
+    const lanes = (window.DossierLanes || []).map(fn => { try { return fn(body); } catch (_) { return null; } }).filter(l => l && Array.isArray(l.sections));
     const host = mountConsole(body, 'agents', [
       { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is right now — identity, level, purpose, and live status.',
         build: frag(agHead(a, act) + agBrief(a)) },
@@ -2244,7 +2264,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         build: frag(agSkills(a && a.id)) },
       { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'The markdown files that compose this agent’s prompt, plus its per-agent model pin.',
         build: frag(agConfig(a)) }
-    ], {
+    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), {
       // tabsTop: the five section tabs (BRIEF/GROWTH/MEMORY/SKILLS/CONFIG) render as a horizontal strip at the
       // top of the right pane; the left rail becomes the agent roster full-height (railTop below).
       tabsTop: true,
@@ -2276,6 +2296,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     loadMemoryCore(a);
     loadPractice(a && a.id ? a.id : 'agent');   // S5: fill the GROWTH tab's B3 meter from the agent's real skillbase
     drawPortrait(host.querySelector('#ag-portrait'), a);
+    lanes.forEach(l => { try { if (typeof l.wire === 'function') l.wire(); } catch (_) {} });
+    // SKILLS tab: a locked capability card deep-links into REFIT to place its missing gear (same
+    // honest path the retired SKILLS window carried — moved here with the grid, NAV CONDENSE 2).
+    const agentName = (a && a.name) || (a && a.id) || 'agent';
+    host.querySelectorAll('.perk-locked[data-perk-cap]').forEach(p => {
+      const go = () => { sfx('click'); placeGearForSkill(p.dataset.perkCap, agentName); };
+      p.addEventListener('click', go);
+      p.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
+    });
+    // TOOLSET honesty: a family switched OFF in ABILITIES → TOOLSETS must read as OFF here too, so
+    // the two surfaces can't tell different stories. Best-effort; a fetch miss leaves perks as-is.
+    Harness.api.get('/api/toolsets').then(j => {
+      const disabledObjs = {};
+      (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
+      const skills = skillsFor((a && a.id) || 'agent');
+      const perks = host.querySelectorAll('.perk-grid .perk');
+      skills.forEach((s, i) => {
+        if (s.cap && disabledObjs[s.cap] && perks[i]) {
+          perks[i].classList.remove('on'); perks[i].classList.add('ts-disabled');
+          const stat = perks[i].querySelector('.perk-stat'); if (stat) { stat.textContent = '○ OFF — switch it on in ⇄ ABILITIES'; stat.classList.remove('ask'); }
+        }
+      });
+    }).catch(() => {});
   }
   function drawPortrait(cv, a) {
     if (!cv) return;
@@ -2378,48 +2421,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     try { caps = (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(agentId).map(c => c.objectType) : []; } catch (e) {}
     return SKILLS.map(s => ({ ...s, on: s.cap === null || caps.indexOf(s.cap) !== -1 }));
   }
-  function buildSkills(body) {
+  /* NAV CONDENSE 2 (2026-08-04): the standalone SKILLS window is gone. Its per-agent CAPABILITIES
+     grid lives in the dossier's SKILLS tab (agSkills — same truth, one per-agent home), and the two
+     procedure sections below register as an ABILITIES lane: windows/connectors.js reads
+     window.AbilityLanes at build time and mounts these sections in its own console, so one window
+     owns the whole "what agents can do" axis. Same two-part lane shape as windows/automation.js
+     ({sections, wire}); wire() runs after the shared mountConsole call. */
+  function abilitySkillsLane(body) {
     const a = present[sel];
     const agentId = (a && a.id) || 'agent';
-    const skills = skillsFor(agentId);
-    const on = skills.filter(s => s.on).length;
-    // CONSOLE MODE: CAPABILITIES · SKILL LIBRARY · AGENT SKILLS as three sections instead of one long scroll.
-    // The library categories stay as sub-headers inside the LIBRARY section (renderSkillLibrary emits them);
-    // its async loaders target #sk-lib / #sk-agent which live inside the panes below.
-    // locked copy is OBJECT-TRUTHFUL: not a disabled toggle, but "no DISH at the desk" — it points at the furniture.
-    const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
-    // a LOCKED-for-missing-gear card (a real cap whose prop isn't on the floor) becomes a one-click deep-link into
-    // REFIT to place that prop — the honest fix, never a fake auto-grant. COMPUTE (cap:null) is always on and never
-    // locked. data-perk-cap carries the capability objectType so the wiring below routes it to placeGearForSkill.
-    const secCaps =
-      '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
-      '<div class="perk-grid">' +
-      skills.map((s, i) => {
-        const lockable = !s.on && s.cap;
-        return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
-          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place ' + skArt(SK_OBJ_NAME[s.cap] || s.cap) + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
-          ' style="--ci:' + i + '">' +
-          '<div class="perk-icon">' + s.icon + '</div>' +
-          '<div class="perk-name">' + s.name + '</div>' +
-          '<div class="perk-desc">' + s.tools + '</div>' +
-          '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
-          (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : capLockedText(s)) + '</div>' +
-          (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
-      }).join('') +
-      '</div>' +
-      '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
-      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
-      '<b>notebook</b> saves freely.</p>' +
-      // Audit finding 1: this readout and TOOLSETS are the SAME tool families under two names, and this panel
-      // never said where the switches live. One honest pointer closes the loop.
-      '<p class="sk-note">This view is <b>read-only</b> — the on/off switches for these same tool families live in ' +
-      'the <b>⇄ TOOLSETS</b> panel on the bottom bar.</p>';
     const secLibrary =
       // "recipes" here collided with the ❒ RECIPES dock feature (audit finding 2) — these are PROCEDURES: how-to
       // guides an agent follows mid-task, not launchable jobs.
       '<p class="sk-note sk-lib-intro">Pre-installed <b>procedures</b> your agents follow when a task matches ' +
       '(not the same as ❒ RECIPES — those are launchable jobs; these are how-to guides). Each one ' +
-      'rides on the capabilities above — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
+      'rides on the agent’s capabilities (the TOOLSETS section here; per-agent, the dossier’s SKILLS tab) — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
       'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
       '<div id="sk-lib" class="sk-lib"><div class="sk-loading"><span class="loading pulse">loading the skill library…</span></div></div>';
     const secAgent =
@@ -2431,37 +2447,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        because a live session cannot switch voice mid-call. */
 
     const frag = html => (el => { el.innerHTML = html; });
-    mountConsole(body, 'skills', [
-      { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
+    const sections = [
       { id: 'library', label: 'SKILL LIBRARY', glyph: '▤', desc: 'Pre-installed procedures your agents follow when a task matches, grouped by kind.', build: frag(secLibrary) },
       { id: 'agent', label: 'AGENT SKILLS', glyph: '✎', desc: 'Procedures this agent created or learned itself.', build: frag(secAgent) }
-    ], { search: true, searchPlaceholder: 'search skills…' });
-    loadSkillLibrary(agentId);
-    loadAgentSkills(agentId);
-    wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
-    // LOCKED capability card → the real REFIT placement surface (same deep-link the SKILL LIBRARY's PLACE uses).
-    // A ts-disabled card (gear IS placed, toolset just off) is not locked-for-gear, so it never gets this wiring.
-    const agentName = (a && a.name) || agentId;
-    body.querySelectorAll('.perk-locked[data-perk-cap]').forEach(p => {
-      const go = () => { sfx('click'); placeGearForSkill(p.dataset.perkCap, agentName); };
-      p.addEventListener('click', go);
-      p.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
-    });
-    // TOOLSET honesty: a family switched OFF in the TOOLSETS console must read as OFF here too, so the two
-    // surfaces can't tell different stories. Cheap best-effort: fetch the toolset state and dim matching perks
-    // (mapped by the granting objectType == SKILLS[].cap). Never blocks the panel; a fetch miss leaves perks as-is.
-    Harness.api.get('/api/toolsets').then(j => {
-      const disabledObjs = {};
-      (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
-      const perks = body.querySelectorAll('.perk-grid .perk');
-      skills.forEach((s, i) => {
-        if (s.cap && disabledObjs[s.cap] && perks[i]) {
-          perks[i].classList.remove('on'); perks[i].classList.add('ts-disabled');
-          const stat = perks[i].querySelector('.perk-stat'); if (stat) { stat.textContent = '○ OFF — switch it on in ⇄ TOOLSETS'; stat.classList.remove('ask'); }
-        }
-      });
-    }).catch(() => {});
+    ];
+    function wire() {
+      loadSkillLibrary(agentId);
+      loadAgentSkills(agentId);
+      wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
+    }
+    return { sections, wire };
   }
+  window.AbilityLanes = window.AbilityLanes || [];
+  window.AbilityLanes.push(abilitySkillsLane);
 
   // async: fetch the bundled recipe catalog (with THIS agent's placed objects, so the active/locked readout is
   // truthful) and render it into #sk-lib. Mirrors loadMemoryCore — re-query the host after the await so a panel
@@ -2476,14 +2474,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const h = $('#sk-lib');
         if (h) {
           renderSkillLibrary(h, (d && d.skills) || [], agentId, placed);
-          requestAnimationFrame(() => fitTermInViewport(open.skills));
+          requestAnimationFrame(() => fitTermInViewport(open.connectors));
         }
       })
       .catch(() => {
         const h = $('#sk-lib');
         if (h) {
           h.innerHTML = '<div class="sk-loading">Could not load the skill library — is the sidecar running?</div>';
-          requestAnimationFrame(() => fitTermInViewport(open.skills));
+          requestAnimationFrame(() => fitTermInViewport(open.connectors));
         }
       });
   }
@@ -2512,7 +2510,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (typeof Build === 'undefined' || !(Build.open || Build.toggle)) {
       notify('Open ⚒ BUILD and place ' + skArt(label) + label + ' to unlock this skill', 'warn'); return;
     }
-    try { if (open.skills) minimizeTerm('skills'); } catch (_) {}
+    // the caller may sit in the ABILITIES console (skill library PLACE) or the dossier's SKILLS tab
+    // (locked capability card) — clear whichever is open so REFIT isn't buried under it.
+    try { if (open.connectors) minimizeTerm('connectors'); } catch (_) {}
+    try { if (open.agents) minimizeTerm('agents'); } catch (_) {}
     try {
       if (Build.isOpen && Build.isOpen()) { /* already in REFIT */ }
       else if (Build.open) Build.open();
@@ -4703,7 +4704,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
       // dock read as a loop.
       { id: 'notifs', label: 'ALERTS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
-      { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
+      { id: 'system', label: 'RUNTIME', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, and station backup.', build: frag(secSystem) }
     ];
     const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
 
@@ -6362,10 +6363,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '760px' }],
-    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { console: true }],
+    // NAV CONDENSE 2 (2026-08-04): 'skills' is no longer a window key — the skill library/agent-
+    // skills sections live in the ABILITIES (connectors) console via AbilityLanes, and per-agent
+    // capabilities live in the dossier's SKILLS tab. openTerm keeps the old keys alive as aliases
+    // (TERM_ALIAS). UPDATES stays its own SYSTEM-dock window (Andrew's call — an update is a
+    // check-it-now surface, not a setting).
+    updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { w: '760px' }],
-    updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
@@ -6421,7 +6426,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // ('create' → 'routines-create', 'start'/'active' → 'loops-start'/'loops').
   const TERM_ALIAS = {
     routines: { term: 'automation', section: 'routines', map: { active: 'routines', create: 'routines-create' } },
-    loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } }
+    loops:    { term: 'automation', section: 'loops',    map: { active: 'loops', start: 'loops-start' } },
+    // NAV CONDENSE 2: three more retired window keys live on as deep links. 'skills' lands on the
+    // ABILITIES skill library (its per-agent CAPABILITIES grid moved to the dossier SKILLS tab, so
+    // the old 'caps' section maps to the toolsets home); 'logbook' and 'rewind' are dossier
+    // sections of the selected agent. ('updates' is still a real window — no alias needed.)
+    skills:   { term: 'connectors', section: 'library', map: { library: 'library', agent: 'agent', caps: 'toolsets' } },
+    logbook:  { term: 'agents',     section: 'logbook', map: { runs: 'logbook', slag: 'logbook', insights: 'logbook' } },
+    rewind:   { term: 'agents',     section: 'restore', map: {} }
   };
   function openTerm(key, section) {
     const al = TERM_ALIAS[key];

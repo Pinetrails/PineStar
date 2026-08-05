@@ -35,10 +35,13 @@ const MANUAL =
   'hands that work to an agent.\n' +
   '- The DOCK (bottom bar): ⚒ BUILD → BUILD STATION opens REFIT; the RECRUIT/SUMMON control opens ' +
   'the Recruitment Bay.\n' +
-  '- ⇄ ABILITIES (dock): **the one place external platforms get connected.** Four tabs — TOOLSETS ' +
+  '- ⇄ ABILITIES (dock): **the one place external platforms get connected**, and the home of everything ' +
+  'agents can do. Its sections — TOOLSETS ' +
   '(built-in tool families + their kill-switches), CATALOG (one-click connectors to vetted services), ' +
   'KEYS (paste an API key for any platform, listed or not), MCP CONNECTORS (attach any MCP server by ' +
-  'URL), EXTENSIONS (the Commander\'s own hooks and plugins). Its search box matches platform names.\n' +
+  'URL), EXTENSIONS (the Commander\'s own hooks and plugins), SKILL LIBRARY (pre-installed procedures ' +
+  'agents follow), AGENT SKILLS (procedures an agent learned itself). Its search box matches platform names. ' +
+  'A single agent\'s live capability readout is the SKILLS tab of its dossier (CREW › AGENTS).\n' +
   '- ✉ CHANNELS (dock): connect Telegram, Discord, Slack, Matrix, or Signal so the Commander can ' +
   'message agents FROM those apps. This is the INBOUND direction and is NOT where a platform becomes ' +
   'an agent tool — that is ABILITIES.\n' +
