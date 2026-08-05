@@ -96,4 +96,52 @@ A.ok(/if \(!V \|\| !V\.grounded\(grounds, pool\)\) continue;/.test(jobsSrc), '�
 A.ok(idx.indexOf('app/autojobs.js') < idx.indexOf('app/autopilot.js'),
   'autojobs.js loads before autopilot.js — which is why the veto engine is resolved at call time');
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   3. ONE CARD GRAMMAR + ONE HEADER FAMILY ACROSS EVERY SHELF
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+const mkt = read('frontend/app/marketplace.js');
+// the glyph sweep below must read CODE, not the block comment that documents which glyphs were retired.
+const mktCode = mkt.replace(/\/\*[\s\S]*?\*\//g, '');
+// the two recruiter shelves rendered `it.why` raw — the one place the bay names a real counter was the one
+// place it dropped the "because".
+A.eq(/\{ s: Specialties\.get\(it\.classId\), why: it\.why \}/.test(mkt), false,
+  'no shelf maps a raw recommender reason onto a card any more');
+A.eq((mkt.match(/why: whyGrammar\(it\.why\)/g) || []).length, 2,
+  'both recruiter shelves (curated + uncovered) speak the shared grammar');
+// ONE glyph. The four strays are gone from the shelf headers.
+for (const [glyph, was] of [['★', 'RECOMMENDED FOR YOU'], ['◆', 'CURATED FOR YOUR WORKFLOW'], ['◆', 'UNCOVERED'], ['✦', 'DRAFTED FOR YOU']]) {
+  A.eq(mktCode.indexOf(glyph + ' ' + was) >= 0, false, 'the “' + glyph + ' ' + was + '” header is gone');
+}
+A.ok(/function noticedHead\(tail\)/.test(mkt) && /NOTICED' : 'NOTICED'/.test(mkt),
+  'the bay composes its earned headers with the SAME eyebrow the COMMS offer card uses');
+// …and the noticer is claimed ONLY where something was noticed.
+A.ok(/res\.personalized\s*\n?\s*\? noticedHead\(/.test(mkt) || /personalized\s*$/m.test(mkt), 'the specialists shelf gates the eyebrow on its own personalized flag');
+A.ok(/coldHead\('STARTING LINEUP/.test(mkt) && /coldHead\('STARTING POINTS/.test(mkt),
+  'both cold-start shelves keep the glyph and DROP the noticer claim — a spread noticed nothing');
+A.ok(/const coldHead = \(tail\) => '◈ ' \+ tail;/.test(mkt),
+  '…structurally: coldHead composes the glyph and nothing else, so a cold shelf CANNOT wear the eyebrow');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   6. THE FOR YOU HEADER MAY NOT CLAIM A ROW THE RANKER DID NOT PERSONALIZE
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   Readiness says the station has learned enough to be ASKED. It does not say THIS row used any of it. */
+const catalog = Recipes.list();
+const cold = Recipes.rankRecipesExplained(catalog, { limit: 3 });
+A.eq(cold.personalized, false, 'no signal at all → the row reports itself as a spread');
+A.eq(cold.items.length, 3, '…and still returns a full, varied row (the shelf never empties)');
+// a ready-but-silent Commander: dossier filled (so readiness passes) yet the goal text matches no recipe, no
+// launches, no topics, no profile. This is the exact shape that used to print "◈ FOR YOU" over catalog order.
+const silent = Recipes.rankRecipesExplained(catalog, { limit: 3, goalText: 'i want to be happy and rich', launches: {}, topics: [] });
+A.eq(silent.personalized, false, 'a filled dossier whose goal hits nothing is STILL a spread — and says so');
+A.eq(silent.items.map(r => r.id).join(','), cold.items.map(r => r.id).join(','), '…the identical spread, in fact');
+// one real launch is enough to earn the claim
+const earned = Recipes.rankRecipesExplained(catalog, { limit: 3, launches: { [catalog[0].id]: 4 } });
+A.eq(earned.personalized, true, 'one REAL launch counter earns the personalized header');
+A.eq(earned.items[0].id, catalog[0].id, '…and puts that recipe first');
+// the old signature is untouched — every existing caller and test keeps working byte-for-byte
+A.eq(Recipes.rankRecipes(catalog, { limit: 3 }).map(r => r.id).join(','), cold.items.map(r => r.id).join(','),
+  'rankRecipes still returns the plain array it always did');
+A.ok(/const head = \(ready && ranked\.personalized\)/.test(mkt),
+  'the shelf gates its header on BOTH readiness and what the ranker actually did');
+
 A.report('rec truth & consistency (W3)');

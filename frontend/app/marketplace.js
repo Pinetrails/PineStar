@@ -1225,6 +1225,21 @@ const Marketplace = (() => {
     if (!t) return '';
     return (typeof Recommend !== 'undefined' && Recommend.whyLine) ? (Recommend.whyLine({ why: t }) || t) : t;
   }
+  /* ONE HEADER GRAMMAR TOO (2026-08-05). The bay's five recommender shelves had grown five headers under FOUR
+     different glyphs — ★ RECOMMENDED, ◆ CURATED, ◆ UNCOVERED, ✦ DRAFTED, ◈ FOR YOU — and not one of them named
+     the agent doing the noticing, while the COMMS offer card next door leads with '◈ <NAME> NOTICED'. Same
+     station, same act of noticing, five costumes. These are the SAME family now: one glyph, and the noticer is
+     named wherever the shelf genuinely noticed something.
+
+     ⛔ THE NOTICER CLAIM IS NOT DECORATION. A cold-start shelf noticed NOTHING — it is a lineup drawn in catalog
+     order — so it keeps the glyph and does NOT get the eyebrow. Stamping "NOTICED" on a spread would be the
+     header telling the same lie item 6 fixes one function below. `noticedHead` is for earned rows only. */
+  function noticedHead(tail) {
+    const n = String((ctx && ctx.agentName) || '').trim();
+    // mirrors chat.js recCard: the name when the station has one, a bare NOTICED when it does not.
+    return '◈ ' + (n ? n.toUpperCase() + ' NOTICED' : 'NOTICED') + (tail ? ' — ' + tail : '');
+  }
+  const coldHead = (tail) => '◈ ' + tail;   // same glyph, no noticer claim
   function becauseText(s) {
     const ps = profileApi(); if (!ps || !ps.explain) return '';
     const t = ps.explain(s.tags || {});
@@ -1339,8 +1354,8 @@ const Marketplace = (() => {
     if (!res.items.length) return '';
     res.items.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     const head = res.personalized
-      ? '★ RECOMMENDED FOR YOU — based on your recent runs'
-      : '◈ STARTING LINEUP — one per lane while the station learns what you work on · this shelf changes as you use agents';
+      ? noticedHead('based on your recent runs')
+      : coldHead('STARTING LINEUP — one per lane while the station learns what you work on · this shelf changes as you use agents');
     return '<div class="mkt-sect-h mkt-rec-sect">' + head + '</div><div class="mkt-rec-rail">' +
       res.items.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
@@ -1351,12 +1366,16 @@ const Marketplace = (() => {
     let res; try { res = RecruiterStore.recommend(); } catch (_) { return ''; }
     if (!res || !res.warm || !res.items || !res.items.length) return '';
     const excludeId = ctx && ctx.currentSpecialtyId;
+    // …through the SAME grammar every other shelf and every COMMS offer card speaks. These two recruiter shelves
+    // rendered `it.why` raw, so the one place the bay names a REAL counter ("your recent work leaned on the web")
+    // was also the one place it forgot the "because" — two shelves side by side in different voices.
     const cards = res.items
-      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
+      .map(it => ({ s: Specialties.get(it.classId), why: whyGrammar(it.why) }))
       .filter(x => x.s && x.s.id !== excludeId);
     if (!cards.length) return '';
     cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
-    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — based on your recent runs · the next hire your real work points to</div>' +
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">' +
+      noticedHead('the next hire your real work points to') + '</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- UNCOVERED: a warm learned topic NOBODY on the crew handles (2026-07-28) ----------
@@ -1371,11 +1390,12 @@ const Marketplace = (() => {
     if (!res || !res.items || !res.items.length) return '';
     const excludeId = ctx && ctx.currentSpecialtyId;
     const cards = res.items
-      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
+      .map(it => ({ s: Specialties.get(it.classId), why: whyGrammar(it.why) }))
       .filter(x => x.s && x.s.id !== excludeId);
     if (!cards.length) return '';
     cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
-    return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">◆ UNCOVERED — work you keep doing that nobody on the crew handles</div>' +
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">' +
+      noticedHead('work you keep doing that nobody on the crew handles') + '</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- PROSPECTS: bespoke DRAFTS the station authored from the Commander's real work (Slice 4) ----------
@@ -1387,7 +1407,10 @@ const Marketplace = (() => {
     if (typeof ProspectStore === 'undefined' || !ProspectStore.list) return '';
     let items = []; try { items = ProspectStore.list() || []; } catch (_) { return ''; }
     if (!items.length) return '';
-    return '<div class="mkt-sect-h mkt-rec-sect mkt-prospect-sect">✦ DRAFTED FOR YOU — new roles the station authored from your work</div>' +
+    // one glyph with the rest of the family; the VERB stays "drafted" because that is what actually happened —
+    // these are specs the station wrote, not catalog classes it ranked.
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-prospect-sect">' +
+      noticedHead('new roles the station drafted from your work') + '</div>' +
       '<div class="mkt-rec-rail">' + items.map(prospectCardHTML).join('') + '</div>';
   }
   function prospectCardHTML(p) {
@@ -1440,7 +1463,14 @@ const Marketplace = (() => {
     // visits repeat two of three cards and it takes twelve visits to see the whole library. Striding by 3
     // makes each visit a disjoint set and surfaces all twelve buckets in four. This shelf exists for someone
     // who cannot yet name a use case, so three NEW domains beats one new and two they already skipped.
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 });
+    const rankOpts = { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 };
+    // ASK THE RANKER WHAT IT ACTUALLY DID. `ready` only says the station has learned enough to be asked; it does
+    // NOT say this row used any of it. A ready Commander whose profile, goals, launches and topics all come up
+    // silent gets a catalog-order category spread — and used to get "◈ FOR YOU" printed over it.
+    const ranked = Recipes.rankRecipesExplained
+      ? Recipes.rankRecipesExplained(Recipes.list(), rankOpts)
+      : { items: Recipes.rankRecipes(Recipes.list(), rankOpts), personalized: false };
+    const items = ranked.items;
     if (!items || !items.length) return '';
     // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
     // shelf blends four real signals and used to explain NONE of them — every other shelf in the bay names its
@@ -1453,7 +1483,11 @@ const Marketplace = (() => {
       // the COMMS offer cards do (recommend.js whyLine). Fail-open — the raw reason if the spine isn't loaded.
       return whyGrammar(raw);
     };
-    const head = ready ? '◈ FOR YOU' : '◈ STARTING POINTS — a varied lineup while the station gets to know you';
+    // the header may claim this row is FOR THEM only when a real term produced it (and readiness still gates the
+    // whole personalized read, so both must hold).
+    const head = (ready && ranked.personalized)
+      ? noticedHead('picked from your real work')
+      : coldHead('STARTING POINTS — a varied lineup while the station gets to know you');
     items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));
     return '<div class="mkt-sect-h mkt-foryou-sect">' + head + '</div><div class="mkt-rec-rail">' +
       items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
