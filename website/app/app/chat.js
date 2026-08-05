@@ -497,6 +497,7 @@ const Chat = (() => {
     // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
     // never flush into a new session (same law as turninQueue above). A fresh beat-slot arbiter matches the DOM.
     arcRunsSeen.clear();   // GROWTH Tier 2: the arc side starts clean per session (a prior hero's arc offers never carry over)
+    reconfirmDeferred.clear();   // quality loop Q3: a deferred "still true?" is per-session like every sibling above — an agent switch starts clean
     clearNudge();
     if (beatCards) beatCards.reset();
     beatCards = (typeof BeatCard !== 'undefined' && BeatCard.create) ? BeatCard.create({ vanish: vanish }) : null;

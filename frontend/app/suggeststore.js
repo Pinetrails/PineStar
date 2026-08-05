@@ -223,7 +223,9 @@ const SuggestStore = (() => {
         const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
         if (accepted) { acceptedRecommendation = recommendationId; acceptedRunId = null; ledgerPost({ id: recommendationId, state: 'accepted', reason: 'accepted' });
           const launched = doBuild(parsed);
-          if (launched && rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} }
+          if (launched) {
+            if (rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'suggest', dim: probe ? probe.dim : '', spawnsWork: true, id: recommendationId }); } catch (_) {} }
+          }
           /* A REFUSED LAUNCH IS A REAL EVENT, AND IT WAS SILENT (fixed 2026-08-04). doBuild returns false when
              the stream is busy — the guard above correctly stops the attribution stamp being armed on work that
              never started, but then NOTHING happened: the loop learned nothing and the Commander was told
@@ -232,11 +234,15 @@ const SuggestStore = (() => {
              that is the outcome folded, and the chip settles with one short line naming the real reason.
              `acceptedRecommendation` is cleared for the same reason the stamp is not armed: no run started, so
              the next unrelated run must not be recorded (onRunStart) as this recommendation's work.
-             THE LEDGER IS DELIBERATELY LEFT AS-IS: 'accepted' is already posted and truthful (they really did
-             accept), and recommendation-ledger.js NEXT allows accepted → started/declined/completed only —
-             there is no state for "accepted, launch refused", and inventing one of the three would be a lie. */
+             The ledger gets the same truth: NEXT.accepted permits `declined`, and the ledger's own fold
+             (recommendation-ledger.js) explicitly treats declined/wrong_time as NEUTRAL, not negative — the
+             exact "right idea, wrong moment" shape this is. Leaving the row terminal at `accepted` would have
+             counted a launch that never happened as a positive preference signal forever.
+             NOTE this branch keys on `launched` ALONE — a successful launch with RecQualityStore absent must
+             never take the refused path (it would clear the accept and lie to the Commander mid-run). */
           else {
             acceptedRecommendation = null; acceptedRunId = null;
+            ledgerPost({ id: recommendationId, state: 'declined', reason: 'wrong_time' });
             if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'suggest', dim: probe ? probe.dim : '' }, true); } catch (_) {} }
             try { if (typeof Chat !== 'undefined' && Chat.localLine) Chat.localLine('stream’s busy — ask me again after this run'); } catch (_) {}
           } }

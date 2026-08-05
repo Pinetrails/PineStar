@@ -198,14 +198,16 @@ A.ok(passBody.indexOf('c.quality = recQualityOf') < passBody.indexOf('Recommend.
   '…before the spine ranks them');
 for (const [file, probe, what] of [
   ['frontend/app/suggeststore.js', /noteAccept\(\{ channel: 'suggest', dim: probe \? probe\.dim : '', spawnsWork: true/, 'the suggestion arms a stamp (its accept launches a run)'],
-  ['frontend/app/suggeststore.js', /const launched = doBuild\(parsed\);\s*\n\s*if \(launched && rq && rq\.noteAccept\)/,
-    'and it arms that stamp ONLY when the launch really started — a busy stream no-ops the send, and an accept that ran nothing must attribute nothing'],
+  ['frontend/app/suggeststore.js', /const launched = doBuild\(parsed\);\s*\n\s*if \(launched\) \{\s*\n\s*if \(rq && rq\.noteAccept\)/,
+    'and it arms that stamp ONLY when the launch really started — the refused branch keys on `launched` ALONE, so a successful launch with the store absent can never take it'],
   ['frontend/app/suggeststore.js', /if \(deps\.launchDirective\) return deps\.launchDirective\(directive\) === true;/,
     'doBuild reports the launch result (fail-closed: an unprovable launch is not a launch)'],
   /* S6: …and a REFUSED launch is no longer silent. Detecting it was only half the fix — the loop learned
      nothing from it and the Commander was told nothing (they tapped "let's build it" and the beat vanished). */
-  ['frontend/app/suggeststore.js', /acceptedRecommendation = null; acceptedRunId = null;\s*\n\s*if \(rq && rq\.noteDecline\) \{ try \{ rq\.noteDecline\(\{ channel: 'suggest', dim: probe \? probe\.dim : '' \}, true\); \}/,
+  ['frontend/app/suggeststore.js', /acceptedRecommendation = null; acceptedRunId = null;\s*\n\s*ledgerPost\(\{ id: recommendationId, state: 'declined', reason: 'wrong_time' \}\);\s*\n\s*if \(rq && rq\.noteDecline\) \{ try \{ rq\.noteDecline\(\{ channel: 'suggest', dim: probe \? probe\.dim : '' \}, true\); \}/,
     'a refused launch folds "deferred" — right idea, wrong moment, which is all the harness can honestly say'],
+  ['frontend/app/suggeststore.js', /ledgerPost\(\{ id: recommendationId, state: 'declined', reason: 'wrong_time' \}\);\s*\n\s*if \(rq && rq\.noteDecline\)/,
+    'and the LEDGER hears the same truth — declined/wrong_time is its own neutral shape; a row left terminal at accepted would count a launch that never happened as positive preference forever'],
   ['frontend/app/suggeststore.js', /Chat\.localLine\('stream’s busy — ask me again after this run'\)/,
     'and it TELLS the Commander why, in one short house line, instead of the beat just disappearing'],
   ['frontend/app/app.js', /let sent = false; if \(typeof Chat !== 'undefined' && Chat\.send && !Chat\.isBusy\(\)\) \{ Chat\.send\(text\); sent = true; \} persist\(\); return sent;/,
