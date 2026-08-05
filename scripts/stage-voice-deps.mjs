@@ -105,6 +105,35 @@ function pruneOnnxBinaries(root) {
   return { freed, kept };
 }
 
+// Tauri's resource copy can retain files that disappeared from a later staged tree. Purge the exact
+// packages this script drops from prior release-resource outputs before the bundler runs, otherwise a
+// warm build can silently put a removed dependency back into the installer.
+function purgeStaleReleasePackages() {
+  const targetRoot = join(ROOT, 'src-tauri', 'target');
+  const roots = [join(targetRoot, 'release', 'node_modules')];
+  let entries = [];
+  try { entries = readdirSync(targetRoot, { withFileTypes: true }); } catch (_) {}
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name !== 'release') {
+      roots.push(join(targetRoot, entry.name, 'release', 'node_modules'));
+    }
+  }
+  const removeNamed = dir => {
+    let children;
+    try { children = readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const child of children) {
+      if (!child.isDirectory()) continue;
+      const childPath = join(dir, child.name);
+      if (DROP_ANYWHERE.has(child.name)) {
+        rmSync(childPath, { recursive: true, force: true });
+      } else {
+        removeNamed(childPath);
+      }
+    }
+  };
+  for (const root of roots) removeNamed(root);
+}
+
 if (args.includes('--report')) {
   if (!existsSync(OUT)) { console.log('voice-deps: nothing staged at ' + OUT); process.exit(0); }
   console.log('voice-deps staged: ' + mb(dirSize(join(OUT, 'node_modules'))) + ' at ' + OUT);
@@ -152,6 +181,7 @@ let extraFreed = 0;
     }
   }
 })(dest);
+if (OUT === resolve(join(ROOT, 'src-tauri', 'voice-deps'))) purgeStaleReleasePackages();
 const final = dirSize(dest);
 
 // A staged tree that cannot resolve the very packages it exists for is worse than none: it would ship and

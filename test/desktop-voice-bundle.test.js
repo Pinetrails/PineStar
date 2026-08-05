@@ -52,5 +52,7 @@ assert.match(stage, /if \(!pruned\.kept\.length\)/, 'the build fails closed when
 assert.match(stage, /for \(const dep of runtimeDeps\)/, 'every declared production dependency must exist in the staged tree');
 assert.match(stage, /DROP_ANYWHERE = new Set\(\['onnxruntime-web', 'adm-zip'\]\)/, 'browser ONNX and the build-only ZIP downloader are not shipped in the Node sidecar bundle');
 assert.match(stage, /build-only adm-zip leaked into the shipped runtime closure/, 'the build fails closed if the vulnerable postinstall-only ZIP package survives staging');
+assert.match(stage, /function purgeStaleReleasePackages\(\)/, 'warm Tauri outputs are purged so removed packages cannot survive in a later installer');
+assert.match(stage, /OUT === resolve\(join\(ROOT, 'src-tauri', 'voice-deps'\)\)/, 'stale-output purging is limited to the real desktop staging path');
 
 console.log('desktop voice bundle tests passed');
