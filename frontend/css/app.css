@@ -3947,6 +3947,89 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 /* the section head is a click target only while searching (jump-to-section) */
 .con-searching .con-sec-head { cursor: pointer; }
 .con-searching .con-sec-head:hover .sec-l { color: var(--ph-bright); }
+/* ---------- SETTINGS ▸ PERMISSIONS ----------
+   The pane answers three questions in order (who asks first · how far it may go unattended · what is
+   already blessed), topped by the FULL BYPASS master switch. Before this block it was one undifferentiated
+   column of .set-row prose: block labels rendered at body weight, and because .set-row is display:block
+   the flip buttons sat INLINE after variable-length sentences — five ragged left edges, text touching the
+   button. These rules are scoped to the permissions ids/classes only; the shared .set-row / .key-list
+   vocabulary every other settings section uses is untouched. */
+/* The prose measure. NOT expressed in `ch`: VT323's advance is only ~4.8px, so a "92ch" that reads as a
+   sane 92-character measure in a proportional font resolves to 442px here — half of an 860px pane, which
+   left every paragraph orphaned against a wide empty gutter (live-measured 2026-08-05). Set in px, and
+   generous: the paragraphs fill the pane like every sibling settings section, and the cap only bites when
+   the console is dragged very wide. */
+:root { --perm-measure: 760px; }
+.perm-master {
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.35); border-radius: var(--r-sm); box-shadow: var(--raise);
+  padding: 10px 13px 11px; margin: 2px 0 6px;
+}
+/* ON is the loudest state in the product — the card says so with the alarm accent, not with more words. */
+.perm-master.on { border-left-color: var(--bad); box-shadow: var(--raise), 0 0 14px rgba(var(--bad-rgb), 0.16); }
+.perm-m-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.perm-m-title { font-size: 15px; color: var(--ph-bright); letter-spacing: 2px; }
+.perm-m-chip {
+  font-size: 10px; letter-spacing: 1px; padding: 1px 7px; border-radius: var(--r-sm);
+  border: 1px solid var(--ph-dim); color: var(--ph-dim);
+}
+.perm-m-chip.on { border-color: var(--bad); color: var(--bad); box-shadow: 0 0 8px rgba(var(--bad-rgb), 0.28); }
+.perm-m-desc { font-size: 12px; color: var(--ph-dim); line-height: 1.5; margin: 6px 0 9px; max-width: var(--perm-measure); }
+.perm-m-desc code { color: var(--ph); }
+.perm-m-act { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.perm-m-act .bb[disabled] { opacity: 0.5; pointer-events: none; }
+/* a refused flip reports AT the switch, in the error palette the rest of the app uses for a real failure */
+.perm-m-err {
+  font-size: 12px; line-height: 1.4; margin: 0 0 9px; padding: 6px 8px; color: #ffb0a8;
+  border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); border-radius: var(--r-sm);
+}
+.perm-m-floor {
+  font-size: 11px; color: var(--ph-dim); line-height: 1.4; margin: 0; padding-top: 8px;
+  border-top: 1px solid var(--ph-faint); max-width: var(--perm-measure); opacity: 0.85;
+}
+/* the per-agent APPROVAL list: name + state left, the flip button in its own right-aligned column */
+.perm-list { display: flex; flex-direction: column; gap: 5px; margin: 9px 0 10px; }
+.perm-agent {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.22); border-radius: var(--r-sm); padding: 6px 11px;
+}
+.perm-agent.full { border-left-color: var(--gold); }
+.perm-agent .pa-name { flex: 0 0 auto; min-width: 88px; color: var(--ph-bright); letter-spacing: 1px; font-size: 14px; }
+/* the MODE tag carries the state as a word, in a fixed column, so the list can be read down the
+   left edge without parsing five sentences (it replaced a ⚡/✋ pictograph — see paintApproval) */
+.perm-agent .pa-mode {
+  flex: 0 0 auto; min-width: 92px; font-size: 10px; letter-spacing: 1px;
+  color: var(--ph-dim); border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  padding: 1px 6px; text-align: center;
+}
+.perm-agent.full .pa-mode { color: var(--gold); border-color: rgba(var(--gold-rgb), 0.45); }
+.perm-agent .pa-state { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--ph-dim); line-height: 1.35; }
+.perm-agent .bb { flex: 0 0 auto; margin-left: auto; }
+/* the two whole-station switches sit clear of the row list they act on */
+.perm-allacts { margin-top: 10px; }
+/* the lede under each numbered header: same dim body copy, but measured and spaced as a paragraph
+   (.set-about alone carries a 12px top margin tuned for the bottom of a long section) */
+.set-about.perm-lede { margin: 0 0 9px; max-width: var(--perm-measure); line-height: 1.5; opacity: 0.62; }
+.set-about.perm-lede:empty { display: none; }
+/* The STANDING APPROVALS ledger speaks the SAME row language as the APPROVAL list above, so the two
+   lists read as one pane instead of "cards up top, loose prose down here". CSS-only: renderGrants keeps
+   emitting .set-row + a button, and :has() picks out exactly the rows that HAVE a control — the
+   "— pre-approve a capability —" separator and the teaching empty state stay plain text. */
+.perm-grants { margin-top: 2px; display: flex; flex-direction: column; gap: 5px; }
+.perm-grants .set-row:has(> .bb) {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.22); border-radius: var(--r-sm); padding: 6px 11px;
+}
+.perm-grants .set-row:has(> .bb) > span:first-child { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+.perm-grants .set-row:has(> .bb) > .bb { flex: 0 0 auto; margin-left: auto; }
+/* a standing FULL ACCESS wildcard is the broadest grant in the product — same alarm accent as the
+   master card, so it can never sit in the ledger looking like an ordinary row. */
+.perm-grants .set-row:has(> [data-perm-revoke^="blanket:"]) { border-left-color: var(--bad); }
+.perm-grants .set-about { margin-top: 4px; }
+.perm-grants .set-row:not(:has(> .bb)) { margin: 4px 0 0; opacity: 0.75; }
+
 /* while searching: every section is shown, non-matching rows fade, empty sections collapse their body */
 .con-searching .con-miss { opacity: .18; }
 .con-searching .con-sec-nomatch { display: none; }
