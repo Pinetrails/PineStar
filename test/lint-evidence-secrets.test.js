@@ -14,6 +14,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'evidence-secret-lint-'));
 try {
   fs.mkdirSync(path.join(tmp, 'clean'), { recursive: true });
   fs.writeFileSync(path.join(tmp, 'clean', 'phase5-status.json'), '{"model":"anthropic/test","usd":0.01}\n');
+  fs.mkdirSync(path.join(tmp, 'clean', 'frozen-reference', '.git'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'clean', 'frozen-reference', 'upstream-fixture.txt'), 'key=sk-or-v1-upstreamfixture12345\n');
   {
     const res = spawnSync(process.execPath, [script, path.relative(ROOT, path.join(tmp, 'clean'))], {
       cwd: ROOT,
@@ -21,6 +23,7 @@ try {
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /OK/);
+    assert.doesNotMatch(res.stdout + res.stderr, /upstream-fixture/, 'nested source checkouts are not treated as authored evidence');
   }
 
   fs.mkdirSync(path.join(tmp, 'dirty'), { recursive: true });
@@ -33,9 +36,10 @@ try {
     assert.equal(res.status, 1, res.stderr || res.stdout);
     assert.match(res.stderr, /openrouter-v1-key/);
     assert.doesNotMatch(res.stderr, /abc123456789xyz/, 'lint output redacts by omission');
+    assert.doesNotMatch(res.stderr, /upstreamfixture12345/, 'upstream fixture text never leaks');
   }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log('lint-evidence-secrets.test: OK (6 assertions)');
+console.log('lint-evidence-secrets.test: OK (8 assertions)');

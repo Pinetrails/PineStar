@@ -27,6 +27,13 @@ A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_COMPUTER_DRIVER", "1"\)/.test(ma
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_BROWSER_HEADLESS", "1"\)/.test(mainRs), 'every desktop sidecar launch pins controlled browsing headless');
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_USER_CONTROL_MODE", "preserve"\)/.test(mainRs), 'every desktop sidecar launch pins user-control preservation');
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_MCP_STDIO", "0"\)/.test(mainRs), 'installed desktop refuses unsandboxed local MCP children');
+A.ok(/fn set_sidecar_branded_env[\s\S]*?strip_prefix\("SKYNET_"\)[\s\S]*?STARNET_\{suffix\}/.test(mainRs), 'desktop-owned sidecar values replace both brand aliases');
+for (const suffix of ['PORT', 'IPC_TOKEN', 'API_TOKEN', 'WORKSPACES', 'OPENROUTER_KEY']) {
+  A.ok(new RegExp(`set_sidecar_branded_env\\(&mut cmd, "SKYNET_${suffix}"`).test(mainRs), `desktop pins both aliases for ${suffix}`);
+}
+A.ok(/for \(provider, env_name\) in SIDECAR_PROVIDER_KEY_ENVS[\s\S]*?set_sidecar_branded_env\(&mut cmd, env_name, key\)/.test(mainRs), 'provider keychain values cannot be shadowed by inherited canonical aliases');
+A.ok(/for \(channel, env_name\) in SIDECAR_CHANNEL_TOKEN_ENVS[\s\S]*?set_sidecar_branded_env\(&mut cmd, env_name, token\)/.test(mainRs), 'channel keychain values cannot be shadowed by inherited canonical aliases');
+A.ok(/fn desktop_owned_env_replaces_poisoned_brand_aliases[\s\S]*?poisoned-parent-value[\s\S]*?fresh-launch-token/.test(mainRs), 'Rust regression test poisons both alias directions before applying desktop-owned values');
 A.ok(!/starnet_open_workshop_file/.test(mainRs), 'webview IPC exposes no workshop file launcher');
 A.ok(!/starnet_open_user_directory/.test(mainRs), 'webview IPC exposes no directory launcher');
 

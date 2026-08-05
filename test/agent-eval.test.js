@@ -17,7 +17,7 @@ const { tmpdir } = require('node:os');
   const report = core.evaluate({ tasks, baselineRows: baseline, candidateRows: candidate });
   A.eq(report.summary, { pass: true, active: 8, passed: 8, failed: 0, pending: 0 }, 'seed pack passes existing behavior and all six bridge scenarios');
   A.eq(report.results[1].metrics, {
-    turns: 1, toolCalls: 1, retries: 0, tokensIn: 20, tokensOut: 8, tokens: 28, costUsd: 0.000036, durationMs: 190,
+    turns: 1, toolCalls: 1, retries: 0, tokensIn: 20, tokensOut: 8, tokens: 28, costUsd: 0.000036, firstTokenMs: 0, durationMs: 190,
     artifactHashes: [{ path: 'output.md', sha256: '0da6d1b1911c49b32fb845247367d08532316038e81c2b524de8b192818e1e9f' }], verificationFresh: true
   }, 'metrics include turns, tools, retries, tokens, cost, time, artifact identity, and verification freshness');
 

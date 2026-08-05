@@ -163,6 +163,8 @@
       // (previously the send rejection was swallowed and the failure left no trace anywhere). Additive:
       // old jobs load these as undefined and every consumer tolerates absence.
       lastDeliveryAt: null, lastDeliveryOk: null, lastDeliveryError: null,
+      // Durable terminal receipt. `pending` is replayed on boot with the same run id, result, cost and destination.
+      finalization: null, lastUsd: 0,
       // G4.5 one-shot fire-claim: stamped at fire time (claimOnceFire), cleared on settlement (markRun).
       // null on a fresh job; only ever non-null while a one-shot run is in flight (or a zombie past maxRunMs).
       fireClaim: null, lastFireAttemptAt: null,
@@ -319,12 +321,18 @@
     result = result || {}; ctx = ctx || {};
     const now = ctx.now || 0;
     const ok = result.ok === true;
-    return mapJob(jobs, id, (job) => Object.assign({}, job, {
-      lastDeliveryAt: iso(now),
-      lastDeliveryOk: ok,
-      lastDeliveryError: ok ? null : String(result.error != null ? result.error : 'delivery failed') +
-        (result.channel ? ' [' + String(result.channel) + ']' : '')
-    }));
+    return mapJob(jobs, id, (job) => {
+      const error = ok ? null : String(result.error != null ? result.error : 'delivery failed') +
+        (result.channel ? ' [' + String(result.channel) + ']' : '');
+      const next = Object.assign({}, job, { lastDeliveryAt: iso(now), lastDeliveryOk: ok, lastDeliveryError: error });
+      if (job.finalization && (!result.runId || String(result.runId) === String(job.finalization.runId))) {
+        next.finalization = Object.assign({}, job.finalization, {
+          state: ok ? 'delivered' : 'pending', attempts: (job.finalization.attempts || 0) + 1,
+          deliveredAt: ok ? iso(now) : null, lastError: error
+        });
+      }
+      return next;
+    });
   }
 
   /* markRun — record the outcome of a fired run. `result = { runId, status:'ok'|'error', reason, error, transient }`.
@@ -370,6 +378,14 @@
       }
 
       // terminal: finalize this occurrence.
+      next.lastUsd = Number.isFinite(Number(result.usd)) ? Number(result.usd) : 0;
+      next.finalization = {
+        id: String(next.lastRunId || job.id) + ':final', runId: String(next.lastRunId || ''), state: 'pending',
+        outcome: ok ? (String(result.output || '').trim() === '[SILENT]' ? 'silent' : 'ok') : 'failed',
+        result: ok ? String(result.output || '').slice(0, 32000) : '', error: ok ? null : next.lastError,
+        usd: next.lastUsd, deliver: String(job.deliver || 'local'), origin: job.origin || null,
+        destination: String(job.deliver || 'local'), committedAt: iso(now), attempts: 0
+      };
       next.retryCount = 0;
       next.lastRunAt = iso(now);
       next.repeat = Object.assign({}, job.repeat, { completed: ((job.repeat && job.repeat.completed) || 0) + 1 });

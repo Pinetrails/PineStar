@@ -105,5 +105,41 @@ const { makeTranscriptStore } = require('../sidecar/transcriptstore.js');
   const rebuilt = reborn.reconstruct(STREAM, { limit: 500 });
   A.ok(rebuilt.length >= 4, 'and it reconstructs into a replayable OpenAI-format prompt for the next run');
 
+  // ---- STRICT ROTATION BARRIER: a failed durable drain prevents the fold instead of losing history ----
+  const guardedMessages = [];
+  for (let i = 0; i < 40; i++) guardedMessages.push({ role: i % 2 ? 'assistant' : 'user', content: 'guarded prior ' + i + ' ' + 'y'.repeat(200) });
+  guardedMessages.push({ role: 'user', content: 'keep the guarded history' });
+  const guardedStore = makeTranscriptStore({
+    io: { readAll: () => [], append() {}, appendDurable() { throw new Error('injected fsync failure'); } },
+    clock: { now: () => 2000 }
+  });
+  const guardedEvents = [];
+  let guardedTurn = 0, strictAttempts = 0;
+  const guardedResult = await runAgentLoop({
+    messages: guardedMessages,
+    provider: { priceOf: () => null, contextLimit: () => 2000, stream: async function* () {
+      guardedTurn++;
+      if (guardedTurn === 1) {
+        yield { type: 'tool_start', index: 0, id: 'guard-call', name: 'noop' };
+        yield { type: 'tool_args', index: 0, chunk: '{}' };
+        yield { type: 'usage', usage: { prompt_tokens: 1900, completion_tokens: 5, total_tokens: 1905 } };
+        yield { type: 'done', finishReason: 'tool_calls' };
+        return;
+      }
+      yield { type: 'text', delta: 'GUARDED FINAL' };
+      yield { type: 'done', finishReason: 'stop' };
+    } },
+    emit: (name, payload) => guardedEvents.push({ name, payload }),
+    dispatch: async () => ({ ok: true, content: 'guard result' }),
+    tools: [{ type: 'function', function: { name: 'noop', parameters: { type: 'object', properties: {} } } }],
+    context: makeContext({ contextLimit: 2000, compactAt: 0.65, keepTail: 4 }),
+    summarize: async older => { strictAttempts++; guardedStore.appendNewStrict('guard', AGENT, older, { sourceRunId: 'guard-run' }); return { summary: 'must not commit' }; },
+    model: 'm', agentId: AGENT, runId: 'guard-run', limits: { maxIters: 4 }
+  });
+  A.eq(guardedResult.reason, 'done', 'a transcript fsync failure does not crash the run');
+  A.ok(strictAttempts >= 1, 'the real compaction path attempted the strict transcript barrier');
+  A.eq(guardedEvents.filter(e => e.name === 'agent.compact').length, 0, 'the loop never commits a fold whose durable transcript drain failed');
+  A.ok(guardedResult.messages.some(m => /guarded prior 0/.test(String(m.content || ''))), 'the unfurled live history remains available after the refused fold');
+
   A.report('transcript.compaction.e2e.test');
 })();

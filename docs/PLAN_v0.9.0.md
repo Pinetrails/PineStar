@@ -1,428 +1,524 @@
-# PLAN — v0.9.0 · LEGIBLE · SOLID · UNBLOCKED
+# PLAN - v0.9.0: THE RELIABILITY PROOF RELEASE
 
-Written 2026-07-31 against trunk `feat/harness-backend` @ `129801b1` (v0.8.0 published, both
-platforms). Every claim below was re-grepped against trunk on the day of writing, but the
-**doc-trust rule still applies**: this file is a hypothesis within hours. Grep before you build.
+Written 2026-08-02 against `feat/harness-backend` at `606027f6`, after v0.8.5
+published. This replaces the 2026-07-31 LEGIBLE / SOLID / UNBLOCKED plan. Most of
+that plan's browser, routine, connector, release, and defect work landed before
+or during v0.8.5; its surviving beginner-legibility work is retained here.
 
-## The mandate
+This document is a queue, not authority. Trunk, the QA ledgers, live app behavior,
+and exact-candidate receipts win whenever they disagree with it.
 
-Andrew, 2026-07-31, verbatim intent:
+## Mandate
 
-1. **Users are still confused.** They ask a lot of questions, which means the product is not
-   explaining itself. This update's first job is to make StarNet dramatically easier to
-   understand.
-2. **Fix as many bugs and issues as we can.**
-3. **Build a stealth engine** so the station's own browsing stops being misidentified as a bot,
-   comparable to what the reference harness ships.
+Andrew's release direction:
 
-Three tracks, one release. Track A is the headline; Track B is the volume; Track C is the new
-capability.
+1. v0.9.0 is the release where StarNet earns confidence as a harness in the same
+   class as a mature reference such as Hermes Agent.
+2. Field experience says the model output is not the weak link. Extensive dogfood
+   has produced exceptional outputs, and roughly 95% of reported problems have
+   concerned harness behavior rather than answer quality.
+3. Therefore this is not another feature-count sprint or a subjective prose
+   contest. Hold model quality steady and attack the machinery around it: work
+   starting, continuing, landing, surviving interruption, reaching the intended
+   destination, and being reported truthfully.
+4. v0.9.0 is the proof release. Once its candidate survives the frozen campaign,
+   v1.0.0 should be a promotion of that proven contract, not another feature wave.
 
----
+## Current position - verified 2026-08-02
 
-## Ground truth at the time of writing (verified, not quoted from docs)
+### What is already strong
 
-| Fact | Evidence |
-| --- | --- |
-| Trunk `129801b1`, version `0.8.0`, ~1,011 commits in the last 7 days | `git log` |
-| `npm run test:fast` is **473/473 green, exit 0** at this tree | run live 2026-07-31, log kept |
-| Green Guardian says **RED** at the same commit with `test-fast exitCode 1` | `qa/guardian-last-cycle.json` |
-| → those two disagree. The Guardian red is most likely the known `loops.e2e` / `voice.button` flake | `qa/STATUS.md:142` |
-| The durable bug register says 28 open of 36 — **25 of those 28 are already fixed in trunk source** | merge `0a6a14e1` landed the fixes; the `.md` records were never flipped |
-| Genuinely open register bugs: **3** | `4962c3ad` (P0), `e05cdba8` (P1), `f42a5f46` (P1) |
-| 10 `agent/*` lanes are ahead of trunk carrying **built and gated** fixes | `git rev-list feat/harness-backend..<branch>` |
-| Detector ledger: 4 Guardian P1 · 23 Perfectionist P1 · 246 Janitor P2 | `node scripts/qa/ledger.mjs --status` |
-| **There are zero GitHub issues, and no support address, community link, or "report a problem" path** in the app, `README.md`, `INSTALL.md`, or the website | grep — the only external URLs in `frontend/app/*.js` are provider API-key pages |
-| **The app links to none of its own documentation.** 11 pages exist at `website/docs/*.html`, ~30–40 lines of prose each, and nothing in the frontend points at them | grep |
-| The codebase carries **essentially zero TODO/FIXME debt** — mine `qa/bugs/` and `docs/NEXT.md` for the backlog, not comments | full scan of `sidecar/`, `frontend/` |
+- The static station surface grants 94 tools across compute, memory, files, web,
+  terminal, orchestration, media, and Spotify, plus dynamic MCP tools.
+- The provider catalog has 17 profiles. Channel adapters exist for Telegram,
+  Discord, Slack, Matrix, and Signal.
+- The real harness has semantic continuation, a durable run journal, segmented
+  transcript history, output parking, code composition, LSP edit diagnostics,
+  background subagents with inspect/interrupt/resume, durable channel redelivery,
+  verification-before-done, checkpoints, untrusted-content fencing and taint,
+  routines, Night Shift, E-STOP, ACP, and an OpenAI-compatible surface.
+- The deterministic agent evaluation pack passes 8/8 on current trunk.
+- The fresh Guardian on `606027f6` is GREEN. The registered defect authority has
+  0 open P0, 0 open P1, and 7 open P2 bugs.
+- v0.8.5 received installed-desktop proof at its exact source tag `865d87fb`.
+  Current trunk correctly fails `qa:ready` only because later release-workflow
+  commits invalidate the candidate-bound Beginner and installed receipts.
 
-**The single most important number here is the one we don't have.** Andrew is seeing user
-questions, but the project has no channel that captures them: no issue tracker traffic, no
-support inbox in the product, no in-app feedback path. Every "users are confused about X"
-statement in this plan is therefore inference from the code and from past audits — not from
-users. Track A starts by fixing that, because otherwise the rest of Track A is guesswork.
+### What is not yet proven
 
----
+- The eight active agent evaluations are deterministic StarNet scenarios. They
+  prove mechanisms, not comparative real-task outcomes.
+- No one frozen candidate has survived the entire fault, concurrency, integration,
+  beginner, performance, installed-build, and soak campaign.
+- `qa:product-perfect --status` still stops at W0. Several advertised claims are
+  partial, experimental, excluded, or awaiting exact-candidate live proof.
+- Performance is not release-gated: time to first token, time to useful artifact,
+  long-transcript responsiveness, memory growth, and recovery time lack a shared
+  candidate-bound scorecard.
+- Beginner explanation remains incomplete: the tour is one-shot, only 29
+  `data-hint` uses exist, and the glossary contains several missing or conflicting
+  everyday nouns.
+- Public release truth is split: the source repository's latest Release is older
+  than the updater repository, and the published v0.8.5 notes still call the build
+  a candidate being staged before publication.
+- The raw finding ledger contains 350 open P2 findings. Many will be duplicates,
+  stale, non-product, or low-confidence Janitor output, but that classification has
+  not been completed on a frozen candidate.
 
-# Track A — LEGIBILITY: make StarNet explain itself
+## What "equivalent harness" means
 
-The finding that reframes this whole track: **StarNet already has a good explanation layer, and
-it is barely deployed and cannot be re-entered.**
+Parity is an outcome contract, not identical topology.
 
-- `frontend/app/glossary.js` holds 32 solid beginner sentences.
-- `frontend/app/hint.js` is a correct, delegated, themed, keyboard-accessible tooltip layer.
-- Only **29 `data-hint` attributes exist in the entire frontend**, and four of them
-  (`effort`, `voice`, `focus`, `deliverable`) point at terms the glossary does not define, so
-  they render nothing.
-- The guided tour (`frontend/app/tutorial.js`) is genuinely good — and it can only ever run
-  once. `firstCommand` is called from exactly one place (`frontend/app/app.js:2977`, the
-  awakening's `taught` callback), guards on `state.firstCommandDone`, and has no reset path.
-  A refresh or crash mid-tour costs the user the tour, the FIRST STEPS briefing, and any
-  re-entry, permanently.
+StarNet does NOT need every reference-harness channel, hosted deployment mode,
+password-manager integration, HPC backend, or CLI flag. Those are product breadth.
+They become release requirements only when StarNet advertises them or when a
+shared workload cannot succeed without them.
 
-So the work is mostly *deployment and re-entry*, not authoring. That is a much cheaper update
-than it looks.
+StarNet DOES need mature behavior in these critical categories:
 
-### A0 — Capture the actual questions (do this first, it is one day)
+1. Agent loop and context continuity.
+2. Tool correctness, artifact integrity, and verification.
+3. Cancellation, E-STOP, timeout, and spend enforcement.
+4. Crash/restart recovery without lost work or replayed mutations.
+5. Parallel and background delegation with durable, correctly routed results.
+6. Routine and channel delivery with exact-once outcome accounting.
+7. Provider, OAuth, connector, and credential lifecycle reliability.
+8. Historical recall, compaction, and long-session stability.
+9. Prompt-injection containment and truthful capability authority.
+10. An installed first-user journey that reaches useful work without stranding.
+11. Performance and cost that stay usable under real load.
+12. UI telemetry that never outruns backend proof.
 
-Nothing else in this track should be finalised before real questions are flowing in.
+## Non-goals for v0.9.0
 
-- Add a support/contact route the user can actually find: `README.md`, `INSTALL.md`, the website
-  footer, and one in-app door (SYSTEM ▸ FIELD MANUAL is the natural home).
-- Add a "report a problem / ask a question" path in-app that attaches the existing diagnostics
-  bundle (`frontend/app/diagnostics.js` already assembles one, and already carries
-  `androo.agi@gmail.com`).
-- Decide where community questions land and make it one place.
-
-**Done means:** a fresh install has a visible way to ask a question, and we have a written
-list of the first 20 real questions to steer A1–A7 against.
-
-### A1 — Help you can re-enter (the highest-leverage single fix in this update)
-
-Open since the first backlog as GA-17 (`docs/NEXT.md:1729`); `docs/TUTORIAL_ONBOARDING_PLAN.md:335`
-flagged replay as an open decision and recommended yes.
-
-- `Tutorial.firstCommand` becomes replayable from FIELD MANUAL: "▸ SHOW ME AROUND AGAIN".
-- FIRST STEPS briefing re-openable on demand, not only when `firstCommandDone` flipped.
-- Coachmarks get a "show me this again" reset (they are already persisted per-key at
-  `tutorial.js:674-750`).
-- An abandoned tour must be resumable, not lost: persist tour progress, offer resume on next boot.
-
-**Done means:** I refresh the browser mid-tour, come back, and can finish or restart the tour
-and reach FIRST STEPS — verified live on a seeded station, not just in tests.
-
-### A2 — Say what this is before asking for anything
-
-Today the only framing a first-timer gets before the configuration screen is the splash line
-`AI-AGENT HARNESS` (`frontend/index.html:57`). The real explanation — the REAL vs FOR SHOW
-contract, "the floor IS the pipeline", "real work runs server-side whether or not you've laid a
-belt" — lives in the Field Manual behind a dock menu (`tutorial.js:857-901`).
-
-- One short pre-configuration beat: what StarNet is, what it will do with a key, what runs
-  locally. Keep it eerie, keep it honest, keep it skippable-forward but not lost.
-- Promote the honesty contract (what is real vs cosmetic) out of tab 4 of the manual.
-
-**Done means:** a first-timer can answer "what is this program" before being asked for a
-provider key.
-
-### A3 — The keyless first run — **DECISION NEEDED (Andrew)**
-
-`frontend/app/app.js:2375-2388` makes a live 30-second model round-trip a hard precondition of
-the awakening. `docs/FULL_RELEASE_POLISH_PLAN.md:78` states the consequence plainly: *a fresh
-install produces zero value before a provider key.* The keyless path exists but is deliberately
-thin (`onboarding.js:607-616`: honest holding line, purpose + cadence, an IOU).
-
-This is a genuine product fork, not a knowledge gap, so it goes to Andrew rather than being
-decided in a lane. Options, in the order I'd rank them:
-
-1. **A scripted no-LLM demo station** — the station boots, the tour runs, one canned "run"
-   shows the loop end to end, clearly labelled as a demo. Cheapest, no money, no lies.
-2. **Managed starter credits** — best conversion, but it is the billing rail and it drags the
-   subscriptions lane into this release.
-3. **Leave it** — accept that the funnel needs a key on day one.
-
-Nothing else in Track A blocks on this; it can land late.
-
-### A4 — Deploy the vocabulary layer that already exists
-
-- Tag every jargon site with `data-hint`: `workstream` (`marketplace.js:354, 646, 2376`),
-  `sidecar` (`stationui.js:2470`, `build.js:930, 942`), `orchestrator`, `lane`, `clearance`.
-  Target: every first-use of a station noun on a surface a beginner reaches.
-- Add the missing glossary terms — `session`, `project`, `agent`, `specialist`, `class`, `crew`,
-  `provider`, `key`, `credit`, `intake`, `outbox` — plus the four already-referenced-but-undefined
-  ones (`effort`, `voice`, `focus`, `deliverable`).
-- Settle the naming collisions rather than papering them: **eight peer nouns** now sit in the
-  work/build docks (TASKS · DELIVERABLES · RECIPES · ROUTINES · LOOPS · QUESTS · SKILLS ·
-  ABILITIES), and `LOOPS` was added *after* the vocabulary audit counted seven. Residual
-  collision at `stationui.js:1479` still says "skill recipes" while `:2403` deliberately says
-  "procedures".
-- **One object, four words:** the rail says SESSIONS, the glossary says *workstream*, the slash
-  catalog and COMMS system lines say *workstream*, recruitment copy says *workstream* untagged.
-  Pick the user-facing word and use it everywhere the user can see.
-- Add the missing cross-links the 2026-07-15 audit asked for: RECIPES' MAKE ROUTINE ↔ ROUTINES.
-
-**Done means:** hovering any station noun on any beginner-reachable surface explains it, and no
-two panels call the same object different things.
-
-### A5 — Delete the lessons that teach a false model
-
-This one is a truthfulness bug wearing a UX costume. Connectors are **account-level**:
-`sidecar/capability/office.js:38` rides every configured connector onto both surfaces regardless
-of what is placed on the floor. The agent's own manual was corrected
-(`sidecar/manual.js:61-64`), but the game still teaches the opposite:
-
-- `frontend/app/quests.js:121` — *"Bind a live tool portal — place a connector portal in REFIT…"*
-- `frontend/app/tutorial.js:761` — FIRST STEPS item *"Bind a connector portal"*
-- `frontend/app/windows/connectors.js:374` — names the missing prop and offers **no button**;
-  `docs/CONNECTOR_UX_PLAN.md:219` calls fixing this *the single highest ratio of user-unblocked
-  to lines-changed in the document*.
-
-Fix the three, then walk the connect path live end to end.
-
-### A6 — An actual answer surface
-
-- The Field Manual becomes searchable, and gains the entries that answer the questions A0
-  collects.
-- **Link the docs that already exist.** Eleven pages sit at `website/docs/*.html` and the app
-  points at none of them. Every panel that has a matching page gets a "▸ read more" door.
-- Those pages are thin — expand `getting-started`, `station`, and `troubleshooting` in the same
-  lane, and mirror the vocabulary decisions from A4 so the docs and the app agree.
-- Keyboard cheat-sheet overlay (GA-17's second half).
-- Prop hover tooltips: name + what it actually grants (GB-6, `docs/NEXT.md:1758`). Belts already
-  carry tags (`world.js:4080`); props are silent.
-
-### A7 — Measure comprehension, not stalls
-
-`loops/beginner-run.md` asks the beginner loop to record *"every hesitation >10s, every
-misleading label"* — but the runner is `ui-only` and reports only `stalledStep`, and just 3 of
-382 findings in the corpus come from it. **There is no artifact anywhere in `qa/` that records
-"I did not understand X."** Extend the loop to file comprehension findings, and make an
-unexplained surface a real finding class.
+- No feature-for-feature clone of Hermes Agent.
+- No new channel or execution backend solely to improve a comparison table.
+- No subjective model-answer bake-off as the main release gate.
+- No claim of literal mathematical certainty. "100% confidence" means every
+  defined critical contract passed on one immutable installed candidate, all
+  observed failures were explained, and the residual exclusions are explicit.
+- No v1.0.0 feature pile after the v0.9 proof candidate freezes.
 
 ---
 
-# Track B — SOLIDITY: fix as many real bugs as we can
+# Track 0 - Freeze the contract and evidence format
 
-The good news is that a large fraction of this track is already built and merely unlanded.
-Do the cheap, high-certainty work first.
+This blocks the rest. Without it, each lane proves a slightly different product.
 
-### B0 — Get the gate honest (blocks everything)
+## 0.1 Freeze the comparison target
 
-Trunk's fast gate passed 473/473 for me at `129801b1` while the Guardian recorded
-`test-fast exitCode 1` at the same commit. Either something in the six `qa(claims)`/`docs(release)`
-commits turns it red, or it is the known flake (`loops.e2e` ~2 fails in 12 runs, plus a
-`voice.button` timing flake). **Reproduce it before planning on top of it**, then kill the flake
-— a gate that lies costs more than the bug it hides. Law already on the books: read the log,
-never the exit code.
+- Reference: Hermes Agent tag `v2026.7.30` (v0.19.1), never moving `main`.
+- Record the exact reference commit and installed/runtime version in every report.
+- Use the reference as a failure-class and shared-workload oracle, not as design
+  authority over StarNet's product decisions.
 
-### B1 — Land what is already built and gated, in this order
+## 0.2 Freeze the StarNet scope
 
-| Order | Lane | What it fixes | Severity |
-| --- | --- | --- | --- |
-| 1 | `agent/quality-loop-0730f` | **E-STOP does not survive a page reload** — a refresh silently clears `cronHalted`/`nightshiftHalted` and re-arms cron with no human resume gesture | P0, worst live defect found |
-| 2 | `agent/quality-loop-0731` | Halted routines still count down "next in 12m" for work that will never fire (register `4962c3ad`) | P0 |
-| 3 | `agent/quality-loop-0731c` | A 403/stale-token on `/api/projects` renders "NO TRUSTED PROJECTS" and wipes entered project scope (`e05cdba8`) | P1 |
-| 4 | `agent/quality-loop-0731d` | One locked legacy file aborts the desktop workspace migration while `.migrated` is still stamped — permanent silent data loss (`f42a5f46`). ⚠ installed-exe cold start not yet exercised | P1 |
-| 5 | `agent/voice-bundle-models` | Installed builds cannot run Local Live at all (the bundle ships no `node_modules`). 1059 MB → 482 MB staged closure. Its own lane; release-shaped | P1 |
-| 6 | `0730b`, `0730c`, `0730e`, `0731b`, `0730` | Local Live engine copy truth, provider-card a11y, attachment transcript lock, unattended shell-key boundary, Update Center version/notes | P2 |
+Create one machine-readable v0.9 contract derived from the existing product-perfect
+claims ledger. Every material promise must be one of:
 
-Merge ritual per lane; gate green before each; two sessions never merge at once.
+- `required` - blocks the release;
+- `experimental` - visibly labelled at its point of use and tested to fail safely;
+- `excluded` - not advertised and absent from the release comparison;
+- `differentiator` - StarNet-specific behavior tested on its own terms.
 
-### B2 — Reconcile the register (half a day, prevents weeks of waste)
+No vague `partial` claim may survive the candidate freeze.
 
-25 of the 28 `status: open` records in `qa/bugs/` were fixed by merge `0a6a14e1` (and
-`598ab4a4`) and never flipped. Run
-`node scripts/qa/bugs.mjs --set <fp> --status fixed --fix 0a6a14e1` for each, regenerate
-`qa/BUGS.md`. Left alone, the next planning pass re-does three weeks of work.
+## 0.3 One receipt schema
 
-⛔ Remember `status: open` is **per-branch** — check `git log --all -- <path>` before trusting
-any single record, in either direction.
+Every behavioral receipt records:
 
-### B3 — The named user-visible bugs with no owner
+- StarNet commit, version, source-tree hash, executable hash, platform;
+- scenario id, seed, model/provider, run id, start/end timestamps;
+- requested outcome and machine-checkable grader result;
+- tool calls, turns, retries, tokens, reconciled cost, first-token time, wall time;
+- artifact hashes and post-mutation verification hashes;
+- interruption/fault injected and exact recovery outcome;
+- transcript/session/delivery destination;
+- console, sidecar, and provider errors;
+- redacted evidence paths.
 
-1. **Delegated work is invisible in its target session.** Andrew's live repro with screenshots:
-   the worker completed a real report, the deliverable landed in the lead's session, and the
-   session he named showed nothing. Root cause is written up in
-   `docs/HANDOFF_SESSION_DELIVERY_BUG.md`: the visible fold is a one-shot 6-second bridge window
-   with **no backfill**, while the durable transcript is correct the whole time.
-   `frontend/app/autosessions.js` already does exactly this healing for `cron-*` streams —
-   dispatch-targeted sessions have no equivalent. The fix is designed, reviewed, and unclaimed.
-2. **Settings split-brain** — the station save carries two disagreeing values for the same
-   setting (`doc.prov:"codex"` vs `agent.provider:"openrouter"`; reasoning effort likewise), and
-   resume only fills a *missing* value, so it never reconciles. Which one wins depends on the
-   read path. `qa/STATUS.md:1655` calls it "still true and still unfixed, worth its own lane."
-3. **Prompt-cache trailing anchor is mechanically fragile** — the breakpoint walks back only 20
-   content blocks, and a single parallel-tool turn can exceed that, silently re-billing the whole
-   conversation as a cold write. This is a money bug and it shipped in v0.8.0.
+Extend `scripts/eval` rather than inventing a second evaluation format.
 
-### B4 — The stranded-user set and connector reliability
+## 0.4 Repair public release truth now
 
-`docs/NEXT.md:1525` items 8–13 are still open, all frontend-owned: no undo for out-of-jail
-artifacts, full-agent backup unreachable in-app, a dead MCP connector invisible outside its own
-panel, a dead channel likewise, custom/Ollama base URL uneditable after onboarding, connector
-OAuth locked for five uncancelable minutes. The law is already written: *shippable = zero
-stranded.*
+- Make the public v0.8.5 notes describe a published release, not a staged candidate.
+- Decide and document why source releases and updater releases are separate, then
+  ensure every download path points at the current version.
+- Rewrite the stale v1.0 draft before it can be reused: it still describes unsigned
+  Windows binaries, unproved platforms, and an older feature contract.
 
-Connector reliability pairs with A5 — `sidecar/mcp/oauth.js` contains **zero** `AbortSignal` or
-timeout, which is why sign-in can wedge forever, and `sidecar/mcp/transport.http.js` still passes
-`fetch failed` straight through to the user.
-
-### B5 — The two defect classes worth mechanizing
-
-Derived from mining every reported-bug lane: of the six recurring classes, only two are static
-census work that has never been run, and both keep producing user-visible bugs.
-
-- **A stamped field with no reader, or a reader that means something else.** Enumerate
-  producers → consumers for every persisted field. (Live example: `/api/nightshift/status.awaySince`
-  is stamped as a *future* instant while `frontend/app/nightreport.js:93` documents it as the
-  moment the window opened.)
-- **A classifier that drops a class added later.** Feed every regex/allowlist that classifies
-  user-supplied identifiers one instance of each class that exists *today*. (This class alone
-  produced the connector search indexing 0 of 48 platforms, the recipe tab's 42→3 collapse, the
-  FOR-YOU shelf emptying on a negative term, and the permissions regex dropping every `path:` grant.)
-
-The other classes need a human or an agent walking a live failure state — which is what the
-beginner loop upgrade in A7 is for.
-
-### B6 — The Guardian's four P1s
-
-Two journey parity regressions (`crew/working-covers-busy`, `shownWorking=0 >= busy-on-roster=1`),
-one boot journey failure ("floor never came up"), and `log/frozen-bus` "-1 events captured", open
-and unattributed since 2026-07-27. These are what keep the Guardian red; they must be triaged
-before any `qa:ready` claim.
-
-### B7 — Installed-build truths
-
-- **macOS notarization re-proof.** The resumable workflow is implemented and on trunk; Apple never
-  returned an invalid verdict, but three runners lost their network route while polling and a
-  fourth hit GitHub's six-hour ceiling. Until it is exercised end to end, mac support is not
-  proven. Parity is a publish gate.
-- Andrew still owes a **ChatGPT session rotation** — a credential sat readable in unencrypted
-  `%TEMP%`; purging copies cannot un-expose it.
-- Version lives in **four** files (`package-lock.json` twice) and `release-cut.mjs` bumps none of
-  them. Worth fixing inside this release rather than re-learning it at the cut.
+Done means: a machine can name exactly what v0.9 promises, what it excludes, and
+which immutable artifact each receipt proves.
 
 ---
 
-# Track C — REACH: stop looking like a robot
+# Track 1 - The harness reliability gauntlet
 
-## Scope, stated before the design
+The gauntlet is primarily deterministic fault injection. It should be cheap enough
+to run repeatedly before provider-backed confirmation.
 
-**In scope:** not volunteering that we are automation. A real user-agent string with matching
-client hints, no automation-controlled fingerprint, no CDP leak, human-plausible input timing,
-per-site politeness and backoff, and honest detection of the walls we do hit.
+## 1.1 Run-boundary crash matrix
 
-**Out of scope, permanently:** solving or bypassing CAPTCHAs and human-verification challenges,
-forging consent, distributed or mass-scale scraping infrastructure, credential-stuffing helpers,
-or anything built to defeat a site's authentication. When a site genuinely demands "prove you are
-human", the answer stays what it is today — hand it to the Commander via `browser.attach` /
-`browser.login`. The station browses **on behalf of a present user, at human scale**; the whole
-point is that this is a true statement about StarNet, and the stealth layer must not make it
-false.
+Kill and restart the sidecar at each boundary:
 
-## The policy reversal has to be written down
+1. accepted request, before provider dispatch;
+2. during provider streaming;
+3. tool intent journaled, before a read tool dispatch;
+4. tool intent journaled, before a mutating tool dispatch;
+5. mutation completed, before result checkpoint;
+6. tool result checkpointed, before the next model turn;
+7. final text generated, before transcript acknowledgement;
+8. transcript durable, before UI/channel delivery acknowledgement;
+9. compaction or history-segment rotation in progress;
+10. routine/subagent finalization in progress.
 
-The codebase currently argues the *opposite* position in two comment blocks and a QA digest:
-`sidecar/tools/builtin/browser.js:1792-1799` ("WHY THIS AND NOT A STEALTH ENGINE"), `:2354-2356`
-("They are NOT a stealth feature: the station's answer to bot walls is `browser.attach`, never
-spoofing"), and the ATTACH entry in `qa/STATUS.md`. Andrew's order supersedes those, but they must
-be rewritten in the same lane or the codebase contradicts itself and the next agent re-litigates it.
-The honest new framing: attach remains the answer for *authenticated* walls; the stealth layer is
-for the ordinary case where a site refuses a browser purely for looking automated.
+Critical invariants:
 
-## What we start from (verified 2026-07-31)
+- a mutation is never automatically dispatched twice;
+- completed text and artifacts are never silently lost;
+- uncertain mutation state becomes an explicit review state;
+- a safe read-only boundary may resume automatically;
+- every recovered run remains attached to its original agent, session, trigger,
+  routine/subagent identity, and cost ledger.
 
-The driver is a hand-rolled CDP client over a WebSocket in
-`sidecar/tools/builtin/browser.js` — **no Playwright, no Puppeteer, no npm dependency at all**
-(`package.json` has two runtime deps, neither related). It borrows Playwright's cached Chromium
-*as a binary* when present, otherwise installed Chrome.
+## 1.2 Transport and credential matrix
 
-- **Complete launch-arg list** (`browser.js:573-582`): `--disable-gpu --no-first-run
-  --no-default-browser-check --remote-debugging-port=<ephemeral> --window-size=1440,900
-  --user-data-dir=<profile>`, plus headless `--headless=new --hide-scrollbars --mute-audio`.
-- **The only existing evasion in the repo** is negative: never pass `--remote-debugging-port=0`,
-  because Chromium then calls `EnableAutomationControlled(true)` and sets `navigator.webdriver`
-  (`browser.js:266-292`). Nothing else is touched.
-- `Runtime.enable` **is** sent (`browser.js:741`) — the classic CDP detection leak is wide open.
-- **No user-agent override at launch**, so `--headless=new` ships `HeadlessChrome/…` in the UA.
-  Very likely our single largest tell.
-- No `Accept-Language`, no `Sec-CH-UA` metadata, no `Network.setExtraHTTPHeaders` anywhere.
-- **Input is instant and inhumanly regular**: click dispatches press+release at the same pixel
-  with no preceding `mouseMoved` (`:1045`); type sends the whole string as one `Input.insertText`
-  so page keypress listeners see a paste (`:1054`); scroll is a `window.scrollBy` JS call so no
-  wheel events reach the page at all (`:1381`); drag is exactly 6 uniform linear steps (`:1085`).
-- **We add our own tells**: `__STARNET_SETTLE__` and `__STARNET_SYNTHETIC_INPUT__` are installed as
-  non-configurable globals with ~20 frozen prototype patches (`:67-208`) — trivially enumerable by
-  any page — and `navigate()` deliberately fails closed if the shim did not install (`:936-941`),
-  so they cannot simply be deleted.
-- The keyless HTTP path (`sidecar/tools/builtin/web.js:37`) sends a frozen Chrome-124 UA with three
-  headers, no `Sec-Fetch-*`, no `Referer`, and there is **no rate limiter or backoff anywhere**.
-- Challenge detection exists **only** in `sidecar/tools/builtin/webreader.js:45-62` and is never
-  applied to the agent-driven browser: an agent that navigates into a Cloudflare interstitial gets
-  HTTP 200 and "Just a moment…" as page text.
+Exercise every supported live family through connect, success, failure, restart,
+revoke, and secret removal:
 
-## Two constraints that decide the architecture
+- provider: 401/403, 402/quota, 408/timeout, 429, 5xx, malformed stream, truncated
+  stream, connection drop, rotation and fallback;
+- connector: OAuth callback cancellation, expired access token, refresh rotation,
+  refresh refusal, MCP timeout, schema drift, removal while down;
+- channel: disconnected socket, partial multi-chunk send, rate limit, block/kick,
+  restart with outbox pending, redelivery exhaustion;
+- browser/web: challenge page, navigation timeout, popup, download, attached-profile
+  refusal, reader fallback, host cooldown cancellation;
+- desktop UI: SSE disconnect/reconnect, stale token, suspended tab, sidecar restart.
 
-1. **Zero runtime dependencies, and the desktop bundle ships no `node_modules`.** Camoufox (a
-   ~300MB Firefox fork, and unmaintained for roughly a year) and playwright-stealth are therefore
-   not options for the shipped app. Everything must be CDP-level and dependency-free — which,
-   given we already own a raw CDP client, is a genuine advantage rather than a limitation.
-2. **The determinism law bans ambient clock and RNG in backend logic**
-   (`browser.js:860, 1463, 2024`; enforced by `lint-determinism` in the gate). Human pacing must
-   draw from `shared/clock-rng.js` (`makeRng`, mulberry32, seeded) so replay stays byte-identical.
+No empty state may be rendered from a failed read. No old credential may be deleted
+until its replacement is durably read back.
 
-## Slices
+## 1.3 Concurrency matrix
 
-- **C1 — Launch-profile parity.** Add `--disable-blink-features=AutomationControlled`; override the
-  UA at launch to strip `HeadlessChrome`; supply matching `userAgentMetadata` so UA-CH does not
-  desync (today `setUserAgentOverride` is called without it, `:1178`); set `Accept-Language`, locale
-  and timezone from the host rather than leaving them empty. Refresh the three device presets
-  (`:2357-2361`) — an iPhone 17.5 / Chrome 126 preset on a current Chromium is itself a mismatch.
-- **C2 — CDP leak reduction.** Avoid or defer `Runtime.enable`; move our evaluation into an
-  isolated world so the page cannot observe the console/debugger side effects.
-- **C3 — Shim minimisation.** Keep the fail-closed guarantee, but make the `__STARNET_*` globals
-  non-enumerable and per-run named, and narrow the frozen prototype patch set to what the
-  pointer-lock incident actually requires.
-- **C4 — Human input model** (seeded RNG only): a mouse path to the target before the press, a
-  press duration, per-character typing with realistic inter-key intervals, real
-  `Input.dispatchMouseEvent{type:'mouseWheel'}` scrolling, non-linear drags.
-- **C5 — Politeness.** A per-host token bucket plus backoff on 429/403 with jitter, in `web.js`.
-  This is both an anti-detection measure and the right thing to do.
-- **C6 — Challenge honesty everywhere.** Port the `webreader.js` challenge detector into
-  `browser.navigate` / `get_text`, so a challenge page is a distinct, actionable result and never
-  silently returned as page text. **This is a truthful-telemetry fix, not a stealth feature**, and
-  it is the slice I would build first — it is what makes the rest debuggable.
-- **C7 — The escalation ladder**, written into the tool doctrine: station browser → politeness
-  retry → attach to the Commander's own Chrome (already built, already consented) → tell the user
-  plainly. A wall we cannot pass honestly is an answer, not an error.
-- **C8 — Proof.** Extend `test/browser.gauntlet.e2e.test.js` — it already drives **real Chromium**
-  and already runs in `test:http` — with fixture routes that echo request headers and report
-  `navigator.webdriver`, the UA, and `Object.getOwnPropertyNames(window)`, plus a challenge-page
-  fixture. Add the launch-arg assertions to `test/browser.test.js:294-359`, which is already the
-  fingerprint block.
+Run representative collisions rather than isolated happy paths:
 
-**Done means:** on a real site that blocks us today, the station reaches the content; and on a
-site that legitimately demands human verification, the agent says so plainly and offers attach.
-Both observed live, not inferred from unit tests.
+- two sessions on one agent;
+- foreground run plus channel run;
+- foreground run plus routine fire;
+- background named workers plus ephemeral fan-out;
+- routine plus Night Shift;
+- connector refresh while another run uses the connector;
+- E-STOP and per-run cancel during each combination;
+- app close/reopen while work is in flight.
+
+Grade result routing, capability authority, cancellation reach, spend accounting,
+and artifact ownership. A result in the wrong session is a failed scenario even if
+the underlying model work succeeded.
+
+## 1.4 Persistence and migration matrix
+
+- forward-version refusal;
+- corrupt primary plus valid backup;
+- corrupt primary and backup;
+- locked legacy file during migration;
+- disk-full/short-write simulation;
+- full-agent export and restore;
+- project grant, revoke, forget, and restart;
+- update over a populated real station;
+- 10,000+ transcript rows with repeated restart/search/compaction.
+
+## 1.5 Repeat bar
+
+- Every deterministic critical scenario: 100 consecutive passes.
+- Every platform-sensitive scenario: 25 passes on Windows and 25 on macOS.
+- Every real-provider/integration scenario: at least 5 success/failure/restart
+  cycles per supported family on the candidate.
+- Any unexplained flake resets that scenario's count after the fix.
+
+Done means: all critical matrices are green, no ambiguous outcome remains, and the
+gauntlet emits one candidate-bound report consumed by the release gate.
 
 ---
 
-## Sequencing
+# Track 2 - Shared StarNet/reference workload comparison
 
-- **Wave 1 (unblock).** B0 gate honesty → B1 merge queue → B2 register reconciliation → A0 capture
-  the questions. Nothing here is speculative; most of it is already built.
-- **Wave 2 (the headline).** A1 re-entry → A2 what-is-this → A5 false lessons → A4 vocabulary
-  deployment, in parallel with C6 → C1 → C2 on the browsing side, and B3's session-delivery
-  backfill.
-- **Wave 3 (depth).** A6 answer surface + docs, A7 comprehension findings, C3–C5, B4 stranded set
-  and connector reliability, B5 census sweeps.
-- **Wave 4 (cut).** B6 Guardian triage, B7 installed-build truths, A3 if Andrew has decided it,
-  then the release ritual.
+This is deliberately smaller than the fault gauntlet because output quality is not
+the observed problem. It answers whether the harness can successfully carry the
+same work with the same model.
 
-One lane per worktree, `agent/<name>`, gate green before every merge, claims re-lock as its own
-commit after the code commit.
+## 2.1 Fair-run controls
 
-## The shipping bar for v0.9.0
+- Same model build and provider account where both harnesses support it.
+- Same clean fixture workspace and network authorization.
+- Equivalent tool families and permissions; unsupported extras stay disabled.
+- Same task text and completion grader.
+- Three fresh runs per ordinary scenario; more only when variance is material.
+- Judge artifacts and observable results, never writing style.
 
-1. A first-time user can learn what StarNet is, take the tour, **lose it, and get it back**.
-2. Every station noun a beginner meets explains itself on hover, and no two panels name the same
-   object differently.
-3. No shipped surface teaches a model the harness contradicts (the connector-portal lesson is the
-   live example).
-4. `qa/bugs/` tells the truth, the fast gate is honest and green, and the three genuinely open
-   register bugs plus the E-STOP-on-reload defect are closed.
-5. A delegated run into a named session is visible in that session, or the session heals itself
-   from the durable record.
-6. The station browser reaches at least one real site that refuses it today, and reports a genuine
-   human-verification wall honestly instead of returning challenge text as content.
-7. Both platforms build; macOS notarization has been exercised end to end.
+## 2.2 Workload pack - 32 scenarios
 
-## Decisions only Andrew can make
+- 6 coding/file tasks: inspect, edit, patch, run checks, produce verified artifact.
+- 4 research/browser tasks: multi-source answer, page interaction, download/PDF,
+  honest challenge escalation.
+- 4 document/data tasks: parse and transform common files, preserve exact output.
+- 4 memory/history tasks: old-decision recall, long transcript, compaction, restart.
+- 6 orchestration tasks: named delegation, parallel fan-out, background continuation,
+  interruption, resume, synthesis and destination routing.
+- 4 routine/channel tasks: create/manage/run, delivery, partial failure, redelivery.
+- 4 recovery/security tasks shared where injection seams permit: timeout, provider
+  drop, prompt-injection content, and post-tool interruption.
 
-1. **A3 — the keyless first run.** Scripted no-LLM demo, managed starter credits, or leave it?
-   My recommendation: the demo station, and keep credits with the subscriptions lane.
-2. **Track C's public framing.** The stealth layer changes what we say about the product. I would
-   describe it as "the station browses like a person, because a person asked it to" — and keep the
-   CAPTCHA line explicit in the docs, because it is a real limit, not a temporary one.
-3. **The eight-noun taxonomy.** A4 can tag and cross-link everything, but collapsing SKILLS and
-   ABILITIES into one panel — which two audits have now asked for — is a product decision.
+## 2.3 Comparison gate
+
+- 100% pass on critical safety, mutation, recovery, and delivery scenarios.
+- At least 95% overall StarNet pass rate.
+- StarNet within 5 percentage points of the frozen reference on shared scenarios.
+- Zero StarNet-only false-done, wrong-destination, duplicate-mutation, or authority
+  escape events.
+- Every loss is explained and either fixed or turned into an explicit release
+  exclusion. Statistical variance is rerun, not hand-waved.
+
+The comparison is a release input, not marketing copy. Public parity language is
+allowed only after the installed StarNet candidate reproduces the result.
+
+---
+
+# Track 3 - Performance and cost truth
+
+Hermes has made performance a product feature. StarNet needs its own measured bar.
+
+## 3.1 Measurements
+
+- cold boot to interactive station;
+- send to first visible token;
+- send to first tool activity;
+- send to verified useful artifact;
+- final provider token to durable transcript and visible delivery;
+- session-switch time at 100, 1,000, and 10,000 turns;
+- streaming render responsiveness for a large answer and large diff;
+- idle and active memory/CPU over 48 hours;
+- restart recovery time with large history;
+- tokens, cache reads/writes, reconciled USD, and auxiliary-model spend.
+
+## 3.2 Initial release thresholds
+
+Set the exact numbers from a v0.8.5 baseline before optimizing. Until then:
+
+- no v0.9 regression greater than 10% on StarNet's median baseline without an
+  explicit quality/reliability tradeoff;
+- no shared-workload wall-time or cost more than 25% worse than the reference
+  without an explained product difference;
+- no visible streaming stall longer than five seconds without truthful activity;
+- memory must remain bounded during the 48-hour soak.
+
+Optimize only measured bottlenecks. Do not sacrifice recovery or truthful telemetry
+to win a latency number.
+
+---
+
+# Track 4 - Beginner legibility and recovery
+
+This is the surviving high-value portion of the earlier v0.9 plan.
+
+## 4.1 Replayable onboarding
+
+- `Tutorial.firstCommand` can restart from the Field Manual after completion.
+- A refresh/crash mid-tour offers Resume or Start Over.
+- FIRST STEPS and coachmarks are re-openable and resettable.
+- The first useful result remains reachable when the user skips the ceremony.
+
+## 4.2 Deploy the glossary
+
+- Every first use of a station noun on a beginner-reachable surface has a working
+  explanation.
+- Add the missing everyday terms: agent, session, project, specialist, provider,
+  key, effort, voice, focus, deliverable, intake, and outbox.
+- Choose one user-facing word for the same object. Do not expose session/workstream
+  or capability/toolset collisions without explaining the distinction.
+- Searchable Field Manual, keyboard sheet, and relevant docs links.
+
+## 4.3 Failure recovery language
+
+Every visible failure must state:
+
+- what failed;
+- what StarNet did and did not preserve;
+- one concrete recovery action;
+- whether retry is safe;
+- where diagnostics/support live.
+
+## 4.4 Beginner gate
+
+On the exact installed candidate, five people unfamiliar with the current build
+must independently:
+
+- understand what StarNet is before supplying credentials;
+- connect a provider;
+- create or enter a station;
+- complete one real task and open its result in under ten minutes;
+- recover from one planted failure;
+- find help or diagnostics without being told where it is.
+
+Every hesitation, wrong expectation, and misleading label becomes a finding, not
+just a stalled-step count.
+
+---
+
+# Track 5 - Defect and claim closure
+
+## 5.1 Registered bugs
+
+Close or evidence-dismiss the seven current P2 bugs. Re-run the register on the
+frozen candidate; zero P0/P1 is necessary but not sufficient for 1.0 promotion.
+
+## 5.2 Raw ledger
+
+Triage the 350 open P2 findings into:
+
+- reproduced product defect;
+- duplicate of a registered bug;
+- stale against current source;
+- test/detector defect;
+- non-product maintenance finding;
+- accepted, visible release limitation.
+
+Only reproduced release-surface defects block v0.9, but no unclassified P2 may
+remain at candidate freeze.
+
+## 5.3 Product-perfect waves
+
+Use the existing W0-W7 machinery as the release spine rather than creating another
+readiness program:
+
+- W0-W5 are implementation/reconciliation waves.
+- W6 is the full integration proof on one candidate.
+- W7 is the frozen soak and external validation.
+
+Adjust a claim only when the advertised product contract changes. Never weaken a
+gate merely because the current candidate cannot pass it.
+
+---
+
+# Track 6 - Immutable candidate, soak, and 1.0 promotion
+
+## 6.1 Candidate freeze
+
+After Tracks 0-5 are green:
+
+1. Freeze one clean commit.
+2. Bump version before gating.
+3. Build signed Windows and signed/notarized macOS installers.
+4. Record installer, executable, embedded frontend, sidecar, updater, and source
+   hashes.
+5. Install those exact bytes on clean machines.
+6. Run all release gates without rebuilding.
+
+Any code change creates a new candidate and invalidates candidate-bound receipts.
+
+## 6.2 Forty-eight-hour v0.9 soak
+
+The same artifact must survive:
+
+- representative real-provider interactive work;
+- background delegation;
+- channel traffic and redelivery;
+- connector refresh and restart;
+- routine and Night Shift activity;
+- cancellation and E-STOP;
+- app/sidecar restart;
+- large transcript growth;
+- update check and clean relaunch;
+- zero unexplained process death, data loss, duplicate mutation, false telemetry,
+  or P0/P1 event.
+
+## 6.3 v1.0.0 promotion
+
+Promote the proven v0.9 contract only after:
+
+- W7 passes on the immutable artifact;
+- five attended beginner sessions pass;
+- ten clean-machine installs pass across supported platforms;
+- a minimum seven-day field window produces no unresolved P0/P1 or truth escape;
+- every support report is classified and no recurring harness failure is open;
+- release notes, website, updater feed, source repository, and support path all name
+  the same current version and supported platforms.
+
+The promotion may contain version/notes/release metadata only. A feature or behavior
+change returns the candidate to the relevant proof wave.
+
+---
+
+# Execution order and lane map
+
+## Wave A - start immediately
+
+1. Contract/claims freeze and release-surface truth repair.
+2. Eval receipt schema and fault-runner foundation.
+3. v0.8.5 performance baseline.
+4. Registered P2 bug closure.
+5. Replayable onboarding and glossary deployment.
+
+These lanes can proceed independently. None should edit shared events/schema without
+the owner lane; new evaluation events should remain evaluation-local where possible.
+
+## Wave B - reliability attacks
+
+1. Crash-boundary matrix.
+2. Transport/credential matrix.
+3. Concurrency/routing matrix.
+4. Persistence/migration matrix.
+5. Platform installed-build scenarios.
+
+Each lane first reproduces a red scenario, then fixes the smallest responsible seam,
+then proves the live installed behavior where applicable.
+
+## Wave C - comparative proof and measured fixes
+
+1. Run the frozen 32-scenario shared pack.
+2. Classify every difference.
+3. Fix task-success, reliability, safety, and material efficiency gaps.
+4. Do not build breadth-only parity features.
+5. Re-run the complete pack after the last fix.
+
+## Wave D - candidate campaign
+
+1. W0-W6 terminal on one source candidate.
+2. Signed/notarized installed builds.
+3. Five beginner sessions and integration lifecycle proofs.
+4. Forty-eight-hour soak.
+5. Publish v0.9.0 only after the exact artifact remains green.
+
+## Wave E - v1.0 promotion
+
+No new feature wave. Seven-day field window, ten clean installs, final support and
+release-surface reconciliation, then promote.
+
+---
+
+# v0.9.0 shipping bar
+
+v0.9.0 ships only when all are true:
+
+1. The finite release contract contains no vague partial claims.
+2. All critical deterministic fault scenarios pass 100 consecutive times.
+3. Shared workload success is at least 95%, within five points of the frozen
+   reference, with 100% critical recovery/security/delivery success.
+4. The exact candidate has zero open P0/P1 and zero unclassified P2 findings.
+5. Performance and cost have candidate-bound baselines with no unexplained material
+   regression.
+6. Five beginner journeys reach and open useful work in under ten minutes and
+   recover from a planted failure.
+7. Every advertised integration is proven through connect/success/failure/restart/
+   revoke/secret-removal or visibly experimental at its point of use.
+8. Windows and macOS installed candidates are exact-source proven; macOS is signed,
+   notarized and stapled, and Windows signatures verify.
+9. The immutable artifact survives the 48-hour soak.
+10. `qa:ready` is READY and product-perfect is terminal through the required release
+    wave on that exact candidate.
+
+## The stop rule
+
+Once these gates are green, stop adding things. A harness earns 1.0 by remaining
+correct under use, not by moving the finish line with another feature.

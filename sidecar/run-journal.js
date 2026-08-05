@@ -174,7 +174,13 @@ function analyze(records, corrupt) {
       intents.delete(callId);
     }
   }
-  const uncertain = Array.from(intents.values());
+  // An explicit read intent is safe to replay from the provider-valid checkpoint: it cannot have changed host
+  // state before the missing result boundary. Legacy/unknown intents remain conservative (review-required), as
+  // do all declared mutations. Keep the reads visible separately so recovery UIs and receipts can prove exactly
+  // what will be re-dispatched instead of silently treating them as completed.
+  const pending = Array.from(intents.values());
+  const replayableReads = pending.filter(intent => intent && intent.mutating === false);
+  const uncertain = pending.filter(intent => !intent || intent.mutating !== false);
   const terminal = !!(last && last.type === 'finish');
   const transcriptAck = !!(terminal && last.payload && last.payload.transcriptAck === true);
   let checkpoint = latestCheckpoint || baseCheckpoint || (first && first.type === 'begin' ? first.payload : {});
@@ -190,7 +196,7 @@ function analyze(records, corrupt) {
     // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
     status: uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable'),
     meta: first && first.type === 'begin' ? first.payload : {},
-    uncertain, completed, baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
+    uncertain, replayableReads, completed, baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
     checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
   };
 }
