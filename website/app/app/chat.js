@@ -4829,7 +4829,15 @@ const Chat = (() => {
     let pick = null; try { pick = RecruiterStore.topPick(); } catch (_) { return null; }
     const why = (pick && pick.spec) ? String(pick.why || '').trim() : '';
     if (!why) return null;                                                  // cold/thin signal → silence
-    return { kind: 'recruit', why: why, fire: () => { maybeRecruit(); } };
+    // STRENGTH: the recruiter ALREADY computes one — recruiter.js derives it from EVIDENCE VOLUME (the share of
+    // the Commander's real work this class's kit captures, lifted toward 1 as the sample count clears the floor)
+    // and recruiterstore.topPick carries it the whole way here. This beat then dropped it, so a pick standing on
+    // three samples entered the spine indistinguishable from one standing on forty. recommend.js is explicit
+    // that abstaining is a small RELATIVE ADVANTAGE over reporting a low reading honestly, and equally explicit
+    // that the channels which abstain do so because there is nothing to read. This one has something to read.
+    const conf = Number(pick.confidence);
+    const strength = (Number.isFinite(conf) && conf > 0) ? (conf > 1 ? 1 : conf) : null;
+    return { kind: 'recruit', why: why, strength: strength, fire: () => { maybeRecruit(); } };
   }
 
   // JUST-IN-TIME CURIOSITY — cited by the dimension it is actually targeting, phrased plainly.
