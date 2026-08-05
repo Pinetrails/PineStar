@@ -2154,6 +2154,26 @@ async function runSkillCurator(o) {
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
    prompt-injection escalation path (mirrors the reference harness's import-frozen YOLO flag). */
 const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(ENV('FULL_ACCESS') || '').trim());
+/* MASTER BYPASS (2026-08-05, the Commander's explicit call) — the runtime "FULL BYPASS" switch behind
+   Settings → PERMISSIONS. When ON: every agent, every surface (watched chat, Telegram, routines, night
+   shift) skips the consent broker AND gets owner-DM-grade impact reach (shell, media, connectors)
+   unattended. What it deliberately does NOT buy: the hardline file floor (tier 1 — .env/.git stay
+   unwritable), and the physical mouse/real-screen desktop lease (host-minted pairing only).
+   Injection-safety is preserved by SOURCING, not freezing: the flag lives in a persisted, token-gated
+   store flipped only by the /api/permissions/bypass route — a human clicking settings. The model has no
+   tool that reaches it, so runtime-flippable here does not reopen what freezing FULL_ACCESS closed.
+   Persist-before-commit: a torn write leaves the previous state standing (never a phantom bypass). */
+const BYPASS_FILE = path.join(WORKSPACES, 'permissions.bypass.json');
+function loadMasterBypass() {
+  try { const raw = loadResilient(BYPASS_FILE, 'permissions-bypass'); return !!(raw && raw.on === true); }
+  catch (e) { return false; }   // unreadable -> OFF (fail-closed, the safe default)
+}
+let masterBypassFlag = loadMasterBypass();
+const masterBypassOn = () => masterBypassFlag;
+function setMasterBypass(on) {
+  saveResilient(BYPASS_FILE, { version: 1, on: !!on, setAt: Date.now() });   // throws -> caller reports, state unchanged
+  masterBypassFlag = !!on;
+}
 // permanent allowlist of danger-class keys (capability:scope) the user has blessed forever. Lives BESIDE
 // the notebook store (sibling of the fs jail) so the agent's own fs.* tools can neither read nor rewrite it.
 const ALLOWLIST_FILE = path.join(WORKSPACES, 'permissions.allow.json');
@@ -6850,6 +6870,7 @@ const ROUTES = [
   { m: 'GET', exact: '/api/permissions', h: handlePermissionsList },
   { m: 'POST', exact: '/api/permissions/grant', h: handlePermissionsGrant },
   { m: 'POST', exact: '/api/permissions/revoke', h: handlePermissionsRevoke },
+  { m: 'POST', exact: '/api/permissions/bypass', h: handlePermissionsBypass },
   { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
   { m: 'POST', exact: '/api/projects/forget', h: handleProjectForget },   // Projects rail: hard-forget revoked metadata (never withdraws trust)
@@ -10926,7 +10947,9 @@ async function runOnce(o) {
   // remote desktop lease; no prompt text, task flag, stored approval, or generic API caller can manufacture it.
   const remoteDesktopAuthorized = ownerTrusted && DESKTOP_SHELL
     && /^(1|true|yes|on|win32|windows)$/i.test(String(ENV('COMPUTER_DRIVER') || '').trim());
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted, remoteDesktopAuthorized });
+  // masterBypass is read ONCE at run admission (authority objects are per-run and frozen); the consent broker
+  // below re-reads it per call, so turning FULL BYPASS OFF still bites mid-run at the consent tier.
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted, remoteDesktopAuthorized, masterBypass: masterBypassOn() });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -11615,7 +11638,9 @@ async function runOnce(o) {
   const consent = o.consent || makeConsentBroker({
     // An owner DM with approvals OFF is the Commander acting directly, so it never waits on a second approval
     // channel. If that chat explicitly enables approvals, preserve the chosen in-chat prompt behavior instead.
-    bypass: FULL_ACCESS || agentFullAccess || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
+    // a FUNCTION, re-read every call: the master FULL BYPASS switch must take effect — and revoke — on the
+    // very next tool call without a restart. The frozen env flag and the per-agent posture ride inside it.
+    bypass: () => FULL_ACCESS || masterBypassOn() || agentFullAccess || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist,
     /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
        is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
@@ -12852,7 +12877,23 @@ function handlePermissionsList(req, res) {
     if (set && set.has('*')) blanket.push({ key: 'blanket:' + aid, agentId: aid, scope: 'watched sessions, until the app restarts' });
   }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket })));
+  // additive: the master FULL BYPASS switch + whether the boot env forces it (so the panel can say WHY the
+  // toggle is pinned on rather than rendering a switch that appears to do nothing).
+  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket, masterBypass: masterBypassOn(), envFullAccess: FULL_ACCESS })));
+}
+// POST /api/permissions/bypass { on } — flip the master FULL BYPASS switch. The click IS the consent: this
+// route is reachable only through the token-gated loopback API (a human in settings), never from a tool.
+// Fail-closed: a torn durable write returns ok:false and the previous state stands.
+async function handlePermissionsBypass(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const want = body && body.on === true;
+  try { setMasterBypass(want); }
+  catch (e) {
+    res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ok: false, reason: 'could not persist the bypass switch — state unchanged', masterBypass: masterBypassOn() }));
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, masterBypass: masterBypassOn(), envFullAccess: FULL_ACCESS }));
 }
 // POST /api/permissions/grant { key } — proactively PRE-BLESS a curated, LOCAL-only capability (cabinet:write)
 // so an autonomous run can use it with no mid-run prompt. Refuses any non-curated/exec/network class; fail-closed
@@ -13096,7 +13137,7 @@ async function handleAutonomyWrite(req, res) {
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
   const sessionKey = 'autowrite-' + crypto.randomUUID();
-  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce
+  const consent = makeConsentBroker({ bypass: () => FULL_ACCESS || masterBypassOn(), hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce; the master FULL BYPASS switch (like the env) covers this surface too
   const lifecycle = await agentLifecycle.acquireMutation(agentId, sessionKey);
   if (!lifecycle.ok) return sendJson(409, { ok: false, reason: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
   try {

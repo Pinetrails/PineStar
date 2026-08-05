@@ -143,6 +143,7 @@ test/tauri.hardening.test.js
 test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
+test/master-bypass.test.js
 test/workshop-store.test.js
 test/workshop-undo.e2e.test.js
 test/workshop-visibility.test.js
