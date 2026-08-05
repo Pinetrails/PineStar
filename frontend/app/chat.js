@@ -270,6 +270,11 @@ const Chat = (() => {
   function startPresence(ws) {
     presenceCurTool = null;
     runRails = [];   // a fresh run folds only ITS OWN rails — never an earlier run's history
+    /* A RUN, not a rail, is the lifetime of a pending tool call. endToolRail() used to clear this map,
+       which conflated "stop adding chips to that rail" with "forget which calls are still awaiting a
+       result" — see the note there. A new run is the honest place to drop stale pairings: its callIds
+       are fresh, so nothing from the previous run can ever resolve into it. */
+    pendingChips.clear();
     if (isActiveWs(ws)) { renderPresence(); ensureElapsedTimer(); }   // the elapsed tick also drives the presence update
   }
   function presenceToolCall(ws, name) { presenceCurTool = name || null; if (isActiveWs(ws)) renderPresence(); }
@@ -1520,6 +1525,39 @@ const Chat = (() => {
     }
     return null;
   }
+  /* THE CHIP HEAD IS A LABEL, NOT A DUMP. It used to print `brief(argsSummary)` — the raw JSON the tool was
+     called with, truncated at 56 characters, so a file write read
+     `fs.write {"path":"q3-summary.md","content":"# Q3 summary\n\nTh…`: cut mid-token, mid-escape, and with the
+     one word that matters (the filename) buried behind punctuation. This lifts the SALIENT argument instead.
+     Nothing is hidden — the complete arguments are still one click away in .tc-d-args, verbatim. Purely a
+     display digest: it never invents a value, and an unrecognised shape falls back to the old brief(). */
+  const ARG_KEYS = ['path', 'file', 'filename', 'query', 'q', 'url', 'pattern', 'name', 'target', 'title', 'command', 'cmd', 'text', 'id'];
+  /* SCAN, DON'T PARSE. The sidecar CAPS argsSummary (80 chars on the wire today), so what arrives is
+     usually a truncated JSON prefix that no parser will accept — `JSON.parse` throwing is the common case,
+     not the edge case. This walks the string for COMPLETE `"key": value` pairs instead: the value regex
+     requires its closing quote, so a field the cap cut in half can never be shown as if it were whole. */
+  const ARG_PAIR = /"([A-Za-z0-9_.-]+)"\s*:\s*(?:"((?:[^"\\]|\\.)*)"|(-?\d+(?:\.\d+)?|true|false))/g;
+  function argPairs(raw) {
+    const out = new Map();
+    ARG_PAIR.lastIndex = 0;
+    let m;
+    while ((m = ARG_PAIR.exec(raw))) {
+      const v = (m[2] !== undefined ? m[2] : m[3]);
+      if (v == null) continue;
+      // JSON escapes are display noise in a one-line chip head; a real newline would break the row.
+      const clean = String(v).replace(/\\[nrt]/g, ' ').replace(/\\(.)/g, '$1').replace(/\s+/g, ' ').trim();
+      if (clean && !out.has(m[1])) out.set(m[1], clean);
+    }
+    return out;
+  }
+  function argDigest(argsSummary) {
+    const raw = String(argsSummary == null ? '' : argsSummary).trim();
+    if (!raw) return '';
+    const pairs = argPairs(raw);
+    for (const k of ARG_KEYS) { const v = pairs.get(k); if (v) return brief(v); }
+    if (pairs.size === 1) { const v = pairs.values().next().value; if (v) return brief(v); }
+    return brief(raw);                                   // unrecognised shape → exactly the old behaviour
+  }
   function ensureToolRail() {
     if (toolRail && toolRail.isConnected) return toolRail;
     clearEmptyState();
@@ -1528,7 +1566,16 @@ const Chat = (() => {
     log.appendChild(toolRail); autoscroll();
     return toolRail;
   }
-  function endToolRail() { toolRail = null; pendingChips.clear(); }   // a break (prose / beat / deliverable) closes the rail
+  /* A BREAK CLOSES THE RAIL, IT DOES NOT ORPHAN THE CALLS IN FLIGHT (fixed 2026-08-05).
+     This used to also `pendingChips.clear()`, and that quietly double-listed the work trail of every run
+     that wrote a file. Order of events for one `fs.write`: the CALL opens a rail and registers its chip →
+     the sidecar's `deliverable` event fires and calls breakLive() → endToolRail() wiped the map → the tool
+     RESULT arrives, finds no pending chip, and takes resolveChip's ORPHAN path. The Commander was left
+     with the same single call rendered twice, in two different rails: a `pending` chip stuck forever
+     holding the raw arguments, and a second resolved chip that had lost them. Closing the rail only means
+     "the next chip starts a new one"; a call stays pairable until its result lands or the next run
+     starts (startPresence clears the map). */
+  function endToolRail() { toolRail = null; }
   // one delegated toggle handler for the whole log's chips (wired once alongside the copy handler)
   function toggleChip(head) {
     const chip = head && head.closest && head.closest('.tool-chip'); if (!chip) return;
@@ -1549,13 +1596,19 @@ const Chat = (() => {
     const nm = document.createElement('span'); nm.className = 'tc-name'; nm.textContent = flav ? flav.label : shortName(ev.name);
     // for a flavored skill chip the human phrase already carries the skill name, so the raw args stay in the
     // expand detail only (kept below) — the chip head is clean.
-    const args = document.createElement('span'); args.className = 'tc-args'; args.textContent = (!flav && ev.argsSummary) ? brief(ev.argsSummary) : '';
+    const args = document.createElement('span'); args.className = 'tc-args'; args.textContent = flav ? '' : argDigest(ev.argsSummary);
     const stat = document.createElement('span'); stat.className = 'tc-stat'; stat.textContent = '';   // filled by resolveChip
     const exp = document.createElement('span'); exp.className = 'tc-exp'; exp.setAttribute('aria-hidden', 'true'); exp.textContent = '▸';   // disclosure chevron (rotates when open)
     head.appendChild(glyph); head.appendChild(nm); if (args.textContent) head.appendChild(args); head.appendChild(stat); head.appendChild(exp);
     const detail = document.createElement('div'); detail.className = 'tc-detail';
     const dArgs = document.createElement('div'); dArgs.className = 'tc-d-args';
-    dArgs.textContent = ev.argsSummary ? cap(ev.argsSummary) : '(no arguments)';
+    /* TRUTHFUL TELEMETRY: the sidecar caps argsSummary on the wire, so the expand was never showing the
+       "full" arguments — it was showing a JSON prefix chopped mid-token, which reads as a malformed call
+       the agent supposedly made. Say when the record is cut instead of letting the reader assume it isn't. */
+    const argsCut = !!(ev.argsSummary && !(function () { try { JSON.parse(ev.argsSummary); return true; } catch (_) { return false; } })());
+    dArgs.textContent = ev.argsSummary
+      ? (cap(ev.argsSummary) + (argsCut ? '  … (arguments truncated in the run record)' : ''))
+      : '(no arguments)';
     detail.appendChild(dArgs);
     chip.appendChild(head); chip.appendChild(detail);
     rail.appendChild(chip);
@@ -1894,13 +1947,20 @@ const Chat = (() => {
   function runCallCount(entry) {
     return Array.isArray(entry && entry.toolTrace) ? entry.toolTrace.length : Math.max(0, Number(entry && entry.toolsOk) || 0);
   }
-  function telemetryRun(entry, role) {
+  /* SAY IT ONCE. The fold already holds this run's tool CHIPS — the same calls, with their arguments, their
+     result summaries and an expand. Emitting the persisted ↳ rows next to them listed every call a second
+     time, in a third vocabulary (the persisted `fs_write` beside the chip's `fs.write`), so a one-call run
+     read as a busy machine log. When chips are present the LEAD block keeps only its header — the identity,
+     duration and call count, which the chips genuinely do not carry. WORKER blocks always keep their rows:
+     a dispatched worker's calls never produced chips on this stream, so those lines are the only record of
+     them. And on a reloaded transcript, where the chips are gone, the rows come back. */
+  function telemetryRun(entry, role, skipTools) {
     const wrap = document.createElement('div'); wrap.className = 'rt-run';
     const calls = runCallCount(entry);
     const head = document.createElement('div'); head.className = 'rt-run-head';
     head.textContent = [role, entry.agentId || '', entry.model && entry.model !== '(unknown)' ? entry.model : '', (entry.reasoningEffort && entry.reasoningEffort !== 'none') ? entry.reasoningEffort : '', Number(entry.durationMs) > 0 ? fmtMs(Number(entry.durationMs)) : '', calls + (calls === 1 ? ' call' : ' calls')].filter(Boolean).join(' · ');
     wrap.appendChild(head);
-    for (const t of (Array.isArray(entry.toolTrace) ? entry.toolTrace : [])) {
+    for (const t of (skipTools ? [] : (Array.isArray(entry.toolTrace) ? entry.toolTrace : []))) {
       const line = document.createElement('div'); line.className = 'rt-tool' + (t.isError ? ' err' : '');
       line.textContent = '↳ ' + String(t.name || 'unknown') + ' · ' + fmtMs(Math.max(0, Number(t.ms) || 0)) + ' · ' + (t.isError ? 'failed' : 'ok');
       if (t.summary) line.title = String(t.summary);
@@ -1933,7 +1993,9 @@ const Chat = (() => {
     }
     const old = fold.querySelector('.run-telemetry'); if (old) old.remove();
     const detail = document.createElement('div'); detail.className = 'run-telemetry';
-    detail.appendChild(telemetryRun(entry, 'lead'));
+    // chips for THIS run already in the fold? then the lead's per-tool rows would just repeat them.
+    const hasChips = !!fold.querySelector('.tool-chip');
+    detail.appendChild(telemetryRun(entry, 'lead', hasChips));
     children.forEach(child => detail.appendChild(telemetryRun(child, 'worker')));
     fold.appendChild(detail);
     if (!card.querySelector('.cp-chev')) {
