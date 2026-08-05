@@ -1871,7 +1871,7 @@ const Chat = (() => {
     const wrap = document.createElement('div'); wrap.className = 'rt-run';
     const calls = runCallCount(entry);
     const head = document.createElement('div'); head.className = 'rt-run-head';
-    head.textContent = [role, entry.agentId || '', entry.model && entry.model !== '(unknown)' ? entry.model : '', entry.reasoningEffort || '', Number(entry.durationMs) > 0 ? fmtMs(Number(entry.durationMs)) : '', calls + (calls === 1 ? ' call' : ' calls')].filter(Boolean).join(' · ');
+    head.textContent = [role, entry.agentId || '', entry.model && entry.model !== '(unknown)' ? entry.model : '', (entry.reasoningEffort && entry.reasoningEffort !== 'none') ? entry.reasoningEffort : '', Number(entry.durationMs) > 0 ? fmtMs(Number(entry.durationMs)) : '', calls + (calls === 1 ? ' call' : ' calls')].filter(Boolean).join(' · ');
     wrap.appendChild(head);
     for (const t of (Array.isArray(entry.toolTrace) ? entry.toolTrace : [])) {
       const line = document.createElement('div'); line.className = 'rt-tool' + (t.isError ? ' err' : '');
@@ -1895,7 +1895,7 @@ const Chat = (() => {
       if (Number(entry.durationMs) > 0) bits.push(fmtMs(Number(entry.durationMs)));
       bits.push(leadCalls + ' lead ' + (leadCalls === 1 ? 'call' : 'calls'));
       if (children.length) bits.push(workerCalls + ' worker ' + (workerCalls === 1 ? 'call' : 'calls'));
-      const identity = [entry.model && entry.model !== '(unknown)' ? entry.model : '', entry.reasoningEffort || ''].filter(Boolean).join(' ');
+      const identity = [entry.model && entry.model !== '(unknown)' ? entry.model : '', (entry.reasoningEffort && entry.reasoningEffort !== 'none') ? entry.reasoningEffort : ''].filter(Boolean).join(' ');
       if (identity) bits.push(identity);
       sum.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
     }
@@ -2216,7 +2216,7 @@ const Chat = (() => {
       b.onclick = () => settle(verdict, flash, isDeny); btns.appendChild(b);
     }
     // CRT glyphs, not color emoji: ▲ nailed it · ◆ close · ▼ missed (semantics preserved, phosphor-themed)
-    mk('▲ nailed it', '', 'great', '★ +XP', false);
+    mk('▲ nailed it', 'primary', 'great', '★ +XP', false);
     mk('◆ close', '', 'ok', 'noted', false);
     mk('▼ missed', 'deny', 'miss', 'noted', true);
   }
@@ -2335,7 +2335,7 @@ const Chat = (() => {
   // honestly in place — never a dead click.
   function openWorkBtn(host, rw, openWork) {
     if (!openWork) return;
-    const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = '↗ read the work';
+    const b = document.createElement('button'); b.className = 'consent-btn primary'; b.textContent = '↗ read the work';
     b.onclick = () => {
       b.disabled = true; b.textContent = 'opening…';
       Promise.resolve().then(() => openWork(rw)).then(ok => {
@@ -2799,7 +2799,7 @@ const Chat = (() => {
     const patchSaveOnly = !!(plan && m.kind === 'patch' && plan.action !== 'apply');
     // gold PRIMARY when the click really implements; a fallback save stays neutral so the gold always means "accept"
     const implBtn = document.createElement('button'); implBtn.className = 'consent-btn' + (patchSaveOnly ? '' : ' ws-primary');
-    implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
+    implBtn.classList.add('primary'); implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
     implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
       : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'
       : ('saves the files to ' + ((plan && plan.dest) || 'your StarNet deliverables folder'));
@@ -2979,7 +2979,7 @@ const Chat = (() => {
       }
       function renderChoices() {
         btns.innerHTML = '';
-        mkBtn(prop.kind === 'skill' ? 'Save skill' : 'Keep', '', () => submit('keep', null, prop.kind === 'skill' ? 'saved as skill' : 'kept in memory', false));
+        mkBtn(prop.kind === 'skill' ? 'Save skill' : 'Keep', 'primary', () => submit('keep', null, prop.kind === 'skill' ? 'saved as skill' : 'kept in memory', false));
         mkBtn('Edit', '', enterEdit);
         mkBtn('Discard', 'deny', () => submit('discard', null, '✕ discarded', true));
       }
@@ -3485,18 +3485,26 @@ const Chat = (() => {
     // — the agent's own name (which the old per-channel card titles carried) had been dropped on the floor. It is
     // derived exactly as the rest of the card's copy derives it: the live hero name, upper-cased.
     const who = String(spec.eyebrow || (name ? String(name).toUpperCase() + ' NOTICED' : 'NOTICED'));
-    title.appendChild(document.createTextNode(who));
+    // THE KIND LEADS. It used to sit below the evidence as a chip in the item grid's first column, which
+    // both hid what kind of decision this was until line four AND squeezed the proposal into a narrow
+    // second column. In the eyebrow it identifies the card immediately and frees the full width below.
+    const kind = document.createElement('span'); kind.className = 'rec-kind';
+    kind.textContent = String(spec.label == null ? '' : spec.label).toUpperCase();
+    if (kind.textContent) {
+      title.appendChild(kind);
+      title.appendChild(document.createTextNode('·'));
+    }
+    const whoEl = document.createElement('span'); whoEl.className = 'rec-who'; whoEl.textContent = who;
+    title.appendChild(whoEl);
     const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
     r.body.appendChild(title); r.body.appendChild(slotEl);
     const item = document.createElement('div'); item.className = 'turnin-item rec-item';
     const ev = String(spec.evidence == null ? '' : spec.evidence).trim();
     if (ev) { const e = document.createElement('div'); e.className = 'rec-evidence'; e.textContent = ev; item.appendChild(e); }
-    const kind = document.createElement('span'); kind.className = 'turnin-kind';
-    kind.textContent = String(spec.label == null ? '' : spec.label).toUpperCase();
     const text = document.createElement('span'); text.className = 'turnin-text';
     text.textContent = String(spec.proposal == null ? '' : spec.proposal);
     const btns = document.createElement('span'); btns.className = 'consent-btns';
-    item.appendChild(kind); item.appendChild(text);
+    item.appendChild(text);
     // the note is CONSEQUENCE, not evidence ("raises the dial to FREE") — a dim aside between the
     // proposal and the buttons, so the card still ENDS on the two taps.
     const note = String(spec.note == null ? '' : spec.note).trim();
@@ -3573,7 +3581,7 @@ const Chat = (() => {
     function renderChoices() {
       btns.innerHTML = '';
       const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
-      mk(prop.kind === 'retire' ? 'Retire it' : 'Keep', '', () => commit('keep'));
+      mk(prop.kind === 'retire' ? 'Retire it' : 'Keep', 'primary', () => commit('keep'));
       if (prop.kind !== 'retire') mk('Edit', '', enterEdit);
       mk('Discard', 'deny', () => commit('discard'));
     }
@@ -3793,7 +3801,7 @@ const Chat = (() => {
       TrustStore.decline(offer); settle('✕ not yet', true);
     }
     const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
-    mk('Accept', '', () => commit('accept'));
+    mk('Accept', 'primary', () => commit('accept'));
     mk('Not yet', 'deny', () => commit('decline'));
     autoscroll();
     return true;
@@ -3893,7 +3901,7 @@ const Chat = (() => {
     function renderChoices() {
       btns.innerHTML = '';
       const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
-      mk('Keep', '', () => commit('keep'));
+      mk('Keep', 'primary', () => commit('keep'));
       mk('Edit', '', enterEdit);
       mk('Discard', 'deny', () => commit('discard'));
     }
