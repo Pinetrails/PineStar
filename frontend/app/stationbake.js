@@ -271,8 +271,15 @@ const StationBake = (() => {
      begins (see skirtTops). Along a straight edge it is constant, so the whole wall is one rect;
      it only steps where the hull curves. Calling back per RUN rather than per column keeps a flat
      wall at a handful of fills while still letting a corner staircase down one pixel at a time. */
-  const runsOf = (topOf, w) => {
-    if (!topOf) return [[0, w, 0]];               // no geometry (headless / swatch): one flat wall
+  /* `flat` is the wall top to assume when there is no geometry to follow — the headless canvas mock
+     has no getImageData, and a palette chip has no hull at all.
+     IT MUST BE WORLD-ANCHORED, NOT ZERO. Passing 0 anchors the courses to CANVAS row 0, and a chunk
+     canvas starts at a different world row than the monolithic one, so the same wall came out with
+     its coursing shifted between the two bake paths — 69738 pixels of chunk-parity failure the
+     moment the default shell grew a texture. Callers pass `courseAt(vy, pitch) - vy`, which is the
+     same absolute phase-lock the pre-contour code used. */
+  const runsOf = (topOf, w, flat) => {
+    if (!topOf) return [[0, w, flat || 0]];
     const out = [];
     let x0 = 0;
     while (x0 < w) {
@@ -284,7 +291,7 @@ const StationBake = (() => {
     }
     return out;
   };
-  const wallRuns = (topOf, w, cb) => { for (const r of runsOf(topOf, w)) cb(r[0], r[1], r[2]); };
+  const wallRuns = (topOf, w, cb, flat) => { for (const r of runsOf(topOf, w, flat)) cb(r[0], r[1], r[2]); };
 
   /* ONE COURSE, DRAWN AS A CONNECTED CONTOUR OF THE WALL TOP.
 
@@ -330,7 +337,7 @@ const StationBake = (() => {
     const px = boxed(fg, 0, 0, w, h);
     const bedH = o.bedH || 1, from = o.jointFrom || 0, run = o.ch - from - bedH;
     const rows = Math.ceil(h / o.ch) + 2;
-    const runs = runsOf(topOf, w);
+    const runs = runsOf(topOf, w, courseAt(vy, o.ch) - vy);
     for (let k = 0; k < rows; k++) {
       if (o.crest) { fg.fillStyle = o.crest; courseLine(px, runs, k, o.ch, 0, 1); }
       if (o.bed) { fg.fillStyle = o.bed; courseLine(px, runs, k, o.ch, o.ch - bedH, bedH); }
@@ -1481,6 +1488,9 @@ const StationBake = (() => {
     if (bx > ax && by > ay) b.fillRect(ax, ay, bx - ax, by - ay);
   };
 
+  // armour-plate pitch. Deliberately more than double BRICK's course: at this scale plate SIZE is
+  // what separates an engineered hull from masonry, and 11 fits three strakes in the 32px skirt.
+  const STRAKE = 11;
   const hullStation = {
     // the panel seam grid — the shipped shell, phase-locked to the same world grid it always used
     // (lines at x = 5 + 28k, y = 9 + 26k), so a re-clad station and an untouched one still align.
@@ -1497,10 +1507,51 @@ const StationBake = (() => {
       for (let y = y1 + 6; y < y2; y += 18) { b.fillRect(x1 + 2, y, 2, 2); b.fillRect(x2 - 4, y, 2, 2); }
     },
     bands: rampBands,
-    // the shell's panel joint is now the SHARED pass every material gets (see panelSeam) — station
-    // keeps its original 0.35, which is what holds its pixels identical to the pre-axis bake
+    // the shell's panel joint is the SHARED pass every material gets (see panelSeam); station keeps
+    // the 0.35 it always had, so the family's structural beat is literally the station's own
     seam: 0.35,
-    veins: null
+    /* THE STATION SHELL, REBUILT (2026-08-05, Andrew: "its very old and needs an upgrade anyways").
+       It was the v7 hull verbatim — a smooth six-stop ramp with one vertical seam and nothing else.
+       No structure at all, which is exactly why, sat next to nine designed materials, it read as the
+       empty slot rather than as the default everyone starts on.
+
+       What it is now: ARMOUR STRAKES. Wide horizontal plates, deliberately at an 11px pitch — more
+       than double BRICK's 5 — because the thing that separates engineering from masonry at this
+       scale is plate SIZE. Each strake takes a thin catch-light along its top edge, a hard shadow
+       beneath where the plate above it overhangs, and a row of rivets on the lip. The rivets are the
+       identity, and they are also the promise the plate ring's rim has always made and the skirt
+       never kept: the hull is bolted together.
+
+       THE PALETTE IS UNCHANGED. Only structure is added, so a hued station shell still derives
+       exactly as before, AUTO is still the shell's own grey, and the ramp underneath — the thing
+       that gives the station its height — is the same six stops it always was. This is the one
+       deliberate break of the axis's pixel-parity property, taken on Andrew's call; everything
+       BELOW the veins pass still matches the pre-axis bake byte for byte. */
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      coursedVein(fg, w, h, vx, vy, {
+        ch: STRAKE,
+        crest: 'rgba(226,232,214,0.13)',      // the sky-catch along a plate's top edge
+        bed: 'rgba(0,0,0,0.40)', bedH: 2      // the shadow the plate above throws down onto it
+      }, topOf);
+      const px = boxed(fg, 0, 0, w, h);
+      const runs = runsOf(topOf, w, courseAt(vy, STRAKE) - vy);
+      // RIVETS along each strake's lip. Keyed on ABSOLUTE x (pitch 7) so two adjacent rooms wearing
+      // the station shell share one rivet line, and so a chunk bake lands them identically.
+      for (let k = 0; k < Math.ceil(h / STRAKE) + 2; k++) {
+        for (const r of runs) {
+          const y = r[2] + k * STRAKE + 2;
+          for (let wx = courseAt(vx + r[0], 7); wx < vx + r[0] + r[1]; wx += 7) {
+            if (wx < vx + r[0]) continue;
+            fg.fillStyle = 'rgba(228,236,220,0.12)'; px(wx - vx, y, 1, 1);
+            fg.fillStyle = 'rgba(0,0,0,0.28)'; px(wx - vx, y + 1, 1, 1);
+          }
+        }
+      }
+      // the panel joint's LIT edge — one plate butts against the next and you see the near plate's
+      // own edge beside the dark seam. panelSeam paints that seam at x = 5 + 28k, so this sits at 6.
+      fg.fillStyle = 'rgba(220,226,208,0.09)';
+      for (let x = 6 - (vx % 28); x < w; x += 28) px(x, 0, 1, h);
+    }
   };
 
   /* TIMBER — stacked log courses. The Stardew cabin, and the material this whole axis was asked for.
@@ -1550,7 +1601,7 @@ const StationBake = (() => {
           for (let wx = courseAt(vx + rx, 19); wx < vx + rx + rw; wx += 19)
             if (h2(wx, k, 'knotv') % 3 === 0) px(wx - vx, y, 2, 2);
         }
-      });
+      }, courseAt(vy, LOG) - vy);
     }
   };
 
@@ -1716,7 +1767,7 @@ const StationBake = (() => {
        desynchronises across chunk seams. Fixed pitch, hashed OFFSET — parity-safe irregularity. */
     veins(fg, pal, w, h, vx, vy, topOf) {
       const px = boxed(fg, 0, 0, w, h);
-      const runs = runsOf(topOf, w);
+      const runs = runsOf(topOf, w, courseAt(vy, 7) - vy);
       for (let k = 0; k < Math.ceil(h / 7) + 2; k++) {
         const drop = h2(0, k, 'stnh') % 3;                   // the bed wanders 0..2 inside its course
         fg.fillStyle = 'rgba(0,0,0,0.46)'; courseLine(px, runs, k, 7, 6 - drop, 1);
