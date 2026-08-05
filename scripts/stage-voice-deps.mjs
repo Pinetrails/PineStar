@@ -45,7 +45,10 @@ const DROP_TOP = new Set(['@tauri-apps', '.bin', '.package-lock.json']);
    the Kokoro->Whisper round-trip was re-run from a simulated bundle with these removed and still passed.
    ⛔ `@img/sharp` is NOT here on purpose — transformers imports it eagerly and dropping it breaks the very
    first `import`, which is exactly how this was found. */
-const DROP_ANYWHERE = new Set(['onnxruntime-web']);
+// adm-zip is used only by onnxruntime-node's npm postinstall downloader. The packaged app loads
+// dist/index.js and an already-staged native binding; it never executes script/install*. Keep the
+// build-time ZIP parser out of the shipped runtime closure.
+const DROP_ANYWHERE = new Set(['onnxruntime-web', 'adm-zip']);
 // Source maps are pure debug weight in a shipped bundle.
 const DROP_SUFFIX = ['.map'];
 
@@ -160,6 +163,11 @@ for (const dep of runtimeDeps) {
 if (!pruned.kept.length) {
   console.error('stage-voice-deps: FAILED — no onnxruntime binary kept for ' + PLATFORM + '/' + ARCH +
     '. The bundle would ship an engine it cannot load.');
+  process.exit(1);
+}
+
+if (existsSync(join(dest, 'adm-zip'))) {
+  console.error('stage-voice-deps: FAILED - build-only adm-zip leaked into the shipped runtime closure.');
   process.exit(1);
 }
 
