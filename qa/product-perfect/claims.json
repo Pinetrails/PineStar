@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5f60389bbead622b656a6bfffb6030a41f8a6c69",
+    "sourceCommit": "b8470588d919e6d0139632b3f731e28662a3823b",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 540307,
-        "sha256": "65e4ef21695eb39a6dd8104170308b987110e0d9025113bd00820967e95c35b0"
+        "bytes": 541135,
+        "sha256": "329776e238afb5e4f8368f66c87b85e4f3f3e019d402246be012902aa91954ba"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 237068,
-        "sha256": "c2a5076b409552fb83f09cddf74493024eef04a1c2d68d02f05bf768403efa1f"
+        "bytes": 238588,
+        "sha256": "915df616bc8e78cfb8eda4373d5e5e17307d19dd743f7e6e21c815805b55ca91"
       },
       {
         "path": "frontend/app/mint.js",
@@ -473,8 +473,8 @@
       },
       {
         "path": "frontend/app/prospectstore.js",
-        "bytes": 14343,
-        "sha256": "56a0a193d52a246f912f0e1626ee2bccc3aa66a78f0a81fa6a7f47d6c0b4fa28"
+        "bytes": 17741,
+        "sha256": "c18f4a6fbbcc6757357c50c7dbeef962a283d9436ab8682293b5a49e6247bfe7"
       },
       {
         "path": "frontend/app/queryspine.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/routinenudgestore.js",
-        "bytes": 7787,
-        "sha256": "998cdba86bf6bcbe33711ccfff73307db39ad4755a8b291cd0442a62fc95e504"
+        "bytes": 9330,
+        "sha256": "d6e63a7419c4357e4d6d63bdf097deca08137f7e4c87b843e42781e4d6062aa9"
       },
       {
         "path": "frontend/app/safety.js",
