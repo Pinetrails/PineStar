@@ -70,6 +70,7 @@ const Build = (() => {
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let lineType = 'research_line';   // LINES tool: the armed starter-line blueprint (WorldModel.BLUEPRINTS id)
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
+  let ghost = null;                     // GHOST PROJECTION (Phase 3): dedicated engine — never mixes with convey
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
   let propQuery = '';                   // palette SEARCH text: non-empty = browse the whole catalog flat, ignoring tier/cat
 
@@ -100,6 +101,7 @@ const Build = (() => {
     });
     bakeDirty = true; bakeDirtyRects = null; planDirty = true;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
+    ghost = (typeof GhostLine !== 'undefined') ? GhostLine.create() : null;   // Phase 3: fresh projection per session
     testNotes.length = 0;   // never carry a prior session's ride captions into a fresh REFIT
     lastFrameTs = 0;
     resize();
@@ -119,6 +121,7 @@ const Build = (() => {
     clearTimeout(tipTimer); tipTimer = 0;
     clearTimeout(rideTimer); rideTimer = 0; ridePending = false;   // a ride can't fire into a closed REFIT
     if (convey) convey.reset(), convey = null;
+    if (ghost) ghost.reset(), ghost = null;
     propThumbs.length = 0; lastThumbTs = 0;   // free the preview tiles' canvases
     if (unsub) unsub(), unsub = null;
     if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
@@ -2131,6 +2134,8 @@ const Build = (() => {
         lastStampIds = null;
       }
       renderFinCard();
+      // ghost projection (Phase 3): same plan, same components, same frame rebase as everything above
+      if (ghost) ghost.setContext({ plan: valPlan, comps: valComps, offset: (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 } });
     }
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
@@ -2285,9 +2290,23 @@ const Build = (() => {
       }
     }
     convey.tick(dt, now, belts, jmap, testStops());   // stops: preview crates are consumed at their dock, like real ones
+    /* GHOST PROJECTION (Phase 3): stands down while anything coach-like is up (tutorial, the
+       first-run card, an ARMED/pending first ride — the two narrations must never fight) and the
+       INSTANT any real preview crate rides (▸ TEST / the first ride own the belt). Same belts,
+       same junction decisions, same frame as the real sim; its own dedicated engine + stops. */
+    if (ghost) {
+      const blocked = tutorialCoaching() || ridePending || !!rideTimer
+        || !!(root && root.querySelector('.refit-firstrun')) || convey.boxCount() > 0;
+      const feed = (opts && opts.world && opts.world.feedState) ? opts.world.feedState() : { known: false, fed: false };
+      ghost.tick(dt, now, belts, jmap, { blocked, feed });
+    }
     convey.drawBelts(ctx, now, t, belts, valLive);
   }
-  function drawConveyorBoxes(now, t) { if (convey) { convey.drawBoxes(ctx, now, t); drawTestNotes(now, t); } }
+  function drawConveyorBoxes(now, t) {
+    if (!convey) return;
+    convey.drawBoxes(ctx, now, t); drawTestNotes(now, t);
+    if (ghost) ghost.draw(ctx, now, t, Math.max(9, 11 / zoom));   // projection + WOULD-captions over the real layer
+  }
 
   /* THE GUIDANCE LIVES WHERE THE HANDS ARE (2026-07-05 playtest): callouts render INSIDE build mode, in
      plain words that name the fix, at a size you can read while placing — the same visual language as the
@@ -2658,6 +2677,8 @@ const Build = (() => {
       })),
     } : null),
     finRegistry: () => finRead(station),
+    // ghost-projection readout (Phase 3) — the EXACT state the projection runs on (boxes/captions/log)
+    ghost: () => (ghost ? ghost.peek() : null),
     // run the REAL hover path over a tile and report what the reclaim highlight would target
     // (a belt tile lights the belt, not the room under it).
     hoverAt: (tile) => {
