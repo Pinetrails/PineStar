@@ -503,7 +503,12 @@
       const title = safeTitle(w), ti = title.toLowerCase().indexOf(q);
       if (ti >= 0) { out.push({ id: w.id, title: w.title, snippet: 'title match', match: 'title' }); continue; }
       for (const m of visibleMessages(w)) {
-        const body = scrubSecrets(m.content), i = body.toLowerCase().indexOf(q); if (i < 0) continue;
+        // Most queries do not occur in most turns. Check the raw text first so a miss does not pay
+        // for every credential-redaction regex across the whole session archive. A raw candidate is
+        // still scrubbed and checked again before it can become a hit: text inside a secret remains
+        // unsearchable and snippets remain safe.
+        const raw = m.content, rawIndex = raw.toLowerCase().indexOf(q); if (rawIndex < 0) continue;
+        const body = scrubSecrets(raw), i = body.toLowerCase().indexOf(q); if (i < 0) continue;
         const start = Math.max(0, i - 20);
         out.push({ id: w.id, title: w.title, snippet: body.slice(start, start + 60).replace(/\s+/g, ' ').trim(), match: 'transcript' });
         break;
