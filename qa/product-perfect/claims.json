@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5f2fc379ceb6ae45c4ec2bfa888f09bf863ee623",
+    "sourceCommit": "916be222a0650d030414b6ae2af47f1a248fa2aa",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -78,13 +78,13 @@
       },
       {
         "path": "frontend/app/autojobs.js",
-        "bytes": 16641,
-        "sha256": "d6dfbbecdf44b6a516d0b9f0fbfb9f029c53201daafb6f531b538facb3d60475"
+        "bytes": 18640,
+        "sha256": "74cd688dfb1dd1815f500e3fea2a7ea5f57924504edd191b6f130bae1b7424be"
       },
       {
         "path": "frontend/app/autojobstore.js",
-        "bytes": 18150,
-        "sha256": "e9f05b529eefa8f6da0f1e0eddefab6d9a4227019078ad094b9992c44907e0a7"
+        "bytes": 18612,
+        "sha256": "9c219c368ced0659f87dc46437b24649479bc088ef75c83956f23176ea516775"
       },
       {
         "path": "frontend/app/autonomy.js",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 234007,
-        "sha256": "71b606a1082a05576832a5f16909c68d1e5200b2908242b0ad6b100f35aeb577"
+        "bytes": 234563,
+        "sha256": "fa633a83316a8df611c6d4375f37d92ea3d7509acaea9aafc1584454783b7bed"
       },
       {
         "path": "frontend/app/mint.js",
@@ -593,8 +593,8 @@
       },
       {
         "path": "frontend/app/recruiter.js",
-        "bytes": 15996,
-        "sha256": "e071ea9b862866c7e35274e8f9dd26f3a61dee06c80c520536cc7052b6b1da9a"
+        "bytes": 16879,
+        "sha256": "7ab59bdb25be205dd70c7965dafe9fde2bb9421347f953c3a36d34a373d35415"
       },
       {
         "path": "frontend/app/recruiterstore.js",
