@@ -24,6 +24,9 @@ const fs = require('fs');
 const path = require('path');
 const P = (...p) => path.join(__dirname, '..', ...p);
 const read = (...p) => fs.readFileSync(P(...p), 'utf8');
+/* the few checks here that are genuinely ASYNC (a promise racing an invalidation cannot be driven any other
+   way) park their tail here; the report waits on all of them, so an async assertion can never be skipped. */
+const PENDING = [];
 
 const Recipes = require('../frontend/app/recipes.js');
 const Recruiter = require('../frontend/app/recruiter.js');
@@ -283,11 +286,43 @@ A.eq(dIdx.has('Weekly competitor digest for pricing'), false, '…and a genuinel
    ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
 A.eq(/fitProjects = fitProjects \|\| \[\]/.test(mkt), false, 'a failed /api/projects no longer caches [] (truthy) forever');
 A.eq(/fitChannels = fitChannels \|\| \[\]/.test(mkt), false, '…nor does /api/connectors');
-A.ok(/\.catch\(\(\) => \{ fitProjectsPending = null; return fitProjects \|\| \[\]; \}\)/.test(mkt),
+A.ok(/\.catch\(\(\) => \{ if \(gen === fitGen\) fitProjectsPending = null; return fitProjects \|\| \[\]; \}\)/.test(mkt),
   'the failure clears the in-flight marker and leaves the cache NULL — the same shape loadSkillCatalog documents');
-A.ok(/\.catch\(\(\) => \{ fitChannelsPending = null; return fitChannels \|\| \[\]; \}\)/.test(mkt), '…on both loaders');
-A.ok(/function invalidateFit\(\) \{ fitProjects = null; fitChannels = null; \}/.test(mkt) && /invalidateFit\(\);\s+\/\//.test(mkt),
-  'and re-opening the bay drops both, so a folder granted or a channel connected elsewhere lands');
+A.ok(/\.catch\(\(\) => \{ if \(gen === fitGen\) fitChannelsPending = null; return fitChannels \|\| \[\]; \}\)/.test(mkt), '…on both loaders');
+A.ok(/function invalidateFit\(\) \{ fitProjects = null; fitChannels = null; fitProjectsPending = null; fitChannelsPending = null; fitGen\+\+; \}/.test(mkt) &&
+  /invalidateFit\(\);\s+\/\//.test(mkt),
+  'and re-opening the bay drops the caches AND the in-flight markers, so a folder granted elsewhere lands');
+
+/* ── 9b. A FETCH IN FLIGHT ACROSS AN INVALIDATION CANNOT WRITE ITSELF BACK IN ──────────────────────────────
+   invalidateFit nulled the two caches and left the two PENDING markers standing — half a drop. Grant a folder
+   while the previous open's /api/projects is still in the air and the OLD promise resolved its pre-grant rows
+   straight back into the freshly-cleared cache: the READY shelf was authoritatively stale until a THIRD open.
+   Behavioural: the real loaders are lifted out of marketplace.js and driven with a controllable fetch. */
+{
+  const from = mkt.indexOf('  let fitProjects = null, fitProjectsPending = null');
+  const to = mkt.indexOf('  // the context RecipeFit reasons over');
+  A.ok(from > 0 && to > from, 'precondition: the fit-cache block is where the lock expects it');
+  const mkFit = new Function('fetch', mkt.slice(from, to) +
+    '\n return { loadFitProjects, invalidateFit, peek: () => fitProjects };');
+  const gates = [];
+  const fit = mkFit(() => new Promise(res => gates.push(rows =>
+    res({ ok: true, json: () => Promise.resolve({ projects: rows }) }))));
+  const first = fit.loadFitProjects();                                  // open #1 — fetch in flight
+  A.eq(gates.length, 1, 'the first open really did fire a fetch');
+  fit.invalidateFit();                                                  // …the Commander grants a folder and comes back
+  const second = fit.loadFitProjects();                                 // open #2 — must NOT be handed the stale promise
+  A.eq(gates.length, 2, 'the second open fires its OWN fetch instead of adopting the in-flight one');
+  gates[0]([{ root: '/old' }]);                                         // the PRE-GRANT answer lands late
+  PENDING.push(Promise.resolve(first).then(v => {
+    A.eq(v.map(p => p.root).join(','), '/old', 'the stale resolve still answers its own caller honestly');
+    A.eq(fit.peek(), null, '…but it wrote NOTHING through: the post-invalidation cache is untouched');
+    gates[1]([{ root: '/old' }, { root: '/granted' }]);
+    return second;
+  }).then(v => {
+    A.eq(v.map(p => p.root).join(','), '/old,/granted', 'the post-invalidation fetch is what fills the cache');
+    A.eq(fit.peek().map(p => p.root).join(','), '/old,/granted', '…so the READY shelf sees the new grant on THIS open');
+  }));
+}
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
    10. A RELOAD DOES NOT RE-MINT THE SAME `shown` LEDGER ROW
@@ -407,4 +442,5 @@ A.ok(/const why = parsed\.why \? \(' ' \+ parsed\.why\) : '';/.test(fireBody),
 A.eq(/you said|because you/.test(fireBody.slice(0, fireBody.indexOf('Chat.nudge'))), false,
   '…with no framing that would attribute it to the Commander');
 
-A.report('rec truth & consistency (W3)');
+Promise.all(PENDING).then(() => A.report('rec truth & consistency (W3)'),
+  e => { console.error(e); process.exit(1); });

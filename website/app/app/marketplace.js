@@ -1533,44 +1533,61 @@ const Marketplace = (() => {
 
      Invalidation is the other half: a Commander who grants a folder or connects a channel does it in ANOTHER
      panel and comes BACK to the bay, so re-opening the bay drops both caches (invalidateFit, called from open()).
-     A stale-forever "ready" shelf is the same lie as an empty one. */
+     A stale-forever "ready" shelf is the same lie as an empty one.
+
+     ⛔ AND INVALIDATION MUST DROP THE IN-FLIGHT FETCH TOO (2026-08-05). It nulled the two CACHES and left the
+     two PENDING markers standing, which is only half a drop and produced the same stale shelf by a longer route:
+     grant a folder while a /api/projects fetch from the previous open is still in the air → invalidateFit()
+     clears the cache → the OLD promise resolves and writes its pre-grant rows straight back in → the READY shelf
+     is authoritatively stale, and stays that way until a THIRD open. Worse, a caller that arrived between the
+     invalidate and the resolve was handed the retained promise and got the pre-grant answer with no fetch of its
+     own. So invalidation clears the markers AND bumps a generation token: a resolve from a superseded generation
+     may answer ITS OWN caller (that request really did happen) but may not write through to the cache or touch
+     the markers a newer fetch now owns. */
   let fitProjects = null, fitProjectsPending = null, fitChannels = null, fitChannelsPending = null;
-  function invalidateFit() { fitProjects = null; fitChannels = null; }
+  let fitGen = 0;   // bumped on every invalidation; a resolve carrying an older token cannot write through
+  function invalidateFit() { fitProjects = null; fitChannels = null; fitProjectsPending = null; fitChannelsPending = null; fitGen++; }
   function loadFitProjects() {
     if (fitProjects) return Promise.resolve(fitProjects);
     if (fitProjectsPending) return fitProjectsPending;
-    fitProjectsPending = fetch('/api/projects', { cache: 'no-store' })
+    const gen = fitGen;
+    const p = fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : { projects: [] })
       .then(d => {
-        fitProjects = (Array.isArray(d && d.projects) ? d.projects : []).map(p => ({
-          root: String((p && (p.root || p.path)) || ''),
-          name: String((p && (p.name || p.label)) || '') || basenameOf(String((p && (p.root || p.path)) || '')),
+        const rows = (Array.isArray(d && d.projects) ? d.projects : []).map(p2 => ({
+          root: String((p2 && (p2.root || p2.path)) || ''),
+          name: String((p2 && (p2.name || p2.label)) || '') || basenameOf(String((p2 && (p2.root || p2.path)) || '')),
           // REAL evidence about what KIND of folder this is — the projects API already computes it. Without it
           // the shelf cannot tell a code repo from a folder of invoices and offers 'PR Sweep' against either.
-          git: !!(p && p.isGitRepo)
-        })).filter(p => p.root);
-        fitProjectsPending = null; return fitProjects;
+          git: !!(p2 && p2.isGitRepo)
+        })).filter(p2 => p2.root);
+        if (gen !== fitGen) return rows;                 // superseded: answer this caller, write through NOTHING
+        fitProjects = rows; fitProjectsPending = null; return fitProjects;
       })
       // retryable: leave fitProjects NULL (an empty array would be truthy and cache the failure forever).
-      .catch(() => { fitProjectsPending = null; return fitProjects || []; });
-    return fitProjectsPending;
+      .catch(() => { if (gen === fitGen) fitProjectsPending = null; return fitProjects || []; });
+    fitProjectsPending = p;
+    return p;
   }
   function loadFitChannels() {
     if (fitChannels) return Promise.resolve(fitChannels);
     if (fitChannelsPending) return fitChannelsPending;
-    fitChannelsPending = fetch('/api/connectors', { cache: 'no-store' })
+    const gen = fitGen;
+    const p = fetch('/api/connectors', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : { connectors: [] })
       .then(d => {
-        const rows = Array.isArray(d && d.connectors) ? d.connectors : (Array.isArray(d && d.items) ? d.items : []);
+        const raw = Array.isArray(d && d.connectors) ? d.connectors : (Array.isArray(d && d.items) ? d.items : []);
         // CONNECTED only — a configured-but-broken connector cannot be cited as a reason the station is ready.
-        fitChannels = rows.filter(c => c && c.connected !== false && c.status !== 'error')
+        const rows = raw.filter(c => c && c.connected !== false && c.status !== 'error')
           .map(c => ({ id: String((c && c.id) || ''), label: String((c && (c.label || c.name || c.kind || c.id)) || '') }))
           .filter(c => c.label);
-        fitChannelsPending = null; return fitChannels;
+        if (gen !== fitGen) return rows;                 // superseded: answer this caller, write through NOTHING
+        fitChannels = rows; fitChannelsPending = null; return fitChannels;
       })
       // retryable: leave fitChannels NULL — same reason (see the note above the cache declarations).
-      .catch(() => { fitChannelsPending = null; return fitChannels || []; });
-    return fitChannelsPending;
+      .catch(() => { if (gen === fitGen) fitChannelsPending = null; return fitChannels || []; });
+    fitChannelsPending = p;
+    return p;
   }
   function basenameOf(p) { const s = String(p || '').replace(/[\\/]+$/, ''); const i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\')); return i >= 0 ? s.slice(i + 1) : s; }
 
