@@ -343,9 +343,14 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
    supplies the width at FIRST layout, so #logo-anchor reserves the right seat before any asset
    has loaded (the img had to fire `load` to get one). Ratio = the SVG's viewBox; if the trace is
    ever regenerated at a different field height, copy the new viewBox here.
+   The asset is the `mosaic` preset — the master's own ASCII-dash texture, coarsened until it
+   survives this box. It is tuned FOR 24-30px: the dashes are sized so they still resolve here, and
+   the same texture at the master's native dash scale goes to dim mush by 30px. If this height ever
+   grows past ~56px, retrace finer (dev/trace-logo.mjs); if it ever shrinks below 24, switch to
+   --preset=solid, which is the legible floor.
    No CSS glow/drop-shadow — removed per Andrew, and that still stands. */
 .logo-img {
-  height: 30px; aspect-ratio: 2837 / 480; display: block;
+  height: 30px; aspect-ratio: 946 / 160; display: block;
   background-color: var(--ph);
   -webkit-mask: url(../assets/brand/starnet-wordmark.svg) center / contain no-repeat;
           mask: url(../assets/brand/starnet-wordmark.svg) center / contain no-repeat;
