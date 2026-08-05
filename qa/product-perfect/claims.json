@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "916be222a0650d030414b6ae2af47f1a248fa2aa",
+    "sourceCommit": "5f60389bbead622b656a6bfffb6030a41f8a6c69",
     "pathSetSha256": "5adf9f085dcd65a13635fece3d01f23d0d8fd65a6852da84c830ae0e805e722d",
     "files": [
       {
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 234563,
-        "sha256": "fa633a83316a8df611c6d4375f37d92ea3d7509acaea9aafc1584454783b7bed"
+        "bytes": 237068,
+        "sha256": "c2a5076b409552fb83f09cddf74493024eef04a1c2d68d02f05bf768403efa1f"
       },
       {
         "path": "frontend/app/mint.js",
@@ -573,8 +573,8 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 60701,
-        "sha256": "88c361a4cbdc677794996df9f83527c2f7329ec227316da5a00f38c9cb479f75"
+        "bytes": 62195,
+        "sha256": "f868bff6ac8098049051432d341e8d8e892ee7c6f1d90be3151e059762deafcb"
       },
       {
         "path": "frontend/app/recommend.js",
@@ -593,8 +593,8 @@
       },
       {
         "path": "frontend/app/recruiter.js",
-        "bytes": 16879,
-        "sha256": "7ab59bdb25be205dd70c7965dafe9fde2bb9421347f953c3a36d34a373d35415"
+        "bytes": 17399,
+        "sha256": "602f2b999c81665cede0c0fb7305eb797864701ceb2d7e948a940af331cb1f88"
       },
       {
         "path": "frontend/app/recruiterstore.js",
@@ -758,8 +758,8 @@
       },
       {
         "path": "frontend/app/topicmatch.js",
-        "bytes": 8585,
-        "sha256": "6f9195d6bf031a8d820050ddc6f0b551a69fcb529ff007d0ff4561a7eb0e7cc2"
+        "bytes": 10838,
+        "sha256": "ff457929b92ba6f2c1deb3b1263fb5d060807615bf25a752af1c252b673d0773"
       },
       {
         "path": "frontend/app/trophies.js",
