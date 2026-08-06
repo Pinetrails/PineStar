@@ -51,6 +51,24 @@ A.ok(/g\.className = 'refit-guide refit-firstrun'/.test(build),
 A.ok(/document\.querySelector\('#terms \.term'\) \|\| document\.querySelector\('\.refit-firstrun'\)/.test(tut),
   'showCoach defers over the first-run card too, so the deferred open does not stack card + coachmark');
 
+/* ---------- P0: one failed first paint must not strand REFIT on a black overlay ----------
+   requestAnimationFrame does not continue after an exception. The next frame must therefore be scheduled by a
+   finally-owned supervisor, with a bounded retry and a fresh canonical bake/camera instead of requiring DONE +
+   reopen to manufacture a new loop. */
+const frameStart = build.indexOf('function frame(now)');
+A.ok(frameStart >= 0, 'REFIT render frame exists');
+const frameSeg = build.slice(frameStart, build.indexOf('\n  function drawGrid', frameStart));
+A.ok(/try\s*\{[\s\S]*catch \(err\)[\s\S]*finally\s*\{[\s\S]*scheduleFrame\(failed\)/.test(frameSeg),
+  'the REFIT frame is supervised and schedules its successor from finally even after a draw exception');
+A.ok(/function scheduleFrame\(failed\)[\s\S]{0,600}Math\.min\(1000,[\s\S]{0,600}requestAnimationFrame\(frame\)/.test(build),
+  'failed frames retry with bounded backoff instead of a 60fps error loop');
+const recoverStart = build.indexOf('function recoverFrame(err)');
+const recoverSeg = build.slice(recoverStart, build.indexOf('\n  function frame(now)', recoverStart));
+A.ok(/cache = null; cacheGeo = null/.test(recoverSeg) && /bakeDirty = true/.test(recoverSeg),
+  'recovery discards the suspect derived bake and rebuilds from canonical station state');
+A.ok(/resize\(\); fitCamera\(\)/.test(recoverSeg),
+  'recovery re-measures and re-fits the station after a first-layout race');
+
 /* ---------- P1: the kit-out is opt-IN, so it must be opt-OUT-able at any moment ---------- */
 A.ok(/function kitBail\(\)/.test(tut), 'the kit-out has a bail');
 const bailSeg = tut.slice(tut.indexOf('function kitBail()'), tut.indexOf('function beatFullyEquipped('));

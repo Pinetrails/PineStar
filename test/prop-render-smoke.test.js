@@ -83,6 +83,18 @@ A.eq(empty, [], 'every catalog prop actually paints (this is what "drew nothing"
 A.eq(escaped, [], 'every catalog prop paints ON its own footprint (w/h are PIXELS in a draw fn, never tiles)');
 A.ok(checked >= 118, 'walked the whole catalog (' + checked + ' props)');
 
+/* Andrew's v0.9 restart escape: a workstation west of world zero threw only during the first seconds of
+   process uptime. `scr()` used a negative JS remainder as an array index, produced undefined, and desk's
+   U.shade(sc) killed REFIT's only animation callback. Positive-origin / warm-uptime smoke never saw it. */
+{
+  const ctx = recorder(); PS.setCtx(ctx); PS.setNow(0);
+  let error = null;
+  try { PS.draw({ t: 'desk', x: -17, y: 0, w: 2, h: 1, id: 'west-desk' }, true); }
+  catch (e) { error = e; }
+  A.eq(error, null, 'a lit desk at negative world x paints on the first frame after restart');
+  A.ok(ctx.rects.length >= MIN_RECTS, 'the negative-phase desk paints real pixels instead of blanking REFIT');
+}
+
 /* A mounted prop must draw exactly SURFACE_RISE higher and nowhere else — the lift is applied once,
    at the draw() origin, and no prop function may bake its own mount height. */
 {
