@@ -49,6 +49,18 @@ const { makeAgentLifecycle } = require('../sidecar/agent-lifecycle.js');
     'agent deletion reserves the lifecycle before archive');
   A.ok(/agentLifecycle\.canStart\(agentId\)[\s\S]{0,900}concurrencyGate\.tryEnter/.test(source),
     'run admission rejects work while deletion is reserved');
+  A.ok(/checkpointMutation:\s*async[\s\S]{0,1800}checkpointStore\.snapshot\(agentId,[\s\S]{0,500}workTree: workTree/.test(source),
+    'run context snapshots the resolved mutation root instead of assuming the agent jail');
+  A.ok(/preciseCheckpoint[\s\S]{0,350}!preciseCheckpoint/.test(source),
+    'generic checkpoint hook defers fs, shell.exec, and verify.run to their precise-root boundary');
+
+  const rewind = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'rewind.js'), 'utf8');
+  A.ok(/s\.workTree[\s\S]{0,260}PROJECT ROOT/.test(rewind),
+    'restore UI identifies external project-root snapshots explicitly');
+  A.ok(/data-root=/.test(rewind) && /rolls back <b>' \+ esc\(root\)/.test(rewind),
+    'restore confirmation names the exact root whose files will change');
+  A.ok(/restoreAvailable/.test(rewind) && /PROJECT ACCESS REVOKED/.test(rewind),
+    'restore UI blocks a project restore whose path grant is no longer active');
 
   A.report('agent-lifecycle');
 })().catch(e => { console.log('FAIL: agent-lifecycle threw - ' + (e && e.stack || e)); process.exit(1); });

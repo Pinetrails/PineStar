@@ -6125,12 +6125,33 @@ function runGitCheckpoint(args, opts) {   // resolves (never rejects); a missing
     } catch (e) { resolve({ code: 1, stdout: '', stderr: String((e && e.message) || e) }); }
   });
 }
+function checkpointPathInside(candidate, base) {
+  let a = path.resolve(String(candidate || '')), b = path.resolve(String(base || ''));
+  if (path.sep === '\\') { a = a.toLowerCase(); b = b.toLowerCase(); }
+  return a === b || a.indexOf(b + path.sep) === 0;
+}
+function checkpointPermanentRoot(candidate) {
+  const matches = blessedRoots().filter(function (root) { return root && checkpointPathInside(candidate, root); });
+  matches.sort(function (a, b) { return String(b).length - String(a).length; });
+  return matches.length ? path.resolve(matches[0]) : null;
+}
 // SKYNET_/STARNET_CHECKPOINT_MAX_BYTES tunes the shadow-repo size ceiling that triggers a gc/re-init sweep
 // (the store defaults to 500MB when unset/invalid). Wired here so an operator can cap 24/7 checkpoint growth
 // without a code change; a non-positive/blank value falls through to the store default.
 const _ckptMaxBytes = Number(ENV('CHECKPOINT_MAX_BYTES'));
 const checkpointStore = makeCheckpointStore(Object.assign(
-  { fs, pathMod: path, root: WORKSPACES, runGit: runGitCheckpoint, clock: { now: () => Date.now() }, keep: 50 },
+  {
+    fs, pathMod: path, root: WORKSPACES, runGit: runGitCheckpoint, clock: { now: () => Date.now() }, keep: 50,
+    scopeIdOf: (workTree) => crypto.createHash('sha256').update(String(workTree)).digest('hex').slice(0, 24),
+    // A restore into an external root is allowed only while that exact project remains blessed. A one-time path
+    // grant may still CREATE a pre-mutation snapshot (the host marks that one call as resolved/authorized), but
+    // replaying it later requires the Commander to re-authorize the project first.
+    allowWorkTree: (workTree) => blessedRoots().some(function (root) {
+      let a = path.resolve(String(workTree || '')), b = path.resolve(String(root || ''));
+      if (path.sep === '\\') { a = a.toLowerCase(); b = b.toLowerCase(); }
+      return a === b;
+    })
+  },
   (_ckptMaxBytes > 0 && isFinite(_ckptMaxBytes)) ? { maxRepoBytes: Math.floor(_ckptMaxBytes) } : {}
 ));
 // checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
@@ -12120,6 +12141,7 @@ async function runOnce(o) {
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
   let parkSeq = 0;   // distinguishes parked outputs within one run (see parkOutput below)
+  const checkpointedMutationRoots = new Set();
   const capCtx = makeCapCtx(resolved, Object.assign({
     emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal, ownerTrusted,
     origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
@@ -12131,6 +12153,41 @@ async function runOnce(o) {
     hooks: hookSpine,
     cwd: WORKSPACES,
     projectCwd: o.workdir || null,
+    // PRECISE CHECKPOINT ROOT. fs.* invokes this after path-trust has resolved the actual base but before bytes
+    // change; shell/verify invoke it after their real cwd is resolved but before spawning. This closes the gap
+    // where the generic host hook always snapshotted WORKSPACES/<agentId> even while the tool mutated a blessed
+    // project elsewhere. `resolvedRoot:true` is host-internal authority for a one-time path-trust decision; it
+    // permits snapshot creation only. A later restore still requires the project to be blessed again.
+    checkpointMutation: async (rootCandidate, label, opts2) => {
+      if (!rootCandidate) return null;
+      if (!CHECKPOINTS_ENABLED && !(opts2 && opts2.always === true)) return null;
+      const aid = fsJail.safeAgentId(agentId || 'agent');
+      const workspace = path.resolve(WORKSPACES, aid);
+      const candidate = path.resolve(String(rootCandidate));
+      let workTree = null, authorizedWorkTree = false;
+      if (!checkpointPathInside(candidate, workspace)) {
+        const permanent = checkpointPermanentRoot(candidate);
+        if (permanent) workTree = permanent;
+        else if (opts2 && opts2.resolvedRoot === true) { workTree = candidate; authorizedWorkTree = true; }
+        else return null;
+      }
+      const turn = execution.checkpointTurn();
+      const rootKey = path.sep === '\\' ? String(workTree || workspace).toLowerCase() : String(workTree || workspace);
+      const key = String(turn) + '\0' + rootKey;
+      if (checkpointedMutationRoots.has(key)) return null;
+      checkpointedMutationRoots.add(key);
+      try {
+        const snap = await checkpointStore.snapshot(agentId, {
+          runId, turn, label: label || 'mutation', workTree: workTree || undefined,
+          authorizedWorkTree: authorizedWorkTree
+        });
+        if (snap && snap.created) {
+          emit('checkpoint.created', { agentId, runId, turn, snapshotId: snap.id, files: snap.files || 0, bytes: snap.bytes || 0, label: label || 'mutation' });
+          execution.advanceCheckpoint();
+        }
+        return snap;
+      } catch (_) { return null; }
+    },
     // OUTPUT PARKING: the host half of the tool-output cap. Over-cap output is written WHOLE into the agent's
     // own workspace before the clamp destroys its middle, and the result points the model at the file — the
     // work was already done and paid for, so the part that did not fit is recoverable instead of gone. Lands
@@ -12483,7 +12540,8 @@ async function runOnce(o) {
     // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
-    if (mutatesWorkspace(c.name) && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
+    const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run)$/.test(c.name);
+    if (mutatesWorkspace(c.name) && !preciseCheckpoint && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
       try {
         const turn = execution.checkpointTurn();
         const snap = await checkpointStore.snapshot(agentId, { runId, turn, label: c.name });

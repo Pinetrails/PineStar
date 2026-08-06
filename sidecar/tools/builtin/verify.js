@@ -69,12 +69,15 @@
           dialect: environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix'), isWin: isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this check ' + safetyDeny.reason + '. verify.run cannot change the user\'s screen, session, processes, input, or network exposure; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
+        const checkpoint = typeof ctx.checkpointMutation === 'function'
+          ? Promise.resolve().then(function () { return ctx.checkpointMutation(hostCwd, 'verify.run', { always: true }); }).catch(function () { return null; })
+          : Promise.resolve(null);
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
-        const run = environment && typeof environment.execute === 'function'
+        const run = checkpoint.then(function () { return environment && typeof environment.execute === 'function'
           // ctx.surface rides along (host authority): an unattended run receives only the service keys whose
           // unattended grant is flipped ON — the same rule resolveForRequest enforces on web_request.
           ? environment.execute({ agentId: aid, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, surface: ctx.surface })
-          : runCommand({ spawn: spawn, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
+          : runCommand({ spawn: spawn, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin }); });
         return run.then(function (res) {
           const verdict = interpret(res);
           const body = redact(res.out || '(no output)');

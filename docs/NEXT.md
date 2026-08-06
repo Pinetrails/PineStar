@@ -42,6 +42,26 @@ received a spoken `audio/ogg` request through `/api/stt` and returned HTTP 200 i
 released. The Windows desktop staging simulation retained and resolved `OggOpusDecoder`. A live external
 Telegram Bot API delivery was not sent from this isolated lane; network ingress remains covered by the fake
 Bot API E2E plus the live shared STT route.
+## 2026-08-04 — AUTHORIZED PROJECT-ROOT REWIND (`agent/hermes-project-rollback`)
+
+IMPLEMENTATION READY; CANDIDATE CLAIMS BLOCKED. Checkpoints now bind their shadow Git history to the exact
+mutation root instead of always snapshotting the agent workspace. Relative workspace writes retain the
+existing IDs and layout; commands and writes in an authorized external project use a digest-scoped repo
+under the station checkpoint store, never the project's own `.git`. Restore rechecks current root authority
+and fails closed after revocation while keeping the checkpoint visible for later exact-root reauthorization.
+The Rewind UI names the affected root and cannot offer a restore while its authority is revoked.
+
+Focused real-filesystem proof covers external-root mutation, revocation, reauthorization, byte-exact
+restore, removal of newly created files, preservation of a project's existing `.git`, checkpoint-index
+rebuild, scope identity, and path-jail containment. Tool wiring proof covers filesystem writes plus shell and
+verification commands at their effective host working directory. Before the final trunk sync, the focused
+suites were 247 assertions green, canonical `npm run test:fast` was 524/524 green, and canonical
+`npm run test:http` was 60/60 green. After merging current trunk `4052834e`, focused proof remained 247 green
+and HTTP remained 60/60 green. Fast passed its first 205 steps, including every touched rollback test, then
+correctly blocked at `qa-product-perfect-claims.test.js` because the shared claims are sealed to another
+candidate commit (9 failed / 55 passed). This branch does not rewrite shared candidate evidence. Final
+integration must reconcile the known `sidecar/index.js`/fast-manifest overlaps, regenerate candidate-bound
+claims once, and rerun the canonical gate. No station-wide readiness claim is made.
 
 ## 2026-08-04 — COMPLETE STATION DISASTER RECOVERY P0 (`agent/disaster-recovery-p0`)
 

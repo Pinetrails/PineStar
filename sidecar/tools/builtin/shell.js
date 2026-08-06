@@ -749,10 +749,13 @@
         const safetyDeny = remoteOwner ? null : commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P, dialect: shellDialect, isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this command ' + safetyDeny.reason + '. StarNet task processes preserve the user\'s control of their computer; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
+        const checkpoint = typeof ctx.checkpointMutation === 'function'
+          ? Promise.resolve().then(function () { return ctx.checkpointMutation(hostCwd, 'shell.exec', { always: true }); }).catch(function () { return null; })
+          : Promise.resolve(null);
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
         // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
-        if (args && args.background) {
-          if (!environment && !bg) return Promise.resolve({ content: 'Background processes are not available in this build.', summary: 'unavailable' });
+        if (args && args.background) return checkpoint.then(function () {
+          if (!environment && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
           const r = environment && typeof environment.startBackground === 'function'
             // ctx.surface (host authority, from runInputContext) rides along so the backend hands this child only
             // the service keys the Commander granted for unattended use — see servicekeys.runEnv.
@@ -761,13 +764,15 @@
           const content = r.ok
             ? 'Started background process ' + r.bgId + ' in your workspace. It keeps running while you work — check it with shell.bg.status (id "' + r.bgId + '"), read its full log with shell.bg.read, send it input with shell.bg.write, stop it with shell.bg.kill.'
             : 'Could not start a background process: ' + r.error;
-          return Promise.resolve({ content: content, summary: r.ok ? ('bg started ' + r.bgId) : 'bg refused' });
-        }
+          return { content: content, summary: r.ok ? ('bg started ' + r.bgId) : 'bg refused' };
+        });
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         const markerIsWin = environment && environment.backendId !== 'local' ? false : isWin;
-        const run = environment && typeof environment.execute === 'function'
-          ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, surface: ctx.surface })
-          : runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
+        const run = checkpoint.then(function () {
+          return environment && typeof environment.execute === 'function'
+            ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, surface: ctx.surface })
+            : runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
+        });
         return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
           const pm = parseMarker(res.out);

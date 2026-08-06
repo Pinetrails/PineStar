@@ -217,8 +217,14 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     A.ok(rr.abs === '/outside/project/file.txt' && rr.base === '/blessed', 'wired: absolute path is resolved via the injected guard');
     A.ok(seen.length === 1 && seen[0].scope === 'read' && seen[0].agentId === 'agz', 'guard receives the absolute path with scope + agentId');
     // a write tool threads scope:'write' to the guard (so writes can stay consent-gated by the caller)
-    await WT.writeTool.run({ path: '/outside/project/w.txt', content: 'x' }, { agentId: 'agz' }).catch(() => {});
+    const checkpoints = [];
+    await WT.writeTool.run({ path: '/outside/project/w.txt', content: 'x' }, {
+      agentId: 'agz', checkpointMutation: async (root, label, opts) => checkpoints.push({ root, label, opts })
+    }).catch(() => {});
     A.ok(seen.some(s => s.scope === 'write'), 'a write tool threads scope:"write" to the guard');
+    A.eq(checkpoints.length, 1, 'external fs write asks the host to checkpoint before filesystem mutation');
+    A.eq(checkpoints[0].root, '/blessed', 'checkpoint binds to the root resolved by path trust, not the agent jail');
+    A.eq(checkpoints[0].opts.resolvedRoot, true, 'one-time path authorization is explicitly host-marked for snapshot creation');
     // NUL is illegal even with a guard wired (never reaches the guard)
     await rejects(WT._internals.resolveInside('agz', '/a/\0/b', { scope: 'read' }), 'NUL stays illegal even when pathTrust is wired');
     // a relative path is UNAFFECTED by the guard — still jailed, guard never consulted for it
