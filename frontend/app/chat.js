@@ -963,6 +963,17 @@ const Chat = (() => {
     if (modelEl) modelEl.textContent = cur ? pinReadout(cur) : '';
     if (bar) bar.hidden = !list.length;   // no roster yet (pre-wake) → hide the row rather than show an empty selector
   }
+  // DOSSIER RENAME INVALIDATION: setAgentName mutates App's live roster without switching workstreams, so the
+  // top identity row's option-key cache and Chat's focused speaker-name cache would otherwise retain the old
+  // label. Re-resolve both from the authoritative live roster. This is deliberately lighter than load(ws): a
+  // display-name edit must not clear/replay the transcript, reset beat queues, or disturb an in-flight stream.
+  function refreshAgentIdentity() {
+    if (activeWs && typeof App !== 'undefined' && App.agentName) {
+      const nm = App.agentName(activeWs.agentId || 'agent');
+      if (nm) name = nm;
+    }
+    renderIdBar();
+  }
   // wire the agent <select> once: a change hands off to App.selectAgent (switch/mint a stream bound to that
   // agent). Registered from init() so a re-init can't stack handlers.
   function wireIdBar() {
@@ -7572,5 +7583,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus, askBudgetSpent, spendAsk };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, refreshAgentIdentity, setRosterStatus, askBudgetSpent, spendAsk };
 })();

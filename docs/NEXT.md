@@ -2487,3 +2487,15 @@ Evidence on the isolated branch: the plist parses as XML, the touched JavaScript
 517/517 green. A macOS artifact build and a real allow/deny/reset microphone round-trip remain
 unverified on this Windows host; the next macOS release candidate must prove the generated
 `StarNet.app/Contents/Info.plist` contains the key and exercise the prompt on real hardware.
+
+# READY TO MERGE 2026-08-06 — COMMS PROFILE-RENAME CACHE (`agent/statusbar-profile-names`)
+
+Profile renames now invalidate COMMS' cached roster-option labels and focused-speaker name without
+reloading the workstream or disturbing transcript/beat/run state. The frontend website mirror and
+the agent-model source contract are synchronized.
+
+Live seeded proof at `localhost:8791`: focused overseer `ATLAS → ORION` updated the CREW row and
+selected COMMS option immediately; non-focused specialist `STRATEGIST → VEGA` updated its CREW row
+and COMMS option while ORION stayed selected. After stopping and restarting the seeded sidecar with
+`--keep`, both surfaces rehydrated as `ORION / VEGA`. Focused regression: 61 assertions; website
+sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verification was not run.
