@@ -241,12 +241,19 @@ async function main() {
 
       // ---- the INSTALLED card state (.cc-on / .added). Nothing is connected on a seeded station and
       //      a real connect needs the public internet, so this is a CSS-ONLY check of the two states.
-      const stateProbe = await evalJS(cdp, `(() => {
+      // ⛔ `.cc-card` now TRANSITIONS border-color (depth pass), so a computed read taken in the same
+      //    tick returns the START colour and the state reads as broken. Every read below is taken
+      //    after the transition settles. (A frozen timeline does the same thing permanently — see the
+      //    Browser-pane note in the lane memory.)
+      const stateProbe = await evalJS(cdp, `(async () => {
+        const settle = () => new Promise(r => setTimeout(r, 400));   // past --t-fast (120ms)
         const card = document.querySelector('#cc-list .cc-card'); if (!card) return 'no-card';
         const base = getComputedStyle(card).borderTopColor;
         card.classList.add('cc-on');
+        await settle();
         const on = getComputedStyle(card).borderTopColor;
         card.classList.remove('cc-on');
+        await settle();
         // the KEYS "already added" state signals through BORDER + TITLE COLOUR (never opacity — the
         // cardIn animation's retained final value outranks a normal opacity declaration).
         const ky = document.querySelector('#ky-catalog [data-ky-pick]');
@@ -255,8 +262,10 @@ async function main() {
           const t = ky.querySelector('.cc-top b');
           const before = { border: getComputedStyle(ky).borderTopColor, title: t ? getComputedStyle(t).color : '?' };
           ky.classList.add('added');
+          await settle();
           const after = { border: getComputedStyle(ky).borderTopColor, title: t ? getComputedStyle(t).color : '?' };
           ky.classList.remove('added');
+          await settle();
           added = { before, after, borderChanged: before.border !== after.border, titleDimmed: before.title !== after.title };
         }
         return { baseBorder: base, connectedBorder: on, differs: base !== on, keyAdded: added };
