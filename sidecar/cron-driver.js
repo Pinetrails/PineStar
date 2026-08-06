@@ -38,6 +38,11 @@
                                                  //   a getter is re-read each fire so it can fold in the live
                                                  //   Commander dossier (Phase C). Both forms stay determinism-clean.
      deps.maxRunMs         -> int                // self-healing lease ceiling: a run older than this is reclaimed
+     deps.stageBriefFor   -> (agentId) -> string|null
+                                                 // OPTIONAL: the standing job brief of the dock this agent
+                                                 //   crews (index.js injects router.stageBrief). Appended to
+                                                 //   the entry run's system context under the hub's exact
+                                                 //   section header. PROMPT TEXT ONLY — never grants/tools.
      deps.placeWorkitem(agentId, prompt, runId)
                            -> void               // OPTIONAL: ride the routine's instruction onto the CONVEYOR as a
                                                  //   box bound for its agent (the SAME workitem.placed plumbing a
@@ -92,6 +97,13 @@
     // message gets — resolveStation(agentId) -> the bay room's objects, else null -> the host's default office.
     // Optional + injected so this module stays determinism-clean; absent -> pre-fix behavior.
     const resolveStation = typeof d.resolveStation === 'function' ? d.resolveStation : null;
+    // THE DOCK'S STANDING BRIEF (inbox-trigger, 2026-08-05): stageBriefFor(agentId) -> the standing job brief
+    // of the dock this agent crews (index.js injects router.stageBrief — the SAME seam hub entry runs and
+    // chain handoffs read), or null. A scheduled fire was the ONE entry-run path that never briefed its dock:
+    // the same agent ran with its brief from a routed message and without it from a routine. PROMPT TEXT ONLY —
+    // a brief never changes who runs, what tools they hold, or what grants apply. Optional + injected so this
+    // file stays determinism-clean; absent -> pre-brief behavior, byte-identical.
+    const stageBriefFor = typeof d.stageBriefFor === 'function' ? d.stageBriefFor : null;
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
     // NS-0 LEASE HEARTBEAT knobs (all injected, determinism-clean; host threads env). The lease sweep no
     // longer reclaims on a fixed wall-clock age — it reclaims only when a run's HEARTBEAT is stale (the run
@@ -319,13 +331,21 @@
         if (view) { try { emit(name, view); } catch (_) {} }
       };
 
+      // the dock's standing brief rides the run's SYSTEM context — the SAME section header the hub's entry
+      // runs use (hub.js), so a routine's agent is briefed exactly like a routed message's agent. Null-safe:
+      // no seam / no floor / no brief composes the exact pre-brief system string.
+      let dockBrief = null;
+      if (stageBriefFor) { try { dockBrief = stageBriefFor(job.agentId); } catch (_) { dockBrief = null; } }
+      const system = ((ident.system && String(ident.system)) || personaOf(job.agentId, job))
+        + (dockBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(dockBrief).slice(0, 2000) : '');
+
       const messages = [{ role: 'user', content: assembledPrompt }];
       // launch the run SYNCHRONOUSLY (so the fire is ordered with the lease/cron.fire), but route both a
       // synchronous throw and an async rejection through the SAME terminal path so the lease always releases.
       let p;
       try {
         p = runOnce({
-          key: key, model: model, system: (ident.system && String(ident.system)) || personaOf(job.agentId, job), messages: messages,
+          key: key, model: model, system: system, messages: messages,
           agentId: job.agentId, isTask: true, emit: sink, signal: ac.signal,
           // streamId 'cron-'+runId makes this run's transcript durable under a per-RUN named stream (runId is a
           // fresh newId() already in scope — determinism-clean). Without it the reply is buffered into `state.buf`

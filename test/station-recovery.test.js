@@ -47,6 +47,8 @@ function seedCompleteStation() {
   write('connectors/servicekeys.json', { version: 1, keys: [{ id: 'weather', name: 'Weather', env: 'WEATHER_API_KEY', key: 'SERVICE_SECRET', enabled: true }] });
   write('.secrets/spotify.json', { accessToken: 'SPOTIFY_SECRET' });
   write('codex/auth.json', { access_token: 'CODEX_SECRET' });
+  write('grok/tokens.json', { access_token: 'GROK_ACCESS_SECRET', refresh_token: 'GROK_REFRESH_SECRET' });
+  write('kimi/tokens.json', { access_token: 'KIMI_ACCESS_SECRET', refresh_token: 'KIMI_REFRESH_SECRET' });
   write('.browser-profile/Cookies', 'COOKIE_SECRET');
   write('proc-ledger.json', { procs: [{ pid: 1 }] });
   write('.recovery-mutation.json', { lastCompletedMutation: 100 });
@@ -71,12 +73,14 @@ A.eq(v1.report.requirements.filter(x => x.status === 'present').length, R.REQUIR
 A.eq(v1.recoveryPoint.completedMutationsLostAtPoint, 0, 'successful quiescent snapshot establishes zero loss through its mutation barrier');
 A.eq(v1.recoveryPoint.continuousRpoCompletedMutations, null, 'bundle does not invent an unproven continuous RPO');
 const bundleText = JSON.stringify(v1);
-for (const secret of ['URL_SECRET', 'MCP_SECRET', 'ACCESS_SECRET', 'REFRESH_SECRET', 'CLIENT_SECRET', 'TELEGRAM_SECRET', 'PROVIDER_SECRET', 'SERVICE_SECRET', 'SPOTIFY_SECRET', 'CODEX_SECRET', 'COOKIE_SECRET', 'BROWSER_SECRET']) {
+for (const secret of ['URL_SECRET', 'MCP_SECRET', 'ACCESS_SECRET', 'REFRESH_SECRET', 'CLIENT_SECRET', 'TELEGRAM_SECRET', 'PROVIDER_SECRET', 'SERVICE_SECRET', 'SPOTIFY_SECRET', 'CODEX_SECRET', 'GROK_ACCESS_SECRET', 'GROK_REFRESH_SECRET', 'KIMI_ACCESS_SECRET', 'KIMI_REFRESH_SECRET', 'COOKIE_SECRET', 'BROWSER_SECRET']) {
   A.ok(bundleText.indexOf(secret) < 0, 'bundle excludes secret: ' + secret);
 }
 A.ok(v1.report.reauthentication.some(x => x.kind === 'connector' && x.id === 'notion'), 'connector reference survives with OAuth reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'channel' && x.id === 'telegram'), 'channel reference survives with token reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'service-key' && x.id === 'weather'), 'service key reference survives with reauthentication receipt');
+A.ok(v1.report.reauthentication.some(x => x.kind === 'provider' && x.id === 'grok'), 'Grok OAuth tokens are excluded with a reauthentication receipt');
+A.ok(v1.report.reauthentication.some(x => x.kind === 'provider' && x.id === 'kimi'), 'Kimi OAuth tokens are excluded with a reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'project-path' && x.id === 'C:/Projects/demo'), 'machine-specific project authority requires explicit reauthorization');
 A.ok(v1.report.skipped.some(x => x.path === '.browser-profile/Cookies'), 'browser cookie profile is explicitly skipped');
 A.ok(v1.report.skipped.some(x => x.path === 'proc-ledger.json'), 'ephemeral process ownership is explicitly skipped');
@@ -102,7 +106,25 @@ A.ok(JSON.parse(read(cleanTarget, 'permissions.allow.json')).allow.includes('fs.
 const recaptured = R.capture({ workspaceRoot: cleanTarget, browserStore: cleanBrowser, now: 1001, appVersion: '0.9.0-test', lastCompletedMutation: 100 });
 A.eq(JSON.stringify(R.semanticFingerprint(recaptured)), JSON.stringify(R.semanticFingerprint(v1)), 'clean-profile semantic fingerprint exactly matches the recovery point');
 
-// C. Corrupt archives fail before touching the requested destination.
+// C. Legacy/adversarial bundles cannot smuggle provider credentials back through restore, even with a valid manifest.
+const credentialBundle = JSON.parse(JSON.stringify(v1));
+for (const rel of ['CODEX/auth.json.bak', 'GROK/TOKENS.JSON', 'kimi/tokens.json.bak']) {
+  const data = Buffer.from('LEGACY_PROVIDER_SECRET');
+  credentialBundle.files.push({ path: rel, bytes: data.length, sha256: crypto.createHash('sha256').update(data).digest('hex'), data: data.toString('base64'), categories: [] });
+}
+credentialBundle.manifestSha256 = crypto.createHash('sha256').update(Buffer.from(JSON.stringify({
+  files: credentialBundle.files.map(x => ({ path: x.path, bytes: x.bytes, sha256: x.sha256 })),
+  browser: credentialBundle.browser.map(x => ({ key: x.key, bytes: x.bytes, sha256: x.sha256 })),
+  recoveryPoint: credentialBundle.recoveryPoint
+}), 'utf8')).digest('hex');
+const credentialCheck = R.validate(credentialBundle);
+A.eq(credentialCheck.ok, false, 'valid-checksum legacy bundle containing provider credentials is rejected');
+for (const rel of ['CODEX/auth.json.bak', 'GROK/TOKENS.JSON', 'kimi/tokens.json.bak']) A.ok(credentialCheck.errors.some(e => e.includes(rel)), 'forbidden credential path is named: ' + rel);
+const credentialTarget = path.join(tmp, 'credential-target');
+A.throws(() => R.restore({ bundle: credentialBundle, targetRoot: credentialTarget }), 'provider credential bundle fails closed before restore');
+A.eq(fs.existsSync(credentialTarget), false, 'rejected provider credential bundle leaves no destination behind');
+
+// D. Corrupt archives fail before touching the requested destination.
 const corrupt = JSON.parse(JSON.stringify(v1));
 corrupt.files.find(x => x.path === 'loops.json').data = Buffer.from('corrupted').toString('base64');
 A.eq(R.validate(corrupt).ok, false, 'corrupt payload is detected');
@@ -110,7 +132,7 @@ const corruptTarget = path.join(tmp, 'corrupt-target');
 A.throws(() => R.restore({ bundle: corrupt, targetRoot: corruptTarget }), 'corrupt bundle restore is refused');
 A.eq(fs.existsSync(corruptTarget), false, 'corrupt restore leaves no destination behind');
 
-// D. Missing required files are reported and cannot become a supposedly complete backup.
+// E. Missing required files are reported and cannot become a supposedly complete backup.
 const missingRoot = path.join(tmp, 'missing-profile');
 fs.cpSync(source, missingRoot, { recursive: true });
 fs.unlinkSync(path.join(missingRoot, 'loops.json'));
@@ -119,7 +141,7 @@ A.eq(missing.report.complete, false, 'missing loop store makes the station bundl
 A.ok(missing.report.requirements.some(x => x.category === 'loops' && x.status === 'missing'), 'missing category is named exactly');
 A.throws(() => R.writeBundleAtomic({ bundle: missing, file: path.join(backups, 'incomplete.json') }), 'incomplete bundle is not committed as a recovery point');
 
-// E. Interrupted backup and disk-full failures preserve the prior verified backup byte-for-byte.
+// F. Interrupted backup and disk-full failures preserve the prior verified backup byte-for-byte.
 const stableFile = path.join(backups, 'stable.json');
 R.writeBundleAtomic({ bundle: v1, file: stableFile, nonce: 'stable' });
 const stableHash = hashFile(stableFile);
@@ -138,7 +160,7 @@ const diskFullFs = new Proxy(fs, {
 A.throws(() => R.writeBundleAtomic({ bundle: v1, file: stableFile, nonce: 'enospc', fs: diskFullFs }), 'disk-full backup reports failure');
 A.eq(hashFile(stableFile), stableHash, 'disk-full failure preserves the previous recovery point');
 
-// F. A newer station can roll back to a prior version while retaining the replaced generation.
+// G. A newer station can roll back to a prior version while retaining the replaced generation.
 write('agent.todo.json', { items: [{ id: 'task-1', text: 'ship recovery', done: true }, { id: 'task-2', text: 'post-v1 mutation', done: false }] });
 write('.recovery-mutation.json', { lastCompletedMutation: 101 });
 const browserV2 = Object.assign({}, browserV1, { 'starnet.station.v1': JSON.stringify({ selectedRoom: 'lab', camera: { x: 9, y: 9 } }) });
@@ -153,7 +175,7 @@ A.ok(!read(rollbackTarget, 'agent.todo.json').includes('task-2'), 'previous reco
 A.ok(read(rollbackReceipt.rollback, 'agent.todo.json').includes('task-2'), 'newer generation remains recoverable after rollback');
 A.eq(rollbackBrowser['starnet.station.v1'], browserV1['starnet.station.v1'], 'browser-owned state rolls back with the workspace generation');
 
-// G. Restore activation failure cannot displace a currently healthy generation.
+// H. Restore activation failure cannot displace a currently healthy generation.
 const beforeActivationHash = hashFile(path.join(rollbackTarget, 'agent.todo.json'));
 A.throws(() => R.restore({ bundle: v2, targetRoot: rollbackTarget, replaceExisting: true, nonce: 'activation-fail', rollbackId: 'should-not-exist', beforeActivate() { throw new Error('injected activation failure'); } }), 'activation failure is reported');
 A.eq(hashFile(path.join(rollbackTarget, 'agent.todo.json')), beforeActivationHash, 'activation failure leaves current generation unchanged');

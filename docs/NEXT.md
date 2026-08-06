@@ -1,41 +1,47 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-08-04 — SKILL ECOSYSTEM 9/10, S1 TRUSTWORTHY DIRECT DISTRIBUTION (`agent/skill-ecosystem-9`)
+## 2026-08-04 — TELEGRAM POLLING / OWNER-PAIRING TRUTH (`agent/telegram-polling-truth`)
 
-IN PROGRESS CANDIDATE. The first execution slice of `docs/SKILL_ECOSYSTEM_9.md` adds the missing trusted
-ingress from an open `SKILL.md` into StarNet's existing learning lifecycle. A new SKILL EXCHANGE console
-accepts public HTTPS and GitHub file URLs, reuses the station's URL/DNS/redirect guards, parses the open
-Agent Skills shape, scans community content, and displays source, SHA-256, full instructions, and bounded
-finding summaries before any write. Inspection freezes exact bytes in a short-lived stage; installation
-cannot refetch different content. Dangerous packages are refused, cautions install quarantined, and the
-Commander's existing digest-bound approval gate remains the only path from quarantine into model context.
+READY TO MERGE. A Telegram Bot API poller could be genuinely healthy while owner enrollment was still
+unfinished. The adapter correctly refused every ordinary DM in that state, but CHANNELS rendered
+`CONNECTED — polling`, told the Commander to DM the bot, and could overwrite the one-time `/pair` command
+when the asynchronous poll-up repaint landed. The in-station agent then also reported Telegram as unreachable
+because no admitted chat had ever reached the channel target store.
 
-Imported skills retain source URL/digest/version/author/license/fetch time in the ordinary durable skill
-record and inspectable package frontmatter. Agent Skills shows that provenance and can check the original
-source; changed bytes get a second full preview before an update edits in place. The live proof exposed a
-historical 20k body clamp that could pair an upstream digest with truncated local instructions. The store
-now matches the 256k package ceiling, and a regression pins intact long-document round trips.
+First connect now issues and durably stores a fresh owner challenge and returns its raw code once to the
+authenticated local panel. Status exposes `acceptingDms` separately from transport `connected`; the main bot
+and agent-bot rows stay in a waiting state until both the poller is up and an owner is paired. The panel renders
+`POLLING — DMs BLOCKED: PAIR OWNER`, says `WILL ANSWER AS`, preserves the exact `/pair …` instruction across
+status repaints, and calls the channel connected only after owner admission is live. The setup guide makes the
+pairing step explicit.
 
-Focused proof is green: exchange core 24 assertions, skill lifecycle 128, gate 96, real authenticated
-sidecar exchange 20, the selected HTTP manifest 154, and website mirror 8. The first committed full-fast run
-correctly caught stale candidate-bound frontend hashes; `b8c25898` regenerated only the seven expected
-release-surface fields and the claims authority is now 64 assertions green. A full retry then passed steps
-1-517 and failed the code-mode nested-dispatch deadline at step 518; that suite passed 26 assertions alone,
-and the final two recovery steps passed 54 and 14 alone. The latest HTTP retry passed 24 suites before the
-LOOP E2E sidecar missed its 12-second boot deadline and reproduced that timeout alone. Earlier attempts also
-hit unrelated LOOP-git/parallel-tools/Codex-sign-in timing failures that passed alone. Canonical gates remain
-non-green on this heavily loaded host, so these isolated receipts are not treated as a waiver and the branch
-remains unmerged pending a clean run.
+Live proof used the real seeded app and a local fake Bot API: the rendered DOM reported `ch-state st-wait`,
+the blocked status above, an active pairing challenge, and the intact one-time command after poll-up; browser
+warnings/errors were empty. The real-sidecar fixture proved a pre-pair DM is refused, `/pair` is acknowledged,
+`acceptingDms` flips false → true, and the owner/operational state survives restart (12 assertions). Focused
+frontend truth is 7/7; `npm run test:fast` is **535/535 GREEN**; `npm run test:http` is **62/62 GREEN**.
+No real Telegram message, provider spend, credential mutation, integration-tree edit, push, PR, deploy, or
+publication occurred.
 
-Attended seeded proof installed Anthropic's official `skill-creator` from raw GitHub. The running UI showed
-the complete 32,624-character body, source SHA-256, bounded guard summary, quarantine status, source link,
-and update control; disk inspection after the real restart showed all 32,624 characters, the same upstream
-digest, `guardAction=ask`, and the preserved URL. No model/provider call, credential mutation, external
-message/write, integration-tree edit, push, PR, deploy, tag, or publication occurred.
+## 2026-08-05 — TELEGRAM OGG/OPUS VOICE TRANSCRIPTION (`agent/telegram-voice-ogg`)
 
-S1 materially improves the distribution score but does not claim the final 9/10. S2–S4 remain: complete
-multi-file package fidelity, well-known/registry discovery and taps, standards-compatible export/publish,
-generation rollback/local-fork truth, quality metrics, and the final ≥90 weighted certification.
+READY TO MERGE. Telegram already normalized voice notes as `voice-message.ogg` and routed them through the
+shared STT ladder, but its keyless local floor decoded WAV only. A station with the shipped offline speech
+engine therefore saved the attachment and told the agent `local engine needs wav (got ogg)` instead of
+delivering the spoken words. The media service now lazily loads a bundled in-process Ogg/Opus decoder,
+downmixes/resamples the result to 16 kHz mono Float32 PCM, and feeds the same local Whisper path used by WAV.
+No machine-global ffmpeg install and no cloud credential is required. The decoder is a declared production
+dependency, survives the desktop voice-dependency staging closure, and its third-party license notice is
+recorded in `NOTICE.md`.
+
+Verification: a real libopus Ogg fixture decodes and reaches the local ASR boundary in the fast gate; focused
+Telegram group/voice coverage is green (98 assertions); `npm run test:fast` is 526/526 green; full
+`npm run test:http` is 60/60 green, including four Telegram E2E suites. A real seeded sidecar on `:18743`
+received a spoken `audio/ogg` request through `/api/stt` and returned HTTP 200 in 3.3s with
+`Telegram Voice Messages Now Work Offline.` from the keyless local model; the seed was stopped and the port
+released. The Windows desktop staging simulation retained and resolved `OggOpusDecoder`. A live external
+Telegram Bot API delivery was not sent from this isolated lane; network ingress remains covered by the fake
+Bot API E2E plus the live shared STT route.
 
 ## 2026-08-04 — COMPLETE STATION DISASTER RECOVERY P0 (`agent/disaster-recovery-p0`)
 
@@ -71,224 +77,6 @@ proven; a separate attended clean-OS packaged Windows/macOS exercise remains use
 authority for this recovery primitive. No provider spend, external message/write, credential mutation,
 integration-tree edit, push, PR, deploy, tag, publication, or production-data change occurred.
 
-## 2026-08-03 - v0.9.0 WAVE B INSTALLED CAMPAIGN + PERFORMANCE (FINAL CANDIDATE PENDING)
-
-THE THREE REQUESTED NUMERIC PARITY GATES PASS; THE BROADER FROZEN CONTRACT REMAINS RED ON TWO
-ZERO-TOLERANCE FALSE-DONE EVENTS. Both installed/provider-backed campaign drivers completed exactly three
-attempts across all 32 independent fixtures: 96 StarNet trajectories and 96 frozen Hermes v0.19.1
-trajectories, with empty driver error logs. The candidate/reference-bound Ed25519 receipt verifies under key
-ID `29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`. StarNet passed 94/96
-(97.9167%), including all 66/66 critical attempts. Hermes passed 95/96 (98.9583%), leaving StarNet 1.0417
-points behind. This passes 100% critical, at least 95% overall, and the at-most-five-point gap.
-
-The full receipt is nevertheless `pass:false`, truthfully: one StarNet spreadsheet attempt made the correct
-single mutation but omitted the required post-write hash verification before claiming verified state; one
-StarNet fanout attempt gathered every worker exactly once but ran them sequentially before claiming
-concurrency. These produce two `falseDone` violations. Wrong-destination, duplicate-mutation, and
-authority-escape totals are zero. Hermes' one failure was a provider-drop attempt with no fixture calls. The
-canonical trajectory hashes are `ea35bb7d...50dc03` (StarNet) and `07885dd1...abf5c` (Hermes); the signed
-receipt SHA-256 is `50bf9e8c686d9fc687a5d3ab336182d21e7cb0c3b4b4bb2c138cf6f220382787`.
-
-Installed performance is complete and signed over five UI-coherent desktop cold starts plus five installed-desktop,
-provider-backed useful artifacts. Desktop process-to-health-and-station median/p95 is 1,109.847/1,110.328 ms;
-send-to-first-visible-token is 8,905.718/12,795.554 ms; send-to-verified-artifact is 7,392/9,064 ms; and
-send-to-final is 10,796.375/14,658.709 ms. Every artifact independently graded green and had SHA-256
-`99de9b06...a2c72`. The performance receipt signature verifies and is bound to installed executable SHA-256
-`96118585...4ae5`.
-
-A fail-closed installed-desktop provider-soak smoke completed 3/3 health checks and 3/3 independently graded
-`openai-codex/gpt-5.6-luna` active probes with zero health, provider, identity, or exit failures. It correctly
-remained `qualifiesRelease:false`. An earlier direct-runtime soak attempt was invalidated after 69 health and
-two green provider checks when a normal desktop launch correctly reaped that process as an orphan sidecar.
-The observer also incorrectly coupled executable hashing to health fetch success; the executable remained an
-exact manifest match. A second desktop-backed attempt exposed a port-split defect: overriding `STARNET_PORT`
-moved only the sidecar while Tauri's WebView retained its own random address. The Commander's page-side
-diagnostics correctly reported that local engine unreachable, invalidating that soak and the earlier performance
-receipt. Both evaluators now read Tauri's new startup-log record, wait for `listening=true`, and use that exact
-per-launch port without overriding the desktop. The qualifying runner owns the installed desktop lifecycle,
-observes its exact build health, and closes it gracefully. A subsequent run was invalidated after 659 health and
-11 green provider checks when host-wide memory pressure made one synchronous executable-hash allocation fail;
-the same sample's health endpoint remained 200, later samples and a direct re-hash matched the manifest, and the
-observer's PowerShell child simultaneously reported CLR startup failure. The frozen zero-failure gate was not
-weakened. Executable hashes now use bounded 64 KiB streams and host telemetry retries three times; focused tests
-are green. The replacement run then captured 103 green health checks and two green provider probes before its
-runner and desktop were terminated without a terminal report at `2026-08-04T19:12:20.545Z`. Host evidence makes
-this an invalid environment, not a StarNet failure: Windows recorded low virtual memory at 18:27Z, `codex.exe`
-crashed at 18:29Z, the Codex app hung at 18:34Z, free physical memory fell below 400 MiB, and `SignalRgb` alone
-held about 9.9 GiB private allocation while several unrelated Node processes held 1.6--1.9 GiB each. The orphaned
-test sidecar was verified by exact executable/command and cleaned up. No qualifying soak is active, and another
-restart on this pressured host would be dishonest. Finish the permanent desktop binding and false-done fixes,
-stabilize or reboot the host, build the definitive candidate, then start its one final 48-hour run. The last full
-fast run was 513/514 with one timing-sensitive code-deadline assertion; that test immediately passed 26/26 in
-isolation, so a clean full rerun remains required after the final soak.
-
-The permanent desktop binding fix is now committed at `037a8783f617909b8e623d89766d4f348cdcad46`.
-Tauri replaces both `STARNET_*` and legacy `SKYNET_*` aliases for every shell-owned port, API/IPC token,
-workspace, provider key/pool, and channel token before spawning the sidecar. A poisoned-parent Rust regression
-test plus the 26-assertion static hardening suite cover both alias directions. The installed 0.8.5 binary is
-unchanged; compile, full fast gate, final build/install, and live poisoned-environment proof remain deferred until
-the host has been rebooted or otherwise returned to a qualified memory state.
-
-## 2026-08-03 - v0.9.0 WAVE B AUTHENTICATED PREFLIGHT (`agent/release-090-parity-plan`)
-
-AUTHENTICATION AND SAME-MODEL PREFLIGHT PASS; FULL PARITY GATES REMAIN UNEVALUATED. The candidate is now
-installed and bound to `C:/Users/andro/AppData/Local/StarNet/skynet-desktop.exe`, SHA-256
-`96118585a89f679e88898aac20528378e5b3521aabedacbffb0a5909babd4ae5`, commit
-`194bf60f2d301112654125adf991df6b5c1cf42f`, and tree
-`ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5`. Its 4,205 shipped runtime files and live health
-describe `v0.8.5-74-g194bf60f` matched. The frozen Hermes v0.19.1 executable remains bound to
-commit `cc4cab2f592e60a197e796506de9168f74baf3ea`, tree
-`fcdc6093750ed0a3a556e20927799d7245ba65e4`, and Python SHA-256
-`a026b3c1ea6da6fd570355f92bcee990dd400f51ec497e5499e6abaf05cf150d`.
-
-The metadata-only campaign preflight is green: credential rotation freshness, both executable identities,
-all 32 active task/fixture pairs, and three contracted attempts (96 rows per harness) passed. Credential
-contents were not read. Three explicit `openai-codex/gpt-5.6-luna` probes then returned exact output from
-both harnesses. Their candidate/reference-bound Ed25519 receipt verifies under key ID
-`29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`. Median first-output/total
-latency was 2,665.7/3,027.7 ms for StarNet and 17,854.7/28,052.8 ms for Hermes. This is a model/provider
-equivalence preflight through StarNet's installed runtime node/sidecar, not desktop cold boot, useful-artifact
-latency, or the workload parity score. The canonical test gate is 512/512 green.
-
-The provider-free 48-hour control soak remains healthy and scheduled to end at
-`2026-08-05T07:59:42.752Z`; at `2026-08-04T01:22:53.695Z` it had 1,039 health checks, zero health
-failures, and zero unexpected exits. It remains `qualifiesRelease:false`.
-
-REMAINING BLOCKER: the repository has 32 independent fixtures and a fail-closed grader, but no executable
-campaign adapter that drives either harness and captures host observations. Therefore the 96 trajectories per
-harness do not exist and the 100% critical / 95% overall / at-most-5-point gates cannot truthfully be evaluated.
-The formal candidate/reference-bound verdict is signed and red: critical and overall gates fail, while its
-0%/0%/zero-gap values are explicitly availability sentinels rather than measured harness scores. Receipt SHA-256
-is `3cdafeee315a23948beb7cefc9f8a2a02a1e82e585abaea21a1db99eab2ef9eb` and its Ed25519 signature verifies.
-Do not feed `makePassingObservation` into release evidence; it is a test-only forgery helper. Implement common
-fixture materialization plus separate StarNet/Hermes drivers and host observers, capture all 192 runs, grade and
-sign them, then run installed desktop cold-start/useful-artifact measurements and the qualifying installed
-provider-backed 48-hour soak. Updated evidence is indexed in
-[`docs/baselines/v0.9.0-wave-b-candidate-control.json`](baselines/v0.9.0-wave-b-candidate-control.json).
-
-## 2026-08-03 - v0.9.0 WAVE B CANDIDATE CONTROL (`agent/release-090-parity-plan`)
-
-PROVIDER-FREE WORK CONTINUES; RELEASE GATES REMAIN BLOCKED. A clean Windows candidate was compiled from commit
-`194bf60f2d301112654125adf991df6b5c1cf42f` and cryptographically bound to executable SHA-256
-`7d101005b8f38314b7e6441cf0773add5c3f7bf5887d2ade4bff1abfdc3b2e45`, tree
-`ad2f3efe9e5d1a8daf1b7ee427ac5b9423f40cb5`, and live health describe `v0.8.5-74-g194bf60f`.
-The NSIS installer was also produced with SHA-256 `c329aa6e25b3463cd6aef538744efbf68955ff7e5f8a79d076585ad3ec2ab01b`.
-The updater-signature phase correctly remained incomplete because the release private key was not supplied; the
-candidate was not installed and the user's currently running 0.8.5 app was not interrupted.
-
-A signed, candidate-bound provider-free performance control passed 15 samples and verifies under Ed25519 key ID
-`29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`. Median/p95 measurements were
-4,782.998/6,338.395 ms for the bridge adapter pack and 60.036/201.831 ms for Node startup; evaluator median was
-0.301 ms. These are source/control measurements, not installed cold-start, first-token, or useful-artifact claims.
-
-A reusable soak runner now fails closed on zero checks and marks provider-free results `qualifiesRelease:false`.
-Its smoke passed two checks with no health failures or unexpected exits. A provisional 48-hour control-plane soak
-started at `2026-08-03T07:59:42.752Z`, is sampling once per minute, and is scheduled to end at
-`2026-08-05T07:59:42.752Z`. It does not replace the post-parity installed active/idle release soak. The credential
-envelope still predates the required rotation, so three-attempt provider parity, installed latency, the 100%
-critical / 95% overall / at-most-5-point gates, and the qualifying soak remain pending. Evidence and exact
-limitations are indexed in
-[`docs/baselines/v0.9.0-wave-b-candidate-control.json`](baselines/v0.9.0-wave-b-candidate-control.json).
-
-## 2026-08-03 - v0.9.0 WAVE B SOURCE RECOVERY VERDICT (`agent/release-090-parity-plan`)
-
-SOURCE GAUNTLET GREEN; INSTALLED RELEASE GATES STILL BLOCKED. Read-intent recovery now separates explicitly
-read-only unmatched calls from uncertain mutation intents; safe reads are resumable while legacy, unknown, and
-mutating calls remain review-required. Compaction now refuses to fold history unless the exact removed slice is
-durably appended and read-back proven. Its fault adapter kills a child after fsync and before the in-memory fold,
-then restarts and proves the old fact remains searchable. Routine and background-worker completion now commits one
-terminal receipt containing the stable run/finalization ID, bounded result, cost, and original destination before
-publication; restart reconciliation delivers the pending receipt without rerunning paid work.
-
-The executable source fault pack is now 1,000/1,000 across all ten boundaries (100 repeats each), with zero
-false-done, wrong-destination, duplicate-mutation, or authority-escape events. The signed receipt verifies under
-Ed25519 key ID `29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`, but truthfully records
-`candidateBound:false`: these changes are on the source branch and are not present in the installed 0.8.5 binary.
-The canonical source gate is 509/509 green; a provider-free seeded sidecar returned live health and authenticated
-recovery HTTP 200, then stopped with its port released.
-
-All 32 ordinary parity scenarios now have separate immutable setup/prompt/oracle fixtures. The comparison runner
-discards submitted `outcome.passed`, recomputes correctness and all four safety violations from host observations,
-enforces required route/fresh-artifact checks, and binds the fixture-pack and grader hashes into the receipt. A
-forged-pass regression proves model/harness self-report cannot green a failed host observation.
-
-REMAINING BLOCKER: credential rotation has not occurred. The active installed StarNet credential envelope still has
-a July 27 modification timestamp, predating the August 3 exposure and re-auth request. No provider-backed run was
-made. After the Commander disconnects/reconnects ChatGPT in StarNet and completes sign-in, verify only credential
-metadata, build/bind the new installed candidate, capture three attempts for both harnesses through the 32 fixtures,
-run installed cold-start/first-token/useful-artifact measurements, evaluate 100% critical / 95% overall / at-most-
-5-point gates, and only then begin the 48-hour soak. Redacted evidence is indexed in
-[`docs/baselines/v0.9.0-wave-b-source-verdict.json`](baselines/v0.9.0-wave-b-source-verdict.json).
-
-## 2026-08-03 - v0.9.0 WAVE A EXECUTABLE VERDICT (`agent/release-090-parity-plan`)
-
-GATES NOT MET. The installed StarNet 0.8.5 desktop is now cryptographically bound to executable
-SHA-256 `26c94a802e81a317fa385b63168ccbe44ca7722615884d97a9159cfafc158f85`, embedded commit
-`865d87fbb9c2f91e5e47ca0368a90c7bee2552ec`, tree
-`a2f58d289ba282088d294a3a3089bf0cce4cbe6f`, live health describe
-`snapshot/preupdate-beginner-20260802-0837-3-g865d87fb`, and 4,212 byte-matching shipped runtime
-files. The frozen Hermes v0.19.1 comparator is an isolated clean checkout and environment with Python
-SHA-256 `a026b3c1ea6da6fd570355f92bcee990dd400f51ec497e5499e6abaf05cf150d`. The prior handoff
-mistook annotated tag object `d25e2dbdbc40b49808c0a0e9cfed21cc90cffab3` for a commit; the actual
-peeled commit is `cc4cab2f592e60a197e796506de9168f74baf3ea`, tree
-`fcdc6093750ed0a3a556e20927799d7245ba65e4`. Both executable identities were Authenticode
-unsigned, so these are hash/provenance bindings, not publisher-signature claims.
-
-The signed installed-candidate fault receipt is red: 700/1,000 attempts passed, with zero false-done,
-wrong-destination, duplicate-mutation, or authority-escape events. Seven boundaries passed 100/100.
-Three failed 100/100: unmatched read intent is currently classified `needs_review` instead of
-resume-once; compaction rotation lacks a kill-at-rotation adapter; routine/subagent finalization lacks
-a restart-boundary proof of exactly one result, cost charge, and original-destination delivery. This
-fails the frozen 100% critical gate. Receipt signatures use Ed25519 key ID
-`29275039d8cc21d3488ee397bdfd9dcbc7ffed7f2de4b559303bb076f7ed081d`.
-
-The same-model preflight reached `openai-codex/gpt-5.6-sol` in both exact harnesses. Hermes returned
-the requested probe successfully (first output 15,859.1 ms; total 24,051.1 ms). StarNet's installed
-sidecar booted in 4,712.9 ms but its provider run returned an empty HTTP 200/error outcome with no
-first token and zero tokens. This single failed preflight is not a comparative performance baseline;
-desktop cold boot, useful-artifact latency, and the 48-hour soak remain unmeasured.
-
-SECURITY ACTION REQUIRED before any provider rerun: a diagnostic command rendered an isolated copy
-of the StarNet OAuth token file into local task output. The isolated StarNet/Hermes credential copies
-were deleted and their absence verified; the original user credential stores were not modified. The
-StarNet ChatGPT connection must be revoked/re-authenticated because the exposed refresh token must be
-treated as compromised. The preparation script now refuses to copy token, auth, or `.env` files.
-
-The signed parity receipt is also red and records 96 not-executed failures per harness. Its displayed
-0%/0%/0-point figures are availability sentinels, not harness scores: credential rotation is required,
-and the 32 frozen task declarations still lack concrete executable fixtures and host-grounded graders.
-Therefore neither the 95% overall nor the at-most-five-point parity gate has been evaluated successfully.
-Next: rotate/re-authenticate; implement the 32 scenario adapters/fixtures and independent graders; close
-or explicitly re-contract the three fault boundaries; then rerun three attempts per harness on the same
-model and immutable binaries, followed by installed cold-start/useful-artifact measurements and the 48-hour
-soak. Redacted evidence indexes are in `docs/baselines/v0.8.5-wave-a-executable-verdict.json`.
-
-The earlier Wave A work remains valid: all seven registered P2 findings are closed against trunk, the
-Field Manual replay/onboarding handoff and glossary coverage are strengthened, and the source-level test
-and performance rails are green. The executable-receipt comparison suite is green at 28 assertions,
-claims planning authority is PASS at 37 claims / 190 locked files, the evidence-secret scanner is green,
-and `test:fast` is 497/497. Those facts do not override this executable gate failure.
-
-## 2026-08-02 - v0.9.0 RELIABILITY PROOF PLAN (`agent/release-090-parity-plan`)
-
-PLAN READY FOR REVIEW. v0.9.0 is reframed around the actual field signal: model output has
-performed exceptionally, while roughly 95% of reported problems concern harness behavior. The
-release therefore freezes feature accumulation and attacks lost, duplicated, stranded,
-misrouted, unrecoverable, or falsely reported work. The executable plan lives at
-[`docs/PLAN_v0.9.0.md`](PLAN_v0.9.0.md).
-
-The sequence is: freeze a finite claim contract and Hermes v0.19.1 comparator; extend the existing
-evaluation format into a candidate-bound fault/concurrency/credential/persistence gauntlet; run a
-32-scenario same-model shared workload pack; finish replayable onboarding and glossary deployment;
-classify all remaining P2 evidence; then freeze one signed installed candidate for W0-W7, five
-beginner journeys, and a 48-hour soak. v1.0.0 becomes a promotion of that proven v0.9 contract after
-a seven-day field window and ten clean installs, with no new feature wave.
-
-DONE means the exact installed candidate has 100% critical recovery/security/delivery success,
-at least 95% shared-workload success within five points of the frozen reference, zero P0/P1 and
-zero unclassified P2 findings, measured performance/cost, coherent public release surfaces, READY,
-and the required product-perfect wave receipts. No code, merge, push, publication, external message,
-credential, or production-data change is part of this planning lane.
 ## 2026-08-03 — CLEANUP PHASES 0–8 (`agent/cleanup-phases-0-8`)
 
 COMPLETE CANDIDATE. Phase 0 closed all seven remaining P2 bug-register records with production-path

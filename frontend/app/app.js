@@ -138,8 +138,26 @@ const App = (() => {
     // correct whether or not the counter-zoom applied.
     const z = logoZoom(logo);
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
-    logo.style.left = (a.left / z) + 'px';
-    logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
+    // DEVICE-PIXEL SNAP: the seat lands on fractions (a themed topbar, a zoom that is not 1, an odd
+    // window width), and a mark parked on a half pixel is antialiased across two — the whole mark
+    // goes soft with nothing in the markup to blame. Round the VISUAL position to a whole device
+    // pixel, then convert to the mark's own layout px (uiZoom law: divide by z exactly once).
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    const snap = v => Math.round(v * dpr) / dpr;
+    const wantLeft = snap(a.left);
+    const wantTop = snap(b.top + (b.height - logo.offsetHeight * z) / 2);
+    logo.style.left = (wantLeft / z) + 'px';
+    logo.style.top = (wantTop / z) + 'px';
+    // ONE correction pass. z is MEASURED off the element (rect/offsetWidth), so it carries a little
+    // float error, and the counter-zoom multiplies that error back into the landed position — the
+    // mark came down ~0.02px off its target, which is exactly the half-pixel smear the snap exists
+    // to remove. Read where it actually landed and subtract the residual; the map is affine, so one
+    // pass drives it to nothing. Never loop: a second pass would chase float noise forever.
+    const got = logo.getBoundingClientRect();
+    if (Math.abs(got.left - wantLeft) > 0.005 || Math.abs(got.top - wantTop) > 0.005) {
+      logo.style.left = ((wantLeft - (got.left - wantLeft)) / z) + 'px';
+      logo.style.top = ((wantTop - (got.top - wantTop)) / z) + 'px';
+    }
     queueLogoOcclusion();   // the mark moved — its clip is stale
   }
 
@@ -187,13 +205,13 @@ const App = (() => {
       host.addEventListener('animationend', queueLogoOcclusion);
     }
   }
-  // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
-  // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
-  // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).
+  // boot-settle re-seat: positionLogo's first run happens before VT323 lands, which moves the
+  // topbar/logo geometry with NO resize event and left the mark off-seat until the first manual
+  // resize (the 2026-07-20 misalignment report). The mark itself no longer needs a settle hook —
+  // it is a masked <span> sized by CSS aspect-ratio, so it has its full width at first layout;
+  // the old `img.load` re-seat existed only because an <img> has no dimensions until it decodes.
   if (typeof document !== 'undefined') {
     try { if (document.fonts && document.fonts.ready && document.fonts.ready.then) document.fonts.ready.then(() => positionLogo()); } catch (_) {}
-    const li = document.querySelector('#logo .logo-img');
-    if (li && !li.complete) li.addEventListener('load', () => positionLogo(), { once: true });
   }
 
   function refreshUsage() {
@@ -2438,6 +2456,7 @@ const App = (() => {
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     if (typeof LaunchMemory !== 'undefined') LaunchMemory.reset();   // …and no inherited last-used recipe inputs (own key)
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
+    if (typeof RecQualityStore !== 'undefined') RecQualityStore.reset();   // …and no inherited recommendation-quality history (own key)
     if (typeof StudyStore !== 'undefined') StudyStore.reset();   // …and a fresh STUDY state — a new Commander never inherits the prior hero's studyDeclined denylist / ignore tallies / rating streaks (own key)
     if (typeof ThreadStore !== 'undefined') ThreadStore.reset();   // …and a fresh THREAD turn-in gate — a new Commander never inherits the prior hero's resolved/ignored mined ideas (the ledger itself is server-side, station-wide)
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
@@ -2519,6 +2538,7 @@ const App = (() => {
     if (World.setOnTrophyCase) World.setOnTrophyCase(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('trophies'); });   // G3b: click the TROPHY CASE → the TROPHY surface (a projection of real completions, never a gate)
     if (World.setOnBayAssign) World.setOnBayAssign(pid => { if (typeof Build !== 'undefined' && Build.openAssign) Build.openAssign(pid); });   // belt legibility: click an unbound BAY's "NO AGENT" nag → REFIT opens straight into its agent picker
     if (World.setOnIntakeFeed) World.setOnIntakeFeed(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('messaging'); });   // belt legibility: click a starved INTAKE's "NO FEED" nag → the CHANNELS panel (wire a real feed)
+    if (World.setOnIntakeSample) World.setOnIntakeSample(o => { if (typeof Chat !== 'undefined' && Chat.sampleCard) Chat.sampleCard(o); });   // guided workflow Phase 4: click the INBOX on a COMPLETE line → the RUN-A-SAMPLE-JOB card (POST /api/routing/sample)
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
     else if (opts.wake) { World.wakeIn(); SFX.level(); }
     // the canonical station the builder edits — restored from the save, or a fresh starter room. LOAD it
@@ -2651,6 +2671,16 @@ const App = (() => {
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
+    // THE RECOMMENDATION QUALITY LOOP (outcome attribution): per-channel EWMA weights over what the station's
+    // accepted offers actually PRODUCED — read by the spine's scorer, moved only by real attributed outcomes
+    // (a clean run, the Commander's 👍/👌/👎, an explicit decline). Self-persists its own key; read-only bus
+    // citizen. Init here, alongside the other proactive-channel stores, so the first pass already sees it.
+    if (typeof RecQualityStore !== 'undefined') RecQualityStore.init({ now: () => Date.now() });
+    // ONE RECOMMENDATION MEMORY: the spine's wire into the durable cross-surface ledger every other recommendation
+    // surface already writes and reads. Its init fires the one read (declined titles + the learned preference
+    // model) the ranking consults; every step of it fails open, so a cold or unreachable ledger simply leaves the
+    // spine ranking exactly as it did before this existed.
+    if (typeof RecLedger !== 'undefined') RecLedger.init({ now: () => Date.now() });
     // QUEST MEMORY (G1a): durable quest state — firstSeenAt/completedAt per quest + dismissed-forever — and
     // the open→done completion celebration (quest sting + gold toast + row flourish; NEVER XP). Self-persists
     // to its own key. Init AFTER XpStore/DossierStore so its first fold sees the real projection as a quiet
@@ -2681,11 +2711,12 @@ const App = (() => {
     if (typeof GoalStore !== 'undefined') GoalStore.init({
       now: () => Date.now(),
       getSystem: () => agent ? agent.systemPrompt : '',
-      // title = deriveTitle(directive), the same instant placeholder /background mints: every milestone card
-      // used to read the literal 'Goal milestone', so three goals were three identical cards. The derived
-      // placeholder also equals deriveTitle(first user msg) once Chat.send lands the directive, which is
-      // exactly what needsModelTitle keys on — so the card rides the normal model-title upgrade ladder.
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'Goal milestone', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
+      // UNION of two same-day fixes: title = deriveTitle(directive) (every milestone card used to read the
+      // literal 'Goal milestone', so three goals were three identical cards; the derived placeholder rides the
+      // normal model-title upgrade ladder) — AND returns TRUE only when a run really kicked off, because a
+      // mid-run send silently no-ops and callers that record a launch (the outcome loop's attribution stamp)
+      // must never count one that never happened.
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'Goal milestone', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); let sent = false; if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) { Chat.send(text); sent = true; } persist(); return sent; },
       getRunSummary: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; return (m && m.title) ? m.title : ''; }
     });
     // UNDERSTANDING: the one honest, adaptive "how well the station understands the Commander" read
@@ -2733,8 +2764,23 @@ const App = (() => {
       // can't mislabel it), falling back to the active workstream when the runId is unknown (e.g. a direct call).
       getRecentTask: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) return m.title; const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
       launchRecipe: launchRecipe,
-      // same duplicate-title fix as the goal-milestone launcher above: name the card from the directive.
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'First build', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
+      /* THE EVIDENCE POOL the suggestion's quote is vetoed against (rec perfection W2). The SAME shape and the
+         same dimensions AutoJobStore reads for its own grounding veto — one accessor idiom, so the two channels
+         can never disagree about what the station "knows". A cold dossier returns {}, which grounds nothing:
+         fail-closed is the point (the failure it replaces was quoting the Commander words they never said). */
+      getBeliefs: () => {
+        const out = {};
+        if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return out;
+        for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders']) {
+          const arr = (DossierStore.beliefs(k) || []).map(b => b && b.text).filter(Boolean);
+          if (arr.length) out[k] = arr;
+        }
+        return out;
+      },
+      // UNION (see the goal-milestone twin above): derived title from the directive + returns TRUE only when a
+      // run really kicked off — the suggestion's attribution stamp is armed off this answer, so a busy stream
+      // must report the no-op honestly.
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'First build', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); let sent = false; if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) { Chat.send(text); sent = true; } persist(); return sent; }
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
@@ -2819,7 +2865,8 @@ const App = (() => {
       api: {
         load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { ok: false, reason: 'permissions service unavailable' }).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
         grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission grant failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
-        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
+        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        bypass: (on) => fetch('/api/permissions/bypass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: on === true }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'bypass switch failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
       }
     });
     // GROWTH Tier 3 — EARNED AUTONOMY (track record → trust): folds the SAME run outcomes xpstore folds into a

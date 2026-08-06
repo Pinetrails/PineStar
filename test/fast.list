@@ -153,6 +153,7 @@ test/tauri.hardening.test.js
 test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
+test/master-bypass.test.js
 test/workshop-store.test.js
 test/workshop-undo.e2e.test.js
 test/workshop-visibility.test.js
@@ -304,6 +305,11 @@ test/suggeststore.test.js
 test/beat-coordination.test.js
 test/beatcard.test.js
 test/recommend.test.js
+test/rec-truth-consistency.test.js
+test/rec-one-memory.test.js
+test/rec-evidence.test.js
+test/recquality.test.js
+test/recqualitystore.test.js
 test/quests.test.js
 test/queststore.test.js
 test/queststate.test.js
@@ -346,6 +352,7 @@ test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js
 test/theme-custom-phosphor.test.js
+test/panel-brightness.test.js
 test/window-minimize.test.js
 test/nightshift-steer-ui.test.js
 test/world-setskin.test.js
@@ -443,12 +450,17 @@ test/g1bprops.test.js
 test/g3btrophy.test.js
 test/stationbake.chunk.test.js
 test/stationbake.materials.test.js
+test/stationbake.seam.test.js
+test/stationbake.hull.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/blueprints.test.js
+test/guidedline.test.js
+test/ghostline.test.js
 test/routing.b5.test.js
 test/plan-poster.test.js
 test/chain.test.js
+test/step-brief.test.js
 test/propanchor.test.js
 test/prop-mount.test.js
 test/prop-render-smoke.test.js
@@ -463,6 +475,7 @@ test/estop-persistence-ui.test.js
 test/channels.adapter.test.js
 test/channels.proxy-fetch.test.js
 test/channels.owner-pairing.test.js
+test/channels.telegram.pairing-ux.test.js
 test/channels.telegram.test.js
 test/channels.telegram.format.test.js
 test/channels.telegram.context.test.js
@@ -503,6 +516,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/brand-wordmark-mask.test.js
 test/personalization-authority-wiring.test.js
 test/sprite-loading.test.js
 test/textsize-screen-space.test.js
@@ -527,6 +541,7 @@ test/release-train-windows-trust.test.js
 test/website-deploy-staging.test.js
 test/website-app-sync.test.js
 test/sprite-assets.test.js
+test/sprite-walk-motion.test.js
 test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js

@@ -149,10 +149,34 @@ const ReturnStore = (() => {
   // rated (collected) — clear the crate
   function resolve(runId) { if (ready() && runId) { state = Returns.resolve(state, runId); save(); } }
 
+  /* foldRow(row) — PROOF crate (guided workflow Phase 4): fold ONE real finished-run row into the pending
+     ledger NOW, so the sample job the Commander just fired lands on the OUTBOX like any delivered run. The
+     row is the sidecar's real recorded outcome (runId/usd/ts/streamId straight from runs.jsonl via
+     POST /api/routing/sample) — never synthesized here. Same Returns.fold/dedupe/caps as the away digest
+     (fold also marks the runId digested, so a later away digest can never re-list it); rating resolves the
+     crate through the identical path. Returns false when the store isn't live or the row carries no runId. */
+  function foldRow(row) {
+    if (!ready() || !row || !row.runId) return false;
+    state = Returns.fold(state, [{
+      runId: String(row.runId),
+      agentId: String(row.agentId || 'agent'),
+      title: String(row.title || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+      routine: row.routine ? String(row.routine).slice(0, 90) : '',
+      usd: Math.max(0, +row.usd || 0),
+      turns: Math.max(0, row.turns | 0),
+      ts: +row.ts || Date.now(),
+      streamId: String(row.streamId || '')
+    }]);
+    save();
+    // an already-open OUTBOX window re-renders with the fresh crate (no-op when closed)
+    try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('outbox'); } catch (_) {}
+    return true;
+  }
+
   // S2/new-hero: a fresh Commander inherits no prior pending crates or attendance trail.
   function reset() { state = null; fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, pendingCount, pendingRows, reviewNext, resolve, reset, lastSeen, isAttended, outboxLine, openWork };
+  return { init, pendingCount, pendingRows, reviewNext, resolve, foldRow, reset, lastSeen, isAttended, outboxLine, openWork };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { ReturnStore };

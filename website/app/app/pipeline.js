@@ -172,7 +172,13 @@
       }
       // EVERY bound bay is a working dock (legibility list; NOT the dispatch `bays` — router semantics untouched).
       // A LONE assigned bay is a COMPLETE build: work addressed to its agent arrives at the dock, no belts needed.
-      dockBays.push({ propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 });
+      // `brief` (step editor, 2026-08-05) rides both dock lists: the Commander's standing job brief for this
+      // station, PROMPT TEXT ONLY — it never touches routing (resolveTarget/chainNext ignore it) or capability
+      // (stationFor reads objects, never brief). Bounded here so no surface can post an unbounded blob.
+      const brief = (typeof p.brief === 'string' && p.brief.trim()) ? p.brief.trim().slice(0, 2000) : null;
+      const dockRec = { propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 };
+      if (brief) dockRec.brief = brief;
+      dockBays.push(dockRec);
       const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
       if (!t) {
         // beltless bound bay: valid alone; merely "not on the line" (warn) when an intake line exists elsewhere
@@ -189,7 +195,9 @@
       for (let yy = p.y - 1; yy <= p.y + bh; yy++)
         for (let xx = p.x - 1; xx <= p.x + bw; xx++)
           if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
-      bays.push({ agentId: p.agentId, propId: p.id, tile: t, tiles });
+      const bayRec = { agentId: p.agentId, propId: p.id, tile: t, tiles };
+      if (brief) bayRec.brief = brief;   // hash includes `bays`, so a brief edit re-arms the sidecar's copy
+      bays.push(bayRec);
       for (const ht of tiles) bayTileToAgent[key(ht.x, ht.y)] = p.agentId;
     }
 
@@ -581,15 +589,83 @@
      NOT the user, it is a machine being handed material, so the turn names the line explicitly. Carrying the
      ORIGINAL request as well as the upstream output is load-bearing: a writer handed only research has no
      idea what was asked and invents one. */
-  function handoffPrompt(originalText, fromAgentId, upstream, hop) {
+  function handoffPrompt(originalText, fromAgentId, upstream, hop, stageBrief) {
+    // stageBrief (step editor, 2026-08-05): the RECEIVING dock's standing job brief — optional 5th param so
+    // every existing caller composes byte-identical turns. Prompt text only; bounded like the compiled copy.
+    const brief = (typeof stageBrief === 'string' && stageBrief.trim()) ? stageBrief.trim().slice(0, 2000) : '';
     return 'PIPELINE HANDOFF — you are stage ' + (hop + 1) + ' of a work line on this station.\n\n'
       + 'The original request was:\n' + String(originalText || '(none recorded)') + '\n\n'
       + 'The upstream stage (' + fromAgentId + ') produced:\n' + String(upstream) + '\n\n'
+      + (brief ? 'YOUR STANDING BRIEF FOR THIS STATION:\n' + brief + '\n\n' : '')
       + 'Do YOUR part of this work and produce the output for the next stage. Do not restate the upstream '
       + 'output — build on it. Answer with the work itself, not a description of what you would do.';
   }
 
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
-  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
+  /* ---------- LINE COMPONENTS (guided workflows, 2026-08-05) ----------
+     Groups the floor's belt machinery into physical LINES: connected components over belt tiles
+     (4-neighbour adjacency, direction-blind — a lane and its return leg are one line) plus every
+     machine (intake/bay/outbox/junction) that touches a component through its footprint + 1-tile
+     ring — the exact hookup semantics compileRoutingPlan's passes use. Pure + deterministic
+     (no RNG, no clock, inputs unmutated); the finish-the-line card derives its checklist from
+     these against the compiled plan, and the delivery-retirement hook hit-tests `tiles`.
+     `key` = the lexicographically smallest member PROP id: prop ids are stable in the save doc,
+     so a line keeps its identity across reloads and across edits that keep that prop. */
+  function lineComponents(geo) {
+    const props = (geo && geo.props) || [];
+    const map = buildBeltMap(geo && geo.belts);
+    const MACH = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    // union-find over belt-tile keys
+    const parent = {};
+    const find = k => { let r = k; while (parent[r] !== r) r = parent[r]; let c = k; while (parent[c] !== r) { const n = parent[c]; parent[c] = r; c = n; } return r; };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; };
+    for (const k in map) parent[k] = k;
+    for (const k in map) {
+      const p = k.split(','), x = +p[0], y = +p[1];
+      for (const d of LANE_ORDER) { const v = DIRV[d], nk = key(x + v[0], y + v[1]); if (map[nk]) union(k, nk); }
+    }
+    // a machine joins (and can BRIDGE) every component its footprint+ring touches
+    const propTiles = {};   // propId -> [belt keys]
+    for (const pr of props) {
+      if (!MACH[pr.t]) continue;
+      const w = pr.w || 1, h = pr.h || 1, hits = [];
+      for (let yy = pr.y - 1; yy <= pr.y + h; yy++)
+        for (let xx = pr.x - 1; xx <= pr.x + w; xx++)
+          if (map[key(xx, yy)]) hits.push(key(xx, yy));
+      if (!hits.length) continue;   // a beltless machine is on no line
+      for (let i = 1; i < hits.length; i++) union(hits[0], hits[i]);
+      propTiles[pr.id] = hits;
+    }
+    // fold members per root
+    const byRoot = {};
+    const compOf = r => byRoot[r] || (byRoot[r] = { key: null, props: [], bays: [], intakes: [], outboxes: [], tiles: {}, beltCount: 0, bbox: null });
+    const grow = (c, x, y) => { const b = c.bbox; if (!b) c.bbox = { x1: x, y1: y, x2: x, y2: y }; else { if (x < b.x1) b.x1 = x; if (y < b.y1) b.y1 = y; if (x > b.x2) b.x2 = x; if (y > b.y2) b.y2 = y; } };
+    for (const k in map) {
+      const c = compOf(find(k)), p = k.split(',');
+      c.tiles[k] = true; c.beltCount++; grow(c, +p[0], +p[1]);
+    }
+    for (const pr of props) {
+      const hits = propTiles[pr.id];
+      if (!hits) continue;
+      const c = compOf(find(hits[0]));
+      c.props.push(pr.id);
+      if (pr.t === 'bay') c.bays.push({ propId: pr.id, agentId: pr.agentId || null, role: pr.role || null, x: pr.x, y: pr.y, w: pr.w || 1, h: pr.h || 1 });
+      else if (pr.t === 'intake') c.intakes.push(pr.id);
+      else if (pr.t === 'outbox') c.outboxes.push(pr.id);
+      grow(c, pr.x, pr.y); grow(c, pr.x + (pr.w || 1) - 1, pr.y + (pr.h || 1) - 1);
+    }
+    const out = [];
+    for (const r in byRoot) {
+      const c = byRoot[r];
+      if (!c.props.length) continue;              // bare belt scribbles are not a line
+      c.props.sort(); c.key = c.props[0];
+      c.bays.sort((a, b) => (a.propId < b.propId ? -1 : a.propId > b.propId ? 1 : 0));
+      out.push(c);
+    }
+    out.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    return out;
+  }
+
+  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
 });

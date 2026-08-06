@@ -56,5 +56,22 @@ A.eq(restoredBrowser.store['starnet.station.v1'], '{"room":"r"}', 'browser-owned
 const second = run(['restore', '--bundle', bundle, '--target', target]);
 A.ok(second.status !== 0 && /not clean/.test(second.stderr), 'restore refuses an existing profile without explicit rollback authority');
 
+const failedTarget = path.join(root, 'failed-machine', 'workspaces');
+const invalidBrowserOut = path.join(root, 'browser-output-is-a-directory');
+fs.mkdirSync(invalidBrowserOut, { recursive: true });
+const failedRestore = run(['restore', '--bundle', bundle, '--target', failedTarget, '--browser-output', invalidBrowserOut]);
+A.ok(failedRestore.status !== 0, 'restore reports browser-output preparation failure');
+A.eq(fs.existsSync(failedTarget), false, 'browser-output failure cannot activate a partial workspace restore');
+
+for (const [label, outputFor] of [
+  ['equal', targetPath => targetPath],
+  ['descendant', targetPath => path.join(targetPath, 'browser', 'restore.json')]
+]) {
+  const collisionTarget = path.join(root, label + '-collision', 'workspaces');
+  const collision = run(['restore', '--bundle', bundle, '--target', collisionTarget, '--browser-output', outputFor(collisionTarget)]);
+  A.ok(collision.status !== 0 && /browser output/i.test(collision.stderr), 'restore rejects browser output ' + label + ' to workspace target');
+  A.eq(fs.existsSync(collisionTarget), false, 'browser output ' + label + ' rejection creates no workspace target');
+}
+
 fs.rmSync(root, { recursive: true, force: true });
 A.report('station-recovery-cli.test');

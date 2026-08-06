@@ -778,7 +778,28 @@
   // + no goal match + never launched), we fall back to an HONEST category spread — one recipe per distinct category
   // in catalog order — so a cold-start user still sees a varied, non-arbitrary row (never a fake "popular"
   // ordering; truthful-telemetry law — the launch counts are the user's OWN real launches, never anyone else's).
-  function rankRecipes(items, opts) {
+  /* rankRecipesExplained — the ranker, plus the ONE fact its caller cannot otherwise recover: did any real signal
+     produce this row, or is it the cold-start category spread? (2026-08-05)
+
+     The bay printed its personalized "◈ FOR YOU" header off `UnderstandingStore.readiness()` alone. Readiness
+     says the station has learned enough to be ASKED; it does not say this particular row used any of it. A
+     Commander with a filled dossier but no profile signal, no goal keyword that hits any of ~100 recipe names,
+     no launches and no warm topic gets `anySignal === false` and a category spread drawn in catalog order — and
+     a header claiming those three cards are FOR THEM. That is the product's core law broken by a string.
+
+     rankRecipes keeps its exact old signature and return value (an array) so every existing caller and test is
+     byte-unaffected; this is the same function with the fact attached. `personalized` is true only when a real
+     term fired AND survived the sink — a row that is entirely spread reports false, and the top-up case (≥1 real
+     card, the rest spread) reports true, because at least one card genuinely is for them.
+
+     ⛔ AND `personalized` ALONE STILL OVERCLAIMS ON THE TOP-UP PATH (2026-08-05). "at least one card is for them"
+     is not "this row was picked from your real work", and the header was reading the boolean as if it were. A
+     one-hit row tops up from the SAME catalog spread the cold start uses, and those filler cards carry no why at
+     all — so a plural, whole-row claim sat over two cards the station had never seen the Commander touch. So the
+     count rides out too: `scored` is how many cards a real term actually produced, `items.length` how many are
+     shown. Equal → the whole row is earned. Fewer → the caller owes MIXED phrasing, not the full claim. */
+  function rankRecipes(items, opts) { return rankRecipesExplained(items, opts).items; }
+  function rankRecipesExplained(items, opts) {
     opts = opts || {};
     const list0 = Array.isArray(items) ? items : builtins();
     const exclude = opts.exclude || null;
@@ -838,6 +859,7 @@
       // scores only a handful of recipes — which used to render a lonely one- or two-card shelf. Fill the rest
       // from the SAME honest category spread the cold start uses, drawing only on recipes that scored EXACTLY
       // zero: a recipe the Commander rated 👎 carries a negative score and must stay sunk, never quietly readmitted.
+      const earned = top.length;   // how many cards a real term actually produced, BEFORE any filler
       if (top.length && top.length < limit) {
         const inRow = {}; top.forEach(r => { inRow[r.id] = true; });
         const spare = scored.filter(x => x.s === 0 && !inRow[x.r.id]).map(x => x.r);
@@ -848,11 +870,12 @@
       // profile affinity, no goal text) scores every candidate <= 0 and this filter returns NOTHING. The caller
       // renders no row at all, so honest feedback would DELETE the FOR YOU shelf. Fall through to the cold-start
       // spread instead: "nothing has earned the row yet" is the same honest state as never having launched one.
-      if (top.length) return top;
+      if (top.length) return { items: top, personalized: true, scored: earned };
     }
     // honest cold-start fallback: a bucket spread (first recipe of each distinct browse bucket), topped up with
-    // the next recipes in order if there aren't enough distinct buckets to fill the row.
-    return categorySpread(pool, limit, opts.spreadOffset);
+    // the next recipes in order if there aren't enough distinct buckets to fill the row. NOTHING here is about
+    // this Commander — which is exactly what `personalized: false` tells the caller to say out loud.
+    return { items: categorySpread(pool, limit, opts.spreadOffset), personalized: false, scored: 0 };
   }
   /* One recipe per distinct BROWSE BUCKET, then the remainder, clipped to n. Shared by the cold-start row and
      the thin-signal top-up so "varied" means the same thing in both places.
@@ -890,7 +913,7 @@
     list, builtins, customs: customList, get, exists,
     fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound,
     // R6 marketplace surface
-    EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, goalKeywordScore,
+    EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, rankRecipesExplained, goalKeywordScore,
     goalKeywordHits, forYouReason, topicScore, TOPIC_SCALE, TOPIC_CAP
   };
 });

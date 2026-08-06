@@ -61,8 +61,12 @@ A.ok(/if \(slow && isHeroRun && runId\) \{ queueStudy\(runId, agentId\); queueTh
   'a blocked moment QUEUES this run\'s study + thread (the pre-spine listeners deferred them; returning dropped them forever)');
 
 // the pass asks the PURE spine who speaks, and exactly one candidate ever fires
-A.ok(/const winner = Recommend\.pick\(cands, recUnderstanding\(\)\);/.test(passBody),
+/* one-memory lane (2026-08-05): the pick now runs over `live` — the candidate list AFTER the shared
+   cross-surface declined memory has removed anything the Commander already waved off elsewhere. */
+A.ok(/const winner = Recommend\.pick\(live, recUnderstanding\(\)\);/.test(passBody),
   'the pass ranks every candidate through Recommend.pick (one voice, best-first, or silence)');
+A.ok(/if \(recAlreadyDeclined\(c\)\)/.test(passBody),
+  '…and the list it ranks has already dropped explicitly-declined proposals (the one memory)');
 A.eq((passBody.match(/winner\.fire\(\)/g) || []).length, 1, 'exactly ONE candidate fires per pass (never two beats)');
 A.ok(/if \(!winner\) return;/.test(passBody), 'no citable candidate means SILENCE, not a fallback beat');
 
@@ -83,6 +87,25 @@ for (const k of ['suggest', 'seed', 'routine', 'recruit', 'curiosity']) {
   A.eq(Recommend.slotKindOf(k), 'nudge', k + ' renders through the one gentle-aside slot');
 }
 
+/* EVERY SOURCE LOCK BELOW BINDS ITS OWN FUNCTION (fixed 2026-08-04). These windows were fixed char counts
+   (`slice(i, i + 2600)`), which overran the function's real end as bodies grew: 9 of the 10 `why:` assertions
+   below were matching a NEIGHBOUR builder's why, and deleting suggestCandidate's why left this suite green.
+   A.fnBody brace-counts to the function's OWN closing brace, so a lock can only ever pass on its own subject. */
+const BUILDERS = ['arcCandidate', 'trustCandidate', 'rateCandidate', 'suggestCandidate', 'seedCandidate',
+                  'routineCandidate', 'recruitCandidate', 'curiosityCandidate', 'studyCandidate', 'threadCandidate'];
+const body = {};
+for (const fn of BUILDERS.concat(['offerStudy', 'offerThread'])) {
+  const async = chatSrc.indexOf('async function ' + fn) >= 0;
+  body[fn] = A.fnBody(chatSrc, (async ? 'async function ' : 'function ') + fn + '(');
+  A.ok(body[fn].length > 0 && body[fn].length < chatSrc.length / 4,
+    'chat.js defines ' + fn + ', and its body is bounded by its own closing brace (' + body[fn].length + ' chars)');
+}
+// the slicer really does stop at the boundary: no builder's body may contain the NEXT builder's declaration
+for (let i = 0; i < BUILDERS.length - 1; i++) {
+  A.ok(body[BUILDERS[i]].indexOf('function ' + BUILDERS[i + 1]) < 0,
+    BUILDERS[i] + '’s window stops before ' + BUILDERS[i + 1] + ' begins (no lock can borrow a neighbour’s evidence)');
+}
+
 /* THE ONCE LAW: a per-run token is spent at FIRE time, never at collection. Spending it while merely staging a
    candidate meant a channel that LOST the moment (or a pass that stood down afterwards) burned the run's only
    chance to speak, and a re-fired agent.run.end found every token spent with nothing ever shown. */
@@ -90,30 +113,23 @@ for (const [fn, probe] of [['arcCandidate', /if \(arcSeen\(runId\)\) return null
                            ['trustCandidate', /beatCards\.hasSeen\('trust', runId\)\) return null;/],
                            ['studyCandidate', /beatCards\.hasSeen\('study', runId\)\) return null;/],
                            ['threadCandidate', /beatCards\.hasSeen\('thread', runId\)\) return null;/]]) {
-  const i = chatSrc.indexOf('function ' + fn);
-  A.ok(probe.test(chatSrc.slice(i, i + 1800)), fn + ' only READS its per-run token (collection is side-effect-free)');
+  A.ok(probe.test(body[fn]), fn + ' only READS its per-run token (collection is side-effect-free)');
 }
-const iArcCand = chatSrc.indexOf('function arcCandidate');
-A.ok(/fire: \(\) => \{ if \(arcOnce\(runId\)\) offerArc\(runId\); \}/.test(chatSrc.slice(iArcCand, iArcCand + 1200)),
+A.ok(/fire: \(\) => \{ if \(arcOnce\(runId\)\) offerArc\(runId\); \}/.test(body.arcCandidate),
   'the arc spends its token when it FIRES');
-for (const [k, fn] of [['trust', 'function trustCandidate'], ['study', 'async function studyCandidate'], ['thread', 'async function threadCandidate']]) {
-  const i = chatSrc.indexOf(fn);
-  A.ok(new RegExp("fire: \\(\\) => \\{ if \\(beatCards\\.once\\('" + k + "', runId\\)\\)").test(chatSrc.slice(i, i + 1800)),
+for (const [k, fn] of [['trust', 'trustCandidate'], ['study', 'studyCandidate'], ['thread', 'threadCandidate']]) {
+  A.ok(new RegExp("fire: \\(\\) => \\{ if \\(beatCards\\.once\\('" + k + "', runId\\)\\)").test(body[fn]),
     k + ' spends its token when it FIRES');
 }
 // …and the deferred queue drain consumes the SAME token, so the queue and the pass can never both render a run's card
-for (const [fn, k] of [['async function offerStudy', 'study'], ['async function offerThread', 'thread']]) {
-  const i = chatSrc.indexOf(fn);
-  A.ok(new RegExp("if \\(beatCards && !beatCards\\.once\\('" + k + "', runId\\)\\) return;").test(chatSrc.slice(i, i + 1600)),
-    fn.replace('async function ', '') + ' consumes the same per-run token before rendering (never a double offer)');
+for (const [fn, k] of [['offerStudy', 'study'], ['offerThread', 'thread']]) {
+  A.ok(new RegExp("if \\(beatCards && !beatCards\\.once\\('" + k + "', runId\\)\\) return;").test(body[fn]),
+    fn + ' consumes the same per-run token before rendering (never a double offer)');
 }
 
 // EVIDENCE OR SILENCE: every candidate builder must cite real state or return null
-for (const fn of ['arcCandidate', 'trustCandidate', 'rateCandidate', 'suggestCandidate', 'seedCandidate',
-                  'routineCandidate', 'recruitCandidate', 'curiosityCandidate', 'studyCandidate', 'threadCandidate']) {
-  const i = chatSrc.indexOf('function ' + fn);
-  A.ok(i > 0, 'chat.js defines ' + fn);
-  A.ok(/why:/.test(chatSrc.slice(i, i + 1800)), fn + ' carries a why — a channel that cannot cite stays silent');
+for (const fn of BUILDERS) {
+  A.ok(/why:/.test(body[fn]), fn + ' carries a why — a channel that cannot cite stays silent');
 }
 
 // the whole pass stands down behind a focused panel / onboarding / intake / an unanswered task question

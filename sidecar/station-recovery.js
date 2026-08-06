@@ -37,10 +37,11 @@ const BROWSER_SECRET_SEGMENT = /(?:^|[._:-])(?:api[-_]?key|apikey|key|keys|token
 const SECRET_FIELD = /^(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|key|api[_-]?key|secret|client[_-]?secret|password|passwd|pwd|authorization|bearer|cookie|session)$/i;
 const EPHEMERAL_TOP = new Set(['.browser-profile']);
 const EPHEMERAL_FILES = new Set(['cron.lock', 'proc-ledger.json', '.starnet-workspace-owner.json']);
-const SYSTEM_SECRET_TOP = new Set(['.secrets', 'codex']);
+const SYSTEM_SECRET_TOP = new Set(['.secrets', 'codex', 'grok', 'kimi']);
 
 function sha256(data) { return crypto.createHash('sha256').update(data).digest('hex'); }
 function slash(p) { return String(p || '').replace(/\\/g, '/').replace(/^\.\//, ''); }
+function systemSecretPath(p) { return SYSTEM_SECRET_TOP.has(slash(p).split('/')[0].toLowerCase()); }
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
 function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function stableSort(arr, key) { return arr.sort((a, b) => String(key(a)).localeCompare(String(key(b)))); }
@@ -173,7 +174,7 @@ function classifyPolicy(rel, st) {
   const top = parts[0].toLowerCase();
   if (st && typeof st.isSymbolicLink === 'function' && st.isSymbolicLink()) return { action: 'skip', reason: 'symbolic links are not portable or safe to follow' };
   if (EPHEMERAL_TOP.has(top)) return { action: 'skip', reason: 'ephemeral browser/runtime profile; sign-in must be re-established' };
-  if (SYSTEM_SECRET_TOP.has(top)) return { action: 'skip', reason: 'system-managed credential material is intentionally excluded', reauth: { kind: top === 'codex' ? 'provider' : 'credential-store', id: top, reason: 'Reauthentication required on the restored profile.' } };
+  if (SYSTEM_SECRET_TOP.has(top)) return { action: 'skip', reason: 'system-managed credential material is intentionally excluded', reauth: { kind: top === '.secrets' ? 'credential-store' : 'provider', id: top, reason: 'Reauthentication required on the restored profile.' } };
   if (EPHEMERAL_FILES.has(p.toLowerCase()) || /(?:^|\/)\.owner\.lock$/.test(p.toLowerCase()) || /\.tmp(?:$|\.)/.test(p.toLowerCase())) return { action: 'skip', reason: 'ephemeral lock/process/temp state' };
   if (/\.bak$/.test(p.toLowerCase()) || /\.corrupt-\d+$/.test(p.toLowerCase())) return { action: 'skip', reason: 'superseded recovery/forensic generation; bundle versioning is authoritative' };
   if (/^connectors\/(?:state|connectors|oauth|servicekeys)\.json$/i.test(p) || /^channels\/secrets\.json$/i.test(p) || /^permissions\.allow\.json$/i.test(p)) return { action: 'sanitize' };
@@ -282,6 +283,7 @@ function validate(bundle) {
   for (const row of files) {
     const rel = slash(row && row.path);
     if (!rel || rel.startsWith('/') || rel.split('/').includes('..')) { errors.push('unsafe bundle path: ' + rel); continue; }
+    if (systemSecretPath(rel)) errors.push('bundle contains forbidden system credential path: ' + rel);
     if (seen.has(rel.toLowerCase())) errors.push('duplicate bundle path: ' + rel);
     seen.add(rel.toLowerCase());
     let data;

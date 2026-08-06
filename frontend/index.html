@@ -395,16 +395,17 @@
 </section>
 
 <!-- ============ GAME ============ -->
-<!-- BRAND MARK — deliberately OUTSIDE the .screen sections: it must paint ABOVE the CRT glass
-     overlays (body::before/::after at z 940/950) so the amber wordmark stays crisp instead of
-     being tinted by the themed top-glow and striped by the scanlines. A .screen is a z-index:10
-     stacking context, so nothing inside one can ever out-stack the glass. #logo-anchor below
-     reserves its seat in the topbar; app.js positionLogo() keeps the two aligned. -->
-<!-- The img is the pre-baked SMALL variant (dev/bake-logo-small.mjs): the 1100px ASCII-mosaic
-     master collapses to gray speckle when the browser minifies it 6.6× to topbar size, so the
-     bake downscales the same art in linear light and re-solidifies the strokes. The title
-     screen keeps the full-size master. -->
-<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo-small.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+<!-- BRAND MARK — deliberately OUTSIDE the .screen sections so it paints above every floating
+     window: a .screen is a z-index:10 stacking context, so nothing inside one can ever out-stack a
+     body child. It sits UNDER the CRT glass though (z935 vs body::before/::after at 940/950) — the
+     beam is meant to run across the wordmark, not stop at its edges; see the z-index note in
+     style.css. #logo-anchor below reserves its seat in the topbar; positionLogo() keeps them
+     aligned, and app/logoclip.js clips the mark under any window it would otherwise cover. -->
+<!-- The mark is a <span> MASKED by starnet-wordmark.svg, not an <img> — that is what lets it take
+     var(--ph) per theme and stay crisp at any DPR / TEXT SIZE. The SVG is the master art's OWN
+     letterforms traced out of its perceived-density field (dev/trace-logo.mjs), NOT a redraw; the
+     title screen keeps the full-size master PNG, where the ASCII-digit texture actually reads. -->
+<div id="logo"><span class="logo-img" role="img" aria-label="STARNET"></span><span class="logo-sub">AI-AGENT HARNESS</span></div>
 
 <section id="screen-game" class="screen">
 
@@ -643,6 +644,8 @@
 <script src="app/propsearch.js"></script><!-- pure REFIT palette search matcher (flat lookup across all 120 props, both tiers) -->
 <script src="app/conveyor.js"></script>
 <script src="app/pipeline.js"></script>
+<script src="app/ghostline.js"></script><!-- GHOST PROJECTION (guided workflows Phase 3): a dashed projected crate loops an INCOMPLETE line so you watch the workflow before it exists — dedicated engine, never mixes with real telemetry -->
+
 <script src="app/propanchor.js"></script>
 <script src="app/waitanchor.js"></script><!-- pure permission-blocked wait-anchor ladder (G4: world.js walks a blocked agent here) -->
 <script src="app/data-shim.js"></script>
@@ -673,6 +676,7 @@
 <script src="app/study.js"></script><!-- GROWTH Tier 1: pure STUDY engine (dossier Phase B) — parse/salience/dedup for work→belief proposals + ratings-taste + archetype classifier -->
 <script src="app/beatcard.js"></script><!-- shared COMMS post-run lifecycle; MUST load before chat.js -->
 <script src="app/recommend.js"></script><!-- THE RECOMMENDATION SPINE: pure one-voice arbiter over every proactive channel (evidence-or-silence); MUST load before chat.js -->
+<script src="app/recquality.js"></script><!-- THE QUALITY LOOP: pure evidence-STRENGTH / belief-STALENESS / channel-quality-EWMA reads behind the spine; MUST load before chat.js -->
 <script src="app/interview.js"></script>
 <script src="app/curiosity.js"></script>
 <script src="app/pitch.js"></script>
@@ -787,6 +791,8 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/threadstore.js"></script><!-- NS-6: THREAD turn-in wiring — fetch mined idea candidates, session cap + resolved/ignore gate, Keep/Edit/Discard → /api/threads/turnin (the click IS the consent); self-persists (own key), never emits -->
 <script src="app/curiositystore.js"></script>
 <script src="app/pitchstore.js"></script>
+<script src="app/recqualitystore.js"></script><!-- THE OUTCOME LOOP: per-channel quality weights earned from what accepted offers really produced (run stamp -> completion/verdict); read-only bus citizen -->
+<script src="app/recledger.js"></script><!-- ONE RECOMMENDATION MEMORY: the spine's writes into (and reads from) the durable cross-surface ledger — a decline made at a COMMS card is a decline everywhere -->
 <script src="app/suggeststore.js"></script>
 <script src="app/goalstore.js"></script><!-- GROWTH Tier 2: GOAL-TREE wiring — decomposition confirm (aux model call), persist (own key) + sidecar mirror, milestone→work-quest binding, chaining/evidence/drift; never emits -->
 <script src="app/understandingstore.js"></script><!-- UNDERSTANDING: composes the honest "how well the station knows the Commander" read from live dossier beliefs + work-samples + active goal; drives curiosity targeting + the COMMANDER meter; read-only bus citizen -->

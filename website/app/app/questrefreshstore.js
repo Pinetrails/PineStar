@@ -88,7 +88,11 @@ const QuestRefreshStore = (() => {
     // (Chat.beatBusy) — stacking this confirm over a pending clarifying question read as "popup after popup"
     // and its choices() wiped the question's own answer chips (live-caught 2026-07-19). Blocked → ambient line.
     const busy = ((typeof Chat.isBusy === 'function') ? Chat.isBusy() : false)
-      || ((typeof Chat.beatBusy === 'function') ? Chat.beatBusy() : false);
+      || ((typeof Chat.beatBusy === 'function') ? Chat.beatBusy() : false)
+      // the SHARED session ask budget (one-memory lane): this confirm is a proactive consent ask, so a spent
+      // budget routes it to the SAME ambient fallback a busy moment does — the DIRECTION card in the quest log
+      // remains the primary confirm surface either way, so nothing is lost, only not shouted.
+      || ((typeof Chat.askBudgetSpent === 'function') ? Chat.askBudgetSpent() : false);
     let shown = null;
     if (!busy && typeof Chat.nudge === 'function') {
       if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }
@@ -98,6 +102,8 @@ const QuestRefreshStore = (() => {
         else if (choice && choice.value === 'no') { verdict('decline').then(afterVerdict); }
         else if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests');
       });
+      // a nudge that actually claimed the slot spends one unit of the shared budget (a refused one spent nothing)
+      if (shown && typeof Chat.spendAsk === 'function') { try { Chat.spendAsk(); } catch (_) {} }
     }
     if (!shown && typeof Chat.broadcast === 'function') {   // nudge refused (a question/beat won the race) → same ambient fallback as busy
       try { Chat.broadcast('NORTH STAR TO CONFIRM · ' + String(ns.text).toUpperCase()); } catch (_) {}

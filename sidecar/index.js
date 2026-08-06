@@ -213,6 +213,7 @@ const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const Recommendation = require('./recommendation-ledger.js');
+const RecommendationEval = require('./recommendation-eval.js');
 const { makeRecommendationLedger } = Recommendation; // one cross-surface recommendation/verdict lifecycle + shared utility ranker
 const { makePersonalizationStore } = require('./personalization-store.js'); // one durable pause/forget authority for every derived recommender
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
@@ -263,6 +264,7 @@ const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser W
 const { makeStationBridge } = require('./station-bridge.js');   // page-side command channel for station tools
 const { makeNativeStt } = require('./native-stt.js');                // keyless Windows dictation fallback for OAuth Live voice
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
+const Pipeline = require('../frontend/app/pipeline.js');   // the ONE routing-plan compiler/resolver (router.js loads the same module) — used here for a side-effect-free dispatch peek
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
 // the specialist classes as {id, tagline}, composed from the shared catalog so team.summon's class list +
 // the [ORCHESTRATION] teamNote never drift from the Recruitment Bay (single source of truth).
@@ -1739,6 +1741,22 @@ function providerCredentialError(provider) {
   if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
   return 'provider is not configured';
 }
+function channelRunConfigFor(agentId) {
+  const id = String(agentId || '').trim();
+  const ident = id ? agentRoster.get(id) : null;
+  if (!ident) return { ok: false, error: 'target agent ' + (id || '(missing)') + ' is not in the live roster' };
+  const provider = normalizeProvider(ident.provider);
+  const model = String(ident.model || '').trim();
+  if (!model) return { ok: false, error: 'target agent ' + id + ' has no roster model' };
+  const key = providerRuntimeKey(provider, '');
+  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  if (!providerHasCredential(provider, key, baseUrl)) return { ok: false, error: providerCredentialError(provider) + ' for target agent ' + id };
+  return {
+    ok: true, key, model, provider, baseUrl,
+    reasoningEffort: resolveReasoningEffort(provider, ident.reasoningEffort),
+    system: ident.system || ''
+  };
+}
 function cronProviderFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
   const explicit = normalizeProviderId((job && job.provider) || (ident && ident.provider) || '');
@@ -1863,6 +1881,23 @@ function buildDeclinedIndex(agentId) {
   try { lists.push((questStore.read().deniedTitles || []).map(String)); } catch (_) {}
   try { lists.push((QuestRefresh.normalize(questRefreshState).declinedNorthStars || []).map(String)); } catch (_) {}
   return DeclinedIndex.build(lists);
+}
+
+/* THE NIGHT SHIFT CONSULTS IT TOO (2026-08-05). Five propose-time sites already filter through the shared
+   declined index — reflection, thread mining, quest minting, the scout — and the night shift, the ONE surface
+   that acts while the Commander is asleep, went parseCandidates → scoreAndSelect → record with no read at all.
+   So an idea explicitly declined in the daylight could be picked overnight, BUILT, and be waiting on the desk
+   in the morning: the single most expensive place in the product to re-propose a rejected thing.
+   Same discipline as every other site: EXACT normalized-title match only (declinedindex.js's own law — a false
+   suppression is worse than an occasional duplicate), and fail-open, because a store hiccup must never silence
+   the night rather than merely fail to filter it. */
+function nightshiftUndeclined(agentId, candidates) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (!list.length) return list;
+  let dIdx = null;
+  try { dIdx = buildDeclinedIndex(agentId); } catch (_) { return list; }
+  if (!dIdx || !dIdx.size) return list;
+  return list.filter(c => c && !dIdx.has(c.title));
 }
 
 // fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
@@ -2075,8 +2110,13 @@ async function runThreadMine(o) {
     // known fingerprints = every live (non-declined) thread + the permanent declined denylist — so a duplicate or a
     // previously-declined idea is deduped AT THE SOURCE and never even stashed again (parity with study's declined).
     let known = {}; try { known = threadsStore.knownFingerprints(); } catch (_) { known = {}; }
+    // …and the READABLE half of that same set, so the model is told what is already on the board BEFORE the paid
+    // call instead of having its duplicates thrown away after it. Live threads only: the declined denylist keeps
+    // fingerprints with no title, so it stays post-hoc-only — which is where it was already doing its job.
+    let knownTitles = [];
+    try { knownTitles = (threadsStore.read().threads || []).filter(t => t && t.state !== 'declined').map(t => String(t.title || '')).filter(Boolean); } catch (_) { knownTitles = []; }
     const out = await threadmine.mine({ agentId, runId, streamId, messages }, {
-      propose, redact, clock: { now: () => Date.now() }, known, max: threadmine.DEFAULT_MAX
+      propose, redact, clock: { now: () => Date.now() }, known, knownTitles, max: threadmine.DEFAULT_MAX
     });
     let proposals = (out && out.proposals) || [];
     // CROSS-WIRE: mine() already deduped vs the thread ledger's own fingerprints; drop anything the Commander
@@ -2231,6 +2271,26 @@ async function runSkillCurator(o) {
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
    prompt-injection escalation path (mirrors the reference harness's import-frozen YOLO flag). */
 const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(ENV('FULL_ACCESS') || '').trim());
+/* MASTER BYPASS (2026-08-05, the Commander's explicit call) — the runtime "FULL BYPASS" switch behind
+   Settings → PERMISSIONS. When ON: every agent, every surface (watched chat, Telegram, routines, night
+   shift) skips the consent broker AND gets owner-DM-grade impact reach (shell, media, connectors)
+   unattended. What it deliberately does NOT buy: the hardline file floor (tier 1 — .env/.git stay
+   unwritable), and the physical mouse/real-screen desktop lease (host-minted pairing only).
+   Injection-safety is preserved by SOURCING, not freezing: the flag lives in a persisted, token-gated
+   store flipped only by the /api/permissions/bypass route — a human clicking settings. The model has no
+   tool that reaches it, so runtime-flippable here does not reopen what freezing FULL_ACCESS closed.
+   Persist-before-commit: a torn write leaves the previous state standing (never a phantom bypass). */
+const BYPASS_FILE = path.join(WORKSPACES, 'permissions.bypass.json');
+function loadMasterBypass() {
+  try { const raw = loadResilient(BYPASS_FILE, 'permissions-bypass'); return !!(raw && raw.on === true); }
+  catch (e) { return false; }   // unreadable -> OFF (fail-closed, the safe default)
+}
+let masterBypassFlag = loadMasterBypass();
+const masterBypassOn = () => masterBypassFlag;
+function setMasterBypass(on) {
+  saveResilient(BYPASS_FILE, { version: 1, on: !!on, setAt: Date.now() });   // throws -> caller reports, state unchanged
+  masterBypassFlag = !!on;
+}
 // permanent allowlist of danger-class keys (capability:scope) the user has blessed forever. Lives BESIDE
 // the notebook store (sibling of the fs jail) so the agent's own fs.* tools can neither read nor rewrite it.
 const ALLOWLIST_FILE = path.join(WORKSPACES, 'permissions.allow.json');
@@ -2586,7 +2646,19 @@ function telegramOwnerAdmission(record, message) {
 }
 function ownerPairingStatus(record) {
   const state = record && record.ownerPairing;
-  return { active: telegramOwnerPairing.active(state, Date.now()), expiresAt: telegramOwnerPairing.active(state, Date.now()) ? Number(state.expiresAt) : 0 };
+  const active = telegramOwnerPairing.active(state, Date.now());
+  return { active, expiresAt: active ? Number(state.expiresAt) : 0 };
+}
+// Mint + durably save one Telegram owner challenge. The raw code is returned only to the authenticated local
+// caller; channelSecrets receives the salted verifier. Shared by first connect (so setup cannot stop at a deaf
+// but healthy poller) and the explicit PAIR OWNER recovery button (which rotates a lost/expired code).
+function issueTelegramOwnerPairing(record) {
+  const issued = telegramOwnerPairing.issue({ now: Date.now() });
+  const next = Object.assign({}, record || {}, { ownerPairing: issued.state });
+  channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
+  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+  if (!persisted) return { ok: false, error: 'could not save the pairing challenge; no code was issued' };
+  return { ok: true, code: issued.code, expiresAt: issued.state.expiresAt, persisted: true };
 }
 // Resolve the effective bot token for a channel: an explicit value (a fresh paste) wins; else the keychain-
 // injected/live-pushed runtime token; else — bare sidecar only — the token saved in the plaintext record.
@@ -3045,6 +3117,7 @@ const router = makeRouter();
    on the floor and not a claim. */
 const chainRunner = makeChainRunner({
   nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
+  stageBrief: (agentId) => router.stageBrief(agentId),   // the RECEIVING dock's standing brief rides each handoff turn (prompt text only)
   emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
   newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
   now: () => Date.now(),
@@ -3683,6 +3756,9 @@ const cronDriver = makeCronDriver({
   // bay-docked agent's cron ran with the default office instead of its bay room's objects. Same resolver
   // the telegram/discord hubs use; null -> the default office, exactly like an unrouted chat.
   resolveStation: (agentId) => router.stationFor(agentId),
+  // the dock's standing brief rides a scheduled entry run's system context exactly like a hub-routed
+  // message's (inbox-trigger, 2026-08-05) — same router.stageBrief seam, prompt text only, never grants/tools.
+  stageBriefFor: (agentId) => router.stageBrief(agentId),
   // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
   // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
   // crate arrives at the agent's bay and (with the run-lifecycle binding in world.js) the agent goes to work.
@@ -4342,9 +4418,26 @@ async function handleScoutDecide(req, res) {
 
 // ONE recommendation lifecycle API. Browser and server surfaces write the same bounded envelope, so "not now"
 // remains a deferral, "never" becomes a cross-surface decline, and replay metrics can measure compounding.
+/* GET /api/recommendations/eval — the offline scorecard (recommendation-eval.js), run over the REAL ledger.
+   The eval module had ZERO runtime consumers: the metrics that grade whether recommendations are actually
+   getting better (adoption, precision@3, counterfactual regret, calibration, contradiction rate) existed only
+   as a CLI over an exported file. This is the same pure evaluate() over the same durable rows — read-only,
+   deterministic for a given ledger state, no model spend. */
+function handleRecommendationsEval(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
+    const rows = recommendationLedger.read();
+    json(200, { ok: true, evaluation: RecommendationEval.evaluate(rows, Object.assign({ now: Date.now() }, surface ? { surface } : {})) });
+  } catch (e) { json(200, { ok: false, error: (e && e.message) || 'recommendation eval failed' }); }
+}
 function handleRecommendationsGet(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   try {
+    // lapse un-answered rows whose surface declared an expiry (same read-time discipline as scoutSweep) —
+    // fire-and-forget: this read serves the pre-sweep state, the next one is clean.
+    try { recommendationLedger.sweep(Date.now()).catch(() => {}); } catch (_) {}
     const u = new URL(req.url, 'http://127.0.0.1');
     const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
     const state = String(u.searchParams.get('state') || '').slice(0, 20);
@@ -4618,7 +4711,7 @@ async function runNightshiftBeat(opts) {
   //    veto's evidence pool = beliefs + activity + thread texts (a thread-tag citation is the preferred grounding).
   const cRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, threads, eligible, focusHeader, priorTonight }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
+  const candidates = nightshiftUndeclined(agentId, Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads }));
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
@@ -4725,7 +4818,7 @@ async function runNightshiftActShift(opts) {
   // veto — while still-invented grounding dies. The snapshot is harness-read truth, never model improv, so it is
   // honest evidence to ground in. Bounded already (projectscan caps it).
   const vetoActivity = projectSnapshot ? activity.concat(projectSnapshot.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) : activity;
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity: vetoActivity, threads });
+  const candidates = nightshiftUndeclined(agentId, Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity: vetoActivity, threads }));
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftPreferenceWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // NS-6 writeback: a build grounded on an open thread marks it PICKED now; a later keep/discard verdict (return
@@ -6156,6 +6249,7 @@ function startTelegram(token, key, model, agentCfg) {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
+    stageBriefFor: (agentId) => router.stageBrief(agentId),                     // the dock's standing brief rides the run's context (prompt text only)
     // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
     // roster + setModel read/write the SAME agentRoster the browser dossier uses (POST /api/roster) — one source
     // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
@@ -6389,8 +6483,10 @@ function startTelegramBot(botId) {
     // that agent's bay run here too; without this seam the same floor did less work depending on which bot
     // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    resolveRunConfig: channelRunConfigFor,                                    // every downstream dock owns its roster provider/model/credential
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // a bound bot's agent still crews its dock — the standing brief applies
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
     // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
@@ -6502,6 +6598,7 @@ function startDiscord(token, key, model, agentCfg) {
       chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
+      stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
       // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
       // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
@@ -6608,6 +6705,7 @@ function getDevHub() {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
     modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },
@@ -6770,6 +6868,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
+      stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
       // In-messenger control surface — identical across channels because it lives in the shared hub.
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
       setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
@@ -6965,6 +7064,7 @@ const ROUTES = [
   { m: 'GET', exact: '/api/permissions', h: handlePermissionsList },
   { m: 'POST', exact: '/api/permissions/grant', h: handlePermissionsGrant },
   { m: 'POST', exact: '/api/permissions/revoke', h: handlePermissionsRevoke },
+  { m: 'POST', exact: '/api/permissions/bypass', h: handlePermissionsBypass },
   { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
   { m: 'POST', exact: '/api/projects/forget', h: handleProjectForget },   // Projects rail: hard-forget revoked metadata (never withdraws trust)
@@ -6988,6 +7088,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/scout/context', h: handleScoutContext },
   { m: 'POST', exact: '/api/scout/decide', h: handleScoutDecide },
   { m: 'POST', exact: '/api/scout/telemetry', h: handleScoutTelemetry },
+  { m: 'GET', qsplit: '/api/recommendations/eval', h: handleRecommendationsEval },
   { m: 'GET', qsplit: '/api/recommendations', h: handleRecommendationsGet },
   { m: 'POST', exact: '/api/recommendations', h: handleRecommendationsPost },
   { m: ['GET', 'POST', 'DELETE'], exact: '/api/personalization', h: handlePersonalization },
@@ -7026,6 +7127,9 @@ const ROUTES = [
   { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
   { m: 'POST', exact: '/api/routing', h: handleRouting },
   { m: 'GET', qsplit: '/api/routing/chain', h: handleRoutingChain },   // qsplit, not exact: `exact` compares the FULL url and this route always carries a query
+  // PROOF (guided workflow Phase 4): run ONE real, labeled sample job through the armed line. Refusals are
+  // 409, never 404 — the finish-the-line card feature-detects the route by exactly that difference.
+  { m: 'POST', exact: '/api/routing/sample', h: handleRoutingSample },
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
   { m: 'POST', exact: '/api/budget/caps', h: handleBudgetCaps },
@@ -7495,8 +7599,158 @@ function handleRoutingChain(req, res) {
   const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
   let next = null;
   try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  // `brief` (additive, step editor 2026-08-05): the NEXT dock's standing job brief, so the browser's COMMS
+  // work line composes the SAME handoff turn the sidecar executor does (chat.js runWorkLine — must not drift).
+  let brief = null;
+  if (next) { try { brief = router.stageBrief(next); } catch (_) { brief = null; } }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ next: next || null }));
+  res.end(JSON.stringify({ next: next || null, brief: brief || null }));
+}
+
+/* ---- POST /api/routing/sample — PROOF: feed ONE real, clearly-labeled work item through the armed line.
+
+   Guided-workflow Phase 4 (docs/CONVEYOR_GUIDED_WORKFLOW_PLAN.md): the button that answers "does my system
+   work?". The sample is a REAL run on the REAL unaddressed dispatch path — the same hub mechanics as the DEV
+   inject seam (handleDevInbound), but a first-class production route: router.resolveTarget picks the dock
+   (filter/splitter engage), the run goes through runOnce (budget governor, ledger, real cost), and the shared
+   chain runner advances the rest of the drawn line. First-class ≠ wider: the run is surface:'autonomous' with
+   NO unattendedGrants (the chain-grants law) — an ungranted mutation default-denies exactly like any headless
+   channel run, and the request body cannot smuggle authority (only {text} is read).
+
+   Contract (the finish-the-line card feature-detects this endpoint):
+     · every refusal is 409 {ok:false,error} — never 404, so "route exists but refuses" is distinguishable
+       from "old sidecar without the route" (400 only for unparseable JSON);
+     · ONE sample in flight per station (the lock is taken synchronously before the first await);
+     · 200 answers only after the line DELIVERED: { replies, runs, delivered, streamId, totalUsd } are the
+       real recorded outcomes (runs.jsonl rows scoped by the sample's own streamId — never synthesized).
+   The workitem events carry an additive `sample:true` marker (obj() stanzas in shared/events.js set no
+   additionalProperties:false — re-proven by validate() in test/routing.sample.e2e.test.js). ---- */
+const SAMPLE_CHAT = 'sample';
+const SAMPLE_TEXT = 'SAMPLE JOB: summarize what this work line does, in three sentences.';
+const SAMPLE_PERSONA = 'You are an agent aboard the STARNET station. This is a clearly-labeled SAMPLE JOB — a small test '
+  + 'crate the Commander sent through the work line to prove it runs end to end. Do the small task directly and '
+  + 'report the result clearly, in a few sentences.';
+let sampleHub = null;        // lazy singleton, one per station — mirrors getDevHub
+let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
+let sampleLineOutcome = null; // terminal chain truth for the current proof; clean runs alone are not OUTBOX proof
+let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
+const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
+function getSampleHub() {
+  if (sampleHub) return sampleHub;
+  sampleHub = makeChannelHub({
+    channel: 'sample', maxMessageLength: 4000, agentPrefix: 'smp_', textBatchWaitMs: 0,
+    runOnce: runOnce, store: channelStore,
+    send: (chatId, text) => { sampleReplies.push(String(text == null ? '' : text)); if (sampleReplies.length > 20) sampleReplies.shift(); return Promise.resolve({ ok: true }); },
+    secrets: devHubSecrets,   // the ONE headless resolution rule (see handleRuntimeAgent) — a second rule would drift
+    persona: SAMPLE_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+    newId: () => crypto.randomUUID(), now: () => Date.now(),
+    resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
+    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
+    resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
+    onResolved: (info) => { sampleResolved = info; },
+    onLineOutcome: (info) => { sampleLineOutcome = info; },
+    // every run of the line (entry dock + hops) records under the sample's OWN workstream, so the recorded
+    // rows in runs.jsonl are scoped exactly and the OUTBOX crate opens a readable transcript session.
+    streamId: () => (sampleInFlight && sampleInFlight.streamId) || undefined
+  });
+  return sampleHub;
+}
+async function handleRoutingSample(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  // ONE PER STATION — the lock is claimed in this synchronous slice (before any await), so two concurrent
+  // posts can never both dispatch. Refusal paths below release it before answering.
+  if (sampleInFlight) {
+    const age = Math.max(0, Math.round((Date.now() - sampleInFlight.startedAt) / 1000));
+    return json(409, { ok: false, error: 'a sample job is already riding the line (started ' + age + 's ago) — wait for it to deliver.' });
+  }
+  sampleInFlight = { streamId: 'sample-' + crypto.randomUUID().slice(0, 8), workitemId: '', startedAt: Date.now() };
+  try {
+    let body = {};
+    try { const raw = await readBody(req, 1 << 16); body = raw && raw.trim() ? (JSON.parse(raw) || {}) : {}; }
+    catch (_) { return json(400, { ok: false, error: 'bad json' }); }   // the finally releases the lock on every exit
+    const text = String(body.text == null ? '' : body.text).trim().slice(0, 2000) || SAMPLE_TEXT;
+    // the armed plan is the precondition — a sample with no line to ride is a lie, not a fallback run.
+    const plan = router.getPlan();
+    if (!plan) {
+      return json(409, { ok: false, error: 'no work line is armed — draw a complete line (INBOX → belts → a crewed dock) and it arms itself.' });
+    }
+    /* side-effect-free dispatch peek: would the armed plan route THIS text to a dock at all? Asked of the
+       SAME compiled plan through the same Pipeline resolver, but with a static lane picker — the router's
+       round-robin counters belong to real dispatch, and the hub's own resolveAgent call below must stay the
+       one and only counter-advancing resolution (one-resolver law). */
+    let peek = null;
+    try { peek = Pipeline.resolveTarget(plan, { tag: (Classify.getTag ? Classify.getTag(text) : undefined), chatId: SAMPLE_CHAT, text: text }, () => 0); } catch (_) { peek = null; }
+    if (!peek) {
+      return json(409, { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
+    }
+    const sec = devHubSecrets();
+    if (!sec.model || (!sec.configured && !sec.key)) {
+      return json(409, { ok: false, error: 'no provider/model is configured for headless runs — connect a provider and set a default model first.' });
+    }
+
+    const t0 = Date.now();
+    const streamId = sampleInFlight.streamId;
+    sampleReplies.length = 0;
+    const hub = getSampleHub();
+    sampleResolved = null;
+    sampleLineOutcome = null;
+    // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
+    // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
+    const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
+      .catch(e => { console.warn('[routing-sample] error:', (e && e.message) || e); return { error: (e && e.message) || String(e) }; });
+    let agentId = '', workitemId = '', isTask = false;
+    try {
+      if (sampleResolved && String(sampleResolved.chatId) === SAMPLE_CHAT && sampleResolved.agentId) {
+        agentId = String(sampleResolved.agentId);
+        isTask = !!sampleResolved.isTask;
+        if (isTask) {
+          workitemId = crypto.randomUUID();
+          sampleInFlight.workitemId = workitemId;
+          const depth = bumpQueue(agentId, +1);
+          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'sample', sample: true, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
+          chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+        }
+      }
+    } catch (e) { console.warn('[routing-sample] intercept error:', (e && e.message) || e); }
+    sampleResolved = null;
+    await settled;
+    // the REAL recorded outcomes: runs.jsonl rows carrying this sample's streamId (newest-first from the
+    // store, so [0] is the LAST stage that ran — the one whose reply the line delivered).
+    let runs = [];
+    try {
+      runs = (runStore.list(null, { limit: 50 }) || [])
+        .filter(r => r && String(r.streamId || '') === streamId)
+        .map(r => ({ runId: r.runId, agentId: r.agentId, reason: r.reason, usd: r.usd, ts: r.ts, title: r.title, streamId: r.streamId, turns: r.turns }));
+    } catch (_) { runs = []; }
+    // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
+    // outcome is clean, including every hop after the routed entry dock.
+    const completed = runs.length > 0 && runs.every(r => r.reason === 'done')
+      && !!sampleLineOutcome && !sampleLineOutcome.stopped
+      && router.chainShipsToOutbox(sampleLineOutcome.agentId);
+    const delivered = completed ? runs[0] : null;
+    const totalUsd = runs.reduce((s, r) => s + ((typeof r.usd === 'number' && isFinite(r.usd)) ? r.usd : 0), 0);
+    if (workitemId) {
+      const d = bumpQueue(agentId, -1);
+      if (completed) chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
+      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+    }
+    if (!completed) {
+      return json(502, {
+        ok: false, sample: true, error: runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
+        chatId: SAMPLE_CHAT, streamId: streamId, agentId: agentId || null, isTask: isTask,
+        workitemId: workitemId || null, replies: sampleReplies.slice(), runs: runs, delivered: null, totalUsd: totalUsd
+      });
+    }
+    return json(200, {
+      ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
+      agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,
+      replies: sampleReplies.slice(), runs: runs, delivered: delivered, totalUsd: totalUsd
+    });
+  } finally {
+    sampleInFlight = null;
+  }
 }
 
 /* ---- GET /api/budget/status — the live spend pools (day + global) vs their caps, plus session resume headroom.
@@ -8940,9 +9194,17 @@ async function handleCronRun(req, res) {
   // the raw cronEmit, so record explicitly here so BOTH fire paths land in the durable decision trail.
   recordAutonomy({ source: 'cron', kind: 'fire', jobId: job.id, agentId: job.agentId, runId: runId, binding: 'run-now', reason: 'manual' });
   placeCronWorkitem(job.agentId, job.prompt, runId);
+  // the dock's standing brief rides Run Now's system context too (inbox-trigger, 2026-08-05): Run Now must
+  // match the scheduled fire's posture exactly, brief included — same router.stageBrief seam, same section
+  // header as the hub's entry runs. Prompt text only; a brief never changes grants/tools/routing.
+  let runNowBrief = null;
+  try { runNowBrief = router.stageBrief(job.agentId); } catch (_) { runNowBrief = null; }
   try {
     await runOnce({
-      key: key, model: model, system: cronSystemFor(job.agentId), messages: [{ role: 'user', content: assembledPrompt }],
+      key: key, model: model,
+      system: cronSystemFor(job.agentId)
+        + (runNowBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(runNowBrief).slice(0, 2000) : ''),
+      messages: [{ role: 'user', content: assembledPrompt }],
       agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
       // streamId 'cron-'+runId matches the SCHEDULED fire (cron-driver.js): Run Now must persist its transcript
       // under the SAME per-run stream so the frontend cron-session (autosessions.js), which forms off the
@@ -10774,6 +11036,10 @@ async function handleRun(req, res) {
   // dressing — which buries a "reply with ONLY a 3-6 word title" instruction and makes models answer chattily),
   // and the away clock is never stamped for it: agent self-talk is not user presence (NS away-detection contract).
   const internal = !!(body && body.internal);
+  // …and the ONE exception to that bareness (rec perfection W2): a recommendation generator asks the model what
+  // this Commander should do next, so it may request the same bounded evidence pack an ordinary task run gets.
+  // Only meaningful alongside internal; runOnce ignores it otherwise.
+  const evidence = !!(body && body.evidence);
   const runProvider = normalizeProvider(provider);
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
@@ -10947,7 +11213,7 @@ async function handleRun(req, res) {
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
       key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
-      emit, signal: ac.signal, runId, trigger: 'directive', internal,
+      emit, signal: ac.signal, runId, trigger: 'directive', internal, evidence,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
       askCommander,            // in-turn clarify: brief.ask blocks + resumes the SAME turn on this watched surface
@@ -11110,7 +11376,9 @@ async function runOnce(o) {
   // remote desktop lease; no prompt text, task flag, stored approval, or generic API caller can manufacture it.
   const remoteDesktopAuthorized = ownerTrusted && DESKTOP_SHELL
     && /^(1|true|yes|on|win32|windows)$/i.test(String(ENV('COMPUTER_DRIVER') || '').trim());
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted, remoteDesktopAuthorized });
+  // masterBypass is read ONCE at run admission (authority objects are per-run and frozen); the consent broker
+  // below re-reads it per call, so turning FULL BYPASS OFF still bites mid-run at the consent tier.
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted, remoteDesktopAuthorized, masterBypass: masterBypassOn() });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -11799,7 +12067,9 @@ async function runOnce(o) {
   const consent = o.consent || makeConsentBroker({
     // An owner DM with approvals OFF is the Commander acting directly, so it never waits on a second approval
     // channel. If that chat explicitly enables approvals, preserve the chosen in-chat prompt behavior instead.
-    bypass: FULL_ACCESS || agentFullAccess || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
+    // a FUNCTION, re-read every call: the master FULL BYPASS switch must take effect — and revoke — on the
+    // very next tool call without a restart. The frozen env flag and the per-agent posture ride inside it.
+    bypass: () => FULL_ACCESS || masterBypassOn() || agentFullAccess || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist,
     /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
        is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
@@ -12577,8 +12847,24 @@ async function runOnce(o) {
   // pages of station doctrine and made models answer as a chatty station agent — the parser then rejected the
   // reply, so e.g. session titles silently stayed on their first-words placeholder.
   const directDomainBlock = directDomainTask ? '\n\n' + DomainTask.prompt(directDomainTask) : '';
+  /* ── THE EVIDENCE PACK FOR RECOMMENDATION GENERATORS (rec perfection W2, 2026-08-05) ───────────────────
+     `internal` keeps the caller's prompt verbatim, and the audit found what that cost: the three generators
+     that must GUESS what the Commander wants next (the First Pitch, the goal decomposition, the ongoing
+     suggestion) were reasoning from strictly LESS than an ordinary task run — the static dossier block in
+     their system prompt, and nothing else. No learned topics with their verbatim quotes, no open threads, no
+     verdict patterns, no recent activity, no active goal. The runs that need evidence most had the least.
+     `evidence:true` appends exactly the pack an ordinary task receives (commander-context.js — bounded,
+     provenance-labelled, "observed; weak; never override the current request"). Everything else about the
+     internal path is untouched: no manual, no capability summary, no skills, no memory fence, and no
+     recall-stat writes (those are gated on `internal` separately, below). It is APPENDED to the system prompt,
+     never inserted after the directive — the caller's strict-format instruction rides the user message and
+     must stay the last thing the model reads. Fail-open: a compose error leaves the prompt byte-identical. */
+  let evidenceBlock = '';
+  if (internal && o.evidence) {
+    try { const t = commanderEvidenceContext(system || ''); if (t) evidenceBlock = '\n\n' + t; } catch (_) { evidenceBlock = ''; }
+  }
   const sys = internal
-    ? String(system || '')
+    ? (String(system || '') + evidenceBlock)
     : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
@@ -13037,7 +13323,23 @@ function handlePermissionsList(req, res) {
     if (set && set.has('*')) blanket.push({ key: 'blanket:' + aid, agentId: aid, scope: 'watched sessions, until the app restarts' });
   }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket })));
+  // additive: the master FULL BYPASS switch + whether the boot env forces it (so the panel can say WHY the
+  // toggle is pinned on rather than rendering a switch that appears to do nothing).
+  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket, masterBypass: masterBypassOn(), envFullAccess: FULL_ACCESS })));
+}
+// POST /api/permissions/bypass { on } — flip the master FULL BYPASS switch. The click IS the consent: this
+// route is reachable only through the token-gated loopback API (a human in settings), never from a tool.
+// Fail-closed: a torn durable write returns ok:false and the previous state stands.
+async function handlePermissionsBypass(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const want = body && body.on === true;
+  try { setMasterBypass(want); }
+  catch (e) {
+    res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ok: false, reason: 'could not persist the bypass switch — state unchanged', masterBypass: masterBypassOn() }));
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, masterBypass: masterBypassOn(), envFullAccess: FULL_ACCESS }));
 }
 // POST /api/permissions/grant { key } — proactively PRE-BLESS a curated, LOCAL-only capability (cabinet:write)
 // so an autonomous run can use it with no mid-run prompt. Refuses any non-curated/exec/network class; fail-closed
@@ -13281,7 +13583,7 @@ async function handleAutonomyWrite(req, res) {
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
   const sessionKey = 'autowrite-' + crypto.randomUUID();
-  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce
+  const consent = makeConsentBroker({ bypass: () => FULL_ACCESS || masterBypassOn(), hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce; the master FULL BYPASS switch (like the env) covers this surface too
   const lifecycle = await agentLifecycle.acquireMutation(agentId, sessionKey);
   if (!lifecycle.ok) return sendJson(409, { ok: false, reason: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
   try {
@@ -13881,10 +14183,25 @@ async function handleChannelConnect(req, res) {
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   let started; try { started = startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  // Poll health is not DM readiness. A fresh bot rejects every ordinary DM until the authenticated local app
+  // pairs an owner, so return a new one-time command as part of connect instead of ending on a deaf false-green.
+  const live = (channelSecrets && channelSecrets.telegram) || {};
+  const pairingRequired = !live.ownerId;
+  const pairing = pairingRequired ? issueTelegramOwnerPairing(live) : { ok: true, persisted: !!(started && started.secretsPersisted) };
   // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status once
   // the transport proves the round-trip. Never assert connected here. `persisted` is the read-back-proven
   // config-write bit: false = live this session but may not survive a restart (never a false "saved").
-  json(200, { connected: !!telegramStatus.connected, state: telegramStatus.state, persisted: !!(started && started.secretsPersisted) });
+  const out = {
+    connected: !!telegramStatus.connected,
+    state: telegramStatus.state,
+    persisted: pairingRequired ? !!pairing.persisted : !!(started && started.secretsPersisted),
+    pairingRequired
+  };
+  if (pairingRequired && pairing.ok) {
+    out.pairingCode = pairing.code;
+    out.pairingExpiresAt = pairing.expiresAt;
+  } else if (pairingRequired) out.pairingError = pairing.error || 'could not issue an owner pairing code';
+  json(200, out);
 }
 
 // POST /api/channels/telegram/sync { agentId?, system?, model?, key?, provider?, agentName? } — refresh the agent identity
@@ -13939,8 +14256,10 @@ function handleChannelStatus(req, res) {
   // disk, not in the keychain) — which the durability fix prevents, but truthful telemetry must be able to say it.
   const durable = configured && (isChannelTokenDurable('telegram') || !!t.token);
   const pairing = ownerPairingStatus(t);
+  const ownerLocked = !!t.ownerId;
+  const acceptingDms = !!telegramStatus.connected && ownerLocked;
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', delivery: telegramStatus.delivery || { state: 'unknown', detail: '', at: 0 }, warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!t.ownerId, ownerPairingActive: pairing.active, ownerPairingExpiresAt: pairing.expiresAt, bots: telegramBotsStatusList() }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', delivery: telegramStatus.delivery || { state: 'unknown', detail: '', at: 0 }, warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked, acceptingDms, ownerPairingActive: pairing.active, ownerPairingExpiresAt: pairing.expiresAt, bots: telegramBotsStatusList() }));
 }
 
 // POST /api/channels/telegram/owner/pair -- mint a fresh local enrollment code. The raw code is in this one
@@ -13950,12 +14269,9 @@ async function handleTelegramOwnerPair(req, res) {
   const cur = (channelSecrets && channelSecrets.telegram) || {};
   if (!channelToken('telegram', '', cur)) return json(409, { error: 'connect the Telegram bot before pairing an owner' });
   if (cur.ownerId) return json(409, { error: 'an owner is already paired; revoke it locally before pairing a different account' });
-  const issued = telegramOwnerPairing.issue({ now: Date.now() });
-  const next = Object.assign({}, cur, { ownerPairing: issued.state });
-  channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
-  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
-  if (!persisted) return json(500, { error: 'could not save the pairing challenge; no code was issued' });
-  json(200, { code: issued.code, expiresAt: issued.state.expiresAt, persisted: true });
+  const pairing = issueTelegramOwnerPairing(cur);
+  if (!pairing.ok) return json(500, { error: pairing.error });
+  json(200, { code: pairing.code, expiresAt: pairing.expiresAt, persisted: true });
 }
 
 function restartTelegramAfterOwnerRevoke(rec) {
@@ -14170,10 +14486,12 @@ function telegramBotsStatusList() {
     const r = bots[bid] || {};
     const live = telegramBots.get(bid);
     const st = (live && live.status) || { connected: false, state: 'down', detail: '' };
+    const ownerLocked = !!r.ownerId;
+    const acceptingDms = !!st.connected && ownerLocked;
     return {
       botId: bid, username: String(r.username || ''), agentId: String(r.agentId || ''), agentName: String(r.name || ''),
       connected: !!st.connected, state: st.state || 'down', detail: st.detail || '', delivery: st.delivery || { state: 'unknown', detail: '', at: 0 },
-      configured: !!r.token, enabled: r.enabled !== false, ownerLocked: !!r.ownerId,
+      configured: !!r.token, enabled: r.enabled !== false, ownerLocked, acceptingDms,
       ownerPairingActive: ownerPairingStatus(r).active
     };
   });
@@ -14194,10 +14512,12 @@ function channelStatusPayload(id) {
   // A standing warning (e.g. a failed owner-binding persist) SELF-HEALS here: while it stands, each status poll
   // re-attempts the save and clears the warning the moment the disk agrees — so the line is never stale-pessimistic.
   if (channelWarn[id]) { try { if (saveChannelSecrets(channelSecrets)) channelWarn[id] = ''; } catch (_) {} }
+  const ownerLocked = !!rec.ownerId;
+  const acceptingDms = id === 'telegram' ? (!!st.connected && ownerLocked) : !!st.connected;
   const out = {
     id: id, connected: !!st.connected, configured: configured, durable: durable,
     state: st.state || 'down', detail: st.detail || '', delivery: id === 'telegram' ? (st.delivery || { state: 'unknown', detail: '', at: 0 }) : undefined, warning: String(channelWarn[id] || ''),
-    notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId,
+    notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked, acceptingDms,
     ownerPairingActive: id === 'telegram' && ownerPairingStatus(rec).active,
     ownerPairingExpiresAt: id === 'telegram' ? ownerPairingStatus(rec).expiresAt : 0,
     // the agent NAME the channel answers as (never a secret) — the panel renders "ANSWERS AS: <name>" so the

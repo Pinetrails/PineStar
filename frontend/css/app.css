@@ -696,6 +696,32 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .consent-btn:active { transform: translateY(1px); }
 .consent-btn:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .consent-btn:focus-visible { outline: none; color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: 0 0 8px var(--ph-glow2); }
+/* PRIMARY ACTION — at most ONE per card. Named friction (2026-08-04): every decision card rendered
+   its affirmative, its editor and its refusal as three identical outlined pills, so the eye had to
+   READ all three to find the "yes". The primary now carries a matte gold fill and reads first.
+   Matte law: the gradient spans 8% of the base tone, the top inset is .14, and hover is a FILL
+   change — never an outer glow. */
+.consent-btn.primary {
+  color: var(--ph-bright); border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+}
+.consent-btn.primary:hover,
+.consent-btn.primary:focus-visible {
+  color: var(--ph-bright); border-color: var(--gold); box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.30), rgba(var(--gold-rgb),.20));
+}
+/* QUIET SECONDARY — the third rank, below the ghost default. Named friction: the away digest put two
+   equally-weighted pills on every row, so three runs arrived as six identical buttons and the rows stopped
+   being distinguishable. The card's copy already states the order ("read each one, THEN rate it"), so the
+   later step recedes until it is earned. Chrome only — the control keeps its full hit area. */
+.consent-btn.quiet {
+  color: var(--ph-dim); border-color: rgba(var(--ph-rgb), .28); background: none;
+  box-shadow: none; text-shadow: none;
+}
+.consent-btn.quiet:hover, .consent-btn.quiet:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: none;
+}
 .consent-btn.danger { color: var(--gold); border-color: var(--gold); }
 .consent-btn.danger:hover { color: var(--ph-bright); background: rgba(var(--gold-rgb), 0.12); }
 .consent-btn.deny { color: var(--bad); border-color: var(--bad); }
@@ -799,7 +825,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   padding-bottom: 6px; margin-bottom: 1px;
   border-bottom: 1px solid rgba(var(--gold-rgb), .18);
 }
-.rec-item { gap: 5px 8px; }
+.rec-item { gap: 5px 8px; grid-template-columns: minmax(0, 1fr); }
+/* THE KIND RIDES THE EYEBROW. Named friction (2026-08-04): study / trust / thread all opened with the
+   same "◈ NOVA NOTICED" line, and the one word that says WHICH decision this is (WORKING STYLE / GRANT /
+   THREAD) sat four lines down as a chip in the item's first grid column — where it also crushed the
+   proposal into a narrow second column that wrapped mid-phrase. Lifted into the eyebrow it identifies
+   the card at a glance AND hands the proposal the card's full width. */
+.rec-kind { color: var(--gold); opacity: 1; letter-spacing: 2.2px; }
+.rec-who { opacity: .62; }
+.rec-eyebrow { opacity: 1; }
 /* the note ("raises the dial to FREE") is consequence, not evidence — it stays the dim aside it was. */
 .rec-item > .turnin-evidence { margin-top: 1px; }
 /* the ask itself carries the weight of a headline without any glow — matte CRT, not a web toast. */
@@ -816,56 +850,63 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* W3 — THE DELIVERY CARD (rendered inside the deliverable's OWN session, 2026-07-15). Rides the gold-inset
    turn-in family (.cmsg.turnin.workshop-return); a flat stack — headline, verify line, what/how lines, the
    Open-it action, the files pane, and one action row (optional message + Implement / Later / Discard). */
-.ws-verline { display:block; font-size:12px; letter-spacing:.3px; margin-top:-2px; }
+.ws-verline { display:block; font-size:13.5px; line-height:1.4; letter-spacing:.3px; margin-top:1px; }
 .ws-verline.ok { color:var(--gold); }
 .ws-verline.dim { color:var(--ph-dim); }
 /* the flat delivery card (2026-07-15, premium pass 2026-07-16): labeled sections in the dossier grammar —
    a gold uppercase micro-label over a bright value (the same ws-k/ws-v voice the config cards speak). */
-.workshop-return .ws-line { display:block; margin-top:2px; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
-.workshop-return .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1.2px; text-transform:uppercase; opacity:.92; margin-bottom:1px; }
+.workshop-return .ws-line { display:block; margin-top:4px; font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+.workshop-return .ws-k { display:block; color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; opacity:.92; margin-bottom:2px; }
 .workshop-return .ws-v { display:block; color:var(--ph-bright); }
-.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v, .workshop-return .ws-because .ws-v { color:var(--ph-dim); font-size:12.5px; }
+.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v, .workshop-return .ws-because .ws-v { color:var(--ph-dim); font-size:13.5px; line-height:1.45; }
 .workshop-return .ws-because .ws-v { font-style:italic; }   /* provenance reads as a quoted aside, not a claim */
 /* honest-brevity furniture (2026-07-17): verbose legacy manifests FOLD instead of walling — a quiet
    inline "+ more" reveal, and one gold-marked row per check-yourself item (the old semicolon join). */
-.workshop-return .ws-more { background:none; border:0; padding:0; margin-left:2px; font:inherit; font-size:11px;
+.workshop-return .ws-more { background:none; border:0; padding:0; margin-left:2px; font:inherit; font-size:12px;
   letter-spacing:.5px; color:var(--gold); cursor:pointer; opacity:.85; }
 .workshop-return .ws-more:hover { opacity:1; text-shadow:0 0 6px var(--ph-glow); }
-.workshop-return .ws-nvitem { display:block; padding-left:11px; position:relative; }
+.workshop-return .ws-nvitem { display:block; padding-left:13px; position:relative; }
 .workshop-return .ws-nvitem::before { content:'▸'; position:absolute; left:0; color:var(--gold); opacity:.7; }
 /* honest kind chip beside the headline — cf-badge vocabulary, gold edge */
-.ws-kindchip { margin-left:8px; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--gold);
+.ws-kindchip { margin-left:8px; font-size:11px; letter-spacing:1.4px; text-transform:uppercase; color:var(--gold);
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:2px; padding:0 5px; background:rgba(var(--gold-rgb),.06);
   vertical-align:2px; white-space:nowrap; }
 .ws-pane { min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
   border-radius:3px; padding:7px 8px; box-sizing:border-box; margin-top:7px; }
 /* disk-proven input-capture notice (validateWorkshopManifest.capturesInput) — shown above the Open-it action */
-.ws-capture-warn { display:block; margin-top:6px; font-size:12px; line-height:1.35; color:var(--gold);
+.ws-capture-warn { display:block; margin-top:6px; font-size:13px; line-height:1.42; color:var(--gold);
   background:rgba(var(--gold-rgb),.07); border:1px solid rgba(var(--gold-rgb),.35); border-radius:3px; padding:4px 7px; }
 .ws-try { margin-top:7px; }
 /* the HERO action — the one click that runs the deliverable. Gold, bloomed, unmistakably primary. */
-.consent-btn.ws-openit { color:var(--gold); border-color:var(--gold); font-size:13px; padding:4px 14px;
-  background:rgba(var(--gold-rgb),.07); box-shadow:0 0 10px rgba(var(--gold-rgb),.16);
-  transition:box-shadow var(--t-fast) var(--ease-soft), background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft); }
-.consent-btn.ws-openit:hover { color:var(--ph-bright); border-color:var(--gold); background:rgba(var(--gold-rgb),.16);
-  box-shadow:0 0 16px rgba(var(--gold-rgb),.34); }
+.consent-btn.ws-openit { color:var(--ph-bright); border-color:var(--gold); font-size:14px; padding:6px 16px;
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.22), rgba(var(--gold-rgb),.13));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.15), 0 1px 0 rgba(0,0,0,.35);
+  transition:background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft); }
+.consent-btn.ws-openit:hover { color:var(--ph-bright); border-color:var(--gold);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.32), rgba(var(--gold-rgb),.21));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.15), 0 1px 0 rgba(0,0,0,.35); }
 /* the ACCEPT action — gold means "this really implements"; a fallback save stays neutral by design */
-.consent-btn.ws-primary { color:var(--gold); border-color:var(--gold); background:rgba(var(--gold-rgb),.06);
-  box-shadow:0 0 8px rgba(var(--gold-rgb),.12); }
-.consent-btn.ws-primary:hover { color:var(--ph-bright); background:rgba(var(--gold-rgb),.15); box-shadow:0 0 12px rgba(var(--gold-rgb),.28); }
-.ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
-.ws-flist { display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
+.consent-btn.ws-primary { color:var(--ph-bright); border-color:var(--gold);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35); }
+.consent-btn.ws-primary:hover { color:var(--ph-bright);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.30), rgba(var(--gold-rgb),.20));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35); }
+.ws-fhead { color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; margin-bottom:6px; }
+.ws-flist { display:flex; flex-direction:column; gap:3px; margin-bottom:7px; }
 .ws-filerow { display:flex; align-items:center; gap:6px; }
 .ws-file { flex:1 1 auto; text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
-  font-family:inherit; font-size:12px; padding:2px 5px; cursor:pointer; overflow-wrap:anywhere; }
+  font-family:inherit; font-size:13.5px; padding:3px 5px; cursor:pointer; overflow-wrap:anywhere; }
 .ws-file:hover { border-color:var(--ph-glow2); color:var(--ph-bright); }
 .ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(var(--gold-rgb),.06); }
 /* W7: "view source" is the demoted, opt-in code reader — small and dim beside the primary open action. */
-.ws-viewsrc { flex:0 0 auto; background:none; border:none; color:var(--ph-glow2); font-family:inherit;
-  font-size:10px; letter-spacing:.5px; padding:2px 4px; cursor:pointer; opacity:.75; }
+/* demoted, but still READABLE — at .75 opacity on --ph-glow2 it had faded to near-invisible beside the
+   larger filenames, which is a hidden control, not a quiet one. */
+.ws-viewsrc { flex:0 0 auto; background:none; border:none; color:var(--ph-dim); font-family:inherit;
+  font-size:11px; letter-spacing:.5px; padding:2px 4px; cursor:pointer; opacity:.9; }
 .ws-viewsrc:hover { color:var(--ph-bright); opacity:1; text-decoration:underline; }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
-  border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
+  border-radius:2px; padding:7px 8px; color:var(--ph-bright); font-size:12.5px; line-height:1.45; white-space:pre-wrap;
   overflow-wrap:anywhere; }
 /* the decide row — separated from the evidence above by a gold hairline; it is the card's consent moment */
 .workshop-return .ws-acts { margin-top:9px; padding-top:9px; border-top:1px solid rgba(var(--gold-rgb),.22);
@@ -875,20 +916,20 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-msg { flex:1 1 200px; min-width:160px; width:auto; max-width:100%; }
 /* the pre-click consequence line ("implement → applies to a new branch in …") — an inset gold consent strip,
    the same left-edge voice as .cmsg.consent: this line IS the consent copy */
-.workshop-return .ws-plan { color:var(--gold); font-size:12px; line-height:1.4; margin-top:7px;
+.workshop-return .ws-plan { color:var(--gold); font-size:13px; line-height:1.45; margin-top:8px;
   border-left:2px solid var(--gold); border-radius:0 3px 3px 0; padding:5px 8px;
   background:rgba(var(--gold-rgb),.07); }
 /* copy-path / open-folder chips on the decided outcome line */
 .ws-destchips { display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle; }
 /* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
 .ws-verdetail { margin-top:6px; }
-.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
-.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; margin-bottom:4px; }
+.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
 .ws-vcmd .ws-vmark { flex:0 0 auto; }
 .ws-vcmd.ok  .ws-vmark { color:var(--gold); }
 .ws-vcmd.bad .ws-vmark { color:var(--bad); }
 .ws-vcmdtext { color:var(--ph-bright); font-family:inherit; }
-.ws-vexit { color:var(--bad); font-size:11px; }
+.ws-vexit { color:var(--bad); font-size:11.5px; }
 
 /* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
@@ -933,7 +974,31 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   padding: 8px 11px; margin: 6px 0 2px; border-radius: 0 5px 5px 0;
 }
 .cmsg.agent.nudge .who { display: none; }
-.cmsg.agent.nudge .body { color: var(--ph-bright); font-size: 14.5px; }
+.cmsg.agent.nudge .body { color: var(--ph-bright); font-size: 15px; }
+/* A MULTI-LINE NUDGE IS A LIST. The marker owns a fixed box so the prose column can hang — a wrapped
+   "✓ drafted the note — waiting in your outbox" now stays visibly ONE item instead of splitting into two
+   at the left margin. Width is set in px, never derived from font-size: ✓ ✗ ⚒ render from the fallback
+   face under VT323 and the two faces disagree (the symbol-glyph law). */
+.nudge-lines { display: flex; flex-direction: column; gap: 4px; }
+/* one column by default — an UNMARKED line is just a row of prose. The marker column is opt-in via .nl-mk,
+   which chat.js sets only when it actually rendered a marker; keying it off the marker CLASSES instead let a
+   nested-but-unmarked line claim the 14px column and crushed its text to one character per line. */
+.nudge-line { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 8px; align-items: start; line-height: 1.42; }
+.nudge-line.nl-mk { grid-template-columns: 14px minmax(0, 1fr); }
+.nudge-line .nl-m { display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 1.42em; flex: 0 0 14px; font-size: 12px; line-height: 1; letter-spacing: 0; color: var(--gold); }
+.nudge-line .nl-t { min-width: 0; overflow-wrap: anywhere; }
+/* the opening line is the claim the whole beat makes — it reads first */
+.nl-first .nl-t, .nl-head .nl-t { color: var(--ph-bright); }
+.nl-first, .nl-head { margin-bottom: 2px; }
+/* a completed act and a REFUSED one must never look alike on a truthfulness surface */
+.nl-yes .nl-m { color: var(--gold); }
+.nl-no .nl-m { color: var(--bad); }
+.nl-no .nl-t { color: var(--ph-dim); }
+.nl-build .nl-m, .nl-file .nl-m { color: var(--gold); }
+/* nested rows sit under their parent's PROSE column, not under its marker */
+.nudge-line.nl-sub { padding-left: 22px; }
+.nudge-line.nl-sub .nl-t { color: var(--ph); }
 
 /* RETIRING A SETTLED BEAT (chat.js vanish()): a decided memory card / answered nudge fades and collapses to
    nothing, then drops from the DOM — so the COMMS feed only ever holds the conversation and PENDING prompts,
@@ -1182,6 +1247,21 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   text-shadow: 0 0 6px var(--ph-glow2); white-space: pre-wrap; min-height: 2.4em;
   display: flex; align-items: center;
 }
+/* the read-gate cue: hidden until a narration beat finishes typing; the beat then waits for the
+   Commander, so the blink is an invitation, not a countdown. Blink dies under reduced motion. */
+.fnv-more { display: none; flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; user-select: none; }
+.fnv-more.show { display: block; animation: fnv-more-blink 1.2s steps(2, start) infinite; }
+.fnv-dialogue.no-anim .fnv-more.show { animation: none; }
+.fnv-dialogue.fnv-wait { cursor: pointer; }
+@keyframes fnv-more-blink { 50% { opacity: .3; } }
+/* the ink stamp: a quiet receipt that an answer just landed in the operating file. Dim phosphor,
+   smaller than the beat line, fades in/out — a ledger note, never a toast. */
+.fnv-ink {
+  flex: 0 0 auto; color: var(--ph-dim); font-size: 13px; letter-spacing: .5px; user-select: none;
+  opacity: 0; transition: opacity .5s ease; min-height: 1.2em; text-shadow: 0 0 4px var(--ph-glow2);
+}
+.fnv-ink.show { opacity: 1; }
+.fnv-dialogue.no-anim .fnv-ink { transition: none; }
 .fnv-opts { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; }
 .fnv-opt {
   display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
@@ -3159,10 +3239,15 @@ body.crew-rail-off #screen-game.active {
 /* The build panel — a full-height left sidebar in the station's premium window chrome.
    MODE (tool grid) is fixed at the top, OPTIONS is the ONE scroll region (the palette can
    grow forever — room kinds, the whole prop gallery), the hint is pinned at the foot. */
+/* Sized off the OVERLAY (100%), never the viewport (vh/vw): TEXT SIZE is a body zoom and a
+   vh length inside the zoomed subtree still computes against the REAL viewport — at AUTO
+   (115%) a vh-sized dock rendered ~15% past the glass and hid every palette's tail. The
+   overlay is inset:0, so 100% IS the glass in the dock's own (zoomed) coordinate space —
+   identical to 100vh at textScale 100. */
 .refit-dock {
   position: absolute; left: 14px; top: 54px; z-index: 2;
   display: flex; flex-direction: column; align-items: stretch;
-  width: min(306px, calc(100vw - 28px)); max-height: calc(100vh - 68px);
+  width: min(306px, calc(100% - 28px)); max-height: calc(100% - 68px);
   padding: 0; border-radius: 9px; overflow: hidden;
   background: var(--panel);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
@@ -3258,6 +3343,12 @@ body.crew-rail-off #screen-game.active {
   font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
 }
 .refit-searchnote.none { color: var(--bad); text-shadow: none; }
+/* SELECT (the default mode) has no palette — a quiet one-liner explains the click contract */
+.refit-selectnote {
+  width: 100%; margin: 4px 0 2px; font-size: 12px; letter-spacing: 1px; line-height: 1.35;
+  font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
+  white-space: normal;
+}
 /* The gallery's wrapper MUST claim the full column. .refit-palette is a wrapping FLEX row, so an
    undeclared child shrink-wraps to its content — and .refit-propgrid's own `width:100%` then resolves
    against that shrunken box, collapsing repeat(auto-fill, 84px) from four columns to ONE. Every other
@@ -3329,8 +3420,8 @@ body.crew-rail-off #screen-game.active {
    a recipe is not). Sized so six tiles of the bake fit at 1:1 — pixel art is never scaled. */
 /* FIXED 66px tracks (the prop gallery's idiom), sized so the 60px patch sits in its cell with no
    dead air — four across keeps ten materials to three rows, which is what stops the dock from
-   growing past the bottom of the screen. The dock's max-height is in `vh` but the whole overlay is
-   uiZoom-scaled, so a palette that merely fits on paper can still run off the glass. */
+   growing past the bottom of the screen. (The dock's max-height is now %-of-overlay, so it caps
+   correctly at every TEXT SIZE — but a short palette still beats a scrollbar.) */
 .refit-matgrid { display: grid; grid-template-columns: repeat(auto-fill, 66px); gap: 6px; width: 100%; }
 .refit-mattile {
   display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0;
@@ -3470,9 +3561,10 @@ body.crew-rail-off #screen-game.active {
 
 /* narrow screens: the panel becomes a bottom sheet — same zones, same single scroll region */
 @media (max-width: 760px) {
-  .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48vh, 380px); }
+  .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48%, 380px); }  /* % of the overlay, not vh — same zoom law as the desktop dock */
   .refit-dock-section { gap: 5px; padding: 7px 8px; }
   .refit-section-label { font-size: 10px; }
+  .refit-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .refit-tool { min-width: 0; font-size: 13px; }
   .refit-hint { min-height: 32px; }
 }
@@ -3538,14 +3630,33 @@ body.crew-rail-off #screen-game.active {
 .mc-enable input[type=checkbox] { margin: 0; }
 
 /* ===== TOOLSETS console: one CRT pill-switch row per capability family ===== */
+/* COMPUTE is the always-on core: seated INTO the panel (a well, not a raised tile) so it reads as
+   part of the chassis rather than as one more switchable row. Dashed edge keeps "not a control". */
 .ts-core { align-items: center; gap: 8px; border: 1px dashed var(--ph-dim); border-radius: var(--r-sm);
-  padding: 8px 10px; margin-bottom: 8px; background: rgba(0,0,0,.28); opacity: .85; }
+  padding: 9px 11px; margin-bottom: 8px; background: rgba(0,0,0,.30); box-shadow: var(--well); opacity: .9; }
+.ts-core .ts-glyph { color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
 .ts-core-tag { font-size: 10px; letter-spacing: 1.5px; color: var(--gold); border: 1px solid var(--gold);
   border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: middle; }
 #ts-list { display: flex; flex-direction: column; gap: 8px; }
+/* Same depth language as the front door and the catalog cards — one top-left light, matte. Scoped to
+   `.ts-row`/`.ts-core` and NOT the shared `.set-row`, which every other settings console also uses. */
 .ts-row { align-items: flex-start; gap: 8px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  padding: 8px 10px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  padding: 8px 10px; box-shadow: var(--raise); position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out);
   animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms); }
+/* the live spine: a lit edge on a granting toolset, dark on one that is off or inert. It states the
+   row's REAL state at a glance, which the checkbox alone only says up close. */
+.ts-row::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--ph); opacity: .55; transition: background var(--t-fast) var(--ease-out),
+  opacity var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out); }
+.ts-row:hover { border-color: var(--ph);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .09), rgba(0,0,0,.32) 62%);
+  box-shadow: var(--raise), 0 0 16px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.5); }
+.ts-row:hover::before { opacity: 1; box-shadow: 0 0 10px var(--ph-glow); }
+/* off or inert = the spine goes dark. Truthful telemetry, in the paint. */
+.ts-row.ts-off::before, .ts-row.ts-inert-row::before { background: var(--ph-dim); opacity: .35; box-shadow: none; }
 .ts-row > input[type=checkbox] { margin-top: 2px; }
 .ts-glyph { font-size: 15px; color: var(--ph); line-height: 1.4; flex: 0 0 auto; }
 .ts-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
@@ -3554,10 +3665,22 @@ body.crew-rail-off #screen-game.active {
 .ts-desc { font-size: 12px; }
 .ts-tag { font-size: 10px; letter-spacing: 1px; color: var(--warn); border: 1px solid var(--warn);
   border-radius: 3px; padding: 0 4px; }
-.ts-inert { display: block; font-size: 11px; color: var(--gold); margin-top: 3px; letter-spacing: .3px; }
+/* the inert notice now carries its own cure button, so it is a flex line rather than a bare block */
+.ts-inert { display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  font-size: 11px; color: var(--gold); margin-top: 3px; letter-spacing: .3px; }
+.ts-place { flex: 0 0 auto; }
+/* "+28 more" — a chip that reads as the continuation of the chip row it ends, not as a command button.
+   Dashed so it never competes with the real `.bb` actions elsewhere on the row. */
+.ts-more { font-family: inherit; font-size: 11px; letter-spacing: .5px; cursor: pointer;
+  color: var(--ph-dim); background: rgba(0,0,0,.4); border: 1px dashed var(--ph-dim);
+  border-radius: 4px; padding: 1px 6px; transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out); }
+.ts-more:hover { color: var(--ph-bright); border-color: var(--ph); }
 .ts-tools { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+/* each tool name is a key set into the row — recessed, so the chips read as an inventory strip
+   rather than as a row of buttons competing with the real actions */
 .ts-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px;
-  padding: 1px 5px; background: rgba(0,0,0,.4); }
+  padding: 1px 5px; background: rgba(0,0,0,.42);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.6), inset 0 -1px 0 rgba(var(--ph-bright-rgb), .04); }
 .ts-row.ts-off { opacity: .62; }
 .ts-row.ts-off .ts-name { color: var(--ph-dim); }
 .ts-row.ts-inert-row .ts-glyph { color: var(--ph-dim); }
@@ -3643,19 +3766,147 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
   border-radius: 3px; padding: 0 4px; margin-right: 4px; text-transform: uppercase;
 }
 
+/* ===== ABILITIES front door: "what are you trying to connect?" =====
+   Six routes above the panes. Styled as pressable rows rather than the card grid so it reads as a
+   MENU (pick one and move on), not as more content to study — the whole point is to be left behind. */
+/* ⛔⛔ LIFT WITH `translate`, NEVER `transform`. Every card here carries `animation: cardIn … both`,
+   and a FINISHED fill:both animation retains its final keyframe — `transform: translateY(0)` — which
+   outranks even an INLINE style (probed live: setting el.style.transform moved the box 0px). The old
+   `.ab-route:active { transform: translateY(1px) }` here was dead CSS for exactly that reason. The
+   independent `translate` property is a separate animatable property cardIn never touches, so it
+   composes freely (probed: a real 6px move). Same family as the `.cc-card.added` opacity trap. */
+
+/* The front door is seated in a RECESSED WELL — the station's own `--well` recipe — so the six routes
+   read as keys set into a console face rather than as six more paragraphs. Matte: an inset floor and
+   one top-left light, no specular sheen (`--glass` is the tube in front of the picture, not a panel). */
+.ab-router {
+  margin: 0 0 16px; padding: 12px 12px 13px; border-radius: var(--r-sm);
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px calc(3px * var(--cz, 1))),
+    linear-gradient(180deg, rgba(var(--ph-rgb), .045), transparent 62%),
+    rgba(0,0,0,.30);
+  box-shadow: var(--well);
+}
+.ab-router-q {
+  color: var(--ph-bright); letter-spacing: 2px; font-size: 15px; margin: 0 0 10px;
+  display: flex; align-items: center; gap: 9px; text-shadow: 0 0 8px var(--ph-glow);
+}
+/* a phosphor rule that fades out — the console's section grammar, not a new ornament */
+.ab-router-q::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--ph-dim), transparent);
+  opacity: .75;
+}
+.ab-router-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 7px; }
+.ab-route {
+  display: flex; align-items: flex-start; gap: 10px; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 13px; letter-spacing: .5px; padding: 9px 11px;
+  color: var(--ph); border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.34) 70%);
+  box-shadow: var(--raise);
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out);
+  animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms);
+  position: relative; overflow: hidden;
+}
+/* the spine: a dark phosphor edge that IGNITES on hover. One element, no extra markup. */
+.ab-route::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--ph-dim); opacity: .5;
+  transition: background var(--t-fast) var(--ease-out), opacity var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out);
+}
+.ab-route:hover {
+  border-color: var(--ph); color: var(--ph-bright);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .13), rgba(0,0,0,.30) 70%);
+  box-shadow: var(--raise), 0 0 18px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.55);
+  translate: 0 -1px;
+}
+.ab-route:hover::before { background: var(--ph); opacity: 1; box-shadow: 0 0 10px var(--ph-glow); }
+.ab-route:active { translate: 0 1px; box-shadow: var(--well); }
+.ab-route:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+/* the glyph sits on its own recessed KEY PLATE — the single strongest "this is hardware" cue here */
+.ab-route-glyph {
+  flex: 0 0 auto; font-size: 15px; line-height: 1; color: var(--ph);
+  width: calc(26px * var(--cz, 1)); height: calc(26px * var(--cz, 1));
+  display: grid; place-items: center; border-radius: 3px;
+  background: rgba(0,0,0,.42); box-shadow: var(--well);
+  text-shadow: 0 0 7px var(--ph-glow);
+  transition: color var(--t-fast) var(--ease-out), text-shadow var(--t-fast) var(--ease-out);
+}
+.ab-route:hover .ab-route-glyph { color: var(--ph-bright); text-shadow: 0 0 12px var(--ph-glow); }
+.ab-route-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ab-route-title { color: var(--ph-bright); letter-spacing: .5px; text-shadow: 0 0 6px var(--ph-glow2); }
+.ab-route-blurb { font-size: 11px; line-height: 1.45; letter-spacing: .2px; }
+.ab-route-blurb b { color: var(--ph); font-weight: normal; }
+/* the affordance carries the DESTINATION: › stays in this console, ↗ opens another window */
+.ab-route-go { flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; line-height: 1.3;
+  transition: color var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out); }
+.ab-route:hover .ab-route-go { color: var(--ph-bright); translate: 2px 0; }
+/* Searching means the Commander already named the thing — the results are the answer, so the
+   question stops taking up the top of the pane. */
+.con-searching .ab-router { display: none; }
+
 /* ===== CONNECTOR CATALOG: one-click, vetted MCP servers (browse-and-add cards) ===== */
 /* setup-type legend — color-coded to the per-card auth chips (green no-setup · gold key · dim OAUTH). Single-weight
    font, so no faux-bold; the color carries the emphasis. */
+/* tier filter — the legend's own vocabulary turned into controls. Each chip wears the colour of the
+   tier it selects, so the row reads as the legend it replaces rather than as a new set of buttons. */
+/* Seated in a recessed TRACK so the row reads as one segmented control — a single instrument with a
+   lit segment — instead of five loose buttons floating on the pane. */
+.cc-filters {
+  display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 10px;
+  padding: 4px; border-radius: var(--r-sm); width: fit-content; max-width: 100%;
+  background: rgba(0,0,0,.30); box-shadow: var(--well);
+}
+.cc-filter {
+  font-family: inherit; font-size: 11px; letter-spacing: 1px; cursor: pointer; text-transform: uppercase;
+  color: var(--ph-dim); background: transparent; border: 1px solid transparent;
+  border-radius: 3px; padding: 3px 10px;
+  transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+}
+.cc-filter:hover { color: var(--ph-bright); border-color: var(--ph-dim); background: rgba(var(--ph-rgb), .08); }
+.cc-filter:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+/* the selected chip inverts and BLOOMS — the same "this one is live" grammar the console rail uses,
+   plus the phosphor halo that says the segment is energised rather than merely filled */
+.cc-filter.active {
+  color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none;
+  box-shadow: 0 0 12px var(--ph-glow2), inset 0 1px 0 rgba(255,255,255,.14);
+}
+/* each tier chip carries its own tier colour (the `.cc-lg-*` rules below are scoped to `.cc-legend`,
+   so the filter row states them again rather than inheriting from prose it is not inside) */
+.cc-filter.cc-lg-none { color: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-lg-none.active { color: var(--ink); background: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-lg-key { color: var(--gold); border-color: var(--gold); }
+.cc-filter.cc-lg-key.active { color: var(--ink); background: var(--gold); border-color: var(--gold); }
+.cc-filter.cc-f-on { color: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-f-on.active { color: var(--ink); background: var(--ok); border-color: var(--ok); }
+
 .cc-legend .cc-lg-none { color: var(--ok); font-weight: normal; }
 .cc-legend .cc-lg-key { color: var(--gold); font-weight: normal; }
 .cc-legend .cc-lg-oauth { color: var(--ph-dim); font-weight: normal; letter-spacing: .5px; }
 .cc-list { display: flex; flex-direction: column; gap: 14px; margin: 4px 0 10px; }
 .cc-group { display: flex; flex-direction: column; gap: 8px; }
+/* ⛔ A CLASS THAT SETS `display` DEFEATS THE `hidden` ATTRIBUTE. The UA sheet's `[hidden]{display:none}`
+   is a bare type-less rule, so the `display:flex` on `.cc-card`/`.cc-group` outranks it: the tier filter
+   set `.hidden = true` on 28 of 37 cards and every one of them stayed painted. It read as working only
+   because the first category happens to be entirely one tier. Restate the rule at class specificity. */
+.cc-group[hidden], .cc-card[hidden] { display: none; }
 .cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 8px; }
 .cc-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  padding: 9px 11px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  padding: 9px 11px; box-shadow: var(--raise);
+  /* one top-left light: a faint phosphor wash at the head falling to the dark card floor */
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out);
   animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 28ms); }
-.cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); }
+/* lift on hover via `translate` — `transform` is retained by cardIn and cannot win (see the front-door note) */
+.cc-card:hover { border-color: var(--ph); translate: 0 -1px;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .10), rgba(0,0,0,.32) 62%);
+  box-shadow: var(--raise), 0 0 16px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.5); }
+/* a connected card is LIT, not merely outlined — the green edge plus its own faint halo */
+.cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok), 0 0 14px rgba(123,200,138,.16); }
 .cc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cc-head b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
 .cc-badge { font-size: 10px; letter-spacing: .5px; border-radius: 3px; padding: 0 4px; text-transform: uppercase; }
@@ -3671,6 +3922,44 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 /* "VIA <name>" jump landing: the aggregator card flashes gold — a MOMENT (same 2.4s gold-flash
    vocabulary as q-celebrate), never a lingering state. */
 .cc-card.cc-jump { border-color: var(--gold); animation: q-celebrate 2.4s ease-out 1; }
+
+/* ---- KEYS "PICK A PLATFORM" cards ----
+   These three classes shipped with NO RULE AT ALL. `.cc-top` is the KEYS directory's head row, and with
+   no `display:flex` its <b> and its tier chip collapsed together into one run of text: every card in the
+   directory rendered its name welded to its badge — "EtsyAPI key", "PrintfulAPI key". The cards also sat
+   in a bare `.cc-group` (no `.cc-grid`), so eleven of them stacked full-width down the pane while the
+   CATALOG's identical cards tiled three-up. Same card family, two different unstyled fates.
+   `.cc-top` mirrors `.cc-head` rather than aliasing it: the KEYS chip is a bordered tier badge that sits
+   hard right, where the catalog's `.cc-chip` is plain colour-coded text. */
+.cc-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cc-top b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
+.cc-tier { margin-left: auto; font-size: 10px; letter-spacing: .5px; white-space: nowrap;
+  border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+.cc-tier.cc-lg-none { color: var(--ok); }
+.cc-tier.cc-lg-key { color: var(--gold); }
+.cc-tier.cc-lg-oauth { color: var(--ph-dim); }
+/* An already-keyed platform is context, not an offer.
+   ⛔ NOT VIA `opacity`: `.cc-card` carries `animation: cardIn … both`, and cardIn's retained final
+   keyframe (`opacity:1`) BEATS any normal opacity declaration in the cascade — the rule computed to
+   1 and the state was invisible. Recede through colour + the same green edge `.cc-on` uses, which
+   are not animated, rather than adding an `!important` to out-shout the animation. */
+.cc-card.added { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); cursor: default; }
+.cc-card.added .cc-top b { color: var(--ph-dim); }
+.cc-card.added .cc-blurb, .cc-card.added .mc-url { color: var(--ph-dim); }
+/* …and it must not ANSWER the pointer. The depth pass gave every `.cc-card` a hover lift + phosphor
+   edge; inherited here it made an already-keyed platform rear up like an offer while `cursor:default`
+   said the opposite. A card that cannot be clicked must not animate as though it can. */
+.cc-card.added:hover { border-color: var(--ok); translate: none;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  box-shadow: var(--raise), inset 0 0 0 1px var(--ok); }
+/* the directory's own category strip. The CATALOG uses the full `.sec` rule here; KEYS emits a bare
+   label, so it gets the same engraved-label grammar without the rule/diamond furniture. */
+.cc-cat { color: var(--ph); letter-spacing: 2px; font-size: 12px; text-transform: uppercase;
+  margin: 2px 0 1px; opacity: .85; }
+/* the KEYS directory card is a PICK, so it must read as pressable — the catalog card is a container
+   whose button does the pressing. Hover lifts it the way the shared card language lifts everything else. */
+[data-ky-pick] { cursor: pointer; transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out); }
+[data-ky-pick]:hover:not(.added) { border-color: var(--ph); background: rgba(0,0,0,.5); }
 
 .rt-agent-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 5px; }
 .rt-agent-btn {
@@ -3886,13 +4175,101 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .con-sec-hidden { display: none; }
 .con-sec-head { margin-top: 2px; }
 /* the section's one-line self-explanatory description under its header */
+/* 86ch, not 62ch: a section desc sat in a ~50-character column while the `.set-about` paragraphs
+   directly beneath it ran the full pane width. Two prose blocks stacked against the same left margin
+   disagreeing about their measure is what read as broken layout — not the measure itself. Both are
+   capped together below so the column edge is consistent down the pane. */
 .con-sec-desc {
   color: var(--ph-dim); font-size: var(--fs-1); letter-spacing: var(--ls-1);
-  margin: -4px 0 12px; line-height: 1.4; max-width: 62ch;
+  margin: -4px 0 12px; line-height: 1.4; max-width: 86ch;
 }
+.con-sec-body .set-about { max-width: 86ch; }
 /* the section head is a click target only while searching (jump-to-section) */
 .con-searching .con-sec-head { cursor: pointer; }
 .con-searching .con-sec-head:hover .sec-l { color: var(--ph-bright); }
+/* ---------- SETTINGS ▸ PERMISSIONS ----------
+   The pane answers three questions in order (who asks first · how far it may go unattended · what is
+   already blessed), topped by the FULL BYPASS master switch. Before this block it was one undifferentiated
+   column of .set-row prose: block labels rendered at body weight, and because .set-row is display:block
+   the flip buttons sat INLINE after variable-length sentences — five ragged left edges, text touching the
+   button. These rules are scoped to the permissions ids/classes only; the shared .set-row / .key-list
+   vocabulary every other settings section uses is untouched. */
+/* The prose measure. NOT expressed in `ch`: VT323's advance is only ~4.8px, so a "92ch" that reads as a
+   sane 92-character measure in a proportional font resolves to 442px here — half of an 860px pane, which
+   left every paragraph orphaned against a wide empty gutter (live-measured 2026-08-05). Set in px, and
+   generous: the paragraphs fill the pane like every sibling settings section, and the cap only bites when
+   the console is dragged very wide. */
+:root { --perm-measure: 760px; }
+.perm-master {
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.35); border-radius: var(--r-sm); box-shadow: var(--raise);
+  padding: 10px 13px 11px; margin: 2px 0 6px;
+}
+/* ON is the loudest state in the product — the card says so with the alarm accent, not with more words. */
+.perm-master.on { border-left-color: var(--bad); box-shadow: var(--raise), 0 0 14px rgba(var(--bad-rgb), 0.16); }
+.perm-m-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.perm-m-title { font-size: 15px; color: var(--ph-bright); letter-spacing: 2px; }
+.perm-m-chip {
+  font-size: 10px; letter-spacing: 1px; padding: 1px 7px; border-radius: var(--r-sm);
+  border: 1px solid var(--ph-dim); color: var(--ph-dim);
+}
+.perm-m-chip.on { border-color: var(--bad); color: var(--bad); box-shadow: 0 0 8px rgba(var(--bad-rgb), 0.28); }
+.perm-m-desc { font-size: 12px; color: var(--ph-dim); line-height: 1.5; margin: 6px 0 9px; max-width: var(--perm-measure); }
+.perm-m-desc code { color: var(--ph); }
+.perm-m-act { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.perm-m-act .bb[disabled] { opacity: 0.5; pointer-events: none; }
+/* a refused flip reports AT the switch, in the error palette the rest of the app uses for a real failure */
+.perm-m-err {
+  font-size: 12px; line-height: 1.4; margin: 0 0 9px; padding: 6px 8px; color: #ffb0a8;
+  border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); border-radius: var(--r-sm);
+}
+.perm-m-floor {
+  font-size: 11px; color: var(--ph-dim); line-height: 1.4; margin: 0; padding-top: 8px;
+  border-top: 1px solid var(--ph-faint); max-width: var(--perm-measure); opacity: 0.85;
+}
+/* the per-agent APPROVAL list: name + state left, the flip button in its own right-aligned column */
+.perm-list { display: flex; flex-direction: column; gap: 5px; margin: 9px 0 10px; }
+.perm-agent {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.22); border-radius: var(--r-sm); padding: 6px 11px;
+}
+.perm-agent.full { border-left-color: var(--gold); }
+.perm-agent .pa-name { flex: 0 0 auto; min-width: 88px; color: var(--ph-bright); letter-spacing: 1px; font-size: 14px; }
+/* the MODE tag carries the state as a word, in a fixed column, so the list can be read down the
+   left edge without parsing five sentences (it replaced a ⚡/✋ pictograph — see paintApproval) */
+.perm-agent .pa-mode {
+  flex: 0 0 auto; min-width: 92px; font-size: 10px; letter-spacing: 1px;
+  color: var(--ph-dim); border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  padding: 1px 6px; text-align: center;
+}
+.perm-agent.full .pa-mode { color: var(--gold); border-color: rgba(var(--gold-rgb), 0.45); }
+.perm-agent .pa-state { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--ph-dim); line-height: 1.35; }
+.perm-agent .bb { flex: 0 0 auto; margin-left: auto; }
+/* the two whole-station switches sit clear of the row list they act on */
+.perm-allacts { margin-top: 10px; }
+/* the lede under each numbered header: same dim body copy, but measured and spaced as a paragraph
+   (.set-about alone carries a 12px top margin tuned for the bottom of a long section) */
+.set-about.perm-lede { margin: 0 0 9px; max-width: var(--perm-measure); line-height: 1.5; opacity: 0.62; }
+.set-about.perm-lede:empty { display: none; }
+/* The STANDING APPROVALS ledger speaks the SAME row language as the APPROVAL list above, so the two
+   lists read as one pane instead of "cards up top, loose prose down here". CSS-only: renderGrants keeps
+   emitting .set-row + a button, and :has() picks out exactly the rows that HAVE a control — the
+   "— pre-approve a capability —" separator and the teaching empty state stay plain text. */
+.perm-grants { margin-top: 2px; display: flex; flex-direction: column; gap: 5px; }
+.perm-grants .set-row:has(> .bb) {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.22); border-radius: var(--r-sm); padding: 6px 11px;
+}
+.perm-grants .set-row:has(> .bb) > span:first-child { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+.perm-grants .set-row:has(> .bb) > .bb { flex: 0 0 auto; margin-left: auto; }
+/* a standing FULL ACCESS wildcard is the broadest grant in the product — same alarm accent as the
+   master card, so it can never sit in the ledger looking like an ordinary row. */
+.perm-grants .set-row:has(> [data-perm-revoke^="blanket:"]) { border-left-color: var(--bad); }
+.perm-grants .set-about { margin-top: 4px; }
+.perm-grants .set-row:not(:has(> .bb)) { margin: 4px 0 0; opacity: 0.75; }
+
 /* while searching: every section is shown, non-matching rows fade, empty sections collapse their body */
 .con-searching .con-miss { opacity: .18; }
 .con-searching .con-sec-nomatch { display: none; }

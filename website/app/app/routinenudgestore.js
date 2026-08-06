@@ -1,8 +1,8 @@
 /* STARNET — routinenudgestore.js : the "you keep launching this — schedule it?" nudge (lane D).
 
    A recipe the Commander keeps hand-launching is a routine that hasn't been admitted yet. This store watches
-   the REAL per-recipe launch counters (ProspectStore.launches — the scout usage read) and, when a naturally-
-   recurring recipe (cadence != null) crosses the launch floor and has NO live routine, gently offers ONCE to
+   the REAL per-recipe launch counters (ProspectStore.launches — the scout usage read) and, when a recipe
+   crosses the launch floor and has NO live routine, gently offers ONCE to
    put it on a schedule. Accepting deep-links into the marketplace's SCHEDULE IT form (App.openRecipeLaunch:
    params prefilled by LaunchMemory, cadence preset, /api/cron/preview + the unattended-outbound warning all
    apply) — PROPOSE-AND-CONFIRM, never a silent cron write.
@@ -91,12 +91,42 @@ const RoutineNudgeStore = (() => {
       const u = launches[id];
       const n = (u && typeof u === 'object') ? u.n : u;
       if (!Number.isFinite(n) || n < LAUNCH_FLOOR) continue;
+      /* ⛔ LAUNCH COUNT IS NOT THE ONLY COUNTER ON RECORD (2026-08-05). This read `u.n` and nothing else, so a
+         recipe the Commander ran three times and rated 👎 all three times still earned "want this every day?" —
+         the station reading repetition as approval while its own rate-the-work verdicts said the opposite. The
+         usage store already keeps `rated.great` / `rated.miss` beside `n` (the FOR YOU ranker spends them).
+         A MISMATCH OF KIND MUST EXCLUDE, NOT DOWN-RANK (repo law): this offer is binary, so a miss-heavy
+         recipe is dropped outright rather than sorted below — there is no "slightly less" schedule to propose.
+         Miss-heavy = at least two misses AND no more praise than misses; one bad run, or a recipe that was
+         mostly liked, still qualifies. Malformed counters read as zero and change nothing. */
+      const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
+      const miss = (rated && Number.isFinite(rated.miss) && rated.miss > 0) ? Math.floor(rated.miss) : 0;
+      const great = (rated && Number.isFinite(rated.great) && rated.great > 0) ? Math.floor(rated.great) : 0;
+      if (miss >= 2 && miss >= great) continue;                       // the Commander already said this one misses
       if (scheduled[id]) continue;                                    // already a live routine
       const off = offers[id];
       if (off && (off.dismissed || (off.n || 0) >= OFFER_MAX)) continue;   // durably waved off / offered enough
       const r = Recipes.get(id);
-      if (!r || !r.cadence) continue;                                 // only naturally-recurring recipes earn this
-      if (!best || n > best.n) best = { id: id, name: r.name || id, n: Math.floor(n), cadence: r.cadence };
+      if (!r) continue;                                               // the recipe is gone (deleted custom) → nothing to schedule
+      /* THE CADENCE GATE IS GONE (2026-08-05) — it was a dead end, not a filter.
+         This used to require `r.cadence` (the CATALOG AUTHOR's suggestion). But the station's own self-growing
+         path — seedstore → Recipes.draft → saveCustom — mints every recipe with `cadence: null` (recipes.js
+         draft()), so an agent-authored recipe the Commander went on to launch eight times by hand could NEVER
+         earn "want it on a schedule?". The one recipe shape that PROVES a habit was the one shape structurally
+         excluded from the habit nudge.
+         The evidence for the offer was never the author's suggestion anyway — it is LAUNCH_FLOOR real
+         hand-launches, which is exactly what the nudge cites. Nothing here fabricates a schedule: the offer
+         states the count and nothing else, and accepting opens the SCHEDULE IT form where the Commander picks
+         the cadence and sees the live next-fire preview before anything is written (propose-and-confirm).
+         Launch SPACING is deliberately not inferred: the usage store keeps `n` and a single `lastAt`, so there
+         is no interval to compute, and guessing one from a lone timestamp would be the fabricated schedule this
+         lane exists to prevent. */
+      const cadence = r.cadence || null;
+      // ties break toward the recipe whose author DID declare a rhythm — a real corroborating signal, used only
+      // to order equally-launched candidates, never to admit or exclude one.
+      if (!best || n > best.n || (n === best.n && cadence && !best.cadence)) {
+        best = { id: id, name: r.name || id, n: Math.floor(n), cadence: cadence };
+      }
     }
     return best;
   }
@@ -117,10 +147,15 @@ const RoutineNudgeStore = (() => {
       [{ label: '▸ put it on a schedule', value: 'routine' }, { label: 'not now', value: 'no', skip: true }],
       choice => {
         if (handled) return; handled = true;
+        // THE OUTCOME LOOP (quality loop, Q2): scheduling opens the SCHEDULE IT form rather than launching a
+        // run, so the accept IS the outcome; a wave-off is real signal about this channel. Fail-open.
+        const rq = (typeof RecQualityStore !== 'undefined') ? RecQualityStore : null;
         if (choice && choice.value === 'routine') {
           if (typeof App !== 'undefined' && App.openRecipeLaunch) App.openRecipeLaunch(c.id, 'routine');
+          if (rq && rq.noteAccept) { try { rq.noteAccept({ channel: 'routine', spawnsWork: false, id: c.id }); } catch (_) {} }
         } else {
           markDismissed(c.id);   // an explicit "not now" is a decision — never offer this recipe again
+          if (rq && rq.noteDecline) { try { rq.noteDecline({ channel: 'routine' }, false); } catch (_) {} }
         }
       }
     );

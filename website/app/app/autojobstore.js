@@ -132,15 +132,20 @@ const AutoJobStore = (() => {
     try {
       let existing = [];
       try { existing = deps.getExistingJobs ? (await deps.getExistingJobs()) || [] : []; } catch (_) { existing = []; }
-      const directive = AutoJobs.buildProposalDirective({ beliefs: beliefs(), existingJobs: existing });
+      // ONE read of the beliefs, used TWICE: it grounds the directive, and it is the evidence pool the parse
+      // vetoes against. Reading it once is what makes those two the same set — a second read could drift.
+      const known = beliefs();
+      const directive = AutoJobs.buildProposalDirective({ beliefs: known, existingJobs: existing });
       const system = deps.getSystem ? deps.getSystem() : '';
       const name = deps.getName ? deps.getName() : 'AGENT';
 
       if (typeof Chat !== 'undefined' && Chat.clearNudge) Chat.clearNudge();   // retire any stale gentle nudge before the focused panel opens
       Dialogue.open({ name });
-      await Dialogue.say('give me a second — let me think about what would be worth running for you on a schedule…');
+      await Dialogue.say('give me a second — let me think about what would be worth running for you on a schedule…', { auto: true });   // latency patter — never gate a wait on a click
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
-      const proposals = (res && !res.error) ? AutoJobs.parseProposals(res.text) : [];
+      // THE GROUNDING VETO runs here: a proposal whose GROUNDS shares nothing with `known` is dropped, so an
+      // invented rationale can never become a cron job the station wakes to forever.
+      const proposals = (res && !res.error) ? AutoJobs.parseProposals(res.text, { beliefs: known }) : [];
       if (!proposals.length) {   // model hiccup / nothing groundable → say nothing useful, leave the flag UNSET so a later run can retry
         if (Dialogue.isOpen()) Dialogue.close();
         return { scheduled: 0 };
@@ -166,7 +171,12 @@ const AutoJobStore = (() => {
         if (!Dialogue.isOpen()) break;
         if (existsAmong(pr.title, live)) continue;   // already a live routine with this name — don't offer a dup
         const rid = 'routine:' + nameFp(pr.title) + ':' + Date.now();
-        ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'dossier', quote: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
+        /* GROUNDS IS THE MODEL'S OWN PROSE, NOT A QUOTE (2026-08-05). It went to the ledger as
+           `type:'dossier', quote:` — the evidence type that means "this is a verbatim thing the Commander's
+           own record says". autojobs.js parses GROUNDS out of the aux reply and V.grounded only checks that it
+           OVERLAPS what the station knows; the words are still the model's. Same mis-typing the suggest ledger
+           carried one file over, same fix: rationale/text. Both ledgerPosts in this file (here and pinProposals). */
+        ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'rationale', text: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
         const choice = await Dialogue.node({ lines: AutoJobs.proposalLines(pr), options: AutoJobs.approveChoices(), dismissable: true, dismissLabel: 'leave it — not now' });
         if (choice && choice.dismissed) { ledgerPost({ id: rid, state: 'deferred', reason: 'wrong_time' }); break; }
         if (choice && choice.value === 'yes' && deps.scheduleJob) {
@@ -204,7 +214,7 @@ const AutoJobStore = (() => {
         id: 'ajp_' + (Date.now().toString(36)) + '_' + (++pinSeq),
         recommendationId: rid, title: pr.title, why: pr.why || '', grounds: pr.grounds || '', cadenceId: pr.cadenceId, prompt: pr.prompt || '', at: Date.now()
       });
-      ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'dossier', quote: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
+      ledgerPost({ id: rid, surface: 'routine', kind: 'routine', title: pr.title, target: nameFp(pr.title), traits: ['routine', 'cadence:' + (pr.cadenceId || 'unknown')], evidence: [{ id: 'routine-grounds', type: 'rationale', text: pr.grounds || pr.why || '' }], readiness: { ready: true, reasons: [] }, modelVersion: 'autojobs-v2' });
       added++;
     }
     return added;

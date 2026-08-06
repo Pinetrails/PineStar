@@ -95,6 +95,19 @@ function makeRouter(o) {
     };
   }
 
+  /* THE STANDING BRIEF (step editor, 2026-08-05): the Commander's job brief for the dock this agent crews,
+     or null. PROMPT TEXT ONLY — it is injected into run prompts (hub entry runs, chain handoffs) and must
+     never influence resolveTarget/chainNext (routing) or stationFor (capability). Same plan precedence as
+     stationFor: a brief is a fact about the PLACED floor, true whether or not the belts compile — so it
+     reads the capability view (stationPlan || plan || capsPlan), and a broken belt graph can't strip it. */
+  function stageBrief(agentId) {
+    const p = stationPlan || plan || capsPlan;
+    if (!p || !agentId) return null;
+    const bay = (p.bays || []).find(b => b.agentId === agentId) || (p.dockBays || []).find(b => b.agentId === agentId);
+    const b = bay && typeof bay.brief === 'string' ? bay.brief.trim() : '';
+    return b ? b.slice(0, 2000) : null;
+  }
+
   /* THE CHAIN EDGE (agentic graphs): which agent does THIS dock's output hand off to? null = a terminal stage
      (its reply is the pipeline's answer) or no routing floor at all. Reads the same compiled plan and the same
      round-robin counters as resolveTarget, so a SPLIT downstream of a dock spreads exactly like one upstream —
@@ -106,7 +119,15 @@ function makeRouter(o) {
     return Pipeline.chainNext(p, agentId, ctx || {}, pick);
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, chainNext, stationFor };
+  // A clean model run is not necessarily a shipped work line. This reports whether the final dock's compiled
+  // outbound lane actually reaches OUTBOX rather than terminating at an open belt end.
+  function chainShipsToOutbox(agentId) {
+    const p = activePlan();
+    const rec = p && p.chains && p.chains[agentId];
+    return !!(rec && rec.outbox && !rec.deadEnd);
+  }
+
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, chainNext, chainShipsToOutbox, stationFor, stageBrief };
 }
 
 module.exports = { makeRouter };

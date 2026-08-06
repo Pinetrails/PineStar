@@ -49,15 +49,26 @@
   };
   function laneWord(lane) { return LANE_WORD[lane] || String(lane || '').toLowerCase(); }
 
-  // tokenize belief/goal text the same way marketplace.specGoalScore does (words >=3 chars, deduped).
+  /* THE ONE GOAL MATCHER (2026-08-05) — Recipes.goalKeywordHits, the same function the FOR YOU row and the bay's
+     specialist shelf now call. This file used to carry its own tokenizer with NO stoplist and a bare `indexOf`,
+     so a dossier sentence scored the W_DOSSIER term on function words ("you", "with", "want") and on fragments
+     buried inside longer words. The shared matcher is word-wise, stoplisted, suffix-aware, and reads only the
+     class's READABLE text (name + tagline + blurb) — never its tag keys, which are internal lane vocabulary.
+     Resolved LAZILY, never captured at load: index.html loads recruiter.js BEFORE recipes.js, so a load-time
+     binding would be null forever in the browser. No matcher available → NO dossier term (0), never a second
+     local matcher — a divergent fallback is exactly the drift this unification exists to end. */
+  const RECIPES_NODE = (typeof module !== 'undefined' && module.exports)
+    ? (() => { try { return require('./recipes.js'); } catch (_) { return null; } })()
+    : null;
+  function goalMatcher() {
+    const R = RECIPES_NODE || ((typeof globalThis !== 'undefined' && globalThis.Recipes) || null);
+    return (R && R.goalKeywordHits) ? R.goalKeywordHits : null;
+  }
   function keywordHits(cls, text) {
     if (!cls || !text) return 0;
-    const words = String(text).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
-    if (!words.length) return 0;
-    const seen = {}; let hits = 0;
-    const hay = ((cls.name || '') + ' ' + (cls.tagline || '') + ' ' + (cls.blurb || '') + ' ' + Object.keys(cls.tags || {}).join(' ')).toLowerCase();
-    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits++; }
-    return hits;
+    const hits = goalMatcher();
+    if (!hits) return 0;
+    return hits({ name: cls.name || '', tagline: cls.tagline || '', blurb: cls.blurb || '' }, text).length;
   }
 
   // the dominant interest tag of a class (its heaviest kit-agnostic tag weight) — for the coverage-gap test.
@@ -152,6 +163,10 @@
       // toward 1 as the sample count clears the floor. Honest 0..1 — never a fabricated high number on thin data.
       const share = clamp01(kitAff);                                    // 0..1 (the vector is normalized)
       const volume = clamp01(samples / (CAL_N * 4));                    // ramps to 1 at ~4x the floor
+      // 0.35 is an arbitrary FLOOR, chosen so a warm-but-thin read still reports something rather than ~0; the
+      // band it produces is 0.35..0.85, entirely below 1. recommend.js maps strength onto a [0.5..1] multiplier,
+      // so this number can only ever DISCOUNT the recruit candidate — it can never inflate one. That asymmetry
+      // is the honest reading and the reason the exact floor does not need defending.
       const confidence = clamp01(0.35 + 0.5 * share * (0.5 + 0.5 * volume));
 
       scored.push({ classId: cls.id, why, confidence,
@@ -214,7 +229,13 @@
       taken.add(best.cls.id);
       items.push({
         classId: best.cls.id,
-        why: 'you keep working on ' + String(topic.label) + (topic.count > 0 ? ' (seen ' + Math.floor(topic.count) + '×)' : '') + ' — nobody on the crew covers it',
+        // the same receipt the other topic-backed shelves now show, composed by the ONE helper that owns the
+        // clip and the speaker-neutral frame (TopicMatch.evidenceLine). The gap clause keeps the last word —
+        // it is the point of this shelf — so the quote sits behind the count it corroborates.
+        why: 'you keep working on ' + String(topic.label) + (topic.count > 0 ? ' (seen ' + Math.floor(topic.count) + '×)' : '') +
+             ((TopicMatch && TopicMatch.evidenceLine && Array.isArray(topic.evidence) && topic.evidence[0])
+               ? (' — ' + TopicMatch.evidenceLine(topic.evidence[0])) : '') +
+             ' — nobody on the crew covers it',
         topic: { label: String(topic.label), count: Math.floor(Number(topic.count) || 0), weight: round(topic.weight) },
         coverage: round(best.cov),
         evidence: (Array.isArray(topic.evidence) ? topic.evidence.slice(0, 1) : [])

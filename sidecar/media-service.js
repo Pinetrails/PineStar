@@ -17,6 +17,48 @@ const STT_PROMPT = 'Transcribe this audio verbatim. Output ONLY the transcribed 
 const STT_GROQ_MODEL = 'whisper-large-v3-turbo';
 const STT_OPENAI_MODEL = 'whisper-1';
 
+let oggOpusDecoderModulePromise = null;
+
+/* Telegram voice notes are Ogg/Opus. The offline Whisper pipeline consumes 16 kHz Float32 PCM, so decode
+   that container in-process instead of depending on a machine-global ffmpeg install. Keep the ESM decoder
+   lazy: a damaged/custom installation must still boot and can truthfully fall through to keyed STT. */
+async function oggOpusToMono16kFloat32(buf, loadModule) {
+  if (!Buffer.isBuffer(buf) || buf.length < 4 || buf.toString('latin1', 0, 4) !== 'OggS') {
+    throw new Error('unreadable Ogg/Opus audio');
+  }
+  const loader = typeof loadModule === 'function'
+    ? loadModule
+    : () => {
+        if (!oggOpusDecoderModulePromise) oggOpusDecoderModulePromise = import('ogg-opus-decoder');
+        return oggOpusDecoderModulePromise;
+      };
+  const mod = await loader();
+  if (!mod || typeof mod.OggOpusDecoder !== 'function') throw new Error('Ogg/Opus decoder is unavailable');
+  const decoder = new mod.OggOpusDecoder({ sampleRate: 16000 });
+  try {
+    await decoder.ready;
+    const decoded = await decoder.decodeFile(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+    const channels = Array.isArray(decoded && decoded.channelData) ? decoded.channelData : [];
+    const samples = Number(decoded && decoded.samplesDecoded) || 0;
+    if (!samples || !channels.length) {
+      const first = decoded && Array.isArray(decoded.errors) && decoded.errors[0];
+      throw new Error((first && first.message) || 'Ogg/Opus audio contained no decodable samples');
+    }
+    const usable = channels.filter(ch => ch && typeof ch.length === 'number');
+    if (!usable.length) throw new Error('Ogg/Opus audio contained no decodable channels');
+    const count = Math.min(samples, ...usable.map(ch => ch.length));
+    const mono = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      let sum = 0;
+      for (const ch of usable) sum += Number(ch[i]) || 0;
+      mono[i] = sum / usable.length;
+    }
+    return mono;
+  } finally {
+    try { decoder.free(); } catch (_) {}
+  }
+}
+
 function pcmToWav(pcm, sampleRate, channels) {
   const bits = 16;
   const blockAlign = channels * bits / 8;
@@ -105,6 +147,7 @@ function makeMediaService(options) {
   const processEnv = o.processEnv || {};
   const redact = typeof o.redact === 'function' ? o.redact : String;
   const logger = o.logger || console;
+  const decodeOggOpus = typeof o.decodeOggOpus === 'function' ? o.decodeOggOpus : oggOpusToMono16kFloat32;
   // The host owns wall time. A missing clock degrades deterministically instead of smuggling ambient time into
   // backend policy (tests and alternate compositions can then reproduce cache decisions exactly).
   const now = typeof o.now === 'function' ? o.now : (() => 0);
@@ -475,19 +518,21 @@ function makeMediaService(options) {
       }
     }
     if (localReady) {
-      if (/^wav$/i.test(format)) {
+      if (/^(?:wav|ogg|opus)$/i.test(format)) {
         try {
-          const pcm = wavToMono16kFloat32(audioBuf);
+          const pcm = /^wav$/i.test(format)
+            ? wavToMono16kFloat32(audioBuf)
+            : await decodeOggOpus(audioBuf);
           if (pcm) {
             const text = await localVoice.transcribe(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
             return { ok: true, text: String(text || '') };
           }
-          lastReason = 'local: unreadable wav';
+          lastReason = 'local: unreadable ' + format;
         } catch (error) { lastReason = 'local: ' + ((error && error.message) || error); }
       } else {
         lastReason = lastReason === 'no transcription'
-          ? 'local engine needs wav (got ' + format + ')'
-          : lastReason + '; local engine needs wav (got ' + format + ')';
+          ? 'local engine cannot decode ' + format
+          : lastReason + '; local engine cannot decode ' + format;
       }
     }
     return { ok: false, reason: lastReason };
@@ -613,6 +658,7 @@ module.exports = {
   makeMediaService,
   pcmToWav,
   wavToMono16kFloat32,
+  oggOpusToMono16kFloat32,
   sttMultipartBody,
   constants: { TTS_DEFAULT_MODEL, TTS_KEY_PROVIDERS, STT_MAX_BYTES, STT_GROQ_MODEL, STT_OPENAI_MODEL }
 };

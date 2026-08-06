@@ -227,6 +227,7 @@ const Marketplace = (() => {
     laneFilter = 'all'; catFilter = 'all'; query = '';
     lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
     recipeRuns = null;        // re-read the run log on every open: work done since the last visit shows up
+    invalidateFit();          // …and so does a folder granted or a channel connected in another panel since
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
@@ -1225,6 +1226,26 @@ const Marketplace = (() => {
     if (!t) return '';
     return (typeof Recommend !== 'undefined' && Recommend.whyLine) ? (Recommend.whyLine({ why: t }) || t) : t;
   }
+  /* ONE HEADER GRAMMAR TOO (2026-08-05). The bay's five recommender shelves had grown five headers under FOUR
+     different glyphs — ★ RECOMMENDED, ◆ CURATED, ◆ UNCOVERED, ✦ DRAFTED, ◈ FOR YOU — and not one of them named
+     the agent doing the noticing, while the COMMS offer card next door leads with '◈ <NAME> NOTICED'. Same
+     station, same act of noticing, five costumes. These are the SAME family now: one glyph, and the noticer is
+     named wherever the shelf genuinely noticed something.
+
+     ⛔ THE NOTICER CLAIM IS NOT DECORATION. A cold-start shelf noticed NOTHING — it is a lineup drawn in catalog
+     order — so it keeps the glyph and does NOT get the eyebrow. Stamping "NOTICED" on a spread would be the
+     header telling the same lie item 6 fixes one function below. `noticedHead` is for earned rows only. */
+  /* ⛔ THE NAME IS USER TEXT, AND THIS RETURN VALUE GOES STRAIGHT INTO innerHTML (2026-08-05). `ctx.agentName`
+     is whatever the Commander typed when they named the agent (app.js does not HTML-escape it on the way in),
+     and `.toUpperCase()` neuters nothing — `<img onerror=…>` uppercases to a tag that still parses. Five shelf
+     headers in this file compose through here; every sibling render around them already escapes. So does this
+     one now. The tails are literals today, but they ride esc() too so a future caller cannot re-open the hole. */
+  function noticedHead(tail) {
+    const n = String((ctx && ctx.agentName) || '').trim();
+    // mirrors chat.js recCard: the name when the station has one, a bare NOTICED when it does not.
+    return '◈ ' + (n ? esc(n.toUpperCase()) + ' NOTICED' : 'NOTICED') + (tail ? ' — ' + esc(tail) : '');
+  }
+  const coldHead = (tail) => '◈ ' + esc(tail);   // same glyph, no noticer claim
   function becauseText(s) {
     const ps = profileApi(); if (!ps || !ps.explain) return '';
     const t = ps.explain(s.tags || {});
@@ -1241,22 +1262,28 @@ const Marketplace = (() => {
      When BOTH signals are silent (cold start) we fall back to an HONEST lane spread — the first class of each
      distinct interest lane in catalog order — under a header that says so (never a fake "recommended"). This
      shelf now renders in the summon/pick flow too: recruiting a NEW agent is exactly when guidance matters. */
-  // common words carry no topic signal — matching a goal on "the" or "with" is noise, and (now that the WHY chip
-  // NAMES the hit) reads as a nonsense reason. Skipping them makes both the rank and the reason more honest.
-  const GOAL_STOP = new Set(['the', 'and', 'for', 'you', 'your', 'with', 'that', 'this', 'from', 'are', 'was', 'has',
-    'have', 'will', 'can', 'all', 'any', 'out', 'get', 'got', 'its', 'our', 'but', 'not', 'who', 'how', 'why', 'what',
-    'when', 'into', 'over', 'more', 'most', 'some', 'than', 'then', 'them', 'they', 'use', 'using', 'need', 'want',
-    'like', 'just', 'also', 'one', 'two', 'per', 'via']);
-  // the ACTUAL goal keywords a class matched (the persisted GOALS belief text ∩ the class's searchable text). The
+  /* ONE GOAL MATCHER FOR THE WHOLE STATION (2026-08-05). This file used to carry its own: a plain substring
+     scan over a haystack that INCLUDED `Object.keys(s.tags)`. Two artifacts followed, and both were visible on
+     the card. (a) the tag lanes are internal vocabulary — 'code'/'research'/'general' — so a goal containing the
+     word "general" scored a point against every general-lane class in the catalog and the WHY chip then quoted
+     it back as «it matches your goal: “general”». (b) a bare `indexOf` matched a FRAGMENT buried inside a longer
+     word ("for" inside "performance"). recipes.js:goalKeywordHits already fixed exactly this — word-wise tokens,
+     a stoplist, an explicit suffix set, and a READABLE-TEXT haystack (name + tagline + blurb, never tag keys) —
+     and its merge note recorded the unification as intended. So this delegates rather than duplicating: the bay
+     and the FOR YOU row can never again disagree about what "matches your goal" means.
+     Resolved LAZILY (never captured at load): recipes.js loads AFTER marketplace.js's dependencies are wired. */
+  function goalMatcher() {
+    return (typeof Recipes !== 'undefined' && Recipes && Recipes.goalKeywordHits) ? Recipes.goalKeywordHits : null;
+  }
+  // the ACTUAL goal keywords a class matched (the persisted GOALS belief text ∩ the class's READABLE text). The
   // WHY chip names hits[0] so it says WHY truthfully ("matches your goal: X") instead of ×3 boilerplate.
   function specGoalHits(s, gt) {
     if (!s || !gt) return [];
-    const words = String(gt).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !GOAL_STOP.has(w));
-    if (!words.length) return [];
-    const seen = {}; const hits = [];
-    const hay = ((s.name || '') + ' ' + (s.tagline || '') + ' ' + Object.keys(s.tags || {}).join(' ')).toLowerCase();
-    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits.push(w); }
-    return hits;
+    const hits = goalMatcher();
+    // no matcher loaded → NO goal term at all. Never a local fallback: a second matcher is how the two surfaces
+    // drifted in the first place, and a silent term is honest where a divergent one is not.
+    if (!hits) return [];
+    return hits({ name: s.name || '', tagline: s.tagline || '', blurb: s.blurb || '' }, gt);
   }
   function specGoalScore(s, gt) { return specGoalHits(s, gt).length; }
   function dominantLane(s) {
@@ -1283,7 +1310,9 @@ const Marketplace = (() => {
     const scoreFn = (learningOn && ps && ps.score) ? (t => ps.score(t)) : null;
     const gt = ready ? goalText() : '';
     const topics = learningOn ? learnedTopics() : [];   // same glass-box gate as the affinity scorer (see forYouShelfHTML)
-    const pool = (items || []).filter(s => s && s.id !== excludeId);
+    // the shared declined read gates the INPUT here too — a declined class never enters the rank, and both the
+    // personalized top-3 and the cold-start lane spread fill from the classes that remain.
+    const pool = (items || []).filter(s => s && s.id !== excludeId && !shelfDeclined(s.name));
     let anySignal = false;
     const scored = pool.map((s, idx) => {
       const aff = scoreFn ? (Number(scoreFn(s.tags || {})) || 0) : 0;
@@ -1313,6 +1342,45 @@ const Marketplace = (() => {
       return { s, why: whyGrammar('it covers the ' + lbl.toLowerCase() + ' lane') };
     }) };
   }
+  /* ── THE SHARED DECLINED MEMORY, ON THE SHELVES (one-memory lane, 2026-08-05) ──────────────────────────
+     Every personalized shelf here consults the ONE cross-surface declined read (RecLedger — the browser wire
+     into sidecar/recommendation-ledger.js) before it ranks: a class or recipe the Commander explicitly waved
+     off — here, at a COMMS card, anywhere — is not shown to them as a recommendation again. Exact normalized
+     name match only, the declinedindex.js bar; fail-open, so an unreachable ledger suppresses nothing.
+     LIBRARY vs SHELF, stated: the declined read gates only the RECOMMENDATION rows. The class stays in the
+     catalog and the recipe stays in the library — "stop recommending this" is not "hide this from me". */
+  let shelfDeclinedNow = null;   // names declined THIS session — covers the gap until the ledger read returns
+  let shelfShownClassIds = null; // classIds the recruit shelves above have already shown THIS paint (dedup)
+  function shelfNameKey(name) {
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.normKey) return RecLedger.normKey(name); } catch (_) {}
+    return String(name == null ? '' : name).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+  function shelfDeclined(name) {
+    const k = shelfNameKey(name);
+    if (!k) return false;
+    if (shelfDeclinedNow && shelfDeclinedNow.has(k)) return true;
+    try { return !!(typeof RecLedger !== 'undefined' && RecLedger.isDeclined && RecLedger.isDeclined(name)); } catch (_) {}
+    return false;
+  }
+  /* the ✕ on a shelf card. A verdict, not a deletion: it lands on the ledger row this card's impression minted
+     (ProspectStore.recommendationVerdict finds it by surface+target), teaches the preference model, joins the
+     cross-surface declined index the propose-time filters and the spine consult — and repaints, so the card is
+     gone the moment it was declined. When personalization is paused no row exists and nothing is recorded
+     durably; the session-set still hides the card, which is UX, not learning. */
+  function declineShelfItem(surface, id, name) {
+    try { if (typeof ProspectStore !== 'undefined' && ProspectStore.recommendationVerdict) ProspectStore.recommendationVerdict(surface, id, 'declined', 'not_relevant'); } catch (_) {}
+    if (!shelfDeclinedNow) shelfDeclinedNow = new Set();
+    const k = shelfNameKey(name);
+    if (k) shelfDeclinedNow.add(k);
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.refresh) RecLedger.refresh(true); } catch (_) {}
+  }
+  // the glyph itself — a span, because these cards are <button>s and a button may not nest one. Same ✕ the
+  // prospect/scout dismissals already use; matte, phosphor-dim until hover (never a white control).
+  function declineGlyphHTML(surface, id, name) {
+    return '<span class="mkt-rec-decline" role="button" tabindex="0" data-decline-surface="' + esc(surface) + '"' +
+      ' data-decline-id="' + esc(id) + '" data-decline-name="' + esc(name) + '"' +
+      ' aria-label="not interested — stop recommending this" title="not interested — stop recommending this">✕</span>';
+  }
   function trackRecommendation(surface, item, why, rank) {
     try {
       if (typeof ProspectStore === 'undefined' || !ProspectStore.noteRecommendation || !item) return;
@@ -1327,14 +1395,16 @@ const Marketplace = (() => {
     // the Commander actually does, with a why derived from a real persisted counter. The curated list already
     // excludes rostered classes and only surfaces classes the work TOUCHES, so it never fabricates a pick. When the
     // signal is cold/thin (or learning is off), fall through to today's honest rankSpecs shelf UNCHANGED.
+    shelfShownClassIds = new Set();   // fresh per paint — the gap shelf below dedups against what THIS render shows
     const curated = recruiterShelf();
     if (curated) return curated;
     const res = rankSpecs(Specialties.builtins(), ctx && ctx.currentSpecialtyId);
     if (!res.items.length) return '';
+    res.items.forEach(x => shelfShownClassIds.add(x.s.id));
     res.items.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     const head = res.personalized
-      ? '★ RECOMMENDED FOR YOU — based on your recent runs'
-      : '◈ STARTING LINEUP — one per lane while the station learns what you work on · this shelf changes as you use agents';
+      ? noticedHead('based on your recent runs')
+      : coldHead('STARTING LINEUP — one per lane while the station learns what you work on · this shelf changes as you use agents');
     return '<div class="mkt-sect-h mkt-rec-sect">' + head + '</div><div class="mkt-rec-rail">' +
       res.items.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
@@ -1345,12 +1415,17 @@ const Marketplace = (() => {
     let res; try { res = RecruiterStore.recommend(); } catch (_) { return ''; }
     if (!res || !res.warm || !res.items || !res.items.length) return '';
     const excludeId = ctx && ctx.currentSpecialtyId;
+    // …through the SAME grammar every other shelf and every COMMS offer card speaks. These two recruiter shelves
+    // rendered `it.why` raw, so the one place the bay names a REAL counter ("your recent work leaned on the web")
+    // was also the one place it forgot the "because" — two shelves side by side in different voices.
     const cards = res.items
-      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
-      .filter(x => x.s && x.s.id !== excludeId);
+      .map(it => ({ s: Specialties.get(it.classId), why: whyGrammar(it.why) }))
+      .filter(x => x.s && x.s.id !== excludeId && !shelfDeclined(x.s.name));   // the shared declined read
     if (!cards.length) return '';
+    cards.forEach(x => { if (shelfShownClassIds) shelfShownClassIds.add(x.s.id); });
     cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
-    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — based on your recent runs · the next hire your real work points to</div>' +
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">' +
+      noticedHead('the next hire your real work points to') + '</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- UNCOVERED: a warm learned topic NOBODY on the crew handles (2026-07-28) ----------
@@ -1365,11 +1440,17 @@ const Marketplace = (() => {
     if (!res || !res.items || !res.items.length) return '';
     const excludeId = ctx && ctx.currentSpecialtyId;
     const cards = res.items
-      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
-      .filter(x => x.s && x.s.id !== excludeId);
+      .map(it => ({ s: Specialties.get(it.classId), why: whyGrammar(it.why) }))
+      /* the shared declined read, PLUS the cross-shelf dedup (one-memory lane): the curated/lineup shelf just
+         above can rank the same class this shelf's gap points to, and two adjacent shelves recommending the same
+         hire back-to-back reads as the bay repeating itself. The shelf ABOVE keeps the card (its evidence names
+         the Commander's own work, the stronger claim); this one shows its next-best uncovered topic instead. */
+      .filter(x => x.s && x.s.id !== excludeId && !shelfDeclined(x.s.name)
+        && !(shelfShownClassIds && shelfShownClassIds.has(x.s.id)));
     if (!cards.length) return '';
     cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
-    return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">◆ UNCOVERED — work you keep doing that nobody on the crew handles</div>' +
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">' +
+      noticedHead('work you keep doing that nobody on the crew handles') + '</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- PROSPECTS: bespoke DRAFTS the station authored from the Commander's real work (Slice 4) ----------
@@ -1381,7 +1462,10 @@ const Marketplace = (() => {
     if (typeof ProspectStore === 'undefined' || !ProspectStore.list) return '';
     let items = []; try { items = ProspectStore.list() || []; } catch (_) { return ''; }
     if (!items.length) return '';
-    return '<div class="mkt-sect-h mkt-rec-sect mkt-prospect-sect">✦ DRAFTED FOR YOU — new roles the station authored from your work</div>' +
+    // one glyph with the rest of the family; the VERB stays "drafted" because that is what actually happened —
+    // these are specs the station wrote, not catalog classes it ranked.
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-prospect-sect">' +
+      noticedHead('new roles the station drafted from your work') + '</div>' +
       '<div class="mkt-rec-rail">' + items.map(prospectCardHTML).join('') + '</div>';
   }
   function prospectCardHTML(p) {
@@ -1434,7 +1518,18 @@ const Marketplace = (() => {
     // visits repeat two of three cards and it takes twelve visits to see the whole library. Striding by 3
     // makes each visit a disjoint set and surfaces all twelve buckets in four. This shelf exists for someone
     // who cannot yet name a use case, so three NEW domains beats one new and two they already skipped.
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 });
+    const rankOpts = { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 };
+    // ASK THE RANKER WHAT IT ACTUALLY DID. `ready` only says the station has learned enough to be asked; it does
+    // NOT say this row used any of it. A ready Commander whose profile, goals, launches and topics all come up
+    // silent gets a catalog-order category spread — and used to get "◈ FOR YOU" printed over it.
+    // the shared declined read gates the INPUT (see readyShelfHTML): a declined recipe never enters the rank,
+    // and the ranker's own spread/top-up keeps the row at three from the recipes that remain — the FOR YOU
+    // shelf-sink law (a negative term must never EMPTY the shelf) holds because this excludes, never down-ranks.
+    const pool = Recipes.list().filter(r => !shelfDeclined(r && r.name));
+    const ranked = Recipes.rankRecipesExplained
+      ? Recipes.rankRecipesExplained(pool, rankOpts)
+      : { items: Recipes.rankRecipes(pool, rankOpts), personalized: false };
+    const items = ranked.items;
     if (!items || !items.length) return '';
     // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
     // shelf blends four real signals and used to explain NONE of them — every other shelf in the bay names its
@@ -1447,7 +1542,22 @@ const Marketplace = (() => {
       // the COMMS offer cards do (recommend.js whyLine). Fail-open — the raw reason if the spine isn't loaded.
       return whyGrammar(raw);
     };
-    const head = ready ? '◈ FOR YOU' : '◈ STARTING POINTS — a varied lineup while the station gets to know you';
+    /* the header may claim this row is FOR THEM only when a real term produced it (and readiness still gates the
+       whole personalized read, so both must hold).
+
+       ⛔ AND THE CLAIM IS SIZED TO THE ROW, NOT TO THE BOOLEAN (2026-08-05). `personalized` goes true on ONE real
+       hit, and rankRecipesExplained then TOPS THE ROW UP from the same cold-start category spread — filler cards
+       that carry no why at all, because nothing about them is about this Commander. The plural whole-row claim
+       "picked from your real work" therefore sat over two catalog cards the station had never seen touched: the
+       honest-header fix, still overclaiming one path down. Three states, one per thing that actually happened. */
+    const scored = Number.isFinite(ranked.scored) ? ranked.scored : (ranked.personalized ? items.length : 0);
+    const head = !(ready && ranked.personalized)
+      ? coldHead('STARTING POINTS — a varied lineup while the station gets to know you')
+      : (scored >= items.length)
+        ? noticedHead('picked from your real work')
+        : noticedHead(scored === 1
+          ? 'one pick from your real work, plus starting points'
+          : scored + ' picks from your real work, plus starting points');
     items.forEach((r, i) => trackRecommendation('recipe', r, reasonFor(r), i + 1));
     return '<div class="mkt-sect-h mkt-foryou-sect">' + head + '</div><div class="mkt-rec-rail">' +
       items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
@@ -1465,40 +1575,72 @@ const Marketplace = (() => {
 
      ⛔ AND IT NEVER BLOCKS THE PAINT. Every input is read from an already-cached best-effort fetch; a
      sidecar that is down means a smaller shelf or none, never a stalled tab. */
+  /* ⛔ AND A FAILURE MUST STAY RETRYABLE (2026-08-05). Both caches used to `.catch(() => { fitX = fitX || []; })`,
+     and `[]` is TRUTHY — so the `if (fitX) return` guard above short-circuited every later call. ONE transient
+     /api/projects hiccup (a sidecar restart, a slow first paint) therefore killed the READY shelf for the rest of
+     the session: RecipeFit was handed zero projects forever, decided the station knows nothing about its
+     Commander, and correctly rendered nothing. The shelf did not look broken — it looked EMPTY, which is its own
+     honest state, so the bug is invisible. This file already documents the exact fix twenty lines into the module
+     (loadSkillCatalog: leave the cache null, clear the in-flight marker, return an empty value for THIS call so
+     the current paint degrades instead of throwing); these two are now the same shape.
+
+     Invalidation is the other half: a Commander who grants a folder or connects a channel does it in ANOTHER
+     panel and comes BACK to the bay, so re-opening the bay drops both caches (invalidateFit, called from open()).
+     A stale-forever "ready" shelf is the same lie as an empty one.
+
+     ⛔ AND INVALIDATION MUST DROP THE IN-FLIGHT FETCH TOO (2026-08-05). It nulled the two CACHES and left the
+     two PENDING markers standing, which is only half a drop and produced the same stale shelf by a longer route:
+     grant a folder while a /api/projects fetch from the previous open is still in the air → invalidateFit()
+     clears the cache → the OLD promise resolves and writes its pre-grant rows straight back in → the READY shelf
+     is authoritatively stale, and stays that way until a THIRD open. Worse, a caller that arrived between the
+     invalidate and the resolve was handed the retained promise and got the pre-grant answer with no fetch of its
+     own. So invalidation clears the markers AND bumps a generation token: a resolve from a superseded generation
+     may answer ITS OWN caller (that request really did happen) but may not write through to the cache or touch
+     the markers a newer fetch now owns. */
   let fitProjects = null, fitProjectsPending = null, fitChannels = null, fitChannelsPending = null;
+  let fitGen = 0;   // bumped on every invalidation; a resolve carrying an older token cannot write through
+  function invalidateFit() { fitProjects = null; fitChannels = null; fitProjectsPending = null; fitChannelsPending = null; fitGen++; }
   function loadFitProjects() {
     if (fitProjects) return Promise.resolve(fitProjects);
     if (fitProjectsPending) return fitProjectsPending;
-    fitProjectsPending = fetch('/api/projects', { cache: 'no-store' })
+    const gen = fitGen;
+    const p = fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : { projects: [] })
       .then(d => {
-        fitProjects = (Array.isArray(d && d.projects) ? d.projects : []).map(p => ({
-          root: String((p && (p.root || p.path)) || ''),
-          name: String((p && (p.name || p.label)) || '') || basenameOf(String((p && (p.root || p.path)) || '')),
+        const rows = (Array.isArray(d && d.projects) ? d.projects : []).map(p2 => ({
+          root: String((p2 && (p2.root || p2.path)) || ''),
+          name: String((p2 && (p2.name || p2.label)) || '') || basenameOf(String((p2 && (p2.root || p2.path)) || '')),
           // REAL evidence about what KIND of folder this is — the projects API already computes it. Without it
           // the shelf cannot tell a code repo from a folder of invoices and offers 'PR Sweep' against either.
-          git: !!(p && p.isGitRepo)
-        })).filter(p => p.root);
-        fitProjectsPending = null; return fitProjects;
+          git: !!(p2 && p2.isGitRepo)
+        })).filter(p2 => p2.root);
+        if (gen !== fitGen) return rows;                 // superseded: answer this caller, write through NOTHING
+        fitProjects = rows; fitProjectsPending = null; return fitProjects;
       })
-      .catch(() => { fitProjects = fitProjects || []; fitProjectsPending = null; return fitProjects; });
-    return fitProjectsPending;
+      // retryable: leave fitProjects NULL (an empty array would be truthy and cache the failure forever).
+      .catch(() => { if (gen === fitGen) fitProjectsPending = null; return fitProjects || []; });
+    fitProjectsPending = p;
+    return p;
   }
   function loadFitChannels() {
     if (fitChannels) return Promise.resolve(fitChannels);
     if (fitChannelsPending) return fitChannelsPending;
-    fitChannelsPending = fetch('/api/connectors', { cache: 'no-store' })
+    const gen = fitGen;
+    const p = fetch('/api/connectors', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : { connectors: [] })
       .then(d => {
-        const rows = Array.isArray(d && d.connectors) ? d.connectors : (Array.isArray(d && d.items) ? d.items : []);
+        const raw = Array.isArray(d && d.connectors) ? d.connectors : (Array.isArray(d && d.items) ? d.items : []);
         // CONNECTED only — a configured-but-broken connector cannot be cited as a reason the station is ready.
-        fitChannels = rows.filter(c => c && c.connected !== false && c.status !== 'error')
+        const rows = raw.filter(c => c && c.connected !== false && c.status !== 'error')
           .map(c => ({ id: String((c && c.id) || ''), label: String((c && (c.label || c.name || c.kind || c.id)) || '') }))
           .filter(c => c.label);
-        fitChannelsPending = null; return fitChannels;
+        if (gen !== fitGen) return rows;                 // superseded: answer this caller, write through NOTHING
+        fitChannels = rows; fitChannelsPending = null; return fitChannels;
       })
-      .catch(() => { fitChannels = fitChannels || []; fitChannelsPending = null; return fitChannels; });
-    return fitChannelsPending;
+      // retryable: leave fitChannels NULL — same reason (see the note above the cache declarations).
+      .catch(() => { if (gen === fitGen) fitChannelsPending = null; return fitChannels || []; });
+    fitChannelsPending = p;
+    return p;
   }
   function basenameOf(p) { const s = String(p || '').replace(/[\\/]+$/, ''); const i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\')); return i >= 0 ? s.slice(i + 1) : s; }
 
@@ -1527,7 +1669,9 @@ const Marketplace = (() => {
     let offers = [];
     // SIX, not three: READY now replaces the cold-start row rather than stacking above it, so it can spend the
     // two rows that row was using. Kept to a multiple of the 3-column rail so the grid never leaves an orphan.
-    try { offers = RecipeFit.offers(Recipes.list(), ctx, { limit: 6 }) || []; } catch (_) { offers = []; }
+    // the shared declined read gates the INPUT, so the fit engine ranks over the eligible pool and the shelf
+    // stays as full as the context allows (a post-rank filter would shrink it below its limit instead).
+    try { offers = RecipeFit.offers(Recipes.list().filter(r => !shelfDeclined(r && r.name)), ctx, { limit: 6 }) || []; } catch (_) { offers = []; }
     if (!offers.length) return '';
     // stash the context-derived values by id so the launch form can prefill from them (see launchFormHTML).
     // Rebuilt from scratch on every shelf render, so a stale binding can never outlive the context that made it.
@@ -1552,6 +1696,7 @@ const Marketplace = (() => {
     const fill = (o.bound || []).length
       ? '<div class="mkt-ready-fill">↳ fills in ' + esc((o.bound || []).map(b => b.key + ': ' + b.label).join(' · ')) + '</div>' : '';
     return '<button class="mkt-rec mkt-foryou mkt-ready-card" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      declineGlyphHTML('recipe', r.id, r.name) +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
       '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + cad +
@@ -1587,6 +1732,7 @@ const Marketplace = (() => {
   function forYouCardHTML(r, why) {
     const cat = CAT_LABEL[railBucket(r)] || 'GENERAL';
     return '<button class="mkt-rec mkt-foryou" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      declineGlyphHTML('recipe', r.id, r.name) +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
       '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(cat) + '</span>' + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') +
@@ -1595,6 +1741,7 @@ const Marketplace = (() => {
   function recCardHTML(s, why) {
     // `why` comes from rankSpecs: the profile-affinity reason, a goal-match note, or the cold-start lane label
     return '<button class="mkt-rec" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
+      declineGlyphHTML('recruit', s.id, s.name) +
       '<div class="mkt-rec-top">' + sealHTML(s, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(s.name) + '</div><div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div></div>' +
       (why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(why) + '</div>' : '') + '</button>';
@@ -1754,6 +1901,18 @@ const Marketplace = (() => {
   function wireRoster(stage) {
     stage.querySelectorAll('.mkt-card').forEach(b => b.addEventListener('click', () => focusFromCard(b.dataset.id)));
     stage.querySelectorAll('.mkt-rec[data-id]').forEach(b => b.addEventListener('click', () => focusFromCard(b.dataset.id)));
+    /* the shelf-card ✕ (one-memory lane): a span inside the card <button>, so its click must stop before the
+       card's own open handler above sees it. Keyboard parity because role="button" promises it. The repaint is
+       immediate — the declined card vanishes and the shelf refills from what remains. */
+    stage.querySelectorAll('.mkt-rec-decline').forEach(x => {
+      const fire = (ev) => {
+        ev.stopPropagation(); ev.preventDefault();
+        declineShelfItem(x.dataset.declineSurface, x.dataset.declineId, x.dataset.declineName);
+        sfx('click'); renderStage();
+      };
+      x.addEventListener('click', fire);
+      x.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') fire(ev); });
+    });
 
     const saveas = stage.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; renderStage(); });
