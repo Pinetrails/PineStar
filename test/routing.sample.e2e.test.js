@@ -58,6 +58,10 @@ function startMockOpenRouter(script) {
           let parsed = null;
           try { parsed = JSON.parse(body); requests.push(parsed); } catch (_) {}
           const turn = decide(parsed);
+          if (turn.status) {
+            res.writeHead(turn.status, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: { message: turn.error || 'mock provider failure' } }));
+          }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           if (turn.tool) {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: turn.tool.name, arguments: JSON.stringify(turn.tool.args) } }] } }] }) + '\n\n');
@@ -158,6 +162,9 @@ function twoStagePlan() {
 (async () => {
   const mock = await startMockOpenRouter([
     // order is load-bearing (script.find takes the FIRST match; later texts contain earlier phrases):
+    { when: 'empty downstream payload', text: '' },
+    { when: 'force clean early stop', text: 'empty downstream payload' },
+    { when: 'force provider failure', status: 500, error: 'forced provider failure' },
     { when: 'use the shell', tool: { name: 'shell.exec', args: { cmd: 'echo pwned' } } },
     { when: 'stage one findings', text: 'final sample answer' },   // the hop's handoff prompt carries stage one's output
     { when: 'sample job', text: 'stage one findings' }             // the entry dock's own turn
@@ -252,6 +259,25 @@ function twoStagePlan() {
     const v2 = Events.validate('workitem.delivered', outDel);
     A.ok(v1.ok, 'workitem.placed with sample:true validates against the frozen contract: ' + JSON.stringify(v1.errors));
     A.ok(v2.ok, 'workitem.delivered with sample:true validates against the frozen contract: ' + JSON.stringify(v2.errors));
+
+    /* ---- 3c. PROVIDER FAILURE is a failed proof, never a delivered crate. ---- */
+    const failed = await post({ text: 'SAMPLE JOB: force provider failure.' });
+    A.eq(failed.status, 502, 'provider failure returns a truthful gateway failure');
+    A.eq(failed.j.ok, false, 'provider failure says ok:false');
+    A.eq(failed.j.delivered, null, 'provider failure cannot claim a durable delivered run');
+    A.ok((failed.j.runs || []).some(r => r.reason === 'error'), 'the failure response includes its durable error run');
+    await sse.settle(500);
+    A.ok(!sse.events.some(e => e.name === 'workitem.delivered' && e.payload && e.payload.workitemId === failed.j.workitemId), 'the failed crate never emits workitem.delivered');
+    A.ok(!sse.events.some(e => e.name === 'workitem.superseded' && e.payload && e.payload.workitemId === failed.j.workitemId), 'provider failure is not falsely labeled as a supersede');
+
+    const early = await post({ text: 'SAMPLE JOB: force clean early stop.' });
+    A.eq(early.status, 502, 'a clean durable run that stops before OUTBOX is still a failed proof');
+    A.eq(early.j.ok, false, 'clean early stop says ok:false');
+    A.ok((early.j.runs || []).length >= 2 && early.j.runs.every(r => r.reason === 'done'), 'early-stop repro has only clean durable runs');
+    A.eq(early.j.delivered, null, 'clean early stop cannot claim an OUTBOX delivery');
+    await sse.settle(500);
+    A.ok(!sse.events.some(e => e.name === 'workitem.delivered' && e.payload && e.payload.workitemId === early.j.workitemId), 'clean early-stop crate never emits OUTBOX delivery');
+    A.ok(!sse.events.some(e => e.name === 'workitem.superseded' && e.payload && e.payload.workitemId === early.j.workitemId), 'clean early stop is not falsely labeled as a supersede');
 
     /* ---- 4. ONE in flight per station ---- */
     const p1 = post({});

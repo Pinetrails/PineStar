@@ -2762,6 +2762,19 @@ const App = (() => {
       // can't mislabel it), falling back to the active workstream when the runId is unknown (e.g. a direct call).
       getRecentTask: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) return m.title; const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
       launchRecipe: launchRecipe,
+      /* THE EVIDENCE POOL the suggestion's quote is vetoed against (rec perfection W2). The SAME shape and the
+         same dimensions AutoJobStore reads for its own grounding veto — one accessor idiom, so the two channels
+         can never disagree about what the station "knows". A cold dossier returns {}, which grounds nothing:
+         fail-closed is the point (the failure it replaces was quoting the Commander words they never said). */
+      getBeliefs: () => {
+        const out = {};
+        if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return out;
+        for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders']) {
+          const arr = (DossierStore.beliefs(k) || []).map(b => b && b.text).filter(Boolean);
+          if (arr.length) out[k] = arr;
+        }
+        return out;
+      },
       // UNION (see the goal-milestone twin above): derived title from the directive + returns TRUE only when a
       // run really kicked off — the suggestion's attribution stamp is armed off this answer, so a busy stream
       // must report the no-op honestly.

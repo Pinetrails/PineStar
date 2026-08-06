@@ -133,6 +133,17 @@
     lines.push('- If you know something they keep meaning to do but never reach (their ambitions), aim instead at moving them toward THAT — the best pitch closes the gap between what drains them and what they actually want.');
     lines.push('- Name the ONE thing only they can give you to make it truly theirs (their context, taste, or a key fact). That is the gap.');
     if (recent) lines.push('- You just did this for them: "' + recent + '". Build on that if it fits.');
+    /* THE NEXT MILESTONE (rec perfection W2). The server-side evidence pack carries the active GOAL, but the
+       milestone tree is decomposed and tracked in the browser (goalstore/goals.js), so the one fact that says
+       what "progress" means RIGHT NOW never reached the model. A pitch that moves the Commander's own next
+       milestone is the most valuable thing this call can produce; a bare goal title only says where they are
+       headed. Absent goal / no decomposition / already complete → nothing is pushed and the directive is
+       byte-identical to today's (never a fabricated milestone). */
+    const milestone = String(ctx.nextMilestone == null ? '' : ctx.nextMilestone).replace(/\s+/g, ' ').trim();
+    if (milestone) {
+      lines.push('- Their goal\'s NEXT unfinished milestone is: "' + milestone.slice(0, 240) + '". ' +
+        'If you can propose something that genuinely moves THAT, it beats anything else you could suggest.');
+    }
     /* THE EXCLUSION LIST RIDES THE PROMPT (2026-08-05). suggeststore already fingerprints every idea it has
        pitched and every one the Commander said "never suggest this" to — and it applied that list only AFTER the
        reply came back, dropping the whole beat and eating the paid aux call whenever the model returned a
@@ -157,6 +168,16 @@
     lines.push('Reply in EXACTLY this format, nothing else:');
     lines.push('PITCH: <one line — what to build>');
     lines.push('WHY: <one sentence — why it fits this Commander>');
+    /* THE EVIDENCE LINE (rec perfection W2), requested only by callers that will actually VETO it. The WHY line
+       is the model's own prose about its own pitch — useful, but not evidence, and W3 established that the
+       ledger may not call it a quote. This asks for something different in kind: the Commander's OWN words that
+       the pitch stands on. The caller (suggeststore) then checks that quote for real token overlap with what the
+       station knows and DROPS it when there is none, so an invented quote can never be spoken back at them.
+       Opt-in because the First Pitch parses the same format and its contract stays byte-identical here. */
+    if (ctx.wantEvidence) {
+      lines.push('EVIDENCE: <the Commander\'s OWN words this stands on, quoted verbatim from what you know about ' +
+        'them above — never your own paraphrase. If you cannot quote them, write NONE.>');
+    }
     lines.push('BUILD: recipe:<id from the list above>  OR  workflow');
     lines.push('GAP: <the one thing only the Commander can give you to make it theirs>');
     return lines.join('\n');
@@ -175,9 +196,14 @@
     if (!title) return null;
     const build = grab('BUILD');
     const rm = /recipe\s*:\s*([\w.-]+)/i.exec(build);
+    /* the EVIDENCE line, when the caller asked for one. Absent (the First Pitch) or an explicit NONE both read
+       as '' — the model saying it cannot quote them is an HONEST answer, and the caller renders no receipt.
+       Surrounding quote marks are stripped so the caller owns the quoting, exactly like recCite does. */
+    const ev = grab('EVIDENCE').replace(/^["“”'‘’]+|["“”'‘’]+$/g, '').trim();
     return {
       title,
       why: grab('WHY'),
+      evidence: /^none$/i.test(ev) ? '' : ev,
       gap: grab('GAP'),
       build: rm ? { kind: 'recipe', recipeId: rm[1] } : { kind: 'workflow', recipeId: null }
     };

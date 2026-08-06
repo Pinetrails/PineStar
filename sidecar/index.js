@@ -1664,6 +1664,22 @@ function providerCredentialError(provider) {
   if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
   return 'provider is not configured';
 }
+function channelRunConfigFor(agentId) {
+  const id = String(agentId || '').trim();
+  const ident = id ? agentRoster.get(id) : null;
+  if (!ident) return { ok: false, error: 'target agent ' + (id || '(missing)') + ' is not in the live roster' };
+  const provider = normalizeProvider(ident.provider);
+  const model = String(ident.model || '').trim();
+  if (!model) return { ok: false, error: 'target agent ' + id + ' has no roster model' };
+  const key = providerRuntimeKey(provider, '');
+  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  if (!providerHasCredential(provider, key, baseUrl)) return { ok: false, error: providerCredentialError(provider) + ' for target agent ' + id };
+  return {
+    ok: true, key, model, provider, baseUrl,
+    reasoningEffort: resolveReasoningEffort(provider, ident.reasoningEffort),
+    system: ident.system || ''
+  };
+}
 function cronProviderFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
   const explicit = normalizeProviderId((job && job.provider) || (ident && ident.provider) || '');
@@ -6386,6 +6402,7 @@ function startTelegramBot(botId) {
     // that agent's bay run here too; without this seam the same floor did less work depending on which bot
     // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    resolveRunConfig: channelRunConfigFor,                                    // every downstream dock owns its roster provider/model/credential
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // a bound bot's agent still crews its dock — the standing brief applies
@@ -7469,6 +7486,7 @@ const SAMPLE_PERSONA = 'You are an agent aboard the STARNET station. This is a c
   + 'report the result clearly, in a few sentences.';
 let sampleHub = null;        // lazy singleton, one per station — mirrors getDevHub
 let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
+let sampleLineOutcome = null; // terminal chain truth for the current proof; clean runs alone are not OUTBOX proof
 let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
 const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
 function getSampleHub() {
@@ -7486,6 +7504,7 @@ function getSampleHub() {
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
     onResolved: (info) => { sampleResolved = info; },
+    onLineOutcome: (info) => { sampleLineOutcome = info; },
     // every run of the line (entry dock + hops) records under the sample's OWN workstream, so the recorded
     // rows in runs.jsonl are scoped exactly and the OUTBOX crate opens a readable transcript session.
     streamId: () => (sampleInFlight && sampleInFlight.streamId) || undefined
@@ -7530,6 +7549,7 @@ async function handleRoutingSample(req, res) {
     sampleReplies.length = 0;
     const hub = getSampleHub();
     sampleResolved = null;
+    sampleLineOutcome = null;
     // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
     // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
     const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
@@ -7550,11 +7570,6 @@ async function handleRoutingSample(req, res) {
     } catch (e) { console.warn('[routing-sample] intercept error:', (e && e.message) || e); }
     sampleResolved = null;
     await settled;
-    if (workitemId) {
-      const d = bumpQueue(agentId, -1);
-      chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
-      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
-    }
     // the REAL recorded outcomes: runs.jsonl rows carrying this sample's streamId (newest-first from the
     // store, so [0] is the LAST stage that ran — the one whose reply the line delivered).
     let runs = [];
@@ -7563,8 +7578,25 @@ async function handleRoutingSample(req, res) {
         .filter(r => r && String(r.streamId || '') === streamId)
         .map(r => ({ runId: r.runId, agentId: r.agentId, reason: r.reason, usd: r.usd, ts: r.ts, title: r.title, streamId: r.streamId, turns: r.turns }));
     } catch (_) { runs = []; }
-    const delivered = runs.length ? runs[0] : null;
+    // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
+    // outcome is clean, including every hop after the routed entry dock.
+    const completed = runs.length > 0 && runs.every(r => r.reason === 'done')
+      && !!sampleLineOutcome && !sampleLineOutcome.stopped
+      && router.chainShipsToOutbox(sampleLineOutcome.agentId);
+    const delivered = completed ? runs[0] : null;
     const totalUsd = runs.reduce((s, r) => s + ((typeof r.usd === 'number' && isFinite(r.usd)) ? r.usd : 0), 0);
+    if (workitemId) {
+      const d = bumpQueue(agentId, -1);
+      if (completed) chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
+      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+    }
+    if (!completed) {
+      return json(502, {
+        ok: false, sample: true, error: runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
+        chatId: SAMPLE_CHAT, streamId: streamId, agentId: agentId || null, isTask: isTask,
+        workitemId: workitemId || null, replies: sampleReplies.slice(), runs: runs, delivered: null, totalUsd: totalUsd
+      });
+    }
     return json(200, {
       ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
       agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,
@@ -10823,6 +10855,10 @@ async function handleRun(req, res) {
   // dressing — which buries a "reply with ONLY a 3-6 word title" instruction and makes models answer chattily),
   // and the away clock is never stamped for it: agent self-talk is not user presence (NS away-detection contract).
   const internal = !!(body && body.internal);
+  // …and the ONE exception to that bareness (rec perfection W2): a recommendation generator asks the model what
+  // this Commander should do next, so it may request the same bounded evidence pack an ordinary task run gets.
+  // Only meaningful alongside internal; runOnce ignores it otherwise.
+  const evidence = !!(body && body.evidence);
   const runProvider = normalizeProvider(provider);
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
@@ -10996,7 +11032,7 @@ async function handleRun(req, res) {
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
       key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
-      emit, signal: ac.signal, runId, trigger: 'directive', internal,
+      emit, signal: ac.signal, runId, trigger: 'directive', internal, evidence,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
       askCommander,            // in-turn clarify: brief.ask blocks + resumes the SAME turn on this watched surface
@@ -12626,8 +12662,24 @@ async function runOnce(o) {
   // pages of station doctrine and made models answer as a chatty station agent — the parser then rejected the
   // reply, so e.g. session titles silently stayed on their first-words placeholder.
   const directDomainBlock = directDomainTask ? '\n\n' + DomainTask.prompt(directDomainTask) : '';
+  /* ── THE EVIDENCE PACK FOR RECOMMENDATION GENERATORS (rec perfection W2, 2026-08-05) ───────────────────
+     `internal` keeps the caller's prompt verbatim, and the audit found what that cost: the three generators
+     that must GUESS what the Commander wants next (the First Pitch, the goal decomposition, the ongoing
+     suggestion) were reasoning from strictly LESS than an ordinary task run — the static dossier block in
+     their system prompt, and nothing else. No learned topics with their verbatim quotes, no open threads, no
+     verdict patterns, no recent activity, no active goal. The runs that need evidence most had the least.
+     `evidence:true` appends exactly the pack an ordinary task receives (commander-context.js — bounded,
+     provenance-labelled, "observed; weak; never override the current request"). Everything else about the
+     internal path is untouched: no manual, no capability summary, no skills, no memory fence, and no
+     recall-stat writes (those are gated on `internal` separately, below). It is APPENDED to the system prompt,
+     never inserted after the directive — the caller's strict-format instruction rides the user message and
+     must stay the last thing the model reads. Fail-open: a compose error leaves the prompt byte-identical. */
+  let evidenceBlock = '';
+  if (internal && o.evidence) {
+    try { const t = commanderEvidenceContext(system || ''); if (t) evidenceBlock = '\n\n' + t; } catch (_) { evidenceBlock = ''; }
+  }
   const sys = internal
-    ? String(system || '')
+    ? (String(system || '') + evidenceBlock)
     : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the

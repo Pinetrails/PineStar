@@ -3538,6 +3538,7 @@ body.crew-rail-off #screen-game.active {
   .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48%, 380px); }  /* % of the overlay, not vh — same zoom law as the desktop dock */
   .refit-dock-section { gap: 5px; padding: 7px 8px; }
   .refit-section-label { font-size: 10px; }
+  .refit-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .refit-tool { min-width: 0; font-size: 13px; }
   .refit-hint { min-height: 32px; }
 }

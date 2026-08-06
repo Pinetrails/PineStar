@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1de55511c7d88707b6df65d950601863652237bb",
+    "sourceCommit": "5a968a69b08f14d811079fd501efe954a061f25e",
     "pathSetSha256": "2343302ec3e7cc02f113dff5103928c4b35e0c473c73c6e16f7fca5921bf0cb3",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 314818,
-        "sha256": "ef4acc4a2632625c4dd9342bf4200aad450444a424560d91290c79207a375432"
+        "bytes": 315660,
+        "sha256": "22dc2c3a47b5006e9c03a23a6acfd6c3e17d87acb9fbe5cfba7d2620045cd2dc"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 211211,
-        "sha256": "1da1562322c9c8cfb7c26aa2a49e8457721ecf3857062ccf03d5dc57a26e08a0"
+        "bytes": 211287,
+        "sha256": "16123eb22960bc380cba8a09592dcee7cd2df6d16604df6fc22512a4032aa523"
       },
       {
         "path": "frontend/app/channels.js",
@@ -258,8 +258,8 @@
       },
       {
         "path": "frontend/app/ghostline.js",
-        "bytes": 17152,
-        "sha256": "f1edd5a4879f75e41afcb5019caff3880d83c64173915f16161a00b06a7c6470"
+        "bytes": 17482,
+        "sha256": "dca5e4acc8daa3cef0bde2dff7a0cfb43b72bf0d17e4db76a3ff96aef0315d64"
       },
       {
         "path": "frontend/app/glossary.js",
@@ -278,13 +278,13 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 25526,
-        "sha256": "b7ee12eff832bd3089a4d23ad53fae3af0c76c2c16eb772ed5fe083cbe88701b"
+        "bytes": 25757,
+        "sha256": "de25b0ef599c8723f802fdc9f5a3ff037e7de46fe3400f45377ae6556fe3e83f"
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 69793,
-        "sha256": "2fee8067c76762d0a75e1e7d43eb6e71f54dc2af7ef31b684ddb06f27a392874"
+        "bytes": 70498,
+        "sha256": "ea269bded941072010bfa13047c2dcda18aad489590af86c7b76b120afdf5550"
       },
       {
         "path": "frontend/app/hint.js",
@@ -423,13 +423,13 @@
       },
       {
         "path": "frontend/app/pitch.js",
-        "bytes": 20437,
-        "sha256": "7f37d279c88c9f74c9f46382f4fd7817f060e874a22efb005e01d2d76f1e656a"
+        "bytes": 22782,
+        "sha256": "0259519df10750f36392da62734591f73a08871413dfd0886404a950b4c24012"
       },
       {
         "path": "frontend/app/pitchstore.js",
-        "bytes": 17794,
-        "sha256": "ebf0e5e3af701b80f90fea6928cf43cb4621350c29e1957902864cfba3b437e1"
+        "bytes": 18695,
+        "sha256": "d84d1b78496cf15863eb1a187052e89f2c939eb76b975973fef174e934b9aae7"
       },
       {
         "path": "frontend/app/pride.js",
@@ -728,8 +728,8 @@
       },
       {
         "path": "frontend/app/suggeststore.js",
-        "bytes": 26548,
-        "sha256": "1849e7e976978b5dbfc5e5aa38ed32a642c73947b65934f7e7a15c53bf21eb6b"
+        "bytes": 32728,
+        "sha256": "15b5029c10b999866408229d59f6d03a058af501253313a18eb5924100710ce6"
       },
       {
         "path": "frontend/app/terrain.js",
@@ -798,8 +798,8 @@
       },
       {
         "path": "frontend/app/understandingstore.js",
-        "bytes": 10076,
-        "sha256": "8eed4a514dc481b92fb9daf6301fc12bb958ff77cfb7bc2d8318d41f63b10389"
+        "bytes": 10449,
+        "sha256": "c8a34d10975ad8411117eaae24c906ef8d837c251d941ed5561a90e70ed70881"
       },
       {
         "path": "frontend/app/updatecore.js",
@@ -943,8 +943,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 294372,
-        "sha256": "36953ecd10857566c57a2fe708ed1559b1293678dd603094342ba347169434d8"
+        "bytes": 294441,
+        "sha256": "e235416d8049a0db55431482de6cd1aecf3751200ef1e3ceb50c13b4c5ec1934"
       },
       {
         "path": "frontend/css/asciifx.css",

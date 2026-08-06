@@ -295,6 +295,10 @@
     // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
     // byte-identical to the behaviour before work lines existed.
     const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
+    // Target-agent runtime identity for downstream work-line hops. The connection's own secrets belong only
+    // to stage one; reusing them would silently run every later dock on the upstream model/provider.
+    const resolveRunConfig = typeof o.resolveRunConfig === 'function' ? o.resolveRunConfig : null;
+    const onLineOutcome = typeof o.onLineOutcome === 'function' ? o.onLineOutcome : null;
     // SAMPLE/PROOF SEAM (additive, 2026-08-05): an optional streamId (string, or fn(chatId) -> string) stamped
     // onto every runOnce this hub fires (entry dock AND chain hops). With it, the host records the runs +
     // transcripts under that workstream (runs.jsonl streamId -> a readable OUTBOX crate); WITHOUT it — every
@@ -1561,6 +1565,14 @@
             const hopRunId = newId();
             myRec.runId = hopRunId; myRec.agentId = h.agentId; myRec.startedAt = now ? now() : null;
             const hs = { buf: '', errMsg: null, usd: 0 };
+            let hopConfig = {};
+            if (resolveRunConfig) {
+              try { hopConfig = resolveRunConfig(h.agentId); }
+              catch (e) { return { text: '', usd: 0, error: 'target agent configuration failed: ' + ((e && e.message) || e) }; }
+              if (!hopConfig || hopConfig.ok === false) {
+                return { text: '', usd: 0, error: (hopConfig && hopConfig.error) || ('target agent ' + h.agentId + ' is not configured') };
+              }
+            }
             const hopSink = (name, payload) => {
               let p; try { p = redact(payload); } catch (_) { p = payload; }
               if (name === 'agent.token') hs.buf += (p.delta || '');
@@ -1573,8 +1585,9 @@
             try { store.appendTurn(h.agentId, 'user', h.text); } catch (_) {}
             try {
               await runOnce({
-                key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
-                system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
+                key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
+                baseUrl: hopConfig.baseUrl || hopConfig.base_url || '', reasoningEffort: hopConfig.reasoningEffort || hopConfig.reasoning_effort,
+                system: hopConfig.system || personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
                 agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
                 streamId: streamIdFor ? streamIdFor(chatId) : undefined,   // the whole line's runs share one workstream (sample/proof seam)
                 surface: 'autonomous', ownerTrusted: ownerTrusted, broadcast: true, reflect: true,
@@ -1586,6 +1599,9 @@
             return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
           }
         });
+        if (onLineOutcome) {
+          try { onLineOutcome({ agentId: line.agentId, stopped: line.stopped || null, hops: line.hops.slice(), usd: line.usd }); } catch (_) {}
+        }
         if (!myRec.superseded && line.hops.length) {
           // the line's answer replaces the first stage's — and the floor/channel agree on who produced it
           firstStageText = state.buf;

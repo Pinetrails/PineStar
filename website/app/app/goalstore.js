@@ -180,7 +180,9 @@ const GoalStore = (() => {
     try {
       const directive = Goals.buildDirective(belief.text);
       const system = deps.getSystem ? deps.getSystem() : '';
-      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
+      // evidence:true (W2): a decomposition proposes the MILESTONES of the Commander's own goal — the open
+      // threads and recent activity are exactly what makes those milestones theirs rather than generic.
+      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true, evidence: true });
       if (!res || res.error) return failed();
       const texts = Goals.parseDecomposition(res.text, { redact: deps.redact });
       if (texts.length < MIN_PATH) return failed();   // under-decomposed / unusable — the confirm panel would drop it anyway

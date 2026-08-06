@@ -84,6 +84,17 @@ const PitchStore = (() => {
 
   // V3 §6: the shared readiness gate, read live. FAIL-CLOSED: a missing/broken readiness read means the
   // station cannot PROVE it knows its Commander — so it does not advise (never the old guess-and-pitch).
+  /* the Commander's goal's NEXT unfinished milestone, or '' (rec perfection W2 — the twin of suggeststore's).
+     The server evidence pack carries the GOAL; the milestone tree lives in the browser, so this is the one fact
+     the pack structurally cannot supply. Fail-open: no store / no goal / no decomposition → '' → unchanged. */
+  function nextMilestone() {
+    try {
+      const u = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) ? UnderstandingStore.read() : null;
+      const nx = u && u.goal && u.goal.next;
+      return nx ? String(nx) : '';
+    } catch (_) { return ''; }
+  }
+
   function readinessRead() {
     try {
       if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) {
@@ -107,14 +118,16 @@ const PitchStore = (() => {
       const recipes = (typeof Recipes !== 'undefined' && Recipes.list)
         ? Recipes.list().map(r => ({ id: r.id, name: r.name, tagline: r.tagline })) : [];
       const caps = deps.getCaps ? deps.getCaps() : [];
-      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask(p && p.runId) : '' });
+      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask(p && p.runId) : '', nextMilestone: nextMilestone() });
       const system = deps.getSystem ? deps.getSystem() : '';
       const name = deps.getName ? deps.getName() : 'AGENT';
 
       if (typeof Chat !== 'undefined' && Chat.clearNudge) Chat.clearNudge();   // retire any stale gentle nudge from a prior run before the focused panel opens over it
       Dialogue.open({ name });
       await Dialogue.say('give me a second — now that i know you a little, let me think about what would actually be worth building for you…', { auto: true });   // latency patter — never gate a wait on a click
-      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
+      // evidence:true (W2) — this call ASKS what is worth building for this Commander, so it reasons from the
+      // same bounded evidence pack an ordinary task run gets, not from the static dossier block alone.
+      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true, evidence: true });
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
       if (!parsed) {   // graceful: no usable pitch (model hiccup / unparseable) → say nothing, stay un-pitched so a later run can retry
         if (Dialogue.isOpen()) Dialogue.close();
@@ -213,7 +226,7 @@ const PitchStore = (() => {
       // invitation to NAME a chore: the Commander directs, the station never guesses a task from nothing.
       else if (readinessRead().ready && typeof Harness !== 'undefined' && Harness.chat && Harness.configured && Harness.configured()) {
         const directive = Pitch.buildStarterDirective({ capabilities: deps.getCaps ? deps.getCaps() : [] });
-        const call = Harness.chat({ system: deps.getSystem ? deps.getSystem() : '', messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true }).catch(() => null);
+        const call = Harness.chat({ system: deps.getSystem ? deps.getSystem() : '', messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true, evidence: true }).catch(() => null);
         const res = await Promise.race([call, new Promise(r => setTimeout(() => r(null), 20000))]);   // a late move is a weird move — cap it
         const parsed = (res && !res.error && res.text) ? Pitch.parseStarter(res.text) : null;
         if (parsed) { move = parsed.move; text = Pitch.presentStarter(parsed); }

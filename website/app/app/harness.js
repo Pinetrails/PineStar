@@ -634,7 +634,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, projectRoot, taskAction }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -649,6 +649,13 @@ const Harness = (() => {
       // reason-only self-talk (retitle / goal-judge / pitch / autopilot): the sidecar keeps the caller's system
       // prompt VERBATIM (no manual/capability/skill/memory dressing) and never stamps the away clock for it.
       if (internal) reqBody.internal = true;
+      /* THE EVIDENCE PACK, for the runs that must GUESS (rec perfection W2). An internal run gets a verbatim
+         system prompt — which is right for a strict-format parse, and wrong for the three RECOMMENDATION
+         generators, which were asked "what should this Commander do next?" while being handed strictly less
+         about the Commander than an ordinary task run receives. `evidence:true` appends the SAME bounded,
+         provenance-labelled server-side pack (commander-context.js) an ordinary task gets — nothing else about
+         the internal path changes (no manual, no skills, no memory fence, no recall-stat writes). */
+      if (evidence) reqBody.evidence = true;
       if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
       // project-anchored session (ref-parity working folder): the sidecar injects the folder context line
