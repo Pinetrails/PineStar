@@ -312,15 +312,22 @@ b { font-weight: normal; color: var(--ph-bright); }
 
 /* ================= TOP BAR ================= */
 #topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; overflow: hidden; }
-/* ABOVE THE GLASS: the brand mark is hoisted to <body> (index.html) and painted OVER the CRT
-   overlays (scanlines z950, vignette+themed top-glow z940) — from inside a .screen (z-index:10
-   stacking context) it could never out-stack them, and the themed glow washing over the amber
-   art is exactly what made non-amber themes look muddy. #logo-anchor keeps its seat in the
-   topbar flex row; app.js positionLogo() syncs the geometry on show/resize. */
+/* HOISTED TO <body>, BUT UNDER THE GLASS. Two independent things are going on here, and the z
+   number resolves both:
+   - The hoist (index.html) is what lets the mark paint over every floating window: #terms lives
+     inside #screen-game, a z-index:10 stacking context, so nothing in there can out-stack a <body>
+     child. ANY z above 10 buys that, which is why app/logoclip.js still has to clip the mark under
+     windows. #logo-anchor keeps its seat in the topbar flex row; positionLogo() syncs geometry.
+   - 935 puts it BENEATH both CRT overlays (vignette+themed top-glow z940, scanlines z950), so the
+     beam runs across the wordmark instead of stopping dead at its edges. The mark is picture; the
+     glass is the tube in front of the picture.
+   It sat at 960 — above the glass — because the art used to be a fixed-amber bitmap that the themed
+   top-glow washed muddy in green/blue/purple. The mark is painted in var(--ph) now, so the glow it
+   picks up is its own hue and that reason is gone. Do not raise this back over 940 without it. */
 #logo {
   color: var(--ph);
   display: none; align-items: center; gap: 12px; flex-shrink: 0;
-  position: fixed; z-index: 960; pointer-events: none;
+  position: fixed; z-index: 935; pointer-events: none;
 }
 /* in-game only; the title screen has its own big logo, and REFIT (builder) is its own full screen —
    the fixed z-960 logo must not float over it (2026-07-09 layering bug; :not(.refit-on) lives INSIDE
@@ -330,10 +337,23 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 .logo-mark { font-size: 27px; color: var(--bad); text-shadow: 0 0 12px rgba(255,92,77,0.7); animation: pulse 2.8s infinite; }
 /* the STARNET wordmark image sits in the chrome top-left; the big version
    lives on the title screen where it has room to read */
+/* MASKED, not placed. The mark paints as var(--ph) through starnet-wordmark.svg, so it re-tints
+   with the theme (the PNG was gold in every one) and re-rasterizes at whatever the device asks
+   for — the baked 60px PNG was exact only at DPR 2 and soft either side of it. aspect-ratio
+   supplies the width at FIRST layout, so #logo-anchor reserves the right seat before any asset
+   has loaded (the img had to fire `load` to get one). Ratio = the SVG's viewBox; if the trace is
+   ever regenerated at a different field height, copy the new viewBox here.
+   The asset is the `mosaic` preset — the master's own ASCII-dash texture, coarsened until it
+   survives this box. It is tuned FOR 24-30px: the dashes are sized so they still resolve here, and
+   the same texture at the master's native dash scale goes to dim mush by 30px. If this height ever
+   grows past ~56px, retrace finer (dev/trace-logo.mjs); if it ever shrinks below 24, switch to
+   --preset=solid, which is the legible floor.
+   No CSS glow/drop-shadow — removed per Andrew, and that still stands. */
 .logo-img {
-  height: 30px; width: auto; display: block;
-  /* No CSS glow/brightness: the baked small asset (dev/bake-logo-small.mjs) already carries
-     the art's own halo baked in; CSS drop-shadows on top fuzzed the mark (removed per Andrew). */
+  height: 30px; aspect-ratio: 946 / 160; display: block;
+  background-color: var(--ph);
+  -webkit-mask: url(../assets/brand/starnet-wordmark.svg) center / contain no-repeat;
+          mask: url(../assets/brand/starnet-wordmark.svg) center / contain no-repeat;
 }
 /* one confident wordmark in the chrome — the big ASCII logo lives on the
    title screen where it has room to read (salvaged from agent/design-system) */

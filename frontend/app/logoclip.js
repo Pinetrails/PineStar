@@ -1,14 +1,12 @@
 /* STARNET logoclip.js — the brand mark yields to windows.
 
-   #logo is hoisted to <body> at z960 so the amber wordmark paints ABOVE the CRT glass
-   (body::before scanlines z950, body::after vignette/top-glow z940) instead of being striped and
-   tinted by it. That hoist also parks it above every floating window: #terms lives INSIDE
+   #logo is hoisted to <body>, which parks it above every floating window: #terms lives INSIDE
    #screen-game, a z-index:10 stacking context, so a .term can never out-stack a <body> child no
    matter how high zTop() climbs — drag a panel into the top-left and the logo bleeds straight
-   through it (2026-07-29 layering report). No z-index fixes that: the glass must stay over the
-   windows, and anything over the glass is over the windows too.
-
-   So the mark is CLIPPED instead. This module owns the pure geometry: subtract the occluding
+   through it (2026-07-29 layering report). Lowering the mark under the CRT glass (z935, so the beam
+   runs across it) does NOT fix that and never could: the glass sits at 940/950, still far above the
+   z10 screen, so every seat that keeps the mark under the glass is also a seat above the windows.
+   Hence this module — the mark is CLIPPED under them instead. It owns the pure geometry: subtract the occluding
    window rects from the mark's box and emit the CSS clip-path for what is left. Subtracting the
    real rects (rather than hiding the whole mark on first contact) is what makes it read as true
    occlusion — a window's left edge cuts the wordmark exactly where the edge lands.

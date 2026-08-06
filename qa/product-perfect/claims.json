@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0c103cb1e07cd3274758d57652ed4bdc798faba6",
+    "sourceCommit": "7346fce8e7caeb0b70fbb8aa54788e530a0e3121",
     "pathSetSha256": "2343302ec3e7cc02f113dff5103928c4b35e0c473c73c6e16f7fca5921bf0cb3",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 313414,
-        "sha256": "8fa00a7300013babb16f3ae9e0a977b2d52d6c9ebe388c729cdbbd9fec7c61de"
+        "bytes": 314818,
+        "sha256": "ef4acc4a2632625c4dd9342bf4200aad450444a424560d91290c79207a375432"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -333,8 +333,8 @@
       },
       {
         "path": "frontend/app/logoclip.js",
-        "bytes": 4037,
-        "sha256": "b0599d5276c29dac7062fede4168b2a71538b76d911d81684941c6261fa8bbc3"
+        "bytes": 4016,
+        "sha256": "8fb9d2499e5f46c71631eaa8b1a6422abfafe3dcf3caa07bdd94baf18e8dfb34"
       },
       {
         "path": "frontend/app/loop-templates.js",
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 193395,
-        "sha256": "1d6757d820b979d79009e93f4f233e2b5e1414b0d5c7e5f2cf1c7a0baf4fa78e"
+        "bytes": 214942,
+        "sha256": "8dd49c32449a42ae99b90229099d15ecb2877e473aae91be5df5875ae02f0800"
       },
       {
         "path": "frontend/app/stationcommands.js",
@@ -863,8 +863,8 @@
       },
       {
         "path": "frontend/app/windows/messaging.js",
-        "bytes": 53290,
-        "sha256": "e291ea7e8bf3a531ac77d5d50cde19ca40ccf14cf85234f4248d67f8f274c5aa"
+        "bytes": 50789,
+        "sha256": "a9a7d2cf2329be5ea16ed2abe37c2de49e5d734f618132c669ec52151e283fb4"
       },
       {
         "path": "frontend/app/windows/outbox.js",
@@ -983,8 +983,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 93191,
-        "sha256": "cf8b437ff4c067ea178535ac1826d60a4fd2860e2f8f08ed11c79dbd8f23308f"
+        "bytes": 94893,
+        "sha256": "682f89bee5b27cf35ec5b80ec926e9c386c094b241c47ca5329d56bc6c578b7f"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -1013,8 +1013,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 68891,
-        "sha256": "6d5c856ebc4996a8cda63fd5d11f911d10a86aaa7f65cf06d741b0d68fe7bd84"
+        "bytes": 69057,
+        "sha256": "675f439f5059e414d33bd30117d4a5e2940cb6ecc5d7273d7d1369d8562d3240"
       },
       {
         "path": "frontend/js/arcade.js",
