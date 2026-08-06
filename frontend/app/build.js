@@ -2924,13 +2924,24 @@ const Build = (() => {
       assign = placed.connectorId
         ? '<div class="pc-assign ok">▸ BOUND ' + esc(placed.connectorId) + '</div>'
         : '<div class="pc-assign">UNBOUND — click to bind a server</div>';
+    } else if (placed && placed.t === 'intake' && placed.label) {
+      // a NAMED line's INBOX hover names the line (line naming) — the card is the ONE hover voice in
+      // REFIT (one-voice law), so the fact rides here; the canvas glance covers the card-less contexts.
+      assign = '<div class="pc-assign ok">▸ LINE · ' + esc(placed.label) + '</div>';
+    }
+    // a briefed dock's hover shows its duty line (a glance answer to "what does this step DO?")
+    if (placed && placed.t === 'bay' && placed.brief) {
+      const bp = String(placed.brief).replace(/\s+/g, ' ');
+      assign += '<div class="pc-assign">✎ ' + esc(bp.length > 72 ? bp.slice(0, 72) + '…' : bp) + '</div>';
     }
     return '<h4>' + esc(c.label) + '</h4>' + tier + (desc ? ('<p>' + esc(desc) + '</p>') : '') + '<div class="pc-foot">' + foot + '</div>' + assign;
   }
   let propCardKey = null;
   function showPropCard(c, placed, cx, cy) {
     if (!propCard || !c) return;
-    const key = placed ? ('p:' + placed.id + ':' + (placed.agentId || placed.connectorId || '')) : ('c:' + c.id);
+    const key = placed
+      ? ('p:' + placed.id + ':' + (placed.agentId || placed.connectorId || '') + ':' + (placed.label || '') + ':' + (placed.brief ? placed.brief.length : 0))
+      : ('c:' + c.id);
     if (key !== propCardKey) { propCard.innerHTML = propCardHTML(c, placed); propCardKey = key; }
     propCard.style.display = 'block';
     const w = propCard.offsetWidth || 230, h = propCard.offsetHeight || 96;
