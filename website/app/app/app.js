@@ -557,6 +557,8 @@ const App = (() => {
     renderRail();
     pushRoster();
     persist();
+    // COMMS caches option labels + the focused speaker name; invalidate both for overseer and crew renames.
+    if (typeof Chat !== 'undefined' && Chat.refreshAgentIdentity) Chat.refreshAgentIdentity();
     return true;
   }
 
