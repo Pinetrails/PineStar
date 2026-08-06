@@ -47,6 +47,8 @@ function seedCompleteStation() {
   write('connectors/servicekeys.json', { version: 1, keys: [{ id: 'weather', name: 'Weather', env: 'WEATHER_API_KEY', key: 'SERVICE_SECRET', enabled: true }] });
   write('.secrets/spotify.json', { accessToken: 'SPOTIFY_SECRET' });
   write('codex/auth.json', { access_token: 'CODEX_SECRET' });
+  write('grok/tokens.json', { access_token: 'GROK_ACCESS_SECRET', refresh_token: 'GROK_REFRESH_SECRET' });
+  write('kimi/tokens.json', { access_token: 'KIMI_ACCESS_SECRET', refresh_token: 'KIMI_REFRESH_SECRET' });
   write('.browser-profile/Cookies', 'COOKIE_SECRET');
   write('proc-ledger.json', { procs: [{ pid: 1 }] });
   write('.recovery-mutation.json', { lastCompletedMutation: 100 });
@@ -71,12 +73,14 @@ A.eq(v1.report.requirements.filter(x => x.status === 'present').length, R.REQUIR
 A.eq(v1.recoveryPoint.completedMutationsLostAtPoint, 0, 'successful quiescent snapshot establishes zero loss through its mutation barrier');
 A.eq(v1.recoveryPoint.continuousRpoCompletedMutations, null, 'bundle does not invent an unproven continuous RPO');
 const bundleText = JSON.stringify(v1);
-for (const secret of ['URL_SECRET', 'MCP_SECRET', 'ACCESS_SECRET', 'REFRESH_SECRET', 'CLIENT_SECRET', 'TELEGRAM_SECRET', 'PROVIDER_SECRET', 'SERVICE_SECRET', 'SPOTIFY_SECRET', 'CODEX_SECRET', 'COOKIE_SECRET', 'BROWSER_SECRET']) {
+for (const secret of ['URL_SECRET', 'MCP_SECRET', 'ACCESS_SECRET', 'REFRESH_SECRET', 'CLIENT_SECRET', 'TELEGRAM_SECRET', 'PROVIDER_SECRET', 'SERVICE_SECRET', 'SPOTIFY_SECRET', 'CODEX_SECRET', 'GROK_ACCESS_SECRET', 'GROK_REFRESH_SECRET', 'KIMI_ACCESS_SECRET', 'KIMI_REFRESH_SECRET', 'COOKIE_SECRET', 'BROWSER_SECRET']) {
   A.ok(bundleText.indexOf(secret) < 0, 'bundle excludes secret: ' + secret);
 }
 A.ok(v1.report.reauthentication.some(x => x.kind === 'connector' && x.id === 'notion'), 'connector reference survives with OAuth reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'channel' && x.id === 'telegram'), 'channel reference survives with token reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'service-key' && x.id === 'weather'), 'service key reference survives with reauthentication receipt');
+A.ok(v1.report.reauthentication.some(x => x.kind === 'provider' && x.id === 'grok'), 'Grok OAuth tokens are excluded with a reauthentication receipt');
+A.ok(v1.report.reauthentication.some(x => x.kind === 'provider' && x.id === 'kimi'), 'Kimi OAuth tokens are excluded with a reauthentication receipt');
 A.ok(v1.report.reauthentication.some(x => x.kind === 'project-path' && x.id === 'C:/Projects/demo'), 'machine-specific project authority requires explicit reauthorization');
 A.ok(v1.report.skipped.some(x => x.path === '.browser-profile/Cookies'), 'browser cookie profile is explicitly skipped');
 A.ok(v1.report.skipped.some(x => x.path === 'proc-ledger.json'), 'ephemeral process ownership is explicitly skipped');
