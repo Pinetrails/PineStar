@@ -14,6 +14,12 @@ A.eq(DomainTask.classify('Review sidecar/index.js before release.'), null, 'a so
 A.eq(DomainTask.classify('Open README.md and summarize it.'), null, 'a dotted document filename is not classified as a public host');
 A.eq(DomainTask.classify('Check with alice@example.com before shipping.'), null, 'an email address is not classified as a public host');
 A.ok(DomainTask.classify('Open https://example.com/docs')?.host === 'example.com', 'an explicit URL remains a bounded direct-domain task');
+A.eq(DomainTask.classify('Open Cargo.toml and review the package.'), null, 'Cargo.toml is not a public host');
+A.eq(DomainTask.classify('Inspect config.ini for the setting.'), null, 'config.ini is not a public host');
+A.eq(DomainTask.classify('Review schema.sql before migration.'), null, 'schema.sql is not a public host');
+A.ok(DomainTask.classify('Open docs.rs and read the crate docs.')?.host === 'docs.rs', 'a bare domain on a real ccTLD remains supported');
+A.ok(DomainTask.classify('Visit example.sh and inspect the site.')?.host === 'example.sh', 'a public suffix that resembles a file extension remains supported');
+A.eq(DomainTask.classify('Review src/docs.rs before release.'), null, 'a path remains local even when its filename ends in a public suffix');
 A.eq(DomainTask.classify('Find the correct official site for starnessos.com'), null, 'a requested alternative search stays open-ended');
 A.eq(DomainTask.classify('Compare starnessos.com and example.com'), null, 'multiple hosts are not collapsed to one target');
 A.ok(DomainTask.isTargetFetch({ name: 'web_fetch', args: { url: 'https://www.starnessos.com/docs' } }, p), 'exact-host web_fetch is recognized');
