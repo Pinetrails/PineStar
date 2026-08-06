@@ -1664,6 +1664,22 @@ function providerCredentialError(provider) {
   if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
   return 'provider is not configured';
 }
+function channelRunConfigFor(agentId) {
+  const id = String(agentId || '').trim();
+  const ident = id ? agentRoster.get(id) : null;
+  if (!ident) return { ok: false, error: 'target agent ' + (id || '(missing)') + ' is not in the live roster' };
+  const provider = normalizeProvider(ident.provider);
+  const model = String(ident.model || '').trim();
+  if (!model) return { ok: false, error: 'target agent ' + id + ' has no roster model' };
+  const key = providerRuntimeKey(provider, '');
+  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  if (!providerHasCredential(provider, key, baseUrl)) return { ok: false, error: providerCredentialError(provider) + ' for target agent ' + id };
+  return {
+    ok: true, key, model, provider, baseUrl,
+    reasoningEffort: resolveReasoningEffort(provider, ident.reasoningEffort),
+    system: ident.system || ''
+  };
+}
 function cronProviderFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
   const explicit = normalizeProviderId((job && job.provider) || (ident && ident.provider) || '');
@@ -6386,6 +6402,7 @@ function startTelegramBot(botId) {
     // that agent's bay run here too; without this seam the same floor did less work depending on which bot
     // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    resolveRunConfig: channelRunConfigFor,                                    // every downstream dock owns its roster provider/model/credential
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // a bound bot's agent still crews its dock — the standing brief applies
