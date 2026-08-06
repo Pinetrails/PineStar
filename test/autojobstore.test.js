@@ -204,7 +204,9 @@ global.Onboarding = undefined;
     hn.next = { text: TWO };
     await AutoJobStore.propose({ proactive: true });
     A.eq(AutoJobStore.pendingCount(), 2, 'first proposal run pins two');
-    const again = AutoJobStore.pinProposals(AutoJobs.parseProposals(TWO));
+    // parse with the SAME evidence pool the store uses, or the veto would return [] and this dedup check would
+    // pass for the wrong reason (nothing to re-pin is not the same as a rejected duplicate).
+    const again = AutoJobStore.pinProposals(AutoJobs.parseProposals(TWO, { beliefs: deps.getBeliefs() }));
     A.eq(again, 0, 're-pinning the same proposals adds nothing (dedup by title — once per proposal)');
     A.eq(AutoJobStore.pendingCount(), 2, 'the ledger did not grow on a duplicate re-propose');
 

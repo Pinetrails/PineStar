@@ -35,6 +35,7 @@
   const REQUIRE_DIMS = ['goals'];   // can't propose a build without knowing what the Commander actually wants
   const MIN_KNOWN = 2;              // at least two dossier dimensions filled before the agent dares to advise
   const MAX_RECIPES = 8;            // cap the recipe shelf we show the agent (keeps the directive lean + the prompt warm)
+  const MAX_EXCLUDE = 12;           // …and cap the already-suggested list for the same reason (bounded prompt, always)
   const SUGGEST_MIN_GAP = 3;        // ongoing ideas: min completed tasks between suggestions (cooldown, anti-nag)
   const SUGGEST_SESSION_CAP = 1;    // ongoing ideas: at most one gentle suggestion per session (mirrors the curiosity cap)
 
@@ -132,6 +133,20 @@
     lines.push('- If you know something they keep meaning to do but never reach (their ambitions), aim instead at moving them toward THAT — the best pitch closes the gap between what drains them and what they actually want.');
     lines.push('- Name the ONE thing only they can give you to make it truly theirs (their context, taste, or a key fact). That is the gap.');
     if (recent) lines.push('- You just did this for them: "' + recent + '". Build on that if it fits.');
+    /* THE EXCLUSION LIST RIDES THE PROMPT (2026-08-05). suggeststore already fingerprints every idea it has
+       pitched and every one the Commander said "never suggest this" to — and it applied that list only AFTER the
+       reply came back, dropping the whole beat and eating the paid aux call whenever the model returned a
+       familiar idea. A low-diversity model can do that every cooldown. Scout, quest-refresh, prospect and
+       autojobs all hand their exclusions to the model instead; this is the same move. Post-hoc dedup stays as
+       the backstop — a prompt is guidance, never a guarantee. */
+    // whitespace-normalized exactly like reflect.js knownBlock and threadmine.js knownBlock: a title carrying a
+    // newline or a run of spaces would otherwise break the one-per-line shape of the block it lands in.
+    const exclude = (Array.isArray(ctx.exclude) ? ctx.exclude : []).map(s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim())
+      .filter(Boolean).slice(0, MAX_EXCLUDE);
+    if (exclude.length) {
+      lines.push('- ALREADY SUGGESTED (or turned down). Do NOT propose any of these again, or a restatement of ' +
+        'one — pick something genuinely different: ' + exclude.map(t => '"' + t + '"').join('; ') + '.');
+    }
     if (recipes.length) {
       lines.push('Recipes you can instantiate (prefer one of these when it fits):');
       for (const r of recipes) lines.push('  - recipe:' + r.id + ' — ' + String(r.name || r.id) + (r.tagline ? ' (' + r.tagline + ')' : ''));

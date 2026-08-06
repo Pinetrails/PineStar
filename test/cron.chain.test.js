@@ -29,7 +29,8 @@ function setup(opts) {
     emit: (name, payload) => events.push({ name, payload }),
     newId: () => 'run-' + (++idN), newAbort: () => new AbortController(), now: () => clock.now(),
     getKey: () => 'sk-test', defaultModel: 'test/model', persona: 'PERSONA', maxRunMs: 480000,
-    advanceChain: opts.advanceChain ? (o) => { chainCalls.push(o); return opts.advanceChain(o); } : undefined
+    advanceChain: opts.advanceChain ? (o) => { chainCalls.push(o); return opts.advanceChain(o); } : undefined,
+    stageBriefFor: opts.stageBriefFor
   });
   return { driver, clock, events, runs, chainCalls, getJob: (id) => cronStore.getJob(store, id) };
 }
@@ -93,6 +94,42 @@ async function fireAndSettle(s, reply) {
     A.eq(s.runs[0].opts.unattendedGrants, ['workbench'], "stage one (the routine's own agent) keeps the recorded grant");
     A.eq(s.chainCalls.length, 1, 'the line still advanced');
     A.eq(s.chainCalls[0].unattendedGrants, [], 'the advanceChain seam is handed an EMPTY grants list — hops never inherit authority');
+    A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'and the routine still settles ok');
+  }
+
+  /* ---- THE DOCK'S STANDING BRIEF RIDES A SCHEDULED ENTRY RUN (inbox-trigger, 2026-08-05). A routine's
+     fire was the ONE entry-run path that never briefed its dock: the same agent ran WITH its standing brief
+     from a routed message (hub.js) and WITHOUT it from a routine. The driver now asks the injected
+     stageBriefFor(agentId) — index.js wires router.stageBrief, the same seam the hub and chain handoffs
+     read — and appends the brief to the run's SYSTEM under the hub's exact section header. Prompt text
+     only: grants/tools/messages are untouched. ---- */
+  {
+    const s = setup({ stageBriefFor: (aid) => (aid === 'researcher' ? 'Dig three primary sources, cite them.' : null) });
+    await fireAndSettle(s, 'stage one output');
+    A.eq(s.runs[0].opts.system, 'PERSONA\n\nYOUR STANDING BRIEF FOR THIS STATION:\nDig three primary sources, cite them.',
+      "the entry run's system carries the dock's standing brief under the hub's exact section header");
+    A.eq(s.runs[0].opts.messages[0].content, 'research the thing', 'the brief rides SYSTEM — the user message is untouched');
+    A.eq(s.runs[0].opts.unattendedGrants, [], 'and a brief never smuggles grants');
+    A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'the routine settles ok');
+  }
+
+  /* ---- no seam / no brief -> the exact pre-brief system string (byte-identical) ---- */
+  {
+    const s = setup({});
+    await fireAndSettle(s, 'plain');
+    A.eq(s.runs[0].opts.system, 'PERSONA', 'no stageBriefFor seam -> pre-brief system, byte-identical');
+  }
+  {
+    const s = setup({ stageBriefFor: () => null });
+    await fireAndSettle(s, 'plain');
+    A.eq(s.runs[0].opts.system, 'PERSONA', 'a seam with no brief for this dock -> pre-brief system, byte-identical');
+  }
+
+  /* ---- a THROWING brief seam never kills the fire (a brief is an enhancement, not a gate) ---- */
+  {
+    const s = setup({ stageBriefFor: () => { throw new Error('boom'); } });
+    await fireAndSettle(s, 'still works');
+    A.eq(s.runs[0].opts.system, 'PERSONA', 'a throwing brief seam degrades to the pre-brief system');
     A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'and the routine still settles ok');
   }
 

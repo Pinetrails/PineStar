@@ -12,6 +12,10 @@
 
 const Build = (() => {
   const TOOLS = [
+    // SELECT is the DEFAULT mode (2026-08-05 interaction reshape): entering REFIT arms NO placement
+    // tool — a click INSPECTS the machine under it (its picker/editor/flow card) instead of trying to
+    // place something. Key 0, ESC and right-click all return here from any armed tool.
+    { id: 'select', key: '0', label: '◎ SELECT', hint: 'click any machine or belt to open it — its picker, its routes, where its lane goes', cursor: 'default' },
     { id: 'room', key: '1', label: '▦ ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
     { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
     // 'paint' stays the INTERNAL id (the drag mode, the model's paintTiles verb, the key map and every
@@ -58,7 +62,7 @@ const Build = (() => {
   const MINZ = 0.4, MAXZ = 6;
 
   // interaction state
-  let tool = 'room', kind = 'hab', style = 'cobalt', mat = 'plate', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
+  let tool = 'select', kind = 'hab', style = 'cobalt', mat = 'plate', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
   // SURFACE targets one surface at a time — the deck or the walls — so the palette stays two rows
   // instead of four. 'follow' wall colour = inherit the room's floor hue (the default).
   let paintTarget = 'floor', wallMat = 'plating', wallStyle = 'follow';
@@ -85,9 +89,11 @@ const Build = (() => {
     station = opts.getStation();
     if (!station) return;
     spaceHeld = false; drag = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
+    tool = 'select';   // SELECT is the default mode — a fresh REFIT session never opens with a placement tool armed
     ridePending = false;   // the auto first-ride re-arms from THIS session's compile, never a stale one
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
     finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
+    for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
     probeSampleSeam();
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
@@ -192,7 +198,9 @@ const Build = (() => {
       btn.setAttribute('aria-pressed', t.id === tool ? 'true' : 'false');
       btn.dataset.tool = t.id; btn.innerHTML = t.label + ' <span class="refit-key">' + t.key + '</span>';
       btn.title = t.hint + '  (' + t.key + ')';
-      btn.onclick = () => selectTool(t.id);
+      // clicking the ARMED tool's own button again DESELECTS it (back to select) — a tool must
+      // always have an obvious off switch, not just eight other on switches.
+      btn.onclick = () => selectTool(t.id === tool ? 'select' : t.id);
       tools.appendChild(btn);
     });
     renderPalette();
@@ -357,7 +365,13 @@ const Build = (() => {
     let paletteLabel = '';
     pal.innerHTML = '';
     propThumbs.length = 0;   // drop any preview tiles from a prior render (they're rebuilt below for the prop tool)
-    if (tool === 'room') {
+    if (tool === 'select') {
+      paletteLabel = 'INSPECT';
+      const note = document.createElement('div');
+      note.className = 'refit-selectnote';
+      note.textContent = 'Click a machine to open it · click a belt to see where its lane goes. Keys 1–9 arm a build tool; ESC / right-click always returns here.';
+      pal.appendChild(note);
+    } else if (tool === 'room') {
       paletteLabel = 'ROOM TYPE';
       station.KIND_ORDER.forEach(k => {
         const b = document.createElement('button');
@@ -908,8 +922,16 @@ const Build = (() => {
     const res = station.stampBlueprint(bp.id, o.x, o.y);   // ONE undoable action — see worldmodel.stampBlueprint
     if (res && res.ok) {
       lastStampIds = res.ids || null;   // the finish-the-line card adopts this line on the next recompile
+      // LINE NAMING: a stamp leaves the intake's `label` UNSET (the save carries only what the Commander
+      // typed) — but this session remembers which blueprint stamped it, so the intake card's name field
+      // can offer the blueprint's name as its placeholder (session-scoped, like lastStampIds).
+      try { for (const id of (res.ids || [])) { const sp = station.propById(id); if (sp && sp.t === 'intake') stampNameOf[id] = bp.label; } } catch (_) {}
       pushFlash(bp.props.map(p => ({ x1: o.x + p.x, y1: o.y + p.y, x2: o.x + p.x + p.w - 1, y2: o.y + p.y + p.h - 1 })), false);
       sfx('chime');
+      // PLACEMENT FLOW: a blueprint stamps ONCE, then the tool drops back to SELECT — the next
+      // click on the fresh line inspects a dock instead of stamping a second copy on top of it.
+      // (Deselect BEFORE the tip: selectTool hides any tip it finds.)
+      deselectTool({ silent: true });
       flashTip(ev, bp.label + ' STAMPED — now click each BAY to assign an agent', true);
       if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }
       // belts just landed — the same first-touch coach a hand-laid run earns (points at ▸ TEST)
@@ -920,15 +942,18 @@ const Build = (() => {
     }
   }
 
-  function selectTool(id) {
+  function selectTool(id, o) {
     tool = id; drag = null; connectFrom = null; dupe = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
       const active = b.dataset.tool === id;
       b.classList.toggle('active', active);
       b.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
-    renderPalette(); setHint(); setCursor(); sfx('click');
+    renderPalette(); setHint(); setCursor();
+    if (!(o && o.silent)) sfx('click');
   }
+  // every "drop whatever is armed" gesture (ESC, right-click, post-stamp) lands here
+  function deselectTool(o) { if (tool !== 'select') selectTool('select', o); }
 
   function setHint(msg) {
     if (!hintEl) return;
@@ -1007,45 +1032,123 @@ const Build = (() => {
     spec.purpose = duty + (cls && cls.purpose ? '\n\n' + cls.purpose : '');
     try { return App.summonAgent(spec, { activate: false, desk: true }); } catch (e) { return null; }
   }
-  function openBayPicker(bayId, ev) {
-    if (!root || root.querySelector('.refit-bay-picker')) return;
-    const p = station.propById(bayId); if (!p || !(p.t === 'bay' || isPcProp(p.t))) return;
-    const isPc = isPcProp(p.t);
-    const noun = isPc ? 'PC' : 'bay';
-    const strip = isPc ? '' : flowStripHTML('bay');
-    const cur = p.agentId || '';
+  /* ---------- THE STEP CARD (workflow studio, 2026-08-05) ----------
+     ONE surface per dock, on the inspect seam: THE STEP (which stage of which line this is), THE AGENT
+     (who crews it — the summon/roster/free-id machinery of the old BAY picker folded in, one surface
+     instead of two hops), THE WORK (the dock's standing JOB BRIEF — what this step does with arriving
+     work). The brief persists on the prop (worldmodel.setPropBrief -> migrate() whitelist), compiles
+     into the posted plan (pipeline bays/dockBays.brief) and is injected into entry runs + chain
+     handoffs by the sidecar (router.stageBrief). PROMPT TEXT ONLY — a brief never changes who runs or
+     what tools they hold; routing and capability come from the binding and the room, untouched. */
+  // the LINE a prop belongs to (valComps membership from the CURRENT compiled geometry), or null
+  function lineOfProp(propId) {
+    return (valComps && valComps.find(c => c.props.indexOf(propId) >= 0)) || null;
+  }
+  // a line's saved display name: the intake's `label` (line naming rides the INTAKE prop), or null
+  function lineNameOf(c) {
+    if (!c) return null;
+    for (const iid of c.intakes) { const ip = station.propById(iid); if (ip && ip.label) return ip.label; }
+    return null;
+  }
+  /* which position does this dock's agent hold on the COMPILED line? (inbox-trigger, 2026-08-05)
+     'entry' = fed straight by an intake source (plan.reach — the BFS from every source), 'chain' = fed by an
+     upstream dock's chain edge (plan.chains[..].next), null = unknowable (unbound dock / no compiled plan /
+     a lone dock off the belt graph). Read from the SAME compiled plan the sidecar routes by — never guessed
+     from geometry. reach wins when both hold: a dock intakes feed directly is an entry stage first. */
+  function stepPositionOf(agentId) {
+    if (!agentId || !valPlan) return null;
+    if (valPlan.reach && valPlan.reach[agentId]) return 'entry';
+    const chains = valPlan.chains || {};
+    for (const a in chains) { const nx = (chains[a] && chains[a].next) || []; if (nx.indexOf(agentId) >= 0) return 'chain'; }
+    return null;
+  }
+  /* the brief placeholder differs by POSITION (Andrew's confusion, now law): an entry dock's brief reads
+     against the ARRIVING message; a chain-fed dock's against the previous station's output. One generic
+     fallback for docks the plan can't place (unbound / beltless). */
+  const BRIEF_PH = {
+    entry: "The arriving message is the task. This is your station's standing part of it — what this desk always does with arriving work.",
+    chain: "Work arrives here as the previous station's output. This is your station's job — your part of every run that reaches you."
+  };
+  function openStepCard(bayId, ev) {
+    if (!root || root.querySelector('.refit-step-card')) return;
+    const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
-    // role-carrying dock + a live creation seam -> the picker LEADS with the one-click summon
-    const roleInfo = (!isPc && p.role && typeof App !== 'undefined' && App.summonAgent
-      && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
+    const roleInfo = (p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
+    const canSummon = !!(roleInfo && typeof App !== 'undefined' && App.summonAgent);
+    const cur = p.agentId || '';
+    // THE STEP zone copy — all provable floor facts: the role from the stamp, the line from the compiled
+    // component grouping (Pipeline.lineComponents), its name from the intake's saved label.
+    const comp = lineOfProp(bayId);
+    const lineTxt = comp
+      ? 'ON <b>' + esc((lineNameOf(comp) || 'an unnamed line').toUpperCase()) + '</b> — ' + comp.bays.length + ' dock' + (comp.bays.length === 1 ? '' : 's') + ' on this line'
+      : 'not on a line yet — lay belts (7) to put this dock on one';
+    const stepTxt = roleInfo
+      ? 'THIS STEP WANTS A <b>' + esc(p.role) + '</b> — ' + esc(roleInfo.desc)
+      : 'a dock — work routed here runs as its agent';
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
+    const briefPh0 = 'what this step does with arriving work' + (roleInfo ? ' — e.g. ' + roleInfo.desc : '');
+    const briefPh = BRIEF_PH[stepPositionOf(cur)] || briefPh0;
     const g = document.createElement('div');
-    g.className = 'refit-guide refit-bay-picker';
+    g.className = 'refit-guide refit-step-card';
     g.innerHTML = `
       <div class="refit-guide-card">
-        <h3>▮ ASSIGN AGENT TO ${isPc ? 'PC' : 'BAY'}</h3>
-        ${strip}
-        ${isPc
-          ? '<ul><li>This computer becomes the chosen agent\'s <b>dedicated PC</b> — its compute.</li><li><b>Every agent needs its own PC</b>; roommates can share one room, not one computer.</li></ul>'
-          : '<ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li><li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>'}
+        <h3>▮ STEP — ${esc(p.role || 'DOCK')}</h3>
+        ${flowStripHTML('bay')}
         <div class="refit-form">
-        ${roleInfo ? '<div class="refit-sec">THIS DOCK WANTS A ' + esc(p.role) + ' — ' + esc(roleInfo.desc) + '</div><button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
-        ${agents.length ? '<div class="refit-sec">' + (roleInfo ? 'OR PICK ONE OF YOUR AGENTS' : 'YOUR AGENTS — click to assign') + '</div><div class="refit-agents refit-bay-agents">' + rows + '</div>' : ''}
-        <div class="refit-sec">${agents.length ? 'OR TYPE AN AGENT ID' : 'AGENT ID'}</div>
-        <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}" />
+        <div class="refit-sec">THE STEP</div>
+        <div class="step-fact">${stepTxt}</div>
+        <div class="step-fact">${lineTxt}</div>
+        <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(cur) : 'uncrewed'}</span></div>
+        ${canSummon ? '<button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
+        ${agents.length ? '<div class="refit-agents refit-bay-agents" id="step-rows">' + rows + '</div>' : ''}
+        <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="${agents.length ? 'or type an agent id' : 'agent id — e.g. coder'}" value="${esc(cur)}" />
         <div class="refit-error" id="bay-err">unknown agent — pick one above, or check the id</div>
-        <div class="refit-actions">
-          <button type="button" class="btn-sm refit-primary" id="bay-ok">▸ ASSIGN</button>
+        <div class="refit-actions step-agent-actions">
+          <button type="button" class="btn-sm" id="bay-ok">▸ ASSIGN</button>
           <button type="button" class="btn-sm" id="bay-clear">UNBIND</button>
-          <button type="button" class="btn-sm" id="bay-cancel">CANCEL</button>
+        </div>
+        <div class="refit-sec">THE WORK — JOB BRIEF</div>
+        <textarea id="step-brief" class="refit-input refit-brief" maxlength="2000" rows="3" placeholder="${esc(briefPh)}">${esc(p.brief || '')}</textarea>
+        <div class="refit-note step-brief-note">rides every run this dock gets — saved on blur / Ctrl-Enter. It briefs the agent; it never changes who runs or what tools they hold.</div>
+        <div class="refit-actions">
+          <button type="button" class="btn-sm refit-primary" id="step-done">✓ DONE</button>
         </div>
         </div>
       </div>`;
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const input = g.querySelector('#bay-aid');
+    const brief = g.querySelector('#step-brief');
+    const boundEl = g.querySelector('#step-bound');
     const clearErr = () => { input.classList.remove('is-error'); };
-    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    const closeP = () => { saveBrief(); if (g.parentNode) g.parentNode.removeChild(g); };
+    // a bind/unbind UPDATES the card in place (the brief draft must survive crewing the dock) — the
+    // one-surface law: configure the whole step here, close once.
+    const refreshBinding = () => {
+      const live = station.propById(bayId), aid = (live && live.agentId) || '';
+      if (boundEl) boundEl.textContent = aid ? 'crewed by ' + aid : 'uncrewed';
+      g.querySelectorAll('.bay-agent').forEach(x => x.classList.toggle('active', x.dataset.aid === aid));
+      input.value = aid;
+      // a bind can place this dock on the compiled line — re-read its position so the brief placeholder
+      // speaks to the right feed (arriving message vs the previous station's output). Best-effort: the plan
+      // recompiles async, so a one-frame-stale read just keeps the current copy until the next open.
+      if (brief && !brief.value) brief.placeholder = BRIEF_PH[stepPositionOf(aid)] || briefPh0;
+    };
+    // THE WORK — saved on blur / Ctrl-Enter (never lost on close; a no-op save is silent)
+    let briefSaved = p.brief || '';
+    function saveBrief() {
+      if (!brief || typeof station.setPropBrief !== 'function') return;
+      const v = brief.value.trim();
+      if (v === briefSaved) return;
+      const res = station.setPropBrief(bayId, v);
+      if (res && res.ok) { briefSaved = res.brief || ''; sfx('click'); flashTip(ev, v ? 'job brief saved' : 'job brief cleared', true); }
+      else sfx('bad');
+    }
+    brief.addEventListener('blur', saveBrief);
+    brief.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveBrief(); }
+      if (e.key === 'Escape') { e.stopPropagation(); brief.blur(); }   // first ESC leaves the field (saving); the next closes the card
+    });
     // ⊕ SUMMON A <ROLE> HERE — one click: real summon (existing seam) + bind to THIS dock. On any
     // failure the button re-arms and the manual pick below stays fully available (never a dead end).
     const sumBtn = g.querySelector('#bay-summon');
@@ -1053,26 +1156,24 @@ const Build = (() => {
       sumBtn.disabled = true;
       const a = summonForRole(p.role, roleInfo);
       const res = a && station.assignPropAgent(bayId, a.id);
-      if (res && res.ok) { sfx('chime'); flashTip(ev, a.name + ' summoned → crews this dock', true); closeP(); }
+      if (res && res.ok) { sfx('chime'); flashTip(ev, a.name + ' summoned → crews this dock', true); refreshBinding(); }
       else { sumBtn.disabled = false; sfx('bad'); flashTip(ev, a ? 'summoned, but the dock refused the bind' : 'summon failed — pick an agent below', false); }
     };
-    // ONE CLICK: choosing a roster agent IS the assignment. The old behavior (click only filled the id
-    // into the input, ▸ ASSIGN still required) read as "nothing happened" and got dialogs closed half-done.
+    // ONE CLICK: choosing a roster agent IS the assignment (kept from the old picker — see its note).
     g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => {
       const res = station.assignPropAgent(bayId, b.dataset.aid);
-      if (res && res.ok) { sfx('click'); flashTip(ev, noun + ' → ' + (b.textContent || res.agentId).trim(), true); closeP(); }
+      if (res && res.ok) { sfx('click'); flashTip(ev, 'bay → ' + (b.textContent || res.agentId).trim(), true); refreshBinding(); }
       else { input.value = b.dataset.aid; input.classList.add('is-error'); sfx('bad'); }
     });
     input.addEventListener('input', clearErr);
     g.querySelector('#bay-ok').onclick = () => {
       const res = station.assignPropAgent(bayId, input.value.trim());
-      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP(); }
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('bay → ' + res.agentId) : 'bay unbound', true); refreshBinding(); }
       else { input.classList.add('is-error'); sfx('bad'); }
     };
-    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, noun + ' unbound', true); closeP(); };
-    g.querySelector('#bay-cancel').onclick = closeP;
+    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, 'bay unbound', true); refreshBinding(); };
+    g.querySelector('#step-done').onclick = () => { sfx('click'); closeP(); };
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
-    try { input.focus(); input.select(); } catch (_) {}
   }
 
   /* ---------- WORKSTATION agent-picker: the desk/PC version of the BAY picker. A workstation carries an
@@ -1175,25 +1276,215 @@ const Build = (() => {
     if (!root || root.querySelector('.refit-flow-card')) return;
     const p = station.propById(propId); if (!p) return;
     const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
-    const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN' };
+    const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE' };
     const LINE = {
-      intake: 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. No feed connected? It says so, and clicking it opens CHANNELS.',
+      intake: 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. Its TRIGGERS below decide why this line runs; wire one right here.',
       outbox: 'Every job the crew actually FINISHES ships a green crate here; the pallet is today’s output. Click it (when quiet) for the LOGBOOK.',
       // honest by construction: the harness runs each work-item on its own, so the floor must show each
       // one arriving. A merger tidies several lanes into one — it never combines the JOBS riding them.
-      merger: 'Where several belt lanes join into one. Every crate rides straight through — a merger tidies the LANES, it does not combine the jobs on them (each still runs on its own). Nothing to configure.'
+      merger: 'Where several belt lanes join into one. Every crate rides straight through — a merger tidies the LANES, it does not combine the jobs on them (each still runs on its own). Nothing to configure.',
+      // the splitter's counterpart card: it balances UNOWNED work across its out-lanes; addressed
+      // jobs still ride home (junctionLaneOwners). Nothing to configure — topology does the work.
+      splitter: 'Where one lane fans into several. Unowned work balances across the out-lanes; addressed jobs (crons, bound chats) still take the lane that leads to their owner’s bay. Nothing to configure.'
     };
     const line = LINE[p.t] || LINE.outbox;
+    /* LINE NAMING (workflow studio, 2026-08-05): the INTAKE is a line's front door, so its card names the
+       line — an additive `label` on the intake prop (worldmodel.setPropLabel; migrate() whitelists it).
+       Blueprint stamps leave it UNSET: the placeholder offers the blueprint's name (session map) but only
+       what the Commander types is saved. Legibility only — the finish-the-line header + the intake glance
+       read it; routing never does. Multiple lines on one floor become nameable systems. */
+    const isIntake = p.t === 'intake';
+    const namePh = isIntake ? (stampNameOf[p.id] || 'name this line') : '';
+    const nameHtml = isIntake
+      ? '<div class="refit-sec">LINE NAME</div>'
+        + '<input id="line-name" class="refit-input" type="text" maxlength="48" placeholder="' + esc(namePh) + '" value="' + esc(p.label || '') + '" />'
+        + '<div class="refit-note">names this whole line (shown on its checklist + this INBOX\'s glance) — saved on Enter / blur</div>'
+      : '';
+    /* ---------- THE TRIGGER ZONE (inbox-trigger, 2026-08-05) ----------
+       The INBOX card is the workflow's WHY, completing the loop the floor already draws: trigger (INBOX) →
+       steps (docks + briefs) → result (OUTBOX). Before this the floor shipped the SHAPE of a workflow while
+       its triggers had to be pre-created elsewhere (CHANNELS / AUTOMATION). The zone is truthfully derived:
+       the server-proven feed truth (World.feedState — the exact NO FEED source) and the cron store's own
+       rows (GET /api/cron, filtered to THIS line's dock agents). ⊕ NEW ROUTINE posts the SAME body the
+       AUTOMATION window's create form sends — same schedule vocabulary (every 30m · 0 9 * * * · in 2h),
+       same /api/cron/preview honesty, and NO unattended grants: a routine made from the inbox gets nothing
+       the AUTOMATION window wouldn't give by default. */
+    const comp = isIntake ? lineOfProp(propId) : null;
+    const docks = (comp ? comp.bays : []).filter(b => b.agentId);
+    // default fire-at: the line's entry-reachable dock (plan.reach — fed straight by an intake source);
+    // several bound docks -> a small picker naming role + agent. No bound dock -> honest disable.
+    const entryDocks = docks.filter(b => valPlan && valPlan.reach && valPlan.reach[b.agentId]);
+    let trgDock = (entryDocks[0] || docks[0] || {}).agentId || null;
+    const dockChip = b => '<button type="button" class="bb sm trg-dock' + (b.agentId === trgDock ? ' active' : '') + '" data-aid="' + esc(b.agentId) + '">'
+      + esc((b.role ? b.role + ' · ' : '') + agentLabelFor(b.agentId)) + '</button>';
+    const TRG_PRESETS = [['EVERY 30M', 'every 30m'], ['EVERY 1H', 'every 1h'], ['DAILY 9:00', '0 9 * * *']];
+    const trgHtml = isIntake
+      ? '<div class="refit-sec">TRIGGERS — WHY THIS LINE RUNS</div>'
+        + '<div class="step-fact" id="trg-feed">checking the wires…</div>'
+        + '<div id="trg-routines" class="trg-list"></div>'
+        + '<button type="button" class="bb sm refit-primary refit-summon" id="trg-new">⊕ NEW ROUTINE FOR THIS LINE</button>'
+        + '<div id="trg-form" style="display:none">'
+          + '<textarea id="trg-prompt" class="refit-input refit-brief" maxlength="2000" rows="2" placeholder="what should each run do? e.g. search for new AI-policy news and summarize the top 3"></textarea>'
+          + '<div class="refit-agents trg-presets">' + TRG_PRESETS.map(pp => '<button type="button" class="bb sm trg-preset" data-sched="' + esc(pp[1]) + '">' + esc(pp[0]) + '</button>').join('') + '</div>'
+          + '<input id="trg-sched" class="refit-input" type="text" maxlength="80" placeholder="schedule — every 30m · 0 9 * * * · in 2h" />'
+          + '<div class="trg-preview" id="trg-preview"></div>'
+          + (docks.length > 1
+              ? '<div class="refit-sec">FIRES AT</div><div class="refit-agents" id="trg-docks">' + docks.map(dockChip).join('') + '</div>'
+              : docks.length === 1
+              ? '<div class="step-fact">fires at <b>' + esc((docks[0].role ? docks[0].role + ' · ' : '') + agentLabelFor(docks[0].agentId)) + '</b> — this line’s ' + (entryDocks.length ? 'entry dock' : 'dock') + '</div>'
+              : '<div class="refit-note">crew a dock first — a routine fires at an agent</div>')
+          + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="trg-create"' + (docks.length ? '' : ' disabled') + '>▸ CREATE ROUTINE</button><button type="button" class="btn-sm" id="trg-cancel">CANCEL</button></div>'
+          + '<div class="refit-note trg-msg" id="trg-msg" style="display:none"></div>'
+        + '</div>'
+        + '<div class="refit-actions trg-doors"><button type="button" class="btn-sm" id="trg-chan">⌁ CONNECT A CHANNEL</button><button type="button" class="btn-sm" id="trg-auto">▸ MANAGE IN AUTOMATION</button></div>'
+      : '';
     const g = document.createElement('div');
     g.className = 'refit-guide refit-flow-card';
     g.innerHTML = '<div class="refit-guide-card"><h3>▮ ' + (TITLE[p.t] || TITLE.outbox) + '</h3>'
       + flowStripHTML(hot)
       + '<ul><li>' + line + '</li></ul>'
+      + nameHtml
+      + trgHtml
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));
-    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    let savedLabel = p.label || '';
+    const nameIn = g.querySelector('#line-name');
+    const saveName = () => {
+      if (!nameIn || typeof station.setPropLabel !== 'function') return;
+      const v = nameIn.value.trim();
+      if (v === savedLabel) return;
+      const res = station.setPropLabel(propId, v);
+      if (res && res.ok) { savedLabel = res.label || ''; sfx('click'); flashTip(null, v ? 'line named — ' + v : 'line name cleared', true); if (running) { finSig = ''; renderFinCard(); } }
+      else sfx('bad');
+    };
+    if (nameIn) {
+      nameIn.addEventListener('blur', saveName);
+      nameIn.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); saveName(); }
+        if (e.key === 'Escape') { e.stopPropagation(); nameIn.blur(); }   // leave the field (saving); the next ESC closes the card
+      });
+    }
+    const closeP = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
+    /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
+    if (isIntake) {
+      const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');
+      const formEl = g.querySelector('#trg-form'), newBtn = g.querySelector('#trg-new');
+      const promptEl = g.querySelector('#trg-prompt'), schedEl = g.querySelector('#trg-sched');
+      const pvEl = g.querySelector('#trg-preview'), msgEl = g.querySelector('#trg-msg');
+      const dockAgents = {};
+      for (const b of docks) dockAgents[b.agentId] = true;
+      let schedulerArmed = false;   // mirrors GET /api/cron enabled && !halted — the honest create-confirm
+      const say = (t, bad) => { msgEl.style.display = ''; msgEl.style.color = bad ? 'var(--bad)' : ''; msgEl.textContent = t; };
+      // the channel/routine FEED TRUTH — the same World.feedState the NO FEED nag keys on. Floor-global by
+      // construction (that is what the server proves), said in floor-global words.
+      const feed = (opts && opts.world && opts.world.feedState) ? opts.world.feedState() : { known: false, fed: false };
+      feedEl.innerHTML = !feed.known ? 'CHANNEL FEED — checking the wires…'
+        : feed.fed ? '<b>✓ FED</b> — a channel or an armed routine is wired to drop work on this floor'
+        : '<b>NO FEED</b> — nothing is wired to drop work here yet';
+      // routines targeting THIS line's dock agents — straight off the cron store, name + schedule + state
+      function trgRefresh() {
+        listEl.innerHTML = '<span class="dim">reading routines…</span>';
+        fetch(finApi('/api/cron')).then(r => (r.ok ? r.json() : null)).then(j => {
+          if (!listEl.isConnected) return;
+          if (!j) { listEl.innerHTML = '<div class="refit-note">sidecar unreachable — routines unknown</div>'; return; }
+          schedulerArmed = !!(j.enabled && !j.halted);
+          const mine = (Array.isArray(j.jobs) ? j.jobs : []).filter(jb => jb && dockAgents[jb.agentId]);
+          if (!mine.length) { listEl.innerHTML = '<div class="trg-row dim">no routines target this line’s docks yet</div>'; return; }
+          listEl.innerHTML = mine.map(jb =>
+            '<div class="trg-row"><span class="trg-state' + (jb.enabled && schedulerArmed ? ' on' : '') + '">' + (jb.enabled ? (schedulerArmed ? '●' : '◍') : '○') + '</span> '
+            + '<b>' + esc(jb.name || '(unnamed)') + '</b> <span class="dim">' + esc(jb.scheduleDisplay || '') + ' · fires at ' + esc(agentLabelFor(jb.agentId)) + '</span>'
+            + (jb.enabled ? (schedulerArmed ? '' : ' <span class="trg-warn">saved — scheduler OFF</span>') : ' <span class="dim">paused</span>') + '</div>').join('');
+        }).catch(() => { if (listEl.isConnected) listEl.innerHTML = '<div class="refit-note">sidecar unreachable — routines unknown</div>'; });
+      }
+      trgRefresh();
+      // schedule preview — the honest "next fires", straight from the server math (same seam AUTOMATION uses)
+      const relFmt = iso => { const d = Date.parse(iso) - Date.now(); if (!isFinite(d)) return ''; const m = Math.round(d / 60000); return m < 1 ? 'under a minute' : m < 60 ? 'in ' + m + 'm' : m < 2880 ? 'in ' + Math.round(m / 60) + 'h' : 'in ' + Math.round(m / 1440) + 'd'; };
+      let pvTimer = null;
+      const preview = () => {
+        clearTimeout(pvTimer);
+        const v = schedEl.value.trim();
+        if (!v) { pvEl.textContent = ''; return; }
+        pvTimer = setTimeout(() => {
+          fetch(finApi('/api/cron/preview'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schedule: v }) })
+            .then(r => r.json()).then(r => {
+              if (!pvEl.isConnected || schedEl.value.trim() !== v) return;
+              if (r && r.ok) {
+                const nx = (Array.isArray(r.localNext) && r.localNext[0]) ? r.localNext[0] : (Array.isArray(r.next) && r.next[0] ? relFmt(r.next[0]) : '');
+                pvEl.innerHTML = '✓ ' + esc(r.display) + (nx ? ' → next: ' + esc(nx) : '');
+              } else pvEl.innerHTML = '<span class="trg-warn">' + esc((r && r.error) || 'unrecognized schedule') + '</span>';
+            }).catch(() => {});
+        }, 300);
+      };
+      schedEl.addEventListener('input', preview);
+      g.querySelectorAll('.trg-preset').forEach(b => b.onclick = () => { schedEl.value = b.dataset.sched; sfx('click'); preview(); });
+      g.querySelectorAll('.trg-dock').forEach(b => b.onclick = () => {
+        trgDock = b.dataset.aid; sfx('click');
+        g.querySelectorAll('.trg-dock').forEach(x => x.classList.toggle('active', x.dataset.aid === trgDock));
+      });
+      newBtn.onclick = () => { sfx('click'); formEl.style.display = formEl.style.display === 'none' ? '' : 'none'; if (formEl.style.display !== 'none') promptEl.focus(); };
+      g.querySelector('#trg-cancel').onclick = () => { sfx('click'); formEl.style.display = 'none'; };
+      g.querySelector('#trg-create').onclick = () => {
+        const prompt = promptEl.value.trim(), schedule = schedEl.value.trim();
+        if (!prompt || !schedule) { sfx('bad'); say('a task and a schedule are required', true); return; }
+        if (!trgDock) { sfx('bad'); say('crew a dock first — a routine fires at an agent', true); return; }
+        const btn = g.querySelector('#trg-create'); btn.disabled = true; say('saving…');
+        // the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
+        // provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
+        // the defaults the AUTOMATION window's untouched form would give).
+        const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (e) { return undefined; } })();
+        const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
+        const lname2 = lineNameOf(comp);
+        const name = (lname2 ? lname2 + ' — ' : '') + (prompt.length > 48 ? prompt.slice(0, 45) + '…' : prompt);
+        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz }) })
+          .then(r => r.json()).then(r => {
+            btn.disabled = false;
+            if (r && r.error) { sfx('bad'); say('✕ ' + r.error, true); return; }
+            sfx('chime');
+            // honest confirm: never claim "scheduled" over a disarmed scheduler (same law as AUTOMATION)
+            say(schedulerArmed ? '✓ routine scheduled — fires at ' + agentLabelFor(trgDock) : '✓ saved — but the scheduler is OFF; enable it in AUTOMATION', !schedulerArmed);
+            promptEl.value = ''; pvEl.textContent = '';
+            trgRefresh();
+          }).catch(() => { btn.disabled = false; sfx('bad'); say('✕ could not reach the sidecar — nothing was created', true); });
+      };
+      // the two doors: the SAME openers the finish card / NO FEED nag promise. Both leave REFIT (saving).
+      g.querySelector('#trg-chan').onclick = () => { sfx('click'); closeP(); close(); if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('messaging'); };
+      g.querySelector('#trg-auto').onclick = () => { sfx('click'); closeP(); close(); if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('routines'); };
+    }
     g.querySelector('#flow-ok').onclick = () => { sfx('click'); closeP(); };
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+  }
+
+  /* ---------- BELT-TILE INFO CARD (select mode): "where does this lane go?" ----------
+     Answered from the COMPILED plan via Pipeline.routeFrom — the same fan-every-junction walk the
+     hover tags and the sidecar's routing read from, so the card can never claim a destination a
+     dispatch wouldn't reach. Plan coords are LOCAL (valPlan compiles from cacheGeo) → rebase the
+     clicked WORLD tile by cacheGeo.origin before asking. */
+  function openBeltCard(tx, ty, ev) {
+    if (!root || root.querySelector('.refit-belt-card')) return;
+    const dir = station.beltAt(tx, ty);
+    if (!dir) return;
+    const o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
+    const r = (valPlan && typeof Pipeline !== 'undefined' && Pipeline.routeFrom)
+      ? Pipeline.routeFrom(valPlan, tx - o.tx, ty - o.ty) : null;
+    const DIRWORD = { E: 'EAST ▸', W: '◂ WEST', N: '▴ NORTH', S: '▾ SOUTH' };
+    const li = [];
+    if (r) {
+      if (r.agents.length) li.push('Work riding this lane reaches <b>' + r.agents.map(a => esc(agentLabelFor(a))).join(' + ') + '</b>.');
+      if (r.unbound) li.push('It passes <b>' + r.unbound + ' uncrewed dock' + (r.unbound === 1 ? '' : 's') + '</b> — crew them or crates ride past.');
+      if (r.outbox) li.push('It <b>ships out at the OUTBOX</b>.');
+      if (r.deadEnd) li.push('A branch <b>dead-ends</b> — nothing consumes there.');
+      if (!r.agents.length && !r.unbound && !r.outbox && !r.deadEnd) li.push('This tile isn’t on the compiled line yet — connect it to a machine.');
+    } else li.push('No compiled route yet — lay the line to a machine and this card reads its destination.');
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-belt-card';
+    g.innerHTML = '<div class="refit-guide-card"><h3>▮ BELT — LANE ' + (DIRWORD[dir] || dir) + '</h3>'
+      + '<ul>' + li.map(s => '<li>' + s + '</li>').join('') + '</ul>'
+      + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="belt-ok">✓ GOT IT</button></div></div>';
+    root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    g.querySelector('#belt-ok').onclick = () => { sfx('click'); closeP(); };
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
   }
 
@@ -1404,15 +1695,24 @@ const Build = (() => {
   // render the stage captions: VT323 phosphor, brief rise + fade, world coords (drawn after the boxes)
   function drawTestNotes(now, t) {
     if (!testNotes.length) return;
+    // ride captions register on the activeFlow layer (a running ▸ TEST is a live gesture — it
+    // outranks hover/nags, and the arbiter keeps overlapping captions from garbling each other)
     ctx.save();
-    ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.font = VAL_FONT();
     for (let i = testNotes.length - 1; i >= 0; i--) {
       const n = testNotes[i], k = (now - n.t0) / NOTE_MS;
       if (k >= 1) { testNotes.splice(i, 1); continue; }
       const rise = Math.min(1, k * 4) * 4 + k * 3;
-      ctx.globalAlpha = k < 0.12 ? k / 0.12 : (1 - k) / 0.88;
-      ctx.shadowBlur = 3; ctx.shadowColor = n.col; ctx.fillStyle = n.col;
-      ctx.fillText(n.text, (n.x + 0.5) * t, n.y * t - 3 - rise);
+      const fs = Math.max(9, 11 / zoom), tw = ctx.measureText(n.text).width;
+      const lx = (n.x + 0.5) * t, ly = n.y * t - 3 - rise;
+      voiceSay('activeFlow', { x: n.x * t, y: n.y * t, w: t, h: t }, { x: lx - tw / 2, y: ly - fs, w: tw, h: fs }, (c) => {
+        c.save();
+        c.font = VAL_FONT(); c.textAlign = 'center'; c.textBaseline = 'bottom';
+        c.globalAlpha = k < 0.12 ? k / 0.12 : (1 - k) / 0.88;
+        c.shadowBlur = 3; c.shadowColor = n.col; c.fillStyle = n.col;
+        c.fillText(n.text, lx, ly);
+        c.restore();
+      });
     }
     ctx.restore();
   }
@@ -1457,6 +1757,7 @@ const Build = (() => {
   }
   let valComps = null;          // Pipeline.lineComponents of the CURRENT compiled geometry (set in rebake)
   let lastStampIds = null;      // prop ids of the line stamped this session → the card adopts that line
+  const stampNameOf = {};       // intake propId -> blueprint label (session-scoped; the name field's placeholder)
   let finKeySel = null;         // the line key the card is focused on (session-scoped)
   let finCardEl = null, finComp = null, finSig = '', finPollTs = 0;
   function finState(c) {
@@ -1487,7 +1788,10 @@ const Build = (() => {
     if (!c) { if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl); finCardEl = null; finComp = null; finSig = ''; return; }
     finComp = c;
     const st = finState(c);
-    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample].join('|');
+    // the card is titled with the LINE'S NAME (the intake's saved label — line naming); unnamed lines
+    // keep the generic header. In the sig so a rename repaints without a topology edit.
+    const lname = lineNameOf(c);
+    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || ''].join('|');
     if (!finCardEl) {
       finCardEl = document.createElement('div');
       finCardEl.className = 'refit-finline';
@@ -1502,7 +1806,7 @@ const Build = (() => {
     const sampleOn = finSample === true && crewDone;
     const sampleTip = finSample !== true ? 'coming online soon' : (crewDone ? 'feed ONE real, clearly-labeled sample job through the whole line' : 'crew the docks first');
     finCardEl.innerHTML = `
-      <div class="fl-head"><span class="fl-title">▸ FINISH THE LINE</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
+      <div class="fl-head"><span class="fl-title">▸ ${lname ? 'FINISH ' + esc(lname.toUpperCase()) : 'FINISH THE LINE'}</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
       <button type="button" class="bb fl-step${crewDone ? ' done' : ''}" data-act="crew"${crewDone ? ' disabled' : ''}>${esc(crewTxt)}</button>
       <button type="button" class="bb fl-step${st.feedDone ? ' done' : ''}" data-act="feed"${st.feedDone ? ' disabled' : ''}>${esc(feedTxt)}</button>
       <button type="button" class="bb fl-step${sampleOn ? '' : ' off'}" data-act="sample" title="${esc(sampleTip)}">③ RUN A SAMPLE JOB</button>`;
@@ -1510,7 +1814,7 @@ const Build = (() => {
     const bCrew = finCardEl.querySelector('[data-act="crew"]');
     if (bCrew && !crewDone) bCrew.onclick = () => finFocusCrew(c);
     const bFeed = finCardEl.querySelector('[data-act="feed"]');
-    if (bFeed && !st.feedDone) bFeed.onclick = () => finOpenFeed();
+    if (bFeed && !st.feedDone) bFeed.onclick = () => finOpenFeed(c);
     const bSample = finCardEl.querySelector('[data-act="sample"]');
     if (bSample) bSample.onclick = () => { if (sampleOn) finRunSample(c); };
   }
@@ -1522,12 +1826,16 @@ const Build = (() => {
     panX = cv.width / 2 - (b.x + o.tx + b.w / 2) * t * zoom;
     panY = cv.height / 2 - (b.y + o.ty + b.h / 2) * t * zoom;
     sfx('click');
-    openBayPicker(b.propId, null);
+    openStepCard(b.propId, null);
   }
-  // ② — the real feed surfaces (channels + routines) live in the CHANNELS panel outside REFIT: finish
-  // + save (the ✓ DONE path), then open the exact surface the live world's NO FEED nag click opens.
-  function finOpenFeed() {
+  // ② — ONE SURFACE (inbox-trigger, 2026-08-05): the line's own INBOX card carries the TRIGGER zone
+  // (feed truth, this line's routines, create-right-here, and the CHANNELS/AUTOMATION doors), so the FEED
+  // step opens THAT — the trigger is defined on the floor, not behind a blind hop to the messaging term.
+  // A line with no intake keeps the old door: the CHANNELS panel is the only feed surface it has.
+  function finOpenFeed(c) {
     sfx('click');
+    const iid = c && c.intakes && c.intakes[0];
+    if (iid && station.propById(iid)) { openFlowCard(iid); return; }
     close();
     if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('messaging');
   }
@@ -1697,12 +2005,23 @@ const Build = (() => {
   function onDown(ev) {
     lastClient = { x: ev.clientX, y: ev.clientY };
     hidePropCard();
-    // right-button cancels an in-progress edit (and never starts one) — including a half-made connection
-    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } if (dupe) { dupe = null; hideTip(); setHint(); } return; }
+    // right-button cancels an in-progress edit (and never starts one) — then DROPS the armed tool
+    // back to SELECT. The browser context menu is already suppressed on the canvas (contextmenu
+    // preventDefault in buildDOM), so right-click is a pure deselect gesture.
+    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } if (dupe) { dupe = null; hideTip(); setHint(); } deselectTool(); return; }
     try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
+    if (tool === 'select') {
+      // SELECT (the default): a click INSPECTS what's under it — machine → its editor/picker/flow
+      // card, belt tile → where this lane goes. Empty deck does nothing (space-drag still pans).
+      const pid = station.propAt(w.tx, w.ty);
+      const p = pid && station.propById(pid);
+      if (p) { onInspect(p, ev); return; }
+      if (station.beltAt(w.tx, w.ty)) { openBeltCard(w.tx, w.ty, ev); return; }
+      return;
+    }
     if (tool === 'belt') {
       /* CONNECT MODE — the primary belt interaction (2026-07-05 UX reshape): click one MACHINE, then
          another, and the path lays itself (station.connectBelt — oriented, hooked, junction-aware).
@@ -1726,11 +2045,20 @@ const Build = (() => {
     } else if (tool === 'prop') {
       drag = { mode: 'propstamp', start: w, cur: w, moved: false };
     } else if (tool === 'dupe') {
-      // click-only tool: first click COPIES what's under the cursor, every later click STAMPS a copy
-      if (dupe) stampDupe(w, ev); else pickupDupe(w, ev);
+      // click-only tool: first click COPIES what's under the cursor, every later click STAMPS a copy.
+      // CLICK-ON-MACHINE WINS: with a copy armed, a click ON an existing machine inspects it instead
+      // of silently attempting an invalid stamp on top of it.
+      if (dupe) {
+        const pid = station.propAt(w.tx, w.ty), p = pid && station.propById(pid);
+        if (p) { onInspect(p, ev); return; }
+        stampDupe(w, ev);
+      } else pickupDupe(w, ev);
       return;
     } else if (tool === 'line') {
-      // click-only tool: the armed starter line stamps under the cursor (the ghost already showed it)
+      // click-only tool: the armed starter line stamps under the cursor (the ghost already showed it).
+      // CLICK-ON-MACHINE WINS: a click ON an existing machine inspects it — stamping only on clear deck.
+      const pid = station.propAt(w.tx, w.ty), p = pid && station.propById(pid);
+      if (p) { onInspect(p, ev); return; }
       stampLine(w, ev);
       return;
     } else if (tool === 'move') {
@@ -1806,6 +2134,13 @@ const Build = (() => {
   }
 
   function commitDraw(d, ev) {
+    // CLICK-ON-MACHINE WINS: a plain click (no drag) on an existing machine inspects it — a 1×1
+    // room/hall attempt on top of a prop was never anything but a red flash.
+    if (!d.moved) {
+      const exist = station.propAt(d.cur.tx, d.cur.ty);
+      const ep = exist && station.propById(exist);
+      if (ep) { onInspect(ep, ev); return; }
+    }
     const rect = (tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur);
     const res = (tool === 'hall') ? station.placeHallway({ rect }) : station.addRoom({ kind, rect });
     if (res && res.ok) pushFlash([rect], false);
@@ -1821,15 +2156,35 @@ const Build = (() => {
   // a workstation (PC/desk) opens the dedicated WORKSTATION picker; bays/junctions/etc. keep their editors.
   // (Trunk's PC-binding via the BAY picker is unified into the workstation picker — same agentId field, richer UX.)
   // a MERGER has no config (pure topology, like the splitter) — it explains itself via the flow card.
-  const openPropEditor = (id, t, ev) => { if (WORKSTATION_TYPES[t]) openWorkstationPicker(id, ev); else if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); else if (t === 'intake' || t === 'outbox' || t === 'merger') openFlowCard(id); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger = flow card only (no config)
+  /* THE INSPECT SEAM (2026-08-05): every "the user clicked a machine to look at it" path lands on
+     this ONE dispatch point — select-mode clicks, click-on-machine-wins from armed tools, freshly
+     placed configurables, and the openAssign deep link. The follow-up per-dock step editor replaces
+     the routing INSIDE this function; callers never fan out on prop type themselves. */
+  function onInspect(p, ev) {
+    if (!p) return;
+    const t = p.t;
+    if (WORKSTATION_TYPES[t]) return openWorkstationPicker(p.id, ev);
+    if (t === 'bay') return openStepCard(p.id, ev);   // the per-dock STEP EDITOR (step + agent + job brief — one card)
+    if (t === 'filter') return openJunctionEditor(p.id, ev);
+    if (t === 'airlock') return openDoorPicker(p.id, ev);
+    if (t === 'connector_portal') return openConnectorEditor(p.id, ev);
+    if (t === 'intake' || t === 'outbox' || t === 'merger' || t === 'splitter') return openFlowCard(p.id);
+    // no config surface: answer the click honestly instead of doing nothing
+    const sp = propSpec(t);
+    flashTip(ev, ((sp.label || t) + '').toUpperCase() + ' — MOVE (4) relocates · RECLAIM (5) removes', true);
+  }
+  const openPropEditor = (id, t, ev) => { const p = station && station.propById(id); if (p) onInspect(p, ev); };
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, splitter: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger/splitter = flow card only (no config)
   const isEditableProp = t => !!PROP_EDITABLE[t] || !!WORKSTATION_TYPES[t];   // a workstation binds an agent + opens its picker on place/click
   function commitPropStamp(d, ev) {
-    // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
-    if (isEditableProp(propType) && !d.moved) {
+    // CLICK-ON-MACHINE WINS: a click (no drag) on ANY existing prop inspects it instead of attempting
+    // a placement on top of it — placement happens only on clear deck. (The old rule only caught a
+    // same-type editable prop, so clicking a bay with a desk armed silently tried an invalid place —
+    // the exact "it believes I'm trying to place something" complaint.)
+    if (!d.moved) {
       const exist = station.propAt(d.cur.tx, d.cur.ty);
       const ep = exist && station.propById(exist);
-      if (ep && ep.t === propType) { openPropEditor(exist, ep.t, ev); return; }
+      if (ep) { onInspect(ep, ev); return; }
     }
     const s = propSpec(propType);
     let px = d.cur.tx, py = d.cur.ty;
@@ -1860,11 +2215,22 @@ const Build = (() => {
         if (propType === 'connector_portal') { if (Tutorial.onConnectorPlaced) Tutorial.onConnectorPlaced(); }
         else if ((!isEditableProp(propType) || CONNECT_TYPES[propType]) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
       }
+      // PLACEMENT FLOW: one stamp done → the tool DROPS back to SELECT (silent — the place sound
+      // already fired). Drag-paint tools (BELT/RECLAIM/SURFACE) stay armed; stamping is a decision,
+      // painting is a stroke.
+      deselectTool({ silent: true });
       if (isEditableProp(propType) && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
     }
     feedback(res, ev, grant ? ('EQUIPPED · grants ' + grant) : ('placed ' + propType));
   }
   function commitBeltRun(d, ev) {
+    // CLICK-ON-MACHINE WINS: connectable machines were consumed by the connect flow in onDown; a
+    // plain click on any OTHER machine (a desk, decor) inspects it instead of a 1-tile invalid run.
+    if (!d.moved) {
+      const exist = station.propAt(d.cur.tx, d.cur.ty);
+      const ep = exist && station.propById(exist);
+      if (ep) { onInspect(ep, ev); return; }
+    }
     const res = station.placeBeltRun(d.start, d.cur);
     if (res && res.ok && res.count) {
       pushFlash([beltRunBox(d.start, d.cur)], false);
@@ -2022,9 +2388,11 @@ const Build = (() => {
     if (ev.key === 'Escape') {
       const card = root && root.querySelector('.refit-guide');
       if (card) { markSeen(); card.parentNode.removeChild(card); return; }
-      if (drag) { drag = null; hideTip(); setCursor(); return; }   // cancel an in-progress edit first
-      if (dupe) { dupe = null; hideTip(); setHint(); return; }     // drop the armed copy before leaving REFIT
-      return close();
+      if (drag) { drag = null; hideTip(); setCursor(); return; }         // cancel an in-progress edit first
+      if (connectFrom) { connectFrom = null; hideTip(); return; }        // then a half-made connection
+      if (dupe) { dupe = null; hideTip(); setHint(); return; }           // then the armed copy
+      if (tool !== 'select') { deselectTool(); return; }                 // then the armed tool → SELECT
+      return close();                                                    // only a bare select-mode ESC leaves REFIT
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'z' || ev.key === 'Z')) {
       ev.preventDefault();
@@ -2033,7 +2401,7 @@ const Build = (() => {
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'y' || ev.key === 'Y')) { ev.preventDefault(); sfx(station.redo().ok ? 'click' : 'bad'); return; }
     if (ev.key === 'f' || ev.key === 'F') { fitCamera(); return; }
-    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt', '8': 'dupe', '9': 'line' };
+    const map = { '0': 'select', '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt', '8': 'dupe', '9': 'line' };
     if (map[ev.key]) selectTool(map[ev.key]);
   }
   function onKeyUp(ev) { if (ev.key === ' ') { spaceHeld = false; setCursor(); } }
@@ -2185,6 +2553,7 @@ const Build = (() => {
     const drawVisibleRect = visibleBakeRect(cacheGeo);
     if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy, drawVisibleRect);
     else ctx.drawImage(cache.baseCv, ox, oy);
+    voiceBegin();   // one-voice law: every text layer below REGISTERS; the arbiter paints at the end
     drawGrid(t);
     drawConveyor(now, t);   // belts (floor) → props → boxes ride on top
     drawProps(now);
@@ -2198,6 +2567,9 @@ const Build = (() => {
     drawHover(t);
     drawAgentTag(t);   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
     drawGhost(t, now);
+    // every voice has registered — the arbiter now paints AT MOST one label per anchor region.
+    // overFloor: the pointer is on the station (or a gesture is live) → the projection stays quiet.
+    voiceFlush(!!drag || !!(hoverRoomId || hoverPropId || (hoverTile && station.beltAt(hoverTile.tx, hoverTile.ty))));
     // animate the prop-palette preview gallery (~25fps is plenty + cheap). Runs LAST: it hijacks PropSprites'
     // ctx for the offscreen tiles, and the next frame re-points it at the main canvas in drawProps().
     if (tool === 'prop' && propThumbs.length && now - lastThumbTs >= 40) { paintThumbs(now); lastThumbTs = now; }
@@ -2305,7 +2677,9 @@ const Build = (() => {
   function drawConveyorBoxes(now, t) {
     if (!convey) return;
     convey.drawBoxes(ctx, now, t); drawTestNotes(now, t);
-    if (ghost) ghost.draw(ctx, now, t, Math.max(9, 11 / zoom));   // projection + WOULD-captions over the real layer
+    // projection + WOULD-captions over the real layer — captions go THROUGH the arbiter
+    // (ghostCaption layer: mutes whenever any other voice speaks or the pointer rides the floor)
+    if (ghost) ghost.draw(ctx, now, t, Math.max(9, 11 / zoom), (box, paint) => voiceSay('ghostCaption', box, box, paint));
   }
 
   /* THE GUIDANCE LIVES WHERE THE HANDS ARE (2026-07-05 playtest): callouts render INSIDE build mode, in
@@ -2314,6 +2688,40 @@ const Build = (() => {
      coordinates are LOCAL-frame (valPlan compiles from cacheGeo) and are REBASED by cacheGeo.origin here,
      which kills the frame-drift bug that misplaced ghosts on off-origin floors.
      Red = blocking (loop / no default lane / dup agent / dry intake); amber = fixable advice. */
+  /* ---------- THE ONE-VOICE LABEL ARBITER (2026-08-05 interaction reshape) ----------
+     Every floating-text layer on the REFIT canvas REGISTERS its labels here instead of painting
+     directly; the arbiter draws once per frame, after every producer has spoken. The law it
+     enforces (Andrew's "clusterfuck of text" verdict): AT MOST one label per anchor region, and a
+     lower layer is muted entirely wherever a higher one is live nearby (collision = overlapping
+     label rects OR overlapping anchors).
+       priority: activeFlow (connect gesture / test-ride captions)
+               > hover (the machine under the pointer)
+               > topNag (validation callouts — real problems)
+               > ghostCaption (the projection's WOULD-voice)
+               > rolePlacard (an unbound role dock introducing itself)
+     Ghost captions additionally mute while ANY other layer speaks anywhere, or while the pointer
+     is over the floor (the user is looking at machines, not the projection).
+     All rects are WORLD px (the frame's zoom/pan transform is live at flush time). */
+  const LAYER_PRI = { activeFlow: 5, hover: 4, topNag: 3, ghostCaption: 2, rolePlacard: 1 };
+  const voiceReqs = [];
+  function voiceBegin() { voiceReqs.length = 0; }
+  // anchor = the machine/tile the label speaks about; box = the label's own rect; draw paints it
+  function voiceSay(layer, anchor, box, draw) { voiceReqs.push({ layer, pri: LAYER_PRI[layer] || 0, anchor, box, draw }); }
+  const voiceHit = (a, b, pad) => !!(a && b) && a.x - pad < b.x + b.w && a.x + a.w + pad > b.x && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
+  function voiceFlush(overFloor) {
+    if (!voiceReqs.length) return;
+    const othersSpeak = voiceReqs.some(r => r.layer !== 'ghostCaption');
+    const pad = 4 / zoom;   // world-px breathing room between voices
+    const live = voiceReqs.filter(r => r.layer !== 'ghostCaption' || (!othersSpeak && !overFloor));
+    live.sort((a, b) => b.pri - a.pri);   // stable: within a layer, registration order holds
+    const placed = [];
+    for (const r of live) {
+      if (placed.some(p => voiceHit(r.box, p.box, pad) || voiceHit(r.anchor, p.anchor, 0))) continue;
+      placed.push(r);
+      if (r.draw) r.draw(ctx);
+    }
+  }
+
   const VAL_FONT = () => Math.max(9, 11 / zoom) + "px 'VT323','Courier New',monospace";
   /* LABEL COLLISION (2026-07-11): callouts are laid out, not just painted — neighboring findings on one
      row (or two findings on the SAME prop) used to print on a shared baseline and mash into garble
@@ -2339,7 +2747,12 @@ const Build = (() => {
     const o = cacheGeo.origin || { tx: 0, ty: 0 };
     const pulse = 0.55 + 0.35 * Math.sin(now / 280);
     const placed = [];
-    const mark = (rect, col, label) => {
+    // the checklist's focused next step: its dock may speak its role placard even unhovered
+    const focusDock = (finCardEl && finComp) ? (finState(finComp).unbound[0] || null) : null;
+    const focusDockId = focusDock ? focusDock.propId : null;
+    /* brackets always paint (a bracket is machinery marking, not text); the LABEL registers with
+       the arbiter — one voice per anchor, higher layers mute this one nearby. */
+    const mark = (rect, col, label, layer) => {
       // rect arrives in LOCAL tiles → draw in WORLD px (bake + props frame)
       const X = (rect.x1 + o.tx) * t, Y = (rect.y1 + o.ty) * t;
       const Wd = (rect.x2 - rect.x1 + 1) * t, Hd = (rect.y2 - rect.y1 + 1) * t;
@@ -2353,13 +2766,24 @@ const Build = (() => {
       ctx.moveTo(X + .5, Y + Hd - .5 - L); ctx.lineTo(X + .5, Y + Hd - .5); ctx.lineTo(X + .5 + L, Y + Hd - .5);
       ctx.moveTo(X + Wd - .5, Y + Hd - .5 - L); ctx.lineTo(X + Wd - .5, Y + Hd - .5); ctx.lineTo(X + Wd - .5 - L, Y + Hd - .5);
       ctx.stroke();
-      ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
+      ctx.restore();
+      if (!label) return;
+      // measure + collision-step NOW (final boxes), paint at flush if the arbiter grants the voice
+      ctx.save();
+      ctx.font = VAL_FONT();
+      const tw = ctx.measureText(label).width;
+      ctx.restore();
       // baseline-bottom label: its box spans [y-lh, y] — colliders step UP (dir -1), away from the machinery
       const lh = Math.max(9, 11 / zoom) + 2 / zoom;
-      const ly = placeLabel(placed, X + Wd / 2, Y - 2 / zoom - lh, ctx.measureText(label).width, lh, -1);
-      ctx.fillText(label, X + Wd / 2, ly + lh);
-      ctx.restore();
+      const ly = placeLabel(placed, X + Wd / 2, Y - 2 / zoom - lh, tw, lh, -1);
+      voiceSay(layer || 'topNag', { x: X, y: Y, w: Wd, h: Hd }, { x: X + Wd / 2 - tw / 2, y: ly, w: tw, h: lh }, (c) => {
+        c.save();
+        c.globalAlpha = pulse;
+        c.font = VAL_FONT(); c.textAlign = 'center'; c.textBaseline = 'bottom';
+        c.shadowBlur = 3; c.shadowColor = col; c.fillStyle = col;
+        c.fillText(label, X + Wd / 2, ly + lh);
+        c.restore();
+      });
     };
     // routing findings from the compiled plan — every label names the FIX (see VAL_LABEL)
     if (valPlan && valPlan.errors && valPlan.errors.length) {
@@ -2369,10 +2793,20 @@ const Build = (() => {
         let rect = null;
         if (e.tile) rect = { x1: e.tile.x, y1: e.tile.y, x2: e.tile.x, y2: e.tile.y };
         else if (e.propId && propById[e.propId]) { const p = propById[e.propId]; rect = { x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }; }
-        let label = VAL_LABEL[e.code] || e.code;
-        // a ROLE-carrying unbound dock says WHO it wants, not a bare NO AGENT (guided workflows Phase 1)
-        if (e.code === 'UNBOUND_BAY' && e.propId) { const rl = roleLabelFor(propById[e.propId]); if (rl) label = rl; }
-        if (rect) mark(rect, e.warn ? '#ffbe3c' : '#ff5046', label);   // amber warn vs red blocker
+        if (!rect) continue;
+        let label = VAL_LABEL[e.code] || e.code, layer = 'topNag';
+        /* a ROLE-carrying unbound dock is a PLACARD, not a permanent nag (one-voice law): it speaks
+           only while hovered or while it is the checklist's focused next step — at rest the amber
+           bracket + the FINISH-THE-LINE card already carry the story. Roleless unbound bays keep
+           the short topNag (there is no card walking the user to them). */
+        if (e.code === 'UNBOUND_BAY' && e.propId) {
+          const rl = roleLabelFor(propById[e.propId]);
+          if (rl) {
+            layer = 'rolePlacard';
+            label = (hoverPropId === e.propId || focusDockId === e.propId) ? rl : null;
+          }
+        }
+        mark(rect, e.warn ? '#ffbe3c' : '#ff5046', label, layer);   // amber warn vs red blocker
       }
     }
     // B5 cost-safety: a BOUND bay whose room has no dedicated PC can't run routed work — the compute gate
@@ -2401,25 +2835,34 @@ const Build = (() => {
     const pulse = 0.45 + 0.3 * Math.sin(now / 260);
     const placed = [];
     ctx.save();
-    ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = VAL_FONT();
     for (const p of station.props()) {
       if (!CONNECT_TYPES[p.t]) continue;
       const isFrom = connectFrom && p.id === connectFrom;
       // mid-connect the story flips: the armed machine burns gold, every other machine reads as a target
-      const role = isFrom ? 'FROM ▸ NOW CLICK A DESTINATION'
-        : connectFrom ? 'CLICK TO CONNECT'
-        : p.t === 'intake' ? 'FROM · CLICK TO CONNECT' : (p.t === 'bay' || p.t === 'outbox') ? 'TO · CLICK TO CONNECT' : 'JUNCTION';
       const col = isFrom ? '#ffd94a' : connectFrom ? '#7ee2a8' : p.t === 'intake' ? '#3fd08a' : '#5ad0ff';
       const X = p.x * t, Y = p.y * t, Wd = (p.w || 1) * t, Hd = (p.h || 1) * t;
       ctx.globalAlpha = isFrom ? 0.95 : pulse;
       ctx.strokeStyle = col; ctx.lineWidth = (isFrom ? 2.5 : 1.5) / zoom;
       ctx.strokeRect(X - 1, Y - 1, Wd + 2, Hd + 2);
-      ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
+      /* ONE-VOICE LAW: the FROM/TO text exists ONLY while the connect flow is mid-gesture
+         (connectFrom armed). At rest the pulsing outlines alone say "these are the endpoints" —
+         nine simultaneous CLICK TO CONNECT / JUNCTION captions were the loudest single layer in
+         Andrew's text-soup screenshot. Mid-gesture labels ride the activeFlow layer (top priority). */
+      if (!connectFrom) continue;
+      const role = isFrom ? 'FROM ▸ NOW CLICK A DESTINATION' : 'CLICK TO CONNECT';
+      const tw = ctx.measureText(role).width;
       // baseline-top label below the prop: colliders step DOWN (dir +1), away from the machinery
       const lh = Math.max(9, 11 / zoom) + 2 / zoom;
-      const ly = placeLabel(placed, X + Wd / 2, Y + Hd + 2 / zoom, ctx.measureText(role).width, lh, 1);
-      ctx.fillText(role, X + Wd / 2, ly);
-      ctx.shadowBlur = 0;
+      const ly = placeLabel(placed, X + Wd / 2, Y + Hd + 2 / zoom, tw, lh, 1);
+      voiceSay('activeFlow', { x: X, y: Y, w: Wd, h: Hd }, { x: X + Wd / 2 - tw / 2, y: ly, w: tw, h: lh }, (c) => {
+        c.save();
+        c.font = VAL_FONT(); c.textAlign = 'center'; c.textBaseline = 'top';
+        c.globalAlpha = isFrom ? 0.95 : pulse;
+        c.shadowBlur = 3; c.shadowColor = col; c.fillStyle = col;
+        c.fillText(role, X + Wd / 2, ly);
+        c.restore();
+      });
     }
     ctx.restore();
   }
@@ -2431,42 +2874,65 @@ const Build = (() => {
     if (drag || !hoverPropId) return;
     const p = station.propById(hoverPropId);
     if (!p) return;
-    const isPc = isPcProp(p.t), isBay = p.t === 'bay';
-    if (!isPc && !isBay) return;
-    const bound = !!p.agentId;
+    const anchor = { x: p.x * t, y: p.y * t, w: (p.w || 1) * t, h: (p.h || 1) * t };
+    /* ONE-VOICE LAW: while the DOM prop card (the Fallout-style hover panel) is up for THIS prop,
+       it IS the hover voice — the canvas tag would be a second caption on the same machine. Still
+       CLAIM the hover slot (an empty draw) so lower layers (nags, placards, ghost) mute near the
+       machine the user is actually looking at. The chain line the tag used to add is folded into
+       the card itself (propCardHTML) so no information is lost. */
+    const cardUp = propCard && propCard.style.display === 'block' && propCardKey && propCardKey.indexOf('p:' + p.id + ':') === 0;
+    if (cardUp) { voiceSay('hover', anchor, anchor, null); return; }
+    const isPc = isPcProp(p.t), isBay = p.t === 'bay', isIntake = p.t === 'intake';
+    if (!isPc && !isBay && !isIntake) return;
+    // a NAMED line's INBOX glances its line name (line naming — registered through the arbiter like every
+    // other hover voice; an unnamed intake keeps its pre-existing silence, no new resting text).
+    if (isIntake && !p.label) return;
+    const bound = isIntake ? true : !!p.agentId;
     // a role-carrying dock's glance names the role it wants while unbound ("BAY · needs a RESEARCHER")
     const ri = (!bound && p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
-    const txt = (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : (ri ? 'needs a ' + p.role + ' — ' + ri.desc : 'unassigned'));
-    ctx.font = (8 / zoom) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    const cx = (p.x + (p.w || 1) / 2) * t, topY = p.y * t - 2 / zoom;
-    const pad = 5 / zoom, bw = ctx.measureText(txt).width + pad * 2, bh = 11 / zoom;
-    ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw / 2, topY - bh, bw, bh);
-    ctx.fillStyle = bound ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
-    ctx.fillText(txt, cx, topY - 2 / zoom);
+    const txt = isIntake ? ('LINE · ' + String(p.label))
+      : (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : (ri ? 'needs a ' + p.role + ' — ' + ri.desc : 'unassigned'));
     // dock→dock affordance: a BOUND bay's glance also says where its OUTPUT goes — read from the compiled
     // plan's chain record (valPlan.chains — the same fact the sidecar routes by), so the tag can never
     // claim a handoff dispatch wouldn't perform. Same tag chrome, stacked one line above; still a glance,
     // never a window. A beltless dock has no chain record and gains no line.
+    let t2 = null, ch = null;
     if (isBay && bound && valPlan && valPlan.chains) {
-      const ch = valPlan.chains[p.agentId];
-      const t2 = !ch ? null
+      ch = valPlan.chains[p.agentId];
+      t2 = !ch ? null
         : (ch.next && ch.next.length) ? '▸ HANDS OFF TO ' + ch.next.map(agentLabelFor).join(' + ')
         : ch.outbox ? '▸ SHIPS TO OUTBOX'
         : ch.deadEnd ? '▸ OUTPUT DEAD-ENDS' : null;
-      if (t2) {
-        const bw2 = ctx.measureText(t2).width + pad * 2, top2 = topY - bh;
-        ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw2 / 2, top2 - bh, bw2, bh);
-        // handoff/ship-out = the bound green; a dead-ending output reads amber (same invite-to-fix tone as 'unassigned')
-        ctx.fillStyle = (ch.next && ch.next.length) || ch.outbox ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
-        ctx.fillText(t2, cx, top2 - 2 / zoom);
-      }
     }
+    ctx.save();
+    ctx.font = (8 / zoom) + 'px monospace';
+    const pad = 5 / zoom, bh = 11 / zoom;
+    const bw = ctx.measureText(txt).width + pad * 2;
+    const bw2 = t2 ? ctx.measureText(t2).width + pad * 2 : 0;
+    ctx.restore();
+    const cx = (p.x + (p.w || 1) / 2) * t, topY = p.y * t - 2 / zoom;
+    const lines = t2 ? 2 : 1, wMax = Math.max(bw, bw2);
+    voiceSay('hover', anchor, { x: cx - wMax / 2, y: topY - bh * lines, w: wMax, h: bh * lines }, (c) => {
+      c.save();
+      c.font = (8 / zoom) + 'px monospace'; c.textAlign = 'center'; c.textBaseline = 'bottom';
+      c.fillStyle = 'rgba(8,16,12,0.92)'; c.fillRect(cx - bw / 2, topY - bh, bw, bh);
+      c.fillStyle = bound ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
+      c.fillText(txt, cx, topY - 2 / zoom);
+      if (t2) {
+        const top2 = topY - bh;
+        c.fillStyle = 'rgba(8,16,12,0.92)'; c.fillRect(cx - bw2 / 2, top2 - bh, bw2, bh);
+        // handoff/ship-out = the bound green; a dead-ending output reads amber (same invite-to-fix tone as 'unassigned')
+        c.fillStyle = (ch.next && ch.next.length) || ch.outbox ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
+        c.fillText(t2, cx, top2 - 2 / zoom);
+      }
+      c.restore();
+    });
   }
 
   function drawHover(t) {
     if (drag) return;
-    // a hovered prop (move/reclaim) outlines on top of any room outline
-    if ((tool === 'move' || tool === 'reclaim' || (tool === 'dupe' && !dupe)) && hoverPropId) {
+    // a hovered prop (select/move/reclaim) outlines on top of any room outline
+    if ((tool === 'select' || tool === 'move' || tool === 'reclaim' || (tool === 'dupe' && !dupe)) && hoverPropId) {
       const p = station.propById(hoverPropId);
       if (p) {
         ctx.lineWidth = 1.5 / zoom;
@@ -2475,11 +2941,11 @@ const Build = (() => {
         return;
       }
     }
-    // a belt is reclaimable even though it sits ON a deck: highlight the BELT tile (not the room
-    // under it) so the red outline matches what a click actually tears down (belt-before-room).
-    if (tool === 'reclaim' && hoverTile && station.beltAt(hoverTile.tx, hoverTile.ty)) {
+    // a belt is reclaimable/inspectable even though it sits ON a deck: highlight the BELT tile (not
+    // the room under it) so the outline matches what a click actually targets (belt-before-room).
+    if ((tool === 'reclaim' || tool === 'select') && hoverTile && station.beltAt(hoverTile.tx, hoverTile.ty)) {
       ctx.lineWidth = 1.5 / zoom;
-      ctx.strokeStyle = 'rgba(255,92,77,0.95)';
+      ctx.strokeStyle = tool === 'reclaim' ? 'rgba(255,92,77,0.95)' : 'rgba(120,220,255,0.95)';
       ctx.strokeRect(hoverTile.tx * t + 1, hoverTile.ty * t + 1, t - 2, t - 2);
       return;
     }
@@ -2590,20 +3056,44 @@ const Build = (() => {
         ? '<div class="pc-assign ok">▸ HOSTED BY ' + esc(agentLabel(placed.agentId)) + '</div>'
         : '<div class="pc-assign">UNASSIGNED — click to choose an agent</div>';
     } else if (placed && placed.t === 'bay') {
-      assign = placed.agentId
-        ? '<div class="pc-assign ok">▸ AGENT ' + esc(agentLabel(placed.agentId)) + '</div>'
-        : '<div class="pc-assign">NO AGENT — click to assign</div>';
+      if (placed.agentId) {
+        assign = '<div class="pc-assign ok">▸ AGENT ' + esc(agentLabel(placed.agentId)) + '</div>';
+        // the dock→dock line the canvas tag used to carry — the card is the ONE hover voice now
+        // (one-voice law), so the chain fact rides here, from the same compiled valPlan.chains.
+        const ch = valPlan && valPlan.chains && valPlan.chains[placed.agentId];
+        const t2 = !ch ? null
+          : (ch.next && ch.next.length) ? '▸ HANDS OFF TO ' + ch.next.map(agentLabelFor).join(' + ')
+          : ch.outbox ? '▸ SHIPS TO OUTBOX'
+          : ch.deadEnd ? '▸ OUTPUT DEAD-ENDS' : null;
+        if (t2) assign += '<div class="pc-assign' + ((ch.next && ch.next.length) || ch.outbox ? ' ok' : '') + '">' + esc(t2) + '</div>';
+      } else {
+        // an unbound ROLE dock introduces itself here on hover (its floor placard is muted while hovered)
+        const ri = (placed.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(placed.role) : null;
+        assign = ri ? '<div class="pc-assign">NEEDS A ' + esc(placed.role) + ' — ' + esc(ri.desc) + ' — click to crew</div>'
+          : '<div class="pc-assign">NO AGENT — click to assign</div>';
+      }
     } else if (placed && placed.t === 'connector_portal') {
       assign = placed.connectorId
         ? '<div class="pc-assign ok">▸ BOUND ' + esc(placed.connectorId) + '</div>'
         : '<div class="pc-assign">UNBOUND — click to bind a server</div>';
+    } else if (placed && placed.t === 'intake' && placed.label) {
+      // a NAMED line's INBOX hover names the line (line naming) — the card is the ONE hover voice in
+      // REFIT (one-voice law), so the fact rides here; the canvas glance covers the card-less contexts.
+      assign = '<div class="pc-assign ok">▸ LINE · ' + esc(placed.label) + '</div>';
+    }
+    // a briefed dock's hover shows its duty line (a glance answer to "what does this step DO?")
+    if (placed && placed.t === 'bay' && placed.brief) {
+      const bp = String(placed.brief).replace(/\s+/g, ' ');
+      assign += '<div class="pc-assign">✎ ' + esc(bp.length > 72 ? bp.slice(0, 72) + '…' : bp) + '</div>';
     }
     return '<h4>' + esc(c.label) + '</h4>' + tier + (desc ? ('<p>' + esc(desc) + '</p>') : '') + '<div class="pc-foot">' + foot + '</div>' + assign;
   }
   let propCardKey = null;
   function showPropCard(c, placed, cx, cy) {
     if (!propCard || !c) return;
-    const key = placed ? ('p:' + placed.id + ':' + (placed.agentId || placed.connectorId || '')) : ('c:' + c.id);
+    const key = placed
+      ? ('p:' + placed.id + ':' + (placed.agentId || placed.connectorId || '') + ':' + (placed.label || '') + ':' + (placed.brief ? placed.brief.length : 0))
+      : ('c:' + c.id);
     if (key !== propCardKey) { propCard.innerHTML = propCardHTML(c, placed); propCardKey = key; }
     propCard.style.display = 'block';
     const w = propCard.offsetWidth || 230, h = propCard.offsetHeight || 96;
@@ -2633,6 +3123,8 @@ const Build = (() => {
   }
   const __test__ = {
     isOpen: () => running,
+    // the armed tool (select = nothing armed) — CDP proof scripts assert the deselect gestures on this
+    tool: () => tool,
     // the live WorldModel — for CDP verify scripts to lay a floor through the REAL validated
     // mutation API (setBelt/addProp/assignPropAgent), never by poking doc internals.
     station: () => station || (opts && typeof opts.getStation === 'function' ? opts.getStation() : null),

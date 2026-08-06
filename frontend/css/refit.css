@@ -92,6 +92,33 @@
 /* ---------- ⊕ SUMMON A <ROLE> HERE — the leading action on a role-carrying dock's picker ---------- */
 .refit-summon { display: flex; align-items: center; justify-content: center; width: 100%; margin: 2px 0 4px; }
 
+/* ---------- THE STEP CARD — the per-dock step editor (workflow studio) ----------
+   Three zones on the shared guide card: THE STEP (provable line facts), THE AGENT (the folded-in
+   picker), THE WORK (the standing job brief). Matte, theme vars only, VT323 for readouts. */
+.step-fact { font-family: 'VT323', monospace; font-size: 14.5px; letter-spacing: .5px; color: var(--text); margin: 2px 0; }
+.step-fact b { color: var(--ph-bright); }
+#step-bound { color: var(--ok); text-transform: none; letter-spacing: .5px; }
+.refit-brief {
+  resize: vertical; min-height: 58px; max-height: 180px;
+  line-height: 1.25; font-size: 14.5px;
+}
+.step-brief-note { font-size: 12px; color: var(--ph-dim); margin: 2px 0 0; }
+.step-agent-actions { margin-top: 2px; }
+
+/* ---------- THE TRIGGER ZONE — the INBOX card's WHY (inbox-trigger, 2026-08-05) ----------
+   Truth rows (feed state + this line's routines off the live cron store) and the inline create
+   mini-form. Matte, theme vars only, VT323 readouts — same vocabulary as the step card zones. */
+.trg-list { margin: 2px 0 4px; }
+.trg-row { font-family: 'VT323', monospace; font-size: 14px; letter-spacing: .4px; color: var(--text); margin: 2px 0; line-height: 1.25; }
+.trg-row b { color: var(--ph-bright); }
+.trg-state { color: var(--ph-dim); }
+.trg-state.on { color: var(--gold); }
+.trg-warn { color: var(--warn); }
+.trg-preview { min-height: 1em; font-family: 'VT323', monospace; font-size: 13px; letter-spacing: .4px; color: var(--ph-dim); margin: 0 0 2px; }
+.trg-presets { margin: 2px 0; }
+.trg-doors { margin-top: 6px; }
+.trg-msg { margin: 6px 0 0; }
+
 /* ---------- FINISH THE LINE — the per-line checklist card (guided workflows Phase 2) ----------
    A floating side card in the station's matte panel vocabulary: theme vars only, VT323, and every
    mixed-glyph label BOX-centred (flex), never padded from font-size (symbol-glyph fallback law).

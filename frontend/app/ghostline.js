@@ -241,24 +241,36 @@ const GhostLine = (() => {
       }
     }
 
-    /* ---------- draw: the ghost crate (conveyor.js projection art) + the WOULD-captions ---------- */
-    function draw(ctx, nowMs, T, fontPx) {
+    /* ---------- draw: the ghost crate (conveyor.js projection art) + the WOULD-captions ----------
+       `say` (optional) is the caller's label arbiter: when provided, each live caption is OFFERED as
+       say(box, paint) — box = the label's rect in the caller's pixel frame, paint = a callback that
+       draws it — instead of painted directly, so the caller's one-voice law can mute the projection
+       while any higher layer speaks. Omitted (world.js, tests) → the classic direct paint. */
+    function draw(ctx, nowMs, T, fontPx, say) {
       if (!engine) return;
       engine.drawBoxes(ctx, nowMs, T);
       if (!notes.length) return;
       const fs = fontPx || 8;
-      ctx.save();
-      ctx.font = fs + "px 'VT323','Courier New',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      for (let i = notes.length - 1; i >= 0; i--) {
-        const n = notes[i], k = (nowMs - n.t0) / NOTE_MS;
-        if (k >= 1 || k < 0) { notes.splice(i, 1); continue; }
+      const font = fs + "px 'VT323','Courier New',monospace";
+      const paintNote = (n, k) => {
         const rise = Math.min(1, k * 4) * 3 + k * 2;
+        ctx.save();
+        ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.globalAlpha = (k < 0.12 ? k / 0.12 : (1 - k) / 0.88) * 0.85;
         ctx.shadowBlur = 3; ctx.shadowColor = GHOST_COL; ctx.fillStyle = GHOST_COL;
         ctx.fillText(n.text, (n.x + 0.5) * T, n.y * T - 3 - rise);
+        ctx.restore();
+      };
+      for (let i = notes.length - 1; i >= 0; i--) {
+        const n = notes[i], k = (nowMs - n.t0) / NOTE_MS;
+        if (k >= 1 || k < 0) { notes.splice(i, 1); continue; }
+        if (say) {
+          ctx.save(); ctx.font = font;
+          const w = ctx.measureText(n.text).width;
+          ctx.restore();
+          say({ x: (n.x + 0.5) * T - w / 2, y: n.y * T - 3 - fs, w, h: fs }, paintNote.bind(null, n, k));
+        } else paintNote(n, k);
       }
-      ctx.restore();
     }
 
     function reset() { clearRide(); cur = null; projecting = false; pass = 0; }

@@ -239,10 +239,41 @@ function makeRecommendationLedger(deps) {
       e.outcome = normOutcome(Object.assign({}, e.outcome, patch || {})); e.updatedAt = Number(now) || e.updatedAt; out = e; return s;
     }).then(() => out);
   }
+  /* THE EXPIRY SWEEP (one-memory lane, 2026-08-05). `expiresAt` was normalized and stored on every row and then
+     consulted by NOTHING — a surface could declare "this offer stops being answerable at T" and the ledger kept
+     the un-answered impression forever, quietly depressing acceptanceRate for an offer nobody could act on.
+     The sweep DROPS a row only when ALL THREE hold: it declared an expiry, the expiry has passed, and it was
+     never answered (still `shown`/`opened`). An expiry is NEVER a verdict — deferred/accepted/declined/completed
+     rows are the Commander's real answers and are kept regardless (the declinedindex law: TTL expiries never
+     feed suppression, and a dropped row feeds nothing at all). Rows that declared no expiry are untouched. */
+  function sweep(now) {
+    const at = Number(now) || 0;
+    if (!at) return Promise.resolve(0);
+    let dropped = 0;
+    return durable.update(STORE_KEY, cur => {
+      const s = normalize(cur);
+      const keep = s.entries.filter(e => !(e.expiresAt > 0 && at > e.expiresAt && (e.state === 'shown' || e.state === 'opened')));
+      dropped = s.entries.length - keep.length;
+      if (!dropped) return undefined;
+      s.entries = keep; return s;
+    }).then(() => dropped);
+  }
   function clear() { return durable.update(STORE_KEY, () => ({ v: 1, entries: [] })).then(() => true); }
-  function declinedTexts() { return read().entries.filter(e => e.state === 'declined').map(e => e.title); }
+  /* every text a declined row can be recognized by: the title AND the target (one-memory lane, 2026-08-05).
+     A shelf decline's target is the recipe/class id; a spine decline's is a token fingerprint of the proposal.
+     The shared declined index normalizes both, so a re-proposal that matches EITHER exactly is suppressed —
+     and one that matches neither never is (the index's own false-suppression bar, unchanged). */
+  function declinedTexts() {
+    const out = [];
+    for (const e of read().entries) {
+      if (e.state !== 'declined') continue;
+      out.push(e.title);
+      if (e.target && e.target !== e.title) out.push(e.target);
+    }
+    return out;
+  }
   function summary(opts) { return replay(read(), opts); }
-  return { read, list, record, verdict, verdictTarget, outcome, clear, declinedTexts, summary, _durable: durable };
+  return { read, list, record, verdict, verdictTarget, outcome, sweep, clear, declinedTexts, summary, _durable: durable };
 }
 
 module.exports = { makeRecommendationLedger, normalize, normalizeEntry, replay, fingerprint, preferenceFor,

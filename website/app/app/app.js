@@ -2656,6 +2656,11 @@ const App = (() => {
     // (a clean run, the Commander's 👍/👌/👎, an explicit decline). Self-persists its own key; read-only bus
     // citizen. Init here, alongside the other proactive-channel stores, so the first pass already sees it.
     if (typeof RecQualityStore !== 'undefined') RecQualityStore.init({ now: () => Date.now() });
+    // ONE RECOMMENDATION MEMORY: the spine's wire into the durable cross-surface ledger every other recommendation
+    // surface already writes and reads. Its init fires the one read (declined titles + the learned preference
+    // model) the ranking consults; every step of it fails open, so a cold or unreachable ledger simply leaves the
+    // spine ranking exactly as it did before this existed.
+    if (typeof RecLedger !== 'undefined') RecLedger.init({ now: () => Date.now() });
     // QUEST MEMORY (G1a): durable quest state — firstSeenAt/completedAt per quest + dismissed-forever — and
     // the open→done completion celebration (quest sting + gold toast + row flourish; NEVER XP). Self-persists
     // to its own key. Init AFTER XpStore/DossierStore so its first fold sees the real projection as a quiet
