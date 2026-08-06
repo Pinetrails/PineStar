@@ -10811,6 +10811,10 @@ async function handleRun(req, res) {
   // dressing — which buries a "reply with ONLY a 3-6 word title" instruction and makes models answer chattily),
   // and the away clock is never stamped for it: agent self-talk is not user presence (NS away-detection contract).
   const internal = !!(body && body.internal);
+  // …and the ONE exception to that bareness (rec perfection W2): a recommendation generator asks the model what
+  // this Commander should do next, so it may request the same bounded evidence pack an ordinary task run gets.
+  // Only meaningful alongside internal; runOnce ignores it otherwise.
+  const evidence = !!(body && body.evidence);
   const runProvider = normalizeProvider(provider);
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
@@ -10984,7 +10988,7 @@ async function handleRun(req, res) {
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
       key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
-      emit, signal: ac.signal, runId, trigger: 'directive', internal,
+      emit, signal: ac.signal, runId, trigger: 'directive', internal, evidence,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
       askCommander,            // in-turn clarify: brief.ask blocks + resumes the SAME turn on this watched surface
@@ -12614,8 +12618,24 @@ async function runOnce(o) {
   // pages of station doctrine and made models answer as a chatty station agent — the parser then rejected the
   // reply, so e.g. session titles silently stayed on their first-words placeholder.
   const directDomainBlock = directDomainTask ? '\n\n' + DomainTask.prompt(directDomainTask) : '';
+  /* ── THE EVIDENCE PACK FOR RECOMMENDATION GENERATORS (rec perfection W2, 2026-08-05) ───────────────────
+     `internal` keeps the caller's prompt verbatim, and the audit found what that cost: the three generators
+     that must GUESS what the Commander wants next (the First Pitch, the goal decomposition, the ongoing
+     suggestion) were reasoning from strictly LESS than an ordinary task run — the static dossier block in
+     their system prompt, and nothing else. No learned topics with their verbatim quotes, no open threads, no
+     verdict patterns, no recent activity, no active goal. The runs that need evidence most had the least.
+     `evidence:true` appends exactly the pack an ordinary task receives (commander-context.js — bounded,
+     provenance-labelled, "observed; weak; never override the current request"). Everything else about the
+     internal path is untouched: no manual, no capability summary, no skills, no memory fence, and no
+     recall-stat writes (those are gated on `internal` separately, below). It is APPENDED to the system prompt,
+     never inserted after the directive — the caller's strict-format instruction rides the user message and
+     must stay the last thing the model reads. Fail-open: a compose error leaves the prompt byte-identical. */
+  let evidenceBlock = '';
+  if (internal && o.evidence) {
+    try { const t = commanderEvidenceContext(system || ''); if (t) evidenceBlock = '\n\n' + t; } catch (_) { evidenceBlock = ''; }
+  }
   const sys = internal
-    ? String(system || '')
+    ? (String(system || '') + evidenceBlock)
     : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the

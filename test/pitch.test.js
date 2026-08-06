@@ -63,6 +63,8 @@ const good = 'PITCH: a daily crypto-price watcher\nWHY: you said you check price
 A.eq(P.parsePitch(good), {
   title: 'a daily crypto-price watcher',
   why: 'you said you check prices every morning',
+  // W2: the optional EVIDENCE line. A reply without one reads '' — an absent receipt, never a fabricated quote.
+  evidence: '',
   gap: 'which coins you actually care about',
   build: { kind: 'recipe', recipeId: 'morning-brief' }
 }, 'parses a well-formed recipe pitch');

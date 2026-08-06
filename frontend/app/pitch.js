@@ -157,6 +157,16 @@
     lines.push('Reply in EXACTLY this format, nothing else:');
     lines.push('PITCH: <one line — what to build>');
     lines.push('WHY: <one sentence — why it fits this Commander>');
+    /* THE EVIDENCE LINE (rec perfection W2), requested only by callers that will actually VETO it. The WHY line
+       is the model's own prose about its own pitch — useful, but not evidence, and W3 established that the
+       ledger may not call it a quote. This asks for something different in kind: the Commander's OWN words that
+       the pitch stands on. The caller (suggeststore) then checks that quote for real token overlap with what the
+       station knows and DROPS it when there is none, so an invented quote can never be spoken back at them.
+       Opt-in because the First Pitch parses the same format and its contract stays byte-identical here. */
+    if (ctx.wantEvidence) {
+      lines.push('EVIDENCE: <the Commander\'s OWN words this stands on, quoted verbatim from what you know about ' +
+        'them above — never your own paraphrase. If you cannot quote them, write NONE.>');
+    }
     lines.push('BUILD: recipe:<id from the list above>  OR  workflow');
     lines.push('GAP: <the one thing only the Commander can give you to make it theirs>');
     return lines.join('\n');
@@ -175,9 +185,14 @@
     if (!title) return null;
     const build = grab('BUILD');
     const rm = /recipe\s*:\s*([\w.-]+)/i.exec(build);
+    /* the EVIDENCE line, when the caller asked for one. Absent (the First Pitch) or an explicit NONE both read
+       as '' — the model saying it cannot quote them is an HONEST answer, and the caller renders no receipt.
+       Surrounding quote marks are stripped so the caller owns the quoting, exactly like recCite does. */
+    const ev = grab('EVIDENCE').replace(/^["“”'‘’]+|["“”'‘’]+$/g, '').trim();
     return {
       title,
       why: grab('WHY'),
+      evidence: /^none$/i.test(ev) ? '' : ev,
       gap: grab('GAP'),
       build: rm ? { kind: 'recipe', recipeId: rm[1] } : { kind: 'workflow', recipeId: null }
     };
