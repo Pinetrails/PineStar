@@ -1487,16 +1487,22 @@ const StationBake = (() => {
      TOP edge (the crown side) and grows toward the floor contact; `a` runs along the wall's length.
      That is what lets one painter serve west, east, south and an interior north seam, each of which
      points its depth axis a different way. */
+  /* `runs` are depths in PIXELS, for the ~4px foreshortened side band. `deepRuns` are FRACTIONS of
+     the face depth, for the tall curving corner face, which runs ~23px at the top of the arc and a
+     couple at its foot — a rail pinned to an absolute depth would slide off the wall as it narrows.
+     `grain` is a concentric pitch for the materials whose straight recipe carries horizontal grain.
+     Every value below is read off the material's own recipe, so the corner continues what the
+     straight wall is already doing rather than inventing a second vocabulary. */
   const WALL_EDGES = {
-    bulkhead:  { pitch: 12, joint: -0.30 },
-    courses:   { pitch: 6,  joint: -0.34 },
-    service:   { pitch: 12, joint: -0.26, runs: [[1, 0.16]] },              // the conduit that rides the wall
-    plating:   { pitch: 12, joint: -0.30, runs: [[0, 0.14]] },              // lit plate lip along the top
-    ribbed:    { pitch: 4,  joint: -0.36, litNext: 0.16 },                  // the tightest rhythm in the set
-    panelled:  { pitch: 12, joint: -0.32, runs: [[1, -0.18]] },             // panel inset
+    bulkhead:  { pitch: 12, joint: -0.30, deepRuns: [[0.34, -0.16]] },
+    courses:   { pitch: 6,  joint: -0.34, grain: 6 },
+    service:   { pitch: 12, joint: -0.26, runs: [[1, 0.16]], grain: 5 },    // the conduit that rides the wall
+    plating:   { pitch: 12, joint: -0.30, runs: [[0, 0.14]], deepRuns: [[0.55, -0.26], [0.60, 0.14]] },
+    ribbed:    { pitch: 4,  joint: -0.36, litNext: 0.16, deepRuns: [[0.72, -0.28]] },   // the tightest rhythm in the set
+    panelled:  { pitch: 12, joint: -0.32, runs: [[1, -0.18]], deepRuns: [[0.28, -0.20], [0.78, -0.20]] },
     viewport:  { pitch: 12, joint: -0.20, glass: true },                    // dark cool glazing
-    pipework:  { pitch: 6,  joint: -0.24, runs: [[1, 0.12], [2, -0.20]] },  // pipes running the length
-    wainscot:  { pitch: 12, joint: -0.28, runs: [[2, 0.20]] },              // the dado rail
+    pipework:  { pitch: 6,  joint: -0.24, runs: [[1, 0.12], [2, -0.20]], deepRuns: [[0.44, 0.14]] },
+    wainscot:  { pitch: 12, joint: -0.28, runs: [[2, 0.20]], deepRuns: [[0.62, 0.20], [0.68, -0.24]] },  // the dado rail
     hedge:     { pitch: 0,  speck: true }
   };
 
@@ -2054,7 +2060,42 @@ const StationBake = (() => {
 
      Only the LADDER WIDTH eases (crownEase, capW → capH), never the boundary: a top surface really
      is foreshortened where you see it edge-on. Bottom corners pass cy = ay and are unchanged. */
-  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, HR, capW, capFar, cy, record) {
+  /* ONE SLICE OF THE CORNER'S TALL FACE — the back wall, curving.
+
+     THE CORNER FACE IS THE SAME SURFACE AS THE STRAIGHT NORTH FACE (2026-08-05, Andrew: "it should
+     look like the actual WALL on the back wall, it should look like that wall is curving"). At a top
+     corner the lifted crown ring vacates a region, and that region is the north wall's own face
+     coming round the bend — `bakeTallNorthFace` hands the straight version to WALL_RECIPES, while
+     this one was a flat `pal.face` fill. So the back wall visibly curved and went blank doing it.
+
+     THE MAPPING IS THE WHOLE TRICK, and it is the same one the hull's contour uses: DEPTH IS
+     MEASURED INWARD FROM THE CROWN. On the straight wall that measure is height down the face; round
+     the arc it is distance in from the wall's top. Under it the two families of mark transform
+     correctly and automatically:
+       · DOWN-wall marks (the lit top course, WAINSCOT's dado rail, SERVICE's grain) are constant
+         depth — so they become CONCENTRIC bands that bend with the wall;
+       · ALONG-wall marks (RIBBED's ribs, PLATING's plate seams) are constant along-position — so
+         they become RADIAL SPOKES, spaced by ARC LENGTH so they neither bunch nor stretch.
+     `deepRuns` are FRACTIONS of the face depth, not pixels: the face is ~23px deep at the top of the
+     arc and a couple of px at its foot, and a rail pinned to an absolute depth would slide off the
+     wall as it narrows. */
+  function cornerFaceSlice(put, pal, ed, horiz, fixed, d0, len, step, s) {
+    if (len <= 0) return;
+    const base = ed.glass ? U.shade(pal.base, -0.55) : pal.face;
+    const spoke = ed.pitch > 0 && (((Math.round(s) % ed.pitch) + ed.pitch) % ed.pitch) === 0;
+    for (let i = 0; i < len; i++) {
+      const t = len <= 1 ? 0 : i / (len - 1);
+      let c = U.shade(base, 0.14 - 0.34 * t);                     // lit at the crown, falling to the deck
+      for (const [f, lift] of (ed.deepRuns || [])) if (Math.round(f * (len - 1)) === i) c = U.shade(base, lift);
+      if (ed.grain && i > 1 && i % ed.grain === 0) c = U.shade(base, -0.12);
+      if (spoke) c = U.shade(base, ed.joint == null ? -0.30 : ed.joint);
+      else if (ed.speck && h2(fixed, i, 'wedge') % 3 === 0) c = U.shade(base, 0.16);
+      const px = d0 + step * i;
+      if (horiz) put(px, fixed, 1, 1, c); else put(fixed, px, 1, 1, c);
+    }
+  }
+
+  function bakeCornerCrown(b, pal, ed, kind, X, Y, ax, ay, Rc, HR, capW, capFar, cy, record) {
     const A = CORNER[kind];
     const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
     // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
@@ -2081,6 +2122,9 @@ const StationBake = (() => {
       for (let ix = x0; ix < x1; ix++) { const p = record.get(ix); if (p === undefined || y0 < p) record.set(ix, y0); }
     };
     const K = HR * Math.SQRT1_2;              // the 45° split between the two duals
+    /* arc length of a point on the ring, measured from the corner's horizontal. Both duals feed the
+       SAME measure, so the spoke rhythm runs unbroken across the 45° handoff between them. */
+    const sOf = (px, py) => HR * Math.atan2(Math.abs(py + 0.5 - cy), Math.abs(px + 0.5 - ax));
     /* the DECK's own curve is the inner limit for the face fill — everything from the ladder down
        to it is wall face. Same centre and rounding convention as the deck cut itself, so the face
        stops exactly where the floor starts. */
@@ -2110,14 +2154,15 @@ const StationBake = (() => {
       if (outX < 0) {
         put(ex, py, 1, 1, wallDk);                                             // the shell's own edge
         put(ex + 1, py, w, 1, pal.cap); put(ex + 1, py, 1, 1, lit);            // the lit top surface
-        put(ex + 2 + w, py, Math.max(0, inner - (ex + 2 + w)), 1, pal.face);   // face, down to the deck
+        // face, down to the deck — depth 0 sits just inside the crown, so the material curves with it
+        cornerFaceSlice(put, pal, ed, true, py, ex + 2 + w, Math.max(0, inner - (ex + 2 + w)), 1, sOf(ex, py));
         put(ex + 1 + w, py, 1, 1, seam);
       } else {
         // the lit edge is the crown's OUTERMOST row, i.e. ex - 1 here — putting it on `ex` paints
         // over the shell edge and rules a near-white line along the station's own silhouette.
         put(ex, py, 1, 1, wallDk);
         put(ex - w, py, w, 1, pal.cap); put(ex - 1, py, 1, 1, lit);
-        put(inner + 1, py, Math.max(0, (ex - 1 - w) - inner), 1, pal.face);
+        cornerFaceSlice(put, pal, ed, true, py, ex - 2 - w, Math.max(0, (ex - 1 - w) - inner), -1, sOf(ex, py));
         put(ex - 1 - w, py, 1, 1, seam);
       }
     }
@@ -2132,12 +2177,12 @@ const StationBake = (() => {
       if (outY < 0) {
         put(ix, ey, 1, 1, wallDk);
         put(ix, ey + 1, 1, w, pal.cap); put(ix, ey + 1, 1, 1, lit);
-        put(ix, ey + 2 + w, 1, Math.max(0, inner - (ey + 2 + w)), pal.face);
+        cornerFaceSlice(put, pal, ed, false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
         put(ix, ey + 1 + w, 1, 1, seam);
       } else {
         put(ix, ey, 1, 1, wallDk);
         put(ix, ey - w, 1, w, pal.cap); put(ix, ey - 1, 1, 1, lit);   // outermost crown row, not the shell edge
-        put(ix, inner + 1, 1, Math.max(0, (ey - 1 - w) - inner), pal.face);
+        cornerFaceSlice(put, pal, ed, false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
         put(ix, ey - 1 - w, 1, 1, seam);
       }
     }
@@ -2837,7 +2882,7 @@ const StationBake = (() => {
       const cCapW = sideCapW();
       let reach = null;
       if (kind === 'tl' || kind === 'tr') crownReach.set(ccx + ',' + ccy, reach = new Map());
-      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, HR, cCapW,
+      bakeCornerCrown(b, cPal, cEd, kind, X, Y, ax, ay, Rc, HR, cCapW,
                       cornerCapFar(kind, cCapW, Math.max(2, Math.round(WALL.capH))), cCy, reach);
     }
 
