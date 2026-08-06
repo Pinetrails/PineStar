@@ -19,7 +19,12 @@
   'use strict';
 
   const HOST_RE = /\b(?:https?:\/\/)?((?:[a-z0-9](?:[a-z0-9-]{0,62})\.)+[a-z]{2,63})(?::\d+)?(?:[\/?#][^\s]*)?/ig;
-  const FILE_SUFFIXES = new Set(['bat', 'c', 'cc', 'cjs', 'cmd', 'cpp', 'css', 'csv', 'doc', 'docx', 'env', 'gif', 'go', 'h', 'hpp', 'htm', 'html', 'java', 'jpeg', 'jpg', 'js', 'json', 'jsx', 'lock', 'log', 'md', 'mjs', 'pdf', 'png', 'ppt', 'pptx', 'ps1', 'py', 'rb', 'rs', 'sh', 'svg', 'ts', 'tsx', 'txt', 'webp', 'xls', 'xlsx', 'xml', 'yaml', 'yml']);
+  // Bare dotted words are admitted only when their final label is an assigned country-code suffix or a
+  // well-known generic public suffix. This is intentionally conservative: a false negative keeps ordinary
+  // research behavior, while treating Cargo.toml as a host can terminate real work early.
+  const COUNTRY_SUFFIXES = 'ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg eh er es et eu fi fj fk fm fo fr ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug um us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw'.split(' ');
+  const GENERIC_SUFFIXES = 'aero app art asia biz blog cloud club com coop dev digital edu email gov info int live mil mobi museum name net news online org pro shop site store tech travel xyz'.split(' ');
+  const PUBLIC_SUFFIXES = new Set(COUNTRY_SUFFIXES.concat(GENERIC_SUFFIXES));
   const DIRECT_RE = /\b(check|check out|visit|open|read|inspect|browse|look at|review)\b|\b(docs?|documentation|website|site)\b/i;
   const EXPANSIVE_RE = /\b(find|locate|discover)\s+(?:the\s+)?(?:correct|right|official|new|current)\b|\b(alternatives?|similar sites?|where (?:it|the site) moved|domain history|archives?|wayback|compare|across the web)\b|\bsearch\s+(?:the\s+)?web\s+for\b/i;
   const WORKER_MAX_ITERS = 3;
@@ -42,7 +47,10 @@
       const preceding = m.index > 0 ? src[m.index - 1] : '';
       const suffix = host.slice(host.lastIndexOf('.') + 1);
       if (!explicitUrl && (preceding === '@' || preceding === '/' || preceding === '\\')) continue;
-      if (!explicitUrl && FILE_SUFFIXES.has(suffix)) continue;
+      // Uppercase bare identifiers are overwhelmingly repository filenames (README.md, LICENSE.md). URLs
+      // remain case-insensitive when explicit; for a bare ambiguous token, declining classification is safer.
+      if (!explicitUrl && m[1] !== m[1].toLowerCase()) continue;
+      if (!explicitUrl && !PUBLIC_SUFFIXES.has(suffix)) continue;
       if (!host || seen.has(host)) continue;
       seen.add(host); found.push(host);
     }
