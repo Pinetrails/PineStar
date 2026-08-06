@@ -2366,7 +2366,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .kb-live { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
 
 /* SKILLS — honest capability readout (reuses v7 .perk-grid/.perk) */
-.term.skills-term { max-height: calc(100vh - 96px); }
+.term.skills-term { max-height: var(--term-band, calc(100vh * var(--sn-unzoom, 1) - 96px)); }
 .term.skills-term .term-body { flex: 1 1 auto; min-height: 0; }
 .sk-note { font-size: 12px; opacity: 0.62; margin-top: 12px; line-height: 1.45; }
 /* the locked status line ("○ NO CABINET AT DESK") reads at --ph, not --ph-dim: at the perk's 0.65 opacity a dim
@@ -4011,10 +4011,16 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    cross-section search. Kills the small-window scroll tunnel. Phosphor vars
    only; motion (the .swap-in crossfade) rides motion.css.
    ============================================================ */
+/* A console SIZES ITSELF to the band (style.css .term) rather than to a slice of the raw glass:
+   78vh under a 150% TEXT SIZE zoom is 117vh of real screen, and 720px of zoomed-space is 1080
+   real px — either way the window outgrew the frame and buried its own titlebar under the
+   chrome bars. One local var so height and max-height can never drift apart. */
 .term.console {
-  width: min(1060px, 88vw);
-  height: min(78vh, 720px);
-  max-width: 88vw; max-height: min(78vh, 720px);
+  --con-w: min(1060px, calc(88vw * var(--sn-unzoom, 1)));
+  --con-h: min(var(--term-band, calc(78vh * var(--sn-unzoom, 1))), 720px);
+  width: var(--con-w);
+  height: var(--con-h);
+  max-width: var(--con-w); max-height: var(--con-h);
 }
 .term.console .term-body.term-console-body {
   display: flex; flex-direction: row; gap: 0;
@@ -4251,7 +4257,7 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 
 /* responsive: on a narrow viewport the rail sits on top as a horizontal strip */
 @media (max-width: 720px) {
-  .term.console { width: 94vw; height: 84vh; }
+  .term.console { --con-w: calc(94vw * var(--sn-unzoom, 1)); --con-h: var(--term-band, calc(84vh * var(--sn-unzoom, 1))); }
   .term.console .term-body.term-console-body { flex-direction: column; }
   .con-rail { flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--ph-dim); }
   .con-rail-list { flex-direction: row; flex-wrap: wrap; overflow-x: auto; }
