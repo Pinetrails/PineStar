@@ -41,6 +41,7 @@ const SYSTEM_SECRET_TOP = new Set(['.secrets', 'codex', 'grok', 'kimi']);
 
 function sha256(data) { return crypto.createHash('sha256').update(data).digest('hex'); }
 function slash(p) { return String(p || '').replace(/\\/g, '/').replace(/^\.\//, ''); }
+function systemSecretPath(p) { return SYSTEM_SECRET_TOP.has(slash(p).split('/')[0].toLowerCase()); }
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
 function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function stableSort(arr, key) { return arr.sort((a, b) => String(key(a)).localeCompare(String(key(b)))); }
@@ -282,6 +283,7 @@ function validate(bundle) {
   for (const row of files) {
     const rel = slash(row && row.path);
     if (!rel || rel.startsWith('/') || rel.split('/').includes('..')) { errors.push('unsafe bundle path: ' + rel); continue; }
+    if (systemSecretPath(rel)) errors.push('bundle contains forbidden system credential path: ' + rel);
     if (seen.has(rel.toLowerCase())) errors.push('duplicate bundle path: ' + rel);
     seen.add(rel.toLowerCase());
     let data;
