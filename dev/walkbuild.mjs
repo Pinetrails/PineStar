@@ -11,28 +11,18 @@
 //            A body whose walk frames were rendered on a different scale from its rotations grows
 //            the moment it steps (skeleton shipped 28-38% taller walking than standing). Healthy
 //            sets sit at max(walk height) / idle height ~= 0.96-1.08.
-//   MOTION — whether the cycle actually re-poses the body. A walk template needs legs to swing;
-//            give it a character whose feet never separate and it can come back as six copies of
-//            the standing pose, which reads as a body shimmering in place while it slides. That
-//            failure is invisible to a build check: the heights are all IDENTICAL, which is
-//            exactly what a passing build check looks like.
+//   Motion is NOT checked here. It belongs on the masters (test/sprite-walk-motion.test.js) —
+//   the in-world draw scales a 92px master to ~17px and that smooth downscale destroys every
+//   structural signal it was measured with. The build ratio is the one read that survives it.
 //
-//            One threshold cannot serve both gaits, and picking the wrong one fails the healthy
-//            sets instead of the broken ones. A STRIDE moves the legs and leaves the head where it
-//            is (secretagent's head-top spread is 0px); a BOB moves the whole body and never opens
-//            the feet. So measure both — head-top spread AND foot-band width spread — and require
-//            that ONE of them moves. Pixellab's dud passes neither: its head never moves and its
-//            feet never part, which is precisely what "six copies of the standing pose" means.
-//            Raw pixel churn is NOT a substitute: the dud measured 0.31 frame-to-frame change,
-//            comfortably above any sane floor, and every bit of it was outline noise.
-//
+
 // The cycle is phased on DISTANCE (b.odo), not the clock, and the per-frame stride is derived
 // inside assets.js — so rather than re-deriving it out here (and re-deriving it wrong), sweep odo
 // across a wide span in fine steps and keep the distinct renders. That reads the real frame
 // selection instead of a re-implementation of it.
 //
 // Usage:  node dev/walkbuild.mjs [--port 8941] [--cdp 9341] [--sets skeleton,pikachu,endoskeleton]
-// Exits nonzero if any set's walk leaves the healthy band, or a walk paints no motion at all.
+// Exits nonzero if any set's walk leaves the healthy build band.
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { sleep, launchChrome, connectCDP, evalJS } from '../scripts/lib/cdp.mjs';
@@ -144,11 +134,7 @@ try {
       fails.push(`${skin}: walks at ${r.ratio}x its standing height — outside the healthy 0.90..1.12 band`);
     if (!(r.frames >= 2))
       fails.push(`${skin}: the whole odo sweep produced ${r.frames} distinct render(s) — the cycle is not advancing`);
-    // A stride swings the feet, a bob lifts the body — one or the other has to move. Both bars sit
-    // clear of the noise floor a dud produces: the pre-fix pikachu measured 4 and 4 here.
-    if (!(r.headSpread >= 6 || r.footSpread >= 12))
-      fails.push(`${skin}: head never lifts (${r.headSpread}qpx) and feet never part (${r.footSpread}qpx) — ` +
-                 `the cycle is copies of the standing pose, so the body just slides`);
+
   }
 
   if (fails.length) { code = 1; console.log('\nFAIL:'); fails.forEach(f => console.log('  - ' + f)); }
