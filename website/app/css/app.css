@@ -3317,6 +3317,12 @@ body.crew-rail-off #screen-game.active {
   font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
 }
 .refit-searchnote.none { color: var(--bad); text-shadow: none; }
+/* SELECT (the default mode) has no palette — a quiet one-liner explains the click contract */
+.refit-selectnote {
+  width: 100%; margin: 4px 0 2px; font-size: 12px; letter-spacing: 1px; line-height: 1.35;
+  font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
+  white-space: normal;
+}
 /* The gallery's wrapper MUST claim the full column. .refit-palette is a wrapping FLEX row, so an
    undeclared child shrink-wraps to its content — and .refit-propgrid's own `width:100%` then resolves
    against that shrunken box, collapsing repeat(auto-fill, 84px) from four columns to ONE. Every other
