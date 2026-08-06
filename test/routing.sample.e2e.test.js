@@ -135,17 +135,22 @@ async function startSseCollector(url) {
 
 // a deployable two-stage floor: INTAKE -> research-agent -> writer-agent -> OUTBOX. Bay rooms carry a
 // computer (the compute gate) + a workbench (projects the consent-gated shell.exec the grants probe needs).
+// Both docks carry a STANDING BRIEF (step editor): the entry dock's must reach its run's system context,
+// the downstream dock's must reach the handoff turn — asserted against the mock provider's recordings.
+const ENTRY_BRIEF = 'Dig the sources and hand a clean evidence pack downstream.';
+const HOP_BRIEF = 'Draft the final answer in press style.';
 function twoStagePlan() {
   const belt = (x, y, dir) => ({ x, y, dir });
   const plan = Pipeline.compileRoutingPlan({
     props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
-            { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent' },
-            { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent' },
+            { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent', brief: ENTRY_BRIEF },
+            { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent', brief: HOP_BRIEF },
             { id: 'o', t: 'outbox', x: 10, y: 0, w: 1, h: 1 }],
     belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'), belt(8, 0, 'E'), belt(9, 0, 'E')]
   });
   A.ok(Pipeline.ok(plan), 'fixture: the two-stage floor is deployable');
   A.eq((plan.chains['research-agent'] || {}).next, ['writer-agent'], 'fixture: the floor chains the two docks');
+  A.eq(plan.bays.find(b => b.agentId === 'research-agent').brief, ENTRY_BRIEF, 'fixture: the compiled plan carries the entry brief');
   for (const b of plan.bays.concat(plan.dockBays)) b.objects = ['computer', 'workbench'];
   return plan;
 }
@@ -206,6 +211,23 @@ function twoStagePlan() {
     A.ok(h.runs.every(r => r.reason === 'done'), 'both stages finished clean');
     A.ok(h.delivered && h.delivered.agentId === 'writer-agent', 'the delivering run is the LAST stage (writer-agent)');
     A.ok(typeof h.totalUsd === 'number' && isFinite(h.totalUsd), 'the sample reports its real total cost');
+
+    /* ---- 3b. THE STANDING BRIEFS REACHED THE RUNS (step editor — execution truth, not UI copy).
+       The mock provider recorded every request body; the ENTRY dock's brief must ride its run's SYSTEM
+       context, and the RECEIVING dock's brief must ride the handoff turn's USER text (the shared
+       Pipeline.handoffPrompt 5th param via the chain runner's stageBrief seam). ---- */
+    const BRIEF_HDR = 'YOUR STANDING BRIEF FOR THIS STATION:';
+    const lastUserOf = rq => { const m = [...((rq && rq.messages) || [])].reverse().find(x => x && x.role === 'user'); return String((m && m.content) || ''); };
+    const sysOf = rq => ((rq && rq.messages) || []).filter(x => x && x.role === 'system').map(x => String(x.content || '')).join('\n');
+    const entryReq = mock.requests.find(rq => lastUserOf(rq).indexOf('SAMPLE JOB') >= 0 && lastUserOf(rq).indexOf('PIPELINE HANDOFF') < 0);
+    A.ok(entryReq, 'the entry dock\'s provider request was recorded');
+    A.ok(sysOf(entryReq).indexOf(BRIEF_HDR + '\n' + ENTRY_BRIEF) >= 0,
+      'the ENTRY dock\'s standing brief rode its run\'s system context: ' + sysOf(entryReq).slice(-160));
+    const hopReq = mock.requests.find(rq => lastUserOf(rq).indexOf('PIPELINE HANDOFF') >= 0);
+    A.ok(hopReq, 'the chain hop\'s provider request was recorded');
+    A.ok(lastUserOf(hopReq).indexOf(BRIEF_HDR + '\n' + HOP_BRIEF) >= 0,
+      'the RECEIVING dock\'s standing brief rode the handoff turn: ' + lastUserOf(hopReq).slice(0, 300));
+    A.ok(lastUserOf(hopReq).indexOf('stage one findings') >= 0, 'alongside the upstream output (the turn still carries the work)');
 
     // the recorded rows are in the station's real run history too (the ledger/run-store path, not a claim)
     const runsApi = await fetch(B + '/api/runs?agent=*&limit=50', { headers }).then(r => r.json());

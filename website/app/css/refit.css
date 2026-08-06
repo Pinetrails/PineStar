@@ -92,6 +92,19 @@
 /* ---------- ⊕ SUMMON A <ROLE> HERE — the leading action on a role-carrying dock's picker ---------- */
 .refit-summon { display: flex; align-items: center; justify-content: center; width: 100%; margin: 2px 0 4px; }
 
+/* ---------- THE STEP CARD — the per-dock step editor (workflow studio) ----------
+   Three zones on the shared guide card: THE STEP (provable line facts), THE AGENT (the folded-in
+   picker), THE WORK (the standing job brief). Matte, theme vars only, VT323 for readouts. */
+.step-fact { font-family: 'VT323', monospace; font-size: 14.5px; letter-spacing: .5px; color: var(--text); margin: 2px 0; }
+.step-fact b { color: var(--ph-bright); }
+#step-bound { color: var(--ok); text-transform: none; letter-spacing: .5px; }
+.refit-brief {
+  resize: vertical; min-height: 58px; max-height: 180px;
+  line-height: 1.25; font-size: 14.5px;
+}
+.step-brief-note { font-size: 12px; color: var(--ph-dim); margin: 2px 0 0; }
+.step-agent-actions { margin-top: 2px; }
+
 /* ---------- FINISH THE LINE — the per-line checklist card (guided workflows Phase 2) ----------
    A floating side card in the station's matte panel vocabulary: theme vars only, VT323, and every
    mixed-glyph label BOX-centred (flex), never padded from font-size (symbol-glyph fallback law).

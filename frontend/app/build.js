@@ -93,6 +93,7 @@ const Build = (() => {
     ridePending = false;   // the auto first-ride re-arms from THIS session's compile, never a stale one
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
     finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
+    for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
     probeSampleSeam();
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
@@ -921,6 +922,10 @@ const Build = (() => {
     const res = station.stampBlueprint(bp.id, o.x, o.y);   // ONE undoable action — see worldmodel.stampBlueprint
     if (res && res.ok) {
       lastStampIds = res.ids || null;   // the finish-the-line card adopts this line on the next recompile
+      // LINE NAMING: a stamp leaves the intake's `label` UNSET (the save carries only what the Commander
+      // typed) — but this session remembers which blueprint stamped it, so the intake card's name field
+      // can offer the blueprint's name as its placeholder (session-scoped, like lastStampIds).
+      try { for (const id of (res.ids || [])) { const sp = station.propById(id); if (sp && sp.t === 'intake') stampNameOf[id] = bp.label; } } catch (_) {}
       pushFlash(bp.props.map(p => ({ x1: o.x + p.x, y1: o.y + p.y, x2: o.x + p.x + p.w - 1, y2: o.y + p.y + p.h - 1 })), false);
       sfx('chime');
       // PLACEMENT FLOW: a blueprint stamps ONCE, then the tool drops back to SELECT — the next
@@ -1027,45 +1032,99 @@ const Build = (() => {
     spec.purpose = duty + (cls && cls.purpose ? '\n\n' + cls.purpose : '');
     try { return App.summonAgent(spec, { activate: false, desk: true }); } catch (e) { return null; }
   }
-  function openBayPicker(bayId, ev) {
-    if (!root || root.querySelector('.refit-bay-picker')) return;
-    const p = station.propById(bayId); if (!p || !(p.t === 'bay' || isPcProp(p.t))) return;
-    const isPc = isPcProp(p.t);
-    const noun = isPc ? 'PC' : 'bay';
-    const strip = isPc ? '' : flowStripHTML('bay');
-    const cur = p.agentId || '';
+  /* ---------- THE STEP CARD (workflow studio, 2026-08-05) ----------
+     ONE surface per dock, on the inspect seam: THE STEP (which stage of which line this is), THE AGENT
+     (who crews it — the summon/roster/free-id machinery of the old BAY picker folded in, one surface
+     instead of two hops), THE WORK (the dock's standing JOB BRIEF — what this step does with arriving
+     work). The brief persists on the prop (worldmodel.setPropBrief -> migrate() whitelist), compiles
+     into the posted plan (pipeline bays/dockBays.brief) and is injected into entry runs + chain
+     handoffs by the sidecar (router.stageBrief). PROMPT TEXT ONLY — a brief never changes who runs or
+     what tools they hold; routing and capability come from the binding and the room, untouched. */
+  // the LINE a prop belongs to (valComps membership from the CURRENT compiled geometry), or null
+  function lineOfProp(propId) {
+    return (valComps && valComps.find(c => c.props.indexOf(propId) >= 0)) || null;
+  }
+  // a line's saved display name: the intake's `label` (line naming rides the INTAKE prop), or null
+  function lineNameOf(c) {
+    if (!c) return null;
+    for (const iid of c.intakes) { const ip = station.propById(iid); if (ip && ip.label) return ip.label; }
+    return null;
+  }
+  function openStepCard(bayId, ev) {
+    if (!root || root.querySelector('.refit-step-card')) return;
+    const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
-    // role-carrying dock + a live creation seam -> the picker LEADS with the one-click summon
-    const roleInfo = (!isPc && p.role && typeof App !== 'undefined' && App.summonAgent
-      && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
+    const roleInfo = (p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
+    const canSummon = !!(roleInfo && typeof App !== 'undefined' && App.summonAgent);
+    const cur = p.agentId || '';
+    // THE STEP zone copy — all provable floor facts: the role from the stamp, the line from the compiled
+    // component grouping (Pipeline.lineComponents), its name from the intake's saved label.
+    const comp = lineOfProp(bayId);
+    const lineTxt = comp
+      ? 'ON <b>' + esc((lineNameOf(comp) || 'an unnamed line').toUpperCase()) + '</b> — ' + comp.bays.length + ' dock' + (comp.bays.length === 1 ? '' : 's') + ' on this line'
+      : 'not on a line yet — lay belts (7) to put this dock on one';
+    const stepTxt = roleInfo
+      ? 'THIS STEP WANTS A <b>' + esc(p.role) + '</b> — ' + esc(roleInfo.desc)
+      : 'a dock — work routed here runs as its agent';
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
+    const briefPh = 'what this step does with arriving work' + (roleInfo ? ' — e.g. ' + roleInfo.desc : '');
     const g = document.createElement('div');
-    g.className = 'refit-guide refit-bay-picker';
+    g.className = 'refit-guide refit-step-card';
     g.innerHTML = `
       <div class="refit-guide-card">
-        <h3>▮ ASSIGN AGENT TO ${isPc ? 'PC' : 'BAY'}</h3>
-        ${strip}
-        ${isPc
-          ? '<ul><li>This computer becomes the chosen agent\'s <b>dedicated PC</b> — its compute.</li><li><b>Every agent needs its own PC</b>; roommates can share one room, not one computer.</li></ul>'
-          : '<ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li><li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>'}
+        <h3>▮ STEP — ${esc(p.role || 'DOCK')}</h3>
+        ${flowStripHTML('bay')}
         <div class="refit-form">
-        ${roleInfo ? '<div class="refit-sec">THIS DOCK WANTS A ' + esc(p.role) + ' — ' + esc(roleInfo.desc) + '</div><button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
-        ${agents.length ? '<div class="refit-sec">' + (roleInfo ? 'OR PICK ONE OF YOUR AGENTS' : 'YOUR AGENTS — click to assign') + '</div><div class="refit-agents refit-bay-agents">' + rows + '</div>' : ''}
-        <div class="refit-sec">${agents.length ? 'OR TYPE AN AGENT ID' : 'AGENT ID'}</div>
-        <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}" />
+        <div class="refit-sec">THE STEP</div>
+        <div class="step-fact">${stepTxt}</div>
+        <div class="step-fact">${lineTxt}</div>
+        <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(cur) : 'uncrewed'}</span></div>
+        ${canSummon ? '<button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
+        ${agents.length ? '<div class="refit-agents refit-bay-agents" id="step-rows">' + rows + '</div>' : ''}
+        <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="${agents.length ? 'or type an agent id' : 'agent id — e.g. coder'}" value="${esc(cur)}" />
         <div class="refit-error" id="bay-err">unknown agent — pick one above, or check the id</div>
-        <div class="refit-actions">
-          <button type="button" class="btn-sm refit-primary" id="bay-ok">▸ ASSIGN</button>
+        <div class="refit-actions step-agent-actions">
+          <button type="button" class="btn-sm" id="bay-ok">▸ ASSIGN</button>
           <button type="button" class="btn-sm" id="bay-clear">UNBIND</button>
-          <button type="button" class="btn-sm" id="bay-cancel">CANCEL</button>
+        </div>
+        <div class="refit-sec">THE WORK — JOB BRIEF</div>
+        <textarea id="step-brief" class="refit-input refit-brief" maxlength="2000" rows="3" placeholder="${esc(briefPh)}">${esc(p.brief || '')}</textarea>
+        <div class="refit-note step-brief-note">rides every run this dock gets — saved on blur / Ctrl-Enter. It briefs the agent; it never changes who runs or what tools they hold.</div>
+        <div class="refit-actions">
+          <button type="button" class="btn-sm refit-primary" id="step-done">✓ DONE</button>
         </div>
         </div>
       </div>`;
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const input = g.querySelector('#bay-aid');
+    const brief = g.querySelector('#step-brief');
+    const boundEl = g.querySelector('#step-bound');
     const clearErr = () => { input.classList.remove('is-error'); };
-    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    const closeP = () => { saveBrief(); if (g.parentNode) g.parentNode.removeChild(g); };
+    // a bind/unbind UPDATES the card in place (the brief draft must survive crewing the dock) — the
+    // one-surface law: configure the whole step here, close once.
+    const refreshBinding = () => {
+      const live = station.propById(bayId), aid = (live && live.agentId) || '';
+      if (boundEl) boundEl.textContent = aid ? 'crewed by ' + aid : 'uncrewed';
+      g.querySelectorAll('.bay-agent').forEach(x => x.classList.toggle('active', x.dataset.aid === aid));
+      input.value = aid;
+    };
+    // THE WORK — saved on blur / Ctrl-Enter (never lost on close; a no-op save is silent)
+    let briefSaved = p.brief || '';
+    function saveBrief() {
+      if (!brief || typeof station.setPropBrief !== 'function') return;
+      const v = brief.value.trim();
+      if (v === briefSaved) return;
+      const res = station.setPropBrief(bayId, v);
+      if (res && res.ok) { briefSaved = res.brief || ''; sfx('click'); flashTip(ev, v ? 'job brief saved' : 'job brief cleared', true); }
+      else sfx('bad');
+    }
+    brief.addEventListener('blur', saveBrief);
+    brief.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveBrief(); }
+      if (e.key === 'Escape') { e.stopPropagation(); brief.blur(); }   // first ESC leaves the field (saving); the next closes the card
+    });
     // ⊕ SUMMON A <ROLE> HERE — one click: real summon (existing seam) + bind to THIS dock. On any
     // failure the button re-arms and the manual pick below stays fully available (never a dead end).
     const sumBtn = g.querySelector('#bay-summon');
@@ -1073,26 +1132,24 @@ const Build = (() => {
       sumBtn.disabled = true;
       const a = summonForRole(p.role, roleInfo);
       const res = a && station.assignPropAgent(bayId, a.id);
-      if (res && res.ok) { sfx('chime'); flashTip(ev, a.name + ' summoned → crews this dock', true); closeP(); }
+      if (res && res.ok) { sfx('chime'); flashTip(ev, a.name + ' summoned → crews this dock', true); refreshBinding(); }
       else { sumBtn.disabled = false; sfx('bad'); flashTip(ev, a ? 'summoned, but the dock refused the bind' : 'summon failed — pick an agent below', false); }
     };
-    // ONE CLICK: choosing a roster agent IS the assignment. The old behavior (click only filled the id
-    // into the input, ▸ ASSIGN still required) read as "nothing happened" and got dialogs closed half-done.
+    // ONE CLICK: choosing a roster agent IS the assignment (kept from the old picker — see its note).
     g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => {
       const res = station.assignPropAgent(bayId, b.dataset.aid);
-      if (res && res.ok) { sfx('click'); flashTip(ev, noun + ' → ' + (b.textContent || res.agentId).trim(), true); closeP(); }
+      if (res && res.ok) { sfx('click'); flashTip(ev, 'bay → ' + (b.textContent || res.agentId).trim(), true); refreshBinding(); }
       else { input.value = b.dataset.aid; input.classList.add('is-error'); sfx('bad'); }
     });
     input.addEventListener('input', clearErr);
     g.querySelector('#bay-ok').onclick = () => {
       const res = station.assignPropAgent(bayId, input.value.trim());
-      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP(); }
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('bay → ' + res.agentId) : 'bay unbound', true); refreshBinding(); }
       else { input.classList.add('is-error'); sfx('bad'); }
     };
-    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, noun + ' unbound', true); closeP(); };
-    g.querySelector('#bay-cancel').onclick = closeP;
+    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, 'bay unbound', true); refreshBinding(); };
+    g.querySelector('#step-done').onclick = () => { sfx('click'); closeP(); };
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
-    try { input.focus(); input.select(); } catch (_) {}
   }
 
   /* ---------- WORKSTATION agent-picker: the desk/PC version of the BAY picker. A workstation carries an
@@ -1207,15 +1264,45 @@ const Build = (() => {
       splitter: 'Where one lane fans into several. Unowned work balances across the out-lanes; addressed jobs (crons, bound chats) still take the lane that leads to their owner’s bay. Nothing to configure.'
     };
     const line = LINE[p.t] || LINE.outbox;
+    /* LINE NAMING (workflow studio, 2026-08-05): the INTAKE is a line's front door, so its card names the
+       line — an additive `label` on the intake prop (worldmodel.setPropLabel; migrate() whitelists it).
+       Blueprint stamps leave it UNSET: the placeholder offers the blueprint's name (session map) but only
+       what the Commander types is saved. Legibility only — the finish-the-line header + the intake glance
+       read it; routing never does. Multiple lines on one floor become nameable systems. */
+    const isIntake = p.t === 'intake';
+    const namePh = isIntake ? (stampNameOf[p.id] || 'name this line') : '';
+    const nameHtml = isIntake
+      ? '<div class="refit-sec">LINE NAME</div>'
+        + '<input id="line-name" class="refit-input" type="text" maxlength="48" placeholder="' + esc(namePh) + '" value="' + esc(p.label || '') + '" />'
+        + '<div class="refit-note">names this whole line (shown on its checklist + this INBOX\'s glance) — saved on Enter / blur</div>'
+      : '';
     const g = document.createElement('div');
     g.className = 'refit-guide refit-flow-card';
     g.innerHTML = '<div class="refit-guide-card"><h3>▮ ' + (TITLE[p.t] || TITLE.outbox) + '</h3>'
       + flowStripHTML(hot)
       + '<ul><li>' + line + '</li></ul>'
+      + nameHtml
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));
-    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    let savedLabel = p.label || '';
+    const nameIn = g.querySelector('#line-name');
+    const saveName = () => {
+      if (!nameIn || typeof station.setPropLabel !== 'function') return;
+      const v = nameIn.value.trim();
+      if (v === savedLabel) return;
+      const res = station.setPropLabel(propId, v);
+      if (res && res.ok) { savedLabel = res.label || ''; sfx('click'); flashTip(null, v ? 'line named — ' + v : 'line name cleared', true); if (running) { finSig = ''; renderFinCard(); } }
+      else sfx('bad');
+    };
+    if (nameIn) {
+      nameIn.addEventListener('blur', saveName);
+      nameIn.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); saveName(); }
+        if (e.key === 'Escape') { e.stopPropagation(); nameIn.blur(); }   // leave the field (saving); the next ESC closes the card
+      });
+    }
+    const closeP = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
     g.querySelector('#flow-ok').onclick = () => { sfx('click'); closeP(); };
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
   }
@@ -1522,6 +1609,7 @@ const Build = (() => {
   }
   let valComps = null;          // Pipeline.lineComponents of the CURRENT compiled geometry (set in rebake)
   let lastStampIds = null;      // prop ids of the line stamped this session → the card adopts that line
+  const stampNameOf = {};       // intake propId -> blueprint label (session-scoped; the name field's placeholder)
   let finKeySel = null;         // the line key the card is focused on (session-scoped)
   let finCardEl = null, finComp = null, finSig = '', finPollTs = 0;
   function finState(c) {
@@ -1552,7 +1640,10 @@ const Build = (() => {
     if (!c) { if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl); finCardEl = null; finComp = null; finSig = ''; return; }
     finComp = c;
     const st = finState(c);
-    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample].join('|');
+    // the card is titled with the LINE'S NAME (the intake's saved label — line naming); unnamed lines
+    // keep the generic header. In the sig so a rename repaints without a topology edit.
+    const lname = lineNameOf(c);
+    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || ''].join('|');
     if (!finCardEl) {
       finCardEl = document.createElement('div');
       finCardEl.className = 'refit-finline';
@@ -1567,7 +1658,7 @@ const Build = (() => {
     const sampleOn = finSample === true && crewDone;
     const sampleTip = finSample !== true ? 'coming online soon' : (crewDone ? 'feed ONE real, clearly-labeled sample job through the whole line' : 'crew the docks first');
     finCardEl.innerHTML = `
-      <div class="fl-head"><span class="fl-title">▸ FINISH THE LINE</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
+      <div class="fl-head"><span class="fl-title">▸ ${lname ? 'FINISH ' + esc(lname.toUpperCase()) : 'FINISH THE LINE'}</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
       <button type="button" class="bb fl-step${crewDone ? ' done' : ''}" data-act="crew"${crewDone ? ' disabled' : ''}>${esc(crewTxt)}</button>
       <button type="button" class="bb fl-step${st.feedDone ? ' done' : ''}" data-act="feed"${st.feedDone ? ' disabled' : ''}>${esc(feedTxt)}</button>
       <button type="button" class="bb fl-step${sampleOn ? '' : ' off'}" data-act="sample" title="${esc(sampleTip)}">③ RUN A SAMPLE JOB</button>`;
@@ -1587,7 +1678,7 @@ const Build = (() => {
     panX = cv.width / 2 - (b.x + o.tx + b.w / 2) * t * zoom;
     panY = cv.height / 2 - (b.y + o.ty + b.h / 2) * t * zoom;
     sfx('click');
-    openBayPicker(b.propId, null);
+    openStepCard(b.propId, null);
   }
   // ② — the real feed surfaces (channels + routines) live in the CHANNELS panel outside REFIT: finish
   // + save (the ✓ DONE path), then open the exact surface the live world's NO FEED nag click opens.
@@ -1921,7 +2012,7 @@ const Build = (() => {
     if (!p) return;
     const t = p.t;
     if (WORKSTATION_TYPES[t]) return openWorkstationPicker(p.id, ev);
-    if (t === 'bay') return openBayPicker(p.id, ev);
+    if (t === 'bay') return openStepCard(p.id, ev);   // the per-dock STEP EDITOR (step + agent + job brief — one card)
     if (t === 'filter') return openJunctionEditor(p.id, ev);
     if (t === 'airlock') return openDoorPicker(p.id, ev);
     if (t === 'connector_portal') return openConnectorEditor(p.id, ev);
@@ -2639,12 +2730,16 @@ const Build = (() => {
        the card itself (propCardHTML) so no information is lost. */
     const cardUp = propCard && propCard.style.display === 'block' && propCardKey && propCardKey.indexOf('p:' + p.id + ':') === 0;
     if (cardUp) { voiceSay('hover', anchor, anchor, null); return; }
-    const isPc = isPcProp(p.t), isBay = p.t === 'bay';
-    if (!isPc && !isBay) return;
-    const bound = !!p.agentId;
+    const isPc = isPcProp(p.t), isBay = p.t === 'bay', isIntake = p.t === 'intake';
+    if (!isPc && !isBay && !isIntake) return;
+    // a NAMED line's INBOX glances its line name (line naming — registered through the arbiter like every
+    // other hover voice; an unnamed intake keeps its pre-existing silence, no new resting text).
+    if (isIntake && !p.label) return;
+    const bound = isIntake ? true : !!p.agentId;
     // a role-carrying dock's glance names the role it wants while unbound ("BAY · needs a RESEARCHER")
     const ri = (!bound && p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
-    const txt = (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : (ri ? 'needs a ' + p.role + ' — ' + ri.desc : 'unassigned'));
+    const txt = isIntake ? ('LINE · ' + String(p.label))
+      : (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : (ri ? 'needs a ' + p.role + ' — ' + ri.desc : 'unassigned'));
     // dock→dock affordance: a BOUND bay's glance also says where its OUTPUT goes — read from the compiled
     // plan's chain record (valPlan.chains — the same fact the sidecar routes by), so the tag can never
     // claim a handoff dispatch wouldn't perform. Same tag chrome, stacked one line above; still a glance,
@@ -2829,13 +2924,24 @@ const Build = (() => {
       assign = placed.connectorId
         ? '<div class="pc-assign ok">▸ BOUND ' + esc(placed.connectorId) + '</div>'
         : '<div class="pc-assign">UNBOUND — click to bind a server</div>';
+    } else if (placed && placed.t === 'intake' && placed.label) {
+      // a NAMED line's INBOX hover names the line (line naming) — the card is the ONE hover voice in
+      // REFIT (one-voice law), so the fact rides here; the canvas glance covers the card-less contexts.
+      assign = '<div class="pc-assign ok">▸ LINE · ' + esc(placed.label) + '</div>';
+    }
+    // a briefed dock's hover shows its duty line (a glance answer to "what does this step DO?")
+    if (placed && placed.t === 'bay' && placed.brief) {
+      const bp = String(placed.brief).replace(/\s+/g, ' ');
+      assign += '<div class="pc-assign">✎ ' + esc(bp.length > 72 ? bp.slice(0, 72) + '…' : bp) + '</div>';
     }
     return '<h4>' + esc(c.label) + '</h4>' + tier + (desc ? ('<p>' + esc(desc) + '</p>') : '') + '<div class="pc-foot">' + foot + '</div>' + assign;
   }
   let propCardKey = null;
   function showPropCard(c, placed, cx, cy) {
     if (!propCard || !c) return;
-    const key = placed ? ('p:' + placed.id + ':' + (placed.agentId || placed.connectorId || '')) : ('c:' + c.id);
+    const key = placed
+      ? ('p:' + placed.id + ':' + (placed.agentId || placed.connectorId || '') + ':' + (placed.label || '') + ':' + (placed.brief ? placed.brief.length : 0))
+      : ('c:' + c.id);
     if (key !== propCardKey) { propCard.innerHTML = propCardHTML(c, placed); propCardKey = key; }
     propCard.style.display = 'block';
     const w = propCard.offsetWidth || 230, h = propCard.offsetHeight || 96;
