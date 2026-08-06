@@ -3011,6 +3011,7 @@ const router = makeRouter();
    on the floor and not a claim. */
 const chainRunner = makeChainRunner({
   nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
+  stageBrief: (agentId) => router.stageBrief(agentId),   // the RECEIVING dock's standing brief rides each handoff turn (prompt text only)
   emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
   newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
   now: () => Date.now(),
@@ -6118,6 +6119,7 @@ function startTelegram(token, key, model, agentCfg) {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
+    stageBriefFor: (agentId) => router.stageBrief(agentId),                     // the dock's standing brief rides the run's context (prompt text only)
     // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
     // roster + setModel read/write the SAME agentRoster the browser dossier uses (POST /api/roster) — one source
     // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
@@ -6353,6 +6355,7 @@ function startTelegramBot(botId) {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // a bound bot's agent still crews its dock — the standing brief applies
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
     // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
@@ -6464,6 +6467,7 @@ function startDiscord(token, key, model, agentCfg) {
       chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
+      stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
       // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
       // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
@@ -6570,6 +6574,7 @@ function getDevHub() {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
     modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },
@@ -6732,6 +6737,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
+      stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
       // In-messenger control surface — identical across channels because it lives in the shared hub.
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
       setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
@@ -7396,8 +7402,12 @@ function handleRoutingChain(req, res) {
   const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
   let next = null;
   try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  // `brief` (additive, step editor 2026-08-05): the NEXT dock's standing job brief, so the browser's COMMS
+  // work line composes the SAME handoff turn the sidecar executor does (chat.js runWorkLine — must not drift).
+  let brief = null;
+  if (next) { try { brief = router.stageBrief(next); } catch (_) { brief = null; } }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ next: next || null }));
+  res.end(JSON.stringify({ next: next || null, brief: brief || null }));
 }
 
 /* ---- POST /api/routing/sample — PROOF: feed ONE real, clearly-labeled work item through the armed line.
@@ -7440,6 +7450,7 @@ function getSampleHub() {
     chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
     onResolved: (info) => { sampleResolved = info; },
     // every run of the line (entry dock + hops) records under the sample's OWN workstream, so the recorded
     // rows in runs.jsonl are scoped exactly and the OUTBOX crate opens a readable transcript session.

@@ -6728,7 +6728,9 @@ const Chat = (() => {
   function lineTag(t) { return (typeof Classify !== 'undefined' && Classify.getTag) ? Classify.getTag(t) : 'general'; }
 
   // WHERE DOES THIS DOCK'S OUTPUT GO? Asked of the router, never re-derived here — the browser holds a plan for
-  // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides.
+  // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides. Returns
+  // { next, brief } — `brief` is the NEXT dock's standing job brief (step editor; the same router fact the
+  // sidecar's chain runner injects), so both surfaces compose one handoff turn. null = terminal stage.
   async function nextStageOf(agentId, tag) {
     try {
       const h = {}, tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) || '';
@@ -6736,7 +6738,7 @@ const Chat = (() => {
       const r = await fetch('/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { cache: 'no-store', headers: h });
       if (!r || !r.ok) return null;
       const j = await r.json();
-      return (j && j.next) ? String(j.next) : null;
+      return (j && j.next) ? { next: String(j.next), brief: (typeof j.brief === 'string' && j.brief) ? j.brief : null } : null;
     } catch (_) { return null; }   // no floor, no sidecar, no line — the single-stage reply already stands
   }
 
@@ -6751,7 +6753,8 @@ const Chat = (() => {
     for (let hop = 1; hop <= LINE_MAX_HOPS; hop++) {
       if (seed.signal && seed.signal.aborted) return out;
       if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
-      const nx = await nextStageOf(cur, lineTag(out.text));
+      const nxr = await nextStageOf(cur, lineTag(out.text));
+      const nx = nxr && nxr.next;
       if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
       // THE LINE'S SPEND CEILING — the same pre-hop check as the sidecar executor (chain.js: out.usd >= maxUsd
       // before the next stage buys a run). out.usd is REAL reconciled spend: each hop's agent.run.end carries
@@ -6773,8 +6776,10 @@ const Chat = (() => {
       wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', from: cur, preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
       if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
 
+      // the RECEIVING dock's standing brief rides the shared handoff turn — the same 5th param the sidecar's
+      // chain runner passes (sidecar/routing/chain.js) — so the same floor composes the same run here too.
       const prompt = (typeof Pipeline !== 'undefined' && Pipeline.handoffPrompt)
-        ? Pipeline.handoffPrompt(seed.originalText, cur, out.text, hop) : out.text;
+        ? Pipeline.handoffPrompt(seed.originalText, cur, out.text, hop, nxr.brief) : out.text;
       const hopRow = isActiveWs(ws) ? streamingAgent(who) : null;
       if (hopRow) activeLiveRow = hopRow;
       let hopAcc = '';
