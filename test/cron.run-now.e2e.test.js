@@ -187,7 +187,7 @@ async function readNdjson(res) {
     const belt = (x, y, dir) => ({ x, y, dir });
     const plan = Pipeline.compileRoutingPlan({
       props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
-              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent' },
+              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent', brief: 'Dig three primary sources and cite them.' },
               { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent' },
               { id: 'o', t: 'outbox', x: 10, y: 0, w: 1, h: 1 }],
       belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'), belt(8, 0, 'E'), belt(9, 0, 'E')]
@@ -206,6 +206,21 @@ async function readNdjson(res) {
     A.ok(starts.indexOf('writer-agent') >= 0, 'RUN NOW fired the DOWNSTREAM stage too (was one stage before)');
     A.ok(mock.requests.length >= callsBefore + 2, 'two provider calls — the line really bought both runs');
     await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'writer-agent' && e.payload.kind === 'chain'), 5000, 'the handoff rides as a chain crate');
+
+    /* THE DOCK'S STANDING BRIEF RIDES A CRON ENTRY RUN (inbox-trigger, 2026-08-05). The posted plan carries
+       b1's brief (pipeline bays.brief -> router.stageBrief); Run Now — and the scheduled fire, same seam —
+       must append it to stage one's SYSTEM under the hub's exact section header. Recorded off the REAL
+       provider request. And the FIRST fire (no plan posted yet) must have carried NO brief header at all —
+       a floorless routine's system is byte-identical to the pre-brief behavior. */
+    const sysOf = req => ((req.messages || []).find(m => m.role === 'system') || {}).content || '';
+    const preFloor = mock.requests.slice(0, callsBefore);
+    A.ok(preFloor.length >= 1 && preFloor.every(r => sysOf(r).indexOf('YOUR STANDING BRIEF FOR THIS STATION') < 0),
+      'before a floor is posted, a Run Now carries NO brief header (pre-brief behavior intact)');
+    const stage1 = mock.requests.slice(callsBefore).find(r =>
+      (r.messages || []).some(m => m.role === 'user' && String(m.content || '').indexOf('gather relevant AI news') >= 0));
+    A.ok(stage1, "found stage one's recorded provider request");
+    A.ok(sysOf(stage1).indexOf('YOUR STANDING BRIEF FOR THIS STATION:\nDig three primary sources and cite them.') >= 0,
+      "stage one's system carries the dock's standing brief under the hub's exact section header");
 
     /* A SESSION IS NAMED AFTER THE RUN IT IS NAMED AFTER. Hops share the routine's 'cron-<runId>' stream so the
        session shows the whole line — which means that stream now holds SEVERAL run rows, and the frontend used

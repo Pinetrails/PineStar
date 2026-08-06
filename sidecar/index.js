@@ -3650,6 +3650,9 @@ const cronDriver = makeCronDriver({
   // bay-docked agent's cron ran with the default office instead of its bay room's objects. Same resolver
   // the telegram/discord hubs use; null -> the default office, exactly like an unrouted chat.
   resolveStation: (agentId) => router.stationFor(agentId),
+  // the dock's standing brief rides a scheduled entry run's system context exactly like a hub-routed
+  // message's (inbox-trigger, 2026-08-05) — same router.stageBrief seam, prompt text only, never grants/tools.
+  stageBriefFor: (agentId) => router.stageBrief(agentId),
   // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
   // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
   // crate arrives at the agent's bay and (with the run-lifecycle binding in world.js) the agent goes to work.
@@ -8982,9 +8985,17 @@ async function handleCronRun(req, res) {
   // the raw cronEmit, so record explicitly here so BOTH fire paths land in the durable decision trail.
   recordAutonomy({ source: 'cron', kind: 'fire', jobId: job.id, agentId: job.agentId, runId: runId, binding: 'run-now', reason: 'manual' });
   placeCronWorkitem(job.agentId, job.prompt, runId);
+  // the dock's standing brief rides Run Now's system context too (inbox-trigger, 2026-08-05): Run Now must
+  // match the scheduled fire's posture exactly, brief included — same router.stageBrief seam, same section
+  // header as the hub's entry runs. Prompt text only; a brief never changes grants/tools/routing.
+  let runNowBrief = null;
+  try { runNowBrief = router.stageBrief(job.agentId); } catch (_) { runNowBrief = null; }
   try {
     await runOnce({
-      key: key, model: model, system: cronSystemFor(job.agentId), messages: [{ role: 'user', content: assembledPrompt }],
+      key: key, model: model,
+      system: cronSystemFor(job.agentId)
+        + (runNowBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(runNowBrief).slice(0, 2000) : ''),
+      messages: [{ role: 'user', content: assembledPrompt }],
       agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
       // streamId 'cron-'+runId matches the SCHEDULED fire (cron-driver.js): Run Now must persist its transcript
       // under the SAME per-run stream so the frontend cron-session (autosessions.js), which forms off the
