@@ -657,9 +657,23 @@ body.no-scan .crt-scan { display: none; }
   animation: scrim-in 0.22s ease-out;
 }
 @keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+/* WHERE A WINDOW RESTS — the BAND, not the raw glass. StationUI.syncTermBand() measures the
+   chrome that owns the top and bottom of the frame (#topbar, #bottombar, and on the Windows
+   desktop shell #sn-titlebar, which paints OVER every window at z930) and publishes the strip
+   between them on #terms as --term-top / --term-band, in the same zoomed-space px a window's
+   own left/top are written in. Centring on the viewport instead hid a tall window's titlebar —
+   its title chip AND its ✕ — under those bars at the largest TEXT SIZE (2026-08-06 report).
+   The fallbacks are the pre-band numbers, so a frame that has not measured yet still opens sane.
+   vw/vh inside the TEXT SIZE body zoom resolve against the REAL viewport and are THEN multiplied
+   by the zoom (86vh renders as 129vh at 150%) — --sn-unzoom is the exact reciprocal, so a
+   viewport-relative cap keeps meaning what it says. Same law as the cabinet block in app.css. */
 .term {
-  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: 480px; max-width: 94vw; max-height: min(86vh, 100vh - 32px);
+  position: fixed; left: 50%;
+  top: calc(var(--term-top, 0px) + var(--term-band, calc(100vh * var(--sn-unzoom, 1))) / 2);
+  transform: translate(-50%, -50%);
+  width: 480px;
+  max-width: calc(94vw * var(--sn-unzoom, 1));
+  max-height: var(--term-band, calc(86vh * var(--sn-unzoom, 1)));
   border-radius: var(--r-lg);
   background:
     radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
