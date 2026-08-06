@@ -2719,6 +2719,20 @@ const StationBake = (() => {
       const sgnX = A.cx ? -1 : 1, sgnY = A.cy ? -1 : 1;
       const fill = (x, y, w, h, c) => { if (w > 0 && h > 0) { b.fillStyle = c; b.fillRect(x, y, w, h); } };
       const outerBand = U.shade(cPal.base, -0.62);   // the same contact-seam tone the straight walls use
+      /* THE CORNER CARRIES THE MATERIAL ROUND THE CURVE (2026-08-05, Andrew on a zoomed room corner:
+         "notice how it cuts off ... we fixed this for the outer shell now lets do it for the walls").
+         The face band here was ONE FLAT `cPal.face` fill. That matched while the straight faces were
+         flat too — but the moment they became a graded band carrying the material's rhythm, a flat
+         patch at the corner is a seam you cannot unsee, which is exactly the defect this pass had
+         been quietly free of before. Same lesson the hull's courseLine taught one layer out: a
+         texture has to FOLLOW the curve, and the corner is where the eye checks.
+         `cEd` is the corner room's own edge recipe; `arcS` is arc length accumulated ALONG the curve
+         by the row walk (ds = hypot(1, Δedge)), so the rhythm keeps a constant spacing round the
+         bend instead of stretching with the rows. It is seeded from the first row's world Y, which
+         is what phase-locks it to the side wall it leaves — the far end meets the north wall on a cut,
+         which is what real coursing does at a corner and what the hull does too. */
+      const cEd = WALL_EDGES[wallMatOf(G.zoneGrid[G.idx(ccx, ccy)])] || WALL_EDGES.bulkhead;
+      let arcS = null, arcPrev = 0;
       const vFace = sgnY < 0 ? NFACE : FACEW;   // top corners meet the deep north face; bottom ones the thin south wall
       const aIn = Math.max(1, Rc - FACEW), bIn = Math.max(1, Rc - vFace);
       eachCornerRow(kind, ax, ay, Rc, (py, edge) => {
@@ -2753,7 +2767,24 @@ const StationBake = (() => {
            never reach it and fell into the "outer sliver" case, which lit the WHOLE run). The lit
            top belongs to the crown raster on the tall side and to the crest band on the side wall. */
         const lo = Math.min(edge, inner), hi = Math.max(edge, inner);
-        clamp(lo, hi + 1, cPal.face);
+        /* the band, graded across its DEPTH exactly as bakeSideFace grades a straight one: depth 0
+           sits at `edge` (the outer/crown side) and grows toward the deck contact, whichever way the
+           corner faces. Identical ramp constants, so the corner and the straight it joins are the
+           same surface at the join row. */
+        if (arcS === null) { arcS = py; arcPrev = edge; }
+        else { arcS += Math.hypot(1, edge - arcPrev); arcPrev = edge; }
+        const cBase = cEd.glass ? U.shade(cPal.base, -0.55) : cPal.face;
+        const bw = hi + 1 - lo;
+        const onMark = cEd.pitch > 0 && ((Math.round(arcS) % cEd.pitch) + cEd.pitch) % cEd.pitch === 0;
+        for (let ix = lo; ix <= hi; ix++) {
+          const d = sgnX < 0 ? ix - lo : hi - ix;
+          const t = bw <= 1 ? 0 : d / (bw - 1);
+          let c = U.shade(cBase, 0.12 - 0.38 * t);
+          for (const [rd, lift] of (cEd.runs || [])) if (rd === d) c = U.shade(cBase, lift);   // runs bend round too
+          if (onMark) c = U.shade(cBase, cEd.joint);
+          else if (cEd.speck && h2(ix, py, 'wedge') % 3 === 0) c = U.shade(cBase, 0.18);
+          clamp(ix, ix + 1, c);
+        }
         if (hasInner) {
           // the foot mirrors wallFoot's depth AND grading exactly (4px / 2px / 1px, -0.24 / -0.40 /
           // -0.58). A 2px flat foot against the straight wall's graded 4px one left the corner ~9
