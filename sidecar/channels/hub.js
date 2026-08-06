@@ -286,6 +286,10 @@
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
+    // STEP EDITOR (2026-08-05): stageBriefFor(agentId) -> the standing job brief of the dock this agent crews,
+    // or null. PROMPT TEXT ONLY — appended to the entry run's system context below; it never widens grants,
+    // tools, or routing (those stay with resolveStation/resolveAgent). Chain hops get theirs inside chain.js.
+    const stageBriefFor = typeof o.stageBriefFor === 'function' ? o.stageBriefFor : null;
     // AGENTIC GRAPHS: the dock resolveAgent picked is stage ONE; the belts drawn PAST it say where its output
     // goes. `chain` is the injected executor (sidecar/routing/chain.js) already bound to the floor's edge
     // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
@@ -1404,7 +1408,14 @@
 
       const rec = store.getChatRecord ? store.getChatRecord(chatId) : null;
       const persona = sec.system || personaFor(agentId, rec);   // the agent's REAL composed prompt when configured
-      const system = persona + (isTask ? TASK_SUFFIX : '');
+      // the dock's standing brief (step editor): when the router holds one for this agent's dock, the run's
+      // system context carries it — the SAME section header the chain handoff turn uses. Null-safe: no seam /
+      // no floor / no brief composes the exact pre-brief system string.
+      let dockBrief = null;
+      if (stageBriefFor) { try { dockBrief = stageBriefFor(agentId); } catch (_) { dockBrief = null; } }
+      const system = persona
+        + (dockBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(dockBrief).slice(0, 2000) : '')
+        + (isTask ? TASK_SUFFIX : '');
 
       // B5: if this agent runs at a bound BAY, its tools are that bay room's objects (resolveStation), not the
       // default office — so a routed agent's reach is exactly what the floor granted it. null -> office default.

@@ -172,7 +172,13 @@
       }
       // EVERY bound bay is a working dock (legibility list; NOT the dispatch `bays` — router semantics untouched).
       // A LONE assigned bay is a COMPLETE build: work addressed to its agent arrives at the dock, no belts needed.
-      dockBays.push({ propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 });
+      // `brief` (step editor, 2026-08-05) rides both dock lists: the Commander's standing job brief for this
+      // station, PROMPT TEXT ONLY — it never touches routing (resolveTarget/chainNext ignore it) or capability
+      // (stationFor reads objects, never brief). Bounded here so no surface can post an unbounded blob.
+      const brief = (typeof p.brief === 'string' && p.brief.trim()) ? p.brief.trim().slice(0, 2000) : null;
+      const dockRec = { propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 };
+      if (brief) dockRec.brief = brief;
+      dockBays.push(dockRec);
       const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
       if (!t) {
         // beltless bound bay: valid alone; merely "not on the line" (warn) when an intake line exists elsewhere
@@ -189,7 +195,9 @@
       for (let yy = p.y - 1; yy <= p.y + bh; yy++)
         for (let xx = p.x - 1; xx <= p.x + bw; xx++)
           if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
-      bays.push({ agentId: p.agentId, propId: p.id, tile: t, tiles });
+      const bayRec = { agentId: p.agentId, propId: p.id, tile: t, tiles };
+      if (brief) bayRec.brief = brief;   // hash includes `bays`, so a brief edit re-arms the sidecar's copy
+      bays.push(bayRec);
       for (const ht of tiles) bayTileToAgent[key(ht.x, ht.y)] = p.agentId;
     }
 
@@ -581,10 +589,14 @@
      NOT the user, it is a machine being handed material, so the turn names the line explicitly. Carrying the
      ORIGINAL request as well as the upstream output is load-bearing: a writer handed only research has no
      idea what was asked and invents one. */
-  function handoffPrompt(originalText, fromAgentId, upstream, hop) {
+  function handoffPrompt(originalText, fromAgentId, upstream, hop, stageBrief) {
+    // stageBrief (step editor, 2026-08-05): the RECEIVING dock's standing job brief — optional 5th param so
+    // every existing caller composes byte-identical turns. Prompt text only; bounded like the compiled copy.
+    const brief = (typeof stageBrief === 'string' && stageBrief.trim()) ? stageBrief.trim().slice(0, 2000) : '';
     return 'PIPELINE HANDOFF — you are stage ' + (hop + 1) + ' of a work line on this station.\n\n'
       + 'The original request was:\n' + String(originalText || '(none recorded)') + '\n\n'
       + 'The upstream stage (' + fromAgentId + ') produced:\n' + String(upstream) + '\n\n'
+      + (brief ? 'YOUR STANDING BRIEF FOR THIS STATION:\n' + brief + '\n\n' : '')
       + 'Do YOUR part of this work and produce the output for the next stage. Do not restate the upstream '
       + 'output — build on it. Answer with the work itself, not a description of what you would do.';
   }
