@@ -194,4 +194,23 @@ if (clamp) {
     'the dock popover no longer uses the <body> zoom, which is now the wrong frame for it');
 }
 
+// The FINISH-THE-LINE card is appended directly to `.refit-overlay`, itself a fixed BODY
+// child. Canvas/card/dock rects and innerWidth are visual pixels; offsetWidth is not. Keep the
+// complete placement and clamp calculation in visual px, then divide the two style writes once.
+const build = read('frontend', 'app', 'build.js');
+const finStart = build.indexOf('function positionFinCard()');
+const finEnd = build.indexOf('function noteLineDelivered(', finStart);
+const finPos = finStart >= 0 && finEnd > finStart ? build.slice(finStart, finEnd) : '';
+A.ok(finPos, 'build.js still positions the FINISH-THE-LINE card');
+A.ok(/const\s+uiz\s*=\s*U\.uiZoom\(\)/.test(finPos),
+  'finish card reads the body-child uiZoom divisor');
+A.ok(/finCardEl\.getBoundingClientRect\(\)/.test(finPos) && !/finCardEl\.offset(?:Width|Height)/.test(finPos),
+  'finish card clamps with its VISUAL rect dimensions, not unzoomed offset dimensions');
+A.ok(/style\.left\s*=\s*Math\.round\(x\s*\/\s*uiz\)\s*\+\s*'px'/.test(finPos),
+  'finish card divides the final visual left coordinate by uiZoom exactly once');
+A.ok(/style\.top\s*=\s*Math\.round\(y\s*\/\s*uiz\)\s*\+\s*'px'/.test(finPos),
+  'finish card divides the final visual top coordinate by uiZoom exactly once');
+A.eq((finPos.match(/\/\s*uiz/g) || []).length, 2,
+  'finish card performs exactly two uiZoom divisions: the final left/top style writes');
+
 A.report('textsize-screen-space.test');

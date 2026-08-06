@@ -1860,9 +1860,11 @@ const Build = (() => {
     const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
     const r = cv.getBoundingClientRect();
     if (!r.width || !r.height) return;
+    const uiz = U.uiZoom();
     const sx = w => r.left + (w * zoom + panX) * (r.width / cv.width);
     const sy = w => r.top + (w * zoom + panY) * (r.height / cv.height);
-    const w = finCardEl.offsetWidth || 232, h = finCardEl.offsetHeight || 118;
+    const cr = finCardEl.getBoundingClientRect();
+    const w = cr.width || 232 * uiz, h = cr.height || 118 * uiz;
     // NEVER over the tool dock (the never-blocks-editing law): a left-sidebar dock raises the floor x
     const dock = root.querySelector('.refit-dock');
     let minX = 8;
@@ -1875,8 +1877,8 @@ const Build = (() => {
     else { x = sx((c.bbox.x2 + 1 + o.tx) * t) - w; y = sy((c.bbox.y2 + 1 + o.ty) * t) + 12; }             // no side room — under the line
     x = Math.max(minX, Math.min(x, window.innerWidth - w - 8));
     y = Math.max(56, Math.min(y, window.innerHeight - h - 8));
-    finCardEl.style.left = Math.round(x) + 'px';
-    finCardEl.style.top = Math.round(y) + 'px';
+    finCardEl.style.left = Math.round(x / uiz) + 'px';
+    finCardEl.style.top = Math.round(y / uiz) + 'px';
   }
   /* the delivery-retirement hook — world.js calls this (WORLD tiles) when a real product crate sinks
      at an outbox mouth. Works with REFIT closed: resolves the station via opts and maps the tile to

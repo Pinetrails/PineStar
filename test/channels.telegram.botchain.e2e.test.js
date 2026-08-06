@@ -39,7 +39,10 @@ function startMockOpenRouter() {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: [{ id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }] }));
+        res.end(JSON.stringify({ data: [
+          { id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] },
+          { id: 'writer/distinct-model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }
+        ] }));
         return;
       }
       if (req.url.indexOf('/chat/completions') >= 0) {
@@ -172,6 +175,12 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKCHAIN';
       body: body === undefined ? undefined : JSON.stringify(body)
     }).then(async r => ({ status: r.status, j: await r.json().catch(() => ({})) }));
 
+    const roster = await api('POST', '/api/roster', { agents: [
+      { agentId: 'research-agent', name: 'RESEARCH', model: 'test/model', provider: 'openrouter', reasoningEffort: 'low' },
+      { agentId: 'writer-agent', name: 'WRITER', model: 'writer/distinct-model', provider: 'openrouter', reasoningEffort: 'high' }
+    ], updatedAt: Date.now() });
+    A.eq(roster.status, 200, 'the two agents have distinct live roster identities');
+
     // ---- 1. add the agent-bound bot and enroll its owner (multibot pattern) ----
     const add = await api('POST', '/api/channels/telegram/bots/connect', { token: TOK_A, agentId: 'research-agent', agentName: 'RESEARCH', model: 'test/model' });
     A.eq(add.status, 200, 'agent bot added');
@@ -204,6 +213,7 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKCHAIN';
     A.ok(llm.requests.length >= callsBefore + 2, 'two provider calls — the line really bought both runs');
     const handoffReq = llm.requests.slice(callsBefore).find(r => (r.messages || []).some(m => m && m.role === 'user' && String(m.content || '').indexOf('PIPELINE HANDOFF') >= 0));
     A.ok(handoffReq, 'the downstream stage was handed the PIPELINE HANDOFF turn');
+    A.eq(handoffReq.model, 'writer/distinct-model', 'the downstream hop uses the target agent\'s roster model');
     const handoffTurn = (handoffReq.messages || []).map(m => String((m && m.content) || '')).find(c => c.indexOf('PIPELINE HANDOFF') >= 0) || '';
     A.ok(handoffTurn.indexOf('research-agent') >= 0, 'the handoff names the upstream stage (the bot\'s bound agent — the hard-lock held)');
     A.ok(handoffTurn.indexOf('Stage one findings') >= 0, 'the handoff carries the upstream OUTPUT, not the raw DM');
