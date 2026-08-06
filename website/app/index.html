@@ -4,9 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STARNET</title>
-<!-- VT323 ships LOCALLY via @font-face in css/style.css (assets/fonts/vt323.woff2, SIL OFL).
-     WEBSITE EMBED ONLY: the app's secondary Google Fonts link is removed here — the public
-     site promises zero third-party requests, and the local woff2 fully covers the embed. -->
+<!-- VT323 — THE STARNET FONT — has exactly ONE source: the local @font-face in css/style.css
+     (frontend/assets/fonts/vt323.woff2, SIL OFL, U+0-10FFFF — the whole range, no subsets).
+     There is NO remote font link here and there must never be one again. The Google Fonts
+     <link> that used to sit on this line registered THREE extra VT323 faces carrying
+     `font-display: swap` and unicode-ranges covering Latin (U+0-FF) — i.e. covering every
+     glyph the station actually renders. `swap` means "paint the FALLBACK first, swap the
+     real face in when the network answers", so on a slow, blocked, or offline load the
+     entire app painted in Courier New. It bought nothing: the local face already covers a
+     superset of what Google served. Preloaded so the face is in flight before first paint. -->
+<link rel="preload" href="assets/fonts/vt323.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/comms.css">

@@ -544,6 +544,7 @@ test/release-train-windows-trust.test.js
 test/release-contract-docs.test.js
 test/website-deploy-staging.test.js
 test/website-app-sync.test.js
+test/font.law.test.js
 test/sprite-assets.test.js
 test/sprite-walk-motion.test.js
 test/lint-gate-can-fail.js
