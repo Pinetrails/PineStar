@@ -75,6 +75,9 @@ A.ok(/function setAgentName[\s\S]{0,1800}pushRoster\(\)[\s\S]{0,120}persist\(\)/
 A.ok(/function relabel\(id, name\)/.test(world), 'World implements relabel');
 A.ok(/\brelabel,/.test(world), 'relabel is exported on the World public API');
 A.ok(/World\.relabel/.test(appjs), 'setAgentName relabels the floor body');
+A.ok(/function setAgentName[\s\S]{0,2600}Chat\.refreshAgentIdentity\(\)/.test(appjs), 'rename invalidates the COMMS identity cache for focused overseer and non-focused crew labels');
+A.ok(/function refreshAgentIdentity\(\)[\s\S]{0,500}App\.agentName\(activeWs\.agentId \|\| 'agent'\)[\s\S]{0,220}renderIdBar\(\)/.test(chat), 'COMMS rename refresh re-resolves the focused speaker and rebuilds the live-roster selector without reloading the stream');
+A.ok(/refreshAgentIdentity\s*,/.test(chat), 'Chat exposes the narrow rename invalidation hook');
 
 // ---- review fix: rename must re-sync the DEFAULT identity so the PROMPT (not just the label) takes the new name ----
 A.ok(/function setAgentName[\s\S]{0,900}baseIdentity\(nm, a\.role\)/.test(appjs), 'rename regenerates the default identity for the new name (prompt is not left saying the old name)');

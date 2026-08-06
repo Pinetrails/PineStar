@@ -2522,3 +2522,15 @@ visible, and the browser warning/error log was empty. Focused regression: 3 asse
 website sync: 8 assertions; exact-code `test:fast`: 518/518 green. Frontend-only change, so
 `test:http` was not required. No merge, push, PR, deployment, publish, production-data,
 credential, or secret change was performed.
+
+# READY TO MERGE 2026-08-06 — COMMS PROFILE-RENAME CACHE (`agent/statusbar-profile-names`)
+
+Profile renames now invalidate COMMS' cached roster-option labels and focused-speaker name without
+reloading the workstream or disturbing transcript/beat/run state. The frontend website mirror and
+the agent-model source contract are synchronized.
+
+Live seeded proof at `localhost:8791`: focused overseer `ATLAS → ORION` updated the CREW row and
+selected COMMS option immediately; non-focused specialist `STRATEGIST → VEGA` updated its CREW row
+and COMMS option while ORION stayed selected. After stopping and restarting the seeded sidecar with
+`--keep`, both surfaces rehydrated as `ORION / VEGA`. Focused regression: 61 assertions; website
+sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verification was not run.

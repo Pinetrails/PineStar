@@ -12,6 +12,10 @@
 function visibleTerminalRect(rect, viewport) {
   const vw = Math.max(0, Number(viewport && viewport.width) || 0);
   const vh = Math.max(0, Number(viewport && viewport.height) || 0);
+  // A viewport may start BELOW the top of the glass: the chrome bars own that strip and one of
+  // them paints over windows (see termBand). `top` defaults to 0, so a plain {width,height}
+  // viewport behaves exactly as it always did.
+  const vt = Number.isFinite(Number(viewport && viewport.top)) ? Number(viewport.top) : 0;
   const width = Math.max(0, Number(rect && rect.width) || 0);
   const height = Math.max(0, Number(rect && rect.height) || 0);
   const left = Number.isFinite(Number(rect && rect.left)) ? Number(rect.left) : 0;
@@ -25,8 +29,8 @@ function visibleTerminalRect(rect, viewport) {
   // the responsive rect to the normal inset.
   const minLeft = fitsWidth ? padX : vw - padX - width;
   const maxLeft = vw - padX - width;
-  const minTop = padY;
-  const maxTop = vh - padY - height;
+  const minTop = vt + padY;
+  const maxTop = vt + vh - padY - height;
   return {
     left: fitsWidth ? Math.max(minLeft, Math.min(left, maxLeft)) : maxLeft,
     top: fitsHeight ? Math.max(minTop, Math.min(top, maxTop)) : minTop,
@@ -256,6 +260,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // sized/parked at one scale can hang past the frame at another.
     if ((document.body.style.zoom || '') !== priorZoom) {
       requestAnimationFrame(() => {
+        // the band is published in zoomed-space px, so a zoom flip invalidates it outright
+        try { syncTermBand(); } catch (_) {}
         try { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, false); }); } catch (_) {}
         // re-announce the layout change (fullscreen.js sn-fs idiom): a zoom flip moves every
         // rect without firing a window resize, so fixed-position trackers (#logo via
@@ -353,7 +359,53 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // conversion; terminalViewport() reports the LOCAL (zoomed-space) viewport so every offset-based
   // clamp below stays consistent, and drag/resize handlers divide their visual mouse reads by it.
   function uiZoom() { const z = parseFloat(document.body && document.body.style ? document.body.style.zoom : ''); return z > 0 ? z : 1; }
-  function terminalViewport() { const z = uiZoom(); return { width: window.innerWidth / z, height: window.innerHeight / z }; }
+
+  /* ---------- THE WINDOW BAND: the strip of glass a floating window may occupy ----------
+     Two chrome bars can sit above a window and neither is negotiable:
+       · #topbar — the instrument cluster, always at the top of the frame;
+       · #sn-titlebar — the Windows desktop shell's own titlebar. It is a <body> child at z930,
+         and a .screen is a z-index:10 stacking context, so NOTHING inside it (every window
+         included) can out-stack the bar: it paints over whatever it covers and swallows the
+         window's title chip and its ✕ whole. titlebar.css already moves .refit-overlay clear of
+         it for exactly this reason; windows were the surface that never got the same treatment.
+     #bottombar owns the other end (the dock + the minimized-window strip).
+     Centring on the raw viewport put a window's own titlebar under them the moment it grew tall,
+     which is what the largest TEXT SIZE does to every console (2026-08-06 report).
+
+     MEASURED, never assumed: both bars are counter-zoomed hardware, the grid re-flows at every
+     breakpoint, and the desktop bar disappears in fullscreen. Rects are VISUAL px while a
+     window's left/top/max-height are ZOOMED-space px, so the band is published divided by the
+     zoom — the one conversion, in the same frame .term writes. Cached because the drag handler
+     reads it per pointermove; every event that can move a bar re-syncs it. */
+  let termBandCache = null;
+  function measureTermBand() {
+    const z = uiZoom();
+    const vw = window.innerWidth / z, vh = window.innerHeight / z;
+    const edge = el => { const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null; return r && r.height > 0 ? r : null; };
+    let top = 0, bottom = vh;
+    const chrome = edge(document.getElementById('sn-titlebar'));   // desktop shell only; display:none in a browser
+    if (chrome) top = Math.max(top, chrome.bottom / z);
+    const tb = edge(document.getElementById('topbar'));
+    if (tb) top = Math.max(top, tb.bottom / z);
+    const bb = edge(document.getElementById('bottombar'));
+    if (bb) bottom = Math.min(bottom, bb.top / z);
+    // Fail open, never closed: a frame mid-boot (or a screen that isn't the station) can report a
+    // degenerate band, and a window squeezed into nothing is worse than one that overlaps a bar.
+    if (!(bottom - top >= 200)) { top = 0; bottom = vh; }
+    return { top, height: bottom - top, width: vw };
+  }
+  // publish the band to CSS as well: `.term` centres and caps itself against it, so the shell's
+  // resting geometry and these JS clamps can never disagree about where a window may live.
+  function syncTermBand() {
+    const band = termBandCache = measureTermBand();
+    const host = $('#terms');
+    if (host) {
+      host.style.setProperty('--term-top', band.top + 'px');
+      host.style.setProperty('--term-band', band.height + 'px');
+    }
+    return band;
+  }
+  function terminalViewport() { return termBandCache || syncTermBand(); }
   const DEFAULT_TERM_LIMITS = { minWidth: 320, minHeight: 220, maxWidth: 960, maxHeight: 760 };
   const CONSOLE_TERM_LIMITS = { minWidth: 560, minHeight: 360, maxWidth: 1200, maxHeight: 840 };
   function terminalLimits(opts) {
@@ -471,8 +523,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // screen's tier (window.screen re-reads per monitor). No-op while a fixed % is chosen.
     if (!(Number(store.settings.textScale) || 0)) applySettings();
     clearTimeout(resizeClampTimer);
-    requestAnimationFrame(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
-    resizeClampTimer = setTimeout(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
+    // the bars move with the frame (and F11 removes the desktop one outright) — re-measure the
+    // band BEFORE anything clamps against it, then again once the reflow has settled.
+    requestAnimationFrame(() => { syncTermBand(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
+    resizeClampTimer = setTimeout(() => { syncTermBand(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
   });
 
   // Land a freshly-opened window in a tidy left-anchored column, CASCADING each so stacked panels
@@ -763,6 +817,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // Opening a panel exits refit first so two features can't stack (see COHERENCE_MATRIX dim T).
     if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) { try { Build.close(); } catch (_) {} }
     sfx('open');
+    // re-measure the band before the window exists: the desktop titlebar mounts after this module
+    // loads, and the rails re-flow on every breakpoint — a stale band would place the first window
+    // of the session against chrome that has since moved.
+    syncTermBand();
     // a11y: remember who opened this so focus can return there on close (the dock item / trigger).
     const opener = (typeof document !== 'undefined' && document.activeElement) || null;
     const w = mkEl('div', 'term');
@@ -6683,6 +6741,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   function init() {
     applySettings();
+    syncTermBand();
     document.querySelectorAll('.bb[data-term]').forEach(b =>
       b.addEventListener('click', () => {
         const k = b.dataset.term, def = BUILDERS[k];

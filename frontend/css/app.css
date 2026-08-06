@@ -2366,7 +2366,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .kb-live { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
 
 /* SKILLS — honest capability readout (reuses v7 .perk-grid/.perk) */
-.term.skills-term { max-height: calc(100vh - 96px); }
+.term.skills-term { max-height: var(--term-band, calc(100vh * var(--sn-unzoom, 1) - 96px)); }
 .term.skills-term .term-body { flex: 1 1 auto; min-height: 0; }
 .sk-note { font-size: 12px; opacity: 0.62; margin-top: 12px; line-height: 1.45; }
 /* the locked status line ("○ NO CABINET AT DESK") reads at --ph, not --ph-dim: at the perk's 0.65 opacity a dim
@@ -4057,12 +4057,17 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    height tween on top left the box measurable at ~4px mid-animation. The entrance covers the open; the async
    loading… -> rows growth snaps, which is the safe trade. */
 .term.console {
-  width: min(1060px, 88vw);
+  /* The width and height limits are expressed in the counter-zoomed window coordinate space and
+     bound to the measured strip between the chrome bars. This retains content-fit consoles while
+     preventing large TEXT SIZE from placing their titlebar underneath fixed chrome. */
+  --con-w: min(1060px, calc(88vw * var(--sn-unzoom, 1)));
+  --con-h: min(var(--term-band, calc(78vh * var(--sn-unzoom, 1))), 720px);
+  width: var(--con-w);
   height: auto;
   /* the floor yields to a short viewport — a flat 320px would out-size the window on a <=380px-tall screen
      (and out-size the 84vh narrow-breakpoint height below), pushing the panel past the frame. */
-  min-height: min(320px, 78vh);
-  max-width: 88vw; max-height: min(78vh, 720px);
+  min-height: min(320px, var(--con-h));
+  max-width: var(--con-w); max-height: var(--con-h);
 }
 .term.console .term-body.term-console-body {
   display: flex; flex-direction: row; gap: 0;
@@ -4303,7 +4308,7 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 
 /* responsive: on a narrow viewport the rail sits on top as a horizontal strip */
 @media (max-width: 720px) {
-  .term.console { width: 94vw; height: 84vh; }
+  .term.console { --con-w: calc(94vw * var(--sn-unzoom, 1)); --con-h: var(--term-band, calc(84vh * var(--sn-unzoom, 1))); }
   .term.console .term-body.term-console-body { flex-direction: column; }
   .con-rail { flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--ph-dim); }
   .con-rail-list { flex-direction: row; flex-wrap: wrap; overflow-x: auto; }

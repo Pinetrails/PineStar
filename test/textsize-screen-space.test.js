@@ -213,4 +213,44 @@ A.ok(/style\.top\s*=\s*Math\.round\(y\s*\/\s*uiz\)\s*\+\s*'px'/.test(finPos),
 A.eq((finPos.match(/\/\s*uiz/g) || []).length, 2,
   'finish card performs exactly two uiZoom divisions: the final left/top style writes');
 
+/* ---- 9. a VIEWPORT-RELATIVE cap inside the zoomed subtree carries the reciprocal too ------
+   The mirror image of rule 5. A vh/vw length inside <body> resolves against the REAL viewport and
+   is THEN multiplied by the zoom, so `86vh` renders as 129vh at 150% — the cap stops capping at
+   exactly the size where it matters. It cost two reports: the REFIT dock's tail fell off the glass
+   (2026-08-05), then every floating window grew taller than the frame and hid its own titlebar
+   under the chrome bars (2026-08-06, "the top of the popup windows get cut off under the header
+   bar (I'm using the largest possible font)").
+   Windows are capped by the measured BAND (StationUI.syncTermBand — the strip between #topbar /
+   the desktop shell's #sn-titlebar and #bottombar); the vh/vw fallbacks behind it, and the width
+   caps beside it, must ride --sn-unzoom. */
+A.ok(/setProperty\('--term-top'/.test(stationui) && /setProperty\('--term-band'/.test(stationui),
+  'stationui publishes the window band so the CSS shell and the JS clamps agree on where a window may live');
+
+// every vw/vh length in a declaration must sit inside a calc() that multiplies by --sn-unzoom
+function unzoomed(decl) {
+  const bare = [];
+  for (const m of decl.matchAll(/\b\d+(?:\.\d+)?v[hw]\b/g)) {
+    const after = decl.slice(m.index, m.index + 120);
+    if (!/^\d+(?:\.\d+)?v[hw]\s*\*\s*var\(--sn-unzoom/.test(after)) bare.push(m[0]);
+  }
+  return bare;
+}
+const WINDOW_RULES = [
+  { what: "style.css .term (the shared window shell)", css: styleCss, sel: '.term', needs: ['--term-band', '--term-top'] },
+  { what: 'app.css .term.console (the two-pane console)', css: appCss, sel: '.term.console', needs: ['--term-band'] },
+  { what: 'app.css .term.skills-term', css: appCss, sel: '.term.skills-term', needs: ['--term-band'] },
+];
+for (const r of WINDOW_RULES) {
+  const bodies = rulesFor(r.css, r.sel);
+  A.ok(bodies.length, r.what + ' still exists as a rule');
+  const joined = bodies.join('\n');
+  for (const v of r.needs) A.ok(joined.includes(v), `${r.what} sizes itself against ${v}`);
+  bodies.forEach((body, i) => A.eq(unzoomed(body), [],
+    `${r.what} rule #${i + 1}: a vw/vh cap inside the body zoom must be written ` +
+    `calc(<n>vh * var(--sn-unzoom, 1)) or it caps ${'>'}100% of the glass at large TEXT SIZE`));
+}
+// The .term shell must not go back to centring on the raw viewport — that IS the reported bug.
+A.ok(!/(^|[\s;{])top:\s*50%/.test(rulesFor(styleCss, '.term')[0] || ''),
+  'the window shell centres in the band, never on the raw glass');
+
 A.report('textsize-screen-space.test');
