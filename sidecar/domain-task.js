@@ -19,6 +19,7 @@
   'use strict';
 
   const HOST_RE = /\b(?:https?:\/\/)?((?:[a-z0-9](?:[a-z0-9-]{0,62})\.)+[a-z]{2,63})(?::\d+)?(?:[\/?#][^\s]*)?/ig;
+  const FILE_SUFFIXES = new Set(['bat', 'c', 'cc', 'cjs', 'cmd', 'cpp', 'css', 'csv', 'doc', 'docx', 'env', 'gif', 'go', 'h', 'hpp', 'htm', 'html', 'java', 'jpeg', 'jpg', 'js', 'json', 'jsx', 'lock', 'log', 'md', 'mjs', 'pdf', 'png', 'ppt', 'pptx', 'ps1', 'py', 'rb', 'rs', 'sh', 'svg', 'ts', 'tsx', 'txt', 'webp', 'xls', 'xlsx', 'xml', 'yaml', 'yml']);
   const DIRECT_RE = /\b(check|check out|visit|open|read|inspect|browse|look at|review)\b|\b(docs?|documentation|website|site)\b/i;
   const EXPANSIVE_RE = /\b(find|locate|discover)\s+(?:the\s+)?(?:correct|right|official|new|current)\b|\b(alternatives?|similar sites?|where (?:it|the site) moved|domain history|archives?|wayback|compare|across the web)\b|\bsearch\s+(?:the\s+)?web\s+for\b/i;
   const WORKER_MAX_ITERS = 3;
@@ -37,6 +38,11 @@
     HOST_RE.lastIndex = 0;
     while ((m = HOST_RE.exec(src)) !== null) {
       const host = normalizeHost(m[1]);
+      const explicitUrl = /^https?:\/\//i.test(m[0]);
+      const preceding = m.index > 0 ? src[m.index - 1] : '';
+      const suffix = host.slice(host.lastIndexOf('.') + 1);
+      if (!explicitUrl && (preceding === '@' || preceding === '/' || preceding === '\\')) continue;
+      if (!explicitUrl && FILE_SUFFIXES.has(suffix)) continue;
       if (!host || seen.has(host)) continue;
       seen.add(host); found.push(host);
     }
