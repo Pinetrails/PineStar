@@ -138,8 +138,26 @@ const App = (() => {
     // correct whether or not the counter-zoom applied.
     const z = logoZoom(logo);
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
-    logo.style.left = (a.left / z) + 'px';
-    logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
+    // DEVICE-PIXEL SNAP: the seat lands on fractions (a themed topbar, a zoom that is not 1, an odd
+    // window width), and a mark parked on a half pixel is antialiased across two — the whole mark
+    // goes soft with nothing in the markup to blame. Round the VISUAL position to a whole device
+    // pixel, then convert to the mark's own layout px (uiZoom law: divide by z exactly once).
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    const snap = v => Math.round(v * dpr) / dpr;
+    const wantLeft = snap(a.left);
+    const wantTop = snap(b.top + (b.height - logo.offsetHeight * z) / 2);
+    logo.style.left = (wantLeft / z) + 'px';
+    logo.style.top = (wantTop / z) + 'px';
+    // ONE correction pass. z is MEASURED off the element (rect/offsetWidth), so it carries a little
+    // float error, and the counter-zoom multiplies that error back into the landed position — the
+    // mark came down ~0.02px off its target, which is exactly the half-pixel smear the snap exists
+    // to remove. Read where it actually landed and subtract the residual; the map is affine, so one
+    // pass drives it to nothing. Never loop: a second pass would chase float noise forever.
+    const got = logo.getBoundingClientRect();
+    if (Math.abs(got.left - wantLeft) > 0.005 || Math.abs(got.top - wantTop) > 0.005) {
+      logo.style.left = ((wantLeft - (got.left - wantLeft)) / z) + 'px';
+      logo.style.top = ((wantTop - (got.top - wantTop)) / z) + 'px';
+    }
     queueLogoOcclusion();   // the mark moved — its clip is stale
   }
 
@@ -187,13 +205,13 @@ const App = (() => {
       host.addEventListener('animationend', queueLogoOcclusion);
     }
   }
-  // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
-  // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
-  // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).
+  // boot-settle re-seat: positionLogo's first run happens before VT323 lands, which moves the
+  // topbar/logo geometry with NO resize event and left the mark off-seat until the first manual
+  // resize (the 2026-07-20 misalignment report). The mark itself no longer needs a settle hook —
+  // it is a masked <span> sized by CSS aspect-ratio, so it has its full width at first layout;
+  // the old `img.load` re-seat existed only because an <img> has no dimensions until it decodes.
   if (typeof document !== 'undefined') {
     try { if (document.fonts && document.fonts.ready && document.fonts.ready.then) document.fonts.ready.then(() => positionLogo()); } catch (_) {}
-    const li = document.querySelector('#logo .logo-img');
-    if (li && !li.complete) li.addEventListener('load', () => positionLogo(), { once: true });
   }
 
   function refreshUsage() {

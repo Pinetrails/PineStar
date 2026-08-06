@@ -460,6 +460,7 @@ test/estop-persistence-ui.test.js
 test/channels.adapter.test.js
 test/channels.proxy-fetch.test.js
 test/channels.owner-pairing.test.js
+test/channels.telegram.pairing-ux.test.js
 test/channels.telegram.test.js
 test/channels.telegram.format.test.js
 test/channels.telegram.context.test.js
@@ -500,6 +501,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/brand-wordmark-mask.test.js
 test/personalization-authority-wiring.test.js
 test/sprite-loading.test.js
 test/textsize-screen-space.test.js
