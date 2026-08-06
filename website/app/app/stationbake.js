@@ -1547,8 +1547,10 @@ const StationBake = (() => {
   /* sample the strip at a WORLD along-coordinate and a depth row. Returns null where the recipe left
      the pixel transparent — VIEWPORT's glass — so a hole stays a hole instead of becoming grey. */
   function stripAt(strip, alongWorld, row) {
-    const sx = (((Math.round(alongWorld) - strip.x0) % strip.w) + strip.w) % strip.w;
-    const sy = Math.max(0, Math.min(strip.h - 1, Math.round(row)));
+    // callers hand in already-quantized addresses (see faceMap) — never round again here, or a
+    // polar address gets quantized twice and beats against itself
+    const sx = (((Math.floor(alongWorld) - strip.x0) % strip.w) + strip.w) % strip.w;
+    const sy = Math.max(0, Math.min(strip.h - 1, Math.floor(row)));
     const i = ((sy * strip.w + sx) << 2), d = strip.d;
     return d[i + 3] ? 'rgb(' + d[i] + ',' + d[i + 1] + ',' + d[i + 2] + ')' : null;
   }
@@ -2161,16 +2163,23 @@ const StationBake = (() => {
      `deepRuns` are FRACTIONS of the face depth, not pixels: the face is ~23px deep at the top of the
      arc and a couple of px at its foot, and a rail pinned to an absolute depth would slide off the
      wall as it narrows. */
-  function cornerFaceSlice(put, pal, ed, strip, alongWorld, horiz, fixed, d0, len, step, s) {
+  function cornerFaceSlice(put, pal, ed, strip, map, alongWorld, horiz, fixed, d0, len, step, s) {
     if (len <= 0) return;
     const base = ed.glass ? U.shade(pal.base, -0.55) : pal.face;
     const spoke = !strip && ed.pitch > 0 && (((Math.round(s) % ed.pitch) + ed.pitch) % ed.pitch) === 0;
     for (let i = 0; i < len; i++) {
       let c;
       if (strip) {
-        // THE WALL'S OWN PIXELS. Row i is depth i below the crown, which on the straight face is the
-        // same row — so the corner shows the identical courses, rails and grain the wall does, bent.
-        c = stripAt(strip, alongWorld, i);
+        /* THE WALL'S OWN PIXELS, addressed in POLAR rather than per-slice.
+           Taking (along, depth) from the SLICE meant the whole run shared one along-value and the
+           depth ran with the slice index — fine on its own, but the two duals point those axes
+           different ways, so at the 45° handoff the texture flipped orientation and stepped. Andrew
+           circled exactly that seam. Computing both from the pixel's own radius and angle makes the
+           mapping rotationally exact and identical either side of the handoff, so there is nothing
+           left for the duals to disagree about. */
+        const px0 = d0 + step * i;
+        const m = map(horiz ? px0 : fixed, horiz ? fixed : px0);
+        c = stripAt(strip, m.a, m.d);
         if (c === null) continue;                                 // VIEWPORT glass: leave the hole open
       } else {
         // headless fallback (no getImageData): the authored approximation, kept so both bake paths
@@ -2223,6 +2232,28 @@ const StationBake = (() => {
        true spacing and lands it in phase with the straight wall it leaves. */
     const arcEnd = HR * Math.PI / 2;
     const alongOf = (px, py) => ax + outX * (arcEnd - sOf(px, py));
+    /* POLAR ADDRESS of any face pixel: how far round the arc it sits (which is the along-coordinate
+       the straight wall would have there) and how far in from the crown (which is its depth down the
+       face). `capW` is the crown's own width; the face begins one seam row inside it. Both fall
+       straight out of the pixel's radius and angle, so the row walk and the column walk agree
+       exactly where they overlap. */
+    const faceMap = (px, py) => {
+      const dx = px + 0.5 - ax, dy = py + 0.5 - cy;
+      const ang = Math.atan2(Math.abs(dy), Math.abs(dx));
+      const r = Math.sqrt(dx * dx + dy * dy);
+      const w = crownEase(Math.min(1, (HR * ang) / arcEnd), capW, capFar);
+      /* ALONG IS THE PIXEL'S OWN WORLD X — the BACK WALL'S axis — not arc length.
+         Arc length is the truer surface coordinate and it is what the hull's skirt uses, but here it
+         aliases badly: `a = HR·ang` makes the marks RADIAL, so they converge as the radius falls and
+         at the inner edge a 4px material (RIBBED) lands ~2.5px apart and beats into a checkerboard.
+         World x advances exactly one unit per pixel at every depth, so it cannot beat — and at the
+         north join it IS the back wall's own coordinate, which makes that seam literally disappear.
+         The cost is the far end of the arc, where the pattern foreshortens instead of holding its
+         spacing; that reads as the wall turning away from you, and it is the end Andrew explicitly
+         deprioritised ("focus on blending with the back wall mainly").
+         Depth stays radial: it is what carries the courses and rails round as concentric bands. */
+      return { a: px, d: Math.max(0, Math.floor((HR - 2 - w) - r)) };
+    };
     /* the DECK's own curve is the inner limit for the face fill — everything from the ladder down
        to it is wall face. Same centre and rounding convention as the deck cut itself, so the face
        stops exactly where the floor starts. */
@@ -2253,14 +2284,14 @@ const StationBake = (() => {
         put(ex, py, 1, 1, wallDk);                                             // the shell's own edge
         put(ex + 1, py, w, 1, pal.cap); put(ex + 1, py, 1, 1, lit);            // the lit top surface
         // face, down to the deck — depth 0 sits just inside the crown, so the material curves with it
-        cornerFaceSlice(put, pal, ed, strip, alongOf(ex, py), true, py, ex + 2 + w, Math.max(0, inner - (ex + 2 + w)), 1, sOf(ex, py));
+        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ex, py), true, py, ex + 2 + w, Math.max(0, inner - (ex + 2 + w)), 1, sOf(ex, py));
         put(ex + 1 + w, py, 1, 1, seam);
       } else {
         // the lit edge is the crown's OUTERMOST row, i.e. ex - 1 here — putting it on `ex` paints
         // over the shell edge and rules a near-white line along the station's own silhouette.
         put(ex, py, 1, 1, wallDk);
         put(ex - w, py, w, 1, pal.cap); put(ex - 1, py, 1, 1, lit);
-        cornerFaceSlice(put, pal, ed, strip, alongOf(ex, py), true, py, ex - 2 - w, Math.max(0, (ex - 1 - w) - inner), -1, sOf(ex, py));
+        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ex, py), true, py, ex - 2 - w, Math.max(0, (ex - 1 - w) - inner), -1, sOf(ex, py));
         put(ex - 1 - w, py, 1, 1, seam);
       }
     }
@@ -2275,12 +2306,12 @@ const StationBake = (() => {
       if (outY < 0) {
         put(ix, ey, 1, 1, wallDk);
         put(ix, ey + 1, 1, w, pal.cap); put(ix, ey + 1, 1, 1, lit);
-        cornerFaceSlice(put, pal, ed, strip, alongOf(ix, ey), false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
+        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ix, ey), false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
         put(ix, ey + 1 + w, 1, 1, seam);
       } else {
         put(ix, ey, 1, 1, wallDk);
         put(ix, ey - w, 1, w, pal.cap); put(ix, ey - 1, 1, 1, lit);   // outermost crown row, not the shell edge
-        cornerFaceSlice(put, pal, ed, strip, alongOf(ix, ey), false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
+        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ix, ey), false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
         put(ix, ey - 1 - w, 1, 1, seam);
       }
     }
