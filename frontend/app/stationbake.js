@@ -18,14 +18,18 @@ const StationBake = (() => {
   /* palette + geometry knobs — verbatim from v7 world.js/render.js */
   const pad = 7;
   const NFACE = 9, FACEW = 4;
-  const wallTop = '#4a463a', wallFace = '#2b2820', wallDk = '#1d1a14', hullC = '#191712';
+  // `wallDk` used to live here too — a fourth wall tone that was in fact the SHELL, painted over the
+  // hull plate on every exterior edge. It moved to the hull palette as `edge` (2026-08-06); nothing
+  // outside a room is a wall tone any more.
+  const wallTop = '#4a463a', wallFace = '#2b2820', hullC = '#191712';
   const wallCap = '#7c7258';   // the lit TOP surface of a tall wall — bright on purpose: it survives the ambient bake and defines wall height at any zoom
 
   /* PER-ROOM WALL PALETTE. The four constants above used to paint every wall in the station one
      colour — a cobalt bridge and a rust foundry had identical brown-grey walls. The interior
      faces are derived per room now, from that room's wall hue (which itself defaults to the
-     room's FLOOR hue, so a station is varied the moment it's built). The HULL tones stay global
-     on purpose: the outside of the station is one shell, the inside of each room is decorated.
+     room's FLOOR hue, so a station is varied the moment it's built). The HULL tones went per-room
+     too — first the skirt (2026-08-05), then the exterior edge and corner rim that the wall pass
+     was still painting from constants (2026-08-06). Nothing outside a room is global now.
 
      TONE SEPARATION IS THE WHOLE JOB. A wall face at only -0.15 off the deck's own base reads as
      the SAME surface as the floor — same value, same plate rhythm — so the room looks like one
@@ -161,17 +165,21 @@ const StationBake = (() => {
      are not customizable"). They are per room now. WorldModel.hullMatOfRoom/hullStyleOfRoom are the
      authority; what is here is the PAINT, plus the fallback for geometry arriving without either.
 
-     ---- THE NULL-HUE CASE IS LOAD-BEARING ----
-     `G.hullBaseOf` may answer null, and that is not "missing data" — it means "the shell's own
-     tone", which every room that has never been re-clad carries. Answering it with the LITERAL
-     legacy constants (not a ramp derived from some stand-in colour) is what keeps every station
-     already built pixel-identical, and it is why this axis did not have to shift a single golden.
-     Derive only when a hue was actually chosen. */
-  const LEGACY_HULL = {
-    base: hullC, seam: '#231f17', rim: '#28241b', bolt: '#302b21', arc: '#28241b',
-    lit: '#3f3a2c', dk: '#0b0a07',
-    bands: ['#0b0a07', '#100e09', '#16130d', '#1f1b12', '#2a251a', '#3f3a2c']
-  };
+     ---- THERE IS NO "NO SKIN" CASE ANY MORE (2026-08-06) ----
+     `G.hullBaseOf` may still answer null, and that means "the shell's own tone" — the hue below,
+     which every room that has never been re-clad carries. It used to mean something stronger: a
+     whole PARALLEL PALETTE of literal pre-axis constants, kept so that stations already built
+     stayed pixel-identical. That property turned out to be the defect Andrew reported — "the
+     default still has the previous default mixed in ... make sure the previous shell walls are
+     100% gone". A room on the old constants is not a room wearing the STATION skin: it cannot be
+     re-toned, it does not answer to the material catalog, and beside a re-clad neighbour it reads
+     as a different material entirely.
+     So the constants are gone and the default is now an ordinary skin: the STATION material at
+     STATION_TONE. What kept the look is that STATION carries its OWN palette ramp (`pal` below,
+     the hand-tuned pre-axis ladder re-expressed as ratios of whatever hue the room holds) instead
+     of the shared derivation — the same freedom every material already had over its bands, veins
+     and dressing. The shell you always had is now a skin you can re-colour. */
+  const STATION_TONE = hullC;
   /* ---- THE VACUUM CLAMP: why a hull hue cannot be used at face value ----
      Every other surface in this bake is painted UNDER the ambient mask, which multiplies it down by
      0.77 before you ever see it. The hull is the one surface deliberately left OUTSIDE that mask —
@@ -213,6 +221,39 @@ const StationBake = (() => {
     return '#' + ((1 << 24) | (c(r) << 16) | (c(g) << 8) | c(b)).toString(16).slice(1);
   };
 
+  /* A PURE EXPOSURE STEP — every channel scaled by one factor, so the hue survives untouched and
+     only the amount of light on the surface changes. `U.shade` lerps toward WHITE on a lift, which
+     desaturates: it is right for a mark sitting ON a surface (a catch-light really is whiter) and
+     wrong for restating the SAME material at a different brightness, which is what a shell ramp is.
+     Ceiling: nothing on the exterior may out-shine the lit wall crown by much — see the vacuum note
+     — so a lift is scaled back if it would carry the result past it. */
+  const HULL_LIFT_CEIL = 115;
+  const lift = (hex, k) => {
+    const n = parseInt(String(hex).slice(1), 16);
+    let r = ((n >> 16) & 255) * k, g = ((n >> 8) & 255) * k, b = (n & 255) * k;
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (l > HULL_LIFT_CEIL) { const s = HULL_LIFT_CEIL / l; r *= s; g *= s; b *= s; }
+    const c = v => Math.max(0, Math.min(255, Math.round(v)));
+    return '#' + ((1 << 24) | (c(r) << 16) | (c(g) << 8) | c(b)).toString(16).slice(1);
+  };
+
+  /* THE STATION SHELL'S OWN LADDER. These ratios ARE the pre-axis constants: measured off them
+     channel by channel against the shell tone they were drawn at, so STATION at STATION_TONE
+     reproduces the shipped shell to within a few units per channel — and STATION at any OTHER hue
+     is the same shell in that colour, which is the thing the literal constants could never be.
+     Multiplicative, not U.shade, precisely so a re-coloured station hull stays the colour you
+     picked instead of drifting grey as it climbs (see `lift`). */
+  const hullStationPal = raw => {
+    const base = vacuum(raw);
+    return {
+      base,
+      seam: lift(base, 1.35), rim: lift(base, 1.56), bolt: lift(base, 1.87),
+      arc:  lift(base, 1.56), lit: lift(base, 2.50), dk: lift(base, 0.43),
+      edge: lift(base, 1.16),
+      bands: [0.43, 0.62, 0.85, 1.20, 1.63, 2.50].map(k => lift(base, k))
+    };
+  };
+
   /* A DERIVED SHELL. Same discipline as WALL_TONE: every mark is a U.shade off the room's one hue,
      so any material renders in any colour coherently. The skirt ramp darkens DOWNWARD (away from
      the deck lights, into the void) — that gradient is what gives the station its height, and a
@@ -227,15 +268,29 @@ const StationBake = (() => {
       arc:  U.shade(base, -0.14),
       lit:  U.shade(base, 0.24),
       dk:   U.shade(base, -0.58),
+      /* THE EDGE — the top-down ring of shell between a wall's lit crown and the void, on the north,
+         east and west. It is the ONLY part of the exterior you see on three of a room's four sides
+         (the plate's dressing sits under it and the skirt only hangs on the south), so while the
+         wall pass painted it from a module constant a hull skin could not reach three quarters of
+         the station. See the note on `edge` in bakeWalls. */
+      edge: U.shade(base, 0.02),
       bands: [U.shade(base, -0.74), U.shade(base, -0.64), U.shade(base, -0.50), U.shade(base, -0.32), U.shade(base, -0.12), U.shade(base, 0.14)]
     };
+  };
+  /* A MATERIAL MAY OWN ITS PALETTE, not just its texture. `HULL_RECIPES[m].pal` is optional and
+     defaults to the shared derivation; only STATION supplies one, because its ladder predates the
+     axis and is the one every other skin was tuned to sit beside. Resolved through the recipe so
+     there is exactly ONE path from (room → hue → paint) — the parallel legacy table is what let a
+     pre-existing room fall outside the catalog entirely. */
+  const hullPalOf = (matId, raw) => {
+    const r = HULL_RECIPES[matId];
+    return (r && r.pal ? r.pal : derivedHullPal)(raw || STATION_TONE);
   };
   let hullPalCache = null;
   function hullPal(z) {
     let p = hullPalCache && hullPalCache.get(z);
     if (p) return p;
-    const base = (G && G.hullBaseOf) ? G.hullBaseOf(z) : null;
-    p = base ? derivedHullPal(base) : LEGACY_HULL;
+    p = hullPalOf(hullMatOf(z), (G && G.hullBaseOf) ? G.hullBaseOf(z) : null);
     if (!hullPalCache) hullPalCache = new Map();
     hullPalCache.set(z, p);
     return p;
@@ -248,6 +303,11 @@ const StationBake = (() => {
   };
   // two footprints share a skirt only if they share a SKIN — see the group note in bakeHullExtrusion
   const hullKeyOf = z => { const p = hullPal(z); return hullMatOf(z) + '|' + p.base; };
+  /* THE SHELL'S OWN EDGE, per room. Every site that used to reach for the module-level `wallDk`
+     while painting something OUTSIDE a room now asks here instead. `wallDk` is still the wall's
+     own dark step (it is a WALL tone) — what moved is the exterior band, which was never the
+     wall's to paint. */
+  const hullEdge = z => hullPal(z).edge;
 
   /* SKIRT BANDS. Each entry is [dy, colour]: the silhouette stamped `dy` px down-screen, painted in
      the order given. A stamp OWNS the rows between its own dy and the next (smaller) one, so a list
@@ -1233,7 +1293,7 @@ const StationBake = (() => {
     // crown: this branch paints none, and a wall with no crown does not read as a wall at all.
     if (up === 0) {
       const cap = room ? 4 : 2;                                        // legacy NCAP (rooms) / 2 (corridors)
-      b.fillStyle = wallDk; b.fillRect(X, Y - cap, T, cap);
+      b.fillStyle = hullEdge(e.z); b.fillRect(X, Y - cap, T, cap);
       b.fillStyle = wallFace; b.fillRect(X, Y, T, inFace);
       b.fillStyle = 'rgba(0,0,0,0.25)'; b.fillRect(X + 5, Y, 1, inFace);
       b.fillStyle = wallTop; b.fillRect(X, Y + inFace, T, 1);
@@ -1250,9 +1310,9 @@ const StationBake = (() => {
     const capH = Math.max(2, Math.round(WALL.capH));
     const h = up + inFace, topY = Y - up;              // all integer already (up/capH rounded, T/inFace int)
     const n = h2(e.x, e.y, 'nwall');
-    // dark hull lip above the crown (the old NCAP band, pushed up with the wall) — HULL tone, not
-    // the room's: this is the shell seen from outside.
-    b.fillStyle = wallDk; b.fillRect(X, topY - capH - 2, T, 2);
+    // dark hull lip above the crown (the old NCAP band, pushed up with the wall) — the SHELL seen
+    // from outside, so it takes the room's own hull skin rather than a module constant.
+    b.fillStyle = hullEdge(e.z); b.fillRect(X, topY - capH - 2, T, 2);
     // lit crown — opaque cap band, 1px lighter top edge, 1px darker seam beneath. Kept BRIGHT:
     // after the ambient bake this continuous line defines the wall height at any zoom.
     crown(b, X, topY - capH, T, capH, pal.cap);
@@ -1779,6 +1839,9 @@ const StationBake = (() => {
   // what separates an engineered hull from masonry, and 11 fits three strakes in the 32px skirt.
   const STRAKE = 11;
   const hullStation = {
+    // the shell's own ladder rather than the shared derivation — see hullStationPal. This is what
+    // let the pre-axis constants retire without every built station changing appearance.
+    pal: hullStationPal,
     // the panel seam grid — the shipped shell, phase-locked to the same world grid it always used
     // (lines at x = 5 + 28k, y = 9 + 26k), so a re-clad station and an untouched one still align.
     dress(b, pal, x, y, w, h) {
@@ -2299,7 +2362,9 @@ const StationBake = (() => {
     }
   }
 
-  function bakeCornerCrown(b, pal, ed, strip, kind, X, Y, ax, ay, Rc, HR, capW, capFar, cy, record) {
+  // `shellEdge` is the owning room's exterior tone — the single pixel of shell outside the ring,
+  // the arc's counterpart of the straight walls' outer hull band (see the note in bakeWalls).
+  function bakeCornerCrown(b, pal, ed, strip, kind, X, Y, ax, ay, Rc, HR, capW, capFar, cy, record, shellEdge) {
     const A = CORNER[kind];
     const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
     // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
@@ -2384,7 +2449,7 @@ const StationBake = (() => {
       const w = crownEase(Math.max(0, t) / HR, capW, capFar);
       const dx = deckXAt(py), inner = dx == null ? (outX < 0 ? X + T : X - 1) : dx;
       if (outX < 0) {
-        put(ex, py, 1, 1, wallDk);                                             // the shell's own edge
+        put(ex, py, 1, 1, shellEdge);                                             // the shell's own edge
         put(ex + 1, py, w, 1, pal.cap); put(ex + 1, py, 1, 1, lit);            // the lit top surface
         // face, down to the deck — depth 0 sits just inside the crown, so the material curves with it
         cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ex, py), true, py, ex + 2 + w, Math.max(0, inner - (ex + 2 + w)), 1, sOf(ex, py));
@@ -2392,7 +2457,7 @@ const StationBake = (() => {
       } else {
         // the lit edge is the crown's OUTERMOST row, i.e. ex - 1 here — putting it on `ex` paints
         // over the shell edge and rules a near-white line along the station's own silhouette.
-        put(ex, py, 1, 1, wallDk);
+        put(ex, py, 1, 1, shellEdge);
         put(ex - w, py, w, 1, pal.cap); put(ex - 1, py, 1, 1, lit);
         cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ex, py), true, py, ex - 2 - w, Math.max(0, (ex - 1 - w) - inner), -1, sOf(ex, py));
         put(ex - 1 - w, py, 1, 1, seam);
@@ -2407,12 +2472,12 @@ const StationBake = (() => {
       const w = crownEase(s / HR, capW, capFar);
       const dy = deckYAt(ix), inner = dy == null ? (outY < 0 ? Y + T : Y - 1) : dy;
       if (outY < 0) {
-        put(ix, ey, 1, 1, wallDk);
+        put(ix, ey, 1, 1, shellEdge);
         put(ix, ey + 1, 1, w, pal.cap); put(ix, ey + 1, 1, 1, lit);
         cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ix, ey), false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
         put(ix, ey + 1 + w, 1, 1, seam);
       } else {
-        put(ix, ey, 1, 1, wallDk);
+        put(ix, ey, 1, 1, shellEdge);
         put(ix, ey - w, 1, w, pal.cap); put(ix, ey - 1, 1, 1, lit);   // outermost crown row, not the shell edge
         cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ix, ey), false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
         put(ix, ey - 1 - w, 1, 1, seam);
@@ -2433,6 +2498,17 @@ const StationBake = (() => {
       // cobalt room's tall north wall would meet three brown-grey walls at its corners. As of
       // 2026-08-05 they carry its MATERIAL as well, via bakeSideFace — see the ladder note there.
       const pal = wallPal(e.z), wallFace = pal.face, wallTop = pal.top, mat = wallMatOf(e.z);
+      /* THE BAND OUTSIDE THE CROWN IS THE SHELL, NOT THE WALL (2026-08-06). Every exterior edge
+         below used to fill it with the module constant `wallDk`, and that band is `pad` wide by
+         contract — exactly the width of the hull plate. So it covered the plate, its dressing and
+         its rim on the north, east and west, and a room's chosen skin survived only on the SOUTH,
+         where the skirt hangs below the silhouette and no wall band reaches. Diffing an un-clad
+         bake against a TIMBER one showed it exactly: 4882 changed pixels, every one of them in the
+         47 rows at the bottom of the room, and not one anywhere else.
+         That is what Andrew was looking at — "there is still the previous textures present on some
+         shells, and there is also no way to change it". There was not: three sides of every room on
+         every station were painted from a constant no menu could reach. */
+      const shellEdge = hullEdge(e.z);
       // the same strip the tall face and the corner sample — one picture across all three surfaces
       const eStrip = faceStrip(mat, pal, Math.max(0, Math.round(e.room ? WALL.up : WALL.corUp)) + face);
       /* A SIDE WALL IS SEEN AS ITS TOP SURFACE, and that surface is a BAND, not a line.
@@ -2483,7 +2559,7 @@ const StationBake = (() => {
           b.fillRect(X, Y + T - fw + i, T, 1);
         }
         if (e.exterior) {
-          b.fillStyle = wallDk; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
+          b.fillStyle = shellEdge; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
           crown(b, X, Y + T + 1, T, cw, pal.cap);                                 // the wall's LIT TOP SURFACE
           crown(b, X, Y + T + cw, T, 1, crownLit);                                // lit outer edge
           b.fillStyle = crownSeam; b.fillRect(X, Y + T, T, 1);                    // dark seam under the crown
@@ -2495,7 +2571,7 @@ const StationBake = (() => {
         bakeSideFace(b, pal, mat, X, Y, fw, T, 'x', 1, eStrip);        // west: crown is to the LEFT, so depth grows with x
         if (e.exterior) {
           const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
-          b.fillStyle = wallDk; b.fillRect(X - side, Y, side, T);          // outer hull band — the shell, global tone
+          b.fillStyle = shellEdge; b.fillRect(X - side, Y, side, T);       // outer hull band — the ROOM'S shell
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X - side, Y, 1, T);
           crown(b, X - 1 - cw, Y, cw, T, pal.cap);                         // the wall's LIT TOP SURFACE
           crown(b, X - 1 - cw, Y, 1, T, crownLit);                         // lit outer edge
@@ -2506,7 +2582,7 @@ const StationBake = (() => {
         bakeSideFace(b, pal, mat, X + T - fw, Y, fw, T, 'x', -1, eStrip);   // east: crown is to the RIGHT — depth reversed
         if (e.exterior) {
           const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
-          b.fillStyle = wallDk; b.fillRect(X + T, Y, side, T);
+          b.fillStyle = shellEdge; b.fillRect(X + T, Y, side, T);
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X + T + side - 1, Y, 1, T);
           crown(b, X + T + 1, Y, cw, T, pal.cap);
           crown(b, X + T + cw, Y, 1, T, crownLit);
@@ -3167,7 +3243,8 @@ const StationBake = (() => {
         }
         fill(ix, py, 1, 1, outerBand);
       }
-      const cRoom = !G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]);
+      const cZone = G.zoneGrid[G.idx(ccx, ccy)];
+      const cRoom = !G.isCorridor(cZone);
       const cCy = cornerArcCy(kind, ay, Y, HR, cRoom);   // the outline circle's centre — lifted on a top corner
       // HULL RIM — the outer silhouette's own curve (HR), concentric with the interior one and now
       // rasterized off the SAME row walk, so the two curves stay a fixed pixel distance apart all
@@ -3176,7 +3253,9 @@ const StationBake = (() => {
       // straight across the middle of the standing wall face.
       eachCornerRow(kind, ax, cCy, HR, (py, ex) => {
         if (ex == null) return;
-        fill(A.cx ? ex : ex - 1, py, 2, 1, '#28241b');
+        // the rim belongs to the room the corner was cut from — the same rule the straight rim pass
+        // follows. It was the literal pre-axis constant, so a clad room reverted to shell-grey here.
+        fill(A.cx ? ex : ex - 1, py, 2, 1, hullPal(cZone).rim);
       });
 
       /* THE CROWN RING carries the wall's lit top surface around the arc, so the bright line that
@@ -3188,11 +3267,12 @@ const StationBake = (() => {
       /* the strip is rendered at the SAME face height the straight north wall uses, and anchored two
          tiles back from the corner so the recipe's per-tile hash variation lines up with the wall the
          corner is joining instead of restarting at the arc. */
-      const cMat = wallMatOf(G.zoneGrid[G.idx(ccx, ccy)]);
+      const cMat = wallMatOf(cZone);
       const cUp = Math.max(0, Math.round(cRoom ? WALL.up : WALL.corUp));
       const cStrip = faceStrip(cMat, cPal, cUp + (cRoom ? NFACE : 5));
       bakeCornerCrown(b, cPal, cEd, cStrip, kind, X, Y, ax, ay, Rc, HR, cCapW,
-                      cornerCapFar(kind, cCapW, Math.max(2, Math.round(WALL.capH))), cCy, reach);
+                      cornerCapFar(kind, cCapW, Math.max(2, Math.round(WALL.capH))), cCy, reach,
+                      hullEdge(cZone));
     }
 
     bakeRoomLighting(b);   // after the chamfers, so a rounded corner is lit like every other surface
@@ -3449,7 +3529,7 @@ const StationBake = (() => {
     const prevT = T;
     T = tile || 12;
     try {
-      const pal = base ? derivedHullPal(base) : LEGACY_HULL;
+      const pal = hullPalOf(HULL_RECIPES[matId] ? matId : 'station', base);
       const w = cols * T, h = Math.max(12, height || 30);
       const ringH = Math.max(6, Math.min(12, Math.round(h * 0.38)));
       ctx.fillStyle = pal.base; ctx.fillRect(0, 0, w, ringH);
