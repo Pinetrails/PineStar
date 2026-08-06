@@ -1664,6 +1664,22 @@ function providerCredentialError(provider) {
   if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
   return 'provider is not configured';
 }
+function channelRunConfigFor(agentId) {
+  const id = String(agentId || '').trim();
+  const ident = id ? agentRoster.get(id) : null;
+  if (!ident) return { ok: false, error: 'target agent ' + (id || '(missing)') + ' is not in the live roster' };
+  const provider = normalizeProvider(ident.provider);
+  const model = String(ident.model || '').trim();
+  if (!model) return { ok: false, error: 'target agent ' + id + ' has no roster model' };
+  const key = providerRuntimeKey(provider, '');
+  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  if (!providerHasCredential(provider, key, baseUrl)) return { ok: false, error: providerCredentialError(provider) + ' for target agent ' + id };
+  return {
+    ok: true, key, model, provider, baseUrl,
+    reasoningEffort: resolveReasoningEffort(provider, ident.reasoningEffort),
+    system: ident.system || ''
+  };
+}
 function cronProviderFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
   const explicit = normalizeProviderId((job && job.provider) || (ident && ident.provider) || '');
@@ -6386,6 +6402,7 @@ function startTelegramBot(botId) {
     // that agent's bay run here too; without this seam the same floor did less work depending on which bot
     // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    resolveRunConfig: channelRunConfigFor,                                    // every downstream dock owns its roster provider/model/credential
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // a bound bot's agent still crews its dock — the standing brief applies
@@ -7469,6 +7486,7 @@ const SAMPLE_PERSONA = 'You are an agent aboard the STARNET station. This is a c
   + 'report the result clearly, in a few sentences.';
 let sampleHub = null;        // lazy singleton, one per station — mirrors getDevHub
 let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
+let sampleLineOutcome = null; // terminal chain truth for the current proof; clean runs alone are not OUTBOX proof
 let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
 const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
 function getSampleHub() {
@@ -7486,6 +7504,7 @@ function getSampleHub() {
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
     onResolved: (info) => { sampleResolved = info; },
+    onLineOutcome: (info) => { sampleLineOutcome = info; },
     // every run of the line (entry dock + hops) records under the sample's OWN workstream, so the recorded
     // rows in runs.jsonl are scoped exactly and the OUTBOX crate opens a readable transcript session.
     streamId: () => (sampleInFlight && sampleInFlight.streamId) || undefined
@@ -7530,6 +7549,7 @@ async function handleRoutingSample(req, res) {
     sampleReplies.length = 0;
     const hub = getSampleHub();
     sampleResolved = null;
+    sampleLineOutcome = null;
     // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
     // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
     const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
@@ -7550,11 +7570,6 @@ async function handleRoutingSample(req, res) {
     } catch (e) { console.warn('[routing-sample] intercept error:', (e && e.message) || e); }
     sampleResolved = null;
     await settled;
-    if (workitemId) {
-      const d = bumpQueue(agentId, -1);
-      chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
-      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
-    }
     // the REAL recorded outcomes: runs.jsonl rows carrying this sample's streamId (newest-first from the
     // store, so [0] is the LAST stage that ran — the one whose reply the line delivered).
     let runs = [];
@@ -7563,8 +7578,25 @@ async function handleRoutingSample(req, res) {
         .filter(r => r && String(r.streamId || '') === streamId)
         .map(r => ({ runId: r.runId, agentId: r.agentId, reason: r.reason, usd: r.usd, ts: r.ts, title: r.title, streamId: r.streamId, turns: r.turns }));
     } catch (_) { runs = []; }
-    const delivered = runs.length ? runs[0] : null;
+    // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
+    // outcome is clean, including every hop after the routed entry dock.
+    const completed = runs.length > 0 && runs.every(r => r.reason === 'done')
+      && !!sampleLineOutcome && !sampleLineOutcome.stopped
+      && router.chainShipsToOutbox(sampleLineOutcome.agentId);
+    const delivered = completed ? runs[0] : null;
     const totalUsd = runs.reduce((s, r) => s + ((typeof r.usd === 'number' && isFinite(r.usd)) ? r.usd : 0), 0);
+    if (workitemId) {
+      const d = bumpQueue(agentId, -1);
+      if (completed) chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
+      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+    }
+    if (!completed) {
+      return json(502, {
+        ok: false, sample: true, error: runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
+        chatId: SAMPLE_CHAT, streamId: streamId, agentId: agentId || null, isTask: isTask,
+        workitemId: workitemId || null, replies: sampleReplies.slice(), runs: runs, delivered: null, totalUsd: totalUsd
+      });
+    }
     return json(200, {
       ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
       agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,

@@ -119,7 +119,15 @@ function makeRouter(o) {
     return Pipeline.chainNext(p, agentId, ctx || {}, pick);
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, chainNext, stationFor, stageBrief };
+  // A clean model run is not necessarily a shipped work line. This reports whether the final dock's compiled
+  // outbound lane actually reaches OUTBOX rather than terminating at an open belt end.
+  function chainShipsToOutbox(agentId) {
+    const p = activePlan();
+    const rec = p && p.chains && p.chains[agentId];
+    return !!(rec && rec.outbox && !rec.deadEnd);
+  }
+
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, chainNext, chainShipsToOutbox, stationFor, stageBrief };
 }
 
 module.exports = { makeRouter };
