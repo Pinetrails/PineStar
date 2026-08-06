@@ -208,6 +208,9 @@ const GhostLine = (() => {
         }
       }
       e.tick(dtMs, nowMs, belts, junctions, cur.stops);
+      projecting = e.boxCount() > 0 || !!pendingChain;
+      if (projecting) nextSpawnAt = 0;
+      else if (!nextSpawnAt || nextSpawnAt <= nowMs) nextSpawnAt = nowMs + LOOP_PAUSE_MS;
     }
 
     // the engine consumed a ghost — at a dock (chain on) or off the open end (ship out / fade)

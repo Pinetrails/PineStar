@@ -182,6 +182,28 @@ const geoChain = bound => ({
   A.eq(p.pending, false, 'pending clears once the projection begins');
 }
 
+/* ---- inter-pass truth: terminal delivery clears projecting on that exact tick ---- */
+{
+  const geo = geoChain(false);
+  const plan = P.compileRoutingPlan(geo);
+  const g = GhostLine.create();
+  g.setContext({ plan, comps: P.lineComponents(geo), offset: { tx: 0, ty: 0 } });
+  const jm = jmapOf(plan);
+  let now = 0, terminal = null, sawOut = false;
+  for (let i = 0; i < 2500 && !terminal; i++) {
+    now += 16;
+    g.tick(16, now, geo.belts, jm, { feed: { known: false, fed: false } });
+    const p = g.peek();
+    if (p.log.some(e => e.kind === 'out')) sawOut = true;
+    if (sawOut && p.boxes.length === 0 && !p.pendingChain) terminal = p;
+  }
+  A.ok(terminal, 'the proof observed the first pass fully leave the OUTBOX');
+  A.eq(terminal && terminal.boxes.length, 0, 'no projection crate remains on the terminal tick');
+  A.eq(terminal && terminal.pendingChain, false, 'no chain continuation remains after the OUTBOX');
+  A.eq(terminal && terminal.projecting, false, 'terminal delivery clears projecting on the same tick');
+  A.eq(terminal && terminal.pending, true, 'the next loop is explicitly pending during the inter-pass pause');
+}
+
 /* ---- a non-deployable plan (belt CYCLE) projects nothing ---- */
 {
   const geo = {
