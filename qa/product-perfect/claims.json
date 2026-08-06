@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "dbcf6027c687ed9626d1fe124ff787356866a7c7",
+    "sourceCommit": "6b8c3952d7f62c6e31e6c6568209c1e62cb1cdf2",
     "pathSetSha256": "1dbea34b120662d77bb0e3ed28e0428655952023ac3ef2d929da5f8b60558068",
     "files": [
       {
@@ -583,8 +583,8 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 63003,
-        "sha256": "a74e2fa75be4609965ae984e93c077fdc6a043c318f0c00ba7ba3d0317fd4c81"
+        "bytes": 63011,
+        "sha256": "96419811ba69bbb76d02698c4ef1a6eaf5d13ec522226725de7d5ebf9a2310da"
       },
       {
         "path": "frontend/app/recledger.js",
