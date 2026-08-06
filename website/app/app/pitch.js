@@ -133,6 +133,17 @@
     lines.push('- If you know something they keep meaning to do but never reach (their ambitions), aim instead at moving them toward THAT — the best pitch closes the gap between what drains them and what they actually want.');
     lines.push('- Name the ONE thing only they can give you to make it truly theirs (their context, taste, or a key fact). That is the gap.');
     if (recent) lines.push('- You just did this for them: "' + recent + '". Build on that if it fits.');
+    /* THE NEXT MILESTONE (rec perfection W2). The server-side evidence pack carries the active GOAL, but the
+       milestone tree is decomposed and tracked in the browser (goalstore/goals.js), so the one fact that says
+       what "progress" means RIGHT NOW never reached the model. A pitch that moves the Commander's own next
+       milestone is the most valuable thing this call can produce; a bare goal title only says where they are
+       headed. Absent goal / no decomposition / already complete → nothing is pushed and the directive is
+       byte-identical to today's (never a fabricated milestone). */
+    const milestone = String(ctx.nextMilestone == null ? '' : ctx.nextMilestone).replace(/\s+/g, ' ').trim();
+    if (milestone) {
+      lines.push('- Their goal\'s NEXT unfinished milestone is: "' + milestone.slice(0, 240) + '". ' +
+        'If you can propose something that genuinely moves THAT, it beats anything else you could suggest.');
+    }
     /* THE EXCLUSION LIST RIDES THE PROMPT (2026-08-05). suggeststore already fingerprints every idea it has
        pitched and every one the Commander said "never suggest this" to — and it applied that list only AFTER the
        reply came back, dropping the whole beat and eating the paid aux call whenever the model returned a

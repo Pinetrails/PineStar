@@ -84,6 +84,17 @@ const PitchStore = (() => {
 
   // V3 §6: the shared readiness gate, read live. FAIL-CLOSED: a missing/broken readiness read means the
   // station cannot PROVE it knows its Commander — so it does not advise (never the old guess-and-pitch).
+  /* the Commander's goal's NEXT unfinished milestone, or '' (rec perfection W2 — the twin of suggeststore's).
+     The server evidence pack carries the GOAL; the milestone tree lives in the browser, so this is the one fact
+     the pack structurally cannot supply. Fail-open: no store / no goal / no decomposition → '' → unchanged. */
+  function nextMilestone() {
+    try {
+      const u = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) ? UnderstandingStore.read() : null;
+      const nx = u && u.goal && u.goal.next;
+      return nx ? String(nx) : '';
+    } catch (_) { return ''; }
+  }
+
   function readinessRead() {
     try {
       if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) {
@@ -107,7 +118,7 @@ const PitchStore = (() => {
       const recipes = (typeof Recipes !== 'undefined' && Recipes.list)
         ? Recipes.list().map(r => ({ id: r.id, name: r.name, tagline: r.tagline })) : [];
       const caps = deps.getCaps ? deps.getCaps() : [];
-      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask(p && p.runId) : '' });
+      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask(p && p.runId) : '', nextMilestone: nextMilestone() });
       const system = deps.getSystem ? deps.getSystem() : '';
       const name = deps.getName ? deps.getName() : 'AGENT';
 

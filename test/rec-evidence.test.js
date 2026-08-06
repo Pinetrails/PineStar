@@ -164,4 +164,31 @@ A.ok(/if \(st && st\.stale\) probe = null;/.test(fireBody),
 A.ok(fireBody.indexOf('probe = null') < fireBody.indexOf('Pitch.buildDirective'),
   '…before the directive is built, so the stale belief never reaches the model at all');
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   4. THE NEXT MILESTONE REACHES THE GENERATORS
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+{
+  const base = { recipes: [], capabilities: [] };
+  A.eq(Pitch.buildDirective(base).indexOf('NEXT unfinished milestone'), -1,
+    'no goal decomposition → no milestone line (never a fabricated target)');
+  A.eq(Pitch.buildDirective(Object.assign({ nextMilestone: '   ' }, base)).indexOf('NEXT unfinished milestone'), -1,
+    '…and a blank one is not a milestone either');
+  const d = Pitch.buildDirective(Object.assign({ nextMilestone: 'pick the launch date' }, base));
+  A.ok(d.indexOf('"pick the launch date"') >= 0, 'a real next milestone reaches the model');
+  A.ok(/it beats anything else you could suggest/.test(d), '…as the thing to beat, not as background');
+  const long = Pitch.buildDirective(Object.assign({ nextMilestone: 'x'.repeat(500) }, base));
+  A.ok(long.indexOf('x'.repeat(240)) >= 0 && long.indexOf('x'.repeat(241)) < 0, 'the milestone is bounded at 240 chars');
+}
+/* WHY THE MILESTONE IS A PROMPT FACT AND NOT A NEW SPINE TERM, recorded rather than left as a gap: the plan
+   floated a `goalAligned` within-band modifier. Nothing in the pass produces that field — and the quality lane
+   already proved (0 of 20000) what a modifier no candidate populates is worth. A term is added when a builder
+   can honestly compute it; until then this fact belongs where it changes the OUTPUT, which is the directive. */
+for (const [file, label] of [['frontend/app/pitchstore.js', 'the First Pitch'],
+                             ['frontend/app/suggeststore.js', 'the ongoing suggestion']]) {
+  const src = read(file);
+  A.ok(/nextMilestone: nextMilestone\(\)/.test(src), label + ' passes the next milestone into its directive');
+  A.ok(/const nx = u && u\.goal && u\.goal\.next;/.test(A.fnBody(src, 'function nextMilestone()')),
+    '…read from the live understanding read, never cached or guessed');
+}
+
 A.report('rec evidence (W2)');

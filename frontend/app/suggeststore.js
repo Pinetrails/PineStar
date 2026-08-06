@@ -93,6 +93,17 @@ const SuggestStore = (() => {
     try { ok = !!A.grounded(q, pool); } catch (_) { ok = false; }
     return ok ? q.slice(0, 200) : '';
   }
+  /* the Commander's goal's NEXT unfinished milestone, or '' (rec perfection W2). The server-side evidence pack
+     carries the active GOAL; the milestone tree is decomposed and tracked in the browser, so this is the one
+     thing the pack structurally cannot know. Fail-open at every step: no store, no goal, no decomposition →
+     '' → the directive is byte-identical to before. */
+  function nextMilestone() {
+    try {
+      const u = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) ? UnderstandingStore.read() : null;
+      const nx = u && u.goal && u.goal.next;
+      return nx ? String(nx) : '';
+    } catch (_) { return ''; }
+  }
   // the receipt line, in the ONE grammar (recommend.js whyLine): «because you said "…"». Fail-open to the plain
   // quoted form if the spine module is not loaded — the words are the Commander's either way.
   function citeLine(quote) {
@@ -253,7 +264,7 @@ const SuggestStore = (() => {
           }
         } catch (_) {}
       }
-      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '', unlockedCapability: chain || '', probe: probe, exclude: excludeTitles(), wantEvidence: true });
+      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '', unlockedCapability: chain || '', probe: probe, exclude: excludeTitles(), wantEvidence: true, nextMilestone: nextMilestone() });
       const system = deps.getSystem ? deps.getSystem() : '';
       // evidence:true (W2): the ongoing suggestion is the station guessing what would help next; the learned
       // topics (with their verbatim quotes) and open threads are the grounding it was being denied.
