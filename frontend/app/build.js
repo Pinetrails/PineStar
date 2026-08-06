@@ -1050,6 +1050,25 @@ const Build = (() => {
     for (const iid of c.intakes) { const ip = station.propById(iid); if (ip && ip.label) return ip.label; }
     return null;
   }
+  /* which position does this dock's agent hold on the COMPILED line? (inbox-trigger, 2026-08-05)
+     'entry' = fed straight by an intake source (plan.reach — the BFS from every source), 'chain' = fed by an
+     upstream dock's chain edge (plan.chains[..].next), null = unknowable (unbound dock / no compiled plan /
+     a lone dock off the belt graph). Read from the SAME compiled plan the sidecar routes by — never guessed
+     from geometry. reach wins when both hold: a dock intakes feed directly is an entry stage first. */
+  function stepPositionOf(agentId) {
+    if (!agentId || !valPlan) return null;
+    if (valPlan.reach && valPlan.reach[agentId]) return 'entry';
+    const chains = valPlan.chains || {};
+    for (const a in chains) { const nx = (chains[a] && chains[a].next) || []; if (nx.indexOf(agentId) >= 0) return 'chain'; }
+    return null;
+  }
+  /* the brief placeholder differs by POSITION (Andrew's confusion, now law): an entry dock's brief reads
+     against the ARRIVING message; a chain-fed dock's against the previous station's output. One generic
+     fallback for docks the plan can't place (unbound / beltless). */
+  const BRIEF_PH = {
+    entry: "The arriving message is the task. This is your station's standing part of it — what this desk always does with arriving work.",
+    chain: "Work arrives here as the previous station's output. This is your station's job — your part of every run that reaches you."
+  };
   function openStepCard(bayId, ev) {
     if (!root || root.querySelector('.refit-step-card')) return;
     const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
@@ -1067,7 +1086,8 @@ const Build = (() => {
       ? 'THIS STEP WANTS A <b>' + esc(p.role) + '</b> — ' + esc(roleInfo.desc)
       : 'a dock — work routed here runs as its agent';
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
-    const briefPh = 'what this step does with arriving work' + (roleInfo ? ' — e.g. ' + roleInfo.desc : '');
+    const briefPh0 = 'what this step does with arriving work' + (roleInfo ? ' — e.g. ' + roleInfo.desc : '');
+    const briefPh = BRIEF_PH[stepPositionOf(cur)] || briefPh0;
     const g = document.createElement('div');
     g.className = 'refit-guide refit-step-card';
     g.innerHTML = `
@@ -1109,6 +1129,10 @@ const Build = (() => {
       if (boundEl) boundEl.textContent = aid ? 'crewed by ' + aid : 'uncrewed';
       g.querySelectorAll('.bay-agent').forEach(x => x.classList.toggle('active', x.dataset.aid === aid));
       input.value = aid;
+      // a bind can place this dock on the compiled line — re-read its position so the brief placeholder
+      // speaks to the right feed (arriving message vs the previous station's output). Best-effort: the plan
+      // recompiles async, so a one-frame-stale read just keeps the current copy until the next open.
+      if (brief && !brief.value) brief.placeholder = BRIEF_PH[stepPositionOf(aid)] || briefPh0;
     };
     // THE WORK — saved on blur / Ctrl-Enter (never lost on close; a no-op save is silent)
     let briefSaved = p.brief || '';
@@ -1254,7 +1278,7 @@ const Build = (() => {
     const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
     const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE' };
     const LINE = {
-      intake: 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. No feed connected? It says so, and clicking it opens CHANNELS.',
+      intake: 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. Its TRIGGERS below decide why this line runs; wire one right here.',
       outbox: 'Every job the crew actually FINISHES ships a green crate here; the pallet is today’s output. Click it (when quiet) for the LOGBOOK.',
       // honest by construction: the harness runs each work-item on its own, so the floor must show each
       // one arriving. A merger tidies several lanes into one — it never combines the JOBS riding them.
@@ -1276,12 +1300,51 @@ const Build = (() => {
         + '<input id="line-name" class="refit-input" type="text" maxlength="48" placeholder="' + esc(namePh) + '" value="' + esc(p.label || '') + '" />'
         + '<div class="refit-note">names this whole line (shown on its checklist + this INBOX\'s glance) — saved on Enter / blur</div>'
       : '';
+    /* ---------- THE TRIGGER ZONE (inbox-trigger, 2026-08-05) ----------
+       The INBOX card is the workflow's WHY, completing the loop the floor already draws: trigger (INBOX) →
+       steps (docks + briefs) → result (OUTBOX). Before this the floor shipped the SHAPE of a workflow while
+       its triggers had to be pre-created elsewhere (CHANNELS / AUTOMATION). The zone is truthfully derived:
+       the server-proven feed truth (World.feedState — the exact NO FEED source) and the cron store's own
+       rows (GET /api/cron, filtered to THIS line's dock agents). ⊕ NEW ROUTINE posts the SAME body the
+       AUTOMATION window's create form sends — same schedule vocabulary (every 30m · 0 9 * * * · in 2h),
+       same /api/cron/preview honesty, and NO unattended grants: a routine made from the inbox gets nothing
+       the AUTOMATION window wouldn't give by default. */
+    const comp = isIntake ? lineOfProp(propId) : null;
+    const docks = (comp ? comp.bays : []).filter(b => b.agentId);
+    // default fire-at: the line's entry-reachable dock (plan.reach — fed straight by an intake source);
+    // several bound docks -> a small picker naming role + agent. No bound dock -> honest disable.
+    const entryDocks = docks.filter(b => valPlan && valPlan.reach && valPlan.reach[b.agentId]);
+    let trgDock = (entryDocks[0] || docks[0] || {}).agentId || null;
+    const dockChip = b => '<button type="button" class="bb sm trg-dock' + (b.agentId === trgDock ? ' active' : '') + '" data-aid="' + esc(b.agentId) + '">'
+      + esc((b.role ? b.role + ' · ' : '') + agentLabelFor(b.agentId)) + '</button>';
+    const TRG_PRESETS = [['EVERY 30M', 'every 30m'], ['EVERY 1H', 'every 1h'], ['DAILY 9:00', '0 9 * * *']];
+    const trgHtml = isIntake
+      ? '<div class="refit-sec">TRIGGERS — WHY THIS LINE RUNS</div>'
+        + '<div class="step-fact" id="trg-feed">checking the wires…</div>'
+        + '<div id="trg-routines" class="trg-list"></div>'
+        + '<button type="button" class="bb sm refit-primary refit-summon" id="trg-new">⊕ NEW ROUTINE FOR THIS LINE</button>'
+        + '<div id="trg-form" style="display:none">'
+          + '<textarea id="trg-prompt" class="refit-input refit-brief" maxlength="2000" rows="2" placeholder="what should each run do? e.g. search for new AI-policy news and summarize the top 3"></textarea>'
+          + '<div class="refit-agents trg-presets">' + TRG_PRESETS.map(pp => '<button type="button" class="bb sm trg-preset" data-sched="' + esc(pp[1]) + '">' + esc(pp[0]) + '</button>').join('') + '</div>'
+          + '<input id="trg-sched" class="refit-input" type="text" maxlength="80" placeholder="schedule — every 30m · 0 9 * * * · in 2h" />'
+          + '<div class="trg-preview" id="trg-preview"></div>'
+          + (docks.length > 1
+              ? '<div class="refit-sec">FIRES AT</div><div class="refit-agents" id="trg-docks">' + docks.map(dockChip).join('') + '</div>'
+              : docks.length === 1
+              ? '<div class="step-fact">fires at <b>' + esc((docks[0].role ? docks[0].role + ' · ' : '') + agentLabelFor(docks[0].agentId)) + '</b> — this line’s ' + (entryDocks.length ? 'entry dock' : 'dock') + '</div>'
+              : '<div class="refit-note">crew a dock first — a routine fires at an agent</div>')
+          + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="trg-create"' + (docks.length ? '' : ' disabled') + '>▸ CREATE ROUTINE</button><button type="button" class="btn-sm" id="trg-cancel">CANCEL</button></div>'
+          + '<div class="refit-note trg-msg" id="trg-msg" style="display:none"></div>'
+        + '</div>'
+        + '<div class="refit-actions trg-doors"><button type="button" class="btn-sm" id="trg-chan">⌁ CONNECT A CHANNEL</button><button type="button" class="btn-sm" id="trg-auto">▸ MANAGE IN AUTOMATION</button></div>'
+      : '';
     const g = document.createElement('div');
     g.className = 'refit-guide refit-flow-card';
     g.innerHTML = '<div class="refit-guide-card"><h3>▮ ' + (TITLE[p.t] || TITLE.outbox) + '</h3>'
       + flowStripHTML(hot)
       + '<ul><li>' + line + '</li></ul>'
       + nameHtml
+      + trgHtml
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));
@@ -1303,6 +1366,91 @@ const Build = (() => {
       });
     }
     const closeP = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
+    /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
+    if (isIntake) {
+      const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');
+      const formEl = g.querySelector('#trg-form'), newBtn = g.querySelector('#trg-new');
+      const promptEl = g.querySelector('#trg-prompt'), schedEl = g.querySelector('#trg-sched');
+      const pvEl = g.querySelector('#trg-preview'), msgEl = g.querySelector('#trg-msg');
+      const dockAgents = {};
+      for (const b of docks) dockAgents[b.agentId] = true;
+      let schedulerArmed = false;   // mirrors GET /api/cron enabled && !halted — the honest create-confirm
+      const say = (t, bad) => { msgEl.style.display = ''; msgEl.style.color = bad ? 'var(--bad)' : ''; msgEl.textContent = t; };
+      // the channel/routine FEED TRUTH — the same World.feedState the NO FEED nag keys on. Floor-global by
+      // construction (that is what the server proves), said in floor-global words.
+      const feed = (opts && opts.world && opts.world.feedState) ? opts.world.feedState() : { known: false, fed: false };
+      feedEl.innerHTML = !feed.known ? 'CHANNEL FEED — checking the wires…'
+        : feed.fed ? '<b>✓ FED</b> — a channel or an armed routine is wired to drop work on this floor'
+        : '<b>NO FEED</b> — nothing is wired to drop work here yet';
+      // routines targeting THIS line's dock agents — straight off the cron store, name + schedule + state
+      function trgRefresh() {
+        listEl.innerHTML = '<span class="dim">reading routines…</span>';
+        fetch(finApi('/api/cron')).then(r => (r.ok ? r.json() : null)).then(j => {
+          if (!listEl.isConnected) return;
+          if (!j) { listEl.innerHTML = '<div class="refit-note">sidecar unreachable — routines unknown</div>'; return; }
+          schedulerArmed = !!(j.enabled && !j.halted);
+          const mine = (Array.isArray(j.jobs) ? j.jobs : []).filter(jb => jb && dockAgents[jb.agentId]);
+          if (!mine.length) { listEl.innerHTML = '<div class="trg-row dim">no routines target this line’s docks yet</div>'; return; }
+          listEl.innerHTML = mine.map(jb =>
+            '<div class="trg-row"><span class="trg-state' + (jb.enabled && schedulerArmed ? ' on' : '') + '">' + (jb.enabled ? (schedulerArmed ? '●' : '◍') : '○') + '</span> '
+            + '<b>' + esc(jb.name || '(unnamed)') + '</b> <span class="dim">' + esc(jb.scheduleDisplay || '') + ' · fires at ' + esc(agentLabelFor(jb.agentId)) + '</span>'
+            + (jb.enabled ? (schedulerArmed ? '' : ' <span class="trg-warn">saved — scheduler OFF</span>') : ' <span class="dim">paused</span>') + '</div>').join('');
+        }).catch(() => { if (listEl.isConnected) listEl.innerHTML = '<div class="refit-note">sidecar unreachable — routines unknown</div>'; });
+      }
+      trgRefresh();
+      // schedule preview — the honest "next fires", straight from the server math (same seam AUTOMATION uses)
+      const relFmt = iso => { const d = Date.parse(iso) - Date.now(); if (!isFinite(d)) return ''; const m = Math.round(d / 60000); return m < 1 ? 'under a minute' : m < 60 ? 'in ' + m + 'm' : m < 2880 ? 'in ' + Math.round(m / 60) + 'h' : 'in ' + Math.round(m / 1440) + 'd'; };
+      let pvTimer = null;
+      const preview = () => {
+        clearTimeout(pvTimer);
+        const v = schedEl.value.trim();
+        if (!v) { pvEl.textContent = ''; return; }
+        pvTimer = setTimeout(() => {
+          fetch(finApi('/api/cron/preview'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schedule: v }) })
+            .then(r => r.json()).then(r => {
+              if (!pvEl.isConnected || schedEl.value.trim() !== v) return;
+              if (r && r.ok) {
+                const nx = (Array.isArray(r.localNext) && r.localNext[0]) ? r.localNext[0] : (Array.isArray(r.next) && r.next[0] ? relFmt(r.next[0]) : '');
+                pvEl.innerHTML = '✓ ' + esc(r.display) + (nx ? ' → next: ' + esc(nx) : '');
+              } else pvEl.innerHTML = '<span class="trg-warn">' + esc((r && r.error) || 'unrecognized schedule') + '</span>';
+            }).catch(() => {});
+        }, 300);
+      };
+      schedEl.addEventListener('input', preview);
+      g.querySelectorAll('.trg-preset').forEach(b => b.onclick = () => { schedEl.value = b.dataset.sched; sfx('click'); preview(); });
+      g.querySelectorAll('.trg-dock').forEach(b => b.onclick = () => {
+        trgDock = b.dataset.aid; sfx('click');
+        g.querySelectorAll('.trg-dock').forEach(x => x.classList.toggle('active', x.dataset.aid === trgDock));
+      });
+      newBtn.onclick = () => { sfx('click'); formEl.style.display = formEl.style.display === 'none' ? '' : 'none'; if (formEl.style.display !== 'none') promptEl.focus(); };
+      g.querySelector('#trg-cancel').onclick = () => { sfx('click'); formEl.style.display = 'none'; };
+      g.querySelector('#trg-create').onclick = () => {
+        const prompt = promptEl.value.trim(), schedule = schedEl.value.trim();
+        if (!prompt || !schedule) { sfx('bad'); say('a task and a schedule are required', true); return; }
+        if (!trgDock) { sfx('bad'); say('crew a dock first — a routine fires at an agent', true); return; }
+        const btn = g.querySelector('#trg-create'); btn.disabled = true; say('saving…');
+        // the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
+        // provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
+        // the defaults the AUTOMATION window's untouched form would give).
+        const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (e) { return undefined; } })();
+        const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
+        const lname2 = lineNameOf(comp);
+        const name = (lname2 ? lname2 + ' — ' : '') + (prompt.length > 48 ? prompt.slice(0, 45) + '…' : prompt);
+        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz }) })
+          .then(r => r.json()).then(r => {
+            btn.disabled = false;
+            if (r && r.error) { sfx('bad'); say('✕ ' + r.error, true); return; }
+            sfx('chime');
+            // honest confirm: never claim "scheduled" over a disarmed scheduler (same law as AUTOMATION)
+            say(schedulerArmed ? '✓ routine scheduled — fires at ' + agentLabelFor(trgDock) : '✓ saved — but the scheduler is OFF; enable it in AUTOMATION', !schedulerArmed);
+            promptEl.value = ''; pvEl.textContent = '';
+            trgRefresh();
+          }).catch(() => { btn.disabled = false; sfx('bad'); say('✕ could not reach the sidecar — nothing was created', true); });
+      };
+      // the two doors: the SAME openers the finish card / NO FEED nag promise. Both leave REFIT (saving).
+      g.querySelector('#trg-chan').onclick = () => { sfx('click'); closeP(); close(); if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('messaging'); };
+      g.querySelector('#trg-auto').onclick = () => { sfx('click'); closeP(); close(); if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('routines'); };
+    }
     g.querySelector('#flow-ok').onclick = () => { sfx('click'); closeP(); };
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
   }
@@ -1666,7 +1814,7 @@ const Build = (() => {
     const bCrew = finCardEl.querySelector('[data-act="crew"]');
     if (bCrew && !crewDone) bCrew.onclick = () => finFocusCrew(c);
     const bFeed = finCardEl.querySelector('[data-act="feed"]');
-    if (bFeed && !st.feedDone) bFeed.onclick = () => finOpenFeed();
+    if (bFeed && !st.feedDone) bFeed.onclick = () => finOpenFeed(c);
     const bSample = finCardEl.querySelector('[data-act="sample"]');
     if (bSample) bSample.onclick = () => { if (sampleOn) finRunSample(c); };
   }
@@ -1680,10 +1828,14 @@ const Build = (() => {
     sfx('click');
     openStepCard(b.propId, null);
   }
-  // ② — the real feed surfaces (channels + routines) live in the CHANNELS panel outside REFIT: finish
-  // + save (the ✓ DONE path), then open the exact surface the live world's NO FEED nag click opens.
-  function finOpenFeed() {
+  // ② — ONE SURFACE (inbox-trigger, 2026-08-05): the line's own INBOX card carries the TRIGGER zone
+  // (feed truth, this line's routines, create-right-here, and the CHANNELS/AUTOMATION doors), so the FEED
+  // step opens THAT — the trigger is defined on the floor, not behind a blind hop to the messaging term.
+  // A line with no intake keeps the old door: the CHANNELS panel is the only feed surface it has.
+  function finOpenFeed(c) {
     sfx('click');
+    const iid = c && c.intakes && c.intakes[0];
+    if (iid && station.propById(iid)) { openFlowCard(iid); return; }
     close();
     if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('messaging');
   }
