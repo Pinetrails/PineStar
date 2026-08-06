@@ -11,8 +11,14 @@ safe recovery, durable autonomous work, and a smoother first-use experience.
   safer workspace ownership, and guarded 0.8.5-to-0.9.0 migration behavior.
 - Added inspect-first Skill Exchange installation with immutable source bytes, provenance, quarantine,
   approval gates, and update checks.
+- Expanded the built-in roster to 28 practical agent classes and the bundled Skill Library to 73
+  procedures, with task-matched class discovery from COMMS and authored skill depth wired into runs.
 - Improved Telegram owner pairing truth and added offline Ogg/Opus voice-note transcription through
   the bundled local speech path.
+- Restored cross-platform push-to-talk transcription, preserved crew skins through save rehydration,
+  and refreshed live agent levels without requiring an app restart.
+- Added durable model controls for tasks and loops, bounded long-haul history growth, stronger loop
+  cancellation/recovery, and post-content connector/tool safety boundaries.
 - Expanded independent parity fixtures, graders, signed receipts, host observers, installed-desktop
   performance measurement, and fail-closed soak tooling.
 - Refined onboarding, recommendations, permissions, dock layout, accessibility, station visuals, and
