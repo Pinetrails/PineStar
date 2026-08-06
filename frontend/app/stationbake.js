@@ -2361,9 +2361,21 @@ const StationBake = (() => {
         // only ever hang SOUTH of the tile: extruding it toward the viewer like the north wall
         // would bury the walkable row in front of it.
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
-        // south: the sliver of face still inside the tile. Its top edge is the SOUTH one (the crown
-        // hangs below), so depth runs UP-screen — dir -1.
-        bakeSideFace(b, pal, mat, X, Y + T - fw, T, fw, 'y', -1, eStrip);
+        /* THE SOUTH WALL HAS NO VISIBLE INNER FACE (2026-08-05, Andrew: "we need to remove the wall
+           on the bottom it doesnt make sense to be there due to the angle").
+           The camera sits above and SOUTH. That is what lets you see the north wall's inner face at
+           all, and by the same geometry it is what forbids the south wall's: that face points north,
+           away from you. All you can see of the south wall is its TOP — the crown hanging below the
+           tile — and its OUTER face, which is the hull skirt.
+           This is the standard open-box convention and it is now consistent: north, east and west
+           show their inner faces, the wall nearest the camera is cut away. The sliver inside the tile
+           is therefore a CONTACT SHADOW, not a surface — darkest where the deck meets the wall's
+           base, easing as it approaches the crown. It always was a flat dark sliver; giving it the
+           material made it start asserting a face that cannot be there, which is what showed. */
+        for (let i = 0; i < fw; i++) {
+          b.fillStyle = U.shade(pal.base, -0.62 + 0.16 * (fw <= 1 ? 1 : i / (fw - 1)));
+          b.fillRect(X, Y + T - fw + i, T, 1);
+        }
         if (e.exterior) {
           b.fillStyle = wallDk; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
           crown(b, X, Y + T + 1, T, cw, pal.cap);                                 // the wall's LIT TOP SURFACE
