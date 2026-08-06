@@ -298,6 +298,7 @@
     // Target-agent runtime identity for downstream work-line hops. The connection's own secrets belong only
     // to stage one; reusing them would silently run every later dock on the upstream model/provider.
     const resolveRunConfig = typeof o.resolveRunConfig === 'function' ? o.resolveRunConfig : null;
+    const onLineOutcome = typeof o.onLineOutcome === 'function' ? o.onLineOutcome : null;
     // SAMPLE/PROOF SEAM (additive, 2026-08-05): an optional streamId (string, or fn(chatId) -> string) stamped
     // onto every runOnce this hub fires (entry dock AND chain hops). With it, the host records the runs +
     // transcripts under that workstream (runs.jsonl streamId -> a readable OUTBOX crate); WITHOUT it — every
@@ -1598,6 +1599,9 @@
             return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
           }
         });
+        if (onLineOutcome) {
+          try { onLineOutcome({ agentId: line.agentId, stopped: line.stopped || null, hops: line.hops.slice(), usd: line.usd }); } catch (_) {}
+        }
         if (!myRec.superseded && line.hops.length) {
           // the line's answer replaces the first stage's — and the floor/channel agree on who produced it
           firstStageText = state.buf;

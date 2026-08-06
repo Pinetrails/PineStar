@@ -7486,6 +7486,7 @@ const SAMPLE_PERSONA = 'You are an agent aboard the STARNET station. This is a c
   + 'report the result clearly, in a few sentences.';
 let sampleHub = null;        // lazy singleton, one per station — mirrors getDevHub
 let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
+let sampleLineOutcome = null; // terminal chain truth for the current proof; clean runs alone are not OUTBOX proof
 let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
 const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
 function getSampleHub() {
@@ -7503,6 +7504,7 @@ function getSampleHub() {
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
     onResolved: (info) => { sampleResolved = info; },
+    onLineOutcome: (info) => { sampleLineOutcome = info; },
     // every run of the line (entry dock + hops) records under the sample's OWN workstream, so the recorded
     // rows in runs.jsonl are scoped exactly and the OUTBOX crate opens a readable transcript session.
     streamId: () => (sampleInFlight && sampleInFlight.streamId) || undefined
@@ -7547,6 +7549,7 @@ async function handleRoutingSample(req, res) {
     sampleReplies.length = 0;
     const hub = getSampleHub();
     sampleResolved = null;
+    sampleLineOutcome = null;
     // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
     // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
     const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
@@ -7577,13 +7580,14 @@ async function handleRoutingSample(req, res) {
     } catch (_) { runs = []; }
     // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
     // outcome is clean, including every hop after the routed entry dock.
-    const completed = runs.length > 0 && runs.every(r => r.reason === 'done');
+    const completed = runs.length > 0 && runs.every(r => r.reason === 'done')
+      && !!sampleLineOutcome && !sampleLineOutcome.stopped
+      && router.chainShipsToOutbox(sampleLineOutcome.agentId);
     const delivered = completed ? runs[0] : null;
     const totalUsd = runs.reduce((s, r) => s + ((typeof r.usd === 'number' && isFinite(r.usd)) ? r.usd : 0), 0);
     if (workitemId) {
       const d = bumpQueue(agentId, -1);
       if (completed) chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
-      else chanEmit('workitem.superseded', { workitemId, agentId, ts: Date.now() });
       chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
     }
     if (!completed) {

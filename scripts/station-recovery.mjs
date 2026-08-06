@@ -81,6 +81,10 @@ try {
     const target = required(a.target, 'target');
     const bundle = Recovery.readBundle(file);
     const browserOutput = path.resolve(String(a['browser-output'] || path.join(path.dirname(target), 'starnet-browser-restore.json')));
+    const browserWithinTarget = path.relative(target, browserOutput);
+    if (browserWithinTarget === '' || (!path.isAbsolute(browserWithinTarget) && browserWithinTarget !== '..' && !browserWithinTarget.startsWith('..' + path.sep))) {
+      throw new Error('browser output must be outside the workspace target: ' + browserOutput);
+    }
     const browserStore = Object.fromEntries(bundle.browser.map(row => [row.key, row.value]));
     const browserPayload = JSON.stringify({ schema: 'starnet.backup', version: 1, app: 'starnet', exportedAt: bundle.createdAt, agentName: 'restored-station', secretsIncluded: false, secretPolicy: 'credentials-excluded', store: browserStore, notebook: null }, null, 2) + '\n';
     const browserStage = browserOutput + '.restore-stage-' + process.pid + '-' + Date.now();
