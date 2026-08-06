@@ -28,6 +28,8 @@
   const MIN_TOKENS = 2;           // a belief needs at least this many significant (non-stopword) words
   const DEFAULT_MAX = 5;          // never dump a wall of proposals at the turn-in beat
   const PROMPT_CAP = 4000;        // chars of recent exchange fed to the aux model
+  const KNOWN_MAX = 25;           // …and how many already-held beliefs it is told NOT to re-propose (bounded prompt)
+  const KNOWN_CHARS = 160;        // per-belief clip for that block — a gist, never the whole stored text
   const MIN_REFLECT_CHARS = 200;  // skip reflection on trivial exchanges (one cheap call still costs)
   // SKILL stays in LINE so a model that still emits it parses cleanly — KIND no longer maps it, so the
   // candidate is silently dropped (conservative: never mis-tagged as a fact).
@@ -43,8 +45,15 @@
   // into a durable memory (mirrors context.stripRecallFence — kept inline so reflect stays standalone).
   const RECALL_FENCE = /<recalled-memory>[\s\S]*?<\/recalled-memory>|<\/?recalled-memory>/gi;
 
-  // the reflection prompt: the recent user/assistant exchange (system + tool turns stripped), tail-capped.
-  function buildPrompt(messages, cap) {
+  /* the reflection prompt: the recent user/assistant exchange (system + tool turns stripped), tail-capped —
+     preceded by WHAT IS ALREADY KNOWN (2026-08-05).
+
+     The dedup used to be entirely post-hoc: reflect() drops exact and Jaccard-near dupes AFTER the aux call
+     returns, which means a model that faithfully re-derives the same three beliefs every run burns a paid call
+     to produce nothing, every run, forever. Telling it what the store already holds costs a few hundred bounded
+     characters and asks it to spend the call on something new instead. The post-hoc filter STAYS — a prompt is
+     guidance, not a guarantee, and it is the filter that actually protects the notebook. */
+  function buildPrompt(messages, cap, knownTexts) {
     cap = cap || PROMPT_CAP;
     const turns = [];
     for (const msg of (Array.isArray(messages) ? messages : [])) {
@@ -54,10 +63,28 @@
     }
     let body = turns.join('\n');
     if (body.length > cap) body = body.slice(body.length - cap);   // keep the most recent exchange
+    /* ⛔ THIS ECHOES STORED BELIEF TEXT BACK INTO A DIRECTIVE — name the surface honestly. A belief reaches the
+       notebook from the model's own parse of a conversation the user drove, so its text is not trusted input,
+       and here it is replayed inside the instruction half of a later prompt. The BOUND on that: every belief is
+       collapsed to one line (\s+ → ' '), clipped to KNOWN_CHARS, capped at KNOWN_MAX entries, and rendered as a
+       '- ' item under a labelled data heading — so it cannot open a new prompt section or forge a role turn.
+       Line-leading directive markers are stripped for the same reason: a belief may be DATA in this block, never
+       a heading or a command in it. This is mitigation, not a guarantee — a prompt is guidance; the parse
+       (LINE tag required) and the post-hoc dedup are what actually protect the notebook. */
+    // newest-first (the caller passes the store in its own order; the tail is the freshest), clipped both ways
+    const known = (Array.isArray(knownTexts) ? knownTexts : [])
+      .map(t => String(t == null ? '' : t).replace(/\s+/g, ' ').trim())
+      .map(t => t.replace(/^(?:[-*#>=+_`~]+\s*)+/, '').replace(/^(?:SYSTEM|USER|AGENT|ASSISTANT|INSTRUCTIONS?)\s*:\s*/i, '').trim())
+      .filter(Boolean).slice(-KNOWN_MAX).reverse()
+      .map(t => t.length > KNOWN_CHARS ? (t.slice(0, KNOWN_CHARS - 1) + '…') : t);
+    const knownBlock = known.length
+      ? ('ALREADY REMEMBERED — do NOT propose any of these again, or a restatement of one:\n' +
+         known.map(t => '- ' + t).join('\n') + '\n\n')
+      : '';
     return 'From this exchange, list ONLY durable facts or preferences worth remembering for future ' +
       'runs — one per line, each tagged FACT: or PREFERENCE:. These are beliefs about the user or the world, ' +
       'never instructions, procedures, or advice you gave. Skip anything transient or already ' +
-      'obvious. If nothing is worth keeping, reply NONE.\n\n' + body;
+      'obvious. If nothing is worth keeping, reply NONE.\n\n' + knownBlock + body;
   }
 
   // parse the aux model's reply into {kind, content} candidates; untagged lines are ignored (conservative).
@@ -122,13 +149,14 @@
     const propose = opts.propose;
     if (typeof propose !== 'function') return { proposals: [] };
 
-    const prompt = buildPrompt(run.messages, PROMPT_CAP);
-    let raw;
-    try { raw = await propose(prompt); } catch (_) { return { proposals: [], prompt: prompt }; }   // a failed reflection never hurts the run
-
+    // the SAME set feeds the prompt and the post-hoc filter, so the model is told exactly what will be rejected.
     const seen = {};
     const priorTexts = [];   // existing beliefs + already-accepted proposals, for near-dupe (paraphrase) rejection
     for (const r of (Array.isArray(opts.existing) ? opts.existing : [])) { const t = textOf(r).trim(); seen[t.toLowerCase()] = 1; if (t) priorTexts.push(t); }
+
+    const prompt = buildPrompt(run.messages, PROMPT_CAP, priorTexts.slice());
+    let raw;
+    try { raw = await propose(prompt); } catch (_) { return { proposals: [], prompt: prompt }; }   // a failed reflection never hurts the run
     const now = clock.now();
     const proposals = [];
     for (const cand of parse(raw)) {

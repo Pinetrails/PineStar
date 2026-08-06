@@ -66,6 +66,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const runSeenAt = new Map();       // agentId -> performance.now() of the last counted run.start (agentLive's veto grace)
   let crewLiveWired = false;         // the crew-status live listener is registered exactly once
   let repaintAutonomyDial = null;    // GROWTH Tier 3: the open Settings AUTONOMY panel's paint fn (null when closed) — lets an accepted trust offer repaint the EARNED badge live
+  // Same idiom for the open Settings PERMISSIONS panel's per-agent APPROVAL list. The list is painted from
+  // the live roster, so a SUMMON or a DELETE while the panel is open must repaint it — otherwise it keeps
+  // offering a flip for an agent that no longer exists (and hides one that does). null when closed.
+  let repaintPermAgents = null;
   let lastStageSummary = '';         // #8: last screen-reader summary text, so we only update the live region on change
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
@@ -4496,25 +4500,42 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
       '<div id="ns-report"></div>';
     const secPermissions =
-      // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
-      // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
-      // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
-      '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
-      '<p class="set-about" id="perm-desc"></p>' +
-      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
+      // PERMISSIONS — reorganized (2026-08-05): ONE pane answers the three questions users kept hunting across
+      // surfaces. 1 · WHO asks first — the per-agent ASK/FULL ACCESS switch (previously reachable only via each
+      // dossier CONFIG card or /yolo) plus a whole-station switch. 2 · HOW FAR it may go unattended — the
+      // WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here). 3 · WHAT is pre-blessed — the standing-grant
+      // ledger. No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
+      // ── 0 · FULL BYPASS — the master switch, above everything it outranks. Its own CARD (not a
+      // key-list row): it outranks every control below it, so it carries the visual weight of one.
+      '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
+      // ── 1 · APPROVAL ──
+      '<h4 class="ms-h">1 · APPROVAL <span class="dim">— who stops to ask you first</span></h4>' +
+      '<p class="set-about perm-lede">Each crew member either <b>ASKS</b> — a permission card pauses its run until you answer — or holds <b>FULL ACCESS</b> and runs everything itself, no prompts. Same switch as the dossier CONFIG card and <code>/yolo</code> in COMMS.</p>' +
+      '<div class="perm-list" id="perm-approval"></div>' +
+      '<div class="mc-acts perm-allacts">' +
+        '<button class="bb sm danger" id="perm-full-all">FULL ACCESS — WHOLE STATION</button>' +
+        '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
+      '</div>' +
+      '<div class="mc-hint">full access skips the prompts, not the floor: a hard safety floor still blocks the most dangerous host actions, and unattended runs (night shift, routines) never inherit it — those follow the level and approvals below.</div>' +
+      // ── 2 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
       // (test-pinned, and it says the stakes plainly).
-      '<div class="set-row"><span class="dim">LEVEL — the same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY</span></div>' +
+      '<h4 class="ms-h">2 · UNATTENDED LEVEL <span class="dim">— how far it may go while you’re away</span></h4>' +
+      '<p class="set-about perm-lede">The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
+      '<p class="set-about perm-lede" id="perm-desc"></p>' +
+      '<p class="set-about perm-lede" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       '<div class="set-themes" id="perm-level">' +
         '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">WAIT</button>' +
         '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
         '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
-      '<div class="set-row"><span class="dim">STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
-      '<div class="key-list" id="perm-grants"></div>';
+      // ── 3 · STANDING APPROVALS ──
+      '<h4 class="ms-h">3 · STANDING APPROVALS <span class="dim">— what it may already do unattended</span></h4>' +
+      '<p class="set-about perm-lede">Every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time).</p>' +
+      '<div class="key-list perm-grants" id="perm-grants"></div>';
     const secBudget =
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
       // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
@@ -4722,7 +4743,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
       { id: 'nightshift', label: 'NIGHT SHIFT', glyph: '☾', desc: 'What the station is doing unattended right now, and its recent decision trail.', build: frag(secNightShift) },
-      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
+      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'Who asks first, how far it may go unattended, and every standing approval.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
       // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
@@ -4895,6 +4916,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // changes so the level highlight + #perm-desc stay in sync with the posture. No-op until that block wires it.
     let syncPerm = function () {};
     repaintAutonomyDial = null;   // GROWTH Tier 3: re-armed per settings render (the closure below owns the live DOM)
+    repaintPermAgents = null;     // same contract: the PERMISSIONS block below re-arms it against THIS render's DOM
     // AUTONOMY dial — retune Initiative / Reach in place (AutonomyStore persists; no rerender so it won't wipe an
     // open key editor). The describe() line repaints live so the posture is always honestly spelled out.
     if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {
@@ -5345,6 +5367,77 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         return rows.join('');
       };
+      /* ── 1 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
+         (not copies), so approvalMode read here is the same truth pushRoster ships to the sidecar; a flip goes
+         through access.config.setApproval — the identical path the dossier CONFIG card and /yolo use — so the
+         per-run consent gate follows it. Escalation (→ FULL ACCESS) keeps the house two-press confirm; taking
+         power BACK (→ ask) applies on first click, never armed. */
+      const apWrap = host.querySelector('#perm-approval');
+      const paintApproval = () => {
+        if (!apWrap) return;
+        const can = !!(access.config && access.config.setApproval);
+        if (!present.length) { apWrap.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
+        // One row per crew member: name + MODE tag + sentence on the left, the flip button in a
+        // RIGHT-ALIGNED column, so the list reads as one aligned table instead of five ragged inline
+        // sentences with the control jammed against the last word. No glyph column — the state is
+        // already carried by the accent edge, the MODE tag and the sentence; a pictograph in front of
+        // each name was a third telling of the same fact, in an emoji face this app does not speak.
+        apWrap.innerHTML = present.map(a => {
+          const full = !!(a && a.approvalMode === 'full');
+          return '<div class="perm-agent' + (full ? ' full' : '') + '">' +
+            '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
+            '<span class="pa-mode">' + (full ? 'FULL ACCESS' : 'ASKS') + '</span>' +
+            '<span class="pa-state">' + (full ? 'runs everything itself, no prompts' : 'stops before it writes, runs, or reaches out') + '</span>' +
+            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? 'MAKE IT ASK' : 'GIVE FULL ACCESS') + '</button>' : '') +
+            '</div>';
+        }).join('');
+        apWrap.querySelectorAll('[data-ap-flip]').forEach(b => {
+          const id = b.getAttribute('data-ap-flip'), to = b.getAttribute('data-ap-to');
+          // setApproval returns false when the roster no longer holds that id (deleted from another
+          // surface while this panel sat open). Repaint either way — the list is what is WRONG in that
+          // case — and say so, rather than leaving a dead button that silently does nothing.
+          const apply = () => {
+            const ok = access.config.setApproval(id, to);
+            paintApproval();
+            if (!ok) notify('that agent is no longer on the roster — the list has been refreshed', 'warn');
+          };
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? NO PROMPTS', restLabel: 'GIVE FULL ACCESS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          else b.addEventListener('click', () => { sfx('click'); apply(); });
+        });
+      };
+      // WHOLE-STATION switches. Both COUNT what actually changed and report that number: a blanket
+      // "whole station on FULL ACCESS" toast over an empty roster, or over a partly-failed sweep, is
+      // the app asserting a state the harness never reached (the truthful-telemetry law).
+      const sweepApproval = (mode) => {
+        if (!(access.config && access.config.setApproval)) return null;
+        let done = 0;
+        present.forEach(a => { if (access.config.setApproval(a.id, mode)) done++; });
+        paintApproval();
+        return { done: done, of: present.length };
+      };
+      const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
+      if (fullAll) ArmConfirm.wire(fullAll, {
+        armedLabel: 'SURE? EVERY AGENT, NO PROMPTS', restLabel: 'FULL ACCESS — WHOLE STATION', timeoutMs: 4000,
+        onArm: () => sfx('bad'),
+        onConfirm: () => {
+          const r = sweepApproval('full');
+          if (!r) return;
+          sfx('bad');
+          notify(r.done
+            ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' now run with FULL ACCESS — no approval prompts (the hard safety floor still applies)'
+            : 'no crew to change — summon an agent first', r.done ? 'warn' : 'bad');
+        }
+      });
+      if (askAll) askAll.addEventListener('click', () => {
+        const r = sweepApproval('ask');
+        if (!r) return;
+        sfx('click');
+        notify(r.done
+          ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' will ask before risky moves again'
+          : 'no crew to change — summon an agent first', r.done ? 'good' : 'bad');
+      });
+      paintApproval();
+      repaintPermAgents = paintApproval;   // let a SUMMON / DELETE refresh this list while the panel is open
       const wireGrants = () => {
         if (!grantsWrap) return;
         grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
@@ -5356,8 +5449,70 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           onConfirm: () => { sfx('bad'); Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm); }
         }));
       };
+      /* ── 0 · FULL BYPASS switch — painted from SERVER truth (snap.masterBypass / snap.envFullAccess), never a
+         local guess. Turning it ON is the broadest action in the product → house two-press confirm; turning it
+         OFF is taking power back → first click. When the boot env forces it, the panel says WHY the switch is
+         pinned instead of rendering a toggle that appears to do nothing (truthful telemetry). */
+      const bypassWrap = host.querySelector('#perm-bypass');
+      /* A FAILED flip has to report AT the switch. The store keeps one shared `error` field, and the
+         panel's only error readout (#perm-status) lives under the block-2 header — so a refused bypass
+         write printed its reason two blocks away from the button that caused it, while the card itself
+         silently repainted to the unchanged state. This holds the last bypass-flip failure and renders
+         it inside the card; it clears on the next successful flip. */
+      let bypassErr = '';
+      const paintBypass = (snap) => {
+        if (!bypassWrap) return;
+        bypassWrap.classList.toggle('on', !!(snap.loaded && (snap.masterBypass || snap.envFullAccess)));
+        if (!snap.loaded) { bypassWrap.innerHTML = '<p class="perm-m-desc">The bypass switch is unavailable until the local permission service confirms it.</p>'; return; }
+        // the card: title + live state chip · one description paragraph · the control on its OWN line ·
+        // a hairline-separated floor note. The button never sits inside the prose (it read as part of
+        // the sentence), and the state is a chip so ON/OFF is legible without reading the paragraph.
+        const floorNote = 'Still standing either way: the protected-file floor (.env / .git) and real mouse &amp; screen control (desktop pairing only).';
+        const head = (chip, chipCls) => '<div class="perm-m-head"><span class="perm-m-title">FULL BYPASS</span>' +
+          '<span class="perm-m-chip' + (chipCls ? ' ' + chipCls : '') + '">' + chip + '</span></div>';
+        const errLine = bypassErr ? '<p class="perm-m-err">⚠ ' + esc(bypassErr) + ' — the switch is unchanged.</p>' : '';
+        if (snap.envFullAccess) {
+          bypassWrap.innerHTML = head('ON — FORCED BY ENVIRONMENT', 'on') +
+            '<p class="perm-m-desc">Forced ON by the <code>SKYNET_FULL_ACCESS</code> environment variable. Remove it and restart the station to hand control back to this switch.</p>' +
+            '<p class="perm-m-floor">' + floorNote + '</p>';
+          return;
+        }
+        bypassWrap.innerHTML = snap.masterBypass
+          ? (head('ON', 'on') +
+             '<p class="perm-m-desc">Every agent, every surface — chat, Telegram, routines, night shift — runs everything without asking, shell included. Survives restarts until you turn it off.</p>' +
+             errLine +
+             '<div class="perm-m-act"><button class="bb sm" id="perm-bypass-off">✕ TURN OFF</button></div>' +
+             '<p class="perm-m-floor">' + floorNote + '</p>')
+          : (head('OFF', '') +
+             '<p class="perm-m-desc">One switch, no permission prompts anywhere: every agent, every surface — chat, Telegram, routines, night shift — shell included. Persists until you turn it off.</p>' +
+             errLine +
+             '<div class="perm-m-act"><button class="bb sm danger" id="perm-bypass-on">TURN ON</button></div>' +
+             '<p class="perm-m-floor">' + floorNote + '</p>');
+        // A flip is in flight until the server answers: disable the button so a double-press can't post
+        // twice, and record the outcome AT the card. setBypass never throws (the store catches), but a
+        // rejected promise must still release the button rather than freeze the control.
+        const flip = (btn, want, okMsg, okCls) => {
+          btn.disabled = true;
+          Promise.resolve(PermissionsStore.setBypass(want)).then(s => {
+            bypassErr = (s && s.error) ? String(s.error) : '';
+            repaintPerm();
+            if (!bypassErr) notify(okMsg, okCls);
+          }).catch(e => {
+            bypassErr = String((e && e.message) || 'the bypass switch could not be reached');
+            repaintPerm();
+          });
+        };
+        const onBtn = bypassWrap.querySelector('#perm-bypass-on'), offBtn = bypassWrap.querySelector('#perm-bypass-off');
+        if (onBtn) ArmConfirm.wire(onBtn, {
+          armedLabel: 'SURE? EVERYTHING, EVERYWHERE, NO PROMPTS', restLabel: 'TURN ON', timeoutMs: 4000,
+          onArm: () => sfx('bad'),
+          onConfirm: () => { sfx('bad'); flip(onBtn, true, 'FULL BYPASS ON — nothing asks for approval anywhere until you turn it off', 'warn'); }
+        });
+        if (offBtn) offBtn.addEventListener('click', () => { sfx('click'); flip(offBtn, false, 'FULL BYPASS off — approvals apply again', 'good'); });
+      };
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();
+        paintBypass(snap);
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
         if (permStatus) {
@@ -6528,6 +6683,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     crewRender();
     if (open.agents) rerender('agents');
     if (open.automation) rerender('automation');   // the ROUTINES lane's create form shows the roster
+    // SETTINGS ▸ PERMISSIONS paints one APPROVAL row per crew member. Repaint just that list (never a
+    // whole-panel rerender, which would wipe a half-typed budget/key field) so a summon or delete can't
+    // leave it offering a flip for an agent that is gone.
+    try { if (repaintPermAgents) repaintPermAgents(); } catch (_) {}
   }
 
   /* ============== ARCADE CABINET ==============

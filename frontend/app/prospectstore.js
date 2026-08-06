@@ -35,6 +35,66 @@ const ProspectStore = (() => {
   let recommendationIds = {};
 
   const now = () => (deps.now ? deps.now() : (typeof Date !== 'undefined' ? Date.now() : 0));
+
+  /* ---- THE SHOWN-ROW MEMORY (2026-08-05) ----------------------------------------------------------------
+     `recommendationIds` is the "I have already told the ledger about this card" set. It lived only in memory,
+     so every page reload re-minted a `shown` row for the SAME three shelf cards. The ledger's replay divides by
+     `counts.shown`, so acceptanceRate and evidenceCoverage fell a little every time the Commander refreshed a
+     tab, `repeats` climbed, and foldPref's per-kind/per-trait `shown` grew without any new impression — which
+     drags that kind's learned weight toward zero. A metric that decays because the browser was reloaded is not
+     a measurement of anything, and the recruiter now READS that preference model.
+
+     So the set is persisted, bounded FIFO, with a WINDOW. Re-rendering the same card after a reload is the same
+     impression and must not be counted twice; the same card surfacing again a week later genuinely IS a new
+     impression, and suppressing that would understate real exposure in the other direction. One day is the line:
+     longer than any session or reload cycle, shorter than any honest re-surfacing.
+     Own key, own hydrate — the legacy KEY store stays exactly as it is (read-only). */
+  const SHOWN_KEY = 'starnet.prospects.shown.v1';
+  const SHOWN_CAP = 200;                     // bounded: a long-lived station keeps the most recent impressions
+  const SHOWN_TTL_MS = 24 * 60 * 60 * 1000;
+  function loadShown() {
+    try {
+      if (typeof localStorage === 'undefined') return {};
+      const o = JSON.parse(localStorage.getItem(SHOWN_KEY) || 'null');
+      const rows = (o && typeof o === 'object' && o.rows && typeof o.rows === 'object') ? o.rows : {};
+      const out = {};
+      for (const k of Object.keys(rows)) {
+        const r = rows[k];
+        // drop anything malformed on the way IN, so a corrupt file can never resurrect a garbage id
+        if (r && typeof r === 'object' && typeof r.id === 'string' && Number.isFinite(r.at)) out[k] = { id: r.id, at: r.at };
+      }
+      return out;
+    } catch (_) { return {}; }
+  }
+  function saveShown() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const keys = Object.keys(recommendationIds).sort((a, b) => recommendationIds[a].at - recommendationIds[b].at);
+      const keep = keys.slice(Math.max(0, keys.length - SHOWN_CAP));   // FIFO: oldest impressions evicted first
+      const rows = {}; for (const k of keep) rows[k] = recommendationIds[k];
+      localStorage.setItem(SHOWN_KEY, JSON.stringify({ v: 1, rows: rows }));
+    } catch (_) {}
+  }
+  /* ⛔ THE WINDOW GATES THE MINT, NOT THE LOOKUP (2026-08-05). These were one function, and the TTL applied to
+     every caller — so `recommendationVerdict` / `recommendationOutcome` ALSO went blind at T+24h and returned
+     false without POSTing anything. A Commander who left the bay open overnight, or came back to a card whose
+     impression row was older than the window, could accept or decline it and have the verdict SILENTLY DROPPED
+     while the `shown` row it belonged to sat on the ledger forever unanswered. That depresses acceptanceRate in
+     exactly the direction the reload fix was made to stop.
+     The impression is a FACT about a row that exists; the window is a statement about when a re-render counts as
+     a NEW impression. Only the second is time-bounded. The store is bounded by SHOWN_CAP FIFO on save (and load
+     no longer age-drops, for the same reason: a decision made after a restart must still land). */
+  // the stored id for a shelf key, whatever its age — '' only when no impression was ever recorded.
+  function shownId(key) {
+    const r = recommendationIds[key];
+    return (r && r.id) ? r.id : '';
+  }
+  // the id ONLY while it is still the same impression window; '' means a re-render is genuinely new exposure.
+  function freshShownId(key) {
+    const r = recommendationIds[key];
+    if (!r) return '';
+    return ((now() - r.at) < SHOWN_TTL_MS) ? r.id : '';
+  }
   // the token-carrying fetch (Harness.apiFetch); injectable for tests.
   const api = (u, init) => (deps.fetch ? deps.fetch(u, init)
     : (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch(u, init)
@@ -55,6 +115,7 @@ const ProspectStore = (() => {
   function init(opts) {
     deps = opts || {};
     legacy = hydrateLegacy(loadLegacy());
+    recommendationIds = loadShown();   // impressions survive the reload; that is the whole point of the store
     cache = null;
     if (!bound && typeof U !== 'undefined' && U.bus && U.bus.on) {
       U.bus.on('agent.run.end', onRunEnd);
@@ -126,9 +187,11 @@ const ProspectStore = (() => {
     const lane = String(surface || 'scout');
     if (!target) return '';
     const key = lane + ':' + target;
-    if (recommendationIds[key]) return recommendationIds[key];
+    const already = freshShownId(key);   // MINT-side only: the window decides what counts as a new impression
+    if (already) return already;     // same card, same window → the impression is already on the ledger
     const id = 'ui:' + lane + ':' + target.slice(0, 60) + ':' + now() + ':' + (++recommendationSeq);
-    recommendationIds[key] = id;
+    recommendationIds[key] = { id: id, at: now() };
+    saveShown();
     meta = meta || {};
     try { api('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       id, surface: lane, kind: meta.kind || lane, title: item.name || item.title || target, target,
@@ -138,14 +201,15 @@ const ProspectStore = (() => {
     return id;
   }
   function recommendationVerdict(surface, target, state, reason) {
-    const key = String(surface || '') + ':' + String(target || '');
-    const id = recommendationIds[key];
+    // reads the SAME persisted map, so a decline made after a reload now lands on the row that impression
+    // actually created — it used to find an empty in-memory map and record nothing at all.
+    const id = shownId(String(surface || '') + ':' + String(target || ''));
     if (!id) return false;
     try { api('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, state, reason }) }).catch(() => {}); } catch (_) {}
     return true;
   }
   function recommendationOutcome(surface, target, outcome) {
-    const id = recommendationIds[String(surface || '') + ':' + String(target || '')];
+    const id = shownId(String(surface || '') + ':' + String(target || ''));
     if (!id) return false;
     try { api('/api/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, outcome: outcome || {} }) }).catch(() => {}); } catch (_) {}
     return true;
@@ -232,7 +296,7 @@ const ProspectStore = (() => {
   function launches() { return (cache && cache.usage && cache.usage.launches) || {}; }
 
   // a brand-new hero drops the browser-side state; the server store is the station's own memory (kept).
-  function reset() { legacy = hydrateLegacy(null); cache = null; recommendationIds = {}; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { legacy = hydrateLegacy(null); cache = null; recommendationIds = {}; try { localStorage.removeItem(KEY); localStorage.removeItem(SHOWN_KEY); } catch (_) {} }
 
   return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, preferenceModel, ledger, dismiss, accept, reset,
     noteLaunch, noteRated, launches, noteRecommendation, recommendationVerdict, recommendationOutcome,

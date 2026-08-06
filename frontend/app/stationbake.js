@@ -151,6 +151,221 @@ const StationBake = (() => {
                     0 = a genuinely seamless deck · 1 = the old hard v3 grid. */
   const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
 
+  /* ============================ THE EXTERIOR SHELL (HULL SKINS) ============================
+     Everything you see of a room from OUTSIDE: the plate surrounding its footprint, the texture
+     over that plate, the framed rim, the rounded corner arcs, and the SKIRT — the tall face
+     extruded below the station's silhouette, which is what actually reads at a glance.
+
+     Until 2026-08-05 all five came from the five constants above, so every room of every station
+     wore the identical dark riveted shell (Andrew, circling exactly those edges: "the outer walls
+     are not customizable"). They are per room now. WorldModel.hullMatOfRoom/hullStyleOfRoom are the
+     authority; what is here is the PAINT, plus the fallback for geometry arriving without either.
+
+     ---- THE NULL-HUE CASE IS LOAD-BEARING ----
+     `G.hullBaseOf` may answer null, and that is not "missing data" — it means "the shell's own
+     tone", which every room that has never been re-clad carries. Answering it with the LITERAL
+     legacy constants (not a ramp derived from some stand-in colour) is what keeps every station
+     already built pixel-identical, and it is why this axis did not have to shift a single golden.
+     Derive only when a hue was actually chosen. */
+  const LEGACY_HULL = {
+    base: hullC, seam: '#231f17', rim: '#28241b', bolt: '#302b21', arc: '#28241b',
+    lit: '#3f3a2c', dk: '#0b0a07',
+    bands: ['#0b0a07', '#100e09', '#16130d', '#1f1b12', '#2a251a', '#3f3a2c']
+  };
+  /* ---- THE VACUUM CLAMP: why a hull hue cannot be used at face value ----
+     Every other surface in this bake is painted UNDER the ambient mask, which multiplies it down by
+     0.77 before you ever see it. The hull is the one surface deliberately left OUTSIDE that mask —
+     the skirt hangs in void and renders at its raw baked tones. So the FLOOR_STYLES palette, whose
+     hues were chosen to sit in a dark substrate band *once ambient has taken them down*, renders
+     roughly four times brighter out there than the same hue does inside the room.
+
+     Measured on the shipped bake, down the middle of a south wall: the station's own shell tops out
+     at luma 37, TIMBER at 51, STONE at 55, BRICK at 58 — and brick's mortar spiked to 86, brighter
+     than the lit wall crown (79) and the brightest thing on the whole exterior. That is exactly the
+     "doesn't look right, needs to be more cohesive" read (Andrew, 2026-08-05): a building glowing
+     harder than the station it is bolted to.
+
+     So a chosen hue is clamped into the shell's own value band before anything derives from it.
+     Scaling all three channels by one factor preserves the hue exactly — it is a pure exposure
+     change, which is the honest model for "this surface gets no light". The floor lifts near-black
+     hues (ONYX) so a shell never goes pure void, and the cap is what keeps BONE from painting a
+     blazing white building — the same standing law that killed light mode three times. */
+  const HULL_LUMA_CAP = 28, HULL_LUMA_FLOOR = 13;
+  /* ...EXCEPT AT THE BRIGHT POLE. The clamp above exists to stop a hue picked as a FLOOR SUBSTRATE
+     from accidentally glowing when it is used on the one surface ambient never touches. But BONE and
+     WHITE are not accidents — they are the palette's deliberate bright end, and nobody lands on them
+     by mistake. Flattening them to 28 alongside RUST and COBALT does not make the station cohesive,
+     it just makes the palette lie: you pick WHITE and get another dark grey wall.
+     So a hue that is already unambiguously bright (luma over the pole) clamps to its own, much
+     higher ceiling instead. A white building then really is the brightest thing outside — above the
+     lit wall crown at 79, below the ceiling lamps at 127 — which is exactly what a whitewashed wall
+     looks like at night, and it stays strictly OPT-IN: you have to go and choose it. */
+  const HULL_BRIGHT_POLE = 150, HULL_BRIGHT_CAP = 85;
+  const vacuum = hex => {
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (l < 1) return '#0d0d0d';
+    const cap = l > HULL_BRIGHT_POLE ? HULL_BRIGHT_CAP : HULL_LUMA_CAP;
+    const k = l > cap ? cap / l : (l < HULL_LUMA_FLOOR ? HULL_LUMA_FLOOR / l : 1);
+    if (k === 1) return hex;
+    const c = v => Math.max(0, Math.min(255, Math.round(v * k)));
+    return '#' + ((1 << 24) | (c(r) << 16) | (c(g) << 8) | c(b)).toString(16).slice(1);
+  };
+
+  /* A DERIVED SHELL. Same discipline as WALL_TONE: every mark is a U.shade off the room's one hue,
+     so any material renders in any colour coherently. The skirt ramp darkens DOWNWARD (away from
+     the deck lights, into the void) — that gradient is what gives the station its height, and a
+     material that flattens it reads as a sticker rather than a standing wall. */
+  const derivedHullPal = raw => {
+    const base = vacuum(raw);
+    return {
+      base,
+      seam: U.shade(base, -0.26),
+      rim:  U.shade(base, 0.12),
+      bolt: U.shade(base, 0.30),
+      arc:  U.shade(base, -0.14),
+      lit:  U.shade(base, 0.24),
+      dk:   U.shade(base, -0.58),
+      bands: [U.shade(base, -0.74), U.shade(base, -0.64), U.shade(base, -0.50), U.shade(base, -0.32), U.shade(base, -0.12), U.shade(base, 0.14)]
+    };
+  };
+  let hullPalCache = null;
+  function hullPal(z) {
+    let p = hullPalCache && hullPalCache.get(z);
+    if (p) return p;
+    const base = (G && G.hullBaseOf) ? G.hullBaseOf(z) : null;
+    p = base ? derivedHullPal(base) : LEGACY_HULL;
+    if (!hullPalCache) hullPalCache = new Map();
+    hullPalCache.set(z, p);
+    return p;
+  }
+  // FALLBACK ONLY, exactly like wallMatOf: projected geometry always carries hullMatOf.
+  // WorldModel.hullMatOfRoom is the authority — change both.
+  const hullMatOf = z => {
+    const m = (G && G.hullMatOf) ? G.hullMatOf(z) : null;
+    return HULL_RECIPES[m] ? m : 'station';
+  };
+  // two footprints share a skirt only if they share a SKIN — see the group note in bakeHullExtrusion
+  const hullKeyOf = z => { const p = hullPal(z); return hullMatOf(z) + '|' + p.base; };
+
+  /* SKIRT BANDS. Each entry is [dy, colour]: the silhouette stamped `dy` px down-screen, painted in
+     the order given. A stamp OWNS the rows between its own dy and the next (smaller) one, so a list
+     descending from `skirt` to 1 paints the skirt bottom-up.
+
+     BANDS ARE DEPTH, VEINS ARE MATERIAL — and that split is the second thing this file learned.
+     The first cut emitted one band PER COURSE, so a log wall was 18 stamps and a brick wall 14. It
+     was slow (every entry is a full-canvas silhouette composite, per group, per chunk) and, worse,
+     it looked wrong: neighbouring stamps sit at neighbouring points on the same ramp, so the
+     "shadow under a log" and the log above it came out ~0.1 apart in shade and the whole wall read
+     as a flat brown band with faint lines in it. Rendered side by side, TIMBER and STUCCO were the
+     same picture. A course line has to be a HARD local contrast — light crest, dark undercut —
+     which the ramp fundamentally cannot express because the ramp's job is the opposite: a smooth
+     fall into the void. So the ramp stays six stops and every material's texture moved to `veins`,
+     one source-atop pass with real pixel control. Keep new materials on that side of the line. */
+  const RAMP_T = [0, 0.12, 0.32, 0.55, 0.82, 1];
+  const rampStops = skirt => [skirt, skirt - 1, Math.max(3, Math.round(skirt * 0.72)), Math.max(2, Math.round(skirt * 0.45)), 3, 1];
+  // six stops from `lo` at the bottom of the wall to `hi` at the deck line
+  const ramp6 = (pal, skirt, lo, hi) => rampStops(skirt).map((dy, i) => [dy, U.shade(pal.base, lo + (hi - lo) * RAMP_T[i])]);
+  // the shell's own gradient — `station` keeps its six literal tones so the legacy look is exact
+  const rampBands = (pal, skirt) => rampStops(skirt).map((dy, i) => [dy, pal.bands[i]]);
+
+  /* THE COURSED-WALL VEIN. Every masonry-ish shell is the same three decisions — how tall a course
+     is, how wide a unit is, and whether the joint reads LIGHT (mortar between bricks) or DARK (the
+     undercut below an overhanging board or shingle) — so they share one painter and differ only in
+     those numbers. Getting BRICK and SHINGLE to stop looking like each other is exactly a matter of
+     picking opposite answers: brick is a LIGHT grid, shingle is a DARK layered overhang.
+     Everything is phase-locked to ABSOLUTE world coords (that is what vx/vy are for), so two
+     adjacent buildings in the same skin share coursing, and a chunk bake lands identically to a
+     monolithic one. */
+  /* WALK THE WALL IN RUNS OF EQUAL HEIGHT. `topOf[x]` is the canvas row where this column's skirt
+     begins (see skirtTops). Along a straight edge it is constant, so the whole wall is one rect;
+     it only steps where the hull curves. Calling back per RUN rather than per column keeps a flat
+     wall at a handful of fills while still letting a corner staircase down one pixel at a time. */
+  /* `flat` is the wall top to assume when there is no geometry to follow — the headless canvas mock
+     has no getImageData, and a palette chip has no hull at all.
+     IT MUST BE WORLD-ANCHORED, NOT ZERO. Passing 0 anchors the courses to CANVAS row 0, and a chunk
+     canvas starts at a different world row than the monolithic one, so the same wall came out with
+     its coursing shifted between the two bake paths — 69738 pixels of chunk-parity failure the
+     moment the default shell grew a texture. Callers pass `courseAt(vy, pitch) - vy`, which is the
+     same absolute phase-lock the pre-contour code used. */
+  const runsOf = (topOf, w, flat) => {
+    if (!topOf) return [[0, w, flat || 0]];
+    const out = [];
+    let x0 = 0;
+    while (x0 < w) {
+      const t = topOf[x0];
+      let x1 = x0 + 1;
+      while (x1 < w && topOf[x1] === t) x1 += 1;
+      if (t >= 0) out.push([x0, x1 - x0, t]);
+      x0 = x1;
+    }
+    return out;
+  };
+  const wallRuns = (topOf, w, cb, flat) => { for (const r of runsOf(topOf, w, flat)) cb(r[0], r[1], r[2]); };
+
+  /* ONE COURSE, DRAWN AS A CONNECTED CONTOUR OF THE WALL TOP.
+
+     THE BRIDGE BETWEEN RUNS IS THE WHOLE THING (2026-08-05, Andrew, circling the bare strip at a
+     corner: "do you see how it doesn't continue? it just cuts off at the corner. what I am looking
+     for is perfect continuation with the proper curve"). Drawing a flat rect per run is the easy
+     half and it is NOT a curve — it is a staircase of disconnected dashes, because between two runs
+     the course jumps a row with nothing joining them. Filling that step with a one-pixel column is
+     what turns the dashes into a line that sweeps round the arc.
+
+     A previous pass tried to hide the staircase by simply not drawing courses on narrow runs. That
+     is what left the bare vertical band Andrew circled — the cladding visibly quitting at the
+     corner. There is no width below which a course should vanish; it just has to be CONNECTED.
+     Runs that are not touching (`nx[0] !== rx + rw`) are a genuine gap in the wall — a doorway, a
+     neighbouring footprint — and must NOT be bridged, or the line leaps across open space. */
+  const courseLine = (px, runs, k, ch, off, thick) => {
+    for (let i = 0; i < runs.length; i++) {
+      const rx = runs[i][0], rw = runs[i][1];
+      const y = runs[i][2] + k * ch + off;
+      px(rx, y, rw, thick);
+      const nx = runs[i + 1];
+      if (!nx || nx[0] !== rx + rw) continue;
+      const y2 = nx[2] + k * ch + off;
+      const a = Math.min(y, y2), b = Math.max(y, y2);
+      px(rx + rw - 1, a, 1, (b - a) + thick);
+    }
+  };
+
+  /* THE SHARED PANEL JOINT — a faint vertical shadow every 28px, on EVERY shell, run after the
+     material's own veins. It was the station shell's private detail; making it common is what ties
+     the family together, because underneath the cladding it is all still one station, and a row of
+     buildings that share one structural rhythm reads as a street rather than as swatches parked next
+     to each other. Kept well under the material's own contrast so it never competes with the
+     coursing — station keeps its original 0.35 (parity), everything else gets a whisper. */
+  const SHARED_SEAM = 0.16;
+  const panelSeam = (fg, w, h, vx, alpha) => {
+    if (!alpha) return;
+    fg.fillStyle = 'rgba(0,0,0,' + alpha + ')';
+    for (let x = 5 - (vx % 28); x < w; x += 28) fg.fillRect(x, 0, 1, h);
+  };
+
+  const coursedVein = (fg, w, h, vx, vy, o, topOf) => {
+    const px = boxed(fg, 0, 0, w, h);
+    const bedH = o.bedH || 1, from = o.jointFrom || 0, run = o.ch - from - bedH;
+    const rows = Math.ceil(h / o.ch) + 2;
+    const runs = runsOf(topOf, w, courseAt(vy, o.ch) - vy);
+    for (let k = 0; k < rows; k++) {
+      if (o.crest) { fg.fillStyle = o.crest; courseLine(px, runs, k, o.ch, 0, 1); }
+      if (o.bed) { fg.fillStyle = o.bed; courseLine(px, runs, k, o.ch, o.ch - bedH, bedH); }
+      if (o.joint && o.uw > 1 && run > 0) {
+        fg.fillStyle = o.joint;
+        // the stagger is keyed on the course's index DOWN THE WALL, so it stays consistent around
+        // a corner; the joint's x stays keyed on ABSOLUTE world coords, so two buildings in the
+        // same skin still line up and a chunk bake lands identically to a monolithic one.
+        const off = (k & 1) ? (o.uw >> 1) : 0;
+        for (const r of runs) {
+          const y = r[2] + k * o.ch + from;
+          for (let wx = courseAt(vx + r[0] - off, o.uw) + off; wx < vx + r[0] + r[1]; wx += o.uw) px(wx - vx, y, 1, run);
+        }
+      }
+    }
+  };
+
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
     tr: { cx: 0, cy: 1, a0: 1.5 * Math.PI, a1: 2 * Math.PI },
@@ -1249,6 +1464,427 @@ const StationBake = (() => {
     bulkhead: wallBulkhead, courses: wallCourses, service: wallService
   };
 
+  /* ---------------- HULL RECIPES — the materials of the exterior shell ----------------
+     Contract, deliberately mirroring WALL_RECIPES so the two axes stay learnable together:
+
+       dress(b, pal, x, y, w, h)     the texture over ONE footprint's hull plate. The caller clips to
+                                     that rect AND sets source-atop, so a mark can never land on a
+                                     spandrel the corner pass erased. Key every mark on ABSOLUTE bake
+                                     coords — a mark keyed on its offset within the rect renders
+                                     differently in a chunk bake than a monolithic one, which is the
+                                     one bug this whole module's parity test exists to catch.
+       rim(b, pal, x1, y1, x2, y2)   the frame around that footprint (source-atop, same reason).
+       bands(pal, skirt)             the skirt's DEPTH ramp — six stops, no texture. See ramp6.
+       veins(fg, pal, w, h, vx, vy, topOf)
+                                     optional pass over the FINISHED skirt (source-atop, canvas-local
+                                     coords; add vx/vy to key marks on world coords). `topOf[x]` is
+                                     the row that column's wall starts at — index rows from it, via
+                                     coursedVein/wallRuns, and the material FOLLOWS the hull's
+                                     rounded corners instead of being sliced by them (see skirtTops).
+
+     WHERE TO SPEND THE DETAIL: the plate ring is `pad` = 7px read from straight above; the skirt is
+     32px and faces the camera. The skirt IS the material — it is the surface in Andrew's screenshot
+     with a circle round it. A recipe that dresses the ring beautifully and leaves the skirt a flat
+     ramp has skinned the part nobody looks at. */
+
+  // shared: a hard 1px horizontal course line, phase-locked to ABSOLUTE y so neighbouring footprints
+  // of the same material read as one continuous course rather than two walls that nearly line up
+  const courseAt = (y, pitch) => y - ((y % pitch) + pitch) % pitch;
+  /* A CLAMPED FILL. Every recipe paints on a grid, and a grid's last cell always half-hangs off the
+     box it was asked to fill. In the bake a clip absorbs that — but the REFIT palette chip has no
+     clip, so an unclamped recipe bleeds its texture over the chip's edge and, on the skirt, paints a
+     row below the wall's own bottom. Cheap to get right; caught three recipes at once. */
+  const boxed = (b, x0, y0, x1, y1) => (x, y, w, h) => {
+    const ax = Math.max(x0, x), ay = Math.max(y0, y), bx = Math.min(x1, x + w), by = Math.min(y1, y + h);
+    if (bx > ax && by > ay) b.fillRect(ax, ay, bx - ax, by - ay);
+  };
+
+  // armour-plate pitch. Deliberately more than double BRICK's course: at this scale plate SIZE is
+  // what separates an engineered hull from masonry, and 11 fits three strakes in the 32px skirt.
+  const STRAKE = 11;
+  const hullStation = {
+    // the panel seam grid — the shipped shell, phase-locked to the same world grid it always used
+    // (lines at x = 5 + 28k, y = 9 + 26k), so a re-clad station and an untouched one still align.
+    dress(b, pal, x, y, w, h) {
+      b.strokeStyle = pal.seam; b.lineWidth = 1;
+      for (let gx = 5 + Math.ceil((x - 5) / 28) * 28; gx < x + w; gx += 28) { b.beginPath(); b.moveTo(gx + .5, y); b.lineTo(gx + .5, y + h); b.stroke(); }
+      for (let gy = 9 + Math.ceil((y - 9) / 26) * 26; gy < y + h; gy += 26) { b.beginPath(); b.moveTo(x, gy + .5); b.lineTo(x + w, gy + .5); b.stroke(); }
+    },
+    rim(b, pal, x1, y1, x2, y2) {
+      b.lineWidth = 2;
+      b.strokeStyle = pal.rim; b.strokeRect(x1 + 1, y1 + 1, x2 - x1 - 2, y2 - y1 - 2);
+      b.fillStyle = pal.bolt;
+      for (let x = x1 + 6; x < x2; x += 18) { b.fillRect(x, y1 + 2, 2, 2); b.fillRect(x, y2 - 4, 2, 2); }
+      for (let y = y1 + 6; y < y2; y += 18) { b.fillRect(x1 + 2, y, 2, 2); b.fillRect(x2 - 4, y, 2, 2); }
+    },
+    bands: rampBands,
+    // the shell's panel joint is the SHARED pass every material gets (see panelSeam); station keeps
+    // the 0.35 it always had, so the family's structural beat is literally the station's own
+    seam: 0.35,
+    /* THE STATION SHELL, REBUILT (2026-08-05, Andrew: "its very old and needs an upgrade anyways").
+       It was the v7 hull verbatim — a smooth six-stop ramp with one vertical seam and nothing else.
+       No structure at all, which is exactly why, sat next to nine designed materials, it read as the
+       empty slot rather than as the default everyone starts on.
+
+       What it is now: ARMOUR STRAKES. Wide horizontal plates, deliberately at an 11px pitch — more
+       than double BRICK's 5 — because the thing that separates engineering from masonry at this
+       scale is plate SIZE. Each strake takes a thin catch-light along its top edge, a hard shadow
+       beneath where the plate above it overhangs, and a row of rivets on the lip. The rivets are the
+       identity, and they are also the promise the plate ring's rim has always made and the skirt
+       never kept: the hull is bolted together.
+
+       THE PALETTE IS UNCHANGED. Only structure is added, so a hued station shell still derives
+       exactly as before, AUTO is still the shell's own grey, and the ramp underneath — the thing
+       that gives the station its height — is the same six stops it always was. This is the one
+       deliberate break of the axis's pixel-parity property, taken on Andrew's call; everything
+       BELOW the veins pass still matches the pre-axis bake byte for byte. */
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      coursedVein(fg, w, h, vx, vy, {
+        ch: STRAKE,
+        crest: 'rgba(226,232,214,0.13)',      // the sky-catch along a plate's top edge
+        bed: 'rgba(0,0,0,0.40)', bedH: 2      // the shadow the plate above throws down onto it
+      }, topOf);
+      const px = boxed(fg, 0, 0, w, h);
+      const runs = runsOf(topOf, w, courseAt(vy, STRAKE) - vy);
+      // RIVETS along each strake's lip. Keyed on ABSOLUTE x (pitch 7) so two adjacent rooms wearing
+      // the station shell share one rivet line, and so a chunk bake lands them identically.
+      for (let k = 0; k < Math.ceil(h / STRAKE) + 2; k++) {
+        for (const r of runs) {
+          const y = r[2] + k * STRAKE + 2;
+          for (let wx = courseAt(vx + r[0], 7); wx < vx + r[0] + r[1]; wx += 7) {
+            if (wx < vx + r[0]) continue;
+            fg.fillStyle = 'rgba(228,236,220,0.12)'; px(wx - vx, y, 1, 1);
+            fg.fillStyle = 'rgba(0,0,0,0.28)'; px(wx - vx, y + 1, 1, 1);
+          }
+        }
+      }
+      // the panel joint's LIT edge — one plate butts against the next and you see the near plate's
+      // own edge beside the dark seam. panelSeam paints that seam at x = 5 + 28k, so this sits at 6.
+      fg.fillStyle = 'rgba(220,226,208,0.09)';
+      for (let x = 6 - (vx % 28); x < w; x += 28) px(x, 0, 1, h);
+    }
+  };
+
+  /* TIMBER — stacked log courses. The Stardew cabin, and the material this whole axis was asked for.
+     A log reads from three rows and no more: a lit crest where it catches the sky, its own body, and
+     a hard dark line where the next log below it is shadowed. Give it a gradient and it turns to
+     plastic tubing — logs are matte. */
+  const LOG = 6;
+  const hullTimber = {
+    dress(b, pal, x, y, w, h) {
+      for (let gy = courseAt(y, LOG); gy < y + h; gy += LOG) {
+        if (gy >= y) { b.fillStyle = pal.lit; b.fillRect(x, gy, w, 1); }
+        const under = gy + LOG - 1;
+        if (under >= y && under < y + h) { b.fillStyle = pal.dk; b.fillRect(x, under, w, 1); }
+      }
+      // knots — sparse, so a log has grain without turning into polka dots
+      for (let gy = courseAt(y, LOG) + 2; gy < y + h; gy += LOG) {
+        for (let gx = courseAt(x, 23); gx < x + w; gx += 23) {
+          if (gx < x || gy < y) continue;
+          if (h2(gx, gy, 'knot') % 3) continue;
+          b.fillStyle = pal.seam; b.fillRect(gx, gy, 2, 2);
+        }
+      }
+    },
+    // notched log ENDS at the corners — the one detail that says "cabin" rather than "wooden box"
+    rim(b, pal, x1, y1, x2, y2) {
+      const px = boxed(b, x1, y1, x2, y2);
+      b.lineWidth = 1; b.strokeStyle = pal.dk;
+      b.strokeRect(x1 + 0.5, y1 + 0.5, x2 - x1 - 1, y2 - y1 - 1);
+      for (const cx of [x1, x2 - 5]) {
+        for (let gy = y1 + 2; gy < y2 - 2; gy += LOG) {
+          b.fillStyle = pal.lit; px(cx, gy, 5, LOG - 2);
+          b.fillStyle = pal.seam; px(cx + 1, gy + 1, 3, LOG - 4);
+        }
+      }
+    },
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.62, 0.16),
+    // a log reads from a lit crest and a HARD undercut, nothing else. The undercut carries most of
+    // the weight — take it out and the wall goes back to being a flat brown band.
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      coursedVein(fg, w, h, vx, vy, { ch: LOG, crest: 'rgba(255,240,214,0.18)', bed: 'rgba(0,0,0,0.52)', bedH: 2 }, topOf);
+      const px = boxed(fg, 0, 0, w, h);
+      fg.fillStyle = 'rgba(0,0,0,0.40)';
+      wallRuns(topOf, w, (rx, rw, top) => {          // knots ride their own log, so they turn the corner too
+        for (let k = 0; k < Math.ceil(h / LOG) + 2; k++) {
+          const y = top + k * LOG + 2;
+          if (y > h) break;
+          for (let wx = courseAt(vx + rx, 19); wx < vx + rx + rw; wx += 19)
+            if (h2(wx, k, 'knotv') % 3 === 0) px(wx - vx, y, 2, 2);
+        }
+      }, courseAt(vy, LOG) - vy);
+    }
+  };
+
+  /* CLAPBOARD — lapped siding. Same three-row logic as TIMBER at a tighter pitch, but the shadow is
+     the point: a lap board overhangs the one below it, so the dark line sits UNDER the lip, not
+     between two equal bodies. Tighter pitch also means it reads as a HOUSE next to a cabin. */
+  const LAP = 4;
+  const hullClapboard = {
+    dress(b, pal, x, y, w, h) {
+      for (let gy = courseAt(y, LAP); gy < y + h; gy += LAP) {
+        const lip = gy + LAP - 1;
+        if (gy >= y) { b.fillStyle = pal.lit; b.fillRect(x, gy, w, 1); }
+        if (lip >= y && lip < y + h) { b.fillStyle = pal.seam; b.fillRect(x, lip, w, 1); }
+      }
+    },
+    // corner trim boards — the vertical batten a clapboard wall always ends on
+    rim(b, pal, x1, y1, x2, y2) {
+      b.fillStyle = pal.lit; b.fillRect(x1 + 1, y1 + 1, 3, y2 - y1 - 2); b.fillRect(x2 - 4, y1 + 1, 3, y2 - y1 - 2);
+      b.fillStyle = pal.seam; b.fillRect(x1 + 4, y1 + 1, 1, y2 - y1 - 2); b.fillRect(x2 - 5, y1 + 1, 1, y2 - y1 - 2);
+      b.fillStyle = pal.dk; b.fillRect(x1, y1, x2 - x1, 1); b.fillRect(x1, y2 - 1, x2 - x1, 1);
+    },
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.56, 0.20),
+    // tighter pitch than TIMBER and a thinner shadow: a board is a plank, not a log
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      coursedVein(fg, w, h, vx, vy, { ch: LAP, crest: 'rgba(255,250,238,0.20)', bed: 'rgba(0,0,0,0.44)' }, topOf);
+    }
+  };
+
+  /* SHINGLE — a pitched roof read from above, which is what a top-down house actually shows you.
+     Its identity is the STAGGER: every other course offset by half a shingle. A grid of unstaggered
+     rectangles is tile, not shingle, and the eye knows immediately. */
+  const SHG = 7, SHW = 11;   // course pitch × tab width — sized so a tab reads square-ish, not as a stripe
+  // one 1px vertical split per shingle, staggered every other course. Spans are clipped to the
+  // requested box at BOTH ends — a course starting above y0 still owns only the rows inside it.
+  const shingleSplits = (paint, x0, x1, y0, y1) => {
+    for (let gy = courseAt(y0, SHG); gy < y1; gy += SHG) {
+      const row = Math.floor(gy / SHG), off = (row & 1) ? (SHW >> 1) : 0;
+      const sy = Math.max(gy, y0), sh = Math.min(gy + SHG, y1) - sy;
+      if (sh <= 0) continue;
+      for (let gx = courseAt(x0 - off, SHW) + off; gx < x1; gx += SHW) {
+        if (gx < x0) continue;
+        paint(gx, sy, 1, sh);
+      }
+    }
+  };
+  const hullShingle = {
+    dress(b, pal, x, y, w, h) {
+      for (let gy = courseAt(y, SHG); gy < y + h; gy += SHG) {
+        if (gy >= y) { b.fillStyle = pal.lit; b.fillRect(x, gy, w, 1); }
+        const under = gy + SHG - 1;
+        if (under >= y && under < y + h) { b.fillStyle = pal.dk; b.fillRect(x, under, w, 1); }
+      }
+      b.fillStyle = pal.dk;
+      shingleSplits((sx, sy, sw, sh) => b.fillRect(sx, sy, sw, sh), x, x + w, y, y + h);
+    },
+    rim(b, pal, x1, y1, x2, y2) {
+      // the ridge cap + the eave: a roof's two ends, and the only straight lines on it
+      b.fillStyle = pal.lit; b.fillRect(x1, y1, x2 - x1, 2);
+      b.fillStyle = pal.dk; b.fillRect(x1, y2 - 2, x2 - x1, 2);
+      b.fillStyle = pal.rim; b.fillRect(x1, y1, 2, y2 - y1); b.fillRect(x2 - 2, y1, 2, y2 - y1);
+    },
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.62, 0.12),
+    /* SHINGLE vs BRICK is decided here, and it is worth stating plainly because the first pass got
+       it wrong and the two were the same picture: a brick wall is a LIGHT grid on a flat plane; a
+       shingle wall is a stack of OVERHANGING layers. So this one takes a fat 2px black undercut
+       under every course, wide tabs, and splits that stop short of the course above (a shingle's
+       split does not run through the one it laps over) — and no light horizontal line at all. */
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      /* THE SPLIT HAS TO RUN NEARLY THE FULL COURSE or this is just dark CLAPBOARD — which is what
+         it was at jointFrom 2 on a 5px course, leaving a 2px nub of a joint nobody could see. The
+         stagger is the only thing separating a shingle roof from a lapped wall, so it gets the tall
+         run and the wide tab; the course pitch grew with it so the tabs stay square-ish. */
+      coursedVein(fg, w, h, vx, vy, {
+        ch: SHG, uw: SHW, bedH: 2, bed: 'rgba(0,0,0,0.60)',
+        joint: 'rgba(0,0,0,0.55)', jointFrom: 0,
+        crest: 'rgba(255,248,228,0.12)'   // the sliver of sky each tab catches — layers, not a grid
+      }, topOf);
+    }
+  };
+
+  /* BRICK — the townhouse. Bond pattern: 11px stretchers on a 5px course, every other course offset
+     by half. Mortar is a LIGHT line on a dark brick, never the other way round; inverting that is the
+     classic tell of a brick texture drawn from memory. */
+  const BRK = 5, BRW = 11;
+  const brickJoints = (paint, x0, x1, y0, y1) => {
+    for (let gy = courseAt(y0, BRK); gy < y1; gy += BRK) {
+      const row = Math.floor(gy / BRK), off = (row & 1) ? (BRW >> 1) : 0;
+      const sy = Math.max(gy, y0), sh = Math.min(gy + BRK, y1) - sy;
+      if (sh <= 0) continue;
+      for (let gx = courseAt(x0 - off, BRW) + off; gx < x1; gx += BRW) {
+        if (gx < x0) continue;
+        paint(gx, sy, 1, sh);
+      }
+    }
+  };
+  const hullBrick = {
+    dress(b, pal, x, y, w, h) {
+      for (let gy = courseAt(y, BRK); gy < y + h; gy += BRK) {
+        const m = gy + BRK - 1;
+        if (m >= y && m < y + h) { b.fillStyle = pal.rim; b.fillRect(x, m, w, 1); }   // mortar bed
+      }
+      b.fillStyle = pal.rim;
+      brickJoints((sx, sy, sw, sh) => b.fillRect(sx, sy, sw, sh), x, x + w, y, y + h);
+      // per-brick tone jitter — a wall of identical bricks reads as printed paper
+      for (let gy = courseAt(y, BRK); gy < y + h; gy += BRK) {
+        const row = Math.floor(gy / BRK), off = (row & 1) ? (BRW >> 1) : 0;
+        for (let gx = courseAt(x - off, BRW) + off; gx < x + w; gx += BRW) {
+          if (gx < x || gy < y || h2(gx, gy, 'brk') % 4) continue;
+          b.fillStyle = U.shade(pal.base, (h2(gx, gy, 'bt') % 2) ? 0.10 : -0.16);
+          b.fillRect(gx + 1, gy, Math.min(BRW - 1, x + w - gx - 1), Math.min(BRK - 1, y + h - gy));
+        }
+      }
+    },
+    rim(b, pal, x1, y1, x2, y2) {
+      // a soldier course framing the footprint — the header band a brick wall is capped with
+      b.fillStyle = pal.rim; b.strokeStyle = pal.rim; b.lineWidth = 1;
+      b.strokeRect(x1 + 0.5, y1 + 0.5, x2 - x1 - 1, y2 - y1 - 1);
+      b.fillStyle = pal.lit;
+      for (let x = x1 + 2; x < x2 - 1; x += 4) { b.fillRect(x, y1 + 1, 1, 2); b.fillRect(x, y2 - 3, 1, 2); }
+    },
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.60, 0.18),
+    // a LIGHT grid, flat: mortar reads lighter than the brick at every depth down the wall, and
+    // there is deliberately no shadow band — that is SHINGLE's move, and it is what separates them
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      coursedVein(fg, w, h, vx, vy, {
+        ch: BRK, uw: BRW, bedH: 1,
+        bed: 'rgba(255,238,214,0.17)', joint: 'rgba(255,238,214,0.13)'
+      }, topOf);
+    }
+  };
+
+  /* STONE — rubble masonry, the cottage/keep. The opposite discipline to BRICK: NOTHING lines up.
+     Course height varies, joints land where the hash says, and that irregularity is the entire read.
+     Any regular pitch that survives here turns it back into brick. */
+  const hullStone = {
+    dress(b, pal, x, y, w, h) {
+      const px = boxed(b, x, y, x + w, y + h);
+      for (let gy = courseAt(y, 6); gy < y + h; gy += 6) {
+        const m = gy + 5;
+        if (m >= y && m < y + h) { b.fillStyle = pal.dk; px(x, m, w, 1); }
+        for (let gx = courseAt(x, 8); gx < x + w; gx += 8) {
+          const r = h2(gx, gy, 'stn');
+          if (r % 3) { b.fillStyle = pal.dk; px(gx + (r % 5), gy, 1, 5); }
+          if (r % 7 === 0) { b.fillStyle = pal.lit; px(gx + 1, gy + 1, 2, 1); }   // a caught highlight
+        }
+      }
+    },
+    rim(b, pal, x1, y1, x2, y2) {
+      // dressed quoins — the squared corner stones a rubble wall is always finished with
+      b.fillStyle = pal.dk; b.strokeStyle = pal.dk; b.lineWidth = 1;
+      b.strokeRect(x1 + 0.5, y1 + 0.5, x2 - x1 - 1, y2 - y1 - 1);
+      for (const [qx, qy] of [[x1 + 1, y1 + 1], [x2 - 7, y1 + 1], [x1 + 1, y2 - 7], [x2 - 7, y2 - 7]]) {
+        b.fillStyle = pal.lit; b.fillRect(qx, qy, 6, 6);
+        b.fillStyle = pal.rim; b.fillRect(qx + 1, qy + 1, 4, 4);
+      }
+    },
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.64, 0.14),
+    /* NOTHING LINES UP — that is the whole material, and the first pass failed it by stepping a
+       fixed 6×8 grid, which is just brick with the mortar turned off. The bed line now wobbles
+       inside its course and the joints jitter inside their cell.
+       THE JITTER MUST BE A PURE FUNCTION OF ABSOLUTE COORDS, never an accumulation: a `wy += ch`
+       walk with a hashed ch starts from a different place in every chunk and the whole wall
+       desynchronises across chunk seams. Fixed pitch, hashed OFFSET — parity-safe irregularity. */
+    veins(fg, pal, w, h, vx, vy, topOf) {
+      const px = boxed(fg, 0, 0, w, h);
+      const runs = runsOf(topOf, w, courseAt(vy, 7) - vy);
+      for (let k = 0; k < Math.ceil(h / 7) + 2; k++) {
+        const drop = h2(0, k, 'stnh') % 3;                   // the bed wanders 0..2 inside its course
+        fg.fillStyle = 'rgba(0,0,0,0.46)'; courseLine(px, runs, k, 7, 6 - drop, 1);
+        for (const rr of runs) {
+          const yTop = rr[2] + k * 7;
+          for (let wx = courseAt(vx + rr[0], 9); wx < vx + rr[0] + rr[1]; wx += 9) {
+            const r = h2(wx, k, 'stnj');
+            if (r % 5 === 0) continue;                       // not every cell carries a joint
+            fg.fillStyle = 'rgba(0,0,0,0.44)'; px(wx - vx + (r % 7), yTop, 1, 6 - drop);
+            if (r % 4 === 0) { fg.fillStyle = 'rgba(255,250,240,0.10)'; px(wx - vx + 2, yTop + 1, 3, 1); }
+          }
+        }
+      }
+    }
+  };
+
+  /* STUCCO — rendered plaster. The one material whose identity is the ABSENCE of pattern: a broad
+     flat field, a mottle too faint to count as texture, and crisp quoins at the corners doing all the
+     structural talking. Resist adding coursing here; the moment it has courses it is just pale brick. */
+  const hullStucco = {
+    dress(b, pal, x, y, w, h) {
+      for (let gy = y; gy < y + h; gy += 2) for (let gx = courseAt(x, 3); gx < x + w; gx += 3) {
+        if (gx < x) continue;
+        const r = h2(gx, gy, 'stc');
+        if (r % 5) continue;
+        b.fillStyle = (r % 2) ? U.shade(pal.base, 0.07) : U.shade(pal.base, -0.09);
+        b.fillRect(gx, gy, 2, 1);
+      }
+    },
+    rim(b, pal, x1, y1, x2, y2) {
+      b.fillStyle = pal.lit; b.fillRect(x1, y1, x2 - x1, 2);            // the sunlit render lip
+      b.fillStyle = pal.seam; b.fillRect(x1, y2 - 2, x2 - x1, 2);
+      for (const [qx, qy] of [[x1 + 1, y1 + 1], [x2 - 6, y1 + 1], [x1 + 1, y2 - 8], [x2 - 6, y2 - 8]]) {
+        b.fillStyle = pal.lit; b.fillRect(qx, qy, 5, 7);
+        b.fillStyle = pal.rim; b.fillRect(qx + 1, qy + 1, 3, 5);
+      }
+    },
+    // the one shell that is ONLY its ramp — no veins at all. That is the material, not an omission.
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.66, 0.26),
+    veins: null
+  };
+
+  /* CURTAIN — a glass curtain wall. The tower, and the reason a mixed station can read as a CITY:
+     put one of these beside two cabins and the skyline does the storytelling. Vertical mullions on a
+     tight pitch are the whole material — glass itself is just the dark gap between them. */
+  const hullCurtain = {
+    dress(b, pal, x, y, w, h) {
+      b.fillStyle = U.shade(pal.base, -0.34); b.fillRect(x, y, w, h);
+      for (let gx = courseAt(x, 6); gx < x + w; gx += 6) {
+        if (gx < x) continue;
+        b.fillStyle = pal.rim; b.fillRect(gx, y, 1, h);
+      }
+      for (let gy = courseAt(y, 10); gy < y + h; gy += 10) {
+        if (gy < y) continue;
+        b.fillStyle = pal.lit; b.fillRect(x, gy, w, 1);       // the spandrel band between floors
+      }
+    },
+    rim(b, pal, x1, y1, x2, y2) {
+      b.fillStyle = pal.lit; b.lineWidth = 1; b.strokeStyle = pal.lit;
+      b.strokeRect(x1 + 0.5, y1 + 0.5, x2 - x1 - 1, y2 - y1 - 1);
+      b.fillStyle = pal.rim; b.fillRect(x1 + 2, y1 + 2, 2, y2 - y1 - 4); b.fillRect(x2 - 4, y1 + 2, 2, y2 - y1 - 4);
+    },
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.76, 0.10),
+    veins(fg, pal, w, h, vx) {
+      const px = boxed(fg, 0, 0, w, h);
+      // mullions catch what light there is — the ONE place a hull material paints brighter than base
+      fg.fillStyle = 'rgba(210,224,255,0.15)';
+      for (let x = 6 - (vx % 6); x < w; x += 6) px(x, 0, 1, h);
+      fg.fillStyle = 'rgba(0,0,0,0.30)';
+      for (let x = 3 - (vx % 6); x < w; x += 6) px(x, 0, 2, h);
+    }
+  };
+
+  /* HEDGE — a clipped garden wall. Pairs with the interior HEDGE wall material, so a room can be
+     green inside and out. Foliage is the one shell with no straight lines at all: the silhouette
+     still has to be the footprint (the station's geometry is not negotiable), so all the irregularity
+     has to live in the speckle. */
+  const hullHedge = {
+    dress(b, pal, x, y, w, h) {
+      const px = boxed(b, x, y, x + w, y + h);
+      for (let gy = y; gy < y + h; gy++) for (let gx = courseAt(x, 2); gx < x + w; gx += 2) {
+        const r = h2(gx, gy, 'hdg');
+        if (r % 3 === 0) { b.fillStyle = U.shade(pal.base, 0.16); px(gx, gy, 1, 1); }
+        else if (r % 5 === 0) { b.fillStyle = U.shade(pal.base, -0.30); px(gx, gy, 2, 1); }
+      }
+    },
+    rim(b, pal, x1, y1, x2, y2) {
+      b.fillStyle = U.shade(pal.base, 0.26); b.fillRect(x1, y1, x2 - x1, 2);   // the clipped top catches the light
+      b.fillStyle = U.shade(pal.base, -0.44); b.fillRect(x1, y2 - 2, x2 - x1, 2);
+    },
+    bands: (pal, skirt) => ramp6(pal, skirt, -0.70, 0.20),
+    veins(fg, pal, w, h, vx, vy) {
+      const px = boxed(fg, 0, 0, w, h);
+      for (let gy = 0; gy < h; gy++) for (let gx = 0; gx < w; gx += 2) {
+        const r = h2(gx + vx, gy + vy, 'hdgv');
+        if (r % 4 === 0) { fg.fillStyle = 'rgba(0,0,0,0.34)'; px(gx, gy, 2, 1); }
+        else if (r % 11 === 0) { fg.fillStyle = 'rgba(190,255,190,0.07)'; px(gx, gy, 1, 1); }
+      }
+    }
+  };
+
+  const HULL_RECIPES = {
+    station: hullStation, timber: hullTimber, clapboard: hullClapboard, shingle: hullShingle,
+    brick: hullBrick, stone: hullStone, stucco: hullStucco, curtain: hullCurtain, hedge: hullHedge
+  };
+
   /* how wide the LIT TOP SURFACE is on a wall that is not extruded up-screen. Hard-clamped to
      pad-1 — past that the crown falls outside the ambient plate and burns against the starfield
      (see the WALL.sideCap note).
@@ -1639,44 +2275,103 @@ const StationBake = (() => {
     }
   }
 
+  /* THE SKIRT — the tall exterior wall seen from outside, and the surface that carries a hull skin.
+     It renders at its RAW baked tones: the ambient mask deliberately stops at the floor line, so
+     whatever a recipe paints here is what you see, unlit and unmediated.
+
+     ---- ONE SKIRT PER SKIN, NOT ONE PER STATION (2026-08-05) ----
+     This was a single silhouette over every footprint at once, which is correct while the shell is
+     one material: adjacent rooms merge into one unbroken wall with no seam between them, and that
+     merge is exactly what made a station read as ONE building. It is also what has to give for a
+     station to read as SEVERAL. Footprints are grouped by hull KEY (material + hue) and each group
+     stamps its own silhouette, so same-skin neighbours still merge — the old behaviour survives
+     untouched for any station wearing one skin — while a timber cabin beside a brick house each get
+     their own wall and their own corner. That boundary between two skirts IS the street.
+
+     Groups composite `destination-over` in G.allRects order, i.e. under everything already painted,
+     so a neighbour's skirt can never cover a plate that is already down; between two skirts meeting
+     in open void, first-drawn wins, deterministically. Grouping reads only room ids and never the
+     viewport, so a chunk bake groups identically to a monolithic one (chunk-parity, the property
+     stationbake.chunk.test.js exists to defend). */
+  /* PER-COLUMN WALL TOP — for each canvas column, the row where this group's exterior wall begins
+     (one past the silhouette's lowest opaque pixel), or -1 where the group has no wall at all.
+
+     THIS IS WHAT MAKES A MATERIAL TURN A CORNER (2026-08-05, Andrew: "any way they can curve around
+     the edges so it makes a bit more sense?"). The skirt's own DEPTH ramp already follows the hull —
+     it is the silhouette stamped downward, so it curves for free, and that is why the untextured
+     station shell always looked right at a rounded corner. The veins did not: they were ruled in
+     flat absolute rows and then clipped by the curve, so every log course and brick bed ended at a
+     different x and the corner read as a RAGGED STAIRCASE of sliced units beside a wall that curved
+     perfectly. Measuring each course down from its own column's wall top instead bends the whole
+     texture with the hull, and the wall runs out into the corner the way masonry actually does.
+
+     Falls back to null where pixels can't be read back (the headless canvas mock), exactly like
+     ditherLight — coursed materials then paint flat absolute rows, which is what they did before,
+     so both bake paths still agree with each other and chunk parity is unaffected. */
+  function skirtTops(sil, w, h) {
+    const g = sil.getContext('2d');
+    if (typeof g.getImageData !== 'function') return null;
+    let img;
+    try { img = g.getImageData(0, 0, w, h); } catch (e) { return null; }
+    const d = img.data, out = new Int32Array(w);
+    for (let x = 0; x < w; x++) {
+      let last = -1;
+      for (let y = h - 1; y >= 0; y--) if (d[((y * w + x) << 2) + 3]) { last = y; break; }
+      out[x] = last < 0 ? -1 : last + 1;
+    }
+    return out;
+  }
+
   function bakeHullExtrusion(b) {
     const skirt = Math.max(4, Math.round(WALL.skirt));
     // vertical working margin: a footprint whose bottom edge sits just ABOVE this viewport
     // must still drop its skirt INTO it (and one ending just below must not lose its lip),
     // so the silhouette canvases are taller than the viewport by the full skirt reach.
-    const M = skirt + 4;
-    const sil = canvas(CW, CH + M * 2);
-    const g = sil.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    g.translate(-VX, -(VY - M));
-    g.fillStyle = '#fff';
-    for (const r of G.allRects) g.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
-    for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
-    const f = canvas(CW, CH + M * 2);
-    const fg = f.getContext('2d');
-    const tmp = canvas(CW, CH + M * 2);
+    const M = skirt + 4, CH2 = CH + M * 2;
+    const groups = new Map();
+    for (const r of G.allRects) {
+      const k = hullKeyOf(r.z);
+      let grp = groups.get(k);
+      if (!grp) { grp = { z: r.z, rects: [] }; groups.set(k, grp); }
+      grp.rects.push(r);
+    }
+    const tmp = canvas(CW, CH2);
     const tg = tmp.getContext('2d');
-    const stamp = (dy, c) => {
-      tg.clearRect(0, 0, CW, CH + M * 2); tg.drawImage(sil, 0, dy);
-      tg.globalCompositeOperation = 'source-in'; tg.fillStyle = c; tg.fillRect(0, 0, CW, CH + M * 2);
-      tg.globalCompositeOperation = 'source-over'; fg.drawImage(tmp, 0, 0);
-    };
-    // the tall exterior wall seen from outside: banded panels darkening toward the void
-    // (renders at these raw tones — the ambient mask deliberately stops at the floor line)
-    stamp(skirt, '#0b0a07');
-    stamp(skirt - 1, '#100e09');
-    stamp(Math.max(3, Math.round(skirt * 0.72)), '#16130d');
-    stamp(Math.max(2, Math.round(skirt * 0.45)), '#1f1b12');
-    stamp(3, '#2a251a');
-    stamp(1, '#3f3a2c');
-    fg.globalCompositeOperation = 'destination-out'; fg.drawImage(sil, 0, 0);
-    fg.globalCompositeOperation = 'source-atop';
-    fg.fillStyle = 'rgba(0,0,0,0.35)';
-    for (let x = 5 - (VX % 28); x < CW; x += 28) fg.fillRect(x, 0, 1, CH + M * 2);
-    fg.globalCompositeOperation = 'source-over';
-    b.globalCompositeOperation = 'destination-over';
-    b.drawImage(f, VX, VY - M);
-    b.globalCompositeOperation = 'source-over';
+    for (const grp of groups.values()) {
+      const pal = hullPal(grp.z);
+      const recipe = HULL_RECIPES[hullMatOf(grp.z)] || hullStation;
+      const sil = canvas(CW, CH2);
+      const g = sil.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      g.translate(-VX, -(VY - M));
+      g.fillStyle = '#fff';
+      for (const r of grp.rects) g.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
+      /* THE CORNER ERASE RUNS OVER *ALL* CHAMFERS, NOT THIS GROUP'S. A chamfer is cut from the
+         station's silhouette, and a neighbouring room's rounded corner takes a bite out of the void
+         this group's skirt would otherwise fill. Filtering to the group's own chamfers put a square
+         shoulder of skirt back into every corner a differently-clad neighbour had rounded. */
+      for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
+      const f = canvas(CW, CH2);
+      const fg = f.getContext('2d');
+      const stamp = (dy, c) => {
+        tg.clearRect(0, 0, CW, CH2); tg.drawImage(sil, 0, dy);
+        tg.globalCompositeOperation = 'source-in'; tg.fillStyle = c; tg.fillRect(0, 0, CW, CH2);
+        tg.globalCompositeOperation = 'source-over'; fg.drawImage(tmp, 0, 0);
+      };
+      for (const [dy, c] of (recipe.bands || rampBands)(pal, skirt)) stamp(dy, c);
+      fg.globalCompositeOperation = 'destination-out'; fg.drawImage(sil, 0, 0);
+      if (recipe.veins || recipe.seam) {
+        fg.globalCompositeOperation = 'source-atop';
+        // world-coord keying: the canvas' top-left is world (VX, VY - M), so a recipe adding these
+        // offsets gets marks that land on the same world pixel in every chunk that shows them
+        if (recipe.veins) recipe.veins(fg, pal, CW, CH2, VX, VY - M, skirtTops(sil, CW, CH2));
+        panelSeam(fg, CW, CH2, VX, recipe.seam == null ? SHARED_SEAM : recipe.seam);
+      }
+      fg.globalCompositeOperation = 'source-over';
+      b.globalCompositeOperation = 'destination-over';
+      b.drawImage(f, VX, VY - M);
+      b.globalCompositeOperation = 'source-over';
+    }
   }
 
   /* ORDERED DITHER — the light map is the one surface still painted in smooth alpha falloff,
@@ -1851,9 +2546,15 @@ const StationBake = (() => {
     const baseCv = canvas(CW, CH);
     const b = translatedContext(baseCv);
 
+    /* THE EXTERIOR SHELL, PER FOOTPRINT (2026-08-05). Every pass below used to run once for the whole
+       station off a single constant; each is now driven by the owning room's HULL_RECIPES entry.
+       THE PASS ORDER IS UNCHANGED AND MUST STAY THAT WAY — plates, then the corner erase, then
+       corridor plates, then dressing, then rims — because the erase is what rounds the corners and
+       anything painted after it has to be source-atop to respect them. */
+    const plateRect = r => [r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2];
+    const plate = r => { const [x, y, w, h] = plateRect(r); b.fillStyle = hullPal(r.z).base; b.fillRect(x, y, w, h); };
+
     // hull plate behind ROOMS first (notches between distant rooms show stars)
-    const plate = r => b.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
-    b.fillStyle = hullC;
     for (const r of G.allRects) if (!G.isCorridor(r.z)) plate(r);
 
     // chamfer hull spandrel erase + curved rim — BEFORE corridor connectors, so a corridor kissing a
@@ -1861,34 +2562,43 @@ const StationBake = (() => {
     for (const [ccx, ccy, kind] of G.chamfers) {
       const A = CORNER[kind], ax = (ccx + A.cx) * T, ay = (ccy + A.cy) * T;
       eraseSpandrel(b, kind, ax, ay, HR);
-      b.strokeStyle = '#28241b'; b.lineWidth = 2; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
+      // the arc belongs to the room the corner was cut from — same rule the interior chamfer pass
+      // already follows for its wall palette, or a clad room reverts to shell-grey at its corners
+      b.strokeStyle = hullPal(G.zoneGrid[G.idx(ccx, ccy)]).arc;
+      b.lineWidth = 2; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
     }
 
     // hull plate behind CORRIDORS (connectors stay intact through the corner erase)
-    b.fillStyle = hullC;
     for (const r of G.allRects) if (G.isCorridor(r.z)) plate(r);
 
-    // panel seam grid over all hull pixels
+    /* the material's own texture over each footprint's plate. SOURCE-ATOP *and* clipped: atop keeps a
+       mark off the spandrels the corner pass just erased (paint them and every rounded corner grows a
+       square shoulder back), and the clip keeps one room's texture out of a neighbour's plate where
+       their pads overlap. Recipes phase-lock their marks to absolute coords, so two adjacent rooms
+       wearing the same skin still read as one continuous wall. */
     b.globalCompositeOperation = 'source-atop';
-    b.strokeStyle = '#231f17'; b.lineWidth = 1;
-    for (let x = 5; x < W; x += 28) { b.beginPath(); b.moveTo(x + .5, 0); b.lineTo(x + .5, H); b.stroke(); }
-    for (let y = 9; y < H; y += 26) { b.beginPath(); b.moveTo(0, y + .5); b.lineTo(W, y + .5); b.stroke(); }
+    for (const r of G.allRects) {
+      const recipe = HULL_RECIPES[hullMatOf(r.z)] || hullStation;
+      if (!recipe.dress) continue;
+      const [x, y, w, h] = plateRect(r);
+      b.save(); b.beginPath(); b.rect(x, y, w, h); b.clip();
+      recipe.dress(b, hullPal(r.z), x, y, w, h);
+      b.restore();
+    }
     b.globalCompositeOperation = 'source-over';
 
     // riveted rim + bolts PER footprint — each room/corridor frames itself, so the void between
     // distant (or mid-build, not-yet-connected) rooms stays open instead of one rim crossing space.
-    // SOURCE-ATOP like the seam grid above: the rim is a rectangle, but the hull it frames has had
+    // SOURCE-ATOP like the dressing above: the rim is a rectangle, but the hull it frames has had
     // its rounded corners erased by the chamfer pass. Painting it unclipped left the rim's square
     // corner (and its bolts) hanging in empty space beside every rounded corner — the little
     // detached "ladder" fragments. Clipping to existing hull pixels is the whole fix.
     b.globalCompositeOperation = 'source-atop';
     b.lineWidth = 2;
     for (const r of G.allRects) {
-      const x1 = r.x1 * T - pad, y1 = r.y1 * T - pad, x2 = (r.x2 + 1) * T + pad, y2 = (r.y2 + 1) * T + pad;
-      b.strokeStyle = '#28241b'; b.strokeRect(x1 + 1, y1 + 1, x2 - x1 - 2, y2 - y1 - 2);
-      b.fillStyle = '#302b21';
-      for (let x = x1 + 6; x < x2; x += 18) { b.fillRect(x, y1 + 2, 2, 2); b.fillRect(x, y2 - 4, 2, 2); }
-      for (let y = y1 + 6; y < y2; y += 18) { b.fillRect(x1 + 2, y, 2, 2); b.fillRect(x2 - 4, y, 2, 2); }
+      const [x, y, w, h] = plateRect(r);
+      const recipe = HULL_RECIPES[hullMatOf(r.z)] || hullStation;
+      (recipe.rim || hullStation.rim)(b, hullPal(r.z), x, y, x + w, y + h);
     }
     b.globalCompositeOperation = 'source-over';
 
@@ -1909,6 +2619,8 @@ const StationBake = (() => {
       // a rounded corner belongs to the room it was cut from — take that room's wall palette so a
       // coloured room's corner arc doesn't revert to the old universal brown-grey.
       const cPal = wallPal(G.zoneGrid[G.idx(ccx, ccy)]);
+      // ...and the SHELL it is cut out of, for the rows this pass has to fill back with hull
+      const cHull = hullPal(G.zoneGrid[G.idx(ccx, ccy)]).base;
       /* ONE INTEGER CURVE, SHARED BY EVERY LAYER (2026-07-24). This corner used to be six
          anti-aliased arc() strokes at six different radii (T+2.25, T-2.5, T-5.5, HR-2, T-5..T)
          plus a clip()+fill at radius T for the deck cut — so the deck ended on one curve, the wall
@@ -1928,7 +2640,7 @@ const StationBake = (() => {
       const aIn = Math.max(1, Rc - FACEW), bIn = Math.max(1, Rc - vFace);
       eachCornerRow(kind, ax, ay, Rc, (py, edge) => {
         const ady = Math.abs(py + 0.5 - ay);
-        if (edge == null) { fill(X, py, T, 1, hullC); return; }       // row lies wholly outside the curve
+        if (edge == null) { fill(X, py, T, 1, cHull); return; }       // row lies wholly outside the curve
         /* THE INNER BOUNDARY IS AN ELLIPSE, NOT A CIRCLE — this is the whole reason corners never
            quite met their walls. The deck's edge at a rounded corner has to land on TWO straight
            walls: x = Xroom + FACEW on the side wall (4px) and y = Yroom + NFACE on the north wall
@@ -1949,7 +2661,7 @@ const StationBake = (() => {
         const inner = hasInner ? (sgnX < 0 ? Math.round(ax - dxIn) : Math.round(ax + dxIn))
                                : (sgnX < 0 ? X + T : X);
         const clamp = (x0, x1, c) => fill(Math.max(X, x0), py, Math.min(X + T, x1) - Math.max(X, x0), 1, c);
-        if (sgnX < 0) clamp(X, edge, hullC); else clamp(edge + 1, X + T, hullC);      // 1. cut the deck
+        if (sgnX < 0) clamp(X, edge, cHull); else clamp(edge + 1, X + T, cHull);      // 1. cut the deck
         if (sgnX < 0) clamp(edge - 3, edge, outerBand); else clamp(edge + 1, edge + 4, outerBand);
         /* 2. the face: BODY, then a shadowed foot where it meets the deck. Deliberately NO lit top
            course in here — the straight wall's lit course sits 14px higher, up in the crown, so its
@@ -2039,6 +2751,7 @@ const StationBake = (() => {
     }
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
     wallPalCache = null;   // per-room wall palettes are derived from THIS geometry — never reuse across bakes
+    hullPalCache = null;   // ...and so are the per-room exterior shells
     viewportRects = [];    // ...and so are the window holes the wall pass punches
     crownRects = [];       // ...and the crown rects the ambient cut reads back
     crownReach = new Map();   // ...and the corner crown's measured reach, which the mask erase reads back
@@ -2255,7 +2968,44 @@ const StationBake = (() => {
     } finally { T = prevT; viewportRects = prevRects; }
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, sampleWall, CHUNK_PX, LIGHT, WALL, DEPTH };
+  /* HULL SAMPLE — the exterior counterpart of sampleWall, and the one that has to work hardest,
+     because a hull's identity is split across two surfaces that never touch: the plate ring seen
+     from above and the skirt seen face-on. A chip showing only the ring would promise the wrong
+     material entirely (TIMBER's ring and CLAPBOARD's are near-identical; their skirts are not).
+     So the chip paints BOTH, stacked: the dressed plate on top, its rim, then the real band ramp
+     below it — the same recipe output the station bakes, never a hand-drawn mock.
+     `base` may be null, which is the honest way to ask for the shell's own tone. */
+  function sampleHull(ctx, matId, base, cols, height, tile) {
+    const recipe = HULL_RECIPES[matId] || hullStation;
+    const prevT = T;
+    T = tile || 12;
+    try {
+      const pal = base ? derivedHullPal(base) : LEGACY_HULL;
+      const w = cols * T, h = Math.max(12, height || 30);
+      const ringH = Math.max(6, Math.min(12, Math.round(h * 0.38)));
+      ctx.fillStyle = pal.base; ctx.fillRect(0, 0, w, ringH);
+      if (recipe.dress) recipe.dress(ctx, pal, 0, 0, w, ringH);
+      if (recipe.rim) recipe.rim(ctx, pal, 0, 0, w, ringH);
+      /* the skirt, resolved from the SAME band list the bake stamps. A band at dy owns the rows
+         between its own dy and the next smaller one, so painting them in order — each as a rect
+         from the ring down to its dy — reproduces the stack exactly (see the SKIRT BANDS note). */
+      const skirtH = h - ringH;
+      const bands = (recipe.bands || rampBands)(pal, skirtH);
+      for (const [dy, c] of bands) {
+        const d = Math.max(1, Math.min(skirtH, Math.round(dy)));
+        ctx.fillStyle = c; ctx.fillRect(0, ringH, w, d);
+      }
+      // veins belong to the skirt ONLY — in the bake they are source-atop on the skirt canvas and
+      // cannot reach the plate. Unclipped here they'd streak the ring with the skirt's rhythm.
+      if (recipe.veins) {
+        ctx.save(); ctx.beginPath(); ctx.rect(0, ringH, w, skirtH); ctx.clip(); ctx.translate(0, ringH);
+        recipe.veins(ctx, pal, w, skirtH, 0, 0);
+        ctx.restore();
+      }
+    } finally { T = prevT; }
+  }
+
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, sampleWall, sampleHull, CHUNK_PX, LIGHT, WALL, DEPTH };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;

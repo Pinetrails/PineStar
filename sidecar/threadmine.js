@@ -56,9 +56,21 @@
   // enough that an INVENTED quote (words never spoken) still fails, tolerant enough that real re-spacing passes.
   function normText(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
 
+  const KNOWN_MAX = 20;           // how many already-tracked titles the prompt may list (bounded, newest-first)
+  // the "we already have this one" block, or '' when there is nothing to say. Bounded on every axis.
+  function knownBlock(titles) {
+    const list = (Array.isArray(titles) ? titles : [])
+      .map(t => String(t == null ? '' : t).replace(/\s+/g, ' ').trim())
+      .filter(Boolean).slice(-KNOWN_MAX).reverse()
+      .map(t => t.length > MAX_TITLE ? (t.slice(0, MAX_TITLE - 1) + '…') : t);
+    if (!list.length) return '';
+    return 'ALREADY ON THE BOARD — these threads are already tracked. Do NOT list any of them again, or a ' +
+      'restatement of one:\n' + list.map(t => '- ' + t).join('\n') + '\n';
+  }
+
   // build the mining prompt: the recent USER/AGENT exchange (system + tool turns stripped), tail-capped. Also
   // returns the flat conversation text used for the verbatim-quote veto (so the caller need not rebuild it).
-  function buildPrompt(messages, cap) {
+  function buildPrompt(messages, cap, knownTitles) {
     cap = cap || PROMPT_CAP;
     const turns = [];
     for (const msg of (Array.isArray(messages) ? messages : [])) {
@@ -91,7 +103,14 @@
       'QUOTE: <verbatim words the Commander used — copy word-for-word from the text; never paraphrase or invent>\n' +
       'DO: <the concrete first deliverable someone could produce for it>\n' +
       'CONFIDENCE: <high | medium | low — that the Commander would genuinely want this picked up>\n' +
-      'List at most 2, best first. Most conversations contain NO real threads — when in doubt, reply NONE.\n\n' + body;
+      'List at most 2, best first. Most conversations contain NO real threads — when in doubt, reply NONE.\n' +
+      /* ALREADY-TRACKED RIDES THE PROMPT (2026-08-05). mine() has always held a fingerprint map of every live
+         thread and every permanently-declined one — and used it ONLY to drop candidates after the reply landed.
+         A long conversation that re-mentions a thread already on the board therefore paid for a mining call that
+         could only ever return duplicates. The model gets the list now. The post-hoc fingerprint filter is
+         untouched and still authoritative — it is the thing that actually protects the board, and it also covers
+         the DECLINED half, which is stored as fingerprints with no title to show and so cannot be listed here. */
+      knownBlock(knownTitles) + '\n' + body;
     return { prompt: prompt, conversation: body, userText: userTurns.join('\n') };
   }
 
@@ -124,6 +143,9 @@
        · redact  — secret scrubber applied to title + quote (defense in depth).
        · known   — fingerprint→reason map from threadsStore.knownFingerprints() (live threads + declined denylist);
                    a candidate whose fingerprint is present is dropped (dedup at the source, like study's declined).
+       · knownTitles — the READABLE titles of the live threads (threadsStore.read().threads). Listed in the prompt
+                   so the model does not spend the call re-mining the board. Titles only: the declined half is
+                   stored as bare fingerprints, so it has nothing to show and stays post-hoc-only (honestly).
        · max     — cap on proposals.
      proposals: { id, title, spec (the quote), fingerprint, sourceRef, sourceRunId, createdAt }. */
   async function mine(run, opts) {
@@ -135,7 +157,7 @@
     const propose = opts.propose;
     if (typeof propose !== 'function') return { proposals: [] };
 
-    const built = buildPrompt(run.messages, PROMPT_CAP);
+    const built = buildPrompt(run.messages, PROMPT_CAP, opts.knownTitles);
     const convo = normText(built.conversation);   // the haystack for the verbatim-quote veto
     const spoken = normText(built.userText || '');   // the Commander's OWN words (the "you said" bar)
     let raw;
