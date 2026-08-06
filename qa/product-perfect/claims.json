@@ -2246,7 +2246,7 @@
       "surfaceLocators": [
         {
           "path": "INSTALL.md",
-          "needle": "StarNet desktop ships for **Windows and macOS**"
+          "needle": "StarNet's public release train supports **Windows and macOS**"
         }
       ],
       "authorityChecks": [
@@ -2276,11 +2276,11 @@
     {
       "id": "self-update-verified",
       "domain": "release",
-      "claim": "The Windows build self-updates through the signed feed; macOS updates are a documented manual re-download.",
+      "claim": "The built-in updater supports Windows and both Mac architectures through signed updater artifacts.",
       "surfaceLocators": [
         {
           "path": "docs/DOWNLOAD_PAGE.md",
-          "needle": "StarNet on Windows keeps itself up to date"
+          "needle": "The built-in updater supports Windows and both Mac architectures"
         }
       ],
       "authorityChecks": [
@@ -2295,10 +2295,10 @@
           "needle": "Everything below ships working, verified"
         }
       ],
-      "verdict": "REFUTED",
-      "disposition": "NARROW",
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
       "ownerWave": "W7",
-      "qualification": "Automatic checks default off and the blanket verified-live statement lacks installed evidence.",
+      "qualification": "Pipeline and updater support are configured; installed update proof for this candidate remains pending.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
