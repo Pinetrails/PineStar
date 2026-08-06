@@ -61,8 +61,12 @@ A.ok(/if \(slow && isHeroRun && runId\) \{ queueStudy\(runId, agentId\); queueTh
   'a blocked moment QUEUES this run\'s study + thread (the pre-spine listeners deferred them; returning dropped them forever)');
 
 // the pass asks the PURE spine who speaks, and exactly one candidate ever fires
-A.ok(/const winner = Recommend\.pick\(cands, recUnderstanding\(\)\);/.test(passBody),
+/* one-memory lane (2026-08-05): the pick now runs over `live` — the candidate list AFTER the shared
+   cross-surface declined memory has removed anything the Commander already waved off elsewhere. */
+A.ok(/const winner = Recommend\.pick\(live, recUnderstanding\(\)\);/.test(passBody),
   'the pass ranks every candidate through Recommend.pick (one voice, best-first, or silence)');
+A.ok(/if \(recAlreadyDeclined\(c\)\)/.test(passBody),
+  '…and the list it ranks has already dropped explicitly-declined proposals (the one memory)');
 A.eq((passBody.match(/winner\.fire\(\)/g) || []).length, 1, 'exactly ONE candidate fires per pass (never two beats)');
 A.ok(/if \(!winner\) return;/.test(passBody), 'no citable candidate means SILENCE, not a fallback beat');
 

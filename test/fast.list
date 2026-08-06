@@ -292,6 +292,7 @@ test/beat-coordination.test.js
 test/beatcard.test.js
 test/recommend.test.js
 test/rec-truth-consistency.test.js
+test/rec-one-memory.test.js
 test/recquality.test.js
 test/recqualitystore.test.js
 test/quests.test.js

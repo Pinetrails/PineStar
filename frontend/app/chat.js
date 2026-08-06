@@ -4580,11 +4580,49 @@ const Chat = (() => {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.weightFor) return RecQualityStore.weightFor(kind, dim); } catch (_) {}
     return null;
   }
+  /* ── THE ONE MEMORY (one-memory lane, 2026-08-05) ────────────────────────────────────────────────────
+     Every verdict below now lands in BOTH places, and they answer different questions:
+       · RecQualityStore — "how well does THIS CHANNEL do?" Browser-local, an EWMA over outcomes, read only here.
+       · RecLedger       — "did the Commander already answer THIS THING, anywhere?" The durable cross-surface
+                           ledger the bay, the scout, the night shift, the quest minter and reflection all
+                           already write and read. Until this lane it had never heard a single COMMS verdict, so
+                           an idea waved off at a card could be built overnight and shelved the next morning.
+     Both are fail-open and neither is load-bearing for the card itself: a station with no ledger reachable keeps
+     behaving exactly as it did. recAccept/recDecline stay the ONE choke point every channel already calls. */
   function recAccept(channel, dim, spawnsWork, id) {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteAccept) RecQualityStore.noteAccept({ channel: channel, dim: dim || '', spawnsWork: !!spawnsWork, id: id || '' }); } catch (_) {}
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.accepted) RecLedger.accepted(channel); } catch (_) {}
   }
   function recDecline(channel, dim, deferred) {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteDecline) RecQualityStore.noteDecline({ channel: channel, dim: dim || '' }, !!deferred); } catch (_) {}
+    try {
+      if (typeof RecLedger !== 'undefined' && RecLedger.declined) {
+        // a REAL decline changes what the whole station may propose next, so re-read the shared memory; a
+        // deferral ("not now") changes nothing about what is allowed and earns no request.
+        if (RecLedger.declined(channel, !!deferred) && !deferred && RecLedger.refresh) RecLedger.refresh(true);
+      }
+    } catch (_) {}
+  }
+  // the ledger's learned weight for a candidate — the Commander's own decayed accept/decline history for this
+  // kind, across every surface. Absent module / cold ledger / personalization paused → 0 → no adjustment at all.
+  function recPreferenceOf(kind, dim) {
+    try {
+      if (typeof RecLedger !== 'undefined' && RecLedger.preferenceOf) {
+        return RecLedger.preferenceOf(kind, [String(kind || '')].concat(dim ? ['dim:' + String(dim)] : []));
+      }
+    } catch (_) {}
+    return 0;
+  }
+  /* THE SHARED DECLINED READ, applied to the spine's own candidates. Exact normalized-title match only — the same
+     bar sidecar/declinedindex.js sets for the six server-side propose filters, and for the same stated reason: a
+     false suppression is worse than an occasional duplicate. A candidate with no title is never suppressed (there
+     is nothing to match), and an unreachable ledger suppresses nothing at all. */
+  function recAlreadyDeclined(candidate) {
+    try {
+      if (typeof RecLedger === 'undefined' || !RecLedger.isDeclined) return false;
+      const t = candidate && candidate.title;
+      return !!t && RecLedger.isDeclined(t);
+    } catch (_) { return false; }
   }
   /* ── THE STALENESS GUARD (quality loop, Q3) ──────────────────────────────────────────────────────────
      A belief that is OLD and UNCORROBORATED may not be ASSERTED in an offer ("because you said X") — the
@@ -4824,13 +4862,13 @@ const Chat = (() => {
       const weeks = Math.max(1, Math.round(stale.ageDays / 7));
       // NO strength reading on an ASK: strength discounts a weak ASSERTION, and this card asserts nothing.
       // The citation is phrased by the belief's OWN provenance — a study-observed goal was never "said".
-      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recCite(text, beliefCiteKind(belief)),
+      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recCite(text, beliefCiteKind(belief)), title: text,
                fire: () => { if (arcOnce(runId)) reconfirmCard(belief, 'goals', weeks, fp, runId); } };
     }
     // STRENGTH: the cited goal belief's OWN freshness × how well the goals dimension is corroborated. A goal the
     // Commander stated last season, with nothing since to confirm it, is a weaker thing to build an arc on.
     return { kind: 'arc', dim: 'goals', why: recCite(text, beliefCiteKind(belief)), strength: recStrengthOfBelief(belief, 'goals'),
-             fire: () => { if (arcOnce(runId)) offerArc(runId); } };
+             title: text, fire: () => { if (arcOnce(runId)) offerArc(runId); } };
   }
 
   // TRUST — the earned-autonomy offer. Cited by the REAL track record the offer was computed from.
@@ -4851,6 +4889,9 @@ const Chat = (() => {
     // read as 0..1. An offer computed from a 60%-satisfaction record is a thinner thing to propose autonomy on
     // than one computed from 95%, and now says so. Absent/unreadable → null → neutral (never a fabricated 0).
     return { kind: 'trust', why: why, streak: streak, strength: recStrengthOfPercent(pv.confidence),
+             // the ledger title names the CONFIGURATION CHANGE being offered, not an idea — this channel proposes
+             // a permission, so it can never collide with a proposal title in the shared declined memory.
+             title: offer.kind === 'grant' ? 'grant unattended file writes' : ('raise autonomy to ' + String(offer.to || '').toUpperCase()),
              fire: () => { if (beatCards.once('trust', runId)) trustCard(offer, runId); } };
   }
 
@@ -4892,7 +4933,7 @@ const Chat = (() => {
     // STRENGTH: the REAL repeat count behind the shape — a shape asked for four times is corroborated; one seen
     // once is real but thin, and says so by speaking later rather than by claiming less.
     return { kind: 'seed', why: 'you keep asking me to “' + title.toLowerCase() + '”' + (n > 1 ? ' (' + n + '×)' : ''),
-             strength: recStrengthOfCount(n), fire: () => { SeedStore.propose(); } };
+             strength: recStrengthOfCount(n), title: title, fire: () => { SeedStore.propose(); } };
   }
 
   // ROUTINE NUDGE — cited by the real hand-launch count.
@@ -4905,7 +4946,7 @@ const Chat = (() => {
     if (!nm || n < 1) return null;
     // STRENGTH: the same real hand-launch count the citation quotes (corroboration, saturating).
     return { kind: 'routine', why: 'you’ve launched ' + nm + ' ' + n + ' times by hand',
-             strength: recStrengthOfCount(n), fire: () => { RoutineNudgeStore.propose(); } };
+             strength: recStrengthOfCount(n), title: nm, fire: () => { RoutineNudgeStore.propose(); } };
   }
 
   // ADAPTIVE RECRUITMENT — cited by the recruiter's own counter-derived why (the SAME string the bay's
@@ -4925,7 +4966,11 @@ const Chat = (() => {
     // that the channels which abstain do so because there is nothing to read. This one has something to read.
     const conf = Number(pick.confidence);
     const strength = (Number.isFinite(conf) && conf > 0) ? (conf > 1 ? 1 : conf) : null;
-    return { kind: 'recruit', why: why, strength: strength, fire: () => { maybeRecruit(); } };
+    // the class the bay would summon — the same noun the curated shelf shows, so a "no thanks" here and a
+    // dismissal there are the same fact in the one memory.
+    const cls = String((pick.spec && (pick.spec.name || pick.spec.title)) || '').trim();
+    return { kind: 'recruit', why: why, strength: strength, title: cls ? ('recruit a ' + cls) : '',
+             fire: () => { maybeRecruit(); } };
   }
 
   // JUST-IN-TIME CURIOSITY — cited by the dimension it is actually targeting, phrased plainly.
@@ -4934,6 +4979,7 @@ const Chat = (() => {
     const dim = CuriosityStore.consider();
     if (!dim) return null;
     return { kind: 'curiosity', dim: dim, why: 'i still don’t know your ' + String(dimLabel(dim)).toLowerCase(),
+             title: 'learn your ' + String(dimLabel(dim)).toLowerCase(),
              fire: () => { CuriosityStore.markShown(dim); curiosityNudge(dim); } };
   }
 
@@ -4974,7 +5020,7 @@ const Chat = (() => {
     // confidence to read) and its quote comes from the run that just ended (no age to read). There is nothing
     // here the station holds, and inventing a reading would be worse than the small structural edge neutrality
     // buys it — see the strength block above, which states that residual tradeoff rather than hiding it.
-    return { kind: 'thread', why: why,
+    return { kind: 'thread', why: why, title: String(prop.spec || '').trim(),
              fire: () => { if (beatCards.once('thread', runId)) threadCard(prop, agentId, batch.runId || runId); } };
   }
 
@@ -5067,8 +5113,23 @@ const Chat = (() => {
        and the floor means it can never be silenced by quality alone: priority and the per-channel caps remain
        the law. A never-rated channel reads neutral, so nothing changes until real outcomes exist. */
     for (const c of cands) { if (c && c.quality == null) c.quality = recQualityOf(c.kind, c.dim); }
+    /* THE LEARNED PREFERENCE (one-memory lane). The same read, in the same place, from the OTHER memory: the
+       durable ledger's decayed tally of what the Commander has actually accepted and declined on every surface.
+       Two-sided and bounded (recommend.js PREF_MAX) — see that module for why this modifier, alone, may promote. */
+    for (const c of cands) { if (c && c.preference == null) c.preference = recPreferenceOf(c.kind, c.dim); }
 
-    const winner = Recommend.pick(cands, recUnderstanding());
+    /* AND THE HARD HALF OF THAT MEMORY: an offer whose exact proposal the Commander has already declined ANYWHERE
+       is not re-ranked, it is REMOVED. That is the discipline every server-side propose filter already holds, and
+       the spine was the last surface still able to re-raise a thing that had been explicitly waved off — the most
+       visible place in the product to do it, since this one interrupts. A losing candidate is dropped BEFORE the
+       queue decision below, so a suppressed turn-in is not re-queued to be suppressed again at the next run. */
+    const live = [];
+    for (const c of cands) {
+      if (recAlreadyDeclined(c)) { if (c === study) study = null; if (c === thread) thread = null; continue; }
+      live.push(c);
+    }
+
+    const winner = Recommend.pick(live, recUnderstanding());
     // DEFERRED, NEVER STARVED: a fetched turn-in that lost the moment goes back on its FIFO queue and
     // re-offers at the next task end (the pre-spine queue path, unchanged).
     if (study && winner !== study) queueStudy(runId, agentId);
@@ -5077,6 +5138,11 @@ const Chat = (() => {
     // the shared slot still has the last word: a deferred beat drained at the sweep may already hold it.
     if (lifecycle.canOffer(Recommend.slotKindOf(winner.kind)) !== 'free') return;
     try { winner.fire(); } catch (_) {}
+    /* THE IMPRESSION GOES ON THE ONE LEDGER — after fire(), never before: a row that says "shown" for a card that
+       threw on the way to the screen is the app asserting something the harness cannot prove. Channels that mint
+       their own rows (study, suggest) and the two that are not offers at all (rate, memory) are refused inside
+       RecLedger.note, so this call is unconditional here and correct for every channel. */
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.note) RecLedger.note(winner); } catch (_) {}
     // spend one unit of the session ask budget — but only for a card the station CHOSE to raise.
     if (Recommend.asksBudget && Recommend.asksBudget(winner.kind)) sessionAsks += 1;
   }
