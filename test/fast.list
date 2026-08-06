@@ -181,6 +181,7 @@ test/apiauth.test.js
 test/notebook.test.js
 test/skills.test.js
 test/skill-exchange.test.js
+test/abilities.skills-lane.test.js
 test/skills.library.test.js
 test/skills.gate.test.js
 test/slash.test.js

@@ -2473,6 +2473,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const secAgent =
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">loading agent skills…</div></div>';
+    const secExchange =
+      '<p class="sk-note sk-lib-intro">Install an open <b>SKILL.md</b> from a public HTTPS or GitHub file URL. StarNet fetches and scans it first; nothing is installed until you review the exact body and digest below. This first release imports only that single document; referenced package files remain at the source.</p>' +
+      '<div class="sk-exchange-form"><label for="sk-exchange-url">SKILL.MD SOURCE</label>' +
+        '<div class="sk-exchange-row"><input id="sk-exchange-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/blob/main/SKILL.md">' +
+        '<button id="sk-exchange-inspect" class="consent-btn" type="button">INSPECT</button></div></div>' +
+      '<div id="sk-exchange-preview" class="sk-exchange-preview"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
     /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
        Truthful by construction: if the provider has no native voice endpoint we say so rather than
        offering choices that would do nothing, and the note about WHEN a change takes effect is shown
@@ -2660,6 +2666,79 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const card = btn.closest('.sk-card'); if (!card) return;
       const opened = card.classList.toggle('open'); btn.textContent = opened ? '▾' : '▸'; sfx('click');
     }));
+  }
+
+  function scanFindingText(preview) {
+    const findings = preview && preview.scan && Array.isArray(preview.scan.findings) ? preview.scan.findings : [];
+    if (!findings.length) return 'No guard findings.';
+    const shown = findings.slice(0, 6).map(f => (f.category || 'finding') + (f.line ? ' at line ' + f.line : '') + ': ' + (f.description || f.severity || 'review needed'));
+    if (findings.length > shown.length) shown.push('+' + (findings.length - shown.length) + ' more findings in the reviewed body');
+    return shown.join(' · ');
+  }
+
+  function renderSkillExchangePreview(host, preview, agentId, opts) {
+    opts = opts || {};
+    if (!host || !preview) return;
+    const blocked = preview.guardAction === 'block';
+    const asks = preview.guardAction === 'ask';
+    const source = preview.sourceUrl || '';
+    const verdict = blocked ? 'BLOCKED' : (asks ? 'REVIEW + APPROVAL' : 'CLEAR');
+    host.innerHTML =
+      '<div class="sk-card open ' + (blocked || asks ? 'want' : 'on') + '">' +
+        '<div class="sk-card-head"><div class="sk-card-main">' +
+          '<div class="sk-name-row"><span class="sk-name">' + esc(preview.name || 'Unnamed skill') + '</span>' +
+            '<span class="sk-badge ' + (blocked || asks ? 'miss' : 'have') + '">' + verdict + '</span>' +
+            (preview.version ? '<span class="sk-badge free">v' + esc(preview.version) + '</span>' : '') + '</div>' +
+          '<div class="sk-desc">' + esc(preview.summary || '') + '</div>' +
+          '<div class="sk-stat ' + (blocked || asks ? 'want' : 'on') + '">' + esc(scanFindingText(preview)) + '</div>' +
+        '</div></div>' +
+        '<div class="sk-body">' +
+          '<div class="sk-prov"><span>SOURCE</span><a href="' + esc(source) + '" target="_blank" rel="noopener noreferrer">' + esc(source) + '</a></div>' +
+          '<div class="sk-prov"><span>SHA-256</span><code>' + esc(preview.sourceDigest || '') + '</code></div>' +
+          ((preview.author || preview.license) ? '<div class="sk-prov"><span>AUTHOR</span><code>' + esc([preview.author, preview.license].filter(Boolean).join(' · ')) + '</code></div>' : '') +
+          '<pre>' + esc(preview.body || '') + '</pre>' +
+          '<div class="sk-exchange-note ' + (blocked ? 'bad' : (asks ? 'warn' : 'ok')) + '">' +
+            (blocked ? 'Install is disabled. The source contains dangerous instructions.' :
+              (asks ? 'This can be installed, but it stays withheld from the agent until you approve these exact bytes in Agent Skills.' :
+                'This document passed the static guard. Install will preserve this source and digest.')) +
+            ' Only this SKILL.md is staged; referenced package files are not imported.' + '</div>' +
+          '<div class="consent-btns mc-acts">' +
+            (blocked ? '' : '<button class="consent-btn" data-exchange-install type="button">' + (opts.update ? 'INSTALL UPDATE' : 'INSTALL SKILL') + '</button>') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    const install = host.querySelector('[data-exchange-install]');
+    if (install) install.addEventListener('click', async () => {
+      install.classList.add('busy'); install.textContent = 'INSTALLING…';
+      const r = await Harness.skillExchangeInstall({ agentId, inspectionId: preview.inspectionId, sourceDigest: preview.sourceDigest });
+      if (r && r.ok) {
+        sfx('click');
+        host.innerHTML = '<div class="sk-exchange-done">' + esc(preview.name) + ' ' + (r.action === 'update' ? 'updated' : 'installed') +
+          (r.skill && r.skill.withheld ? ' and quarantined for your approval.' : ' and ready for matching work.') + '</div>';
+        loadAgentSkills(agentId);
+      } else {
+        install.classList.remove('busy'); install.textContent = opts.update ? 'INSTALL UPDATE' : 'INSTALL SKILL';
+        const note = host.querySelector('.sk-exchange-note');
+        if (note) { note.className = 'sk-exchange-note bad'; note.textContent = (r && r.error) || 'The install was refused.'; }
+      }
+    });
+  }
+
+  function wireSkillExchange(agentId) {
+    const input = $('#sk-exchange-url'), button = $('#sk-exchange-inspect'), host = $('#sk-exchange-preview');
+    if (!input || !button || !host || !Harness.skillExchangeInspect) return;
+    const inspect = async () => {
+      const url = String(input.value || '').trim();
+      if (!url) { host.innerHTML = '<div class="sk-loading">Enter a public HTTPS URL to a SKILL.md file.</div>'; return; }
+      button.classList.add('busy'); button.textContent = 'INSPECTING…';
+      host.innerHTML = '<div class="sk-loading"><span class="loading pulse">fetching and scanning exact source bytes…</span></div>';
+      const r = await Harness.skillExchangeInspect(url);
+      button.classList.remove('busy'); button.textContent = 'INSPECT';
+      if (r && r.ok && r.preview) renderSkillExchangePreview(host, r.preview, agentId);
+      else host.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'That source could not be inspected.') + '</div>';
+    };
+    button.addEventListener('click', inspect);
+    input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inspect(); } });
   }
 
   function loadAgentSkills(agentId) {
