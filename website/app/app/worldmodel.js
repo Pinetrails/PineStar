@@ -1140,6 +1140,8 @@ const WorldModel = (() => {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
         const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
         if (p.role) lp.role = p.role;   // a role-carrying dock's placard/nag copy (guided workflows)
+        if (p.brief) lp.brief = p.brief;   // a dock's standing job brief -> the compiled plan (step editor; prompt text only)
+        if (p.label) lp.label = p.label;   // an INTAKE's line name (step editor; legibility only, never routing)
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
         if (p.door) lp.door = p.door;   // an AIRLOCK's seal state -> the prop sprite's status light / jam spark
         if (p.connectorId) lp.connectorId = p.connectorId;   // a CONNECTOR PORTAL's bound server -> live state + firing pulse on the sprite
@@ -1298,6 +1300,34 @@ const WorldModel = (() => {
       if (id) p.connectorId = id; else delete p.connectorId;
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
       return { ok: true, id: propId, connectorId: p.connectorId || null };
+    }
+    /* set/clear a BAY's standing JOB BRIEF (step editor, 2026-08-05) — what this step does with arriving
+       work. PROMPT TEXT ONLY: it rides the compiled plan into run prompts and never changes who runs or
+       what tools they hold. Mirrors assignPropAgent's shape; empty clears; bounded at 2000 chars (the
+       same cap migrate()/the compiler enforce, so no path can smuggle an unbounded blob into a save). */
+    function setPropBrief(propId, brief) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      if (p.t !== 'bay') return fail('BAD_TYPE', 'only a BAY carries a job brief');
+      const b = (brief == null ? '' : String(brief)).trim().slice(0, 2000);
+      if ((p.brief || '') === b || (!p.brief && !b)) return { ok: true, id: propId, brief: p.brief || null };   // no-op: no undo slot, no re-emit
+      snapshot();
+      if (b) p.brief = b; else delete p.brief;
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, brief: p.brief || null };
+    }
+    // set/clear an INTAKE's line name (step editor) — pure legibility (the finish-the-line header + the
+    // intake glance); routing never reads it. Mirrors setPropBrief; bounded at 48 chars like migrate().
+    function setPropLabel(propId, label) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      if (p.t !== 'intake') return fail('BAD_TYPE', 'only an INBOX names its line');
+      const l = (label == null ? '' : String(label)).trim().slice(0, 48);
+      if ((p.label || '') === l || (!p.label && !l)) return { ok: true, id: propId, label: p.label || null };
+      snapshot();
+      if (l) p.label = l; else delete p.label;
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, label: p.label || null };
     }
     const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
     const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
@@ -1502,7 +1532,7 @@ const WorldModel = (() => {
       },
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, setHull, paintTiles, renameRoom,
-      addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
+      addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState, setPropBrief, setPropLabel,
       setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt, stampBlueprint,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
@@ -1556,7 +1586,7 @@ const WorldModel = (() => {
     // lookup is installed (i.e. a real client with the catalog); plain node tests keep every prop.
     if (propRules) doc.props = doc.props.filter(p => !(p && typeof p.t === 'string') || !!propRules(p.t));
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); if (typeof p.brief === 'string' && p.brief.trim()) o.brief = p.brief.slice(0, 2000); if (typeof p.label === 'string' && p.label.trim()) o.label = p.label.slice(0, 48); applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }

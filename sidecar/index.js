@@ -198,6 +198,7 @@ const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const Recommendation = require('./recommendation-ledger.js');
+const RecommendationEval = require('./recommendation-eval.js');
 const { makeRecommendationLedger } = Recommendation; // one cross-surface recommendation/verdict lifecycle + shared utility ranker
 const { makePersonalizationStore } = require('./personalization-store.js'); // one durable pause/forget authority for every derived recommender
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
@@ -3011,6 +3012,7 @@ const router = makeRouter();
    on the floor and not a claim. */
 const chainRunner = makeChainRunner({
   nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
+  stageBrief: (agentId) => router.stageBrief(agentId),   // the RECEIVING dock's standing brief rides each handoff turn (prompt text only)
   emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
   newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
   now: () => Date.now(),
@@ -3649,6 +3651,9 @@ const cronDriver = makeCronDriver({
   // bay-docked agent's cron ran with the default office instead of its bay room's objects. Same resolver
   // the telegram/discord hubs use; null -> the default office, exactly like an unrouted chat.
   resolveStation: (agentId) => router.stationFor(agentId),
+  // the dock's standing brief rides a scheduled entry run's system context exactly like a hub-routed
+  // message's (inbox-trigger, 2026-08-05) — same router.stageBrief seam, prompt text only, never grants/tools.
+  stageBriefFor: (agentId) => router.stageBrief(agentId),
   // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
   // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
   // crate arrives at the agent's bay and (with the run-lifecycle binding in world.js) the agent goes to work.
@@ -4304,9 +4309,26 @@ async function handleScoutDecide(req, res) {
 
 // ONE recommendation lifecycle API. Browser and server surfaces write the same bounded envelope, so "not now"
 // remains a deferral, "never" becomes a cross-surface decline, and replay metrics can measure compounding.
+/* GET /api/recommendations/eval — the offline scorecard (recommendation-eval.js), run over the REAL ledger.
+   The eval module had ZERO runtime consumers: the metrics that grade whether recommendations are actually
+   getting better (adoption, precision@3, counterfactual regret, calibration, contradiction rate) existed only
+   as a CLI over an exported file. This is the same pure evaluate() over the same durable rows — read-only,
+   deterministic for a given ledger state, no model spend. */
+function handleRecommendationsEval(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
+    const rows = recommendationLedger.read();
+    json(200, { ok: true, evaluation: RecommendationEval.evaluate(rows, Object.assign({ now: Date.now() }, surface ? { surface } : {})) });
+  } catch (e) { json(200, { ok: false, error: (e && e.message) || 'recommendation eval failed' }); }
+}
 function handleRecommendationsGet(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   try {
+    // lapse un-answered rows whose surface declared an expiry (same read-time discipline as scoutSweep) —
+    // fire-and-forget: this read serves the pre-sweep state, the next one is clean.
+    try { recommendationLedger.sweep(Date.now()).catch(() => {}); } catch (_) {}
     const u = new URL(req.url, 'http://127.0.0.1');
     const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
     const state = String(u.searchParams.get('state') || '').slice(0, 20);
@@ -6118,6 +6140,7 @@ function startTelegram(token, key, model, agentCfg) {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
+    stageBriefFor: (agentId) => router.stageBrief(agentId),                     // the dock's standing brief rides the run's context (prompt text only)
     // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
     // roster + setModel read/write the SAME agentRoster the browser dossier uses (POST /api/roster) — one source
     // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
@@ -6353,6 +6376,7 @@ function startTelegramBot(botId) {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // a bound bot's agent still crews its dock — the standing brief applies
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // VOICE NOTES: the same STT chain /api/stt uses (Groq whisper -> OpenAI whisper -> the chat-model
     // fallback), so a member can hold the button and talk to their agent from a phone. Never throws — a
@@ -6464,6 +6488,7 @@ function startDiscord(token, key, model, agentCfg) {
       chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
+      stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
       // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
       // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
@@ -6570,6 +6595,7 @@ function getDevHub() {
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
     modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },
@@ -6732,6 +6758,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
+      stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
       // In-messenger control surface — identical across channels because it lives in the shared hub.
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
       setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
@@ -6917,6 +6944,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/scout/context', h: handleScoutContext },
   { m: 'POST', exact: '/api/scout/decide', h: handleScoutDecide },
   { m: 'POST', exact: '/api/scout/telemetry', h: handleScoutTelemetry },
+  { m: 'GET', qsplit: '/api/recommendations/eval', h: handleRecommendationsEval },
   { m: 'GET', qsplit: '/api/recommendations', h: handleRecommendationsGet },
   { m: 'POST', exact: '/api/recommendations', h: handleRecommendationsPost },
   { m: ['GET', 'POST', 'DELETE'], exact: '/api/personalization', h: handlePersonalization },
@@ -7396,8 +7424,12 @@ function handleRoutingChain(req, res) {
   const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
   let next = null;
   try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  // `brief` (additive, step editor 2026-08-05): the NEXT dock's standing job brief, so the browser's COMMS
+  // work line composes the SAME handoff turn the sidecar executor does (chat.js runWorkLine — must not drift).
+  let brief = null;
+  if (next) { try { brief = router.stageBrief(next); } catch (_) { brief = null; } }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ next: next || null }));
+  res.end(JSON.stringify({ next: next || null, brief: brief || null }));
 }
 
 /* ---- POST /api/routing/sample — PROOF: feed ONE real, clearly-labeled work item through the armed line.
@@ -7440,6 +7472,7 @@ function getSampleHub() {
     chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
+    stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
     onResolved: (info) => { sampleResolved = info; },
     // every run of the line (entry dock + hops) records under the sample's OWN workstream, so the recorded
     // rows in runs.jsonl are scoped exactly and the OUTBOX crate opens a readable transcript session.
@@ -8971,9 +9004,17 @@ async function handleCronRun(req, res) {
   // the raw cronEmit, so record explicitly here so BOTH fire paths land in the durable decision trail.
   recordAutonomy({ source: 'cron', kind: 'fire', jobId: job.id, agentId: job.agentId, runId: runId, binding: 'run-now', reason: 'manual' });
   placeCronWorkitem(job.agentId, job.prompt, runId);
+  // the dock's standing brief rides Run Now's system context too (inbox-trigger, 2026-08-05): Run Now must
+  // match the scheduled fire's posture exactly, brief included — same router.stageBrief seam, same section
+  // header as the hub's entry runs. Prompt text only; a brief never changes grants/tools/routing.
+  let runNowBrief = null;
+  try { runNowBrief = router.stageBrief(job.agentId); } catch (_) { runNowBrief = null; }
   try {
     await runOnce({
-      key: key, model: model, system: cronSystemFor(job.agentId), messages: [{ role: 'user', content: assembledPrompt }],
+      key: key, model: model,
+      system: cronSystemFor(job.agentId)
+        + (runNowBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(runNowBrief).slice(0, 2000) : ''),
+      messages: [{ role: 'user', content: assembledPrompt }],
       agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
       // streamId 'cron-'+runId matches the SCHEDULED fire (cron-driver.js): Run Now must persist its transcript
       // under the SAME per-run stream so the frontend cron-session (autosessions.js), which forms off the

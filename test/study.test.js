@@ -336,7 +336,8 @@ const S = require('../frontend/app/study.js');
   const iPass = chatSrc.indexOf('async function recommendPass');
   A.ok(iPass > 0, 'chat.js drives ONE collection pass for every proactive channel (the recommendation spine)');
   const passBody = chatSrc.slice(iPass, chatSrc.indexOf('function wireCuriosity', iPass));
-  A.ok(/const winner = Recommend\.pick\(cands, recUnderstanding\(\)\);/.test(passBody),
+  // one-memory lane (2026-08-05): the pick runs over `live` — the list after the shared declined filter.
+  A.ok(/const winner = Recommend\.pick\(live, recUnderstanding\(\)\);/.test(passBody),
     'the winner is chosen by the pure spine, not by an arm-delay race');
   const iStudyCand = chatSrc.indexOf('async function studyCandidate');
   A.ok(iStudyCand > 0 && /slotCanStudy\(runId\) !== 'free'\) return null;/.test(chatSrc.slice(iStudyCand, iStudyCand + 700)),

@@ -13,7 +13,7 @@
         streak count, a real targeted gap). No citable evidence means the channel stays quiet.
 
    A candidate is a plain object:
-     { kind, why, dim?, base?, streak?, declines?, strength?, quality? }
+     { kind, why, dim?, base?, streak?, declines?, strength?, quality?, preference?, title?, target? }
        kind     — the channel id (see PRIORITY). Its beat-slot family is slotKindOf(kind).
        why      — the evidence string, derived from REAL state by the channel adapter. Required.
        dim      — optional dossier dimension this offer targets (enables the value-of-information term).
@@ -27,6 +27,13 @@
        quality  — optional CHANNEL QUALITY WEIGHT (recqualitystore.js): the EWMA of the outcomes this channel's
                   accepted offers really produced. Neutral 1, floored at 0.5 so quality alone can never silence
                   a channel — a dud channel gets quieter, never mute.
+       preference — optional LEARNED PREFERENCE WEIGHT (−0.75..+0.75) from the durable cross-surface ledger
+                  (recledger.js): the Commander's own decayed accept/decline history for this kind. The one
+                  TWO-SIDED modifier here, because it is their answers rather than the station's confidence.
+       title    — optional plain-language name of the thing being proposed. Not scored: it is what the ledger
+                  records and what the shared declined memory is matched against. A channel that proposes an
+                  IDEA should carry one; a channel that asks a question about the station need not.
+       target   — optional stable key for the ledger row (defaults to a fingerprint of the title).
 
    SCORING IS BANDED (redesigned 2026-08-04, after the scorer was proved INERT). It used to give every KIND its
    own 100-wide tier and clamp the whole modifier sum to ±50 — which, since the pass emits at most one candidate
@@ -97,7 +104,8 @@
      so the band wall is enforced STRUCTURALLY (2 × MOD_CAP < BAND_GAP_MIN, asserted below and in recommend.test),
      which keeps the guarantee true for any future modifier someone adds without re-deriving the arithmetic.
      The really achievable range today is much smaller: VOI 0..+60, streak 0..+20, declines 0..−45, strength
-     −15..0, quality −15..+7.5 → mod ∈ [−75 .. +87.5]. So the clamp below is inert at present, deliberately. */
+     −15..0, quality −15..+7.5, preference −20..+20 → mod ∈ [−95 .. +107.5]. So the clamp below is inert at
+     present, deliberately. */
   const MOD_CAP = 240;     // the TOTAL modifier budget, ± — see BAND_GAP_MIN below
 
   // the base score of every kind, derived from the band table. Higher band + earlier inside it = higher base.
@@ -142,6 +150,27 @@
   const QUALITY_FLOOR = 0.5;    // matches recquality.js Q_FLOOR — a dud channel is quieter, NEVER silent
   const QUALITY_CAP = 1.25;     // matches recquality.js Q_CAP — a proven channel earns a small, bounded edge
 
+  /* ── THE LEARNED PREFERENCE TERM (one-memory lane, 2026-08-05) ──────────────────────────────────────────
+     `preference` is the DURABLE CROSS-SURFACE LEDGER's own learned weight for this candidate's kind and traits
+     (sidecar/recommendation-ledger.js replay → foldPref → the Bayesian-smoothed, half-life-decayed weight in
+     −0.75..+0.75; recledger.js carries it into the browser). Until now the spine could not see it at all: the
+     ledger had been recording what the Commander accepts and declines across the bay, the night shift, the
+     quests and the scout for months, and the one component that decides who speaks was ranking blind to all of it.
+
+     WHY THIS ONE IS TWO-SIDED, when strength and quality are not. Those two are the STATION's readings about its
+     own confidence, and the law there is that the station never promotes an offer for feeling sure — it only
+     declines to shout about a thin one. This is not the station's reading. It is a decayed tally of the
+     COMMANDER'S OWN ANSWERS, and their yes deserves exactly as much weight as their no. Rejecting the positive
+     half would mean a kind they have accepted eight times running is ranked identically to one they have never
+     seen — which is not caution, it is deafness.
+
+     BOUNDED, LIKE EVERYTHING ELSE HERE. ±0.75 of ledger weight maps onto ±PREF_MAX, which is two rank steps: it
+     reorders a band comfortably and cannot come near the band wall. A cold ledger, a paused personalization
+     setting (the server sends `model: null` and recledger reports 0), or a kind with no history all read exactly
+     0 — the neutral contribution — so nothing changes until the Commander's real history says it should. */
+  const PREF_MAX = 20;          // ±2 rank steps: enough to reorder a band, never enough to cross one
+  const PREF_RANGE = 0.75;      // the ledger's own clamp (recommendation-ledger.js preferenceFor)
+
   /* A READING THE STATION CANNOT PARSE IS NO READING AT ALL (fail-open, explicit). `Number('')`, `Number(false)`
      and `Number(null)` are all a perfectly finite 0 — which used to hand an empty string or a `false` the FULL
      thin-evidence penalty, i.e. the station punished a channel for a field it had failed to read.
@@ -167,6 +196,14 @@
     return STRENGTH_FLOOR + (1 - STRENGTH_FLOOR) * (n < 0 ? 0 : n > 1 ? 1 : n);
   }
   function qualityDamp(candidate) { return damp(candidate && candidate.quality, QUALITY_FLOOR, QUALITY_CAP); }
+  /* the learned-preference term. An unreadable or absent weight is NO reading (0), never a fabricated lean —
+     the same allowlist predicate every other modifier here goes through. */
+  function preferenceTerm(candidate) {
+    const n = reading(candidate && candidate.preference);
+    if (n == null) return 0;
+    const w = n < -PREF_RANGE ? -PREF_RANGE : n > PREF_RANGE ? PREF_RANGE : n;
+    return PREF_MAX * (w / PREF_RANGE);
+  }
 
   function rank(kind) {
     const i = PRIORITY.indexOf(String(kind || ''));
@@ -222,7 +259,8 @@
     const declines = Math.min(DECLINE_MAX, Math.max(0, num(candidate.declines)) * DECLINE_STEP);
     const mod = voi(candidate, uRead) + streak - declines
       + STRENGTH_MAX * (strengthDamp(candidate) - 1)
-      + QUALITY_MAX * (qualityDamp(candidate) - 1);
+      + QUALITY_MAX * (qualityDamp(candidate) - 1)
+      + preferenceTerm(candidate);
     // the whole modifier budget is clamped well inside one BAND gap, so no stack of modifiers can cross a band.
     // Inside a band it is deliberately larger than the rank step: that is what makes the modifiers mean anything.
     return base + Math.max(-MOD_CAP, Math.min(MOD_CAP, mod));
@@ -269,10 +307,11 @@
   }
 
   return {
-    score, pick, whyLine, citable, rank, slotKindOf, asksBudget, strengthDamp, qualityDamp,
+    score, pick, whyLine, citable, rank, slotKindOf, asksBudget, strengthDamp, qualityDamp, preferenceTerm,
     bandOf, sameBand,
     PRIORITY: PRIORITY.slice(), SLOT_KIND: Object.assign({}, SLOT_KIND),
     BANDS: BANDS.map(b => b.slice()), BASE: Object.assign({}, BASE), BAND_STEP, RANK_STEP, BAND_GAP_MIN,
-    VOI_MAX, SESSION_ASK_MAX, MOD_CAP, STRENGTH_MAX, STRENGTH_FLOOR, QUALITY_MAX, QUALITY_FLOOR, QUALITY_CAP
+    VOI_MAX, SESSION_ASK_MAX, MOD_CAP, STRENGTH_MAX, STRENGTH_FLOOR, QUALITY_MAX, QUALITY_FLOOR, QUALITY_CAP,
+    PREF_MAX, PREF_RANGE
   };
 });

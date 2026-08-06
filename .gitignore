@@ -143,3 +143,7 @@ __pycache__/
 
 # the exact upload for starnetos.com, rebuilt by scripts/stage-website-deploy.mjs each deploy
 website-deploy/
+
+# ABILITIES lane visual-proof screenshots (headless capture output; never committed)
+dev/.shots-abilities/
+.shots-before/

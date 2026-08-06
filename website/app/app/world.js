@@ -5285,7 +5285,11 @@ const World = (() => {
     if (typeof fetch === 'undefined') return;
     // dedupe on topology hash + per-bay caps, so equipping a bay (a capability change with no belt change) still re-POSTs
     const objKey = o => (o && typeof o === 'object') ? (o.objectType + '#' + (o.connectorId || '')) : o;   // connector objs carry a binding; stringify it so a re-bind re-POSTs
-    const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')) : '';
+    // dockBays BRIEFS ride the key too (step editor): a belt-hooked bay's brief already moves plan.hash
+    // (it compiles into `bays`), but a LONE dock's brief lives only in dockBays — outside the hash — and
+    // editing it must still reach the sidecar's copy or stageBrief() serves a stale duty line.
+    const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')
+      + '|' + (plan.dockBays || []).map(b => b.propId + ':' + (b.brief || '')).join(';')) : '';
     planPoster.offer(plan, hash);
   }
   // junction props (splitter/filter/merger) keyed by tile — derived from the compiled plan so the VISUAL engine
