@@ -123,4 +123,4 @@ signature fields, and confirms the referenced installer asset is reachable.
 - `scripts/starnet-release-manifest.mjs`: low-level release manifest generator.
 - `scripts/release-cut.mjs`: one-command release cutter (build + sign + stage + checklist).
 - `scripts/verify-update-host.mjs`: live endpoint verifier (run after upload).
-- `INSTALL.md`: public install instructions for the unsigned installer.
+- `INSTALL.md`: public install instructions and the release-train signing/notarization contract.

@@ -5,7 +5,7 @@
 **A living pixel-art station where real AI agents do real work.**
 
 [![Download](https://img.shields.io/github/v/release/androoAGI/starnet-releases?label=download&color=f5a623)](https://github.com/androoAGI/starnet-releases/releases/latest)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4a90d9)](INSTALL.md)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-4a90d9)](INSTALL.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 [![Local-first](https://img.shields.io/badge/local--first-your%20machine%2C%20your%20data-8250df)](PRIVACY.md)
 
@@ -68,19 +68,18 @@ Desktop builds are published on the
 | **macOS — Apple Silicon** (M1–M4) | `StarNet_<version>_aarch64.dmg` |
 | **macOS — Intel** | `StarNet_<version>_x64.dmg` |
 
-> **Apple Silicon note:** use the native `aarch64` DMG. Until StarNet is Apple-notarized,
-> its first launch shows a false *"StarNet is damaged"* dialog — nothing is wrong with the
-> file, and one Terminal command clears it ([INSTALL.md](INSTALL.md) walks through it).
-> Avoid the `x64` DMG on Apple Silicon: it runs under Rosetta 2, which macOS now warns
-> *"will stop working with a future version of macOS."*
+> **Apple Silicon note:** use the native `aarch64` DMG. Avoid the `x64` DMG on Apple Silicon:
+> it runs under Rosetta 2 rather than using the native architecture.
 
-Builds are not yet OS code-signed, so Windows SmartScreen and macOS Gatekeeper will warn on
-first run — [INSTALL.md](INSTALL.md) walks through exactly what you'll see on each platform.
-StarNet's built-in updater verifies every update against a key embedded in the app, on every
-platform, independent of OS signing.
+The public release train supports Windows and macOS. It refuses to stage a release unless the
+Windows installer passes Authenticode and timestamp verification, both Mac builds pass
+Developer ID checks and Apple notarization, and every updater artifact has a valid updater
+signature. Those are pipeline requirements, not proof that a particular downloaded or installed
+copy was tested on your machine; [INSTALL.md](INSTALL.md) explains what to verify and when to stop.
+Linux packages are internal build artifacts only and are not a supported public release target.
 
-> **Early release:** Windows is the most-tested desktop target. macOS and Linux builds come off
-> the same release train but have less real-world coverage. Broken? Tell us:
+> **Early release:** Windows is the most-tested desktop target. macOS has less real-world
+> coverage. Broken? Tell us:
 > **androo.agi@gmail.com**.
 
 ## Run from source

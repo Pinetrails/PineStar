@@ -43,20 +43,21 @@
 <p class="doc-sub">// every warning documented honestly, every fix spelled out</p>
 
 <h2>Windows: "Windows protected your PC"</h2>
-<p>The installer is Authenticode code-signed, but SmartScreen can still flag it while the
-certificate is new and building reputation — not because anything is wrong. Click
-<b>More info</b> &rarr; <b>Run anyway</b>.</p>
+<p>The public train requires Authenticode publisher and timestamp verification, but SmartScreen
+can still flag a certificate while it builds reputation. Click <b>More info</b>, verify the
+publisher matches the release notes, and proceed only then. Stop if the publisher is unknown.</p>
 
 <h2>macOS: "cannot be opened" / "is damaged"</h2>
-<p>Gatekeeper's standard message for un-notarized apps; the file is fine. After the first
-blocked attempt: <b>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</b>, or
-right-click the app &rarr; <b>Open</b> on older macOS. One-time only.</p>
+<p>A public release is required to carry a Developer ID signature and stapled Apple notarization
+ticket. This warning is therefore a trust failure, not an expected first-run step. Stop and
+report the release tag, asset name, Mac architecture, macOS version, and exact warning. Do not
+clear quarantine or use an unsigned-app override for a purported public release.</p>
 
 <h2>Updates</h2>
-<p>The built-in updater (System &rarr; Updates) checks the public releases channel and verifies
-every update's signature against a key baked into the app before installing. This runs on all
-platforms and is independent of the OS-signing warnings above — even an "unsigned" install
-pulls only cryptographically verified updates.</p>
+<p>The built-in updater (System &rarr; Updates) supports Windows and both Mac architectures and
+verifies every update against a key baked into the app. This is independent of Authenticode,
+Developer ID signing, and notarization. The build contract is not installed-update evidence;
+report a failed update and use the matching current release installer when necessary.</p>
 
 <h2>Uninstalling</h2>
 <ul>

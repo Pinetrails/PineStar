@@ -14,6 +14,7 @@ const buildRs = read('src-tauri/build.rs');
 const desktopCi = read('.github/workflows/desktop-build.yml');
 const releaseCi = read('.github/workflows/release-train.yml');
 const canary = read('scripts/update-canary.mjs');
+const phase5Surface = read('scripts/phase5-surface-proof.mjs');
 
 assert.equal(
   pkg.dependencies['ogg-opus-decoder'],
@@ -51,6 +52,11 @@ for (const [name, source] of [['desktop CI', desktopCi], ['release CI', releaseC
   );
 }
 assert.match(canary, /stage-voice-deps\.mjs'\), '--target', 'win-x64'/, 'canary installers ship the same Windows voice engine');
+assert.match(
+  phase5Surface,
+  /prepare-node\.mjs'[\s\S]*stage-voice-deps\.mjs --target win-x64'[\s\S]*tauri\) \+ ' build'/,
+  'the Windows desktop evidence runner stages the native voice closure before its direct Tauri build'
+);
 
 assert.match(stage, /\^\(win\|darwin\|linux\)-\(x64\|arm64\)\$/, 'the staging script validates release target names');
 assert.match(stage, /pruneOnnxBinaries\(dest\)/, 'foreign ONNX native binaries are removed from the staged closure');

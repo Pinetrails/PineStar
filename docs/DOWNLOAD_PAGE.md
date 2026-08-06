@@ -25,11 +25,8 @@ Pick the asset for your platform:
 | **macOS — Apple Silicon** (M1–M4) | `StarNet_<version>_aarch64.dmg` |
 | **macOS — Intel** | `StarNet_<version>_x64.dmg` |
 
-> **Apple Silicon Macs: use the native `aarch64` DMG.** Until StarNet is Apple-notarized, its
-> first launch shows a false *"StarNet is damaged and can't be opened"* dialog — nothing is
-> wrong with the file, and a single Terminal command clears it (step-by-step in INSTALL.md).
-> Avoid the `x64` DMG on Apple Silicon: it runs under Rosetta 2 translation, which macOS now
-> warns *"will stop working with a future version of macOS."*
+> **Apple Silicon Macs: use the native `aarch64` DMG.** Avoid the `x64` DMG on Apple Silicon:
+> it runs under Rosetta 2 rather than using the native architecture.
 
 > **macOS honesty note:** the macOS build is produced by the same CI and is cryptographically
 > signed for updates, but it's had **less real-world testing than the Windows build** at
@@ -45,29 +42,23 @@ Pick the asset for your platform:
 
 ## Installing (the honest version)
 
-None of the builds are code-signed for the operating system yet (no paid Windows Authenticode
-certificate, no Apple Developer cert), so each OS will warn you the first time you run a new
-app. This is expected for an early build — it does not mean anything is wrong with the file.
+The public release train supports Windows and macOS and fails closed unless Windows passes
+Authenticode publisher/timestamp checks, both Mac builds pass Developer ID and Apple
+notarization checks, and every updater artifact has a valid updater signature. Linux packages
+are internal build artifacts, not supported public downloads.
 
-- **Windows:** SmartScreen will likely show *"Windows protected your PC."* Click **More info**,
-  then **Run anyway**. On some Windows 11 machines, **Smart App Control (SAC)** is a *hard*
-  block that "Run anyway" cannot bypass; if you're on enforced SAC, you'll need to wait for a
-  signed build.
-- **macOS:** the app is **unsigned and un-notarized**, so Gatekeeper blocks the first launch.
-  On **Apple Silicon** (the `aarch64` DMG) the block is a false *"damaged"* dialog with no
-  Open Anyway button — clear it once with a Terminal command:
-  `xattr -dr com.apple.quarantine /Applications/StarNet.app`. On **Intel** (the `x64` DMG)
-  the fix is **System Settings → Privacy & Security → Open Anyway**, or on older macOS
-  **right-click the app → Open**.
+Those checks are a pipeline contract, not installed proof for the asset on your machine.
+Windows SmartScreen can still warn while a signing certificate builds reputation; inspect the
+publisher before proceeding. A public Mac DMG should pass Gatekeeper normally. If it reports an
+unknown developer, missing notarization, or a damaged app, stop and report the exact release and
+asset instead of clearing quarantine or bypassing Gatekeeper.
 
-The full step-by-step for every platform — including how to check your SAC mode and how to
-approve the app on macOS — is in **[INSTALL.md](../INSTALL.md)**. Read it before you install;
-we'd rather tell you what you'll see up front than have the app mysteriously refuse to open.
+The full platform steps and the distinction between public and intentionally unsigned internal
+test builds are in **[INSTALL.md](../INSTALL.md)**.
 
-Once installed, StarNet on Windows keeps itself up to date through its built-in updater
-(System → Updates); you won't need to come back here for routine updates. On macOS, updates
-are currently a manual re-download of the newest DMG (automatic mac updates arrive with the
-notarized build). The updater signature is separate from OS code-signing and is always on.
+The built-in updater supports Windows and both Mac architectures. It verifies updater signatures
+independently of Authenticode, Developer ID, and notarization. Installed update evidence still has
+to be captured for the specific release; the build contract alone is not that evidence.
 
 ## Bring your own key (BYOK)
 
