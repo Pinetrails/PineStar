@@ -2116,11 +2116,6 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/index.html",
-          "needle": "fonts.googleapis.com"
-        },
-        {
-          "kind": "contains",
           "path": "sidecar/index.js",
           "needle": "warmModelCatalog().then("
         }
@@ -2128,7 +2123,7 @@
       "verdict": "REFUTED",
       "disposition": "NARROW",
       "ownerWave": "W2",
-      "qualification": "Google Fonts and the boot-time OpenRouter catalog warm contradict the blanket claim.",
+      "qualification": "The boot-time OpenRouter catalog warm contradicts the blanket claim. The Google Fonts request is GONE — VT323 now has a single local source (the STARNET font law), so the frontend makes no third-party request at boot.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
@@ -2563,17 +2558,12 @@
       "verdict": "MISSING",
       "disposition": "FIX",
       "ownerWave": "W2",
-      "qualification": "The sidecar warms OpenRouter models at server listen and the frontend loads Google Fonts.",
+      "qualification": "The sidecar warms OpenRouter models at server listen. The frontend no longer loads Google Fonts — VT323 ships locally (the STARNET font law), so the remaining boot egress is the catalog warm alone.",
       "authorityChecks": [
         {
           "kind": "contains",
           "path": "sidecar/index.js",
           "needle": "warmModelCatalog().then("
-        },
-        {
-          "kind": "contains",
-          "path": "frontend/index.html",
-          "needle": "fonts.googleapis.com"
         }
       ],
       "refsChecked": [
