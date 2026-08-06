@@ -80,12 +80,41 @@ try {
     const file = required(a.bundle, 'bundle');
     const target = required(a.target, 'target');
     const bundle = Recovery.readBundle(file);
-    const browserStore = {};
-    const receipt = Recovery.restore({ bundle, targetRoot: target, replaceExisting: !!a['replace-existing'], browserSink: browserStore });
     const browserOutput = path.resolve(String(a['browser-output'] || path.join(path.dirname(target), 'starnet-browser-restore.json')));
+    const browserStore = Object.fromEntries(bundle.browser.map(row => [row.key, row.value]));
+    const browserPayload = JSON.stringify({ schema: 'starnet.backup', version: 1, app: 'starnet', exportedAt: bundle.createdAt, agentName: 'restored-station', secretsIncluded: false, secretPolicy: 'credentials-excluded', store: browserStore, notebook: null }, null, 2) + '\n';
+    const browserStage = browserOutput + '.restore-stage-' + process.pid + '-' + Date.now();
+    const browserRollback = browserOutput + '.restore-rollback-' + process.pid + '-' + Date.now();
+    let browserActivated = false;
+    let browserMoved = false;
     fs.mkdirSync(path.dirname(browserOutput), { recursive: true });
-    fs.writeFileSync(browserOutput, JSON.stringify({ schema: 'starnet.backup', version: 1, app: 'starnet', exportedAt: bundle.createdAt, agentName: 'restored-station', secretsIncluded: false, secretPolicy: 'credentials-excluded', store: browserStore, notebook: null }, null, 2) + '\n');
-    printReport({ ok: true, action: 'restore', receipt, browserImport: { file: browserOutput, instruction: 'Open StarNet and choose RESTORE BACKUP to import this browser-owned state.' } });
+    if (fs.existsSync(browserOutput) && !fs.statSync(browserOutput).isFile()) throw new Error('browser output is not a file: ' + browserOutput);
+    try {
+      fs.writeFileSync(browserStage, browserPayload, { flag: 'wx' });
+      if (fs.readFileSync(browserStage, 'utf8') !== browserPayload) throw new Error('browser output staging read-back mismatch');
+    } catch (e) {
+      if (fs.existsSync(browserStage)) fs.unlinkSync(browserStage);
+      throw e;
+    }
+    try {
+      const receipt = Recovery.restore({
+        bundle,
+        targetRoot: target,
+        replaceExisting: !!a['replace-existing'],
+        beforeActivate() {
+          if (fs.existsSync(browserOutput)) { fs.renameSync(browserOutput, browserRollback); browserMoved = true; }
+          fs.renameSync(browserStage, browserOutput);
+          browserActivated = true;
+        }
+      });
+      if (browserMoved && fs.existsSync(browserRollback)) fs.unlinkSync(browserRollback);
+      printReport({ ok: true, action: 'restore', receipt, browserImport: { file: browserOutput, instruction: 'Open StarNet and choose RESTORE BACKUP to import this browser-owned state.' } });
+    } catch (e) {
+      if (browserActivated && fs.existsSync(browserOutput)) fs.unlinkSync(browserOutput);
+      if (browserMoved && fs.existsSync(browserRollback)) fs.renameSync(browserRollback, browserOutput);
+      if (fs.existsSync(browserStage)) fs.unlinkSync(browserStage);
+      throw e;
+    }
   } else usage(1);
 } catch (e) {
   console.error(JSON.stringify({ ok: false, action: cmd, error: (e && e.message) || String(e) }, null, 2));
