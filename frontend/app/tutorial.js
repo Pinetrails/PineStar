@@ -988,7 +988,7 @@ const Tutorial = (() => {
         '</div><div class="fm-content">' + fmContent(curTab)
         + (curTab === 'FIRST STEPS' ? '<button class="fm-tab fm-replay" type="button">REPLAY QUICK TOUR</button>' : '')
         + '</div>';
-      body.querySelectorAll('.fm-tab').forEach(b => { b.onclick = () => { curTab = b.dataset.t; sfx('click'); render(); }; });
+      body.querySelectorAll('.fm-tab[data-t]').forEach(b => { b.onclick = () => { curTab = b.dataset.t; sfx('click'); render(); }; });
       const replay = body.querySelector('.fm-replay');
       if (replay) replay.onclick = () => { sfx('click'); replayFirstCommand(); };
     };

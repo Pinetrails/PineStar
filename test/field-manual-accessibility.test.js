@@ -13,7 +13,8 @@ function fakeBody() {
   const body = {
     buttons: [],
     classList: { add() {} },
-    querySelectorAll(selector) { return selector === '.fm-tab' ? this.buttons : []; }
+    querySelectorAll(selector) { return selector === '.fm-tab[data-t]' ? this.buttons.filter(button => button.dataset.t) : []; },
+    querySelector(selector) { return selector === '.fm-replay' ? this.buttons.find(button => button.textContent === 'REPLAY QUICK TOUR') : null; }
   };
   Object.defineProperty(body, 'innerHTML', {
     set(html) {
@@ -46,7 +47,7 @@ const body = fakeBody();
 context.__tutorial.fillFieldManual(body);
 
 function pressedState() {
-  return body.buttons.map(button => ({
+  return body.buttons.filter(button => button.dataset.t).map(button => ({
     text: button.textContent,
     pressed: button.getAttribute('aria-pressed')
   }));
