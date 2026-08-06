@@ -266,7 +266,14 @@ async function main() {
           const after = { border: getComputedStyle(ky).borderTopColor, title: t ? getComputedStyle(t).color : '?' };
           ky.classList.remove('added');
           await settle();
-          added = { before, after, borderChanged: before.border !== after.border, titleDimmed: before.title !== after.title };
+          // an un-clickable card must not ANSWER the pointer: no lift, edge stays green
+          ky.classList.add('added');
+          const hoverBase = getComputedStyle(ky);
+          const hoverState = { translate: hoverBase.translate, border: hoverBase.borderTopColor };
+          ky.classList.remove('added');
+          await settle();
+          added = { before, after, borderChanged: before.border !== after.border, titleDimmed: before.title !== after.title,
+                    addedHover: hoverState };
         }
         return { baseBorder: base, connectedBorder: on, differs: base !== on, keyAdded: added };
       })()`);

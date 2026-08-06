@@ -3919,6 +3919,12 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .cc-card.added { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); cursor: default; }
 .cc-card.added .cc-top b { color: var(--ph-dim); }
 .cc-card.added .cc-blurb, .cc-card.added .mc-url { color: var(--ph-dim); }
+/* …and it must not ANSWER the pointer. The depth pass gave every `.cc-card` a hover lift + phosphor
+   edge; inherited here it made an already-keyed platform rear up like an offer while `cursor:default`
+   said the opposite. A card that cannot be clicked must not animate as though it can. */
+.cc-card.added:hover { border-color: var(--ok); translate: none;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  box-shadow: var(--raise), inset 0 0 0 1px var(--ok); }
 /* the directory's own category strip. The CATALOG uses the full `.sec` rule here; KEYS emits a bare
    label, so it gets the same engraved-label grammar without the rule/diamond furniture. */
 .cc-cat { color: var(--ph); letter-spacing: 2px; font-size: 12px; text-transform: uppercase;
