@@ -37,7 +37,7 @@ const Build = (() => {
   let opts = null, station = null, unsub = null;
   let connectFrom = null;   // connect-mode state: the armed FROM machine's propId (null = not connecting)
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
-  let raf = 0, running = false;
+  let raf = 0, frameRetryTimer = 0, running = false, frameFailures = 0;
   let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
   let planDirty = true;   // routing-plan cache flag: set by EDITS (station.onChange / open), never by pure pans — see rebake()
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
@@ -106,6 +106,8 @@ const Build = (() => {
       updateUndoRedo();
     });
     bakeDirty = true; bakeDirtyRects = null; planDirty = true;
+    frameFailures = 0;
+    clearTimeout(frameRetryTimer); frameRetryTimer = 0;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
     ghost = (typeof GhostLine !== 'undefined') ? GhostLine.create() : null;   // Phase 3: fresh projection per session
     testNotes.length = 0;   // never carry a prior session's ride captions into a fresh REFIT
@@ -124,6 +126,7 @@ const Build = (() => {
     running = false;
     connectFrom = null;   // never carry a half-made connection across sessions
     if (raf) cancelAnimationFrame(raf), raf = 0;
+    clearTimeout(frameRetryTimer); frameRetryTimer = 0;
     clearTimeout(tipTimer); tipTimer = 0;
     clearTimeout(rideTimer); rideTimer = 0; ridePending = false;   // a ride can't fire into a closed REFIT
     if (convey) convey.reset(), convey = null;
@@ -2510,8 +2513,42 @@ const Build = (() => {
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
 
+  // A browser animation callback has no supervisor: if one draw dependency throws, the callback exits before
+  // the next requestAnimationFrame at the foot of this function and REFIT remains a black overlay forever.
+  // Closing and reopening appeared to "fix" it only because open() started a brand-new loop after the transient
+  // startup condition (asset decode/layout/cache warm-up) had passed. Keep the loop host-owned: one bad frame is
+  // logged, its derived bake is discarded, and a bounded retry re-measures + re-fits from canonical station state.
+  function scheduleFrame(failed) {
+    if (!running) return;
+    if (!failed) { raf = requestAnimationFrame(frame); return; }
+    const delay = Math.min(1000, 80 * Math.pow(2, Math.min(4, Math.max(0, frameFailures - 1))));
+    clearTimeout(frameRetryTimer);
+    frameRetryTimer = setTimeout(() => {
+      frameRetryTimer = 0;
+      if (running) raf = requestAnimationFrame(frame);
+    }, delay);
+  }
+
+  function recoverFrame(err) {
+    frameFailures++;
+    if (root) {
+      root.dataset.renderState = 'recovering';
+      root.dataset.renderFailures = String(frameFailures);
+    }
+    // Capture the short startup sequence with stacks; persistent failures stay bounded by the backoff and then
+    // report only every tenth attempt instead of flooding the desktop console at 60fps.
+    if (frameFailures <= 5 || frameFailures % 10 === 0) console.error('[refit] render failed; retrying', err);
+    cache = null; cacheGeo = null;
+    bakeDirty = true; bakeDirtyRects = null; bakeVisibleOnly = false; planDirty = true;
+    // A first desktop layout pass can change the backing size between open() and the first paint. Re-measure and
+    // frame the canonical bounds during recovery so a stale 0/small viewport cannot leave the station offscreen.
+    try { resize(); fitCamera(); } catch (_) {}
+  }
+
   function frame(now) {
     if (!running) return;
+    let failed = false;
+    try {
     const visibleRect = cacheGeo ? visibleBakeRect(cacheGeo) : null;
     if (visibleRect && cache && StationBake.missingVisibleChunks && StationBake.missingVisibleChunks(cache, visibleRect).length) {
       bakeDirty = true; bakeVisibleOnly = true;
@@ -2576,7 +2613,17 @@ const Build = (() => {
     // ctx for the offscreen tiles, and the next frame re-points it at the main canvas in drawProps().
     if (tool === 'prop' && propThumbs.length && now - lastThumbTs >= 40) { paintThumbs(now); lastThumbTs = now; }
 
-    raf = requestAnimationFrame(frame);
+    frameFailures = 0;
+    if (root) {
+      root.dataset.renderState = 'ready';
+      root.dataset.renderFailures = '0';
+    }
+    } catch (err) {
+      failed = true;
+      recoverFrame(err);
+    } finally {
+      scheduleFrame(failed);
+    }
   }
 
   function drawGrid(t) {
