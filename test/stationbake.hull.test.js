@@ -250,4 +250,24 @@ for (const id of legacyDoc.order) {
   A.eq(revived.projectGeometry().hullBaseOf(id), null, '...at the shell’s own tone (' + id + ')');
 }
 
+/* ---------- TWO SKINS MAY NOT FIGHT OVER THE SAME SKIRT PIXEL ----------
+   Andrew, 2026-08-06: "if you change multiple shells it will break the whole texture system and
+   start glitching out other different separate room textures ... sometimes they half render."
+   Cause: each hull group was composited with `destination-over`, so THE FIRST GROUP DRAWN won every
+   contested pixel and the order was just where rooms sat in G.allRects. A footprint's plate reaches
+   `pad` past its floor and its skirt hangs `skirt` further, so on a real station most rooms contend.
+   A room's skirt therefore appeared only in the strip its neighbour had not already claimed and
+   stopped dead at the boundary — and re-cladding ANY room moved rooms between groups and reshuffled
+   the draw, which is why one change appeared to corrupt unrelated rooms.
+
+   Ownership is geometry, not draw order: a skirt pixel belongs to the footprint DIRECTLY ABOVE it,
+   the nearer one where two qualify. Proven by pixel diff in dev/shellglitch.mjs (chunk parity and
+   incremental re-clad, both 0 across nine simultaneous skins) — a real canvas is required, which the
+   headless mock cannot provide, so what is locked here is that the pass exists and that the
+   ownership mask, not the composite order, is what separates the groups. */
+const HULLSRC = require('fs').readFileSync(require('path').join(__dirname, '..', 'frontend', 'app', 'stationbake.js'), 'utf8');
+A.ok(/nearest footprint above/i.test(HULLSRC), 'the skirt ownership pass is present');
+A.ok(/destination-in/.test(HULLSRC.slice(HULLSRC.indexOf('function bakeHullExtrusion'))),
+  'each hull group is cut back to the pixels it owns before compositing');
+
 A.report('stationbake.hull');

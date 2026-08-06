@@ -2841,9 +2841,8 @@ const StationBake = (() => {
     }
     const tmp = canvas(CW, CH2);
     const tg = tmp.getContext('2d');
-    for (const grp of groups.values()) {
-      const pal = hullPal(grp.z);
-      const recipe = HULL_RECIPES[hullMatOf(grp.z)] || hullStation;
+    const list = [...groups.values()];
+    const silOf = grp => {
       const sil = canvas(CW, CH2);
       const g = sil.getContext('2d');
       g.imageSmoothingEnabled = false;
@@ -2855,9 +2854,67 @@ const StationBake = (() => {
          this group's skirt would otherwise fill. Filtering to the group's own chamfers put a square
          shoulder of skirt back into every corner a differently-clad neighbour had rounded. */
       for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
+      return sil;
+    };
+    const sils = list.map(silOf);
+
+    /* ============ WHO OWNS A SKIRT PIXEL? THE NEAREST FOOTPRINT ABOVE IT ============
+       (2026-08-06, Andrew: "if you change multiple shells it will break the whole texture system
+       and start glitching out other different separate room textures ... sometimes they half
+       render".)
+
+       Each group used to be composited straight onto the base with `destination-over`, which means
+       THE FIRST GROUP DRAWN WINS every pixel the others also want — and the draw order is just the
+       order rooms happen to sit in `G.allRects`. Skirts overlap constantly: a footprint's plate ring
+       reaches `pad` past its floor and its skirt hangs `skirt` px further, so any room within ~39px
+       of another (which on a real station is most of them) contends for the same void.
+
+       The result was a room's skirt appearing in the strip its neighbour's skirt did not happen to
+       cover and stopping dead at the boundary — a HALF-RENDERED wall that looks like the material
+       failed to apply, and which changes shape when ANOTHER room is re-clad, because re-cladding
+       moves rooms between groups and so reorders the draw. Nothing was stale and nothing reverted;
+       two materials were fighting over the same pixels and the winner was arbitrary.
+
+       Ownership is not a draw order, it is a fact about the geometry: a skirt is the wall you see
+       hanging below a footprint, so a pixel belongs to the footprint DIRECTLY ABOVE IT, and where
+       two are above it, to the NEARER one. One downward scan per column settles it exactly.
+       Cheap, and it makes the group masks disjoint, so composite order stops mattering at all. */
+    let own = null;
+    if (list.length > 1) {
+      const idxCv = canvas(CW, CH2), ig = idxCv.getContext('2d');
+      ig.imageSmoothingEnabled = false;
+      sils.forEach((sil, i) => {
+        tg.globalCompositeOperation = 'source-over';
+        tg.clearRect(0, 0, CW, CH2); tg.drawImage(sil, 0, 0);
+        tg.globalCompositeOperation = 'source-in';
+        tg.fillStyle = 'rgb(' + (i + 1) + ',0,0)'; tg.fillRect(0, 0, CW, CH2);
+        tg.globalCompositeOperation = 'source-over';
+        ig.drawImage(tmp, 0, 0);
+      });
+      let img = null;
+      try { img = ig.getImageData(0, 0, CW, CH2); } catch (e) { img = null; }
+      if (img) {
+        const d = img.data;
+        own = new Uint8Array(CW * CH2);
+        for (let x = 0; x < CW; x++) {
+          let last = 0, lastY = -1e9;
+          for (let y = 0; y < CH2; y++) {
+            const i = ((y * CW) + x) << 2;
+            if (d[i + 3]) { last = d[i]; lastY = y; }
+            else if (last && y - lastY <= skirt) own[y * CW + x] = last;
+          }
+        }
+      }
+    }
+
+    list.forEach((grp, gi) => {
+      const pal = hullPal(grp.z);
+      const recipe = HULL_RECIPES[hullMatOf(grp.z)] || hullStation;
+      const sil = sils[gi];
       const f = canvas(CW, CH2);
       const fg = f.getContext('2d');
       const stamp = (dy, c) => {
+        tg.globalCompositeOperation = 'source-over';
         tg.clearRect(0, 0, CW, CH2); tg.drawImage(sil, 0, dy);
         tg.globalCompositeOperation = 'source-in'; tg.fillStyle = c; tg.fillRect(0, 0, CW, CH2);
         tg.globalCompositeOperation = 'source-over'; fg.drawImage(tmp, 0, 0);
@@ -2872,10 +2929,22 @@ const StationBake = (() => {
         panelSeam(fg, CW, CH2, VX, recipe.seam == null ? SHARED_SEAM : recipe.seam);
       }
       fg.globalCompositeOperation = 'source-over';
+      /* cut this group back to the pixels it actually owns. Without it the group that drew first
+         kept every contested pixel — see the ownership note above. Built as a mask and applied with
+         destination-in so the band ramp and veins underneath are untouched. */
+      if (own) {
+        const mask = tg.createImageData(CW, CH2), md = mask.data;
+        const want = gi + 1;
+        for (let p = 0, q = 3; p < own.length; p++, q += 4) if (own[p] === want) md[q] = 255;
+        tg.globalCompositeOperation = 'source-over';
+        tg.clearRect(0, 0, CW, CH2); tg.putImageData(mask, 0, 0);
+        fg.globalCompositeOperation = 'destination-in'; fg.drawImage(tmp, 0, 0);
+        fg.globalCompositeOperation = 'source-over';
+      }
       b.globalCompositeOperation = 'destination-over';
       b.drawImage(f, VX, VY - M);
       b.globalCompositeOperation = 'source-over';
-    }
+    });
   }
 
   /* ORDERED DITHER — the light map is the one surface still painted in smooth alpha falloff,
