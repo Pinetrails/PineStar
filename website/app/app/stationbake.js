@@ -1487,6 +1487,72 @@ const StationBake = (() => {
      TOP edge (the crown side) and grows toward the floor contact; `a` runs along the wall's length.
      That is what lets one painter serve west, east, south and an interior north seam, each of which
      points its depth axis a different way. */
+  /* ================= THE FACE STRIP — the straight wall's OWN pixels, sampled =================
+     2026-08-05, Andrew on the corner: "the textures are completely different, they do not blend
+     whatsoever, its literally entirely different set of graphics ... it should literally appear like
+     its the wall, but just continuing on."
+
+     He is right and the cause was architectural, not a tuning miss. The corner and the side band were
+     painted from WALL_EDGES — a hand-authored vocabulary meant to RESEMBLE each recipe. An imitation
+     never converges: the straight wall is `wallRibbed`'s actual tones and structure, the corner was
+     my approximation of them, and two different pictures meeting at a seam is exactly what you see.
+
+     So the curved and foreshortened surfaces no longer imitate anything. The recipe is rendered ONCE
+     into an offscreen strip a few tiles wide, and every other surface SAMPLES it:
+       · the straight north face  — the recipe, drawn directly (unchanged);
+       · the tall corner face     — strip rows 0..len, sampled along the ARC;
+       · the foreshortened side   — strip rows 0..fw, sampled along the wall.
+     All three are then literally the same graphics, differing only in how much of the face's depth
+     is visible and where the along-axis runs. That is what "the wall, just continuing on" means.
+
+     ONE STRIP PER (MATERIAL, HUE, HEIGHT) — NOT PER TILE. The first cut anchored each strip on the
+     tile that asked for it, so every wall edge allocated a canvas and a getImageData and the bake ran
+     5-7x slower (51ms -> 291ms on an eight-room station, measured). The tile origin only decides
+     WHICH tile's hash supplies the scatter detail — rivets, wear specks — while everything
+     structural (ribs, courses, plate seams, rails) is T-periodic and therefore identical in every
+     tile. The arc's own anchor `ax` is a tile boundary, so sampling still lands rib-aligned with the
+     straight wall it joins. A fixed origin costs nothing visible and gives back the whole regression.
+
+     `viewportRects` is saved and restored: wallViewport CUTS glass and records the hole, and a strip
+     render must never inject phantom windows into the live bake (same guard sampleWall uses). */
+  const STRIP_TILES = 4;
+  let stripCache = null;
+  function faceStrip(matId, pal, h) {
+    const key = matId + '|' + pal.base + '|' + h;
+    const tx0 = 0, ty = 0;
+    if (stripCache && stripCache.has(key)) return stripCache.get(key);
+    let strip = null;
+    const prevRects = viewportRects;
+    try {
+      const w = STRIP_TILES * T;
+      const cv = canvas(w, h);
+      const g = cv.getContext('2d');
+      if (typeof g.getImageData === 'function') {
+        g.imageSmoothingEnabled = false;
+        viewportRects = [];
+        const recipe = WALL_RECIPES[matId] || WALL_RECIPES.plating;
+        for (let i = 0; i < STRIP_TILES; i++) {
+          const tx = tx0 + i;
+          recipe(g, pal, i * T, 0, h, { x: tx, y: ty, z: null }, h2(tx, ty, 'nwall'), true, h);
+        }
+        const img = g.getImageData(0, 0, w, h);
+        strip = { d: img.data, w, h, x0: tx0 * T };
+      }
+    } catch (err) { strip = null; }
+    finally { viewportRects = prevRects; }
+    if (!stripCache) stripCache = new Map();
+    stripCache.set(key, strip);
+    return strip;
+  }
+  /* sample the strip at a WORLD along-coordinate and a depth row. Returns null where the recipe left
+     the pixel transparent — VIEWPORT's glass — so a hole stays a hole instead of becoming grey. */
+  function stripAt(strip, alongWorld, row) {
+    const sx = (((Math.round(alongWorld) - strip.x0) % strip.w) + strip.w) % strip.w;
+    const sy = Math.max(0, Math.min(strip.h - 1, Math.round(row)));
+    const i = ((sy * strip.w + sx) << 2), d = strip.d;
+    return d[i + 3] ? 'rgb(' + d[i] + ',' + d[i + 1] + ',' + d[i + 2] + ')' : null;
+  }
+
   /* `runs` are depths in PIXELS, for the ~4px foreshortened side band. `deepRuns` are FRACTIONS of
      the face depth, for the tall curving corner face, which runs ~23px at the top of the arc and a
      couple at its foot — a rail pinned to an absolute depth would slide off the wall as it narrows.
@@ -1513,10 +1579,26 @@ const StationBake = (() => {
      Marks along the wall are phase-locked to ABSOLUTE world coords so a joint runs unbroken across
      tile boundaries — the old per-tile `Y + 5` rib restarted at every tile, which is invisible at
      pitch 12 and would have been a picket fence at RIBBED's pitch 4. */
-  function bakeSideFace(b, pal, matId, x, y, w, h, axis, dir) {
+  function bakeSideFace(b, pal, matId, x, y, w, h, axis, dir, strip) {
     const ed = WALL_EDGES[matId] || WALL_EDGES.bulkhead;
     const depth = axis === 'x' ? w : h, len = axis === 'x' ? h : w;
     if (depth <= 0 || len <= 0) return;
+    if (strip) {
+      /* THE WALL'S OWN PIXELS AGAIN — rows 0..depth of the same strip the tall face and the corner
+         use, so a side wall is the top few rows of the very material the north wall shows, and the
+         three surfaces cannot drift apart. Depth 0 is the row just under the crown either way. */
+      const put = (d, a, color) => {
+        b.fillStyle = color;
+        const dd = dir > 0 ? d : depth - 1 - d;
+        if (axis === 'x') b.fillRect(x + dd, y + a, 1, 1); else b.fillRect(x + a, y + dd, 1, 1);
+      };
+      const o = axis === 'x' ? y : x;
+      for (let a = 0; a < len; a++) for (let d = 0; d < depth; d++) {
+        const c = stripAt(strip, o + a, d);
+        if (c !== null) put(d, a, c);
+      }
+      return;
+    }
     const put = (d, a, n, color) => {
       b.fillStyle = color;
       const dd = dir > 0 ? d : depth - 1 - d;
@@ -2079,23 +2161,33 @@ const StationBake = (() => {
      `deepRuns` are FRACTIONS of the face depth, not pixels: the face is ~23px deep at the top of the
      arc and a couple of px at its foot, and a rail pinned to an absolute depth would slide off the
      wall as it narrows. */
-  function cornerFaceSlice(put, pal, ed, horiz, fixed, d0, len, step, s) {
+  function cornerFaceSlice(put, pal, ed, strip, alongWorld, horiz, fixed, d0, len, step, s) {
     if (len <= 0) return;
     const base = ed.glass ? U.shade(pal.base, -0.55) : pal.face;
-    const spoke = ed.pitch > 0 && (((Math.round(s) % ed.pitch) + ed.pitch) % ed.pitch) === 0;
+    const spoke = !strip && ed.pitch > 0 && (((Math.round(s) % ed.pitch) + ed.pitch) % ed.pitch) === 0;
     for (let i = 0; i < len; i++) {
-      const t = len <= 1 ? 0 : i / (len - 1);
-      let c = U.shade(base, 0.14 - 0.34 * t);                     // lit at the crown, falling to the deck
-      for (const [f, lift] of (ed.deepRuns || [])) if (Math.round(f * (len - 1)) === i) c = U.shade(base, lift);
-      if (ed.grain && i > 1 && i % ed.grain === 0) c = U.shade(base, -0.12);
-      if (spoke) c = U.shade(base, ed.joint == null ? -0.30 : ed.joint);
-      else if (ed.speck && h2(fixed, i, 'wedge') % 3 === 0) c = U.shade(base, 0.16);
+      let c;
+      if (strip) {
+        // THE WALL'S OWN PIXELS. Row i is depth i below the crown, which on the straight face is the
+        // same row — so the corner shows the identical courses, rails and grain the wall does, bent.
+        c = stripAt(strip, alongWorld, i);
+        if (c === null) continue;                                 // VIEWPORT glass: leave the hole open
+      } else {
+        // headless fallback (no getImageData): the authored approximation, kept so both bake paths
+        // still agree with each other and the mock renders something deterministic.
+        const t = len <= 1 ? 0 : i / (len - 1);
+        c = U.shade(base, 0.14 - 0.34 * t);
+        for (const [f, lift] of (ed.deepRuns || [])) if (Math.round(f * (len - 1)) === i) c = U.shade(base, lift);
+        if (ed.grain && i > 1 && i % ed.grain === 0) c = U.shade(base, -0.12);
+        if (spoke) c = U.shade(base, ed.joint == null ? -0.30 : ed.joint);
+        else if (ed.speck && h2(fixed, i, 'wedge') % 3 === 0) c = U.shade(base, 0.16);
+      }
       const px = d0 + step * i;
       if (horiz) put(px, fixed, 1, 1, c); else put(fixed, px, 1, 1, c);
     }
   }
 
-  function bakeCornerCrown(b, pal, ed, kind, X, Y, ax, ay, Rc, HR, capW, capFar, cy, record) {
+  function bakeCornerCrown(b, pal, ed, strip, kind, X, Y, ax, ay, Rc, HR, capW, capFar, cy, record) {
     const A = CORNER[kind];
     const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
     // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
@@ -2123,8 +2215,14 @@ const StationBake = (() => {
     };
     const K = HR * Math.SQRT1_2;              // the 45° split between the two duals
     /* arc length of a point on the ring, measured from the corner's horizontal. Both duals feed the
-       SAME measure, so the spoke rhythm runs unbroken across the 45° handoff between them. */
+       SAME measure, so the pattern runs unbroken across the 45° handoff between them. */
     const sOf = (px, py) => HR * Math.atan2(Math.abs(py + 0.5 - cy), Math.abs(px + 0.5 - ax));
+    /* ...and the WORLD along-coordinate that arc length corresponds to. The arc's north end sits at
+       x = ax and is where the straight north wall takes over, so alongWorld is anchored there and
+       walks outward by arc length — which is what carries the wall's pattern round the bend at its
+       true spacing and lands it in phase with the straight wall it leaves. */
+    const arcEnd = HR * Math.PI / 2;
+    const alongOf = (px, py) => ax + outX * (arcEnd - sOf(px, py));
     /* the DECK's own curve is the inner limit for the face fill — everything from the ladder down
        to it is wall face. Same centre and rounding convention as the deck cut itself, so the face
        stops exactly where the floor starts. */
@@ -2155,14 +2253,14 @@ const StationBake = (() => {
         put(ex, py, 1, 1, wallDk);                                             // the shell's own edge
         put(ex + 1, py, w, 1, pal.cap); put(ex + 1, py, 1, 1, lit);            // the lit top surface
         // face, down to the deck — depth 0 sits just inside the crown, so the material curves with it
-        cornerFaceSlice(put, pal, ed, true, py, ex + 2 + w, Math.max(0, inner - (ex + 2 + w)), 1, sOf(ex, py));
+        cornerFaceSlice(put, pal, ed, strip, alongOf(ex, py), true, py, ex + 2 + w, Math.max(0, inner - (ex + 2 + w)), 1, sOf(ex, py));
         put(ex + 1 + w, py, 1, 1, seam);
       } else {
         // the lit edge is the crown's OUTERMOST row, i.e. ex - 1 here — putting it on `ex` paints
         // over the shell edge and rules a near-white line along the station's own silhouette.
         put(ex, py, 1, 1, wallDk);
         put(ex - w, py, w, 1, pal.cap); put(ex - 1, py, 1, 1, lit);
-        cornerFaceSlice(put, pal, ed, true, py, ex - 2 - w, Math.max(0, (ex - 1 - w) - inner), -1, sOf(ex, py));
+        cornerFaceSlice(put, pal, ed, strip, alongOf(ex, py), true, py, ex - 2 - w, Math.max(0, (ex - 1 - w) - inner), -1, sOf(ex, py));
         put(ex - 1 - w, py, 1, 1, seam);
       }
     }
@@ -2177,12 +2275,12 @@ const StationBake = (() => {
       if (outY < 0) {
         put(ix, ey, 1, 1, wallDk);
         put(ix, ey + 1, 1, w, pal.cap); put(ix, ey + 1, 1, 1, lit);
-        cornerFaceSlice(put, pal, ed, false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
+        cornerFaceSlice(put, pal, ed, strip, alongOf(ix, ey), false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
         put(ix, ey + 1 + w, 1, 1, seam);
       } else {
         put(ix, ey, 1, 1, wallDk);
         put(ix, ey - w, 1, w, pal.cap); put(ix, ey - 1, 1, 1, lit);   // outermost crown row, not the shell edge
-        cornerFaceSlice(put, pal, ed, false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
+        cornerFaceSlice(put, pal, ed, strip, alongOf(ix, ey), false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
         put(ix, ey - 1 - w, 1, 1, seam);
       }
     }
@@ -2198,6 +2296,8 @@ const StationBake = (() => {
       // cobalt room's tall north wall would meet three brown-grey walls at its corners. As of
       // 2026-08-05 they carry its MATERIAL as well, via bakeSideFace — see the ladder note there.
       const pal = wallPal(e.z), wallFace = pal.face, wallTop = pal.top, mat = wallMatOf(e.z);
+      // the same strip the tall face and the corner sample — one picture across all three surfaces
+      const eStrip = faceStrip(mat, pal, Math.max(0, Math.round(e.room ? WALL.up : WALL.corUp)) + face);
       /* A SIDE WALL IS SEEN AS ITS TOP SURFACE, and that surface is a BAND, not a line.
          THE CROWN IS A RING, NOT A BACK WALL (2026-07-27, Andrew, tracing the missing left edge in
          a screenshot: "it seems to cut off as if there's only a back wall ... on the left and right
@@ -2221,7 +2321,7 @@ const StationBake = (() => {
       if (e.side === 'n') {
         if (e.exterior) { bakeTallNorthFace(b, e, X, Y); continue; }
         // interior north seam: depth runs DOWN from the tile's top edge (the wall's top is up-screen)
-        bakeSideFace(b, pal, mat, X, Y, T, face, 'y', 1);
+        bakeSideFace(b, pal, mat, X, Y, T, face, 'y', 1, eStrip);
         b.fillStyle = wallTop; b.fillRect(X, Y + face, T, 1);
         b.fillStyle = 'rgba(255,255,255,0.05)'; b.fillRect(X, Y, T, 1);
       } else if (e.side === 's') {
@@ -2232,7 +2332,7 @@ const StationBake = (() => {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
         // south: the sliver of face still inside the tile. Its top edge is the SOUTH one (the crown
         // hangs below), so depth runs UP-screen — dir -1.
-        bakeSideFace(b, pal, mat, X, Y + T - fw, T, fw, 'y', -1);
+        bakeSideFace(b, pal, mat, X, Y + T - fw, T, fw, 'y', -1, eStrip);
         if (e.exterior) {
           b.fillStyle = wallDk; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
           crown(b, X, Y + T + 1, T, cw, pal.cap);                                 // the wall's LIT TOP SURFACE
@@ -2243,7 +2343,7 @@ const StationBake = (() => {
         }
       } else if (e.side === 'w') {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + fw, Y, 1, T);      // contact seam onto the deck
-        bakeSideFace(b, pal, mat, X, Y, fw, T, 'x', 1);        // west: crown is to the LEFT, so depth grows with x
+        bakeSideFace(b, pal, mat, X, Y, fw, T, 'x', 1, eStrip);        // west: crown is to the LEFT, so depth grows with x
         if (e.exterior) {
           const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
           b.fillStyle = wallDk; b.fillRect(X - side, Y, side, T);          // outer hull band — the shell, global tone
@@ -2254,7 +2354,7 @@ const StationBake = (() => {
         }
       } else {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + T - dep, Y, 1, T);
-        bakeSideFace(b, pal, mat, X + T - fw, Y, fw, T, 'x', -1);   // east: crown is to the RIGHT — depth reversed
+        bakeSideFace(b, pal, mat, X + T - fw, Y, fw, T, 'x', -1, eStrip);   // east: crown is to the RIGHT — depth reversed
         if (e.exterior) {
           const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
           b.fillStyle = wallDk; b.fillRect(X + T, Y, side, T);
@@ -2882,7 +2982,13 @@ const StationBake = (() => {
       const cCapW = sideCapW();
       let reach = null;
       if (kind === 'tl' || kind === 'tr') crownReach.set(ccx + ',' + ccy, reach = new Map());
-      bakeCornerCrown(b, cPal, cEd, kind, X, Y, ax, ay, Rc, HR, cCapW,
+      /* the strip is rendered at the SAME face height the straight north wall uses, and anchored two
+         tiles back from the corner so the recipe's per-tile hash variation lines up with the wall the
+         corner is joining instead of restarting at the arc. */
+      const cMat = wallMatOf(G.zoneGrid[G.idx(ccx, ccy)]);
+      const cUp = Math.max(0, Math.round(cRoom ? WALL.up : WALL.corUp));
+      const cStrip = faceStrip(cMat, cPal, cUp + (cRoom ? NFACE : 5));
+      bakeCornerCrown(b, cPal, cEd, cStrip, kind, X, Y, ax, ay, Rc, HR, cCapW,
                       cornerCapFar(kind, cCapW, Math.max(2, Math.round(WALL.capH))), cCy, reach);
     }
 
@@ -2911,6 +3017,7 @@ const StationBake = (() => {
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
     wallPalCache = null;   // per-room wall palettes are derived from THIS geometry — never reuse across bakes
     hullPalCache = null;   // ...and so are the per-room exterior shells
+    stripCache = null;     // ...and the rendered face strips the curved surfaces sample
     viewportRects = [];    // ...and so are the window holes the wall pass punches
     crownRects = [];       // ...and the crown rects the ambient cut reads back
     crownReach = new Map();   // ...and the corner crown's measured reach, which the mask erase reads back
