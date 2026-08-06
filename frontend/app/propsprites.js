@@ -30,7 +30,14 @@ const PropSprites = (() => {
   const blink = (period, phase) => ((now / period + (phase || 0)) % 1) < 0.5;
   const flick = (period, phase) => Math.sin(now / period + (phase || 0) * 7);
   const scrCols = ['#62ff9e', '#3fd07c', '#7adfb0', '#2fa863'];
-  const scr = (ph) => scrCols[Math.floor((now / 700 + ph) % scrCols.length)];
+  // Workstations west of world zero carry a negative x phase. JS remainder keeps the dividend's sign, so during
+  // the first seconds after launch the old expression indexed scrCols[-N] and handed undefined to U.shade().
+  // That exception killed REFIT's first animation frame; enough uptime (or DONE + reopen) made the phase positive
+  // and the floor mysteriously returned. Normalize the index into [0,n) for every world coordinate and uptime.
+  const scr = (ph) => {
+    const i = Math.floor(now / 700 + (ph || 0)), n = scrCols.length;
+    return scrCols[((i % n) + n) % n];
+  };
 
   /* ---- furniture micro-helpers (verbatim from v7 sprites.js FURNITURE block) ---- */
   const sh = (x, y, w) => { ctx.globalAlpha = 0.22; px(x, y, w, 2, '#000'); ctx.globalAlpha = 1; };
