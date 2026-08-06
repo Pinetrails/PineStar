@@ -78,7 +78,7 @@ const GhostLine = (() => {
     let engine = null;               // the DEDICATED Conveyor instance (never the caller's)
     let cands = [];                  // per-line precompiled ghost routes (caller frame)
     let cur = null;                  // the candidate being projected right now
-    let projecting = false;          // truth for peek(): actively riding this frame
+    let projecting = false;          // truth for peek(): this selected line's projection has begun
     let pass = 0, nextSpawnAt = 0, pendingChain = null, nid = 0, tnow = 0;
     const notes = [];                // {x, y, text, t0} — WOULD-captions (caller-frame tiles)
     const log = [];                  // bounded event log for tests/CDP proofs
@@ -104,7 +104,7 @@ const GhostLine = (() => {
       cands = [];
       // a non-deployable plan (cycle / dup agent) projects NOTHING — a ghost on a looping line
       // would ride forever, previewing a workflow the sidecar refuses to run.
-      if (!plan || !plan.belts || (plan.errors || []).some(e => !e.warn)) { if (cur) { cur = null; clearRide(); } return; }
+      if (!plan || !plan.belts || (plan.errors || []).some(e => !e.warn)) { if (cur) { cur = null; clearRide(); projecting = false; } return; }
       const map = plan.belts, junctions = plan.junctions || {};
       const rb = t => ({ x: t.x + o.tx, y: t.y + o.ty });
       for (const c of comps) {
@@ -171,7 +171,7 @@ const GhostLine = (() => {
           spawn: rb(spawn), stops, outSet, dockMeta, ship, tags });
       }
       // the projected line may have dissolved/completed under this recompile
-      if (cur && !cands.some(c => c.key === cur.key)) { cur = null; clearRide(); }
+      if (cur && !cands.some(c => c.key === cur.key)) { cur = null; clearRide(); projecting = false; }
       else if (cur) cur = cands.find(c => c.key === cur.key);   // adopt the recompiled route data
     }
 
@@ -193,8 +193,8 @@ const GhostLine = (() => {
         nextSpawnAt = 0;
         return;
       }
-      if (!cur || cur.key !== sel.key) { clearRide(); pass = 0; nextSpawnAt = nowMs + SPAWN_DELAY_MS; }
-      cur = sel; projecting = true;
+      if (!cur || cur.key !== sel.key) { clearRide(); projecting = false; pass = 0; nextSpawnAt = nowMs + SPAWN_DELAY_MS; }
+      cur = sel;
       if (pendingChain && nowMs >= pendingChain.at) { e.enqueueAt(pendingChain.x, pendingChain.y, pendingChain.payload); pendingChain = null; }
       if (!pendingChain && e.boxCount() === 0) {
         if (!nextSpawnAt) nextSpawnAt = nowMs + (pass === 0 ? SPAWN_DELAY_MS : LOOP_PAUSE_MS);
@@ -203,10 +203,14 @@ const GhostLine = (() => {
           e.enqueueAt(cur.spawn.x, cur.spawn.y, { ghost: true, tag, workitemId: 'ghost-' + (++nid) });
           note(cur.spawn.x, cur.spawn.y, '◇ A MESSAGE WOULD ARRIVE HERE');
           push({ kind: 'spawn', tile: { x: cur.spawn.x, y: cur.spawn.y }, tag, pass });
+          projecting = true;
           pass++; nextSpawnAt = 0;
         }
       }
       e.tick(dtMs, nowMs, belts, junctions, cur.stops);
+      projecting = e.boxCount() > 0 || !!pendingChain;
+      if (projecting) nextSpawnAt = 0;
+      else if (!nextSpawnAt || nextSpawnAt <= nowMs) nextSpawnAt = nowMs + LOOP_PAUSE_MS;
     }
 
     // the engine consumed a ghost — at a dock (chain on) or off the open end (ship out / fade)
@@ -280,6 +284,7 @@ const GhostLine = (() => {
         candidates: cands.map(c => ({ key: c.key, crewLeft: c.crewLeft, hasIntake: c.hasIntake, tags: c.tags })),
         boxes: engine ? engine.peekBoxes() : [],
         notes: notes.map(n => ({ x: n.x, y: n.y, text: n.text })),
+        pending: !!cur && !projecting && nextSpawnAt > tnow,
         pendingChain: !!pendingChain, log: log.slice() };
     }
     return { setContext, tick, draw, reset, peek };

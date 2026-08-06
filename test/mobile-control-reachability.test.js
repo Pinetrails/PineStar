@@ -48,6 +48,13 @@ for (const width of [320, 360, 390]) {
     'six REFIT action keys receive a positive grid track at ' + width + 'px');
 }
 
+// REFIT's narrow bottom sheet has only 48% of the glass. With nine modes in the desktop
+// two-column grid, five fixed rows consumed the entire 640x568 sheet and collapsed the one
+// scrollable OPTIONS palette to clientHeight=0. Three narrow-screen columns keep every mode
+// visible while leaving a real scroll viewport for the LINES shelf.
+has(/@media \(max-width: 760px\)[\s\S]*\.refit-tools\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s,
+  'narrow REFIT compacts nine modes to three rows so OPTIONS retains a scroll viewport');
+
 // Dock CSS caps intrinsic content; JS then clamps each wrapped trigger in visual pixels.
 has(/\.bb-menu\s*\{[^}]*min-width:\s*0;[^}]*width:\s*min\(300px, calc\(100vw - 16px\)\);[^}]*max-width:\s*calc\(100vw - 16px\)/s,
   'mobile dock menu can never demand more than viewport minus two 8px edges');
