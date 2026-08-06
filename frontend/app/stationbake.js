@@ -381,7 +381,7 @@ const StationBake = (() => {
   // shipped 'Towering' preset sets corUp 15) — a corUp above up would then under-invalidate on a
   // chunk bake and leave a stale strip of wall behind.
   const dirtyPadPx = () => pad + Math.max(WALL.skirt, Math.max(WALL.up, WALL.corUp) + WALL.capH + 8) + 48;
-  let G, T, HR, W, H, VX, VY, CW, CH, lampPos, edges, chamferAt, extN;
+  let G, T, HR, W, H, VX, VY, CW, CH, lampPos, edges, chamferAt, extN, openJoins;
   const h2 = (x, y, s) => U.hash(x + ',' + y + ',' + (s || ''));
 
   /* ---------- THE ONE ROUNDED-CORNER RASTER ----------
@@ -430,6 +430,78 @@ const StationBake = (() => {
     return g;
   }
 
+  /* ---------- A THRESHOLD IS A HOLE IN A WALL ----------
+     Andrew 2026-08-05, drawing a red line down two abutting rooms AND across a hallway mouth: "when
+     you place multiple rooms, or a hallway, the floors do appear to not blend properly. there is
+     always a border that shows."
+
+     That border is a contract drift, not a taste problem. `bakeThreshold` paints a recessed metal
+     track plus a lit lip across every edge flagged `door` — correct for a DOORWAY, and written when
+     a door was a hand-placed opening in a wall. The foundation then made doors AUTOMATIC: worldmodel
+     opens a threshold at EVERY orthogonally adjacent tile pair of two different zones, so `door`
+     quietly came to mean "the whole shared boundary". Two HAB rooms pushed together — same kind,
+     same hue, same deck material, one continuous room to the eye — got a 4px bar of #3a352c painted
+     down the entire join, measured at 98 luma against a 48-luma deck. Twice the brightness of the
+     floor it divides. That bar IS the border he circled, and the deck's pale door guide ticks ran
+     the same full length underneath it for the same reason.
+
+     The distinction the bake was missing is architectural: a doorway is a GAP IN A WALL. If the
+     seam LINE an opening sits on carries wall on BOTH sides of the gap, you are looking through a
+     doorway and the sill belongs there (a 3-tile hallway mouth punched through a room's south wall
+     keeps its threshold exactly as before). If the line simply runs out at both ends — nothing but
+     void past the opening — there is no wall for it to be a hole in, and the two decks are one
+     floor: paint nothing and let them meet.
+
+     Classified once per bake straight off the zone grid, keyed on world tile coords so a chunked
+     bake and a monolithic bake can never disagree. */
+  // 0 = the seam line has run out here (void/void, or the same zone on both sides — no seam at all)
+  // 1 = an OPEN seam (two zones, passable)   2 = WALL (one side void, or a sealed seam)
+  function seamClass(g, ax, ay, bx, by) {
+    const idx = g.idx, COLS = g.COLS, ROWS = g.ROWS, zg = g.zoneGrid;
+    const at = (x, y) => (x < 0 || y < 0 || x >= COLS || y >= ROWS) ? null : zg[idx(x, y)];
+    const za = at(ax, ay), zb = at(bx, by);
+    if (za === zb) return 0;                                   // covers void/void and interior alike
+    if (za == null || zb == null) return 2;
+    return (g.canStep(ax, ay, bx, by) || g.canStep(bx, by, ax, ay)) ? 1 : 2;
+  }
+  /* every open seam that is NOT a doorway, as 'x,y,side' for the tile on each side of it. Runs are
+     walked whole — the cap test is a property of the RUN, not of one tile in it, so a 12-tile join
+     resolves once and identically for all 12. */
+  function classifyJoins(g) {
+    const open = new Set(), COLS = g.COLS, ROWS = g.ROWS;
+    for (let y = 1; y < ROWS; y++) {                                    // horizontal seams: row y-1 | row y
+      const seg = c => seamClass(g, c, y - 1, c, y);
+      for (let x = 0; x < COLS; x++) {
+        if (seg(x) !== 1) continue;
+        let x2 = x; while (x2 + 1 < COLS && seg(x2 + 1) === 1) x2++;
+        if (!(x > 0 && seg(x - 1) === 2 && x2 + 1 < COLS && seg(x2 + 1) === 2)) {
+          for (let c = x; c <= x2; c++) { open.add(c + ',' + (y - 1) + ',s'); open.add(c + ',' + y + ',n'); }
+        }
+        x = x2;
+      }
+    }
+    for (let x = 1; x < COLS; x++) {                                    // vertical seams: col x-1 | col x
+      const seg = c => seamClass(g, x - 1, c, x, c);
+      for (let y = 0; y < ROWS; y++) {
+        if (seg(y) !== 1) continue;
+        let y2 = y; while (y2 + 1 < ROWS && seg(y2 + 1) === 1) y2++;
+        if (!(y > 0 && seg(y - 1) === 2 && y2 + 1 < ROWS && seg(y2 + 1) === 2)) {
+          for (let c = y; c <= y2; c++) { open.add((x - 1) + ',' + c + ',e'); open.add(x + ',' + c + ',w'); }
+        }
+        y = y2;
+      }
+    }
+    return open;
+  }
+  const isOpenJoin = (x, y, side) => openJoins.has(x + ',' + y + ',' + side);
+  /* the same question asked of a `doorDefs` pair, for the two LIGHT passes that walk it. worldmodel
+     emits every pair +x/+y ordered, so the owning tile is always the first one. Both passes exist to
+     make a DOORWAY read (a gloss dab on the sill, a spill so the spaces past it look connected); run
+     down an open join they became a chain of dabs and a bright ambient trough tracing the boundary —
+     the same border, drawn in light instead of paint. Two rooms open to each other need no help
+     reading as connected: they already are. */
+  const pairIsSill = (x1, y1, x2, y2) => !isOpenJoin(x1, y1, x2 > x1 ? 'e' : 's');
+
   /* derive the wall edges from the zone grid (generalizes world.js's single-room IIFE).
      a boundary edge is where a zone tile faces a different/void neighbour; chamfer tiles
      are skipped (the curved pass handles them); door adjacencies become threshold edges. */
@@ -437,6 +509,7 @@ const StationBake = (() => {
     edges = [];
     const G_ = G, idx = G.idx, COLS = G.COLS, ROWS = G.ROWS, zg = G.zoneGrid;
     const dirs = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
+    openJoins = classifyJoins(G);
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
       const z = zg[idx(x, y)];
       if (z == null) continue;
@@ -448,7 +521,8 @@ const StationBake = (() => {
         const nz = (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) ? null : zg[idx(nx, ny)];
         if (nz === z) continue;                       // interior — no edge
         const door = nz != null && (G_.canStep(x, y, nx, ny) || G_.canStep(nx, ny, x, y));
-        edges.push({ x, y, z, side, room, door, exterior: nz == null });   // z = the zone this wall belongs to (its room owns the wall palette)
+        // open = passable AND not a doorway: the decks simply continue, so NOTHING is painted here
+        edges.push({ x, y, z, side, room, door, open: door && isOpenJoin(x, y, side), exterior: nz == null });   // z = the zone this wall belongs to (its room owns the wall palette)
         if (side === 'n' && nz == null) extN.add(x + ',' + y);   // tiles with a TALL north face (lamp fixtures mount on it)
       }
     }
@@ -970,7 +1044,12 @@ const StationBake = (() => {
         if (wE && !wW) px(X, Y, 1, T, tk);
         px(X, Y, T, T, 'rgba(6,7,10,' + (0.06 * fd).toFixed(3) + ')');
       }
-      const dN = doorTo(x, y, x, y - 1), dS = doorTo(x, y, x, y + 1), dW = doorTo(x, y, x - 1, y), dE = doorTo(x, y, x + 1, y);
+      /* THRESHOLD GUIDE TICKS — pale marks in the floor where you step THROUGH a doorway. They
+         read as a threshold only while the opening is one: on an open join (two rooms simply
+         abutting) they ran the full length of the boundary and became a dashed border line, the
+         same drift bakeThreshold had. Same test, same answer — a doorway is a hole in a wall. */
+      const sillTo = (nx, ny, side) => doorTo(x, y, nx, ny) && !isOpenJoin(x, y, side);
+      const dN = sillTo(x, y - 1, 'n'), dS = sillTo(x, y + 1, 's'), dW = sillTo(x - 1, y, 'w'), dE = sillTo(x + 1, y, 'e');
       if (dN || dS || dW || dE) {
         b.fillStyle = sh(0.13);
         for (let i = 2; i < T - 2; i += 5) {
@@ -2063,7 +2142,10 @@ const StationBake = (() => {
   function bakeWalls(b) {
     for (const e of edges) {
       const X = e.x * T, Y = e.y * T;
-      if (e.door) { bakeThreshold(b, e, X, Y); continue; }
+      // a doorway gets its sill; an OPEN JOIN gets nothing at all — see "A THRESHOLD IS A HOLE IN
+      // A WALL". Painting a track down a seam with no wall on it is what put a bar between two
+      // rooms that are one space.
+      if (e.door) { if (!e.open) bakeThreshold(b, e, X, Y); continue; }
       const fw = e.room ? FACEW : 2, out = e.room ? 4 : 2, face = e.room ? NFACE : 5;
       const dep = fw + 1, rib = 'rgba(0,0,0,0.25)';
       // the SIDE faces (s/w/e) and interior seams carry the room's own wall tone too — otherwise a
@@ -2194,6 +2276,7 @@ const StationBake = (() => {
     }
     // tiny sheen under each doorway light spill (the threshold catches a little floor gloss too)
     for (const [x1, y1, x2, y2] of (G.doorDefs || [])) {
+      if (!pairIsSill(x1, y1, x2, y2)) continue;
       bakeSheen(b, (x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T + T * 0.4, T * 0.4);
     }
     b.globalCompositeOperation = 'source-over';
@@ -2269,9 +2352,22 @@ const StationBake = (() => {
       b.fillStyle = '#5b6066';
       if (vertical) for (let y = r.y1 + 1; y <= r.y2; y += 4) b.fillRect(Math.round(cx) - 3, Math.round((y + 0.5) * T) - 1, 6, 2);
       else for (let x = r.x1 + 1; x <= r.x2; x += 4) b.fillRect(Math.round((x + 0.5) * T) - 3, Math.round(cy) - 1, 6, 2);
-      b.fillStyle = '#a3402e';
-      if (vertical) b.fillRect(r.x1 * T + 2, r.y1 * T + 2, 1, (r.y2 - r.y1 + 1) * T - 4);
-      else b.fillRect(r.x1 * T + 2, r.y1 * T + 2, (r.x2 - r.x1 + 1) * T - 4, 1);
+      /* THE CABLE RUN HANGS ON A WALL (2026-08-05). It is conduit — "a coloured cable run on the
+         wall side" — and it was pinned to the corridor's first row/column unconditionally. Lay a
+         hallway along a room's face and that flank is not a wall at all but an OPEN JOIN, so a 1px
+         #a3402e line at luma 91 got painted straight down the boundary between the two decks: the
+         brightest thing for 70px in either direction, and one more border where the floors are meant
+         to meet. Take whichever flank actually carries wall; if neither does — a passage open on
+         both long sides — there is nothing to hang it on, so it doesn't run. */
+      const openFlank = (fx, fy, n, dx, dy, side) => { for (let i = 0; i < n; i++) if (isOpenJoin(fx + dx * i, fy + dy * i, side)) return true; return false; };
+      const span = (vertical ? (r.y2 - r.y1) : (r.x2 - r.x1)) + 1;
+      const lo = vertical ? !openFlank(r.x1, r.y1, span, 0, 1, 'w') : !openFlank(r.x1, r.y1, span, 1, 0, 'n');
+      const hi = vertical ? !openFlank(r.x2, r.y1, span, 0, 1, 'e') : !openFlank(r.x1, r.y2, span, 1, 0, 's');
+      if (lo || hi) {
+        b.fillStyle = '#a3402e';
+        if (vertical) b.fillRect(lo ? r.x1 * T + 2 : (r.x2 + 1) * T - 3, r.y1 * T + 2, 1, (r.y2 - r.y1 + 1) * T - 4);
+        else b.fillRect(r.x1 * T + 2, lo ? r.y1 * T + 2 : (r.y2 + 1) * T - 3, (r.x2 - r.x1 + 1) * T - 4, 1);
+      }
     }
   }
 
@@ -2528,8 +2624,11 @@ const StationBake = (() => {
       for (const [x, y, w, h] of crownRects) L.fillRect(x, y, w, h);
     }
     for (const l of lampPos) cut(l.x, l.y, l.r, LIGHT.pool);   // lamps punch bright pools out of the darker ambient → the lights carry the room
-    // doorway light spill so corridors and rooms read as connected
-    for (const [x1, y1, x2, y2] of G.doorDefs) cut((x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T, T * 1.6, LIGHT.door);
+    // doorway light spill so corridors and rooms read as connected — DOORWAYS only (see pairIsSill)
+    for (const [x1, y1, x2, y2] of G.doorDefs) {
+      if (!pairIsSill(x1, y1, x2, y2)) continue;
+      cut((x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T, T * 1.6, LIGHT.door);
+    }
     // VIEWPORT GLASS — clear the ambient mask fully over every window the wall pass cut, so the
     // live starfield behind the hole reads at its own brightness instead of the interior's 23%.
     // A hard-edged fill, not a gradient: the frame around it is a hard pixel edge too.
@@ -3005,7 +3104,13 @@ const StationBake = (() => {
     } finally { T = prevT; }
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, sampleWall, sampleHull, CHUNK_PX, LIGHT, WALL, DEPTH };
+  /* THE SEAM LAW, readable without a canvas — the exact classifier every paint pass consults, so a
+     test of it cannot drift from what the bake actually does. Returns the 'x,y,side' keys of every
+     OPEN JOIN (two decks that simply meet); anything passable and absent from this set is a real
+     doorway and keeps its sill, track, guide ticks and light spill. */
+  const seamOpenJoins = geo => [...classifyJoins(geo)].sort();
+
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, sampleWall, sampleHull, seamOpenJoins, CHUNK_PX, LIGHT, WALL, DEPTH };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;
