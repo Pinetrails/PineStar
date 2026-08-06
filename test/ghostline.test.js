@@ -157,6 +157,31 @@ const geoChain = bound => ({
   A.ok(back, 'incompleteness returning resumes the projection');
 }
 
+/* ---- pre-spawn truth: eligibility is pending, not yet projecting ---- */
+{
+  const geo = geoChain(false);
+  const plan = P.compileRoutingPlan(geo);
+  const g = GhostLine.create();
+  g.setContext({ plan, comps: P.lineComponents(geo), offset: { tx: 0, ty: 0 } });
+  const jm = jmapOf(plan);
+  let now = 16;
+  g.tick(16, now, geo.belts, jm, { feed: { known: false, fed: false } });
+  let p = g.peek();
+  A.eq(p.projecting, false, 'the 900ms pre-spawn delay does not claim a projection is riding');
+  A.eq(p.pending, true, 'the scheduled pre-spawn state is reported explicitly as pending');
+  A.eq(p.boxes.length + p.notes.length + p.log.length, 0,
+    'pending means no box, caption, or projection event exists yet');
+  while (!g.peek().log.length && now < 2000) {
+    now += 16;
+    g.tick(16, now, geo.belts, jm, { feed: { known: false, fed: false } });
+  }
+  p = g.peek();
+  A.ok(p.log.length > 0 && (p.boxes.length > 0 || p.notes.length > 0),
+    'the projection eventually begins with observable evidence');
+  A.eq(p.projecting, true, 'projecting flips true only when that evidence begins');
+  A.eq(p.pending, false, 'pending clears once the projection begins');
+}
+
 /* ---- a non-deployable plan (belt CYCLE) projects nothing ---- */
 {
   const geo = {
