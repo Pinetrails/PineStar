@@ -39,10 +39,6 @@ const CHECK = process.argv.includes('--check');
 // Files that live ONLY in the embed. Never deleted, never taken from frontend/.
 const WEBSITE_ONLY = new Set(['demo-boot.js', 'demo.css']);
 
-const EMBED_FONT_COMMENT =
-  '<!-- VT323 ships LOCALLY via @font-face in css/style.css (assets/fonts/vt323.woff2, SIL OFL).\n' +
-  '     WEBSITE EMBED ONLY: the app\'s secondary Google Fonts link is removed here — the public\n' +
-  '     site promises zero third-party requests, and the local woff2 fully covers the embed. -->';
 const EMBED_TAGS =
   '<link rel="stylesheet" href="demo.css"><!-- WEBSITE EMBED ONLY: half-strength glass for the downscaled iframe -->\n' +
   '<script src="demo-boot.js"></script><!-- WEBSITE EMBED ONLY: seeds the captured demo save + DEV seam before any store reads -->';
@@ -62,10 +58,12 @@ function fail(msg) { console.error('sync-website-app: ' + msg); process.exit(1);
 function embedIndexHtml(src) {
   let out = src;
 
-  // 1. Drop the secondary Google Fonts link + its now-wrong comment.
-  const fontBlock = /<!-- VT323 \(the house typeface\)[\s\S]*?<link href="https:\/\/fonts\.googleapis\.com[^>]*>\n/;
-  if (!fontBlock.test(out)) fail('index.html: the VT323/Google-Fonts block anchor was not found — re-check the transform against frontend/index.html');
-  out = out.replace(fontBlock, EMBED_FONT_COMMENT + '\n');
+  // 1. Fonts. This used to STRIP a Google Fonts link the app carried and the public site could
+  //    not (zero third-party requests). As of the STARNET font law the app has no remote font
+  //    either — VT323 has exactly one source, the local woff2 — so there is nothing left to
+  //    strip and this is now a pure assertion. Kept as a hard check rather than deleted: the
+  //    website is generated, so this is the last gate before a re-introduced CDN font would be
+  //    published to starnetos.com.
   if (/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(out)) {
     fail('index.html: a third-party font request survived the strip — the public site promises zero third-party requests');
   }

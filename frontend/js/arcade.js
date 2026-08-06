@@ -301,7 +301,7 @@ const ARCADE = (() => {
     }
   }
   function text(s, x, y, col, size, align) {
-    ctx.fillStyle = col; ctx.font = (size || 8) + 'px monospace';
+    ctx.fillStyle = col; ctx.font = (size || 8) + "px 'VT323','Courier New',monospace";
     ctx.textAlign = align || 'left'; ctx.textBaseline = 'top';
     ctx.fillText(s, x, y);
   }

@@ -858,6 +858,21 @@ const World = (() => {
     // element), so without this guard each new agent stacked another full set of listeners and SSE streams.
     if (listenersBound) return;
     listenersBound = true;
+    // THE STARNET FONT, ON CANVAS. `font-display: block` (style.css) governs the DOM only —
+    // canvas has no equivalent: `ctx.font` resolves against whatever is loaded AT DRAW TIME and
+    // silently falls through to the next family in the stack when VT323 has not landed yet.
+    // The live frame redraws continuously so it heals itself, but StationBake paints its layers
+    // ONCE — a bake that ran a few ms before the face arrived keeps fallback-font text baked into
+    // the floor until the geometry happens to change. So: if the face is not ready, wait for it
+    // and re-bake. Rejection is ignored on purpose — a missing face is already a hard failure the
+    // gate catches (test/font.law.test.js), and there is nothing useful to do about it here.
+    try {
+      if (document.fonts && !document.fonts.check("16px 'VT323'", 'Station')) {
+        document.fonts.load("16px 'VT323'", 'Station')
+          .then(() => { bakeDirty = true; redrawNow(); })
+          .catch(() => {});
+      }
+    } catch (e) {}
     window.addEventListener('resize', resize);
 
     cv.addEventListener('wheel', ev => {

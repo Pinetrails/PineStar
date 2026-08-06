@@ -10,11 +10,19 @@
    drops VT323 → DOM falls back to Courier and the canvas to default
    monospace, degrading the whole phosphor grade.
 
-   This @font-face is the PRIMARY, zero-network source: the woff2 lives
-   in the bundle at frontend/assets/fonts/vt323.woff2 (SIL OFL, see
-   NOTICE.md). The Google Fonts <link> in index.html stays only as a
-   secondary online enhancement (fuller unicode subsets) — it is NOT
-   required for the app to render in VT323.
+   This @font-face is the ONLY source, and it is zero-network: the woff2
+   lives in the bundle at frontend/assets/fonts/vt323.woff2 (SIL OFL, see
+   NOTICE.md) and covers U+0-10FFFF. index.html carries NO remote font
+   link — the Google Fonts one was removed because it registered three
+   MORE 'VT323' faces whose unicode-ranges covered Latin, so the browser
+   preferred a network face over this local one for ordinary station text.
+
+   font-display is `block`, NOT `swap`, and that is the whole point.
+   `swap` means "paint the fallback NOW, swap the real face in later" —
+   it is a licence to render Courier, which is exactly the bug this file
+   exists to prevent. `block` renders nothing until the face is ready,
+   so a glyph is either VT323 or it is not painted yet. Loading a 17KB
+   file off local disk, that window is imperceptible.
 
    font-family MUST be exactly 'VT323' (unquoted matches too) so every
    existing `font-family: 'VT323', monospace` rule and the canvas
@@ -24,7 +32,7 @@
   font-family: 'VT323';
   font-style: normal;
   font-weight: 400;
-  font-display: swap;
+  font-display: block;
   /* path is relative to this file (css/style.css) → up one to frontend/ */
   src: url('../assets/fonts/vt323.woff2') format('woff2');
 }

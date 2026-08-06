@@ -2907,7 +2907,7 @@ const Build = (() => {
         : ch.deadEnd ? '▸ OUTPUT DEAD-ENDS' : null;
     }
     ctx.save();
-    ctx.font = (8 / zoom) + 'px monospace';
+    ctx.font = (8 / zoom) + "px 'VT323','Courier New',monospace";
     const pad = 5 / zoom, bh = 11 / zoom;
     const bw = ctx.measureText(txt).width + pad * 2;
     const bw2 = t2 ? ctx.measureText(t2).width + pad * 2 : 0;
@@ -2916,7 +2916,7 @@ const Build = (() => {
     const lines = t2 ? 2 : 1, wMax = Math.max(bw, bw2);
     voiceSay('hover', anchor, { x: cx - wMax / 2, y: topY - bh * lines, w: wMax, h: bh * lines }, (c) => {
       c.save();
-      c.font = (8 / zoom) + 'px monospace'; c.textAlign = 'center'; c.textBaseline = 'bottom';
+      c.font = (8 / zoom) + "px 'VT323','Courier New',monospace"; c.textAlign = 'center'; c.textBaseline = 'bottom';
       c.fillStyle = 'rgba(8,16,12,0.92)'; c.fillRect(cx - bw / 2, topY - bh, bw, bh);
       c.fillStyle = bound ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
       c.fillText(txt, cx, topY - 2 / zoom);
@@ -2959,7 +2959,7 @@ const Build = (() => {
     ctx.strokeStyle = protectedSpawn ? 'rgba(255,200,80,0.95)' : (tool === 'reclaim' ? 'rgba(255,92,77,0.95)' : 'rgba(120,220,255,0.95)');
     for (const r of rm.rects) ctx.strokeRect(r.x1 * t + 1, r.y1 * t + 1, (r.x2 - r.x1 + 1) * t - 2, (r.y2 - r.y1 + 1) * t - 2);
     if (protectedSpawn) { // a small lock badge so the block is predictable, not surprising
-      const z = rm.rects[0]; ctx.fillStyle = 'rgba(255,200,80,0.95)'; ctx.font = (10 / zoom) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const z = rm.rects[0]; ctx.fillStyle = 'rgba(255,200,80,0.95)'; ctx.font = (10 / zoom) + "px 'VT323','Courier New',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('⌂', (z.x1 + 0.5) * t, (z.y1 + 0.5) * t);
     }
   }
