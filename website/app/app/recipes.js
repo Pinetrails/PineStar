@@ -674,7 +674,7 @@
     'like', 'just', 'also', 'one', 'two', 'per', 'via', 'not', 'new', 'own', 'make', 'made', 'work', 'working',
     // filler that survived the first pass: function words a goal sentence carries but no recipe is ABOUT.
     'always', 'ready', 'fully', 'really', 'very', 'much', 'many', 'every', 'each', 'other', 'same', 'thing',
-    'things', 'stuff', 'something', 'anything', 'someone', 'anyone', 'around', 'about', 'because', 'been',
+    'things', 'stuff', 'something', 'anything', 'someone', 'anyone', 'around', 'about', 'because', 'been', 'help',
     'being', 'doing', 'does', 'did', 'able', 'good', 'well', 'back', 'keep', 'give', 'take', 'know', 'let']);
   const GOAL_SUFFIX = new Set(['', 's', 'es', 'ed', 'er', 'ers', 'ing', 'ly']);
   // split any text into its lowercase word tokens (>= 3 chars — shorter words are noise at this scale).
