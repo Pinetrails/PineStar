@@ -1,5 +1,28 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-04 — TELEGRAM POLLING / OWNER-PAIRING TRUTH (`agent/telegram-polling-truth`)
+
+READY TO MERGE. A Telegram Bot API poller could be genuinely healthy while owner enrollment was still
+unfinished. The adapter correctly refused every ordinary DM in that state, but CHANNELS rendered
+`CONNECTED — polling`, told the Commander to DM the bot, and could overwrite the one-time `/pair` command
+when the asynchronous poll-up repaint landed. The in-station agent then also reported Telegram as unreachable
+because no admitted chat had ever reached the channel target store.
+
+First connect now issues and durably stores a fresh owner challenge and returns its raw code once to the
+authenticated local panel. Status exposes `acceptingDms` separately from transport `connected`; the main bot
+and agent-bot rows stay in a waiting state until both the poller is up and an owner is paired. The panel renders
+`POLLING — DMs BLOCKED: PAIR OWNER`, says `WILL ANSWER AS`, preserves the exact `/pair …` instruction across
+status repaints, and calls the channel connected only after owner admission is live. The setup guide makes the
+pairing step explicit.
+
+Live proof used the real seeded app and a local fake Bot API: the rendered DOM reported `ch-state st-wait`,
+the blocked status above, an active pairing challenge, and the intact one-time command after poll-up; browser
+warnings/errors were empty. The real-sidecar fixture proved a pre-pair DM is refused, `/pair` is acknowledged,
+`acceptingDms` flips false → true, and the owner/operational state survives restart (12 assertions). Focused
+frontend truth is 7/7; `npm run test:fast` is **535/535 GREEN**; `npm run test:http` is **62/62 GREEN**.
+No real Telegram message, provider spend, credential mutation, integration-tree edit, push, PR, deploy, or
+publication occurred.
+
 ## 2026-08-05 — TELEGRAM OGG/OPUS VOICE TRANSCRIPTION (`agent/telegram-voice-ogg`)
 
 READY TO MERGE. Telegram already normalized voice notes as `voice-message.ogg` and routed them through the
