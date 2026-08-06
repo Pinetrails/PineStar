@@ -7550,11 +7550,6 @@ async function handleRoutingSample(req, res) {
     } catch (e) { console.warn('[routing-sample] intercept error:', (e && e.message) || e); }
     sampleResolved = null;
     await settled;
-    if (workitemId) {
-      const d = bumpQueue(agentId, -1);
-      chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
-      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
-    }
     // the REAL recorded outcomes: runs.jsonl rows carrying this sample's streamId (newest-first from the
     // store, so [0] is the LAST stage that ran — the one whose reply the line delivered).
     let runs = [];
@@ -7563,8 +7558,24 @@ async function handleRoutingSample(req, res) {
         .filter(r => r && String(r.streamId || '') === streamId)
         .map(r => ({ runId: r.runId, agentId: r.agentId, reason: r.reason, usd: r.usd, ts: r.ts, title: r.title, streamId: r.streamId, turns: r.turns }));
     } catch (_) { runs = []; }
-    const delivered = runs.length ? runs[0] : null;
+    // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
+    // outcome is clean, including every hop after the routed entry dock.
+    const completed = runs.length > 0 && runs.every(r => r.reason === 'done');
+    const delivered = completed ? runs[0] : null;
     const totalUsd = runs.reduce((s, r) => s + ((typeof r.usd === 'number' && isFinite(r.usd)) ? r.usd : 0), 0);
+    if (workitemId) {
+      const d = bumpQueue(agentId, -1);
+      if (completed) chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: Date.now() - t0, ts: Date.now(), sample: true });
+      else chanEmit('workitem.superseded', { workitemId, agentId, ts: Date.now() });
+      chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+    }
+    if (!completed) {
+      return json(502, {
+        ok: false, sample: true, error: runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
+        chatId: SAMPLE_CHAT, streamId: streamId, agentId: agentId || null, isTask: isTask,
+        workitemId: workitemId || null, replies: sampleReplies.slice(), runs: runs, delivered: null, totalUsd: totalUsd
+      });
+    }
     return json(200, {
       ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
       agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,
