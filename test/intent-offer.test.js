@@ -210,20 +210,22 @@ A.ok(/App\.openClassDossier|App\.openRecipeLaunch/.test(seg), 'accepting deep-li
    buttons stripped by the run's own beats (the failed-run "Add a key" row did exactly this in the live app),
    leaving the offer TEXT stranded with nothing to click. So send() only STAGES the directive and the post-run
    beat slot fires it. These assertions exist so that placement can never be silently moved back. */
-A.ok(/pendingOfferText\s*=\s*\(isTask/.test(chat), 'send() STAGES the directive rather than rendering the offer inline');
-const stageIdx = chat.indexOf('pendingOfferText = (isTask');
+A.ok(/const intentOfferText\s*=\s*\(isTask/.test(chat), 'send() STAGES the directive rather than rendering the offer inline');
+const stageIdx = chat.indexOf('const intentOfferText = (isTask');
 const fireIdx = chat.indexOf('maybeIntentOffer(staged)');
 A.ok(stageIdx > 0 && fireIdx > 0, 'the staged directive is consumed by a separate firing site');
-A.ok(/const staged = pendingOfferText; pendingOfferText = null;/.test(chat),
+A.ok(/intentOfferText:\s*intentOfferText/.test(chat), 'the staged directive is attached to its exact run (concurrent sessions cannot cross wires)');
+A.ok(/const staged = meta && meta\.intentOfferText; if \(meta\) meta\.intentOfferText = null;/.test(chat),
   'the staged directive is cleared as it is read — an offer can never leak onto a later, unrelated run');
 // it must sit INSIDE the post-run gentle-nudge chain, above the work-earned floor (the Commander's own words
 // earned it, not accumulated session work) but below the isTask salience gate.
-const iTaskGate = chat.indexOf('if (meta && !meta.isTask) return;');
+const iTaskGate = chat.indexOf('if (!meta || meta.isTask) {');
 const iFloor = chat.indexOf('CuriosityStore.earned && !CuriosityStore.earned()');
-const iRecruitBeat = chat.indexOf('if (maybeRecruit()) return;');
+const iRecruitBeat = chat.indexOf('const rc = recruitCandidate()');
 A.ok(iTaskGate > 0 && fireIdx > iTaskGate, 'the offer fires only after the isTask salience gate (never on chatter)');
 A.ok(iFloor > 0 && fireIdx < iFloor, 'the offer sits ABOVE the work-earned floor (a fresh Commander still discovers the catalog)');
 A.ok(iRecruitBeat > 0 && fireIdx < iRecruitBeat, 'the offer is checked before adaptive recruitment (it is the more specific, message-derived ask)');
 A.ok(/if \(staged && maybeIntentOffer\(staged\)\) return;/.test(chat), 'a fired offer takes the slot and returns, so nothing stacks on that run');
+A.ok(!/try \{ maybeIntentOffer\(text\); \}/.test(chat), 'send() never renders the offer before the run can replace its choice row');
 
 A.report('intent-offer');

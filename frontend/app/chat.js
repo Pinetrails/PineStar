@@ -5178,7 +5178,7 @@ const Chat = (() => {
         if (!meta || meta.isTask) {
           // An intent offer is earned by the Commander's just-finished directive, so it is allowed before
           // the accumulated-work floor. Consume the staged text exactly once on the slow post-run arm.
-          const staged = pendingOfferText; pendingOfferText = null;
+          const staged = meta && meta.intentOfferText; if (meta) meta.intentOfferText = null;
           if (staged && maybeIntentOffer(staged)) return;
           // WORK-EARNED ASK FLOOR: a real task-run banks toward the session's ask budget, and no gentle
           // unsolicited beat fires until the station has completed Curiosity.MIN_WORK task-runs this session.
@@ -7056,8 +7056,9 @@ const Chat = (() => {
     // own words — the only honest place to say "there is a class built for exactly this". Gated to genuine new
     // work: never a retry (already offered on the original), never a recipe launch (they came FROM the library),
     // never a goal-loop continuation (the station wrote that text, not the Commander), never a reply to a
-    // pending task question. Fires alongside the run — it never blocks or delays the answer.
-    if (isTask && !retry && !fromRecipe && !goalContinuation && !pending) { try { maybeIntentOffer(text); } catch (_) {} }
+    // pending task question. Stage it on this run's metadata so concurrent sessions can never consume each
+    // other's offer; the slow post-run arm reads and clears it after the answer and its own choice rows settle.
+    const intentOfferText = (isTask && !retry && !fromRecipe && !goalContinuation && !pending) ? String(text || '') : null;
     // P1 + BELT IS WORK-ONLY (Andrew's ruling 2026-07-05): only a real TASK directive drops an INTAKE ore box
     // on the belt / bumps the queue gauge (mirrors the Telegram admit shape — the sidecar gates on the SAME
     // classifier). Pure chat ("hello") gets its reply with NOTHING on the floor.
@@ -7189,7 +7190,7 @@ const Chat = (() => {
         projectRoot: ws.projectRoot || undefined,   // project-anchored session: the sidecar injects the folder context ONLY if the root is still a standing blessed grant (truthful)
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent', rec: recClaimRun(id, ws.agentId || 'agent') }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), intentOfferText: intentOfferText, fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent', rec: recClaimRun(id, ws.agentId || 'agent') }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is

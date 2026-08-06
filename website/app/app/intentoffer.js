@@ -116,11 +116,7 @@
   /* the match, or null. Returns { kind, id, name, label, score, runnerUp, terms } — `terms` being the
      distinctive words that actually earned it, so the caller can show an honest reason and a test can
      assert WHY something matched, not just that it did. */
-  function match(text, candidates) {
-    const words = String(text || '').trim().split(/\s+/).filter(w => w.replace(/[^a-z0-9']/gi, '').length >= 2);
-    if (words.length < MIN_QUERY_WORDS) return null;
-    const q = terms(text);
-    if (!q.size) return null;
+  function matchPool(q, candidates) {
     const idx = index(candidates);
     if (idx.n < 2) return null;                       // idf is meaningless without a corpus to compare against
 
@@ -148,8 +144,14 @@
     const top = scored[0], second = scored[1];
     if (top.score < MIN_SCORE) return null;                                  // too thin to speak
     if (top.best < MIN_TOP_IDF) return null;                                 // no genuinely distinctive term
-    // corroboration: one rare word alone is not an intent, unless it IS the class's own name/tagline
-    if (top.hits.length < MIN_HITS && !(top.bestHeadline && top.best >= SOLO_HEADLINE_IDF)) return null;
+    // Corroboration: one rare word alone is not an intent unless the Commander named the WHOLE class/recipe.
+    // Merely sharing one word with a multi-word headline is not naming it: “explain what you just did” must not
+    // count as an explicit request for “Explain This Data”. Single-word names (Ghostwriter, Zebrafish) still work.
+    const fullyNamed = ['name', 'label'].some(key => {
+      const named = terms(top.row.c[key]);
+      return named.size > 0 && Array.from(named).every(w => q.has(w));
+    });
+    if (top.hits.length < MIN_HITS && !(fullyNamed && top.bestHeadline && top.best >= SOLO_HEADLINE_IDF)) return null;
     if (second && top.score < second.score * MARGIN) return null;            // two plausible answers = we don't know
 
     return {
@@ -158,6 +160,22 @@
       runnerUp: second ? top.row.c.id !== second.row.c.id ? second.row.c.id : null : null,
       terms: top.hits.sort((a, b) => b.weight - a.weight).slice(0, 3).map(h => h.w)
     };
+  }
+
+  function match(text, candidates) {
+    const words = String(text || '').trim().split(/\s+/).filter(w => w.replace(/[^a-z0-9']/gi, '').length >= 2);
+    if (words.length < MIN_QUERY_WORDS) return null;
+    const q = terms(text);
+    if (!q.size) return null;
+    const rows = Array.isArray(candidates) ? candidates : [];
+
+    /* Classes and ready-made recipes deliberately overlap: a Legal Assistant owns contract review while the
+       library also has a Contract Review job. Scoring them as one flat corpus makes those two truthful doors
+       cancel each other at the ambiguity margin as the library grows. The class is the broader, durable hire and
+       therefore gets first refusal; recipes remain discoverable whenever no class clears every precision gate. */
+    const classMatch = matchPool(q, rows.filter(c => c && c.kind === 'class'));
+    if (classMatch) return classMatch;
+    return matchPool(q, rows.filter(c => !c || c.kind !== 'class'));
   }
 
   return { match, terms, stem, index, MIN_SCORE, MIN_TOP_IDF, MARGIN, MIN_QUERY_WORDS };
