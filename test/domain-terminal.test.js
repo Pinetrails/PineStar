@@ -19,6 +19,7 @@ A.eq(DomainTask.classify('Inspect config.ini for the setting.'), null, 'config.i
 A.eq(DomainTask.classify('Review schema.sql before migration.'), null, 'schema.sql is not a public host');
 A.ok(DomainTask.classify('Open docs.rs and read the crate docs.')?.host === 'docs.rs', 'a bare domain on a real ccTLD remains supported');
 A.ok(DomainTask.classify('Visit example.sh and inspect the site.')?.host === 'example.sh', 'a public suffix that resembles a file extension remains supported');
+A.ok(DomainTask.classify('Check starnessos.invalid and read its docs.')?.host === 'starnessos.invalid', 'RFC-reserved invalid host remains classifiable for terminal DNS evidence');
 A.eq(DomainTask.classify('Review src/docs.rs before release.'), null, 'a path remains local even when its filename ends in a public suffix');
 A.eq(DomainTask.classify('Find the correct official site for starnessos.com'), null, 'a requested alternative search stays open-ended');
 A.eq(DomainTask.classify('Compare starnessos.com and example.com'), null, 'multiple hosts are not collapsed to one target');
