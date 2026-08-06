@@ -2548,6 +2548,94 @@ const Chat = (() => {
     autoscroll();
   }
 
+  /* THE INBOX SAMPLE CARD (guided workflow Phase 4 — PROOF: "does my system work?"). Opened by clicking the
+     INBOX prop on a floor whose drawn line is COMPLETE (world.js intakeSampleAt → app.js wiring). Offers ONE
+     real, clearly-labeled sample job through the REAL dispatch path (POST /api/routing/sample): the router
+     picks the dock, the run spends real budget through runOnce, the shared chain runner walks the drawn line,
+     and the reply lands on the OUTBOX as a collectable crate (ReturnStore.foldRow of the sidecar's real
+     recorded run row — never synthesized). Same Commander-initiated gold-inset card family as awayReview —
+     it renders immediately (the click asked for it) and never touches the shared post-run beat slot.
+     Honest states only: in-flight reads "riding the line…" while the request is genuinely open; a refusal
+     shows the SERVER's reason verbatim; success shows who delivered, the real cost, and a glance of the reply.
+     opts.fed === false (world feedState, server-proven) adds the CHANNELS door, so the NO-FEED nag's promised
+     click-through survives this card owning the intake click. */
+  let sampleCardEl = null;
+  function sampleCard(opts) {
+    opts = opts || {};
+    if (!log) return;
+    if (sampleCardEl && sampleCardEl.isConnected) { autoscroll(); return; }   // one live card at a time
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('sample-card');
+    sampleCardEl = r.d;
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ INBOX — prove the line: run one small, real job through it, end to end.';
+    r.body.appendChild(title);
+    const item = document.createElement('div'); item.className = 'turnin-item';
+    const text = document.createElement('span'); text.className = 'turnin-text';
+    text.textContent = 'a labeled test crate (“SAMPLE JOB…”) rides the real belts — the router picks the dock, the run spends real budget, and the reply lands on the OUTBOX.';
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(text); item.appendChild(btns);
+    r.body.appendChild(item);
+    const note = document.createElement('div');   // refusal / result area (below the action row)
+    r.body.appendChild(note);
+    const run = document.createElement('button'); run.className = 'consent-btn primary'; run.textContent = '▸ RUN A SAMPLE JOB';
+    const later = document.createElement('button'); later.className = 'consent-btn deny'; later.textContent = 'not now';
+    later.onclick = () => vanish(r.d);
+    btns.appendChild(run); btns.appendChild(later);
+    if (opts.fed === false && typeof StationUI !== 'undefined' && StationUI.openTerm) {
+      // the floor PROVABLY has no feed wired (server-answered, never guessed) — keep the promised door here
+      const feed = document.createElement('button'); feed.className = 'consent-btn'; feed.textContent = '▸ WIRE A REAL FEED — CHANNELS';
+      feed.onclick = () => StationUI.openTerm('messaging');
+      btns.appendChild(feed);
+    }
+    const fail = (msg) => {
+      const err = document.createElement('span'); err.className = 'consent-result err';
+      err.textContent = msg;
+      note.textContent = ''; note.appendChild(err);
+      run.disabled = false; later.disabled = false; run.textContent = '▸ RUN A SAMPLE JOB';
+      autoscroll();
+    };
+    run.onclick = () => {
+      run.disabled = true; later.disabled = true;
+      run.textContent = '⌛ the sample is riding the line…';   // honest: the POST is genuinely open until the line delivers
+      note.textContent = '';
+      Harness.api.post('/api/routing/sample', {}).then(res => {
+        if (!res.ok) return fail(String((res.j && res.j.error) || ('the station refused (http ' + res.status + ')')));   // the server's reason, VERBATIM
+        const j = res.j || {};
+        btns.remove();
+        // TRUTHFUL VERDICT: "delivered" may only be claimed for a run that finished clean ('done' is the
+        // recorded reason in runs.jsonl). An errored stage still replies honestly (the ⚠ text below), but the
+        // card must not stamp a checkmark on it — and no OUTBOX crate: the finished-work ledger is 'done'-only
+        // (the same SLAG rule the away digest applies).
+        const clean = !!(j.delivered && j.delivered.reason === 'done');
+        let folded = false;
+        if (clean) { try { if (typeof ReturnStore !== 'undefined' && ReturnStore.foldRow) folded = ReturnStore.foldRow(j.delivered); } catch (_) {} }
+        const who = (j.delivered && j.delivered.agentId) || j.agentId || 'agent';
+        const cost = (+j.totalUsd > 0 && typeof U !== 'undefined' && U.usd) ? (' · ' + U.usd(+j.totalUsd)) : '';
+        text.textContent = clean
+          ? ('✔ sample delivered — ' + who + ' shipped it' + cost + '.' + (folded ? ' the crate is on the OUTBOX.' : ''))
+          : ('⚠ the sample rode the line, but the run did not finish clean — the reply below says why.');
+        const reply = (j.replies && j.replies.length) ? String(j.replies[j.replies.length - 1]).replace(/\s+/g, ' ').trim() : '';
+        if (reply) {
+          const out = document.createElement('div'); out.className = 'turnin-text';
+          out.textContent = '“' + (reply.length > 220 ? reply.slice(0, 220).trimEnd() + '…' : reply) + '”';
+          note.appendChild(out);
+        }
+        const acts = document.createElement('div'); acts.className = 'turnin-rate';
+        if (folded && typeof StationUI !== 'undefined' && StationUI.openTerm) {
+          const ob = document.createElement('button'); ob.className = 'consent-btn'; ob.textContent = '▸ open the OUTBOX — read it all';
+          ob.onclick = () => StationUI.openTerm('outbox');
+          acts.appendChild(ob);
+        }
+        const done = document.createElement('button'); done.className = 'consent-btn quiet'; done.textContent = 'done';
+        done.onclick = () => vanish(r.d);
+        acts.appendChild(done);
+        note.appendChild(acts);
+        autoscroll();
+      }).catch(() => fail('the station didn’t answer — is the sidecar running?'));
+    };
+    autoscroll();
+  }
+
   /* W3 — THE DELIVERY CARD (reshaped 2026-07-15). WorkshopStore adopts one SESSION per idle-work
      deliverable ('workshop-<runId>', unread in the rail) and calls this ONLY when the Commander opens that
      session — opts.sessionId pins the card to it, so a delivery can never paint into an unrelated stream.
@@ -4420,6 +4508,14 @@ const Chat = (() => {
     const cap = (typeof Recommend !== 'undefined' && Number.isFinite(Recommend.SESSION_ASK_MAX)) ? Recommend.SESSION_ASK_MAX : 4;
     return sessionAsks >= cap;
   }
+  /* ONE BUDGET FOR EVERY PROACTIVE ASK (one-memory lane, 2026-08-05). The spine's cap bounded only the spine's
+     own ten channels; the OFF-SPINE proactive consent beats — the First Pitch, the north-star confirm, the
+     night-shift "review?" nudge — each kept a private anti-nag and their SUM was unbounded on top of the spine's
+     four. spendAsk/askBudgetSpent are exported so those beats spend the SAME budget: five polite systems are
+     still one loud station. What does NOT spend it, stated: the reports (morning night report, the away digest)
+     — an absence's work earns its summary the same way a run earns its rating — and each beat's own once-ever /
+     per-session floors remain untouched underneath. */
+  function spendAsk() { sessionAsks += 1; }
 
   // the understanding read the spine scores value-of-information against. Fail-open: a cold/absent store
   // means no VOI bonus at all (pure priority order) — never a fabricated one.
@@ -4492,11 +4588,49 @@ const Chat = (() => {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.weightFor) return RecQualityStore.weightFor(kind, dim); } catch (_) {}
     return null;
   }
+  /* ── THE ONE MEMORY (one-memory lane, 2026-08-05) ────────────────────────────────────────────────────
+     Every verdict below now lands in BOTH places, and they answer different questions:
+       · RecQualityStore — "how well does THIS CHANNEL do?" Browser-local, an EWMA over outcomes, read only here.
+       · RecLedger       — "did the Commander already answer THIS THING, anywhere?" The durable cross-surface
+                           ledger the bay, the scout, the night shift, the quest minter and reflection all
+                           already write and read. Until this lane it had never heard a single COMMS verdict, so
+                           an idea waved off at a card could be built overnight and shelved the next morning.
+     Both are fail-open and neither is load-bearing for the card itself: a station with no ledger reachable keeps
+     behaving exactly as it did. recAccept/recDecline stay the ONE choke point every channel already calls. */
   function recAccept(channel, dim, spawnsWork, id) {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteAccept) RecQualityStore.noteAccept({ channel: channel, dim: dim || '', spawnsWork: !!spawnsWork, id: id || '' }); } catch (_) {}
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.accepted) RecLedger.accepted(channel); } catch (_) {}
   }
   function recDecline(channel, dim, deferred) {
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteDecline) RecQualityStore.noteDecline({ channel: channel, dim: dim || '' }, !!deferred); } catch (_) {}
+    try {
+      if (typeof RecLedger !== 'undefined' && RecLedger.declined) {
+        // a REAL decline changes what the whole station may propose next, so re-read the shared memory; a
+        // deferral ("not now") changes nothing about what is allowed and earns no request.
+        if (RecLedger.declined(channel, !!deferred) && !deferred && RecLedger.refresh) RecLedger.refresh(true);
+      }
+    } catch (_) {}
+  }
+  // the ledger's learned weight for a candidate — the Commander's own decayed accept/decline history for this
+  // kind, across every surface. Absent module / cold ledger / personalization paused → 0 → no adjustment at all.
+  function recPreferenceOf(kind, dim) {
+    try {
+      if (typeof RecLedger !== 'undefined' && RecLedger.preferenceOf) {
+        return RecLedger.preferenceOf(kind, [String(kind || '')].concat(dim ? ['dim:' + String(dim)] : []));
+      }
+    } catch (_) {}
+    return 0;
+  }
+  /* THE SHARED DECLINED READ, applied to the spine's own candidates. Exact normalized-title match only — the same
+     bar sidecar/declinedindex.js sets for the six server-side propose filters, and for the same stated reason: a
+     false suppression is worse than an occasional duplicate. A candidate with no title is never suppressed (there
+     is nothing to match), and an unreachable ledger suppresses nothing at all. */
+  function recAlreadyDeclined(candidate) {
+    try {
+      if (typeof RecLedger === 'undefined' || !RecLedger.isDeclined) return false;
+      const t = candidate && candidate.title;
+      return !!t && RecLedger.isDeclined(t);
+    } catch (_) { return false; }
   }
   /* ── THE STALENESS GUARD (quality loop, Q3) ──────────────────────────────────────────────────────────
      A belief that is OLD and UNCORROBORATED may not be ASSERTED in an offer ("because you said X") — the
@@ -4736,13 +4870,13 @@ const Chat = (() => {
       const weeks = Math.max(1, Math.round(stale.ageDays / 7));
       // NO strength reading on an ASK: strength discounts a weak ASSERTION, and this card asserts nothing.
       // The citation is phrased by the belief's OWN provenance — a study-observed goal was never "said".
-      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recCite(text, beliefCiteKind(belief)),
+      return { kind: 'arc', dim: 'goals', reconfirm: true, why: recCite(text, beliefCiteKind(belief)), title: text,
                fire: () => { if (arcOnce(runId)) reconfirmCard(belief, 'goals', weeks, fp, runId); } };
     }
     // STRENGTH: the cited goal belief's OWN freshness × how well the goals dimension is corroborated. A goal the
     // Commander stated last season, with nothing since to confirm it, is a weaker thing to build an arc on.
     return { kind: 'arc', dim: 'goals', why: recCite(text, beliefCiteKind(belief)), strength: recStrengthOfBelief(belief, 'goals'),
-             fire: () => { if (arcOnce(runId)) offerArc(runId); } };
+             title: text, fire: () => { if (arcOnce(runId)) offerArc(runId); } };
   }
 
   // TRUST — the earned-autonomy offer. Cited by the REAL track record the offer was computed from.
@@ -4763,6 +4897,9 @@ const Chat = (() => {
     // read as 0..1. An offer computed from a 60%-satisfaction record is a thinner thing to propose autonomy on
     // than one computed from 95%, and now says so. Absent/unreadable → null → neutral (never a fabricated 0).
     return { kind: 'trust', why: why, streak: streak, strength: recStrengthOfPercent(pv.confidence),
+             // the ledger title names the CONFIGURATION CHANGE being offered, not an idea — this channel proposes
+             // a permission, so it can never collide with a proposal title in the shared declined memory.
+             title: offer.kind === 'grant' ? 'grant unattended file writes' : ('raise autonomy to ' + String(offer.to || '').toUpperCase()),
              fire: () => { if (beatCards.once('trust', runId)) trustCard(offer, runId); } };
   }
 
@@ -4804,7 +4941,7 @@ const Chat = (() => {
     // STRENGTH: the REAL repeat count behind the shape — a shape asked for four times is corroborated; one seen
     // once is real but thin, and says so by speaking later rather than by claiming less.
     return { kind: 'seed', why: 'you keep asking me to “' + title.toLowerCase() + '”' + (n > 1 ? ' (' + n + '×)' : ''),
-             strength: recStrengthOfCount(n), fire: () => { SeedStore.propose(); } };
+             strength: recStrengthOfCount(n), title: title, fire: () => { SeedStore.propose(); } };
   }
 
   // ROUTINE NUDGE — cited by the real hand-launch count.
@@ -4817,7 +4954,7 @@ const Chat = (() => {
     if (!nm || n < 1) return null;
     // STRENGTH: the same real hand-launch count the citation quotes (corroboration, saturating).
     return { kind: 'routine', why: 'you’ve launched ' + nm + ' ' + n + ' times by hand',
-             strength: recStrengthOfCount(n), fire: () => { RoutineNudgeStore.propose(); } };
+             strength: recStrengthOfCount(n), title: nm, fire: () => { RoutineNudgeStore.propose(); } };
   }
 
   // ADAPTIVE RECRUITMENT — cited by the recruiter's own counter-derived why (the SAME string the bay's
@@ -4829,7 +4966,19 @@ const Chat = (() => {
     let pick = null; try { pick = RecruiterStore.topPick(); } catch (_) { return null; }
     const why = (pick && pick.spec) ? String(pick.why || '').trim() : '';
     if (!why) return null;                                                  // cold/thin signal → silence
-    return { kind: 'recruit', why: why, fire: () => { maybeRecruit(); } };
+    // STRENGTH: the recruiter ALREADY computes one — recruiter.js derives it from EVIDENCE VOLUME (the share of
+    // the Commander's real work this class's kit captures, lifted toward 1 as the sample count clears the floor)
+    // and recruiterstore.topPick carries it the whole way here. This beat then dropped it, so a pick standing on
+    // three samples entered the spine indistinguishable from one standing on forty. recommend.js is explicit
+    // that abstaining is a small RELATIVE ADVANTAGE over reporting a low reading honestly, and equally explicit
+    // that the channels which abstain do so because there is nothing to read. This one has something to read.
+    const conf = Number(pick.confidence);
+    const strength = (Number.isFinite(conf) && conf > 0) ? (conf > 1 ? 1 : conf) : null;
+    // the class the bay would summon — the same noun the curated shelf shows, so a "no thanks" here and a
+    // dismissal there are the same fact in the one memory.
+    const cls = String((pick.spec && (pick.spec.name || pick.spec.title)) || '').trim();
+    return { kind: 'recruit', why: why, strength: strength, title: cls ? ('recruit a ' + cls) : '',
+             fire: () => { maybeRecruit(); } };
   }
 
   // JUST-IN-TIME CURIOSITY — cited by the dimension it is actually targeting, phrased plainly.
@@ -4838,6 +4987,7 @@ const Chat = (() => {
     const dim = CuriosityStore.consider();
     if (!dim) return null;
     return { kind: 'curiosity', dim: dim, why: 'i still don’t know your ' + String(dimLabel(dim)).toLowerCase(),
+             title: 'learn your ' + String(dimLabel(dim)).toLowerCase(),
              fire: () => { CuriosityStore.markShown(dim); curiosityNudge(dim); } };
   }
 
@@ -4878,7 +5028,7 @@ const Chat = (() => {
     // confidence to read) and its quote comes from the run that just ended (no age to read). There is nothing
     // here the station holds, and inventing a reading would be worse than the small structural edge neutrality
     // buys it — see the strength block above, which states that residual tradeoff rather than hiding it.
-    return { kind: 'thread', why: why,
+    return { kind: 'thread', why: why, title: String(prop.spec || '').trim(),
              fire: () => { if (beatCards.once('thread', runId)) threadCard(prop, agentId, batch.runId || runId); } };
   }
 
@@ -4971,8 +5121,23 @@ const Chat = (() => {
        and the floor means it can never be silenced by quality alone: priority and the per-channel caps remain
        the law. A never-rated channel reads neutral, so nothing changes until real outcomes exist. */
     for (const c of cands) { if (c && c.quality == null) c.quality = recQualityOf(c.kind, c.dim); }
+    /* THE LEARNED PREFERENCE (one-memory lane). The same read, in the same place, from the OTHER memory: the
+       durable ledger's decayed tally of what the Commander has actually accepted and declined on every surface.
+       Two-sided and bounded (recommend.js PREF_MAX) — see that module for why this modifier, alone, may promote. */
+    for (const c of cands) { if (c && c.preference == null) c.preference = recPreferenceOf(c.kind, c.dim); }
 
-    const winner = Recommend.pick(cands, recUnderstanding());
+    /* AND THE HARD HALF OF THAT MEMORY: an offer whose exact proposal the Commander has already declined ANYWHERE
+       is not re-ranked, it is REMOVED. That is the discipline every server-side propose filter already holds, and
+       the spine was the last surface still able to re-raise a thing that had been explicitly waved off — the most
+       visible place in the product to do it, since this one interrupts. A losing candidate is dropped BEFORE the
+       queue decision below, so a suppressed turn-in is not re-queued to be suppressed again at the next run. */
+    const live = [];
+    for (const c of cands) {
+      if (recAlreadyDeclined(c)) { if (c === study) study = null; if (c === thread) thread = null; continue; }
+      live.push(c);
+    }
+
+    const winner = Recommend.pick(live, recUnderstanding());
     // DEFERRED, NEVER STARVED: a fetched turn-in that lost the moment goes back on its FIFO queue and
     // re-offers at the next task end (the pre-spine queue path, unchanged).
     if (study && winner !== study) queueStudy(runId, agentId);
@@ -4981,6 +5146,11 @@ const Chat = (() => {
     // the shared slot still has the last word: a deferred beat drained at the sweep may already hold it.
     if (lifecycle.canOffer(Recommend.slotKindOf(winner.kind)) !== 'free') return;
     try { winner.fire(); } catch (_) {}
+    /* THE IMPRESSION GOES ON THE ONE LEDGER — after fire(), never before: a row that says "shown" for a card that
+       threw on the way to the screen is the app asserting something the harness cannot prove. Channels that mint
+       their own rows (study, suggest) and the two that are not offers at all (rate, memory) are refused inside
+       RecLedger.note, so this call is unconditional here and correct for every channel. */
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.note) RecLedger.note(winner); } catch (_) {}
     // spend one unit of the session ask budget — but only for a card the station CHOSE to raise.
     if (Recommend.asksBudget && Recommend.asksBudget(winner.kind)) sessionAsks += 1;
   }
@@ -6632,7 +6802,9 @@ const Chat = (() => {
   function lineTag(t) { return (typeof Classify !== 'undefined' && Classify.getTag) ? Classify.getTag(t) : 'general'; }
 
   // WHERE DOES THIS DOCK'S OUTPUT GO? Asked of the router, never re-derived here — the browser holds a plan for
-  // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides.
+  // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides. Returns
+  // { next, brief } — `brief` is the NEXT dock's standing job brief (step editor; the same router fact the
+  // sidecar's chain runner injects), so both surfaces compose one handoff turn. null = terminal stage.
   async function nextStageOf(agentId, tag) {
     try {
       const h = {}, tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) || '';
@@ -6640,7 +6812,7 @@ const Chat = (() => {
       const r = await fetch('/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { cache: 'no-store', headers: h });
       if (!r || !r.ok) return null;
       const j = await r.json();
-      return (j && j.next) ? String(j.next) : null;
+      return (j && j.next) ? { next: String(j.next), brief: (typeof j.brief === 'string' && j.brief) ? j.brief : null } : null;
     } catch (_) { return null; }   // no floor, no sidecar, no line — the single-stage reply already stands
   }
 
@@ -6655,7 +6827,8 @@ const Chat = (() => {
     for (let hop = 1; hop <= LINE_MAX_HOPS; hop++) {
       if (seed.signal && seed.signal.aborted) return out;
       if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
-      const nx = await nextStageOf(cur, lineTag(out.text));
+      const nxr = await nextStageOf(cur, lineTag(out.text));
+      const nx = nxr && nxr.next;
       if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
       // THE LINE'S SPEND CEILING — the same pre-hop check as the sidecar executor (chain.js: out.usd >= maxUsd
       // before the next stage buys a run). out.usd is REAL reconciled spend: each hop's agent.run.end carries
@@ -6677,8 +6850,10 @@ const Chat = (() => {
       wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', from: cur, preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
       if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
 
+      // the RECEIVING dock's standing brief rides the shared handoff turn — the same 5th param the sidecar's
+      // chain runner passes (sidecar/routing/chain.js) — so the same floor composes the same run here too.
       const prompt = (typeof Pipeline !== 'undefined' && Pipeline.handoffPrompt)
-        ? Pipeline.handoffPrompt(seed.originalText, cur, out.text, hop) : out.text;
+        ? Pipeline.handoffPrompt(seed.originalText, cur, out.text, hop, nxr.brief) : out.text;
       const hopRow = isActiveWs(ws) ? streamingAgent(who) : null;
       if (hopRow) activeLiveRow = hopRow;
       let hopAcc = '';
@@ -7397,5 +7572,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus, askBudgetSpent, spendAsk };
 })();

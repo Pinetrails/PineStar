@@ -51,11 +51,12 @@ function boot(port, env, attemptsLeft) {
     const token = await bootToken(B, B);
     A.ok(token.length >= 32, 'got a session API token');
     const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
-    const chainOf = async (agentId, tag) => {
+    const chainAsk = async (agentId, tag) => {
       const r = await fetch(B + '/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { headers });
       A.eq(r.status, 200, 'chain seam answers 200 for ' + agentId);
-      return (await r.json()).next;
+      return r.json();
     };
+    const chainOf = async (agentId, tag) => (await chainAsk(agentId, tag)).next;
 
     // ---- 1. the seam is behind the SAME per-launch token gate as every /api route (not TOKEN_EXEMPT) ----
     const bare = await fetch(B + '/api/routing/chain?agentId=research-agent', { headers: { Origin: B } });
@@ -70,7 +71,7 @@ function boot(port, env, attemptsLeft) {
     const plan = Pipeline.compileRoutingPlan({
       props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
               { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent' },
-              { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent' },
+              { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent', brief: 'Draft the result in press style.' },
               { id: 'o', t: 'outbox', x: 10, y: 0, w: 1, h: 1 }],
       belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'), belt(8, 0, 'E'), belt(9, 0, 'E')]
     });
@@ -80,7 +81,11 @@ function boot(port, env, attemptsLeft) {
     A.eq(posted.status, 200, 'the two-stage floor deploys');
 
     // ---- 4. a dock with a chain edge names its downstream agent; a terminal dock answers null ----
-    A.eq(await chainOf('research-agent'), 'writer-agent', 'chained dock -> the downstream agent');
+    // (+ step editor: the answer carries the NEXT dock's standing brief, so the browser's work line
+    //    composes the same handoff turn the sidecar executor does — chat.js nextStageOf reads it.)
+    const hop = await chainAsk('research-agent');
+    A.eq(hop.next, 'writer-agent', 'chained dock -> the downstream agent');
+    A.eq(hop.brief, 'Draft the result in press style.', 'and the RECEIVING dock\'s standing brief rides the answer');
     A.eq(await chainOf('writer-agent'), null, 'terminal dock -> null');
     A.eq(await chainOf('no-such-agent'), null, 'unknown agent -> null');
 

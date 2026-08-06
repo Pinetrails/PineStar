@@ -21,6 +21,7 @@ const World = (() => {
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
   let deskPropId = null, deskFace = 'north';           // set when the hero's desk is a PLACED workstation prop assigned to it (its id + the seat's facing)
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
+  let ghost = null;    // GHOST PROJECTION (guided workflows Phase 3): its own dedicated engine — never mixes with convey
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
   let routingPlan = null;                        // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
   let beltLiveSet = null;                        // { "x,y": true } belt tiles on a complete INTAKE→bound-BAY route (energized render)
@@ -72,7 +73,7 @@ const World = (() => {
   let fitW = 0, fitH = 0;   // canvas size the last fitCamera() framed against — a fit on a hidden/degenerate stage doesn't count as a real view
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, onIntakeFeed = null, wakeAt = 0;
+  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, onIntakeFeed = null, onIntakeSample = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -888,7 +889,7 @@ const World = (() => {
       hoverBeltTile = null;
       if (!hit && beltTileSet) { const bt = tileOf(wp.x, wp.y); if (beltTileSet.has(bt.x + ',' + bt.y)) hoverBeltTile = bt; }
       hoverOutbox = hit ? null : outboxAt(wp);   // arm the hover-glance crate tag (a glance, never a window)
-      cv.style.cursor = (hit || hoverOutbox || arcadeAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp) || intakeFeedAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY + a starved INTAKE are clickable too
+      cv.style.cursor = (hit || hoverOutbox || arcadeAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp) || intakeSampleAt(wp) || intakeFeedAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY + a complete-line INBOX + a starved INTAKE are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -915,6 +916,11 @@ const World = (() => {
       // an UNBOUND bay's nag says CLICK — the click opens the assign flow (REFIT bay picker), closing the loop
       const ub = unboundBayAt(wp);
       if (ub && onBayAssign) { onBayAssign(ub.id); return; }
+      // an INBOX on a COMPLETE line offers the sample-job card (PROOF: run one real job through the line).
+      // Checked first: when the NO-FEED nag is also up (which needs the same live line), the card carries the
+      // CHANNELS door itself, so the nag's promised click-through is never lost — see intakeSampleAt.
+      const ismp = intakeSampleAt(wp);
+      if (ismp && onIntakeSample) { onIntakeSample({ propId: ismp.id, fed: feedState.known ? !!feedState.fed : null }); return; }
       // a NO-FEED intake's nag says CLICK — the click opens the CHANNELS panel (the fix is wiring a feed)
       const inf = intakeFeedAt(wp);
       if (inf && onIntakeFeed) onIntakeFeed(inf.id);
@@ -3655,6 +3661,14 @@ const World = (() => {
       // stops = bound-bay hookup tiles (crate-physics truth: an inbound crate is CONSUMED at its dock,
       // never riding past it toward the outbox — an addressed crate stops only at its OWNER's dock)
       convey.tick(dt, now, geo.belts, junctions, routingPlan ? routingPlan.bayTileToAgent : null);
+      /* GHOST PROJECTION (Phase 3): stands down while the tutorial coaches and the INSTANT any
+         real crate rides (real telemetry owns the belt); resumes when the line goes incomplete
+         again. Same belts + junction decisions as the real sim, on its own dedicated engine. */
+      if (ghost) {
+        const coaching = !!(typeof Tutorial !== 'undefined' && Tutorial.isCoaching && Tutorial.isCoaching());
+        ghost.tick(dt, now, geo.belts, junctions, { blocked: coaching || convey.boxCount() > 0,
+          feed: { known: feedState.known, fed: feedState.fed } });
+      }
       convey.drawBelts(ctx, now, T, geo.belts, beltLiveSet);
     }
 
@@ -3721,6 +3735,7 @@ const World = (() => {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
+    if (ghost) ghost.draw(ctx, now, T, 8);       // the projection + its WOULD-captions (NAG_FONT size)
     drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
     drawShippedPallet(now);   // SHIPPED TODAY: completed jobs stack as product crates at the OUTBOX (server-truth count)
@@ -4579,6 +4594,7 @@ const World = (() => {
   function setOnOutbox(fn) { onOutbox = fn; }
   function setOnBayAssign(fn) { onBayAssign = fn; }   // click an UNBOUND bay → open the assign flow (app wires to REFIT's picker)
   function setOnIntakeFeed(fn) { onIntakeFeed = fn; } // click a NO-FEED intake → open the CHANNELS panel (app wires it)
+  function setOnIntakeSample(fn) { onIntakeSample = fn; } // click an INBOX on a COMPLETE line → the sample-job card (guided workflow Phase 4)
 
   /* ---------- BELT LEGIBILITY: the floor teaches its own routing ----------
      The single failure this layer kills: a user lays belts, sees crates or dead machinery, and cannot tell
@@ -4607,8 +4623,15 @@ const World = (() => {
     const byId = {};
     for (const p of geo.props) byId[p.id] = p;
     for (const e of routingPlan.errors) {
-      const label = NAG_LABEL[e.code];
+      let label = NAG_LABEL[e.code];
       if (!label) continue;
+      // a ROLE-carrying unbound dock names WHO it wants ("RESEARCHER — DIGS SOURCES… — CLICK") instead
+      // of the bare NO AGENT (guided workflows Phase 1; same WorldModel.BAY_ROLES source REFIT reads).
+      if (e.code === 'UNBOUND_BAY' && e.propId) {
+        const rp = byId[e.propId];
+        const ri = (rp && rp.role && !rp.agentId && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(rp.role) : null;
+        if (ri) label = rp.role + ' — ' + ri.desc.toUpperCase() + ' — CLICK';
+      }
       if (e.tile) out.push({ x: e.tile.x, y: e.tile.y, w: 1, h: 1, label, warn: !!e.warn });
       else { const p = e.propId != null && byId[e.propId]; if (p) out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label, warn: !!e.warn }); }
     }
@@ -4654,6 +4677,20 @@ const World = (() => {
       feedState = next;
       if (changed) routingNags = buildRoutingNags();   // feed truth changed → refresh the callouts
     });
+  }
+  /* hit-test: an INBOX (intake) on a floor with a COMPLETE line — an energized intake→bound-bay route exists
+     (beltLiveSet is derived from the SAME compiled plan the sidecar routes by, so "clickable" here means the
+     sample genuinely has a line to ride). Its click offers the RUN-A-SAMPLE-JOB card. Checked BEFORE
+     intakeFeedAt in the click handler; the card itself carries the CHANNELS door when the feed is missing,
+     so the NO-FEED nag's promised click-through stays one tap away. */
+  function intakeSampleAt(wp) {
+    if (!onIntakeSample || !geo || !geo.props || !beltLiveSet || !Object.keys(beltLiveSet).length) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'intake') continue;
+      const x0 = p.x * T, y0 = p.y * T - 10, x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 2;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
   }
   // hit-test: an INTAKE currently showing the NO FEED nag (its click-through opens the CHANNELS panel)
   function intakeFeedAt(wp) {
@@ -5161,6 +5198,14 @@ const World = (() => {
     beltTileSet = new Set(((geo && geo.belts) || []).map(b => b.x + ',' + b.y));
     routeTagCache = null; hoverBeltTile = null;   // the floor changed — every cached hover answer is stale
     routingNags = buildRoutingNags();
+    /* GHOST PROJECTION (Phase 3): re-derive its route data from the SAME plan + geometry this
+       recompile produced. The live world runs it too (not just REFIT): between REFIT sessions this
+       is the view the user stares at their half-built line in, and the existing nags say what's
+       broken while the ghost shows what the line WOULD do — same local frame, offset {0,0}. */
+    if (typeof GhostLine !== 'undefined' && typeof Pipeline !== 'undefined' && Pipeline.lineComponents && geo) {
+      ghost = ghost || GhostLine.create();
+      ghost.setContext({ plan: routingPlan, comps: Pipeline.lineComponents(geo), offset: { tx: 0, ty: 0 } });
+    }
     // B5: enrich each bay with the capability objectTypes in its room, so the sidecar can isolate that agent's
     // tools to exactly what the floor placed there (the bay->agent binding decides WHO; the room decides WHAT).
     // dockBays too — a LONE bay (no belt) is a complete dock and isolates identically (sense pass 2026-07-05).
@@ -5240,7 +5285,11 @@ const World = (() => {
     if (typeof fetch === 'undefined') return;
     // dedupe on topology hash + per-bay caps, so equipping a bay (a capability change with no belt change) still re-POSTs
     const objKey = o => (o && typeof o === 'object') ? (o.objectType + '#' + (o.connectorId || '')) : o;   // connector objs carry a binding; stringify it so a re-bind re-POSTs
-    const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')) : '';
+    // dockBays BRIEFS ride the key too (step editor): a belt-hooked bay's brief already moves plan.hash
+    // (it compiles into `bays`), but a LONE dock's brief lives only in dockBays — outside the hash — and
+    // editing it must still reach the sidecar's copy or stageBrief() serves a stale duty line.
+    const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')
+      + '|' + (plan.dockBays || []).map(b => b.propId + ':' + (b.brief || '')).join(';')) : '';
     planPoster.offer(plan, hash);
   }
   // junction props (splitter/filter/merger) keyed by tile — derived from the compiled plan so the VISUAL engine
@@ -5695,6 +5744,13 @@ const World = (() => {
     const p = (bx && bx.payload) || {};
     if (p.outbound) {
       lastOutboxFlash = fnow;   // box reached the OUTBOX -> flash the chute
+      // GUIDED WORKFLOWS: a line's FIRST real product delivery permanently retires its finish-the-line
+      // card. This is THE delivery seam (the crate that actually sank at the chute) — event-driven, and
+      // product-only: slag (an unproductive run) finishes nothing. World tiles ride over so Build maps
+      // the mouth tile to its line in its own geometry frame.
+      if (p.box === 'product' && geo && geo.origin && typeof Build !== 'undefined' && Build.noteLineDelivered) {
+        try { Build.noteLineDelivered(bx.x + geo.origin.tx, bx.y + geo.origin.ty); } catch (_) {}
+      }
       // slag is NOT a satisfying delivery — skip the relaxed exhale; the post-mortem already fired at run.end
       if (p.box !== 'slag' && agent && !agent.unplaced && activity === 'idle') {   // EXHALE: watch the reply leave, satisfied, then relax (downtime clock resets)
         const ob = geo && geo.props && geo.props.find(q => q.t === 'outbox');
@@ -6405,6 +6461,20 @@ const World = (() => {
     walkingTo: (agent && agent.target) ? { x: agent.target.x, y: agent.target.y } : null,
     seats: [...occupiedSeats],
   });
+  /* CDP-verify hook: CLIENT (mouse-event) coordinates for the centre of the first prop of type `t` — the
+     exact inverse of toWorld/toCanvas, so a shot script can dispatch a REAL canvas click on a prop (the
+     sample-card INBOX proof) instead of faking the handler call. Read-only; null when absent/unbaked. */
+  const _dbgPropClientPoint = (t) => {
+    const p = geo && geo.props && geo.props.find(q => q.t === t);
+    if (!p || !cv) return null;
+    const wx = (p.x + (p.w || 1) / 2) * T, wy = (p.y + (p.h || 1) / 2) * T;
+    const r = cv.getBoundingClientRect();
+    return {
+      id: p.id,
+      clientX: r.left + ((wx * scale + panX) * (r.width / cv.width)),
+      clientY: r.top + ((wy * scale + panY) * (r.height / cv.height))
+    };
+  };
   // E1 verification: report the live link predicate, and force the real chanES closed (a genuine dropped socket)
   // so the DOWN branch can be observed against a real non-OPEN readyState without killing the whole process.
   const _dbgLinkState = () => ({ es: !!chanES, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round(((typeof performance !== 'undefined') ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) });
@@ -6419,6 +6489,7 @@ const World = (() => {
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
+    ghost: ghost ? ghost.peek() : null,        // the projection's own state (never mixed into `boxes` — dedicated engine)
     work: (() => { const o = {}; for (const [k, v] of runWork) o[k] = { tools: v.tools, dels: v.dels }; return o; })(),   // proven-work tally per in-flight run
     routeAt: (x, y) => routeTagFor(x, y),
     outboundAt: aid => outboundBeltTile(aid),   // where would this agent's product crate spawn (verify hook)
@@ -6426,7 +6497,11 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []),
+    // FEED TRUTH accessor (guided workflows): the exact server-proven state the NO FEED nag keys on —
+    // REFIT's finish-the-line card reads THIS, never a parallel poll, so the two can never disagree.
+    feedState: () => ({ known: feedState.known, fed: feedState.fed }),
+    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

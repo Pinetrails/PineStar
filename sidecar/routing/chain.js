@@ -46,6 +46,10 @@ function makeChainRunner(o) {
   // plan — the browser's COMMS work line loads the same function, so the same floor cannot produce a different
   // run on a different surface. Injectable only so a test can watch what a stage was handed.
   const handoffText = typeof o.handoffPrompt === 'function' ? o.handoffPrompt : Pipeline.handoffPrompt;
+  // stageBrief(agentId) -> the RECEIVING dock's standing job brief, or null (step editor, 2026-08-05).
+  // Injected like nextAgent — the runner never reads the plan itself. Prompt text only: it rides into the
+  // handoff turn below and can never change which agent runs (nextAgent alone decides that).
+  const stageBrief = typeof o.stageBrief === 'function' ? o.stageBrief : null;
 
   const preview = s => String(s || '').replace(/\s+/g, ' ').slice(0, PREVIEW);
 
@@ -89,7 +93,11 @@ function makeChainRunner(o) {
       say('workitem.placed', { workitemId, queueId: target, agentId: target, kind: 'chain', from: cur, preview: preview(out.text), ts: t0 });
 
       let r = null;
-      try { r = await runAgent({ agentId: target, text: handoffText(originalText, cur, out.text, hop), hop, from: cur, signal: s.signal, workitemId }); }
+      // the RECEIVING dock's standing brief rides the handoff turn (null-safe: no seam / no brief = the
+      // exact pre-brief prompt, byte for byte — Pipeline.handoffPrompt only appends when one is present).
+      let brief = null;
+      if (stageBrief) { try { brief = stageBrief(target); } catch (_) { brief = null; } }
+      try { r = await runAgent({ agentId: target, text: handoffText(originalText, cur, out.text, hop, brief), hop, from: cur, signal: s.signal, workitemId }); }
       catch (e) { r = { error: (e && e.message) || String(e || 'stage failed') }; }
       r = r || {};
       const usd = (typeof r.usd === 'number' && isFinite(r.usd) && r.usd > 0) ? r.usd : 0;

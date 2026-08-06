@@ -137,6 +137,14 @@ const WorldModel = (() => {
     meadow:   { base: '#374024', label: 'MEADOW' },
     // value poles — the bright + near-black ends of the range (stark, deliberate)
     bone:     { base: '#e7e3d9', label: 'BONE' },
+    /* WHITE — bone's neutral twin, added 2026-08-05 for the SHELL axis (Andrew: "lets add white as a
+       colour for the shell"). BONE is a warm cream; this is the achromatic pole, which is what reads
+       as PAINT rather than as stone. It matters most on a hull: the exterior is the one surface with
+       no ambient over it, so it is the only place a white actually stays white — and a whitewashed
+       STUCCO or CLAPBOARD building is the point of having it. See the bright-pole band in
+       stationbake's vacuum(), which is what keeps it from being clamped into the dark shell band
+       along with every ordinary hue. */
+    white:    { base: '#f2f0ea', label: 'WHITE' },
     onyx:     { base: '#0e0e12', label: 'ONYX' },
   };
 
@@ -192,6 +200,40 @@ const WorldModel = (() => {
   };
   const WALL_ORDER = ['bulkhead', 'courses', 'service', 'plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
 
+  /* the HULL material catalog — THE THIRD SURFACE AXIS (2026-08-05, Andrew, circling the outside
+     edges of five rooms in a screenshot: "the outer walls are not customizable... for users who
+     want to put their station in the forest, and want a more cabin feel").
+
+     DECK and WALLS dress the INSIDE of a room. The hull is everything you see of it from OUTSIDE:
+     the plate that surrounds the footprint, the texture over that plate, the framed rim + bolts,
+     the rounded corner arcs, and — the surface that actually reads at a glance — the SKIRT, the
+     tall face extruded below the station's silhouette. All five were painted from five hardcoded
+     constants, so every room in every station had the identical dark riveted shell. Now the shell
+     is per room, which is what makes a mixed station read as a CITY of separate buildings rather
+     than one hull with seams in it.
+
+     `suggest` is the hue a material defaults to when the room carries no explicit hullStyle. Unlike
+     the wall axis — where `suggest` is only a UI convenience — this one binds in the MODEL, because
+     a hull's default has to be a tone the material was drawn for: TIMBER at the station's own
+     #191712 is black wood, which is nobody's cabin. `station` alone suggests null, meaning "keep
+     the shell's own tone" — the literal legacy constants, so every station already built renders
+     pixel-identical until someone paints it.
+
+     Adding one here is the whole job: give it a recipe in stationbake's HULL_RECIPES and it appears
+     in the REFIT SURFACE palette's HULL target automatically. */
+  const HULL_MATERIALS = {
+    station:   { label: 'STATION',   suggest: null,     blurb: 'riveted hull plate — the shell you launched with' },
+    timber:    { label: 'TIMBER',    suggest: 'walnut', blurb: 'stacked log courses — the cabin' },
+    clapboard: { label: 'CLAPBOARD', suggest: 'ash',    blurb: 'lapped siding boards — the farmhouse' },
+    shingle:   { label: 'SHINGLE',   suggest: 'oak',    blurb: 'overlapping shingles — a pitched roof from above' },
+    brick:     { label: 'BRICK',     suggest: 'rust',   blurb: 'staggered courses + mortar — the townhouse' },
+    stone:     { label: 'STONE',     suggest: 'ash',    blurb: 'irregular rubble masonry — the cottage' },
+    stucco:    { label: 'STUCCO',    suggest: 'amber',  blurb: 'rendered plaster + corner quoins — adobe' },
+    curtain:   { label: 'CURTAIN',   suggest: 'indigo', blurb: 'glass curtain wall + mullions — the tower' },
+    hedge:     { label: 'HEDGE',     suggest: 'fern',   blurb: 'clipped hedge — the garden wall' },
+  };
+  const HULL_ORDER = ['station', 'timber', 'clapboard', 'shingle', 'brick', 'stone', 'stucco', 'curtain', 'hedge'];
+
   /* room categories — a capability-zone label + a default floor (hue + material). kind drives
      nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
      look. `mat` is the DEFAULT deck material a room of this kind is built with — a room whose
@@ -244,6 +286,19 @@ const WorldModel = (() => {
     if (rm && FLOOR_STYLES[rm.floorStyle]) return rm.floorStyle;
     return 'hull';
   };
+  /* THE AUTHORITY on a room's exterior shell (stationbake's HULL_RECIPES fallback is only for
+     geometry arriving without one). Defaults to `station` so nothing already built moves. */
+  const hullMatOfRoom = rm => (rm && HULL_MATERIALS[rm.hullMat]) ? rm.hullMat : 'station';
+  /* A HULL'S HUE, or null for "the shell's own tone". Explicit paint wins; otherwise the material's
+     own suggested hue (see the HULL_MATERIALS note on why this binds in the model and the wall
+     axis's `suggest` does not). A CORRIDOR follows the room it connects only in spirit — it takes
+     its own hull like any other footprint, because a covered walkway between a cabin and a brick
+     house is a real architectural choice and forcing it either way would take that away. */
+  const hullStyleOfRoom = rm => {
+    if (rm && FLOOR_STYLES[rm.hullStyle]) return rm.hullStyle;
+    const def = HULL_MATERIALS[hullMatOfRoom(rm)];
+    return (def && def.suggest) || null;
+  };
   const KIND_ORDER = ['hab', 'bridge', 'lab', 'factory', 'quarters', 'storage'];
 
   /* ---------- pure geometry helpers ---------- */
@@ -270,7 +325,7 @@ const WorldModel = (() => {
     doc.rooms[id] = {
       id, kind: 'hab', name: 'HAB-01',
       rects: [{ x1: 0, y1: 0, x2: 17, y2: 10 }],
-      floorStyle: 'hull', floorMat: null, wallStyle: null, wallMat: null, tier: 0, floorPaint: {}
+      floorStyle: 'hull', floorMat: null, wallStyle: null, wallMat: null, hullStyle: null, hullMat: null, tier: 0, floorPaint: {}
     };
     doc.order.push(id);
     doc.meta.spawnRoomId = id;
@@ -285,13 +340,27 @@ const WorldModel = (() => {
      last tile aims INTO its destination footprint so the crate visibly sinks at the dock — the same
      shape connectBelt lays by hand. Each blueprint must compile (pipeline.js compileRoutingPlan)
      to UNBOUND_BAY warns ONLY — locked by test/blueprints.test.js. */
+  /* BAY ROLES (guided workflows Phase 1, 2026-08-05): a blueprint bay stamps MEANING, not a blank
+     dock — `role` names who should crew it, `desc` says what that crew member does (placard copy),
+     `cls` maps to the real Specialties class the one-click summon deploys. The catalog is static
+     code (single source for copy + class wiring); the SAVED doc carries only the prop's `role`
+     string — see migrate()'s prop whitelist. Role is provenance: it survives binding (a suggestion,
+     never a gate — sandbox law), and hand-placed bays simply have none. */
+  const BAY_ROLES = {
+    RESEARCHER: { desc: 'digs sources & builds the brief', cls: 'researcher' },
+    WRITER:     { desc: 'drafts the result',               cls: 'writer' },
+    ENGINEER:   { desc: 'works the code lane',             cls: 'engineer' },
+    GENERALIST: { desc: 'handles everything else',         cls: 'chief' },
+    CREW:       { desc: 'works its share of the stream',   cls: 'chief' },
+    SHIPPER:    { desc: 'finishes the job & ships it',     cls: 'chief' },
+  };
   const BLUEPRINTS = [
     { id: 'research_line', label: 'RESEARCH LINE', w: 17, h: 2,
       desc: 'INBOX ▸ BAY ▸ BAY ▸ OUTBOX — work rides in, two agents work it in turn (a hand-off chain), the result ships out.',
       props: [
         { t: 'intake', x: 0, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 5, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 10, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 5, y: 0, w: 2, h: 2, role: 'RESEARCHER' },
+        { t: 'bay', x: 10, y: 0, w: 2, h: 2, role: 'WRITER' },
         { t: 'outbox', x: 15, y: 0, w: 2, h: 2 },
       ],
       belts: [
@@ -305,8 +374,8 @@ const WorldModel = (() => {
         { t: 'intake', x: 0, y: 0, w: 2, h: 2 },
         // pre-configured so a fresh stamp never nags FILTER_NO_DEFAULT: code → east lane, everything else → south
         { t: 'filter', x: 4, y: 1, w: 1, h: 1, block: false, routes: { code: 'E' }, def: 'S' },
-        { t: 'bay', x: 7, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 7, y: 3, w: 2, h: 2 },
+        { t: 'bay', x: 7, y: 0, w: 2, h: 2, role: 'ENGINEER' },     // the filter's `code -> E` lane lands here
+        { t: 'bay', x: 7, y: 3, w: 2, h: 2, role: 'GENERALIST' },   // the default (everything-else) lane
       ],
       belts: [
         { x: 2, y: 1, d: 'E' }, { x: 3, y: 1, d: 'E' }, { x: 4, y: 1, d: 'E' },
@@ -318,9 +387,9 @@ const WorldModel = (() => {
       props: [
         { t: 'intake', x: 0, y: 3, w: 2, h: 2 },
         { t: 'splitter', x: 4, y: 4, w: 1, h: 1, block: false },
-        { t: 'bay', x: 8, y: 0, w: 2, h: 2 },
-        { t: 'bay', x: 8, y: 3, w: 2, h: 2 },
-        { t: 'bay', x: 8, y: 6, w: 2, h: 2 },
+        { t: 'bay', x: 8, y: 0, w: 2, h: 2, role: 'CREW' },
+        { t: 'bay', x: 8, y: 3, w: 2, h: 2, role: 'CREW' },
+        { t: 'bay', x: 8, y: 6, w: 2, h: 2, role: 'CREW' },
       ],
       belts: [
         { x: 2, y: 4, d: 'E' }, { x: 3, y: 4, d: 'E' }, { x: 4, y: 4, d: 'E' },
@@ -331,7 +400,7 @@ const WorldModel = (() => {
     { id: 'ship_out', label: 'SHIP-OUT LOOP', w: 7, h: 2,
       desc: 'BAY ▸ OUTBOX — the smallest line: one agent, and every finished job ships a crate to the pallet.',
       props: [
-        { t: 'bay', x: 0, y: 0, w: 2, h: 2 },
+        { t: 'bay', x: 0, y: 0, w: 2, h: 2, role: 'SHIPPER' },
         { t: 'outbox', x: 5, y: 0, w: 2, h: 2 },
       ],
       belts: [
@@ -464,7 +533,7 @@ const WorldModel = (() => {
       const label = ROOM_KINDS[kind].label;
       doc.rooms[id] = {
         id, kind, name: opts.name || (label + '-' + pad2(doc._nid - 1)),
-        rects, floorStyle, floorMat, wallStyle: null, wallMat: null, tier: 0, floorPaint: {}
+        rects, floorStyle, floorMat, wallStyle: null, wallMat: null, hullStyle: null, hullMat: null, tier: 0, floorPaint: {}
       };
       doc.order.push(id);
       if (!doc.meta.spawnRoomId && kind !== 'corridor') doc.meta.spawnRoomId = id;
@@ -575,6 +644,32 @@ const WorldModel = (() => {
       snapshot();
       rm.wallStyle = nextStyle;
       rm.wallMat = nextMat;
+      emit(rm.rects.slice());
+      return { ok: true };
+    }
+
+    /* HULL — the exterior shell, third axis, same shape as setWalls: hue AND material in ONE undo
+       slot. `{style: 'follow'}` clears back to the material's own default tone; `{style: null}` (or
+       omitting it) leaves that axis alone. Picking `station` normalizes the material back to null so
+       a doc that was never re-clad serializes exactly as it did before this axis existed. */
+    function setHull(id, opts) {
+      const rm = doc.rooms[id];
+      if (!rm) return fail('NOT_FOUND', 'no such room');
+      const o = opts || {};
+      const wantStyle = o.style === 'follow' ? null : (o.style == null ? undefined : o.style);
+      const wantMat = o.mat == null ? undefined : o.mat;
+      if (wantStyle !== undefined && wantStyle !== null && !FLOOR_STYLES[wantStyle]) return fail('BAD_STYLE', 'unknown hull colour');
+      if (wantMat !== undefined && !HULL_MATERIALS[wantMat]) return fail('BAD_MAT', 'unknown hull material');
+      const nextMat = wantMat === undefined ? (rm.hullMat || null) : (wantMat === 'station' ? null : wantMat);
+      // picking the material's OWN suggested hue IS "follow" — normalize so it never serializes
+      // redundantly (and so a later catalog re-tune reaches rooms that never chose a tone).
+      const suggested = (HULL_MATERIALS[nextMat || 'station'] || {}).suggest || null;
+      const nextStyle = wantStyle === undefined ? (rm.hullStyle || null)
+        : (wantStyle === suggested ? null : wantStyle);
+      if ((rm.hullStyle || null) === nextStyle && (rm.hullMat || null) === nextMat) return { ok: true };
+      snapshot();
+      rm.hullStyle = nextStyle;
+      rm.hullMat = nextMat;
       emit(rm.rects.slice());
       return { ok: true };
     }
@@ -896,6 +991,7 @@ const WorldModel = (() => {
       for (const s of bp.props) {
         const prop = { id: 'p' + (doc._nid++), t: s.t, x: tx + s.x, y: ty + s.y, w: s.w, h: s.h };
         if (s.block === false) prop.block = false;
+        if (s.role && BAY_ROLES[s.role]) prop.role = s.role;   // guided workflows: the dock stamps carrying its ROLE (see BAY_ROLES)
         applyJunctionCfg(prop, s);   // the FILTER's routes/def ride in pre-configured
         doc.props.push(prop);
         ids.push(prop.id);
@@ -1043,6 +1139,9 @@ const WorldModel = (() => {
       for (const p of doc.props) {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
         const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
+        if (p.role) lp.role = p.role;   // a role-carrying dock's placard/nag copy (guided workflows)
+        if (p.brief) lp.brief = p.brief;   // a dock's standing job brief -> the compiled plan (step editor; prompt text only)
+        if (p.label) lp.label = p.label;   // an INTAKE's line name (step editor; legibility only, never routing)
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
         if (p.door) lp.door = p.door;   // an AIRLOCK's seal state -> the prop sprite's status light / jam spark
         if (p.connectorId) lp.connectorId = p.connectorId;   // a CONNECTOR PORTAL's bound server -> live state + firing pulse on the sprite
@@ -1147,7 +1246,12 @@ const WorldModel = (() => {
         // own wall hue when set, else its floor hue — so walls harmonize with the deck by default)
         wallMatOf: id => wallMatOfRoom(doc.rooms[id]),
         wallBaseOf: id => styleBase(wallStyleOfRoom(doc.rooms[id])),
-        FLOOR_STYLES, FLOOR_MATERIALS, WALL_MATERIALS
+        // the exterior shell: effective material, and the hue to derive its palette from. NULL base
+        // is meaningful and must be passed through as null — it means "the shell's own tone", which
+        // the bake answers with its literal legacy constants rather than a derived ramp.
+        hullMatOf: id => hullMatOfRoom(doc.rooms[id]),
+        hullBaseOf: id => { const s = hullStyleOfRoom(doc.rooms[id]); return s ? styleBase(s) : null; },
+        FLOOR_STYLES, FLOOR_MATERIALS, WALL_MATERIALS, HULL_MATERIALS
       };
     }
 
@@ -1196,6 +1300,34 @@ const WorldModel = (() => {
       if (id) p.connectorId = id; else delete p.connectorId;
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
       return { ok: true, id: propId, connectorId: p.connectorId || null };
+    }
+    /* set/clear a BAY's standing JOB BRIEF (step editor, 2026-08-05) — what this step does with arriving
+       work. PROMPT TEXT ONLY: it rides the compiled plan into run prompts and never changes who runs or
+       what tools they hold. Mirrors assignPropAgent's shape; empty clears; bounded at 2000 chars (the
+       same cap migrate()/the compiler enforce, so no path can smuggle an unbounded blob into a save). */
+    function setPropBrief(propId, brief) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      if (p.t !== 'bay') return fail('BAD_TYPE', 'only a BAY carries a job brief');
+      const b = (brief == null ? '' : String(brief)).trim().slice(0, 2000);
+      if ((p.brief || '') === b || (!p.brief && !b)) return { ok: true, id: propId, brief: p.brief || null };   // no-op: no undo slot, no re-emit
+      snapshot();
+      if (b) p.brief = b; else delete p.brief;
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, brief: p.brief || null };
+    }
+    // set/clear an INTAKE's line name (step editor) — pure legibility (the finish-the-line header + the
+    // intake glance); routing never reads it. Mirrors setPropBrief; bounded at 48 chars like migrate().
+    function setPropLabel(propId, label) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      if (p.t !== 'intake') return fail('BAD_TYPE', 'only an INBOX names its line');
+      const l = (label == null ? '' : String(label)).trim().slice(0, 48);
+      if ((p.label || '') === l || (!p.label && !l)) return { ok: true, id: propId, label: p.label || null };
+      snapshot();
+      if (l) p.label = l; else delete p.label;
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, label: p.label || null };
     }
     const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
     const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
@@ -1365,10 +1497,12 @@ const WorldModel = (() => {
       // reads
       doc: () => doc, rooms, roomById, roomAt, bounds, spawnRoomId,
       props, propById, propAt, belts, beltAt,
-      getSeq: () => seq, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
+      getSeq: () => seq, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, HULL_MATERIALS, HULL_ORDER, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
       matOfRoom: id => matOfRoom(doc.rooms[id]),   // the room's effective deck material (for the palette's active state)
       wallMatOfRoom: id => wallMatOfRoom(doc.rooms[id]),
       wallStyleOfRoom: id => wallStyleOfRoom(doc.rooms[id]),
+      hullMatOfRoom: id => hullMatOfRoom(doc.rooms[id]),
+      hullStyleOfRoom: id => hullStyleOfRoom(doc.rooms[id]),
       // validation (no mutation — for ghost previews)
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun, canPlaceBlueprint,
       // mount rules: injected so the model never imports the prop catalog (see MOUNT RULES).
@@ -1397,8 +1531,8 @@ const WorldModel = (() => {
         return surfaceHostFor(propFootprint(propById(p.id) || p), p.id) ? 'surface' : null;
       },
       // mutations
-      addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, paintTiles, renameRoom,
-      addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
+      addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, setHull, paintTiles, renameRoom,
+      addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState, setPropBrief, setPropLabel,
       setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt, stampBlueprint,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
@@ -1435,6 +1569,10 @@ const WorldModel = (() => {
       if (!('wallMat' in rm)) rm.wallStyle = null;
       if (!FLOOR_STYLES[rm.wallStyle]) rm.wallStyle = null;
       if (!WALL_MATERIALS[rm.wallMat]) rm.wallMat = null;
+      // the hull axis is additive the same way — absent means `station` at the shell's own tone,
+      // which is exactly what every pre-axis room already renders as.
+      if (!FLOOR_STYLES[rm.hullStyle]) rm.hullStyle = null;
+      if (!HULL_MATERIALS[rm.hullMat]) rm.hullMat = null;
     }
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
@@ -1448,7 +1586,7 @@ const WorldModel = (() => {
     // lookup is installed (i.e. a real client with the catalog); plain node tests keep every prop.
     if (propRules) doc.props = doc.props.filter(p => !(p && typeof p.t === 'string') || !!propRules(p.t));
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); if (typeof p.brief === 'string' && p.brief.trim()) o.brief = p.brief.slice(0, 2000); if (typeof p.label === 'string' && p.label.trim()) o.label = p.label.slice(0, 48); applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }
@@ -1467,7 +1605,7 @@ const WorldModel = (() => {
   }
 
   return {
-    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, ROOM_KINDS, KIND_ORDER,
+    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, HULL_MATERIALS, HULL_ORDER, ROOM_KINDS, KIND_ORDER,
     create: doc => makeStation(doc),
     deserialize: doc => makeStation(clone(doc)),
     defaultDoc: freshDoc,
@@ -1479,6 +1617,8 @@ const WorldModel = (() => {
     CAP_PROP_MAP, CAP_LABEL, capForProp: t => CAP_PROP_MAP[t] || null, grantLabelForProp,
     // starter-line blueprints — the static catalog the REFIT LINES palette + headless tests read
     BLUEPRINTS,
+    // bay-role catalog (guided workflows): placard copy + summon-class wiring for role-carrying docks
+    BAY_ROLES, bayRoleInfo: r => BAY_ROLES[r] || null,
   };
 })();
 

@@ -55,7 +55,14 @@
 
   function makeConsentBroker(opts) {
     opts = opts || {};
-    const bypass = !!opts.bypass;
+    /* `bypass` accepts a boolean (the boot-frozen env flag — unchanged) OR a function re-read on every call
+       (MASTER BYPASS, 2026-08-05): the user's runtime FULL BYPASS switch must take effect — and, more
+       importantly, REVOKE — on the very next tool call without a sidecar restart. The function is host-injected
+       from a persisted, token-gated store; nothing the model emits can reach it, so the frozen-at-boot
+       injection-safety property is preserved (the model still cannot flip the flag — only the /api route can). */
+    const bypassFn = typeof opts.bypass === 'function' ? opts.bypass : null;
+    const bypass = bypassFn ? false : !!opts.bypass;
+    const bypassNow = () => { if (bypassFn) { try { return bypassFn() === true; } catch (_) { return false; } } return bypass; };
     const hardline = typeof opts.hardline === 'function' ? opts.hardline : null;
     const sessionKey = opts.sessionKey || 'default';
     const grantsSession = opts.grantsSession instanceof Map ? opts.grantsSession : new Map();
@@ -172,8 +179,8 @@
       // 1. HARDLINE — unreachable past any flag.
       const hr = hardline ? hardline(call, tool) : null;
       if (hr) return { allow: false, scope: scope, hardline: true, reason: String(hr) + ANTI_RETRY };
-      // 2. BYPASS — Full Access.
-      if (bypass) return { allow: true, scope: scope, reason: 'full-access' };
+      // 2. BYPASS — Full Access (boot-frozen env) or the live master FULL BYPASS switch.
+      if (bypassNow()) return { allow: true, scope: scope, reason: 'full-access' };
       // 2.4 UNATTENDED TERMINAL GRANT — checked BEFORE the exec lockout because opening that lockout for exactly
       // this case IS the feature (see terminalAutonomy). Ordering is load-bearing: below tier 2.5 it would be
       // dead code. Still below the hardline floor (tier 1), so protected paths remain unwritable.

@@ -9,9 +9,36 @@ const appSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'ap
 
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 
-// the panel header + the live combined-truth blurb
-ok(/PERMISSIONS\s*<span class="dim">/.test(src), 'PERMISSIONS section header present');
+// the reorganized pane (2026-08-05): three numbered blocks under the console's own PERMISSIONS section head
+// (no duplicated inner h4 for the SECTION — the PROVIDERS rule), topped by the master FULL BYPASS switch.
+// Each block header is a real .ms-h (the shared divider-rule idiom), not body-weight .set-row prose —
+// that flatness is exactly what made the pane unreadable before the 08-05 spacing pass.
+ok(/<h4 class="ms-h">1 · APPROVAL <span class="dim">— who stops to ask you first/.test(src), 'block 1: per-agent APPROVAL header is a real section header');
+ok(/<h4 class="ms-h">2 · UNATTENDED LEVEL/.test(src), 'block 2: unattended-level header is a real section header');
+ok(/<h4 class="ms-h">3 · STANDING APPROVALS/.test(src), 'block 3: standing-approvals header is a real section header');
+// the flip button may never go back to sitting inline after the row's sentence (the collision bug)
+ok(/class="perm-agent/.test(src) && /class="pa-state"/.test(src), 'agent rows are structured (name/state/button), not one inline sentence');
+ok(/id="perm-bypass" class="perm-master"/.test(src), 'the master switch is a CARD, not a key-list row');
+ok(/class="perm-m-act"/.test(src), 'the bypass control sits on its own line, never inside the prose');
 ok(/id="perm-desc"/.test(src), '#perm-desc combined-level blurb element present');
+
+// ── 0 · the master FULL BYPASS switch ──
+ok(/id="perm-bypass"/.test(src), '#perm-bypass master-switch host present');
+// both directions ride ONE flip() helper (it disables the button in flight and records the failure at
+// the card) — so lock the helper plus each direction's call site rather than two literal store calls.
+ok(/PermissionsStore\.setBypass\(want\)/.test(src), 'the bypass flip drives PermissionsStore.setBypass');
+ok(/flip\(onBtn, true,/.test(src) && /flip\(offBtn, false,/.test(src), 'the switch flips both ways');
+ok(/btn\.disabled = true;/.test(src), 'a flip in flight disables its button (no double POST)');
+ok(/class="perm-m-err"/.test(src) && /bypassErr/.test(src), 'a refused flip reports AT the switch, not in another block');
+ok(/ArmConfirm\.wire\(onBtn/.test(src), 'turning FULL BYPASS ON keeps the two-press confirm (destructive-action guard)');
+ok(/snap\.envFullAccess/.test(src), 'an env-forced bypass is explained (pinned switch), never a dead toggle');
+ok(/protected-file floor/.test(src), 'the bypass copy names the floors that still stand (truthful telemetry)');
+
+// ── 1 · per-agent APPROVAL rows ──
+ok(/id="perm-approval"/.test(src), '#perm-approval per-agent list present');
+ok(/setApproval/.test(src), 'rows apply through access.config.setApproval (the dossier/-yolo path)');
+ok(/id="perm-full-all"/.test(src) && /id="perm-ask-all"/.test(src), 'whole-station FULL ACCESS + everyone-asks switches present');
+ok(/ArmConfirm\.wire\(fullAll/.test(src), 'whole-station FULL ACCESS keeps the two-press confirm');
 
 // the level spectrum: never → suggest → draft → full
 ok(/id="perm-level"/.test(src), '#perm-level chooser present');

@@ -286,11 +286,22 @@
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
+    // STEP EDITOR (2026-08-05): stageBriefFor(agentId) -> the standing job brief of the dock this agent crews,
+    // or null. PROMPT TEXT ONLY — appended to the entry run's system context below; it never widens grants,
+    // tools, or routing (those stay with resolveStation/resolveAgent). Chain hops get theirs inside chain.js.
+    const stageBriefFor = typeof o.stageBriefFor === 'function' ? o.stageBriefFor : null;
     // AGENTIC GRAPHS: the dock resolveAgent picked is stage ONE; the belts drawn PAST it say where its output
     // goes. `chain` is the injected executor (sidecar/routing/chain.js) already bound to the floor's edge
     // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
     // byte-identical to the behaviour before work lines existed.
     const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
+    // SAMPLE/PROOF SEAM (additive, 2026-08-05): an optional streamId (string, or fn(chatId) -> string) stamped
+    // onto every runOnce this hub fires (entry dock AND chain hops). With it, the host records the runs +
+    // transcripts under that workstream (runs.jsonl streamId -> a readable OUTBOX crate); WITHOUT it — every
+    // existing channel — runOnce receives streamId undefined, which the host already reads exactly like the
+    // old absent property ('' / 'global' fallbacks), so behaviour is unchanged.
+    const streamIdFor = typeof o.streamId === 'function' ? o.streamId
+      : (o.streamId ? function () { return String(o.streamId); } : null);
     // ONE-RESOLVER LAW: any telemetry that attributes an inbound message to an agent (workitem crates, queue
     // HUD) must come from THIS hub's resolution, never a parallel guess. onResolved fires once per real message
     // (never for /commands) with the exact agentId the run will execute as, in onInbound's first synchronous
@@ -1397,7 +1408,14 @@
 
       const rec = store.getChatRecord ? store.getChatRecord(chatId) : null;
       const persona = sec.system || personaFor(agentId, rec);   // the agent's REAL composed prompt when configured
-      const system = persona + (isTask ? TASK_SUFFIX : '');
+      // the dock's standing brief (step editor): when the router holds one for this agent's dock, the run's
+      // system context carries it — the SAME section header the chain handoff turn uses. Null-safe: no seam /
+      // no floor / no brief composes the exact pre-brief system string.
+      let dockBrief = null;
+      if (stageBriefFor) { try { dockBrief = stageBriefFor(agentId); } catch (_) { dockBrief = null; } }
+      const system = persona
+        + (dockBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(dockBrief).slice(0, 2000) : '')
+        + (isTask ? TASK_SUFFIX : '');
 
       // B5: if this agent runs at a bound BAY, its tools are that bay room's objects (resolveStation), not the
       // default office — so a routed agent's reach is exactly what the floor granted it. null -> office default.
@@ -1479,6 +1497,7 @@
           await runOnce({
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
+            streamId: streamIdFor ? streamIdFor(chatId) : undefined,   // sample/proof seam — undefined for every ordinary channel
             surface: wantApprovals ? 'interactive' : 'autonomous',
             ownerTrusted: ownerTrusted,
             // ...but ONLY for who answers a consent prompt. A phone has no floor to place props on, so this run
@@ -1557,6 +1576,7 @@
                 key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
                 system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
                 agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
+                streamId: streamIdFor ? streamIdFor(chatId) : undefined,   // the whole line's runs share one workstream (sample/proof seam)
                 surface: 'autonomous', ownerTrusted: ownerTrusted, broadcast: true, reflect: true,
                 station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,
                 taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel

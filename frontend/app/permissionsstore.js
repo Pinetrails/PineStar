@@ -23,6 +23,11 @@ const PermissionsStore = (() => {
      NOT a danger key, so normalizeGrants would drop it (that is the same shape as the path:/mcp: bug), and it is
      process-lifetime rather than durable. The ledger renders it above the durable rows with its own REVOKE. */
   let blanket = [];
+  /* The master FULL BYPASS switch (2026-08-05) — server truth from /api/permissions (additive fields).
+     envFullAccess = the boot SKYNET_FULL_ACCESS env forces bypass regardless of the switch; the panel
+     renders the toggle pinned + explained rather than a switch that appears to do nothing. */
+  let masterBypass = false;
+  let envFullAccess = false;
   let loaded = false;     // a successful load/refresh has happened at least once
   let error = '';         // last authority/mutation failure; never replace confirmed grants with guessed emptiness
 
@@ -56,6 +61,8 @@ const PermissionsStore = (() => {
         blanket = Array.isArray(r && r.blanket)
           ? r.blanket.filter(b => b && b.key).map(b => ({ key: String(b.key), agentId: String(b.agentId || ''), scope: String(b.scope || '') }))
           : [];
+        masterBypass = !!(r && r.masterBypass);
+        envFullAccess = !!(r && r.envFullAccess);
         loaded = true;
         error = '';
       } catch (e) { error = String((e && e.message) || 'permissions service unavailable'); }
@@ -72,10 +79,27 @@ const PermissionsStore = (() => {
       grantable: grantable.length ? grantable.slice() : (ready() ? Permissions.grantableKeys() : []),
       meta: Object.assign({}, meta),   // provenance { key: { grantedAt } } — additive; {} when the store is legacy
       blanket: blanket.map(b => Object.assign({}, b)),
+      masterBypass,
+      envFullAccess,
       level: currentLevel(),
       loaded,
       error
     };
+  }
+
+  // flip the master FULL BYPASS switch through the token-gated route. Server truth only: the cached flag
+  // updates from the response, never optimistically — a torn persist reports ok:false with state unchanged.
+  async function setBypass(on) {
+    if (deps.api && typeof deps.api.bypass === 'function') {
+      try {
+        const r = await deps.api.bypass(on === true);
+        if (!r || r.ok === false) { error = failure(r, 'could not flip the bypass switch'); return snapshot(); }
+        masterBypass = !!r.masterBypass;
+        if (typeof r.envFullAccess === 'boolean') envFullAccess = r.envFullAccess;
+        error = '';
+      } catch (e) { error = String((e && e.message) || 'could not flip the bypass switch'); }
+    }
+    return snapshot();
   }
 
   // grant / revoke ONE capability through the api; refresh the cache from the authoritative response. The grant
@@ -121,7 +145,7 @@ const PermissionsStore = (() => {
   // opts: { api:{ load(), grant(key), revoke(key) }, getPosture(), applyPreset(id), load:bool }
   function init(opts) {
     deps = opts || {};
-    grants = []; grantable = []; meta = {}; loaded = false; error = '';
+    grants = []; grantable = []; meta = {}; masterBypass = false; envFullAccess = false; loaded = false; error = '';
     if (deps.load !== false) { try { refresh(); } catch (_) {} }
   }
 
@@ -148,10 +172,16 @@ const PermissionsStore = (() => {
       const snap = await revoke(b.key);
       if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
     }
+    // the master FULL BYPASS switch outranks every row above — a "lockdown" that left it ON would be the
+    // same lie as leaving the blanket standing. Same fail-closed contract: a refused flip REJECTS.
+    if (masterBypass) {
+      const snap = await setBypass(false);
+      if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
+    }
     return snapshot();
   }
 
-  return { init, refresh, snapshot, currentLevel, setLevel, grant, revoke, reset, _grants: () => grants.slice() };
+  return { init, refresh, snapshot, currentLevel, setLevel, grant, revoke, setBypass, reset, _grants: () => grants.slice() };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { PermissionsStore };

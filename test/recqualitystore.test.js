@@ -194,7 +194,8 @@ A.ok(iRate > 0 && /RecQualityStore\.noteVerdict\(runId, verdict\)/.test(chatSrc.
 const iPass = chatSrc.indexOf('async function recommendPass');
 const passBody = chatSrc.slice(iPass, chatSrc.indexOf('function wireCuriosity'));
 A.ok(/c\.quality = recQualityOf\(c\.kind, c\.dim\)/.test(passBody), 'the pass hands each candidate its channel’s earned weight');
-A.ok(passBody.indexOf('c.quality = recQualityOf') < passBody.indexOf('Recommend.pick(cands'),
+// one-memory lane (2026-08-05): the pick runs over `live` (the post-declined-filter list), same order law.
+A.ok(passBody.indexOf('c.quality = recQualityOf') < passBody.indexOf('Recommend.pick(live'),
   '…before the spine ranks them');
 for (const [file, probe, what] of [
   ['frontend/app/suggeststore.js', /noteAccept\(\{ channel: 'suggest', dim: probe \? probe\.dim : '', spawnsWork: true/, 'the suggestion arms a stamp (its accept launches a run)'],

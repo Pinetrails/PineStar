@@ -37,6 +37,10 @@ for (const r of ROOTS) walk(path.join(base, r), files);
 // frontend/app/pipeline.js is the ONE frontend module the sidecar require()s (the shared belt-graph
 // routing compiler), so its determinism is backend-load-bearing — scan it even though the app shim isn't.
 files.push(path.join(base, 'frontend', 'app', 'pipeline.js'));
+// conveyor.js + ghostline.js promise injected-clock determinism in their contracts (replayable
+// transport sim; the ghost projection's route-truth tests depend on it) — hold them to it here.
+files.push(path.join(base, 'frontend', 'app', 'conveyor.js'));
+files.push(path.join(base, 'frontend', 'app', 'ghostline.js'));
 
 const banned = [/\bMath\.random\b/, /\bDate\.now\b/, /\bperformance\.now\b/, /\bnew\s+Date\s*\(\s*\)/];
 const labels = ['Math.random', 'Date.now', 'performance.now', 'new Date()'];
