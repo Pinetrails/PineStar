@@ -62,6 +62,20 @@ const openKey = (k) => `(() => {
   return document.querySelectorAll('.term').length + ' open';
 })()`;
 
+/* Drag the window's header as far up as the pointer can go. The band is only half the fix if a
+   user can still park a window under the bars — the drag clamp has to refuse it. */
+const dragTo = (toY) => `(() => {
+  const all = [...document.querySelectorAll('.term')];
+  const w = all[all.length - 1]; if (!w) return 'no-window';
+  const head = w.querySelector('.term-head'); const r = head.getBoundingClientRect();
+  const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+  const M = (t, y) => new MouseEvent(t, { clientX: cx, clientY: y, bubbles: true, cancelable: true });
+  head.dispatchEvent(M('mousedown', cy));                 // stationui drags on mouse*, not pointer*
+  window.dispatchEvent(M('mousemove', ${toY}));
+  window.dispatchEvent(M('mouseup', ${toY}));
+  return w.classList.contains('term-moved') ? 'moved:' + w.style.top : 'drag-not-registered';
+})()`;
+
 const closeAll = `(() => {
   document.querySelectorAll('.term .term-x').forEach(x => x.click());
   return 'closed';
@@ -144,7 +158,18 @@ async function main() {
         results[tag + '/' + k] = await evalJS(cdp, measure(k));
         results[tag + '/' + k].earlyWinTop = early.winTop;
         results[tag + '/' + k].earlyHeadTop = early.headTop;
-        await capture(cdp, OUT, `${LABEL}-${k}-${tag}`);
+        await capture(cdp, OUT, `${LABEL}-${k}-${tag}`);   // the RESTING window, before we shove it
+        // …then prove a USER cannot park it under the bars either. The DOWN drag is the control:
+        // it must actually move, or an "unchanged after dragging up" reading proves nothing.
+        results[tag + '/' + k].dragDown = await evalJS(cdp, dragTo(10000));
+        await sleep(400);
+        results[tag + '/' + k].downHeadTop = (await evalJS(cdp, measure(k))).headTop;
+        results[tag + '/' + k].dragUp = await evalJS(cdp, dragTo(-400));
+        await sleep(400);
+        const dragged = await evalJS(cdp, measure(k));
+        results[tag + '/' + k].draggedHeadTop = dragged.headTop;
+        results[tag + '/' + k].draggedHeadUnderTopbar = dragged.headUnderTopbar;
+        results[tag + '/' + k].draggedTitleHit = dragged.titleHit;
         console.log(tag, k, opened, JSON.stringify(results[tag + '/' + k]));
       }
       await evalJS(cdp, closeAll);
