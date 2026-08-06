@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f5dc06328fcfc57f03d7aef8c271765ea79b86d1",
+    "sourceCommit": "9bd8cf068e0e302bade7537df7494af490b78bd3",
     "pathSetSha256": "2343302ec3e7cc02f113dff5103928c4b35e0c473c73c6e16f7fca5921bf0cb3",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 313414,
-        "sha256": "8fa00a7300013babb16f3ae9e0a977b2d52d6c9ebe388c729cdbbd9fec7c61de"
+        "bytes": 314818,
+        "sha256": "ef4acc4a2632625c4dd9342bf4200aad450444a424560d91290c79207a375432"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -333,8 +333,8 @@
       },
       {
         "path": "frontend/app/logoclip.js",
-        "bytes": 4037,
-        "sha256": "b0599d5276c29dac7062fede4168b2a71538b76d911d81684941c6261fa8bbc3"
+        "bytes": 4016,
+        "sha256": "8fb9d2499e5f46c71631eaa8b1a6422abfafe3dcf3caa07bdd94baf18e8dfb34"
       },
       {
         "path": "frontend/app/loop-templates.js",
@@ -983,8 +983,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 93191,
-        "sha256": "cf8b437ff4c067ea178535ac1826d60a4fd2860e2f8f08ed11c79dbd8f23308f"
+        "bytes": 94893,
+        "sha256": "682f89bee5b27cf35ec5b80ec926e9c386c094b241c47ca5329d56bc6c578b7f"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -1013,8 +1013,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 68891,
-        "sha256": "6d5c856ebc4996a8cda63fd5d11f911d10a86aaa7f65cf06d741b0d68fe7bd84"
+        "bytes": 69057,
+        "sha256": "675f439f5059e414d33bd30117d4a5e2940cb6ecc5d7273d7d1369d8562d3240"
       },
       {
         "path": "frontend/js/arcade.js",
