@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "618147e92cdf7cdb4cf2fd4fe0af8903f2d45863",
+    "sourceCommit": "baae17173f41df865ab34f1410850c2a04b5540b",
     "pathSetSha256": "2343302ec3e7cc02f113dff5103928c4b35e0c473c73c6e16f7fca5921bf0cb3",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 211287,
-        "sha256": "16123eb22960bc380cba8a09592dcee7cd2df6d16604df6fc22512a4032aa523"
+        "bytes": 211353,
+        "sha256": "937af5cbe107253bbdb45f6b81bd83fe8ed31446b28cad95b81c2426cab4a6fe"
       },
       {
         "path": "frontend/app/channels.js",
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 232785,
-        "sha256": "a74f9198f981322510ba844d4722c04820f81a15af78b1896879372ff0b64f8a"
+        "bytes": 232807,
+        "sha256": "af6084c56c65199994a106b353f414c01076b570bc6fcd13b9a7ff7c4db69d50"
       },
       {
         "path": "frontend/app/stationcommands.js",
@@ -918,8 +918,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 508791,
-        "sha256": "d64deb90fb25ec206e7ac377f2f5ad6dd1c599cac57d5b1fcb156505787db03b"
+        "bytes": 509824,
+        "sha256": "91be3277a3faf750cfeeb95defce42993146105342a91c70fd35754dcafa9a1e"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -983,8 +983,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 94893,
-        "sha256": "682f89bee5b27cf35ec5b80ec926e9c386c094b241c47ca5329d56bc6c578b7f"
+        "bytes": 95422,
+        "sha256": "be06ff92c1a17b0f6fc5d97c65ea8d0206c8d088cc5f40dfed9ca1ef44987545"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -1013,13 +1013,13 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 69057,
-        "sha256": "675f439f5059e414d33bd30117d4a5e2940cb6ecc5d7273d7d1369d8562d3240"
+        "bytes": 69481,
+        "sha256": "0222bfd5fe05f3a9a85cd988552978c5da9236450e1e5b39c3bb665e3869c047"
       },
       {
         "path": "frontend/js/arcade.js",
-        "bytes": 17923,
-        "sha256": "2e3b97d9cecf986fb299d1356e279a433f20db31e57c76c6424e46c806ec80b7"
+        "bytes": 17945,
+        "sha256": "8acf27d508462c1de539a2f17bcade7dc37f5f7e58dcaa2679fb972f5b869050"
       },
       {
         "path": "frontend/js/assets.js",
@@ -2116,11 +2116,6 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/index.html",
-          "needle": "fonts.googleapis.com"
-        },
-        {
-          "kind": "contains",
           "path": "sidecar/index.js",
           "needle": "warmModelCatalog().then("
         }
@@ -2128,7 +2123,7 @@
       "verdict": "REFUTED",
       "disposition": "NARROW",
       "ownerWave": "W2",
-      "qualification": "Google Fonts and the boot-time OpenRouter catalog warm contradict the blanket claim.",
+      "qualification": "The boot-time OpenRouter catalog warm contradicts the blanket claim. The Google Fonts request is GONE — VT323 now has a single local source (the STARNET font law), so the frontend makes no third-party request at boot.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
@@ -2563,17 +2558,12 @@
       "verdict": "MISSING",
       "disposition": "FIX",
       "ownerWave": "W2",
-      "qualification": "The sidecar warms OpenRouter models at server listen and the frontend loads Google Fonts.",
+      "qualification": "The sidecar warms OpenRouter models at server listen. The frontend no longer loads Google Fonts — VT323 ships locally (the STARNET font law), so the remaining boot egress is the catalog warm alone.",
       "authorityChecks": [
         {
           "kind": "contains",
           "path": "sidecar/index.js",
           "needle": "warmModelCatalog().then("
-        },
-        {
-          "kind": "contains",
-          "path": "frontend/index.html",
-          "needle": "fonts.googleapis.com"
         }
       ],
       "refsChecked": [
