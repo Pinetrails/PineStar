@@ -464,17 +464,41 @@ const StationBake = (() => {
     if (za == null || zb == null) return 2;
     return (g.canStep(ax, ay, bx, by) || g.canStep(bx, by, ax, ay)) ? 1 : 2;
   }
+  /* ---- and a doorway is a MINORITY OF THE WALL IT PIERCES ----
+     "Capped by wall at both ends" alone is NOT the definition, and shipping it that way put the
+     border straight back (Andrew, 2026-08-05, red circle round the seam in his own station: "this
+     does not look blended in the slightest"). His geometry is why:
+
+         r1  HAB       x0..17, y0..10
+         r8  CORRIDOR  x3..4,  y11..18
+         r9  HAB       x5..16, y11..18
+
+     The seam under r1 is one contiguous OPEN run x3..16 — the corridor and the room below are
+     side by side, so nothing breaks it — and it happens to be capped by 3 tiles of wall at x0..2
+     and 1 tile at x17. Both ends walled, so the cap test alone called a FOURTEEN-tile opening a
+     doorway and dressed every tile of it. That is a room's whole face, not a door.
+
+     The missing half is scale, and it needs no magic number: an opening is a doorway when it is
+     SHORTER THAN THE WALL IT INTERRUPTS. 14 tiles of gap against 4 of wall is not a hole in a wall,
+     it is two rooms that meet. 3 tiles of hallway mouth against 10 of a room's south wall is.
+     Measured off the seam line itself, so it scales with the station and never needs tuning. */
+  const wallRunFrom = (seg, from, d, lo, hi) => { let n = 0; for (let c = from; c >= lo && c <= hi; c += d) { if (seg(c) !== 2) break; n++; } return n; };
+
   /* every open seam that is NOT a doorway, as 'x,y,side' for the tile on each side of it. Runs are
-     walked whole — the cap test is a property of the RUN, not of one tile in it, so a 12-tile join
-     resolves once and identically for all 12. */
+     walked whole — doorway-ness is a property of the RUN, not of one tile in it, so a 14-tile join
+     resolves once and identically for all 14. */
   function classifyJoins(g) {
     const open = new Set(), COLS = g.COLS, ROWS = g.ROWS;
+    const doorway = (seg, a, b, hi) => {
+      const wLo = wallRunFrom(seg, a - 1, -1, 0, hi), wHi = wallRunFrom(seg, b + 1, 1, 0, hi);
+      return wLo > 0 && wHi > 0 && (b - a + 1) < wLo + wHi;   // jambs on both sides, and narrower than them
+    };
     for (let y = 1; y < ROWS; y++) {                                    // horizontal seams: row y-1 | row y
       const seg = c => seamClass(g, c, y - 1, c, y);
       for (let x = 0; x < COLS; x++) {
         if (seg(x) !== 1) continue;
         let x2 = x; while (x2 + 1 < COLS && seg(x2 + 1) === 1) x2++;
-        if (!(x > 0 && seg(x - 1) === 2 && x2 + 1 < COLS && seg(x2 + 1) === 2)) {
+        if (!doorway(seg, x, x2, COLS - 1)) {
           for (let c = x; c <= x2; c++) { open.add(c + ',' + (y - 1) + ',s'); open.add(c + ',' + y + ',n'); }
         }
         x = x2;
@@ -485,7 +509,7 @@ const StationBake = (() => {
       for (let y = 0; y < ROWS; y++) {
         if (seg(y) !== 1) continue;
         let y2 = y; while (y2 + 1 < ROWS && seg(y2 + 1) === 1) y2++;
-        if (!(y > 0 && seg(y - 1) === 2 && y2 + 1 < ROWS && seg(y2 + 1) === 2)) {
+        if (!doorway(seg, y, y2, ROWS - 1)) {
           for (let c = y; c <= y2; c++) { open.add((x - 1) + ',' + c + ',e'); open.add(x + ',' + c + ',w'); }
         }
         y = y2;
@@ -2255,24 +2279,54 @@ const StationBake = (() => {
     dab(halfW * 1.1, halfW * 0.72, a0 * 0.55);   // lower taper
   }
 
+  /* ---- THE POOL IS CLIPPED TO THE FLOOR, NOT TO THE ROOM (2026-08-05) ----
+     Deleting every painted mark on an open seam was necessary and not sufficient. Andrew, on the
+     first cut: "this does not look blended in the slightest ... i dont want to see this line in the
+     middle." The second cause is LIGHT. The warm floor pool was `fillRect`ed from the room's own
+     top-left corner, so the gradient — whose brightest part sits just below the fixture, ~19px down
+     — got a HARD horizontal cut at the rect edge. Inside an ordinary room that cut is invisible: it
+     hides under the north wall. Across an OPEN JOIN there is no wall to hide it, so the last row of
+     one room (its light long since fallen off) met the first row of the next (its pool at full
+     strength) with a ~30 luma step in 2px. That is a line, drawn in light instead of paint.
+
+     Two rooms open to each other are ONE space and the light has to carry across. So the pool is
+     bounded by two intersected clips instead of a rect:
+       1. the station's floor union — light lands on DECK, never on void or the hull skirt (this is
+          the guard the old per-rect clamp was really providing, and it does the job properly: a
+          neighbour narrower than this room can no longer catch spill on its missing corners);
+       2. this room's footprint, GROWN by the pool radius across whichever sides carry an open join.
+     At a walled edge nothing grows and the bake is unchanged. */
   function bakeRoomLighting(b) {
     b.globalCompositeOperation = 'lighter';
+    const openSide = (r, side) => {
+      if (side === 'n' || side === 's') { const y = side === 'n' ? r.y1 : r.y2; for (let x = r.x1; x <= r.x2; x++) if (isOpenJoin(x, y, side)) return true; }
+      else { const x = side === 'w' ? r.x1 : r.x2; for (let y = r.y1; y <= r.y2; y++) if (isOpenJoin(x, y, side)) return true; }
+      return false;
+    };
     for (const r of G.allRects) {
       if (G.isCorridor(r.z)) continue;
       const X = r.x1 * T, Y = r.y1 * T, RW = (r.x2 - r.x1 + 1) * T, RH = (r.y2 - r.y1 + 1) * T;
       const count = Math.max(1, Math.round((r.x2 - r.x1 + 1) / 7));
       const rad = Math.min(60, Math.max(30, RH * 0.85));
+      const gN = openSide(r, 'n') ? rad : 0, gS = openSide(r, 's') ? rad : 0;
+      const gW = openSide(r, 'w') ? rad : 0, gE = openSide(r, 'e') ? rad : 0;
+      b.save();
+      b.beginPath();
+      for (const q of G.allRects) b.rect(q.x1 * T, q.y1 * T, (q.x2 - q.x1 + 1) * T, (q.y2 - q.y1 + 1) * T);
+      b.clip();
+      b.beginPath(); b.rect(X - gW, Y - gN, RW + gW + gE, RH + gN + gS); b.clip();
       for (let i = 0; i < count; i++) {
         const lx = X + RW * (i + 0.5) / count, ly = Y + T * 1.6;
         const gw = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
         gw.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')'); gw.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')'); gw.addColorStop(1, 'rgba(250,236,206,0)');
-        b.fillStyle = gw; b.fillRect(Math.max(X, lx - rad * 0.7), Y, Math.min(rad * 1.4, RW), Math.min(rad * 1.2, RH));
+        b.fillStyle = gw; b.fillRect(lx - rad * 0.7, ly - rad * 0.7, rad * 1.4, rad * 1.4);
         // FLOOR SHEEN (Slice 2): a faint vertical reflection streak on the deck below the pool, as if
         // the polished plating catches the ceiling light. Narrow (≈40% pool width), taller than wide,
         // additive + very low alpha, warm-neutral like the pool. Drawn under the same 'lighter' pass.
         bakeSheen(b, lx, ly + T * 0.9, rad * 0.34);
         lampPos.push({ x: lx, y: ly, r: rad * 1.4 });
       }
+      b.restore();
     }
     // tiny sheen under each doorway light spill (the threshold catches a little floor gloss too)
     for (const [x1, y1, x2, y2] of (G.doorDefs || [])) {
@@ -2286,6 +2340,13 @@ const StationBake = (() => {
       const count = Math.max(1, Math.round((r.x2 - r.x1 + 1) / 7));
       for (let i = 0; i < count; i++) {
         const lx = X + RW * (i + 0.5) / count;
+        /* A WALL-MOUNTED FLOOD NEEDS A WALL (2026-08-05). The fixture hangs one pixel below the
+           room's north edge. Where that edge is an OPEN JOIN there is no wall behind it, so the
+           mount was drawn floating on the open deck — an 8px bar of #6a6253 capped with 55% white,
+           sitting exactly on the seam. Those are the two little white dashes on the line in
+           Andrew's screenshot, and they survived every paint pass being switched off because they
+           are not seam dressing at all. The room keeps its light; only the hardware goes. */
+        if (isOpenJoin(Math.floor(lx / T), r.y1, 'n')) continue;
         // when the tile behind the fixture carries a TALL exterior face, mount the flood
         // high on that wall (just under the crown); a door/interior seam keeps the old spot
         const up = Math.round(WALL.up);

@@ -77,7 +77,28 @@ for (let y = 2; y <= 9; y++) A.ok(!has('26,' + y + ',e'), 'sealed C|E row ' + y 
       the doorways too would still pass 1 and 3, and would silently delete every sill in the game. */
 A.eq(open.size, 16, 'the A|C join is the ONLY open join in this station (8 tiles x 2 sides)');
 
-/* 5. The classifier is pure: same geometry in, same answer out, and it allocates no canvas
+/* 5. ANDREW'S OWN STATION — the geometry that broke the first version of this law, locked verbatim.
+      "Capped by wall at both ends" was not enough: the corridor and the room below it sit side by
+      side, so the seam under the top room is ONE contiguous 14-tile opening, and it happens to be
+      walled at x0..2 and x17. Both ends capped -> the cap test alone called a room's entire face a
+      doorway and dressed all 14 tiles, which is the exact line he circled. A doorway must also be
+      SHORTER THAN THE WALL IT PIERCES: 14 tiles of gap against 4 of wall is not a door. */
+{
+  const M = 4, W = 26, H = 27;
+  const zg = new Array(W * H).fill(null), ix = (x, y) => y * W + x;
+  const put = (z, x1, y1, x2, y2) => { for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) zg[ix(x + M, y + M)] = z; };
+  put('r1', 0, 0, 17, 10);      // HAB
+  put('r8', 3, 11, 4, 18);      // CORRIDOR, flush against r9
+  put('r9', 5, 11, 16, 18);     // HAB
+  const real = { COLS: W, ROWS: H, idx: ix, zoneGrid: zg,
+    canStep: (a, b, c, d) => (c >= 0 && d >= 0 && c < W && d < H && zg[ix(c, d)] != null) };
+  const os = new Set(StationBake.seamOpenJoins(real));
+  for (let x = 3; x <= 16; x++) {
+    A.ok(os.has((x + M) + ',' + (10 + M) + ',s'), 'live station: seam col ' + x + ' under r1 BLENDS (14-tile gap vs 4 of wall is not a doorway)');
+  }
+}
+
+/* 6. The classifier is pure: same geometry in, same answer out, and it allocates no canvas
       (global.document above throws if a paint pass ever leaks into this path). */
 A.eq(StationBake.seamOpenJoins(geo).join('|'), StationBake.seamOpenJoins(geo).join('|'), 'seam classification is deterministic');
 
