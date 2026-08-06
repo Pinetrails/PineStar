@@ -291,5 +291,95 @@ A.ok(/typeof RecLedger !== 'undefined'/.test(accept) && /typeof RecLedger !== 'u
 A.ok(/RecLedger\.init\(\{ now: \(\) => Date\.now\(\) \}\)/.test(read('frontend/app/app.js')),
   'app.js initializes it alongside the other recommendation stores');
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   6. THE LEDGER'S NEW SEAMS — declined targets, and the expiry sweep
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+STEPS.push(async () => {
+  const os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rec-w1-'));
+  const led = Ledger.makeRecommendationLedger({ fs, path, workspaces: dir });
+  const T = 1700000000000;
+  await led.record({ id: 'r1', surface: 'recipe', title: 'Daily briefing', target: 'daily-briefing' }, T);
+  await led.record({ id: 'r2', surface: 'recipe', title: 'Weekly digest', target: 'weekly-digest' }, T);
+  await led.verdict('r1', 'declined', 'not_relevant', T + 1000);
+  const texts = led.declinedTexts();
+  A.ok(texts.indexOf('Daily briefing') >= 0, 'a declined row is still recognizable by its title');
+  A.ok(texts.indexOf('daily-briefing') >= 0,
+    '…AND by its target — a shelf decline (target = the recipe id) now reaches the shared declined index');
+  A.eq(texts.indexOf('weekly-digest'), -1, 'an un-declined row contributes neither');
+
+  // the expiry sweep: only rows that DECLARED an expiry, past it, and never answered
+  await led.record({ id: 'e1', surface: 'spine', title: 'lapses unanswered', expiresAt: T + 5000 }, T);
+  await led.record({ id: 'e2', surface: 'spine', title: 'answered in time', expiresAt: T + 5000 }, T);
+  await led.verdict('e2', 'declined', 'wrong_thing', T + 2000);
+  await led.record({ id: 'e3', surface: 'spine', title: 'declared no expiry' }, T);
+  const dropped = await led.sweep(T + 10000);
+  A.eq(dropped, 1, 'the sweep drops exactly the one unanswered, expired row');
+  const ids = led.read().entries.map(e => e.id);
+  A.eq(ids.indexOf('e1'), -1, 'the lapsed impression is gone (it was never answerable, so it may not depress acceptance)');
+  A.ok(ids.indexOf('e2') >= 0, 'a row the Commander ANSWERED is kept forever — an expiry is never a verdict');
+  A.ok(ids.indexOf('e3') >= 0, 'a row that declared no expiry is untouched');
+  A.ok(led.declinedTexts().indexOf('answered in time') >= 0, '…and the kept decline still feeds the index');
+  A.eq(await led.sweep(0), 0, 'a sweep with no clock does nothing');
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   7. THE SHELVES CONSULT THE ONE MEMORY, AND EVERY SHELF CARD CAN DECLINE (source-locked: DOM flow)
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+const mktSrc = read('frontend/app/marketplace.js');
+A.eq((mktSrc.match(/shelfDeclined\(/g) || []).length >= 6, true,   // the definition + 5 consult sites
+  'the shared declined read gates the personalized shelves (FOR YOU, READY, lineup, curated, gap)');
+A.ok(/Recipes\.list\(\)\.filter\(r => !shelfDeclined\(r && r\.name\)\)/.test(mktSrc),
+  '…and it gates the INPUT pool, so an exclusion refills the shelf instead of shrinking it (the shelf-sink law)');
+for (const fn of ['function recCardHTML(s, why)', 'function forYouCardHTML(r, why)', 'function readyCardHTML(o)']) {
+  A.ok(/declineGlyphHTML\(/.test(A.fnBody(mktSrc, fn)), fn + ' carries the ✕ decline affordance');
+}
+const glyph = A.fnBody(mktSrc, 'function declineGlyphHTML(surface, id, name)');
+A.ok(/<span class="mkt-rec-decline" role="button" tabindex="0"/.test(glyph),
+  'the ✕ is a span (the card is a <button>; a button may not nest one), keyboard-reachable');
+A.ok(/esc\(surface\)/.test(glyph) && /esc\(id\)/.test(glyph) && /esc\(name\)/.test(glyph),
+  '…and every attribute it interpolates is escaped (the W3 XSS law)');
+const declFn = A.fnBody(mktSrc, 'function declineShelfItem(surface, id, name)');
+A.ok(/recommendationVerdict\(surface, id, 'declined', 'not_relevant'\)/.test(declFn),
+  'a shelf ✕ posts a real declined verdict onto the row this card\'s impression minted');
+A.ok(/RecLedger\.refresh\) RecLedger\.refresh\(true\)/.test(declFn),
+  '…and re-reads the shared memory so the spine sees the decline this session');
+A.ok(/ev\.stopPropagation\(\)/.test(mktSrc.slice(mktSrc.indexOf('.mkt-rec-decline').valueOf())),
+  'the ✕ click stops before the card\'s own open handler (declining is not opening)');
+// the gap shelf dedups against what the shelf above already showed this paint
+A.ok(/shelfShownClassIds && shelfShownClassIds\.has\(x\.s\.id\)/.test(A.fnBody(mktSrc, 'function interestGapShelfHTML()')),
+  'the gap shelf never repeats the class the curated/lineup shelf just recommended (cross-shelf dedup)');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   8. ONE ASK BUDGET FOR THE OFF-SPINE BEATS (source-locked: their gates are DOM/bus flow)
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+A.ok(/askBudgetSpent, spendAsk \};\s*$/m.test(chatSrc) || /setRosterStatus, askBudgetSpent, spendAsk/.test(chatSrc),
+  'chat.js exports the shared budget (read + spend) for the off-spine beats');
+const pitchSrc = read('frontend/app/pitchstore.js');
+A.ok(/Chat\.askBudgetSpent\(\)\) return \{ go: false, reason: 'ask-budget' \}/.test(pitchSrc),
+  'the First Pitch defers on a spent budget (and stays un-pitched, so it returns at a quieter moment)');
+A.ok(pitchSrc.indexOf('Chat.spendAsk()') > pitchSrc.indexOf('state.pitched = true'),
+  '…and spends only a pitch that actually reached the screen');
+const nnSrc = read('frontend/app/nightnudge.js');
+A.ok(/Chat\.askBudgetSpent && Chat\.askBudgetSpent\(\)\) return/.test(nnSrc),
+  'the night-shift "review?" nudge waits on a spent budget (the drafts and the morning report still carry it)');
+A.ok(/if \(Chat\.spendAsk\) Chat\.spendAsk\(\)/.test(nnSrc), '…and spends when it fires');
+const qrSrc = read('frontend/app/questrefreshstore.js');
+A.ok(/Chat\.askBudgetSpent === 'function'\) \? Chat\.askBudgetSpent\(\) : false/.test(qrSrc),
+  'the north-star confirm routes to its ambient fallback on a spent budget');
+A.ok(/if \(shown && typeof Chat\.spendAsk === 'function'\)/.test(qrSrc),
+  '…and spends only a nudge that actually claimed the slot');
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   9. THE EVAL SCORECARD HAS A RUNTIME CONSUMER (source-locked: route table)
+   ══════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+const idxSrc = read('sidecar', 'index.js');
+A.ok(/qsplit: '\/api\/recommendations\/eval', h: handleRecommendationsEval/.test(idxSrc),
+  'GET /api/recommendations/eval serves the scorecard over the REAL ledger (it had zero runtime consumers)');
+A.ok(/RecommendationEval\.evaluate\(rows/.test(idxSrc), '…through the same pure evaluate() the CI script uses');
+A.ok(/recommendationLedger\.sweep\(Date\.now\(\)\)/.test(idxSrc),
+  'the recommendations read lapses expired un-answered rows (the scoutSweep discipline)');
+
 Promise.all(PENDING).then(() => A.report('rec one memory (W1)'),
   e => { console.error(e); process.exit(1); });

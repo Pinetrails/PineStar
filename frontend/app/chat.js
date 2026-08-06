@@ -4508,6 +4508,14 @@ const Chat = (() => {
     const cap = (typeof Recommend !== 'undefined' && Number.isFinite(Recommend.SESSION_ASK_MAX)) ? Recommend.SESSION_ASK_MAX : 4;
     return sessionAsks >= cap;
   }
+  /* ONE BUDGET FOR EVERY PROACTIVE ASK (one-memory lane, 2026-08-05). The spine's cap bounded only the spine's
+     own ten channels; the OFF-SPINE proactive consent beats — the First Pitch, the north-star confirm, the
+     night-shift "review?" nudge — each kept a private anti-nag and their SUM was unbounded on top of the spine's
+     four. spendAsk/askBudgetSpent are exported so those beats spend the SAME budget: five polite systems are
+     still one loud station. What does NOT spend it, stated: the reports (morning night report, the away digest)
+     — an absence's work earns its summary the same way a run earns its rating — and each beat's own once-ever /
+     per-session floors remain untouched underneath. */
+  function spendAsk() { sessionAsks += 1; }
 
   // the understanding read the spine scores value-of-information against. Fail-open: a cold/absent store
   // means no VOI bonus at all (pure priority order) — never a fabricated one.
@@ -7559,5 +7567,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus, askBudgetSpent, spendAsk };
 })();

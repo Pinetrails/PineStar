@@ -1310,7 +1310,9 @@ const Marketplace = (() => {
     const scoreFn = (learningOn && ps && ps.score) ? (t => ps.score(t)) : null;
     const gt = ready ? goalText() : '';
     const topics = learningOn ? learnedTopics() : [];   // same glass-box gate as the affinity scorer (see forYouShelfHTML)
-    const pool = (items || []).filter(s => s && s.id !== excludeId);
+    // the shared declined read gates the INPUT here too — a declined class never enters the rank, and both the
+    // personalized top-3 and the cold-start lane spread fill from the classes that remain.
+    const pool = (items || []).filter(s => s && s.id !== excludeId && !shelfDeclined(s.name));
     let anySignal = false;
     const scored = pool.map((s, idx) => {
       const aff = scoreFn ? (Number(scoreFn(s.tags || {})) || 0) : 0;
@@ -1340,6 +1342,45 @@ const Marketplace = (() => {
       return { s, why: whyGrammar('it covers the ' + lbl.toLowerCase() + ' lane') };
     }) };
   }
+  /* ── THE SHARED DECLINED MEMORY, ON THE SHELVES (one-memory lane, 2026-08-05) ──────────────────────────
+     Every personalized shelf here consults the ONE cross-surface declined read (RecLedger — the browser wire
+     into sidecar/recommendation-ledger.js) before it ranks: a class or recipe the Commander explicitly waved
+     off — here, at a COMMS card, anywhere — is not shown to them as a recommendation again. Exact normalized
+     name match only, the declinedindex.js bar; fail-open, so an unreachable ledger suppresses nothing.
+     LIBRARY vs SHELF, stated: the declined read gates only the RECOMMENDATION rows. The class stays in the
+     catalog and the recipe stays in the library — "stop recommending this" is not "hide this from me". */
+  let shelfDeclinedNow = null;   // names declined THIS session — covers the gap until the ledger read returns
+  let shelfShownClassIds = null; // classIds the recruit shelves above have already shown THIS paint (dedup)
+  function shelfNameKey(name) {
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.normKey) return RecLedger.normKey(name); } catch (_) {}
+    return String(name == null ? '' : name).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+  function shelfDeclined(name) {
+    const k = shelfNameKey(name);
+    if (!k) return false;
+    if (shelfDeclinedNow && shelfDeclinedNow.has(k)) return true;
+    try { return !!(typeof RecLedger !== 'undefined' && RecLedger.isDeclined && RecLedger.isDeclined(name)); } catch (_) {}
+    return false;
+  }
+  /* the ✕ on a shelf card. A verdict, not a deletion: it lands on the ledger row this card's impression minted
+     (ProspectStore.recommendationVerdict finds it by surface+target), teaches the preference model, joins the
+     cross-surface declined index the propose-time filters and the spine consult — and repaints, so the card is
+     gone the moment it was declined. When personalization is paused no row exists and nothing is recorded
+     durably; the session-set still hides the card, which is UX, not learning. */
+  function declineShelfItem(surface, id, name) {
+    try { if (typeof ProspectStore !== 'undefined' && ProspectStore.recommendationVerdict) ProspectStore.recommendationVerdict(surface, id, 'declined', 'not_relevant'); } catch (_) {}
+    if (!shelfDeclinedNow) shelfDeclinedNow = new Set();
+    const k = shelfNameKey(name);
+    if (k) shelfDeclinedNow.add(k);
+    try { if (typeof RecLedger !== 'undefined' && RecLedger.refresh) RecLedger.refresh(true); } catch (_) {}
+  }
+  // the glyph itself — a span, because these cards are <button>s and a button may not nest one. Same ✕ the
+  // prospect/scout dismissals already use; matte, phosphor-dim until hover (never a white control).
+  function declineGlyphHTML(surface, id, name) {
+    return '<span class="mkt-rec-decline" role="button" tabindex="0" data-decline-surface="' + esc(surface) + '"' +
+      ' data-decline-id="' + esc(id) + '" data-decline-name="' + esc(name) + '"' +
+      ' aria-label="not interested — stop recommending this" title="not interested — stop recommending this">✕</span>';
+  }
   function trackRecommendation(surface, item, why, rank) {
     try {
       if (typeof ProspectStore === 'undefined' || !ProspectStore.noteRecommendation || !item) return;
@@ -1354,10 +1395,12 @@ const Marketplace = (() => {
     // the Commander actually does, with a why derived from a real persisted counter. The curated list already
     // excludes rostered classes and only surfaces classes the work TOUCHES, so it never fabricates a pick. When the
     // signal is cold/thin (or learning is off), fall through to today's honest rankSpecs shelf UNCHANGED.
+    shelfShownClassIds = new Set();   // fresh per paint — the gap shelf below dedups against what THIS render shows
     const curated = recruiterShelf();
     if (curated) return curated;
     const res = rankSpecs(Specialties.builtins(), ctx && ctx.currentSpecialtyId);
     if (!res.items.length) return '';
+    res.items.forEach(x => shelfShownClassIds.add(x.s.id));
     res.items.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     const head = res.personalized
       ? noticedHead('based on your recent runs')
@@ -1377,8 +1420,9 @@ const Marketplace = (() => {
     // was also the one place it forgot the "because" — two shelves side by side in different voices.
     const cards = res.items
       .map(it => ({ s: Specialties.get(it.classId), why: whyGrammar(it.why) }))
-      .filter(x => x.s && x.s.id !== excludeId);
+      .filter(x => x.s && x.s.id !== excludeId && !shelfDeclined(x.s.name));   // the shared declined read
     if (!cards.length) return '';
+    cards.forEach(x => { if (shelfShownClassIds) shelfShownClassIds.add(x.s.id); });
     cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">' +
       noticedHead('the next hire your real work points to') + '</div>' +
@@ -1397,7 +1441,12 @@ const Marketplace = (() => {
     const excludeId = ctx && ctx.currentSpecialtyId;
     const cards = res.items
       .map(it => ({ s: Specialties.get(it.classId), why: whyGrammar(it.why) }))
-      .filter(x => x.s && x.s.id !== excludeId);
+      /* the shared declined read, PLUS the cross-shelf dedup (one-memory lane): the curated/lineup shelf just
+         above can rank the same class this shelf's gap points to, and two adjacent shelves recommending the same
+         hire back-to-back reads as the bay repeating itself. The shelf ABOVE keeps the card (its evidence names
+         the Commander's own work, the stronger claim); this one shows its next-best uncovered topic instead. */
+      .filter(x => x.s && x.s.id !== excludeId && !shelfDeclined(x.s.name)
+        && !(shelfShownClassIds && shelfShownClassIds.has(x.s.id)));
     if (!cards.length) return '';
     cards.forEach((x, i) => trackRecommendation('recruit', x.s, x.why, i + 1));
     return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">' +
@@ -1473,9 +1522,13 @@ const Marketplace = (() => {
     // ASK THE RANKER WHAT IT ACTUALLY DID. `ready` only says the station has learned enough to be asked; it does
     // NOT say this row used any of it. A ready Commander whose profile, goals, launches and topics all come up
     // silent gets a catalog-order category spread — and used to get "◈ FOR YOU" printed over it.
+    // the shared declined read gates the INPUT (see readyShelfHTML): a declined recipe never enters the rank,
+    // and the ranker's own spread/top-up keeps the row at three from the recipes that remain — the FOR YOU
+    // shelf-sink law (a negative term must never EMPTY the shelf) holds because this excludes, never down-ranks.
+    const pool = Recipes.list().filter(r => !shelfDeclined(r && r.name));
     const ranked = Recipes.rankRecipesExplained
-      ? Recipes.rankRecipesExplained(Recipes.list(), rankOpts)
-      : { items: Recipes.rankRecipes(Recipes.list(), rankOpts), personalized: false };
+      ? Recipes.rankRecipesExplained(pool, rankOpts)
+      : { items: Recipes.rankRecipes(pool, rankOpts), personalized: false };
     const items = ranked.items;
     if (!items || !items.length) return '';
     // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
@@ -1616,7 +1669,9 @@ const Marketplace = (() => {
     let offers = [];
     // SIX, not three: READY now replaces the cold-start row rather than stacking above it, so it can spend the
     // two rows that row was using. Kept to a multiple of the 3-column rail so the grid never leaves an orphan.
-    try { offers = RecipeFit.offers(Recipes.list(), ctx, { limit: 6 }) || []; } catch (_) { offers = []; }
+    // the shared declined read gates the INPUT, so the fit engine ranks over the eligible pool and the shelf
+    // stays as full as the context allows (a post-rank filter would shrink it below its limit instead).
+    try { offers = RecipeFit.offers(Recipes.list().filter(r => !shelfDeclined(r && r.name)), ctx, { limit: 6 }) || []; } catch (_) { offers = []; }
     if (!offers.length) return '';
     // stash the context-derived values by id so the launch form can prefill from them (see launchFormHTML).
     // Rebuilt from scratch on every shelf render, so a stale binding can never outlive the context that made it.
@@ -1641,6 +1696,7 @@ const Marketplace = (() => {
     const fill = (o.bound || []).length
       ? '<div class="mkt-ready-fill">↳ fills in ' + esc((o.bound || []).map(b => b.key + ': ' + b.label).join(' · ')) + '</div>' : '';
     return '<button class="mkt-rec mkt-foryou mkt-ready-card" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      declineGlyphHTML('recipe', r.id, r.name) +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
       '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + cad +
@@ -1676,6 +1732,7 @@ const Marketplace = (() => {
   function forYouCardHTML(r, why) {
     const cat = CAT_LABEL[railBucket(r)] || 'GENERAL';
     return '<button class="mkt-rec mkt-foryou" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      declineGlyphHTML('recipe', r.id, r.name) +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
       '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(cat) + '</span>' + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') +
@@ -1684,6 +1741,7 @@ const Marketplace = (() => {
   function recCardHTML(s, why) {
     // `why` comes from rankSpecs: the profile-affinity reason, a goal-match note, or the cold-start lane label
     return '<button class="mkt-rec" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
+      declineGlyphHTML('recruit', s.id, s.name) +
       '<div class="mkt-rec-top">' + sealHTML(s, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(s.name) + '</div><div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div></div>' +
       (why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(why) + '</div>' : '') + '</button>';
@@ -1843,6 +1901,18 @@ const Marketplace = (() => {
   function wireRoster(stage) {
     stage.querySelectorAll('.mkt-card').forEach(b => b.addEventListener('click', () => focusFromCard(b.dataset.id)));
     stage.querySelectorAll('.mkt-rec[data-id]').forEach(b => b.addEventListener('click', () => focusFromCard(b.dataset.id)));
+    /* the shelf-card ✕ (one-memory lane): a span inside the card <button>, so its click must stop before the
+       card's own open handler above sees it. Keyboard parity because role="button" promises it. The repaint is
+       immediate — the declined card vanishes and the shelf refills from what remains. */
+    stage.querySelectorAll('.mkt-rec-decline').forEach(x => {
+      const fire = (ev) => {
+        ev.stopPropagation(); ev.preventDefault();
+        declineShelfItem(x.dataset.declineSurface, x.dataset.declineId, x.dataset.declineName);
+        sfx('click'); renderStage();
+      };
+      x.addEventListener('click', fire);
+      x.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') fire(ev); });
+    });
 
     const saveas = stage.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; renderStage(); });

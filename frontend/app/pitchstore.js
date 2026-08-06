@@ -72,6 +72,10 @@ const PitchStore = (() => {
     if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return { go: false, reason: 'onboarding' };
     if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return { go: false, reason: 'intake' };
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return { go: false, reason: 'dialogue-open' };   // never stomp the awakening/tutorial panel
+    // the SHARED session ask budget (one-memory lane): the pitch is a proactive consent ask, so it spends the
+    // same bounded budget the spine's channels do. A spent budget defers it — the flag stays un-pitched, and a
+    // later run (or the next session) offers it at a quieter moment. Fail-open when Chat isn't loaded (the test).
+    try { if (typeof Chat !== 'undefined' && Chat.askBudgetSpent && Chat.askBudgetSpent()) return { go: false, reason: 'ask-budget' }; } catch (_) {}
     const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
     const known = sum ? sum.known : [];
     const rd = readinessRead();
@@ -126,6 +130,9 @@ const PitchStore = (() => {
       if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // G3a: the pitch beat gets its soft chime (was mute)
       const choice = await Dialogue.node({ lines: presented, options: Pitch.choices() });
       state.pitched = true; save();   // we DID deliver a pitch — never offer the first one again (a transient error above leaves it un-pitched)
+      // a pitch that actually reached the screen spends one unit of the shared session ask budget (never the
+      // transient-error path above, which delivered nothing to be budgeted).
+      try { if (typeof Chat !== 'undefined' && Chat.spendAsk) Chat.spendAsk(); } catch (_) {}
       if (Dialogue.isOpen()) Dialogue.close();
       if (choice && choice.value === 'build') doBuild(parsed);
       // 'other' → graceful: the panel closes, the Commander stays in control, the dossier keeps learning for sharper future ideas

@@ -198,6 +198,7 @@ const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const Recommendation = require('./recommendation-ledger.js');
+const RecommendationEval = require('./recommendation-eval.js');
 const { makeRecommendationLedger } = Recommendation; // one cross-surface recommendation/verdict lifecycle + shared utility ranker
 const { makePersonalizationStore } = require('./personalization-store.js'); // one durable pause/forget authority for every derived recommender
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
@@ -4304,9 +4305,26 @@ async function handleScoutDecide(req, res) {
 
 // ONE recommendation lifecycle API. Browser and server surfaces write the same bounded envelope, so "not now"
 // remains a deferral, "never" becomes a cross-surface decline, and replay metrics can measure compounding.
+/* GET /api/recommendations/eval — the offline scorecard (recommendation-eval.js), run over the REAL ledger.
+   The eval module had ZERO runtime consumers: the metrics that grade whether recommendations are actually
+   getting better (adoption, precision@3, counterfactual regret, calibration, contradiction rate) existed only
+   as a CLI over an exported file. This is the same pure evaluate() over the same durable rows — read-only,
+   deterministic for a given ledger state, no model spend. */
+function handleRecommendationsEval(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
+    const rows = recommendationLedger.read();
+    json(200, { ok: true, evaluation: RecommendationEval.evaluate(rows, Object.assign({ now: Date.now() }, surface ? { surface } : {})) });
+  } catch (e) { json(200, { ok: false, error: (e && e.message) || 'recommendation eval failed' }); }
+}
 function handleRecommendationsGet(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   try {
+    // lapse un-answered rows whose surface declared an expiry (same read-time discipline as scoutSweep) —
+    // fire-and-forget: this read serves the pre-sweep state, the next one is clean.
+    try { recommendationLedger.sweep(Date.now()).catch(() => {}); } catch (_) {}
     const u = new URL(req.url, 'http://127.0.0.1');
     const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
     const state = String(u.searchParams.get('state') || '').slice(0, 20);
@@ -6917,6 +6935,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/scout/context', h: handleScoutContext },
   { m: 'POST', exact: '/api/scout/decide', h: handleScoutDecide },
   { m: 'POST', exact: '/api/scout/telemetry', h: handleScoutTelemetry },
+  { m: 'GET', qsplit: '/api/recommendations/eval', h: handleRecommendationsEval },
   { m: 'GET', qsplit: '/api/recommendations', h: handleRecommendationsGet },
   { m: 'POST', exact: '/api/recommendations', h: handleRecommendationsPost },
   { m: ['GET', 'POST', 'DELETE'], exact: '/api/personalization', h: handlePersonalization },
