@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "fcf33b8ffc54a979bcfad6992b6566efe4655bc2",
-    "pathSetSha256": "2343302ec3e7cc02f113dff5103928c4b35e0c473c73c6e16f7fca5921bf0cb3",
+    "sourceCommit": "8615f14224d9e8de1928f38bd158d84c8f5ca497",
+    "pathSetSha256": "1dbea34b120662d77bb0e3ed28e0428655952023ac3ef2d929da5f8b60558068",
     "files": [
       {
         "path": "INSTALL.md",
@@ -129,7 +129,7 @@
       {
         "path": "frontend/app/build.js",
         "bytes": 213625,
-        "sha256": "08c8372e46ca20ccce17b6ed79190728bbc02b7f0b8220a8902001a91d644c3a"
+        "sha256": "c819f47a20a12bdabc1ef4a0dadd1442316d1c66ca5bfc2a51f88323c255dfd5"
       },
       {
         "path": "frontend/app/channels.js",
@@ -718,8 +718,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 480607,
-        "sha256": "9a21342f227574706a77ed05b8a7e617cc441349c76baa3702275a24f19b6c57"
+        "bytes": 486704,
+        "sha256": "ccc8086f6aead11af82efa7d9f565d3613ecfc473daaff8ce2e52177169323f5"
       },
       {
         "path": "frontend/app/study.js",
