@@ -53,11 +53,18 @@
      dep-free UMD. Tolerates a non-AbortSignal parent (unit stubs) by simply not chaining. */
   function childAbort(parent) {
     const ac = new AbortController();
+    let detach = function () {};
     if (parent) {
       if (parent.aborted) abort(ac);
-      else if (typeof parent.addEventListener === 'function') parent.addEventListener('abort', () => abort(ac), { once: true });
+      else if (typeof parent.addEventListener === 'function') {
+        const onAbort = () => abort(ac);
+        try {
+          parent.addEventListener('abort', onAbort, { once: true });
+          detach = () => { try { parent.removeEventListener('abort', onAbort); } catch (_) {} };
+        } catch (_) {}
+      }
     }
-    return ac;
+    return { ac, detach };
   }
 
   function lastAssistant(messages) {
@@ -334,7 +341,8 @@
           const wallMs = bounded
             ? Math.min(allottedWallMs || bounded.workerMaxMs, bounded.workerMaxMs)
             : allottedWallMs;
-          const ac = wallMs ? childAbort(parentSignal) : null;
+          const child = wallMs ? childAbort(parentSignal) : null;
+          const ac = child && child.ac;
           let timedOut = false, timer = null;
           if (ac) timer = setTimeout(() => { timedOut = true; abort(ac); }, wallMs);
           const timeoutRow = (res) => {
@@ -389,6 +397,7 @@
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
           } finally {
             if (timer) clearTimeout(timer);
+            if (child) child.detach();
           }
           noteSessionActivity('station.dispatch_end', job, workerRunId);
           if (timedOut) return timeoutRow(result);   // keep whatever partial text the aborted run did produce

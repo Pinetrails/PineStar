@@ -109,11 +109,18 @@
   // timeout instead of running on. Tools that ignore ctx.signal behave exactly as before (no regression).
   function childAbort(parent) {
     const ctrl = new AbortController();
+    let detach = function () {};
     if (parent) {
       if (parent.aborted) { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }
-      else { try { parent.addEventListener('abort', () => { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }, { once: true }); } catch (_) {} }
+      else {
+        const onAbort = () => { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } };
+        try {
+          parent.addEventListener('abort', onAbort, { once: true });
+          detach = () => { try { parent.removeEventListener('abort', onAbort); } catch (_) {} };
+        } catch (_) {}
+      }
     }
-    return ctrl;
+    return { ctrl, detach };
   }
 
   function makeRegistry() {
@@ -213,7 +220,8 @@
       // (chained to the run's parent signal) is threaded in as ctx.signal so that on TIMEOUT we abort() the work
       // before rejecting — a timed-out tool no longer keeps running/spending in the background.
       const timeoutMs = tool.timeoutMs || ctx.timeoutMs || 0;
-      const ac = childAbort(ctx.signal);
+      const child = childAbort(ctx.signal);
+      const ac = child.ctrl;
       const runCtx = ac !== ctx.signal ? Object.assign({}, ctx, { signal: ac.signal }) : ctx;
       const startedAt = (ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() : 0;
       const elapsed = () => ((ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() - startedAt : 0);
@@ -227,6 +235,11 @@
       } catch (e) {
         if (e && e.__timeout) return await notifyPost(errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout'), elapsed());
         return await notifyPost(errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e))), elapsed());
+      } finally {
+        // A long run may execute hundreds of tools against one parent signal. Once this call settles, its child
+        // controller no longer needs cancellation propagation; retaining every listener until run end leaks the
+        // whole per-call closure graph and eventually trips EventTarget listener-pressure warnings.
+        child.detach();
       }
     }
 

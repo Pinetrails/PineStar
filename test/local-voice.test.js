@@ -41,6 +41,21 @@ function packageOnDisk(name) {
   assert.equal(status.ttsBusy, 0);
   assert.equal(status.lastTtsMs, null);
 
+  {
+    const policies = [];
+    localVoice._hardenSharpImageDecoders({ block: policy => policies.push(policy) });
+    assert.deepEqual(policies, [{ operation: [
+      'VipsForeignLoadNsgif',
+      'VipsForeignLoadTiff',
+      'VipsForeignLoadVips'
+    ] }], 'offline voice blocks the vulnerable Sharp/libvips image loaders before Transformers imports');
+    assert.throws(
+      () => localVoice._hardenSharpImageDecoders({}),
+      /image-decoder hardening is unavailable/,
+      'offline voice fails closed when the Sharp mitigation cannot be applied'
+    );
+  }
+
   // Payload validation runs before anything else, installed or not.
   await assert.rejects(() => localVoice.transcribe(Buffer.alloc(3)), /invalid 16 kHz/);
 

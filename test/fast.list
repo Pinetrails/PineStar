@@ -128,6 +128,7 @@ test/t0-clean-install.test.js
 test/desktop-workspace-migration.test.js
 test/t1-signing.test.js
 test/t2-state-safety.test.js
+test/upgrade-085-090.test.js
 test/t3-release-smoke.test.js
 test/t4-update-delivery.test.js
 test/t5-public-distribution.test.js
@@ -418,6 +419,7 @@ test/routine-tools.test.js
 test/comms-tools.test.js
 test/acp-core.test.js
 test/workstreams.test.js
+test/workstreams.search-perf.test.js
 test/session-power-tools.test.js
 test/session-creation.test.js
 test/projects-view.test.js

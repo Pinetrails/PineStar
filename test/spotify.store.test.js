@@ -135,6 +135,24 @@ function jsonResp(obj, status) { return { ok: (status || 200) < 300, status: sta
     try { await fsp.rm(dir, { recursive: true, force: true }); } catch (_) {}
   }
 
+  // D5: a disk failure while disconnecting must leave BOTH the live view and durable token connected. Before
+  // this guard, clear() changed memory first, then a failed write left the UI saying disconnected while the
+  // old refresh token remained on disk and came back after restart.
+  {
+    const dir = DIR + '-d5';
+    try { await fsp.rm(dir, { recursive: true, force: true }); } catch (_) {}
+    const seed = makeSpotifyStore({ fsp, pathMod: path, dir, fetchImpl: noFetch, now });
+    await seed.setClientId('CID');
+    await seed.setTokens({ accessToken: 'AT-live', refreshToken: 'RT-live', expiresAt: T + 3600000, scope: 'sc' });
+    await fsp.mkdir(path.join(dir, 'spotify.json.tmp')); // persist() writeFile now fails with EISDIR
+    let threw = false; try { await seed.clear(); } catch (_) { threw = true; }
+    A.ok(threw, 'D5: a failed durable clear rejects');
+    A.eq((await seed.status()).connected, true, 'D5: failed clear restores the live connected state');
+    const restarted = makeSpotifyStore({ fsp, pathMod: path, dir, fetchImpl: noFetch, now });
+    A.eq((await restarted.status()).connected, true, 'D5: failed clear leaves the durable refresh token intact');
+    try { await fsp.rm(dir, { recursive: true, force: true }); } catch (_) {}
+  }
+
   // ---- E. not connected -> clean error ----
   try { await fsp.rm(DIR, { recursive: true, force: true }); } catch (_) {}
   const s7 = makeSpotifyStore({ fsp, pathMod: path, dir: DIR, fetchImpl: noFetch, now });

@@ -182,11 +182,22 @@
        (success, throw, abort) lands here exactly once; an unsettled iteration would hold its claim until the
        zombie ceiling and stall the loop for maxRunMs. */
     function settle(loopId, runId, result) {
-      const at = now();
+      const lease = leases.get(loopId);
+      const pending = lease && lease.runId === runId ? lease.settlement : null;
+      const at = pending ? pending.at : now();
       const prev = store.getLoop(getLoops(), loopId);
       const prevState = prev && prev.state;
       const next = store.settleIteration(getLoops(), loopId, Object.assign({ runId: runId }, result), { now: at });
-      setLoops(next);
+      let persisted = false;
+      try { persisted = setLoops(next) !== false; } catch (_) { persisted = false; }
+      if (!persisted) {
+        // The iteration already ran. Keep its lease as a settlement receipt and retry only the durable write;
+        // dropping ownership here lets the old fire claim age into a zombie and execute completed work twice.
+        if (lease && lease.runId === runId && !lease.settlement) {
+          lease.settlement = { at: at, result: Object.assign({}, result) };
+        }
+        return false;
+      }
       leases.delete(loopId);
       if (untrackRun) { try { untrackRun(runId); } catch (_) {} }   // the desk goes quiet only when the pass really ends
       const loop = store.getLoop(next, loopId);
@@ -351,6 +362,13 @@
             // ask the Commander to approve work that never happened.
             if (state.cancelled) return settle(loop.id, runId, { status: 'error', cancelled: true, error: 'cancelled' });
             if (state.errMsg) return settle(loop.id, runId, { status: 'error', error: state.errMsg });
+            const terminalReason = String(state.reason || (res && res.reason) || '');
+            if (terminalReason !== 'done') {
+              return settle(loop.id, runId, {
+                status: 'error', cancelled: terminalReason === 'cancelled',
+                error: 'run ended without completion: ' + (terminalReason || 'missing terminal outcome')
+              });
+            }
             // hand the harvest the run result WITH the streamed text folded in (runOnce doesn't carry it).
             const withText = Object.assign({}, res || {}, { text: (res && res.text) || state.buf });
             // RUN THE CHECK between the work and the settlement. A check that THROWS is not a pass and not a
@@ -397,6 +415,14 @@
     function applyTick(nowMs) {
       const halted = isHalted();
       let fired = 0, skipped = 0, deferred = 0, planned = 0;
+
+      // Retry completed-but-not-yet-durable iteration receipts before considering any new fire. A pending
+      // settlement is not a live process and must never be reclaimed/re-executed as a stale run.
+      for (const entry of Array.from(leases.entries())) {
+        const loopId = entry[0], lease = entry[1];
+        if (!lease || !lease.settlement) continue;
+        settle(loopId, lease.runId, lease.settlement.result);
+      }
 
       // roll every loop's daily budget bucket first, persisting once if any changed. Done before the gate so a
       // loop that was budget-bound yesterday is genuinely free today rather than free-on-the-tick-after.

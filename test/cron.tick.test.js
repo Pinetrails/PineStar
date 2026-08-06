@@ -34,9 +34,10 @@ function setup(jobs, runOnceFake, opts) {
   const runs = [];          // every runOnce opts object the driver passed
   const placed = [];        // every placeWorkitem(agentId,prompt,runId) — the conveyor box a fire rides onto the floor
   let idN = 0;
+  let writes = 0;
   const driver = makeCronDriver({
     getJobs: () => store,
-    setJobs: (j) => { store = j; },
+    setJobs: (j) => { writes++; if (opts.failWriteAt === writes) return false; store = j; return true; },
     runOnce: (o) => { runs.push(o); return Promise.resolve(runOnceFake ? runOnceFake(o) : undefined); },
     emit: (name, payload) => { events.push({ name, payload }); },
     placeWorkitem: (agentId, prompt, runId) => { placed.push({ agentId, prompt, runId }); },
@@ -238,6 +239,40 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(s.getJob('ja').lastStatus, 'error', 'the throwing job recorded lastStatus error');
     A.eq(s.getJob('jb').lastStatus, 'ok', 'the other job still completed ok');
     A.ok(s.events.some(e => e.name === 'cron.result' && e.payload.jobId === 'ja' && e.payload.outcome === 'failed'), 'failed outcome for the throwing job');
+  }
+
+  // ---- 7b. a settlement that cannot persist is retried, never announced or re-fired as completed ----
+  {
+    const j = onceJob('persist-settle', 'in 1m');
+    const s = setup([j], okRun('landed once'), { failWriteAt: 3 }); // claim + first heartbeat persist; settlement fails
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    await flush();
+    A.eq(s.runs.length, 1, 'the one-shot ran exactly once before its settlement write failed');
+    A.eq(countOf(s.events, 'cron.result'), 0, 'an unpersisted settlement is not announced as a completed result');
+    A.eq(s.driver.leases.size, 1, 'the lease retains the pending settlement instead of reopening the fire');
+    s.driver.applyTick(s.clock.now() + 1);             // retry the durable settlement; the injected failure was one-shot
+    A.eq(s.runs.length, 1, 'retrying settlement does not re-run the routine');
+    A.eq(countOf(s.events, 'cron.result'), 1, 'the result is announced exactly once after persistence succeeds');
+    A.eq(s.getJob('persist-settle').state, 'completed', 'the recovered settlement durably completes the one-shot');
+    A.eq(s.driver.leases.size, 0, 'the lease releases only after settlement is durable');
+  }
+
+  // ---- 7c. a cleanly-emitted non-done terminal is still a failed routine outcome ----
+  {
+    const j = onceJob('cancelled-run', 'in 1m');
+    const s = setup([j], (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'schedule', model: o.model });
+      o.emit('agent.token', { delta: 'partial work' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'cancelled', turns: 1, usd: 0 });
+    });
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    await flush();
+    A.eq(s.getJob('cancelled-run').lastStatus, 'error', 'cancelled work is not persisted as a successful routine');
+    A.eq(s.getJob('cancelled-run').lastReason, 'cancelled', 'the durable outcome preserves the real terminal reason');
+    A.ok(/cancelled/.test(s.getJob('cancelled-run').lastError || ''), 'the durable error names why work was incomplete');
+    A.eq(firstOf(s.events, 'cron.result').outcome, 'failed', 'cancelled work is announced as failed, not ok');
   }
 
   // ---- 8. no key/model -> cron.skipped{no-capability}; runOnce is never called ----

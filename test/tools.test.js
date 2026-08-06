@@ -8,6 +8,7 @@ const { makeReplayProvider } = require('../sidecar/providers/replay.js');
 const { makeCostEngine } = require('../sidecar/cost.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
+const { getEventListeners } = require('events');
 
 const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.stringify(args || {}), parseError: null });
 
@@ -94,6 +95,15 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
       parent.abort();
       await p;
       A.ok(childAborted, 'aborting the parent run signal aborts the per-call child signal (cancel propagates to the tool)');
+    }
+
+    // A completed call must detach its parent-cancellation listener. Tool-heavy runs share one parent signal;
+    // retaining one child controller per call until run end creates linear memory/listener growth.
+    {
+      const parent = new AbortController();
+      reg.register({ name: 'quick', schema: { type: 'object' }, run: async () => 'ok' });
+      for (let i = 0; i < 25; i++) await reg.dispatch(call('quick', {}, 'quick-' + i), { signal: parent.signal });
+      A.eq(getEventListeners(parent.signal, 'abort').length, 0, 'settled tools detach their parent abort listeners');
     }
 
     // consent denied -> no run

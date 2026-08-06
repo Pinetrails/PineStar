@@ -56,6 +56,8 @@ unknown.begin({ runId: 'unknown', messages: [] });
 unknown.toolIntent('unknown', { callId: 'side-effect', name: 'shell.exec', mutating: true });
 unknown.finish('unknown', { reason: 'error' });
 A.eq(unknown.inspect('unknown').status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
+unknown.remove('unknown');
+A.eq(unknownIo.files.has('unknown'), true, 'ordinary retirement cannot erase an unknown side-effect outcome');
 
 const readIo = memoryIo();
 const read = J.makeRunJournal({ io: readIo, clock: { now: () => 2 } });

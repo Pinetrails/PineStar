@@ -45,7 +45,10 @@ const DROP_TOP = new Set(['@tauri-apps', '.bin', '.package-lock.json']);
    the Kokoro->Whisper round-trip was re-run from a simulated bundle with these removed and still passed.
    ⛔ `@img/sharp` is NOT here on purpose — transformers imports it eagerly and dropping it breaks the very
    first `import`, which is exactly how this was found. */
-const DROP_ANYWHERE = new Set(['onnxruntime-web']);
+// adm-zip is used only by onnxruntime-node's npm postinstall downloader. The packaged app loads
+// dist/index.js and an already-staged native binding; it never executes script/install*. Keep the
+// build-time ZIP parser out of the shipped runtime closure.
+const DROP_ANYWHERE = new Set(['onnxruntime-web', 'adm-zip']);
 // Source maps are pure debug weight in a shipped bundle.
 const DROP_SUFFIX = ['.map'];
 
@@ -102,6 +105,35 @@ function pruneOnnxBinaries(root) {
   return { freed, kept };
 }
 
+// Tauri's resource copy can retain files that disappeared from a later staged tree. Purge the exact
+// packages this script drops from prior release-resource outputs before the bundler runs, otherwise a
+// warm build can silently put a removed dependency back into the installer.
+function purgeStaleReleasePackages() {
+  const targetRoot = join(ROOT, 'src-tauri', 'target');
+  const roots = [join(targetRoot, 'release', 'node_modules')];
+  let entries = [];
+  try { entries = readdirSync(targetRoot, { withFileTypes: true }); } catch (_) {}
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name !== 'release') {
+      roots.push(join(targetRoot, entry.name, 'release', 'node_modules'));
+    }
+  }
+  const removeNamed = dir => {
+    let children;
+    try { children = readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const child of children) {
+      if (!child.isDirectory()) continue;
+      const childPath = join(dir, child.name);
+      if (DROP_ANYWHERE.has(child.name)) {
+        rmSync(childPath, { recursive: true, force: true });
+      } else {
+        removeNamed(childPath);
+      }
+    }
+  };
+  for (const root of roots) removeNamed(root);
+}
+
 if (args.includes('--report')) {
   if (!existsSync(OUT)) { console.log('voice-deps: nothing staged at ' + OUT); process.exit(0); }
   console.log('voice-deps staged: ' + mb(dirSize(join(OUT, 'node_modules'))) + ' at ' + OUT);
@@ -149,6 +181,7 @@ let extraFreed = 0;
     }
   }
 })(dest);
+if (OUT === resolve(join(ROOT, 'src-tauri', 'voice-deps'))) purgeStaleReleasePackages();
 const final = dirSize(dest);
 
 // A staged tree that cannot resolve the very packages it exists for is worse than none: it would ship and
@@ -160,6 +193,11 @@ for (const dep of runtimeDeps) {
 if (!pruned.kept.length) {
   console.error('stage-voice-deps: FAILED — no onnxruntime binary kept for ' + PLATFORM + '/' + ARCH +
     '. The bundle would ship an engine it cannot load.');
+  process.exit(1);
+}
+
+if (existsSync(join(dest, 'adm-zip'))) {
+  console.error('stage-voice-deps: FAILED - build-only adm-zip leaked into the shipped runtime closure.');
   process.exit(1);
 }
 

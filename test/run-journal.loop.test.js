@@ -58,11 +58,13 @@ function provider() {
     onCheckpoint({ phase, messages: current }) { uncertain.checkpoint('u', { phase, messages: current }); },
     async dispatch(call) {
       uncertain.toolIntent('u', { callId: call.id, name: call.name, mutating: true });
-      throw new Error('process lost result boundary');
+      const boundary = new Error('process lost result boundary');
+      boundary.fatalToRun = true;
+      throw boundary;
     }, capCtx: {}
   });
   uncertain.finish('u', { reason: failed.reason });
-  A.eq(failed.reason, 'done', 'the loop may recover from a thrown dispatch and still answer');
+  A.eq(failed.reason, 'error', 'a lost durable tool boundary terminates the run instead of allowing false success');
   A.eq(uncertain.inspect('u').status, 'needs_review', 'terminal error never makes an unmatched mutation replayable');
 
   A.report('run-journal.loop.test');
