@@ -84,19 +84,52 @@ for (let i = 0; i < HULLS.length; i++) {
 // dispatcher default), and on this axis it would look like the feature simply doing nothing.
 A.eq(sig(sample('no-such-shell', '#3b2b20')), sigs.station, 'an unknown shell falls back to station');
 
-/* ---------- THE PARITY GUARANTEE: station at a null hue is the legacy shell ---------- */
+/* ---------- THE SHELL IS A SKIN NOW, NOT A PARALLEL PALETTE (2026-08-06) ----------
 
-const legacy = sample('station', null, 6, 40);
-const cols = new Set(legacy.map(o => o[5]));
-for (const c of ['#231f17', '#28241b', '#302b21']) {
-  A.ok(cols.has(c), 'the legacy shell still paints its own ' + c + ' (never a derived tone)');
+   This block used to assert the opposite: that `station` at a null hue emitted the pre-axis
+   constants VERBATIM, so every station already built stayed pixel-identical. That guarantee was
+   the defect. A room on those constants was not wearing the STATION skin — it could not be
+   re-toned, it did not answer to the catalog, and beside a re-clad neighbour it read as a
+   different material (Andrew, on his own save: "the default still has the previous default mixed
+   in ... make sure the previous shell walls are 100% gone").
+
+   What replaces it is the property that actually matters, and it is strictly stronger:
+     · the DEFAULT still LOOKS like the shipped shell — every pre-axis tone has a counterpart
+       within a couple of units per channel, so nobody's station visibly changed;
+     · but it is reached through the ordinary (material → hue → ramp) path, so the same ladder
+       re-colours. The old constants could only ever be that one grey. */
+
+const chan = hex => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const dist = (a, b) => { const x = chan(a), y = chan(b); return Math.max(Math.abs(x[0] - y[0]), Math.abs(x[1] - y[1]), Math.abs(x[2] - y[2])); };
+const painted = sample('station', null, 6, 40)
+  .map(o => o[5]).filter(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c));
+const nearest = c => Math.min(...painted.map(p => dist(p, c)));
+
+// the pre-axis shell, tone by tone — seam / rim+arc / bolt, then the six-stop skirt ramp
+for (const c of ['#231f17', '#28241b', '#302b21', '#0b0a07', '#100e09', '#16130d', '#1f1b12', '#2a251a', '#3f3a2c']) {
+  A.ok(nearest(c) <= 5, 'the default shell still LOOKS like the shipped one at ' + c + ' (off by ' + nearest(c) + ')');
 }
-for (const band of ['#0b0a07', '#100e09', '#16130d', '#1f1b12', '#2a251a', '#3f3a2c']) {
-  A.ok(cols.has(band), 'the legacy skirt ramp still carries ' + band);
-}
-// and a HUED station is genuinely different — otherwise the null case is being taken always
+// ...and it is genuinely a skin: the same ladder in another colour, which the constants could not be
 A.ok(sig(sample('station', null, 6, 40)) !== sig(sample('station', '#2b3340', 6, 40)),
   'a station shell painted COBALT differs from the untouched shell');
+const white = sample('station', WorldModel.FLOOR_STYLES.white.base, 6, 40).map(o => o[5])
+  .filter(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c));
+A.ok(Math.max(...white.map(c => { const [r, g, b] = chan(c); return 0.299 * r + 0.587 * g + 0.114 * b; })) > 100,
+  'STATION in WHITE really is a white hull — the pre-axis shell could only ever be one grey');
+
+/* ---------- NOTHING OUTSIDE A ROOM IS PAINTED FROM A MODULE CONSTANT ----------
+   The bug underneath the complaint: the wall pass filled the band between a wall's lit crown and
+   the void with `wallDk`, and that band is `pad` wide by contract — exactly the hull plate. So it
+   covered the plate, its dressing and its rim on the north, east and west, and a chosen skin
+   survived only on the SOUTH skirt. Diffing an un-clad bake against a TIMBER one showed it exactly:
+   4882 changed pixels, every one in the 47 rows at the bottom of the room, none anywhere else.
+   A source lock, because the headless canvas mock cannot bake a station to measure it (see header).
+   If a shell tone is ever needed outside a room again, take it from hullPal(z) — never a constant. */
+const SRC = require('fs').readFileSync(require('path').join(__dirname, '..', 'frontend', 'app', 'stationbake.js'), 'utf8');
+const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+A.eq(code.indexOf('wallDk'), -1, 'the global shell tone `wallDk` is gone from the code entirely');
+A.eq(code.indexOf('#28241b'), -1, 'the chamfer hull rim no longer hard-codes the pre-axis arc tone');
+A.ok(/shellEdge/.test(code), 'the exterior band is painted from the room\'s own shell edge');
 
 /* ---------- the VALUE BAND: an ordinary hue is clamped, the bright pole is not ----------
    The hull is the one surface outside the ambient mask, so a FLOOR_STYLES hue used at face value
