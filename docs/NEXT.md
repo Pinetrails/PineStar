@@ -2585,19 +2585,21 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
   capability flag rather than snapshotting an unrelated local tree.
 
-# READY TO MERGE 2026-08-07 — FULL ACCESS LABEL (`agent/full-access-label`)
+# READY TO MERGE 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
 
-The approval posture again uses the familiar `FULL ACCESS` name across onboarding, agent configuration,
-Permissions, `/yolo` feedback, and the execution-profile API readout. The scoped explanation remains: Full
-Access skips approval prompts only within the agent's selected execution profile and does not add tools, widen
-filesystem scope, choose a runtime, grant desktop control, or bypass the protected-action floor. The generated
-website mirror is synchronized.
+Commit `b5854dba` makes a saved file's name open that file through the desktop OS association instead of
+opening the jailed preview in the default browser. The folder control now reveals/selects the exact artifact
+rather than the default workspace root, and a separate copy-path action preserves the useful clipboard flow.
+Plain-browser builds truthfully label the filesystem action `copy path` and copy the resolved absolute path.
 
-Live seeded proof at `localhost:8796`: the dossier rendered `ASK FOR APPROVAL / FULL ACCESS`; Permissions
-rendered `GIVE FULL ACCESS` and `FULL ACCESS — WHOLE STATION`; no visible `RUN(S) WITHOUT PROMPTS` label remained;
-browser warnings/errors were empty. Focused regressions: 76 assertions; `test:fast`: 572/572 green;
-`test:http`: 68/68 green. Installed-desktop verification was not run. No merge, push, PR, deployment, publish,
-production-data, credential, or secret change was performed.
+The native boundary canonicalizes every requested path, confines relative paths to the owning agent workspace,
+allows absolute paths only below the workspace, user home, or a standing `path:<root>` grant, and rejects UNC,
+missing, `.env`, `.git`, executable, and script targets before shelling out. Focused frontend contracts are
+12/12 green; Rust resolver/security tests are 2/2 green; recap and website-sync suites are green; and
+`npm run test:fast` is 573/573 green. A seeded live run wrote `KaloDataCredentialHandoff.md`, rendered the saved
+row plus `copy path`, copied the exact per-agent absolute path, and produced no browser warnings/errors. The
+packaged Tauri click-through remains to be exercised on an installed desktop candidate before release.
+
 # IN PROGRESS 2026-08-07 — CONNECTORS & ABILITIES AUDIT (`agent/connector-abilities-audit-0807`)
 
 The ABILITIES console now gives a truthful, announced zero-result state instead of turning into a
