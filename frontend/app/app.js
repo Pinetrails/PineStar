@@ -545,11 +545,14 @@ const App = (() => {
   function setAgentExecutionProfile(agentId, profileId) {
     const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
     const id = String(profileId || '');
-    if (!a || EXECUTION_PROFILE_IDS.indexOf(id) < 0) return false;
+    if (!a || EXECUTION_PROFILE_IDS.indexOf(id) < 0) return Promise.resolve(false);
+    const before = executionProfileOf(a);
     a.executionProfile = id;
-    pushRoster();
-    persist();
-    return true;
+    return Promise.resolve(pushRoster()).then(ok => {
+      if (!ok) { a.executionProfile = before; persist(); return false; }
+      persist();
+      return true;
+    }).catch(() => { a.executionProfile = before; persist(); return false; });
   }
 
   // Rename an agent from its dossier. The name is DISPLAY identity only — the agentId (the `agents` Map key, the

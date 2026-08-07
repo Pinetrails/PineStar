@@ -2128,10 +2128,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         epDisarm();
         if (!(access.config && access.config.setExecutionProfile)) { notify('execution profile change unavailable', 'bad'); sfx('bad'); return; }
-        const ok = access.config.setExecutionProfile(a && a.id, id);
-        if (!ok) { notify('could not change execution profile', 'bad'); sfx('bad'); return; }
-        notify(((a && a.name) || 'agent') + ' execution profile → ' + (chip.dataset.name || id), id === 'this-computer' ? 'warn' : 'good');
-        sfx('click'); rerender('agents');
+        chip.disabled = true;
+        Promise.resolve(access.config.setExecutionProfile(a && a.id, id)).then(ok => {
+          if (!ok) { notify('could not change execution profile — the station kept the prior profile', 'bad'); sfx('bad'); rerender('agents'); return; }
+          notify(((a && a.name) || 'agent') + ' execution profile → ' + (chip.dataset.name || id), id === 'this-computer' ? 'warn' : 'good');
+          sfx('click'); rerender('agents');
+        }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); sfx('bad'); rerender('agents'); });
       }));
     }
 
@@ -5566,10 +5568,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }).join('');
         epList.querySelectorAll('[data-perm-profile]').forEach(b => {
           const apply = () => {
-            const ok = access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'));
-            if (!ok) notify('could not change execution profile', 'bad');
-            else notify('execution profile → ' + b.getAttribute('data-name'), b.getAttribute('data-perm-profile') === 'this-computer' ? 'warn' : 'good');
-            paintExecutionProfiles(activeBackend);
+            b.disabled = true;
+            Promise.resolve(access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'))).then(ok => {
+              if (!ok) notify('could not change execution profile — the station kept the prior profile', 'bad');
+              else notify('execution profile → ' + b.getAttribute('data-name'), b.getAttribute('data-perm-profile') === 'this-computer' ? 'warn' : 'good');
+              paintExecutionProfiles(activeBackend);
+            }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); paintExecutionProfiles(activeBackend); });
           };
           if (b.getAttribute('data-perm-profile') === 'this-computer' && !b.classList.contains('sel')) ArmConfirm.wire(b, { armedLabel: 'SURE? BROAD HOST PATHS', restLabel: 'THIS COMPUTER', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
           else b.addEventListener('click', () => { sfx('click'); apply(); });
