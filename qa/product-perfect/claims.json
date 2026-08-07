@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 214552,
-        "sha256": "9473784aaa806867188cb5ee168e112339a2e9c9c088cd3fd655a610f996ea3a"
+        "bytes": 242419,
+        "sha256": "21c2de6ca442f07985c6c9d78c2a45d7825954c26b63913dedbb0134e6ec51b5"
       },
       {
         "path": "frontend/app/channels.js",
