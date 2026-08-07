@@ -2100,9 +2100,12 @@ const Build = (() => {
     const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || ''].join('|');
     if (!finCardEl) {
       finCardEl = document.createElement('div');
-      finCardEl.className = 'refit-finline';
       root.appendChild(finCardEl);
     } else if (sig === finSig) return;
+    // ...and always restate the class: this element is SHARED with STATION ORDERS (the stage before
+    // a line exists), so handing off from orders to the line card has to shed `refit-orders` or the
+    // card keeps orders' styling — and positionFinCard keys its top-right parking on that class.
+    finCardEl.className = 'refit-finline';
     finSig = sig;
     const crewDone = st.crewLeft === 0;
     const crewTxt = crewDone ? '✓ DOCKS CREWED' : '① CREW THE DOCKS — ' + st.crewLeft + ' TO GO';
