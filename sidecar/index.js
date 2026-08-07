@@ -8972,8 +8972,8 @@ function handleCronList(req, res) {
 
 /* GET /api/lifecycle/armed — Lane 4D: the ONE aggregate the desktop tray supervisor polls to decide whether
    closing the window may keep the sidecar alive. "Armed work" = background work that genuinely needs a live
-   process after the window is gone: a cron scheduler with routines, a connected messaging channel, or an
-   armed night-shift. TRUTHFUL TELEMETRY: every field reads REAL in-memory server state (the same sources the
+   process after the window is gone: a cron scheduler with routines, a connected messaging channel, an armed
+   night-shift, or an attached terminal process. TRUTHFUL TELEMETRY: every field reads REAL in-memory server state (the same sources the
    ROUTINES / CHANNELS / night-shift panels read) — nothing is synthesized. When nothing is armed, `armed:false`
    and the tray quits the whole app on window close (no hidden daemon). Reasons are short human strings the tray
    can show verbatim ("2 routines armed", "Telegram connected"). Defensive: a failing subsystem degrades to
@@ -8998,6 +8998,13 @@ function lifecycleArmedSnapshot(now) {
     for (const d of channelRegistry.list()) { try { if (channelStatusPayload(d.id).connected) connected.push(d.id); } catch (_) {} }
     channels = { armed: connected.length > 0, connected: connected };
   } catch (_) {}
+  // TERMINALS — an attached PTY/ConPTY is real ongoing work. A prior-life metadata row is attached:false and
+  // therefore never holds the app open; only a live handle owned by this sidecar process contributes here.
+  let terminals = { armed: false, count: 0 };
+  try {
+    const count = terminalSessions.countRunning();
+    terminals = { armed: count > 0, count: count };
+  } catch (_) {}
   // NIGHT SHIFT / AUTONOMY — armed = the beat timer is live (nightshiftTimer). This subsumes the autonomy dial:
   // the timer arms only when the Commander set an unattended posture (nightshiftShouldArm reads actsUnattended),
   // so a live timer IS the provable "autonomy will act while you're away" signal. `halted` is the durable E-STOP
@@ -9010,12 +9017,13 @@ function lifecycleArmedSnapshot(now) {
   // A halted night shift is not doing work — reflect that in `armed` (truthful: don't hold the process for a
   // frozen shift). Routines/channels are independent of the NS halt.
   const nsArmedActive = nightshift.armed && !nightshift.halted;
-  const armed = routines.armed || channels.armed || nsArmedActive;
+  const armed = routines.armed || channels.armed || nsArmedActive || terminals.armed;
   const reasons = [];
   if (routines.armed) reasons.push(routines.count === 1 ? '1 routine armed' : (routines.count + ' routines armed'));
   for (const id of channels.connected) reasons.push((id.charAt(0).toUpperCase() + id.slice(1)) + ' connected');
   if (nsArmedActive) reasons.push('Night shift armed');
-  return { armed: armed, categories: { routines: routines, channels: channels, nightshift: nightshift }, reasons: reasons, ts: now };
+  if (terminals.armed) reasons.push(terminals.count === 1 ? '1 terminal running' : (terminals.count + ' terminals running'));
+  return { armed: armed, categories: { routines: routines, channels: channels, nightshift: nightshift, terminals: terminals }, reasons: reasons, ts: now };
 }
 // small wrapper so lifecycleArmedSnapshot never throws on the nightshift day-roll (state may be uninitialized
 // in edge boots); returns a benign shape rather than propagating.
