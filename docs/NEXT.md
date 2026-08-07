@@ -2598,3 +2598,34 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   workspace back afterward using exact `scp` argv. Sync never deletes either side, reports its real state/error,
   and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
   capability flag rather than snapshotting an unrelated local tree.
+
+# BLOCKED 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
+
+Commit `b5854dba` makes a saved file's name open that file through the desktop OS association instead of
+opening the jailed preview in the default browser. The folder control now reveals/selects the exact artifact
+rather than the default workspace root, and a separate copy-path action preserves the useful clipboard flow.
+Plain-browser builds truthfully label the filesystem action `copy path` and copy the resolved absolute path.
+
+The native boundary canonicalizes every requested path, confines relative paths to the owning agent workspace,
+allows absolute paths only below the workspace, user home, or a standing `path:<root>` grant, and rejects UNC,
+missing, `.env`, `.git`, executable, and script targets before shelling out. Focused frontend contracts are
+12/12 green; Rust resolver/security tests are 2/2 green; recap and website-sync suites are green; and
+`npm run test:fast` is 573/573 green. A seeded live run wrote `KaloDataCredentialHandoff.md`, rendered the saved
+row plus `copy path`, copied the exact per-agent absolute path, and produced no browser warnings/errors. The
+packaged Tauri click-through remains to be exercised on an installed desktop candidate before release.
+
+Integration was attempted twice from clean trunk snapshot `46b54c10` and rolled back both times under the
+mandatory merge ritual. Attempt 1 failed at fast-gate step 150/573 when `boot-security.test.js` exceeded its
+9-second sidecar boot ceiling; the same test then passed on clean trunk and three consecutive times on this
+branch. Attempt 2 passed `boot-security` and every executed test but the overall fast gate exceeded its
+600-second process ceiling after roughly 350/573 steps. The branch's own complete fast gate remains 573/573
+green, but trunk is intentionally unmerged because neither integration run produced the required full green
+receipt. No installed candidate was built or clicked from an unmerged SHA.
+
+Heartbeat retry 2026-08-07 used current trunk snapshot `f7ecaa40`. The trunk boot preflight passed 16/16,
+but the merged candidate failed at fast-gate step 224/574 with nine
+`qa-product-perfect-claims.test.js` planning-authority assertions. After rollback, that same test passed
+64/64 on unchanged trunk, proving the failure is introduced by the candidate's changed tracked release
+surface. `qa/STATUS.md` already documents this authority model: a descendant that changes source-locked
+public files requires a W0 claims-ledger re-stamp. The lane therefore needs that reviewed re-stamp before
+another merge attempt; retrying unchanged bytes cannot turn this deterministic gate green.
