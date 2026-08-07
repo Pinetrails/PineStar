@@ -30,6 +30,19 @@ does not mean copying every provider, chat adapter, research mode, or cloud sand
 | **G3 MCP process lifecycle** | **MUST** | StarNet has OAuth refresh, timeouts, bounded reconnect, HTTP health degradation, and Safe Cell stdio ownership. Its stdio transport starts eagerly and has no fingerprinted on-disk schema cache, lazy startup, idle/max-lifetime recycling, boot orphan sweep, or watchdog-based child reaping. Hermes landed schema caching and lazy startup at `135a29452` / `1d5ecad56` and has the richer process lifecycle. | With a fault-injection MCP server, prove warm boot can project unchanged schemas without starting the child; first call starts it; crash triggers bounded reconnect; idle and max lifetime recycle it; sidecar death leaves no orphan after next boot; changed command/env/package invalidates the cache; stale schemas are never called as current. |
 | **G4 Complete skill distribution lifecycle** | **MUST for ecosystem-parity claims** | StarNet's inspect-first URL flow safely installs and updates one `SKILL.md`, while local skills can contain support files. It cannot install a complete remote multi-file package, browse/search a registry, preserve update generations, roll back, or export/re-import a standards-compatible package. Hermes exposes Skills Hub list/browse/search/inspect/install and complete packaged skills. | Install a multi-file package from direct GitHub and a registry; bind one digest to `SKILL.md` plus references/scripts/assets/templates; refuse partial fetches; show provenance and quarantine; update only after exact-byte review; roll back offline after upstream disappears; export and re-import without byte or metadata loss. |
 
+### G0 candidate receipt (lane commit `65b90b78`)
+
+G0's observable exit test is closed on `agent/hermes-final-gap-audit`; integration into trunk remains pending.
+The implementation appends operator verdict and continuation-ready/start/finish records to the existing hash-chained
+journal, requires current ownership-bound snapshots and two explicit consent steps, reconstructs only a provider-valid
+checkpoint plus verified results, and blocks canonical-fingerprint mutation replay before consent, leases, new intent,
+or registry dispatch. The live in-app fixture showed the verified mutation continue to `done`, kept the deterministic
+counter at exactly one, retained the finished source/continued-run linkage, and showed the same linkage after a real
+sidecar restart with no retry action. The same panel kept unknown outcomes non-continuable and corrupt repaired prefixes
+forensic-only. Automated evidence: focused recovery matrix 190 assertions; complete fast receipt 574/574; recovery HTTP
+26/26; remaining HTTP tail 38/38 after the aggregate wrapper exceeded its time budget and one loop-check timing case
+passed 33/33 isolated. This receipt closes the lane acceptance test, not the shipped-application claim before merge.
+
 ## Remaining parity lanes
 
 | ID | Priority | Confirmed delta at the audit baseline | Observable exit test |

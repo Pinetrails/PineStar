@@ -2,15 +2,23 @@
 
 ## 2026-08-07 — STARNET 0.10 FINAL HERMES PARITY MAP (`agent/hermes-final-gap-audit`)
 
-AUDIT READY. The current comparison is now pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
+G0 LANE COMPLETE; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
 `origin/main` at `10a2b3d7` (2026-08-07), rather than the stale July Hermes checkout. The full evidence map and
 observable exit tests live in `docs/HARNESS_GAP_2026-08-07.md`.
 
 The 0.10 release-confidence gates are: **G0** operator-visible crash review plus safe resume, **G1** packaged
 Windows/macOS background-lifecycle proof, **G2** a unified opt-in live doctor/support receipt, **G3** MCP
 schema-cache/lazy-start/recycle/orphan lifecycle, and **G4** complete multi-file skill distribution with
-discovery, update generations, rollback, and lossless export/re-import. G0 is actively being implemented in the
-unmerged `codex/operator-run-recovery` worktree; that work is not counted as trunk capability.
+discovery, update generations, rollback, and lossless export/re-import. G0 is implemented in lane commit
+`65b90b78`: authenticated operator resolution, complete-known-outcome continuation, one-shot durable consume,
+provider-valid recovered history, and a host replay barrier that runs before consent or dispatch. The in-app
+fixture proved `happened` -> continuation `done`, the deterministic counter remained exactly one, finished linkage
+survived a second sidecar boot without a retry control, unknown remained non-continuable, and corrupt repair stayed
+forensic-only. Focused recovery coverage is 190 assertions; the current-tree fast gate has a complete 574-step green
+receipt, and the post-live-fix rerun stopped only on a timing-sensitive browser assertion that then passed 293/293
+isolated. HTTP recovery is 26/26; the standard HTTP wrapper timed out with all shown assertions green, its one later
+loop-check timing failure passed 33/33 isolated, and every remaining 38 HTTP entries passed in order. This lane is
+not trunk capability until merged.
 
 The remaining parity lanes are cross-surface session handoff plus authenticated relay/webhooks (G5), live
 subagent steering and structured result contracts (G6), config-blocked/hash-suppressed autonomous monitors
