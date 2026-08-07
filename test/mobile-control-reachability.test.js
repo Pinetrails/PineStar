@@ -48,12 +48,24 @@ for (const width of [320, 360, 390]) {
     'six REFIT action keys receive a positive grid track at ' + width + 'px');
 }
 
-// REFIT's narrow bottom sheet has only 48% of the glass. With nine modes in the desktop
+// REFIT's narrow bottom sheet has only 48% of the glass. With the modes in the desktop
 // two-column grid, five fixed rows consumed the entire 640x568 sheet and collapsed the one
 // scrollable OPTIONS palette to clientHeight=0. Three narrow-screen columns keep every mode
 // visible while leaving a real scroll viewport for the LINES shelf.
-has(/@media \(max-width: 760px\)[\s\S]*\.refit-tools\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s,
-  'narrow REFIT compacts nine modes to three rows so OPTIONS retains a scroll viewport');
+//
+// 2026-08-07 (build-mode overhaul): the desktop dock now bands the modes into named groups
+// (STRUCTURE / SURFACES / WORKFLOW / EDIT), so `.refit-tools` is a PER-GROUP grid rather than
+// the single grid that used to hold all of them. Three columns per group would leave a dead
+// third column on every two-tool band, so the sheet dissolves the wrappers to `display:contents`
+// and #refit-tools itself carries the three-column grid. Same guarantee, new owner: assert the
+// wrappers dissolve AND that the element which actually lays the modes out is three columns.
+has(/@media \(max-width: 760px\)[\s\S]*\.refit-toolgroup, \.refit-tools\s*\{[^}]*display:\s*contents/s,
+  'narrow REFIT dissolves the desktop tool bands so no group leaves a dead column');
+has(/@media \(max-width: 760px\)[\s\S]*#refit-tools\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s,
+  'narrow REFIT compacts every mode to three columns so OPTIONS retains a scroll viewport');
+// The BUILD KIT plate is redundant under the ▮ REFIT MODE title on a phone; the palette needs it more.
+has(/@media \(max-width: 760px\)[\s\S]*\.refit-group-label, \.refit-dock-head\s*\{[^}]*display:\s*none/s,
+  'narrow REFIT drops the band captions and the dock header plate');
 
 // Dock CSS caps intrinsic content; JS then clamps each wrapped trigger in visual pixels.
 has(/\.bb-menu\s*\{[^}]*min-width:\s*0;[^}]*width:\s*min\(300px, calc\(100vw - 16px\)\);[^}]*max-width:\s*calc\(100vw - 16px\)/s,

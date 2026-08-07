@@ -3629,19 +3629,21 @@ body.crew-rail-off #screen-game.active {
   .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48%, 380px); }  /* % of the overlay, not vh — same zoom law as the desktop dock */
   .refit-dock-section { gap: 5px; padding: 7px 8px; }
   .refit-section-label { font-size: 10px; }
-  .refit-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .refit-tool { min-width: 0; font-size: 13px; }
   .refit-hint { min-height: 32px; }
-  /* The bottom sheet has only 48% of the glass, so the four BUILD KIT band captions are the first
-     thing to go: at three columns per group the ten modes already fit in five rows (2/2/2/3 + the
-     SELECT row), exactly the row budget the sheet was tuned for. Groups keep their order — the
-     grouping still reads from the tool order, just without headings eating the scroll viewport. */
-  .refit-group-label { display: none; }
-  #refit-tools, .refit-toolgroup { gap: 4px; }
-  .refit-dock-head { padding: 5px 8px 4px; }
-  .refit-dock-head-t { font-size: 11px; letter-spacing: 2px; }
+  /* THE BOTTOM SHEET DISSOLVES THE BANDS. It has only 48% of the glass, and the desktop's four
+     named groups cost it two ways: the captions eat rows, and a two-tool group inside a
+     three-column grid leaves a dead third column on every one of them. So on a narrow sheet the
+     group wrappers go `display: contents` and #refit-tools itself becomes the three-column grid —
+     all ten modes flow into FOUR dense rows in the same order, and OPTIONS keeps a real scroll
+     viewport (the property test/mobile-control-reachability.test.js exists to guard).
+     The BUILD KIT plate goes too: on a phone it sits directly under the ▮ REFIT MODE title and
+     says the same thing twice, for 31px the palette needs more. */
+  .refit-group-label, .refit-dock-head { display: none; }
+  .refit-toolgroup, .refit-tools { display: contents; }
+  #refit-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
   .refit-toolname { letter-spacing: .5px; }
-  /* three columns means RECLAIM is no longer a lone widow — let it sit in the flow */
+  /* in one flat grid RECLAIM is no longer a lone widow — let it sit in the flow */
   .refit-tool-reclaim { grid-column: auto; }
 }
 
