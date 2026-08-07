@@ -18,6 +18,7 @@ function makeFakeSpawn() {
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
+    child.stdin = { writes: [], ended: false, write: function (value) { this.writes.push(String(value)); }, end: function () { this.ended = true; } };
     child.pid = 4242 + calls.length;
     child.killed = false;
     child.kill = function () { child.killed = true; };
@@ -43,7 +44,8 @@ function makeFakeSpawn() {
 
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-env-'));
-  const clock = { now: () => 0 };
+  let now = 0;
+  const clock = { now: () => now };
 
   try {
     // ---- local backend: old host-shell behavior remains behind the new seam ----
@@ -167,11 +169,99 @@ function makeFakeSpawn() {
       A.eq(mcp.opts.shell, false, 'docker stdio broker explicitly disables shell parsing');
       A.throws(() => env.spawnStdio({ agentId: 'a2', command: 'node', cwd: '/etc' }), 'stdio MCP cwd cannot escape the mounted workspace');
 
+      // Idle cleanup is stop-only and refuses an MCP child that still owns the cell.
+      const activeChild = env.spawnStdio({ agentId: 'a2', command: 'node', args: ['active-server.js'] });
+      const activeRefusal = await env.cleanupAgent('a2', { remove: false, onlyIfIdle: true });
+      A.ok(activeRefusal.refused && /active/.test(activeRefusal.reason), 'idle cleanup refuses an active owned cell');
+      activeChild.emit('close', 0);
+      await new Promise(resolve => setImmediate(resolve));
+      now = 120000;
+      spawn.setNext('true\t' + label + '\ta2\n', 0);
+      spawn.setNext('stop-failed\n', 1);
+      const failedSweep = await env.cleanupIdle(['a2'], { idleMs: 60000, now });
+      A.ok(failedSweep.skipped.some(x => x.agentId === 'a2'), 'a failed idle stop is isolated and reported as skipped');
+      A.eq(env.describe().persistence.readyAgents, 1, 'a failed idle stop preserves live ownership state for retry');
+      spawn.setNext('true\t' + label + '\ta2\n', 0);
+      spawn.setNext('stopped\n', 0);
+      const swept = await env.cleanupIdle(['a2'], { idleMs: 60000, now });
+      A.eq(swept.stopped[0], 'a2', 'idle sweep stops a proven inactive owned cell');
+      const stop = spawn.calls.filter(x => x.args && x.args[0] === 'stop').pop();
+      A.ok(stop && stop.args.indexOf(c.args[c.args.indexOf('--name') + 1]) >= 0, 'idle sweep targets the deterministic owned container');
+      A.ok(!spawn.calls.some(x => x.args && x.args[0] === 'rm' && x.args.indexOf('--force') >= 0), 'idle sweep never deletes a container');
+      A.eq(env.describe().idleCleanup.deletesContainers, false, 'descriptor exposes stop-only cleanup truth');
+
+      spawn.setNext('false\t' + label + '\ta2\n', 0);
       spawn.setNext(c.args[c.args.indexOf('--name') + 1] + '\n', 0);
       const cleaned = await env.cleanupAgent('a2');
       A.ok(cleaned.ok && cleaned.removed, 'explicit cleanup removes the owned persistent environment');
       const rm = spawn.calls.filter(x => x.args && x.args[0] === 'rm').pop();
       A.ok(rm.args.indexOf('--force') >= 0 && rm.args.indexOf(c.args[c.args.indexOf('--name') + 1]) >= 0, 'cleanup targets only the deterministic agent container');
+      spawn.setNext('true\twrong-workspace\ta2\n', 0);
+      let collisionRefused = false; try { await env.cleanupAgent('a2'); } catch (e) { collisionRefused = /collision/.test(String(e.message)); }
+      A.ok(collisionRefused, 'cleanup refuses a same-name container without the exact workspace ownership label');
+    }
+
+    // ---- SSH backend: strict owner configuration + push/run/pull for a non-bind workspace ----
+    {
+      const spawn = makeFakeSpawn();
+      const target = { configured: true, host: 'buildbox', user: 'andrew', port: 2222, remoteRoot: '/srv/starnet/a4' };
+      const env = makeEnvironmentManager({ spawn, fs, pathMod: path, root, clock,
+        env: { PATH: 'safe-path', OPENAI_API_KEY: 'ambient-secret' },
+        serviceEnv: () => ({ REMOTE_API_KEY: 'explicit-service-secret' }),
+        sshConfig: () => target,
+        config: { backend: 'ssh', sshBin: 'sshx', scpBin: 'scpx', sshConnectTimeoutSeconds: 7 } });
+      A.eq(env.backendId, 'ssh', 'SSH backend selected');
+      A.eq(env.supports.hostWorkspace, false, 'SSH truthfully reports no bind-mounted host workspace');
+      A.eq(env.supports.workspaceSync, true, 'SSH advertises explicit workspace synchronization');
+      A.eq(env.supports.checkpoints, false, 'SSH declines unsupported remote checkpoint claims');
+      spawn.setNext('starnet-ssh-ready', 0);
+      const readyOne = env.ensureReady('a4');
+      const readyTwo = env.ensureReady('a4');
+      await Promise.all([readyOne, readyTwo]);
+      A.eq(spawn.calls.length, 1, 'same-agent SSH operations serialize and concurrent readiness probes reuse one result');
+      const probe = spawn.calls[0];
+      A.eq(probe.file, 'sshx', 'SSH probe uses the configured client');
+      A.eq(probe.opts.shell, false, 'SSH client never runs through a local shell');
+      A.ok(probe.args.indexOf('BatchMode=yes') >= 0 && probe.args.indexOf('StrictHostKeyChecking=yes') >= 0, 'SSH is batch-only and fail-closed on unknown host keys');
+      A.ok(probe.args.indexOf('andrew@buildbox') >= 0 && probe.args.indexOf('2222') >= 0, 'SSH target uses validated user, host and port argv');
+      A.ok(probe.child.stdin.writes.join('').indexOf("mkdir -p '/srv/starnet/a4'") >= 0, 'remote readiness creates only the configured workspace');
+
+      env.rememberCwd('a4', '/srv/starnet/a4/src');
+      A.eq(env.getCwd('a4'), '/srv/starnet/a4/src', 'SSH remembers only an in-remote-root cwd');
+      env.rememberCwd('a4', '/etc');
+      A.eq(env.getCwd('a4'), '/srv/starnet/a4/src', 'SSH refuses a cwd outside the configured remote root');
+
+      spawn.setNext('push-ok', 0);
+      spawn.setNext('remote-ok', 0);
+      spawn.setNext('starnet-sync-safe', 0);
+      spawn.setNext('pull-ok', 0);
+      const result = await env.execute({ agentId: 'a4', cmd: 'echo remote', timeoutMs: 2000, surface: 'interactive' });
+      A.eq(result.out.trim(), 'remote-ok', 'SSH returns the real remote command result');
+      const scpCalls = spawn.calls.filter(x => x.file === 'scpx');
+      A.eq(scpCalls.length, 2, 'remote command performs one push and one pull');
+      A.ok(scpCalls[0].args.indexOf('a4/.') >= 0 && scpCalls[0].args.some(x => /andrew@buildbox:\/srv\/starnet\/a4\/$/.test(x)), 'push copies the local agent workspace to the exact remote root');
+      A.ok(scpCalls[1].args.some(x => /andrew@buildbox:\/srv\/starnet\/a4\/\.$/.test(x)) && scpCalls[1].args.indexOf('a4') >= 0, 'pull returns remote outputs to the local agent workspace');
+      A.ok(scpCalls.every(x => x.args.indexOf('StrictHostKeyChecking=yes') >= 0 && x.opts.shell === false), 'file sync keeps the same strict host-key and no-local-shell boundary');
+      const remoteCall = spawn.calls.find(x => x.file === 'sshx' && x.child.stdin.writes.join('').indexOf('echo remote') >= 0);
+      const remoteScript = remoteCall.child.stdin.writes.join('');
+      A.ok(remoteScript.indexOf('echo remote') >= 0 && remoteScript.indexOf("cd '/srv/starnet/a4/src'") >= 0, 'remote command runs inside the clamped cwd through stdin');
+      A.ok(remoteScript.indexOf("REMOTE_API_KEY='explicit-service-secret'") >= 0, 'explicit service key reaches the remote shell through stdin');
+      A.ok(remoteCall.args.join(' ').indexOf('explicit-service-secret') < 0, 'service key never appears in SSH argv');
+      A.ok(remoteScript.indexOf("STARNET_COMPUTER_DRIVER='0'") >= 0, 'remote shell receives the physical-input hard floor');
+      A.eq(env.describe('a4').sync.state, 'ready', 'descriptor reports the proven sync state');
+
+      const linkPath = path.join(root, 'a4', 'escape-link');
+      fs.symlinkSync(root, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+      let localLinkRefused = false; try { await env.syncWorkspace('a4', { direction: 'push' }); } catch (e) { localLinkRefused = /symbolic links/.test(String(e.message)); }
+      A.ok(localLinkRefused, 'workspace push refuses a local symlink before scp can follow it');
+      fs.unlinkSync(linkPath);
+      spawn.setNext('starnet-sync-symlink', 96);
+      let remoteLinkRefused = false; try { await env.syncWorkspace('a4', { direction: 'pull' }); } catch (e) { remoteLinkRefused = /remote tree/.test(String(e.message)); }
+      A.ok(remoteLinkRefused, 'workspace pull refuses a remote tree whose symlink boundary cannot be proven');
+
+      const missing = makeEnvironmentManager({ spawn: makeFakeSpawn(), fs, pathMod: path, root, clock, sshConfig: () => null, config: { backend: 'ssh' } });
+      let refused = false; try { await missing.ensureReady('missing'); } catch (e) { refused = /not configured/.test(String(e.message)); }
+      A.ok(refused, 'SSH refuses execution without an owner-configured target');
     }
 
     // ---- unavailable Docker is reported as checked failure, never as a ready Safe Cell ----

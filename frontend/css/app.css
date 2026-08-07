@@ -4618,3 +4618,8 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 .lp-checkline code { background: rgba(0,0,0,.35); border: 1px solid var(--ph-faint); padding: 1px 6px; color: var(--gold); }
 .lp-link { font-family: inherit; font-size: 11px; color: var(--ph-dim); background: none; border: 0; border-bottom: 1px dotted var(--ph-faint); cursor: pointer; padding: 0; margin-left: 4px; }
 .lp-link:hover { color: var(--ph-bright); border-bottom-color: var(--ph); }
+.exec-policy{border-color:color-mix(in srgb,var(--ph) 38%,transparent)}
+.exec-ssh{margin-top:8px;padding-top:5px;border-top:1px dashed color-mix(in srgb,var(--ph) 28%,transparent)}
+.exec-ssh .set-row{display:grid;grid-template-columns:minmax(100px,130px) minmax(0,1fr);gap:8px;align-items:center}
+.exec-ssh .key-input{width:100%;min-width:0}
+.exec-ssh .mc-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}

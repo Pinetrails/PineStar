@@ -293,7 +293,7 @@ const App = (() => {
   // the APPROVAL clause folded into the system prompt — it MUST match the real consent broker (sidecar) so the
   // agent's words and its actual behaviour never diverge (truthful-telemetry law). 'full' = the broker bypasses
   // the consent gate; 'ask' = the broker prompts the Commander on any mutation/network call.
-  const EXECUTION_PROFILE_IDS = ['station-gear', 'safe-cell', 'trusted-project', 'this-computer'];
+  const EXECUTION_PROFILE_IDS = ['station-gear', 'safe-cell', 'remote-ssh', 'trusted-project', 'this-computer'];
   function executionProfileOf(a) {
     const id = String((a && a.executionProfile) || '');
     if (EXECUTION_PROFILE_IDS.indexOf(id) >= 0) return id;

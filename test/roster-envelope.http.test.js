@@ -71,6 +71,17 @@ const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
     A.eq(((profileApi.body.agents || [])[0] || {}).profile.id, 'trusted-project', 'profile API reports the stored per-agent envelope');
     A.eq(((profileApi.body.agents || [])[0] || {}).profile.approvalMode, 'full', 'profile API reports approval as a separate axis');
     A.eq(typeof (profileApi.body.backend || {}).backend, 'string', 'profile API reports the effective execution backend');
+    A.ok((profileApi.body.profiles || []).some(p => p.id === 'remote-ssh' && p.effectiveBackend === 'ssh'), 'profile catalog exposes the routed Remote SSH backend');
+    const policy = await j('POST', '/api/execution/policy', { idleCleanupMinutes: 17 });
+    A.eq(policy.body.idleCleanupMinutes, 17, 'owner can persist the idle-cell cleanup policy');
+    A.eq(policy.body.deletesContainers, false, 'cleanup policy explicitly promises stop-only behavior');
+    const sshSaved = await j('POST', '/api/execution/ssh', { agentId: 'agent', host: 'buildbox', user: 'andrew', port: 2222, remoteRoot: '/srv/starnet/agent', probe: false });
+    A.ok(sshSaved.body.saved && !sshSaved.body.ready, 'owner can save an offline SSH target without a fake readiness claim');
+    A.eq(sshSaved.body.target.host, 'buildbox', 'saved SSH response returns only the nonsecret destination');
+    const syncRefused = await j('POST', '/api/execution/sync', { agentId: 'agent', direction: 'push' });
+    A.eq(syncRefused.status, 409, 'workspace sync refuses an agent that has not selected Remote SSH');
+    const cleanupRefused = await j('POST', '/api/execution/cleanup', { agentId: 'agent' });
+    A.eq(cleanupRefused.status, 409, 'cell stop refuses a non-Safe-Cell agent');
   } finally {
     await fixture.stop();
   }
@@ -116,6 +127,9 @@ const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
     A.eq(routedAgent.profile && routedAgent.profile.effectiveBackend, 'docker', 'Safe Cell routes this agent to Docker immediately');
     A.eq(routedAgent.environment && routedAgent.environment.effectiveBackend, 'docker', 'runtime truth agrees with the profile authority');
     A.eq(routed.body && routed.body.backend && routed.body.backend.routing && routed.body.backend.routing.perAgent, true, 'station status exposes per-agent backend routing');
+    A.eq(routed.body && routed.body.policy && routed.body.policy.idleCleanupMinutes, 17, 'idle cleanup policy survives a sidecar restart');
+    A.eq(routedAgent.sshTarget && routedAgent.sshTarget.host, 'buildbox', 'nonsecret SSH destination survives the same restart');
+    A.eq(routedAgent.sshTarget && routedAgent.sshTarget.password, undefined, 'profile status never exposes an SSH password');
   } finally {
     await fixture.dispose();
   }

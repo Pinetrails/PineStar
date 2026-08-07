@@ -253,6 +253,7 @@ const { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, makeR
 const { makeEnvironmentManager, sanitizeChildEnv } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { makeExecutionRouter } = require('./execution-router.js');                     // per-agent profile -> real backend routing
 const executionProfiles = require('./execution-profiles.js');       // per-agent runtime/scope envelope; approval + desktop lease stay separate
+const executionSettingsMod = require('./execution-settings.js');    // owner policy: idle cells + nonsecret per-agent SSH destinations
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeLspManager } = require('./lsp-manager.js');             // lazy installed-language-server edit diagnostics
@@ -3049,23 +3050,49 @@ if (require.main === module) {
   inputGuard.observe('boot').catch(() => {});
 }
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
+const EXECUTION_SETTINGS_FILE = path.join(WORKSPACES, 'execution-settings.json');
+const executionIdleDefault = Math.max(0, Math.min(1440, Number(process.env.STARNET_DOCKER_IDLE_MINUTES == null ? 60 : process.env.STARNET_DOCKER_IDLE_MINUTES) || 0));
+let executionSettings = (() => {
+  try { return executionSettingsMod.normalize(loadResilient(EXECUTION_SETTINGS_FILE, 'execution settings'), { idleCleanupMinutes: executionIdleDefault }); }
+  catch (_) { return executionSettingsMod.normalize(null, { idleCleanupMinutes: executionIdleDefault }); }
+})();
+function saveExecutionSettings(next) {
+  const normalized = executionSettingsMod.normalize(next, { idleCleanupMinutes: executionIdleDefault });
+  saveResilient(EXECUTION_SETTINGS_FILE, normalized);
+  executionSettings = normalized;
+  return executionSettings;
+}
 // serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
 // *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
 // `surface` is the RUN's surface, forwarded by the backend from the shell/verify call: an unattended run only
 // receives the keys whose unattended grant is flipped ON, the SAME rule resolveForRequest enforces on
 // web_request. Host authority — it comes from the run, never from tool args.
-const executionEnvironmentDeps = { spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) };
+const executionEnvironmentDeps = { spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env,
+  serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }),
+  idleCleanupMs: () => Number(executionSettings.idleCleanupMinutes || 0) * 60000,
+  sshConfig: (agentId) => executionSettingsMod.targetFor(executionSettings, agentId) };
 const configuredExecutionBackend = String(process.env.STARNET_EXEC_BACKEND || process.env.SKYNET_EXEC_BACKEND || 'local').trim().toLowerCase();
-if (configuredExecutionBackend !== 'local' && configuredExecutionBackend !== 'docker') throw new Error('unknown execution backend "' + configuredExecutionBackend + '" (expected local or docker)');
+if (configuredExecutionBackend !== 'local' && configuredExecutionBackend !== 'docker' && configuredExecutionBackend !== 'ssh') throw new Error('unknown execution backend "' + configuredExecutionBackend + '" (expected local, docker, or ssh)');
 const executionEnvironments = {
   local: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'local' } })),
-  docker: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'docker' } }))
+  docker: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'docker' } })),
+  ssh: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'ssh' } }))
 };
 const executionEnvironment = makeExecutionRouter({
   environments: executionEnvironments,
   defaultBackendId: configuredExecutionBackend,
   profileForAgent: (agentId) => ((agentRoster.get(String(agentId || '')) || {}).executionProfile || 'station-gear')
 });
+let executionCleanupTimer = null;
+async function sweepIdleExecutionEnvironments() {
+  const ids = [...agentRoster].filter(([, rec]) => rec && rec.executionProfile === 'safe-cell').map(([agentId]) => agentId);
+  try { return await executionEnvironment.cleanupIdle(ids, { idleMs: Number(executionSettings.idleCleanupMinutes || 0) * 60000, now: Date.now() }); }
+  catch (e) { return { ok: false, error: String((e && e.message) || e || 'idle cleanup failed') }; }
+}
+if (require.main === module) {
+  executionCleanupTimer = setInterval(() => { sweepIdleExecutionEnvironments().catch(() => {}); }, 60000);
+  try { executionCleanupTimer.unref(); } catch (_) {}
+}
 // Real terminal sessions are a distinct rail from shell.bg: node-pty supplies POSIX forkpty / Windows ConPTY,
 // while this host owns durability, cwd policy, orphan receipts and lifecycle cleanup. Native loading is caught
 // here (not at module top): an unsupported/broken binding leaves terminal.start honestly unavailable without
@@ -7304,6 +7331,57 @@ const TG_BOT_RX = {
   act: /^\/api\/channels\/telegram\/bots\/(\d+)\/(connect|disconnect)$/,
   owner: /^\/api\/channels\/telegram\/bots\/(\d+)\/owner\/(pair|revoke)$/
 };
+function sendExecutionJson(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+async function handleExecutionPolicy(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 8192)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  try {
+    saveExecutionSettings(executionSettingsMod.setIdleCleanupMinutes(executionSettings, body.idleCleanupMinutes));
+    return sendExecutionJson(res, 200, { ok: true, idleCleanupMinutes: executionSettings.idleCleanupMinutes, deletesContainers: false });
+  } catch (e) { return sendExecutionJson(res, 500, { ok: false, error: 'could not save execution policy: ' + String((e && e.message) || e) }); }
+}
+async function handleExecutionSsh(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 16384)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  if (!agentRoster.has(agentId)) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
+  try {
+    const next = executionSettingsMod.setTarget(executionSettings, agentId, body.clear ? {} : body);
+    saveExecutionSettings(next);
+    executionEnvironments.ssh.invalidateAgent(agentId);
+  } catch (e) { return sendExecutionJson(res, 400, { ok: false, saved: false, error: String((e && e.message) || e) }); }
+  const target = executionSettingsMod.targetFor(executionSettings, agentId);
+  if (!target.configured) return sendExecutionJson(res, 200, { ok: true, saved: true, ready: false, target });
+  if (body.probe === false) return sendExecutionJson(res, 200, { ok: true, saved: true, ready: false, target, environment: executionEnvironments.ssh.describe(agentId) });
+  try {
+    await executionEnvironments.ssh.ensureReady(agentId);
+    return sendExecutionJson(res, 200, { ok: true, saved: true, ready: true, target, environment: executionEnvironments.ssh.describe(agentId) });
+  } catch (e) {
+    return sendExecutionJson(res, 200, { ok: false, saved: true, ready: false, target, error: String((e && e.message) || e), environment: executionEnvironments.ssh.describe(agentId) });
+  }
+}
+async function handleExecutionSync(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 8192)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  const rec = agentRoster.get(agentId);
+  if (!rec) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
+  if (rec.executionProfile !== 'remote-ssh') return sendExecutionJson(res, 409, { ok: false, error: 'select the Remote SSH execution profile before synchronizing' });
+  try { return sendExecutionJson(res, 200, await executionEnvironment.syncWorkspace(agentId, { direction: body.direction })); }
+  catch (e) { return sendExecutionJson(res, 502, { ok: false, error: String((e && e.message) || e), environment: executionEnvironment.describeAgent(agentId) }); }
+}
+async function handleExecutionCleanup(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 8192)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  const rec = agentRoster.get(agentId);
+  if (!rec) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
+  if (rec.executionProfile !== 'safe-cell') return sendExecutionJson(res, 409, { ok: false, error: 'only a Safe Cell can be stopped by this control' });
+  try {
+    const result = await executionEnvironments.docker.cleanupAgent(agentId, { remove: false, onlyIfIdle: true });
+    return sendExecutionJson(res, result && result.ok ? 200 : 409, result || { ok: false, error: 'cell stop failed' });
+  } catch (e) { return sendExecutionJson(res, 502, { ok: false, error: String((e && e.message) || e) }); }
+}
+
 const ROUTES = [
   { m: 'POST', exact: '/api/update/prepare', h: handleUpdatePrepare },
   { m: 'POST', exact: '/api/update/cancel', h: handleUpdateCancel },
@@ -7536,7 +7614,7 @@ const ROUTES = [
     const backend = executionEnvironment.describe();
     const agents = [...agentRoster].map(([agentId, rec]) => {
       const environment = executionEnvironment.describeAgent(agentId);
-      return { agentId, environment, profile: executionProfiles.resolve(rec.executionProfile, {
+      return { agentId, environment, sshTarget: executionSettingsMod.targetFor(executionSettings, agentId), profile: executionProfiles.resolve(rec.executionProfile, {
         approvalMode: rec.approvalMode,
         backendId: environment.effectiveBackend,
         physicalDesktopLease: false
@@ -7545,9 +7623,13 @@ const ROUTES = [
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify({
       profiles: executionProfiles.IDS.map(id => executionProfiles.resolve(id, { backendId: executionEnvironment.backendIdForProfile(id) })),
-      backend, agents
+      backend, policy: { idleCleanupMinutes: executionSettings.idleCleanupMinutes, deletesContainers: false }, agents
     }));
   } },
+  { m: 'POST', exact: '/api/execution/policy', h: handleExecutionPolicy },
+  { m: 'POST', exact: '/api/execution/ssh', h: handleExecutionSsh },
+  { m: 'POST', exact: '/api/execution/sync', h: handleExecutionSync },
+  { m: 'POST', exact: '/api/execution/cleanup', h: handleExecutionCleanup },
   { m: 'GET', exact: '/api/execution', h: (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); } },
   { m: 'GET', prefix: '/api/subagents', h: handleSubagentsList },
   { m: 'POST', exact: '/api/subagents/interrupt', h: handleSubagentInterrupt },
@@ -12487,6 +12569,8 @@ async function runOnce(o) {
     checkpointMutation: async (rootCandidate, label, opts2) => {
       if (!rootCandidate) return null;
       if (!CHECKPOINTS_ENABLED && !(opts2 && opts2.always === true)) return null;
+      const selectedEnvironment = executionEnvironment.forAgent(agentId);
+      if (selectedEnvironment && selectedEnvironment.supports && selectedEnvironment.supports.checkpoints === false) return null;
       const aid = fsJail.safeAgentId(agentId || 'agent');
       const workspace = path.resolve(WORKSPACES, aid);
       const candidate = path.resolve(String(rootCandidate));
@@ -12879,7 +12963,9 @@ async function runOnce(o) {
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
     const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run|terminal\.(?:start|write))$/.test(c.name);
-    if (mutatesWorkspace(c.name) && !preciseCheckpoint && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
+    const selectedEnvironment = executionEnvironment.forAgent(agentId);
+    const environmentCheckpoints = !(selectedEnvironment && selectedEnvironment.supports && selectedEnvironment.supports.checkpoints === false);
+    if (environmentCheckpoints && mutatesWorkspace(c.name) && !preciseCheckpoint && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
       try {
         const turn = execution.checkpointTurn();
         const snap = await checkpointStore.snapshot(agentId, { runId, turn, label: c.name });

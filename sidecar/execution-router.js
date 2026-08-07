@@ -16,6 +16,7 @@ function makeExecutionRouter(deps) {
   function backendForProfile(profileId) {
     profileId = String(profileId || 'station-gear');
     if (profileId === 'safe-cell') return environments.docker ? 'docker' : defaultBackendId;
+    if (profileId === 'remote-ssh') return environments.ssh ? 'ssh' : defaultBackendId;
     if (profileId === 'trusted-project' || profileId === 'this-computer') return environments.local ? 'local' : defaultBackendId;
     return defaultBackendId;
   }
@@ -28,7 +29,7 @@ function makeExecutionRouter(deps) {
   function describeAgent(agentId) {
     const backend = forAgent(agentId);
     const effectiveBackend = String(backend.backendId || backend.id || backendIdFor(agentId));
-    return Object.assign({}, backend.describe(), {
+    return Object.assign({}, backend.describe(agentId), {
       routed: true,
       executionProfile: String(profileForAgent(String(agentId || 'agent')) || 'station-gear'),
       effectiveBackend
@@ -69,6 +70,11 @@ function makeExecutionRouter(deps) {
     forAgent,
     ensureReady: agentId => callAgent('ensureReady', agentId, []),
     cleanupAgent: (agentId, opts) => callAgent('cleanupAgent', agentId, [opts]),
+    cleanupIdle: (agentIds, opts) => environments.docker && typeof environments.docker.cleanupIdle === 'function'
+      ? environments.docker.cleanupIdle(agentIds, opts)
+      : Promise.resolve({ ok: true, enabled: false, checked: 0, stopped: [], skipped: [] }),
+    syncWorkspace: (agentId, opts) => callAgent('syncWorkspace', agentId, [opts]),
+    invalidateAgent: agentId => callAgent('invalidateAgent', agentId, []),
     workspaceRoot: agentId => callAgent('workspaceRoot', agentId, []),
     ensureWorkspace: agentId => callAgent('ensureWorkspace', agentId, []),
     getCwd: agentId => callAgent('getCwd', agentId, []),

@@ -1930,6 +1930,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const EXECUTION_PROFILES = [
     { id: 'station-gear', label: 'STATION GEAR', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
     { id: 'safe-cell', label: 'SAFE CELL', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
+    { id: 'remote-ssh', label: 'REMOTE SSH', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
     { id: 'trusted-project', label: 'TRUSTED PROJECT', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
     { id: 'this-computer', label: 'THIS COMPUTER', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
   ];
@@ -4697,7 +4698,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
       // ── 1 · EXECUTION PROFILE ──
       '<h4 class="ms-h">1 · EXECUTION PROFILE <span class="dim">— where it runs and what scope it receives</span></h4>' +
-      '<p class="set-about perm-lede">Safe Cell, Trusted Project, and This Computer set runtime, filesystem reach, and the baseline terminal/files/connector tools. None grants real mouse, keyboard, or screen control.</p>' +
+      '<p class="set-about perm-lede">Safe Cell, Remote SSH, Trusted Project, and This Computer set runtime, filesystem reach, and the baseline terminal/files/connector tools. None grants real mouse, keyboard, or screen control.</p>' +
       '<div class="perm-list" id="perm-execution"></div>' +
       // ── 2 · APPROVAL ──
       '<h4 class="ms-h">2 · APPROVAL PROMPTS <span class="dim">— whether risky calls pause for you</span></h4>' +
@@ -5552,21 +5553,83 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!epList) return;
         if (!present.length) { epList.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
         const can = !!(access.config && access.config.setExecutionProfile);
-        epList.innerHTML = present.map(a => {
+        const idleMinutes = Number(truth && truth.policy && truth.policy.idleCleanupMinutes);
+        const policy = '<div class="perm-agent exec-policy"><span class="pa-name">IDLE SAFE CELLS</span><span class="pa-mode">STOP, NEVER DELETE</span>' +
+          '<span class="pa-state">Stops owned inactive Docker cells after the selected idle time. Active or background work is refused; the writable container layer remains.</span>' +
+          '<div class="set-row"><label for="exec-idle-min">MINUTES</label><input id="exec-idle-min" class="key-input" type="number" min="0" max="1440" step="1" value="' + esc(String(Number.isFinite(idleMinutes) ? idleMinutes : 60)) + '"><button class="bb sm" data-exec-policy-save>SAVE POLICY</button></div>' +
+          '<div class="mc-hint">0 disables automatic cleanup. STOP IDLE CELL uses the same active-work refusal.</div></div>';
+        epList.innerHTML = policy + present.map(a => {
           const id = executionProfileId(a);
           const p = EXECUTION_PROFILES.find(x => x.id === id) || EXECUTION_PROFILES[0];
           const row = ((truth && truth.agents) || []).find(x => x.agentId === a.id);
           const routed = String((row && row.profile && row.profile.effectiveBackend) || 'checking…').toUpperCase();
           const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
-          return '<div class="perm-agent">' +
+          const target = (row && row.sshTarget) || {};
+          const sync = (row && row.environment && row.environment.sync) || {};
+          const sshConfigured = !!target.configured;
+          const sshStatus = sshConfigured ? ('SSH ' + availability + ' / SYNC ' + String(sync.state || 'never').toUpperCase() + (sync.error ? ' / ' + String(sync.error) : '')) : 'no SSH target saved';
+          const ssh = '<details class="mc-adv exec-ssh" data-exec-agent="' + esc(String(a.id)) + '"' + (id === 'remote-ssh' ? ' open' : '') + '><summary>remote SSH target + workspace sync</summary>' +
+            '<div class="set-row"><label>HOST / SSH ALIAS</label><input class="key-input" data-ssh-host value="' + esc(String(target.host || '')) + '" placeholder="buildbox.example"></div>' +
+            '<div class="set-row"><label>USER</label><input class="key-input" data-ssh-user value="' + esc(String(target.user || '')) + '" placeholder="optional"></div>' +
+            '<div class="set-row"><label>PORT</label><input class="key-input" data-ssh-port type="number" min="1" max="65535" value="' + esc(String(target.port || 22)) + '"></div>' +
+            '<div class="set-row"><label>REMOTE ROOT</label><input class="key-input" data-ssh-root value="' + esc(String(target.remoteRoot || '/workspace')) + '" placeholder="/workspace"></div>' +
+            '<div class="mc-hint">Uses the OS OpenSSH agent/config with batch authentication and strict known_hosts. StarNet stores no password or private key. Files push before each command and pull back afterward; sync never deletes either side.</div>' +
+            '<div class="mc-hint" data-ssh-status>' + esc(sshStatus) + '</div>' +
+            '<div class="mc-acts"><button class="bb sm" data-ssh-save>SAVE &amp; PROBE</button>' +
+              (sshConfigured ? '<button class="bb sm" data-ssh-sync="push">PUSH NOW</button><button class="bb sm" data-ssh-sync="pull">PULL NOW</button><button class="bb xs danger" data-ssh-clear>CLEAR TARGET</button>' : '') +
+            '</div></details>';
+          const cell = id === 'safe-cell' ? '<div class="mc-acts"><button class="bb sm" data-cell-stop="' + esc(String(a.id)) + '">STOP IDLE CELL</button></div>' : '';
+          return '<div class="perm-agent" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
             '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
             '<span class="pa-mode">' + esc(p.label) + '</span>' +
             '<span class="pa-state">routes next command to ' + esc(routed) + ' · availability ' + esc(availability) + ' · ' + esc(p.files) + ' · ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</span>' +
             (can ? '<div class="ov-vchips">' + EXECUTION_PROFILES.map(x => '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('') + '</div>' : '') +
+            cell + ssh +
             '</div>';
         }).join('');
+        const policySave = epList.querySelector('[data-exec-policy-save]');
+        if (policySave) policySave.addEventListener('click', () => {
+          const input = epList.querySelector('#exec-idle-min');
+          policySave.disabled = true;
+          Harness.api.post('/api/execution/policy', { idleCleanupMinutes: Number(input && input.value) }).then(j => {
+            notify(j && j.ok ? 'idle-cell cleanup policy saved' : ((j && j.error) || 'could not save cleanup policy'), j && j.ok ? 'good' : 'bad');
+            refreshExecutionProfiles();
+          }).catch(() => { notify('could not save cleanup policy', 'bad'); refreshExecutionProfiles(); });
+        });
+        epList.querySelectorAll('[data-ssh-save]').forEach(button => button.addEventListener('click', () => {
+          const box = button.closest('[data-exec-agent]'); if (!box) return;
+          button.disabled = true;
+          const payload = { agentId: box.getAttribute('data-exec-agent'), host: (box.querySelector('[data-ssh-host]') || {}).value || '', user: (box.querySelector('[data-ssh-user]') || {}).value || '', port: Number((box.querySelector('[data-ssh-port]') || {}).value || 22), remoteRoot: (box.querySelector('[data-ssh-root]') || {}).value || '/workspace' };
+          Harness.api.post('/api/execution/ssh', payload).then(j => {
+            notify(j && j.ready ? 'SSH target saved and ready' : (j && j.saved ? 'SSH target saved — probe failed: ' + (j.error || 'unavailable') : ((j && j.error) || 'could not save SSH target')), j && j.ready ? 'good' : 'bad');
+            refreshExecutionProfiles();
+          }).catch(() => { notify('could not save SSH target', 'bad'); refreshExecutionProfiles(); });
+        }));
+        epList.querySelectorAll('[data-ssh-sync]').forEach(button => button.addEventListener('click', () => {
+          const box = button.closest('[data-exec-agent]'); if (!box) return;
+          button.disabled = true;
+          Harness.api.post('/api/execution/sync', { agentId: box.getAttribute('data-exec-agent'), direction: button.getAttribute('data-ssh-sync') }).then(j => {
+            notify(j && j.ok ? 'workspace ' + button.getAttribute('data-ssh-sync') + ' complete' : ((j && j.error) || 'workspace sync failed'), j && j.ok ? 'good' : 'bad');
+            refreshExecutionProfiles();
+          }).catch(() => { notify('workspace sync failed', 'bad'); refreshExecutionProfiles(); });
+        }));
+        epList.querySelectorAll('[data-ssh-clear]').forEach(button => ArmConfirm.wire(button, { armedLabel: 'SURE? CLEAR TARGET', restLabel: 'CLEAR TARGET', timeoutMs: 4000, onConfirm: () => {
+          const box = button.closest('[data-exec-agent]'); if (!box) return;
+          Harness.api.post('/api/execution/ssh', { agentId: box.getAttribute('data-exec-agent'), clear: true }).then(() => { notify('SSH target cleared', 'good'); refreshExecutionProfiles(); }).catch(() => { notify('could not clear SSH target', 'bad'); refreshExecutionProfiles(); });
+        } }));
+        epList.querySelectorAll('[data-cell-stop]').forEach(button => button.addEventListener('click', () => {
+          button.disabled = true;
+          Harness.api.post('/api/execution/cleanup', { agentId: button.getAttribute('data-cell-stop') }).then(j => {
+            notify(j && j.ok ? 'idle Safe Cell stopped — container preserved' : ((j && (j.reason || j.error)) || 'cell is active or unavailable'), j && j.ok ? 'good' : 'bad');
+            refreshExecutionProfiles();
+          }).catch(() => { notify('could not stop Safe Cell', 'bad'); refreshExecutionProfiles(); });
+        }));
         epList.querySelectorAll('[data-perm-profile]').forEach(b => {
           const apply = () => {
+            const parent = b.closest('[data-profile-agent]');
+            if (b.getAttribute('data-perm-profile') === 'remote-ssh' && (!parent || parent.getAttribute('data-ssh-configured') !== '1')) {
+              notify('save an SSH target before selecting Remote SSH', 'bad'); return;
+            }
             b.disabled = true;
             Promise.resolve(access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'))).then(ok => {
               if (!ok) notify('could not change execution profile — the station kept the prior profile', 'bad');

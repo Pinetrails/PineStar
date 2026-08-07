@@ -2573,3 +2573,14 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   project shelves. It follows no symlinks, skips dependency/system trees, stops at hard ceilings, and returns
   candidates with `grantsChanged:false`. Selecting one grants nothing; the existing separate ADD click remains
   the only durable `path:<canonical-root>` authority transition, with revocation unchanged.
+- **7 · Owner-visible idle cleanup:** Docker cells now track live foreground/stdio activity and consult the
+  background-process ledger. The persisted minute policy and manual stop control stop only a cell this live
+  sidecar probed and whose exact ownership labels still match. Active, unproven, and same-name unowned cells are
+  refused; cleanup never deletes the container or its writable layer.
+- **8 · SSH backend:** `REMOTE SSH` is a real per-agent execution profile. It uses the OS OpenSSH agent/config,
+  strict known-host verification, batch-only auth, bounded probes, remote cwd clamping, and no local-host fallback.
+  StarNet stores the destination and remote root, never a password or private key.
+- **9 · Non-bind workspace sync:** SSH pushes the local agent workspace before a command and pulls the remote
+  workspace back afterward using exact `scp` argv. Sync never deletes either side, reports its real state/error,
+  and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
+  capability flag rather than snapshotting an unrelated local tree.

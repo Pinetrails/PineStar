@@ -51,6 +51,32 @@ layer. Backend owners can call `cleanupAgent(agentId)` for explicit removal, or
 owned by the sidecar process; a restart reuses the container but does not claim that an old interactive stdin or
 log ring can be resumed.
 
+The owner-visible idle policy is stop-only. Its scheduler considers only a cell that this live sidecar has
+successfully probed, rechecks the exact workspace/agent ownership labels, refuses foreground, background, and
+stdio-MCP activity, and issues `docker stop`; it never issues `docker rm`. A same-name container with different
+labels fails closed. Set the minutes in Settings > Permissions, use `0` to disable the scheduler, or use
+`STOP IDLE CELL` for the same active-work refusal on demand.
+
+### `ssh`
+
+Selected by the per-agent `REMOTE SSH` profile. The owner supplies a host (or SSH config alias), optional user,
+port, and absolute POSIX remote workspace in Settings > Permissions. Passwords and private keys are not accepted
+or persisted: StarNet invokes the operating system's OpenSSH client with `BatchMode=yes` and
+`StrictHostKeyChecking=yes`, so authentication stays in the OS SSH agent/config and an unknown host key fails.
+
+SSH has no bind-mounted host workspace. StarNet therefore performs an explicit non-deleting overlay sync:
+
+1. push the local `<WORKSPACES>/<agentId>` tree to the configured remote root;
+2. run the command through remote `sh -s`, with the command and explicit service-key environment traveling on
+   stdin rather than appearing in SSH argv;
+3. pull the remote root back into the local agent workspace, even when the command exits non-zero.
+
+The status reports readiness plus `never`, `syncing`, `ready`, or `error` sync truth and timestamps for the last
+proven push/pull. A sync failure fails the tool call instead of claiming remote outputs returned. Sync never
+deletes either side. Remote background/interactive PTY sessions and remote checkpoints are currently unsupported
+and are reported as such; the checkpoint host consults the backend capability flag instead of snapshotting the
+wrong local tree.
+
 ## Runtime Status
 
 The sidecar exposes the station default and per-agent routing at:
@@ -58,6 +84,10 @@ The sidecar exposes the station default and per-agent routing at:
 ```text
 GET /api/execution
 GET /api/execution-profiles
+POST /api/execution/policy
+POST /api/execution/ssh
+POST /api/execution/sync
+POST /api/execution/cleanup
 ```
 
 The responses name the station default, each agent's routed backend, workspace mapping, background support,
@@ -91,6 +121,8 @@ available through the Permissions/Projects surfaces.
 ## Execution Profiles
 
 - `SAFE CELL` routes terminal/build work to that agent's persistent Docker container.
+- `REMOTE SSH` routes terminal/build work to an owner-configured SSH host and synchronizes the agent workspace.
+  Same-agent SSH commands and manual sync requests are serialized so their push/run/pull overlays cannot race.
 - `TRUSTED PROJECT` routes locally with terminal, files, connected services, and approved project roots.
 - `THIS COMPUTER` routes locally with non-protected host paths in scope. Protected files and physical desktop
   input remain separate hard floors.
@@ -117,7 +149,7 @@ POST /api/subagents/interrupt
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `STARNET_EXEC_BACKEND` | `local` | `local` or `docker` |
+| `STARNET_EXEC_BACKEND` | `local` | `local`, `docker`, or `ssh` |
 | `STARNET_DOCKER_BIN` | `docker` | Docker-compatible executable |
 | `STARNET_DOCKER_IMAGE` | `node:20-bookworm` | Image used for sandboxed commands |
 | `STARNET_DOCKER_WORKSPACE` | `/workspace` | Container mount point |
@@ -126,16 +158,17 @@ POST /api/subagents/interrupt
 | `STARNET_DOCKER_MEMORY` | empty | Optional Docker `--memory` value |
 | `STARNET_DOCKER_SECURITY` | `true` | Adds `--cap-drop ALL`, `no-new-privileges`, and `--pids-limit 256` |
 | `STARNET_DOCKER_EXTRA_ARGS` | `[]` | JSON string array of extra Docker args |
+| `STARNET_DOCKER_IDLE_MINUTES` | `60` | Initial stop-only idle policy; the owner can persist a later value in Settings |
+| `STARNET_SSH_BIN` | `ssh` | OpenSSH-compatible client executable |
+| `STARNET_SCP_BIN` | `scp` | OpenSSH-compatible copy executable used for non-deleting workspace overlays |
+| `STARNET_SSH_CONNECT_TIMEOUT_SECONDS` | `10` | Bounded SSH connection/probe timeout |
 
 Legacy `SKYNET_EXEC_BACKEND`, `SKYNET_DOCKER_BIN`, and `SKYNET_DOCKER_IMAGE` are also accepted where applicable.
 
 ## Parity Direction
 
 the reference harness's production shape includes a richer environment manager with SSH, Modal, Singularity,
-Daytona, idle cleanup, and file synchronization for non-bind-mounted backends. StarNet now has the same
-architectural seam plus durable Docker reuse/background execution. The next parity steps are:
-
-1. Add an owner-visible idle cleanup policy without deleting active or unowned containers.
-2. Add SSH as the first non-local, non-container backend.
-3. Add file sync for backends that cannot share the host workspace by bind mount.
-4. Move checkpoint support behind environment capability flags for remote backends.
+Daytona, idle cleanup, and file synchronization for non-bind-mounted backends. StarNet now has the shared
+environment seam, durable Docker reuse/background execution, stop-only idle cleanup, SSH routing, explicit
+push/pull synchronization, and checkpoint capability flags. Future adapters can implement the same contract;
+remote background-session resumption and delta/conflict-aware sync remain intentionally unclaimed.

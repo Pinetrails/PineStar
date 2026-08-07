@@ -11,7 +11,7 @@
    derived id. */
 'use strict';
 
-const IDS = Object.freeze(['safe-cell', 'trusted-project', 'this-computer']);
+const IDS = Object.freeze(['safe-cell', 'remote-ssh', 'trusted-project', 'this-computer']);
 const VALID_IDS = Object.freeze(['station-gear'].concat(IDS));
 
 const PROFILES = Object.freeze({
@@ -32,6 +32,15 @@ const PROFILES = Object.freeze({
     connectors: false,
     physicalDesktop: 'never',
     description: 'Runs terminal and file work inside the isolated agent workspace. Connected services stay off unless a station prop grants them.'
+  }),
+  'remote-ssh': Object.freeze({
+    id: 'remote-ssh', label: 'REMOTE SSH', backend: 'ssh',
+    filesystemScope: 'agent-workspace',
+    filesystemLabel: 'Agent workspace synchronized to the configured remote host',
+    capabilityObjects: Object.freeze(['computer', 'cabinet', 'workbench']),
+    connectors: true,
+    physicalDesktop: 'never',
+    description: 'Runs terminal work on the owner-configured SSH host. The local agent workspace is pushed before each command and pulled back afterward.'
   }),
   'trusted-project': Object.freeze({
     id: 'trusted-project', label: 'TRUSTED PROJECT', backend: 'local',

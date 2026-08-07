@@ -8,7 +8,7 @@
    the same workspace bind mount.
 
    makeEnvironmentManager({ spawn, fs, pathMod, root, bg?, clock?, env?, config? })
-     -> { backendId, describe, ensureReady, cleanupAgent, ensureWorkspace, workspaceRoot, getCwd,
+     -> { backendId, describe, ensureReady, cleanupAgent, cleanupIdle, syncWorkspace, ensureWorkspace, workspaceRoot, getCwd,
           rememberCwd, execute, startBackground, statusBackground, readBackground,
           writeBackground, closeBackgroundStdin, killBackground, spawnStdio }
 */
@@ -150,6 +150,16 @@
         return reject(new Error('could not start environment process: ' + ((e && e.message) || e)));
       }
 
+      if (opts.input != null && child.stdin) {
+        try {
+          if (typeof child.stdin.write === 'function') child.stdin.write(String(opts.input));
+          if (typeof child.stdin.end === 'function') child.stdin.end();
+        } catch (e) {
+          try { killTree(spawn, child, isWin); } catch (_) {}
+          return reject(new Error('could not write environment process input: ' + ((e && e.message) || e)));
+        }
+      }
+
       const t0 = now();
       let out = '', total = 0, truncated = false, timedOut = false, aborted = false, settled = false;
       const append = function (buf) {
@@ -210,7 +220,10 @@
       dockerSecurity: overrides.dockerSecurity != null ? !!overrides.dockerSecurity : toBool(firstEnv(env, ['STARNET_DOCKER_SECURITY'], 'true'), true),
       dockerCpus: overrides.dockerCpus || firstEnv(env, ['STARNET_DOCKER_CPUS'], ''),
       dockerMemory: overrides.dockerMemory || firstEnv(env, ['STARNET_DOCKER_MEMORY'], ''),
-      dockerExtraArgs: Array.isArray(overrides.dockerExtraArgs) ? overrides.dockerExtraArgs : readListEnv(firstEnv(env, ['STARNET_DOCKER_EXTRA_ARGS'], ''))
+      dockerExtraArgs: Array.isArray(overrides.dockerExtraArgs) ? overrides.dockerExtraArgs : readListEnv(firstEnv(env, ['STARNET_DOCKER_EXTRA_ARGS'], '')),
+      sshBin: overrides.sshBin || firstEnv(env, ['STARNET_SSH_BIN'], 'ssh'),
+      scpBin: overrides.scpBin || firstEnv(env, ['STARNET_SCP_BIN'], 'scp'),
+      sshConnectTimeoutSeconds: clamp(overrides.sshConnectTimeoutSeconds || firstEnv(env, ['STARNET_SSH_CONNECT_TIMEOUT_SECONDS'], '10'), 3, 60)
     };
   }
 
@@ -256,7 +269,7 @@
 
     return {
       id: 'local',
-      supports: { shell: true, background: !!bg, hostWorkspace: true, checkpoints: true, hostileCodeSandbox: false, persistentSession: false, stdioMcp: false },
+      supports: { shell: true, background: !!bg, hostWorkspace: true, workspaceSync: false, checkpoints: true, hostileCodeSandbox: false, persistentSession: false, stdioMcp: false },
       describe: function () { return {
         backend: 'local', workspace: ROOT, background: !!bg,
         safeCell: {
@@ -323,11 +336,41 @@
     const sessions = new Map();
     const ready = new Set();
     const ensuring = new Map();
+    const active = new Map();
+    const lastUsed = new Map();
     const runtimeStatus = { state: 'unknown', error: null };
+    const cleanupStatus = { lastSweepAt: 0, stopped: [], error: null };
     const rootIdentity = stableHash(P.resolve ? P.resolve(ROOT) : ROOT);
     const containerRoot = String(cfg.dockerWorkspace || '/workspace').replace(/\/+$/, '') || '/workspace';
     // Same contract as the local backend: resolved PER CALL, fail-open, never a boot-time snapshot.
     const serviceEnvFn = typeof deps.serviceEnv === 'function' ? deps.serviceEnv : null;
+    const idleCleanupMsFn = typeof deps.idleCleanupMs === 'function' ? deps.idleCleanupMs : function () { return 0; };
+    function nowMs() { try { return Number(clock.now()) || 0; } catch (_) { return 0; } }
+    function touch(agentId) { lastUsed.set(safeAgentId(agentId), nowMs()); }
+    function activeCount(agentId) { return Number(active.get(safeAgentId(agentId)) || 0); }
+    function backgroundRunning(agentId) {
+      try {
+        const rows = deps.bg && typeof deps.bg.status === 'function' ? deps.bg.status(safeAgentId(agentId)) : [];
+        const running = Array.isArray(rows) && rows.some(function (row) { return row && row.running; });
+        if (running) touch(agentId); // idle time starts after the latest sweep that still proved work alive
+        return running;
+      } catch (_) { return true; }
+    }
+    function begin(agentId) {
+      const aid = safeAgentId(agentId);
+      active.set(aid, activeCount(aid) + 1); touch(aid);
+      return function () {
+        const left = Math.max(0, activeCount(aid) - 1);
+        if (left) active.set(aid, left); else active.delete(aid);
+        touch(aid);
+      };
+    }
+    function withActivity(agentId, work) {
+      const done = begin(agentId);
+      let value;
+      try { value = work(); } catch (e) { done(); throw e; }
+      return Promise.resolve(value).then(function (result) { done(); return result; }, function (e) { done(); throw e; });
+    }
     function serviceEnvFor(surface) {
       if (!serviceEnvFn) return {};
       try {
@@ -468,10 +511,18 @@
       for (const value of commandArgs) args.push(value);
       const clientEnv = Object.assign({}, sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {})), forwarded);
       const spawnOptions = opts.spawnOptions || {};
-      return spawn(cfg.dockerBin || 'docker', args, {
+      const release = begin(aid);
+      let child;
+      try { child = spawn(cfg.dockerBin || 'docker', args, {
         stdio: ['pipe', 'pipe', 'pipe'], shell: false, windowsHide: true,
         detached: !!spawnOptions.detached, env: clientEnv
-      });
+      }); } catch (e) { release(); throw e; }
+      let released = false;
+      const finish = function () { if (!released) { released = true; release(); } };
+      if (child && typeof child.once === 'function') { child.once('close', finish); child.once('error', finish); }
+      else if (child && typeof child.on === 'function') { child.on('close', finish); child.on('error', finish); }
+      else finish();
+      return child;
     }
 
     function dockerRun(args, opts) {
@@ -546,26 +597,66 @@
     function cleanupAgent(agentId, opts) {
       const aid = safeAgentId(agentId || 'agent');
       opts = opts || {};
-      ready.delete(aid);
-      sessions.delete(aid);
-      const args = opts.remove === false
-        ? ['stop', '--time', String(clamp(opts.timeoutSeconds || 3, 0, 30)), containerName(aid)]
-        : ['rm', '--force', containerName(aid)];
-      return dockerRun(args, { timeoutMs: 30000 }).then(function (r) {
-        if (opts.remove !== false) { try { fs.unlinkSync(cwdStatePath(aid)); } catch (_) {} }
-        return { ok: r.exitCode === 0, removed: opts.remove !== false, container: containerName(aid), out: String(r.out || '').trim() };
+      if (opts.onlyIfIdle && !ready.has(aid)) {
+        return Promise.resolve({ ok: false, refused: true, reason: 'cell is not owned by this live sidecar session', removed: false, container: containerName(aid) });
+      }
+      if (opts.onlyIfIdle && (activeCount(aid) > 0 || backgroundRunning(aid))) {
+        return Promise.resolve({ ok: false, refused: true, reason: 'environment is active', removed: false, container: containerName(aid) });
+      }
+      return inspectContainer(aid).then(function (owned) {
+        if (!owned.exists) return { ok: true, removed: false, alreadyAbsent: true, container: containerName(aid), out: '' };
+        const args = opts.remove === false
+          ? ['stop', '--time', String(clamp(opts.timeoutSeconds || 3, 0, 30)), containerName(aid)]
+          : ['rm', '--force', containerName(aid)];
+        return dockerRun(args, { timeoutMs: 30000 }).then(function (r) {
+          const ok = r.exitCode === 0;
+          if (ok) {
+            ready.delete(aid);
+            sessions.delete(aid);
+            if (opts.remove !== false) { try { fs.unlinkSync(cwdStatePath(aid)); } catch (_) {} }
+          }
+          return { ok, removed: ok && opts.remove !== false, container: containerName(aid), out: String(r.out || '').trim() };
+        });
       });
+    }
+
+    async function cleanupIdle(agentIds, opts) {
+      opts = opts || {};
+      const idleMs = clamp(opts.idleMs == null ? idleCleanupMsFn() : opts.idleMs, 0, 24 * 60 * 60 * 1000);
+      const at = opts.now == null ? nowMs() : Number(opts.now);
+      const stopped = [], skipped = [];
+      if (!idleMs) return { ok: true, enabled: false, idleMs: 0, checked: 0, stopped, skipped, at };
+      const ids = Array.isArray(agentIds) ? agentIds : Array.from(ready);
+      for (const raw of ids) {
+        let aid; try { aid = safeAgentId(raw); } catch (_) { continue; }
+        if (!ready.has(aid)) { skipped.push({ agentId: aid, reason: 'not owned by this live sidecar' }); continue; }
+        if (activeCount(aid) > 0 || backgroundRunning(aid)) { skipped.push({ agentId: aid, reason: 'active' }); continue; }
+        const last = Number(lastUsed.get(aid));
+        if (!Number.isFinite(last) || at - last < idleMs) { skipped.push({ agentId: aid, reason: 'not idle long enough' }); continue; }
+        try {
+          const result = await cleanupAgent(aid, { remove: false, onlyIfIdle: true, timeoutSeconds: opts.timeoutSeconds });
+          if (result && result.ok) stopped.push(aid);
+          else skipped.push({ agentId: aid, reason: (result && (result.reason || result.out)) || 'stop failed' });
+        } catch (e) {
+          skipped.push({ agentId: aid, reason: String((e && e.message) || e || 'stop failed').slice(0, 300) });
+        }
+      }
+      cleanupStatus.lastSweepAt = at;
+      cleanupStatus.stopped = stopped.slice();
+      cleanupStatus.error = null;
+      return { ok: true, enabled: true, idleMs, checked: ids.length, stopped, skipped, at };
     }
 
     return {
       id: 'docker',
-      supports: { shell: true, background: !!(deps.bg && typeof deps.bg.start === 'function'), hostWorkspace: true, checkpoints: true, hostileCodeSandbox: true, persistentSession: true, stdioMcp: true },
+      supports: { shell: true, background: !!(deps.bg && typeof deps.bg.start === 'function'), hostWorkspace: true, workspaceSync: false, checkpoints: true, hostileCodeSandbox: true, persistentSession: true, stdioMcp: true },
       describe: function () {
         return {
           backend: 'docker', image: cfg.dockerImage || DEFAULT_DOCKER_IMAGE, workspace: containerRoot, hostRoot: ROOT,
           background: !!(deps.bg && typeof deps.bg.start === 'function'),
           availability: { state: runtimeStatus.state, checked: runtimeStatus.state !== 'unknown', error: runtimeStatus.error },
           persistence: { container: 'per-agent', restartReuse: true, writableLayer: true, cwd: true, readyAgents: ready.size },
+          idleCleanup: { enabled: Number(idleCleanupMsFn()) > 0, idleMs: Number(idleCleanupMsFn()) || 0, activeAgents: active.size, lastSweepAt: cleanupStatus.lastSweepAt, lastStopped: cleanupStatus.stopped.slice(), deletesContainers: false },
           safeCell: {
             default: false,
             hostileCodeSandbox: true,
@@ -573,8 +664,10 @@
           }
         };
       },
-      ensureReady: function (agentId) { return ensureContainer(agentId, false); },
+      ensureReady: function (agentId) { touch(safeAgentId(agentId || 'agent')); return ensureContainer(agentId, false); },
       cleanupAgent: cleanupAgent,
+      cleanupIdle: cleanupIdle,
+      syncWorkspace: function (agentId) { return Promise.resolve({ ok: true, needed: false, agentId: safeAgentId(agentId || 'agent'), backend: 'docker' }); },
       workspaceRoot: workspaceRoot,
       ensureWorkspace: ensureWorkspace,
       getCwd: getCwd,
@@ -587,12 +680,12 @@
         // in a command line, and a container only ever receives keys the Commander connected.
         const svc = serviceEnvFor(opts.surface);
         const names = Object.keys(svc);
-        return ensureContainer(aid, false).then(function () {
+        return withActivity(aid, function () { return ensureContainer(aid, false).then(function () {
           return dockerRun(dockerExecArgs(aid, opts.cmd, cwd, names), {
             env: dockerClientEnv(svc), timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs,
             maxBytes: opts.maxBytes, signal: opts.signal, clock: opts.clock || clock
           });
-        });
+        }); });
       },
       startBackground: function (opts) {
         opts = opts || {};
@@ -600,6 +693,7 @@
         if (!bg || typeof bg.start !== 'function') return Promise.resolve({ ok: false, error: 'background processes are not available for the docker backend' });
         const aid = safeAgentId(opts.agentId || 'agent');
         const svc = serviceEnvFor(opts.surface);
+        touch(aid);
         return ensureContainer(aid, false).then(function () {
           return bg.start({
             agentId: aid, cmd: String(opts.cmd || ''), cwd: workspaceRoot(aid), isWin: WIN,
@@ -615,7 +709,227 @@
       killBackground: function (agentId, bgId) { return deps.bg && deps.bg.kill ? deps.bg.kill(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the docker backend' }; },
       killAllBackground: function (agentId) { return deps.bg && deps.bg.killAll ? deps.bg.killAll(agentId) : 0; },
       spawnStdio: spawnStdio,
-      _internals: { dockerCreateArgs: dockerCreateArgs, dockerExecArgs: dockerExecArgs, containerName: containerName, inspectContainer: inspectContainer, posixInside: posixInside, spawnStdio: spawnStdio }
+      _internals: { dockerCreateArgs: dockerCreateArgs, dockerExecArgs: dockerExecArgs, containerName: containerName, inspectContainer: inspectContainer, posixInside: posixInside, spawnStdio: spawnStdio, active: active, lastUsed: lastUsed }
+    };
+  }
+
+  function makeSshBackend(deps) {
+    const spawn = deps.spawn, fs = deps.fs, P = deps.pathMod, ROOT = deps.root;
+    const clock = deps.clock || { now: function () { return 0; } };
+    const cfg = deps.config || {};
+    const targetFn = typeof deps.sshConfig === 'function' ? deps.sshConfig : function () { return null; };
+    const serviceEnvFn = typeof deps.serviceEnv === 'function' ? deps.serviceEnv : null;
+    const states = new Map();
+    const sessions = new Map();
+    const operations = new Map();
+
+    function nowMs() { try { return Number(clock.now()) || 0; } catch (_) { return 0; } }
+    function quote(value) { return "'" + String(value == null ? '' : value).replace(/'/g, "'\\''") + "'"; }
+    function target(agentId) {
+      const aid = safeAgentId(agentId || 'agent');
+      const row = targetFn(aid);
+      if (!row || !row.configured || !row.host) throw new Error('SSH target is not configured for ' + aid);
+      return {
+        host: String(row.host), user: String(row.user || ''), port: clamp(row.port || 22, 1, 65535),
+        remoteRoot: String(row.remoteRoot || '/workspace').replace(/\/+$/, '') || '/workspace'
+      };
+    }
+    function signature(row) { return [row.host, row.user, row.port, row.remoteRoot].join('\n'); }
+    function stateFor(agentId) {
+      const aid = safeAgentId(agentId || 'agent');
+      let state = states.get(aid);
+      if (!state) {
+        state = { availability: 'unknown', error: null, signature: '', lastProbeAt: 0, sync: { state: 'never', direction: null, error: null, lastPushAt: 0, lastPullAt: 0 } };
+        states.set(aid, state);
+      }
+      return state;
+    }
+    function enqueue(agentId, work) {
+      const aid = safeAgentId(agentId || 'agent');
+      const previous = operations.get(aid) || Promise.resolve();
+      const current = previous.catch(function () {}).then(work);
+      operations.set(aid, current);
+      return current.finally(function () { if (operations.get(aid) === current) operations.delete(aid); });
+    }
+    function workspaceRoot(agentId) { return P.join(ROOT, safeAgentId(agentId || 'agent')); }
+    function ensureWorkspace(agentId) {
+      const dir = workspaceRoot(agentId);
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+      return dir;
+    }
+    function getCwd(agentId) {
+      const aid = safeAgentId(agentId || 'agent'), row = target(aid), saved = sessions.get(aid);
+      return saved && posixInside(saved, row.remoteRoot) ? saved : row.remoteRoot;
+    }
+    function rememberCwd(agentId, cwd) {
+      const aid = safeAgentId(agentId || 'agent'), row = target(aid);
+      if (cwd && posixInside(cwd, row.remoteRoot)) sessions.set(aid, String(cwd));
+      return getCwd(aid);
+    }
+    function destination(row) { return (row.user ? row.user + '@' : '') + row.host; }
+    function commonOptions(row) {
+      return ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=' + String(cfg.sshConnectTimeoutSeconds || 10)];
+    }
+    function childEnv() { return sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {})); }
+    function runSsh(row, script, opts) {
+      opts = opts || {};
+      const args = commonOptions(row).concat(['-p', String(row.port), destination(row), 'sh', '-s']);
+      return runProcess({
+        spawn, file: cfg.sshBin || 'ssh', args,
+        spawnOptions: { windowsHide: true, shell: false, env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] },
+        input: String(script || ''), timeoutMs: opts.timeoutMs || 30000, maxTimeoutMs: opts.maxTimeoutMs || 600000,
+        maxBytes: opts.maxBytes || 64000, signal: opts.signal, clock: opts.clock || clock, isWin: WIN
+      });
+    }
+    function runScp(row, source, destinationPath, opts) {
+      opts = opts || {};
+      const args = ['-q', '-r', '-p'].concat(commonOptions(row), ['-P', String(row.port), source, destinationPath]);
+      return runProcess({
+        spawn, file: cfg.scpBin || 'scp', args,
+        spawnOptions: { windowsHide: true, shell: false, env: childEnv(), cwd: ROOT },
+        timeoutMs: opts.timeoutMs || 120000, maxTimeoutMs: opts.maxTimeoutMs || 600000,
+        maxBytes: opts.maxBytes || 64000, signal: opts.signal, clock: opts.clock || clock, isWin: WIN
+      });
+    }
+    function assertLocalTreeSafe(agentId) {
+      const root = ensureWorkspace(agentId), stack = [root];
+      let seen = 0;
+      while (stack.length) {
+        const current = stack.pop();
+        const names = fs.readdirSync(current);
+        for (const name of names) {
+          if (++seen > 100000) throw new Error('workspace sync refused: local tree exceeds the 100000-entry safety bound');
+          const full = P.join(current, name), stat = fs.lstatSync(full);
+          if (stat.isSymbolicLink()) throw new Error('workspace sync refused: symbolic links are not allowed (' + P.relative(root, full) + ')');
+          if (stat.isDirectory()) stack.push(full);
+        }
+      }
+    }
+    function assertRemoteTreeSafe(row, opts) {
+      const script = 'if find ' + quote(row.remoteRoot) + ' -type l -print -quit | grep -q .; then printf starnet-sync-symlink; exit 96; fi\nprintf starnet-sync-safe\n';
+      return runSsh(row, script, { timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs, maxBytes: 4096, signal: opts.signal }).then(function (result) {
+        if (result.exitCode !== 0 || String(result.out || '').indexOf('starnet-sync-safe') < 0) throw new Error('workspace pull refused: remote tree contains a symbolic link or could not be verified');
+      });
+    }
+    function ensureReadyRaw(agentId) {
+      const aid = safeAgentId(agentId || 'agent'), row = target(aid), state = stateFor(aid), sig = signature(row);
+      ensureWorkspace(aid);
+      if (state.availability === 'ready' && state.signature === sig) return Promise.resolve({ ok: true, reused: true, backend: 'ssh', agentId: aid });
+      state.availability = 'checking'; state.error = null; state.signature = sig;
+      const script = 'mkdir -p ' + quote(row.remoteRoot) + '\n' +
+        'test -d ' + quote(row.remoteRoot) + ' && printf starnet-ssh-ready\n';
+      return runSsh(row, script, { timeoutMs: Math.max(10000, (cfg.sshConnectTimeoutSeconds || 10) * 1000 + 3000), maxBytes: 4096 })
+        .then(function (result) {
+          state.lastProbeAt = nowMs();
+          if (result.exitCode !== 0 || String(result.out || '').indexOf('starnet-ssh-ready') < 0) {
+            throw new Error('SSH readiness probe failed' + (result.out ? ': ' + String(result.out).trim().slice(0, 200) : ''));
+          }
+          state.availability = 'ready'; state.error = null;
+          return { ok: true, reused: false, backend: 'ssh', agentId: aid };
+        }).catch(function (e) {
+          state.availability = 'unavailable'; state.error = String((e && e.message) || e || 'SSH unavailable').slice(0, 300); state.lastProbeAt = nowMs();
+          throw e;
+        });
+    }
+    function syncWorkspaceRaw(agentId, opts) {
+      opts = opts || {};
+      const aid = safeAgentId(agentId || 'agent'), row = target(aid), state = stateFor(aid);
+      const direction = ['push', 'pull', 'both'].indexOf(String(opts.direction || 'both')) >= 0 ? String(opts.direction || 'both') : 'both';
+      ensureWorkspace(aid);
+      state.sync.state = 'syncing'; state.sync.direction = direction; state.sync.error = null;
+      const remote = destination(row) + ':' + row.remoteRoot;
+      return ensureReadyRaw(aid).then(async function () {
+        if (direction === 'push' || direction === 'both') {
+          assertLocalTreeSafe(aid);
+          const pushed = await runScp(row, aid + '/.', remote + '/', opts);
+          if (pushed.exitCode !== 0) throw new Error('workspace push failed' + (pushed.out ? ': ' + String(pushed.out).trim().slice(0, 200) : ''));
+          state.sync.lastPushAt = nowMs();
+        }
+        if (direction === 'pull' || direction === 'both') {
+          await assertRemoteTreeSafe(row, opts);
+          const pulled = await runScp(row, remote + '/.', aid, opts);
+          if (pulled.exitCode !== 0) throw new Error('workspace pull failed' + (pulled.out ? ': ' + String(pulled.out).trim().slice(0, 200) : ''));
+          state.sync.lastPullAt = nowMs();
+        }
+        state.sync.state = 'ready'; state.sync.direction = direction; state.sync.error = null;
+        return { ok: true, needed: true, backend: 'ssh', agentId: aid, direction, lastPushAt: state.sync.lastPushAt, lastPullAt: state.sync.lastPullAt };
+      }).catch(function (e) {
+        state.sync.state = 'error'; state.sync.error = String((e && e.message) || e || 'workspace sync failed').slice(0, 300);
+        throw e;
+      });
+    }
+    function ensureReady(agentId) {
+      const aid = safeAgentId(agentId || 'agent');
+      return enqueue(aid, function () { return ensureReadyRaw(aid); });
+    }
+    function syncWorkspace(agentId, opts) {
+      const aid = safeAgentId(agentId || 'agent');
+      return enqueue(aid, function () { return syncWorkspaceRaw(aid, opts); });
+    }
+    function serviceEnv(surface) {
+      const out = {};
+      if (serviceEnvFn) {
+        try {
+          const raw = serviceEnvFn(surface) || {};
+          for (const name of Object.keys(raw)) {
+            if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || INTERNAL_ENV_NAME_RE.test(name) || EXECUTION_HOOK_ENV_RE.test(name)) continue;
+            if (raw[name] != null && raw[name] !== '') out[name] = String(raw[name]);
+          }
+        } catch (_) {}
+      }
+      out.STARNET_USER_CONTROL_MODE = 'preserve';
+      out.STARNET_COMPUTER_DRIVER = '0';
+      out.STARNET_BROWSER_HEADLESS = '1';
+      out.STARNET_MCP_STDIO = '0';
+      out.BROWSER = 'none';
+      return out;
+    }
+    function execute(opts) {
+      opts = opts || {};
+      const aid = safeAgentId(opts.agentId || 'agent');
+      return enqueue(aid, function () {
+        const row = target(aid), cwd = opts.cwd || getCwd(aid);
+        if (!posixInside(cwd, row.remoteRoot)) throw new Error('SSH cwd must stay inside ' + row.remoteRoot);
+        return syncWorkspaceRaw(aid, { direction: 'push', timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs, signal: opts.signal }).then(function () {
+          const env = serviceEnv(opts.surface);
+          let script = 'cd ' + quote(cwd) + ' || exit 97\n';
+          for (const name of Object.keys(env).sort()) script += 'export ' + name + '=' + quote(env[name]) + '\n';
+          script += String(opts.cmd || '') + '\n';
+          return runSsh(row, script, opts);
+        }).then(function (result) {
+          return syncWorkspaceRaw(aid, { direction: 'pull', timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs, signal: opts.signal })
+            .then(function () { return result; });
+        });
+      });
+    }
+    function describe(agentId) {
+      let row = null, state = null;
+      try { if (agentId) { row = target(agentId); state = stateFor(agentId); } } catch (_) {}
+      return {
+        backend: 'ssh', workspace: row ? row.remoteRoot : null, hostWorkspace: false, background: false,
+        availability: { state: row ? state.availability : 'configuration-required', checked: !!(state && state.lastProbeAt), error: state ? state.error : null },
+        remote: row ? { configured: true, host: row.host, user: row.user, port: row.port, remoteRoot: row.remoteRoot, auth: 'os-openssh', strictHostKeyChecking: true } : { configured: false },
+        sync: state ? Object.assign({}, state.sync) : { state: 'never', direction: null, error: null, lastPushAt: 0, lastPullAt: 0 },
+        safeCell: { default: false, hostileCodeSandbox: false, controls: ['strict known_hosts', 'batch-only authentication', 'remote workspace clamp', 'push before command', 'pull after command', 'foreground timeout/abort kill'] }
+      };
+    }
+    function invalidateAgent(agentId) { states.delete(safeAgentId(agentId || 'agent')); sessions.delete(safeAgentId(agentId || 'agent')); return { ok: true }; }
+
+    return {
+      id: 'ssh',
+      supports: { shell: true, background: false, hostWorkspace: false, workspaceSync: true, checkpoints: false, hostileCodeSandbox: false, persistentSession: false, stdioMcp: false },
+      describe, ensureReady, cleanupAgent: function (agentId) { invalidateAgent(agentId); return Promise.resolve({ ok: true, removed: false, backend: 'ssh', disconnected: true }); },
+      cleanupIdle: function () { return Promise.resolve({ ok: true, enabled: false, idleMs: 0, checked: 0, stopped: [], skipped: [] }); },
+      syncWorkspace, invalidateAgent, workspaceRoot, ensureWorkspace, getCwd, rememberCwd, execute,
+      startBackground: function () { return Promise.resolve({ ok: false, error: 'background processes are not available for the SSH backend; run it in the foreground or use a remote service manager' }); },
+      statusBackground: function (_agentId, bgId) { return bgId ? null : []; },
+      readBackground: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
+      writeBackground: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
+      closeBackgroundStdin: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
+      killBackground: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
+      killAllBackground: function () { return 0; },
+      spawnStdio: function () { throw new Error('mcp stdio is not available through the SSH backend'); },
+      _internals: { states, operations, target, runSsh, runScp, quote, assertLocalTreeSafe, assertRemoteTreeSafe }
     };
   }
 
@@ -627,7 +941,8 @@
     let backend;
     if (config.backend === 'local') backend = makeLocalBackend(Object.assign({}, deps, { config: config }));
     else if (config.backend === 'docker') backend = makeDockerBackend(Object.assign({}, deps, { config: config }));
-    else throw new Error('unknown execution backend "' + config.backend + '" (expected local or docker)');
+    else if (config.backend === 'ssh') backend = makeSshBackend(Object.assign({}, deps, { config: config }));
+    else throw new Error('unknown execution backend "' + config.backend + '" (expected local, docker, or ssh)');
 
     return {
       backendId: backend.id,
@@ -635,6 +950,9 @@
       describe: backend.describe,
       ensureReady: backend.ensureReady || function (agentId) { backend.ensureWorkspace(agentId); return Promise.resolve({ ok: true, backend: backend.id }); },
       cleanupAgent: backend.cleanupAgent || function () { return Promise.resolve({ ok: false, error: 'the local backend has no persistent environment to remove' }); },
+      cleanupIdle: backend.cleanupIdle || function () { return Promise.resolve({ ok: true, enabled: false, idleMs: 0, checked: 0, stopped: [], skipped: [] }); },
+      syncWorkspace: backend.syncWorkspace || function (agentId) { return Promise.resolve({ ok: true, needed: false, agentId: safeAgentId(agentId || 'agent'), backend: backend.id }); },
+      invalidateAgent: backend.invalidateAgent || function () { return { ok: true }; },
       workspaceRoot: backend.workspaceRoot,
       ensureWorkspace: backend.ensureWorkspace,
       getCwd: backend.getCwd,

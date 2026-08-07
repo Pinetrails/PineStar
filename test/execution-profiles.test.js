@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const Profiles = require('../sidecar/execution-profiles.js');
 
-A.eq(Profiles.IDS.join(','), 'safe-cell,trusted-project,this-computer', 'the three selectable execution profiles are stable');
+A.eq(Profiles.IDS.join(','), 'safe-cell,remote-ssh,trusted-project,this-computer', 'the four selectable execution profiles are stable');
 A.eq(Profiles.normalizeId(null, { backendId: 'docker', approvalMode: 'ask' }), 'station-gear', 'legacy Docker roster preserves its placed-gear capability envelope');
 A.eq(Profiles.normalizeId(null, { backendId: 'local', approvalMode: 'ask' }), 'station-gear', 'legacy local ASK preserves its placed-gear capability envelope');
 A.eq(Profiles.normalizeId(null, { backendId: 'local', approvalMode: 'full' }), 'station-gear', 'legacy Full Access does not silently acquire new tools');
@@ -21,6 +21,13 @@ A.eq(safe.approvalMode, 'full', 'approval posture is independent of the profile'
 A.eq(safe.physicalDesktop, 'never', 'Safe Cell never claims physical desktop control');
 A.ok(safe.capabilityObjects.includes('cabinet') && safe.capabilityObjects.includes('workbench'), 'Safe Cell advertises files + terminal');
 A.eq(safe.connectors, false, 'Safe Cell does not silently project host connectors');
+
+const remote = Profiles.resolve('remote-ssh', { backendId: 'ssh', approvalMode: 'ask' });
+A.eq(remote.requestedBackend, 'ssh', 'Remote SSH requests the SSH environment');
+A.eq(remote.backendMatched, true, 'Remote SSH reports a real routed backend match');
+A.eq(remote.filesystemScope, 'agent-workspace', 'Remote SSH does not widen host filesystem authority');
+A.eq(remote.physicalDesktop, 'never', 'Remote SSH never implies physical desktop control');
+A.ok(remote.capabilityObjects.includes('cabinet') && remote.capabilityObjects.includes('workbench'), 'Remote SSH projects files and terminal tools');
 
 const trusted = Profiles.resolve('trusted-project', { backendId: 'local', approvalMode: 'ask' });
 A.eq(trusted.backendMatched, true, 'Trusted Project matches the local backend');
