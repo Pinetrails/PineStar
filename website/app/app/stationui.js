@@ -1897,6 +1897,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
       personaCard(a) +
       modelCard(a) +
+      executionProfileCard(a) +
       approvalCard(a) +
       workshopCard(a) +
       agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
@@ -1926,16 +1927,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // changeable any time — until now the ONLY post-create path was the /yolo slash command in COMMS, which most
   // Commanders never find (a creation-time picker with no live-app twin — the codex-sign-in escape class).
   // Applies via access.config.setApproval → pushRoster, so the sidecar's per-run consent gate flips with it.
+  const EXECUTION_PROFILES = [
+    { id: 'station-gear', label: 'STATION GEAR', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
+    { id: 'safe-cell', label: 'SAFE CELL', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
+    { id: 'trusted-project', label: 'TRUSTED PROJECT', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
+    { id: 'this-computer', label: 'THIS COMPUTER', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
+  ];
+  function executionProfileId(a) {
+    const id = String((a && a.executionProfile) || '');
+    return EXECUTION_PROFILES.some(p => p.id === id) ? id : 'station-gear';
+  }
+  function executionProfileCard(a) {
+    const current = executionProfileId(a);
+    const p = EXECUTION_PROFILES.find(x => x.id === current) || EXECUTION_PROFILES[0];
+    const chips = EXECUTION_PROFILES.map(x => '<button type="button" class="ov-vchip' + (x.id === current ? ' sel' : '') + '" data-execution-profile="' + x.id + '" data-name="' + esc(x.label) + '" title="' + esc(x.desc) + '" aria-pressed="' + (x.id === current ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('');
+    return '<div class="cf-card" id="ag-execution-card">' +
+      '<div class="cf-head"><span class="cf-file">▣ execution profile</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-desc">Where this agent runs and what scope it receives. This is separate from approval prompts and never grants real mouse, keyboard, or screen control.</div>' +
+      '<div class="ov-vchips" id="ag-execution-chips">' + chips + '</div>' +
+      '<div class="mc-hint" id="ag-execution-truth">ROUTES NEXT COMMAND TO <b>' + esc(p.backend.toUpperCase()) + '</b> · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop) + ' · checking availability…</div>' +
+      '<div id="ag-execution-msg" class="msg"></div>' +
+    '</div>';
+  }
+
   function approvalCard(a) {
     const full = !!(a && a.approvalMode === 'full');
     const chip = (id, label, desc, sel) =>
       '<button type="button" class="ov-vchip' + (sel ? ' sel' : '') + '" data-approval="' + id + '" data-name="' + esc(label) + '" title="' + esc(desc) + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' + esc(label) + '</button>';
     return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">✋ approval</span><span class="cf-badge">PER-AGENT</span></div>' +
-      '<div class="cf-desc">Whether this agent stops to check with you before it writes, runs, or reaches out — the same choice you made at its creation. Change it any time (<code>/yolo</code> in COMMS is the shortcut).</div>' +
+      '<div class="cf-head"><span class="cf-file">✋ approval prompts</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-desc">Whether risky calls pause for your answer. This does not add tools, widen filesystem scope, choose a runtime, or grant real desktop control. <code>/yolo</code> remains the shortcut for the zero-prompt posture.</div>' +
       '<div class="ov-vchips" id="ag-approval-chips">' +
         chip('ask', 'ASK FOR APPROVAL', 'stops to check with you before it writes, runs, or reaches out', !full) +
-        chip('full', 'FULL ACCESS', 'runs everything itself — no approval prompts', full) +
+        chip('full', 'RUN WITHOUT PROMPTS', 'uses its current execution profile without approval prompts', full) +
       '</div>' +
       '<div id="ag-approval-msg" class="msg"></div>' +
     '</div>';
@@ -2077,6 +2101,40 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('click'); rerender('agents');
       }));
     }
+    // EXECUTION PROFILE chips — capability/runtime/filesystem envelope only. This never changes approvalMode.
+    // The routed backend is fetched from sidecar truth for THIS agent. Profile changes apply to the next
+    // command; availability stays explicit (Docker is not claimed ready before its startup probe).
+    const epWrap = body.querySelector('#ag-execution-chips');
+    if (epWrap) {
+      const epTruth = body.querySelector('#ag-execution-truth');
+      const currentId = executionProfileId(a);
+      const paintBackendTruth = (row) => {
+        const p = EXECUTION_PROFILES.find(x => x.id === executionProfileId(a)) || EXECUTION_PROFILES[0];
+        const routed = String((row && row.profile && row.profile.effectiveBackend) || 'unknown').toUpperCase();
+        const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
+        if (epTruth) epTruth.innerHTML = 'ROUTES NEXT COMMAND TO <b>' + esc(routed) + '</b> · AVAILABILITY <b>' + esc(availability) + '</b>' +
+          ' · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop);
+      };
+      Harness.api.get('/api/execution-profiles').then(j => paintBackendTruth((j && j.agents || []).find(x => x.agentId === (a && a.id)))).catch(() => paintBackendTruth(null));
+      let epArmed = null;
+      const epDisarm = () => { if (epArmed) { epArmed.textContent = epArmed.dataset.name; epArmed.classList.remove('arm'); epArmed = null; } };
+      epWrap.querySelectorAll('[data-execution-profile]').forEach(chip => chip.addEventListener('click', () => {
+        const id = chip.dataset.executionProfile;
+        if (!id || id === currentId) { epDisarm(); return; }
+        if (id === 'this-computer' && epArmed !== chip) {
+          epDisarm(); epArmed = chip; chip.classList.add('arm'); chip.textContent = 'THIS COMPUTER — SURE? broad host paths'; sfx('click'); return;
+        }
+        epDisarm();
+        if (!(access.config && access.config.setExecutionProfile)) { notify('execution profile change unavailable', 'bad'); sfx('bad'); return; }
+        chip.disabled = true;
+        Promise.resolve(access.config.setExecutionProfile(a && a.id, id)).then(ok => {
+          if (!ok) { notify('could not change execution profile — the station kept the prior profile', 'bad'); sfx('bad'); rerender('agents'); return; }
+          notify(((a && a.name) || 'agent') + ' execution profile → ' + (chip.dataset.name || id), id === 'this-computer' ? 'warn' : 'good');
+          sfx('click'); rerender('agents');
+        }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); sfx('bad'); rerender('agents'); });
+      }));
+    }
+
     // APPROVAL chips — apply via access.config.setApproval, then rerender so the sel chip reflects recorded
     // truth. FULL ACCESS is the dangerous pick, so it keeps the house two-press confirm (the personality
     // UNHINGED pattern): press one names what it means (warn tint), press two applies; anything else disarms.
@@ -2093,7 +2151,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (id === 'full' && apArmed !== chip) {
           apDisarm(); apArmed = chip;
           chip.classList.add('arm');
-          chip.textContent = 'FULL ACCESS — SURE? no approval prompts';
+          chip.textContent = 'RUN WITHOUT PROMPTS — SURE?';
           sfx('click');
           return;
         }
@@ -2101,7 +2159,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!(access.config && access.config.setApproval)) { setApMsg('approval change unavailable', false); sfx('bad'); return; }
         const ok = access.config.setApproval(a && a.id, id);
         if (ok === false) { setApMsg('could not change approval', false); sfx('bad'); return; }
-        notify(id === 'full' ? '⚡ ' + ((a && a.name) || 'agent') + ' now runs with FULL ACCESS — no approval prompts' : '✋ ' + ((a && a.name) || 'agent') + ' will ask before risky moves again', id === 'full' ? 'warn' : 'good');
+        notify(id === 'full' ? '⚡ ' + ((a && a.name) || 'agent') + ' will run its current execution profile without approval prompts' : '✋ ' + ((a && a.name) || 'agent') + ' will ask before risky moves again', id === 'full' ? 'warn' : 'good');
         sfx('click'); rerender('agents');
       }));
     }
@@ -4637,21 +4695,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // ── 0 · FULL BYPASS — the master switch, above everything it outranks. Its own CARD (not a
       // key-list row): it outranks every control below it, so it carries the visual weight of one.
       '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
-      // ── 1 · APPROVAL ──
-      '<h4 class="ms-h">1 · APPROVAL <span class="dim">— who stops to ask you first</span></h4>' +
-      '<p class="set-about perm-lede">Each crew member either <b>ASKS</b> — a permission card pauses its run until you answer — or holds <b>FULL ACCESS</b> and runs everything itself, no prompts. Same switch as the dossier CONFIG card and <code>/yolo</code> in COMMS.</p>' +
+      // ── 1 · EXECUTION PROFILE ──
+      '<h4 class="ms-h">1 · EXECUTION PROFILE <span class="dim">— where it runs and what scope it receives</span></h4>' +
+      '<p class="set-about perm-lede">Safe Cell, Trusted Project, and This Computer set runtime, filesystem reach, and the baseline terminal/files/connector tools. None grants real mouse, keyboard, or screen control.</p>' +
+      '<div class="perm-list" id="perm-execution"></div>' +
+      // ── 2 · APPROVAL ──
+      '<h4 class="ms-h">2 · APPROVAL PROMPTS <span class="dim">— whether risky calls pause for you</span></h4>' +
+      '<p class="set-about perm-lede">Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>. This posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. <code>/yolo</code> remains the shortcut.</p>' +
       '<div class="perm-list" id="perm-approval"></div>' +
       '<div class="mc-acts perm-allacts">' +
-        '<button class="bb sm danger" id="perm-full-all">FULL ACCESS — WHOLE STATION</button>' +
+        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
         '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
       '</div>' +
-      '<div class="mc-hint">full access skips every approval prompt on every task, watched or unattended. It does not skip the hard safety floor: protected host actions are blocked automatically, without asking.</div>' +
+      '<div class="mc-hint">The zero-prompt posture applies watched or unattended, within each agent’s execution profile. Protected host actions remain blocked automatically.</div>' +
       // ── 2 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
       // (test-pinned, and it says the stakes plainly).
-      '<h4 class="ms-h">2 · UNATTENDED LEVEL <span class="dim">— how far it may go while you’re away</span></h4>' +
+      '<h4 class="ms-h">3 · UNATTENDED LEVEL <span class="dim">— how far it may go while you’re away</span></h4>' +
       '<p class="set-about perm-lede">The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
       '<p class="set-about perm-lede" id="perm-desc"></p>' +
       '<p class="set-about perm-lede" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
@@ -4662,7 +4724,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
       // ── 3 · STANDING APPROVALS ──
-      '<h4 class="ms-h">3 · STANDING APPROVALS <span class="dim">— what it may already do unattended</span></h4>' +
+      '<h4 class="ms-h">4 · STANDING APPROVALS <span class="dim">— what it may already do unattended</span></h4>' +
       '<p class="set-about perm-lede">Every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time).</p>' +
       '<div class="key-list perm-grants" id="perm-grants"></div>';
     const secBudget =
@@ -5483,7 +5545,44 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         return rows.join('');
       };
-      /* ── 1 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
+      /* ── 1 · EXECUTION PROFILE rows — a real capability/runtime/filesystem envelope, independent of approval.
+         Each choice writes the same roster field consumed by runOnce's capability projection. */
+      const epList = host.querySelector('#perm-execution');
+      const paintExecutionProfiles = (truth) => {
+        if (!epList) return;
+        if (!present.length) { epList.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
+        const can = !!(access.config && access.config.setExecutionProfile);
+        epList.innerHTML = present.map(a => {
+          const id = executionProfileId(a);
+          const p = EXECUTION_PROFILES.find(x => x.id === id) || EXECUTION_PROFILES[0];
+          const row = ((truth && truth.agents) || []).find(x => x.agentId === a.id);
+          const routed = String((row && row.profile && row.profile.effectiveBackend) || 'checking…').toUpperCase();
+          const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
+          return '<div class="perm-agent">' +
+            '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
+            '<span class="pa-mode">' + esc(p.label) + '</span>' +
+            '<span class="pa-state">routes next command to ' + esc(routed) + ' · availability ' + esc(availability) + ' · ' + esc(p.files) + ' · ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</span>' +
+            (can ? '<div class="ov-vchips">' + EXECUTION_PROFILES.map(x => '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('') + '</div>' : '') +
+            '</div>';
+        }).join('');
+        epList.querySelectorAll('[data-perm-profile]').forEach(b => {
+          const apply = () => {
+            b.disabled = true;
+            Promise.resolve(access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'))).then(ok => {
+              if (!ok) notify('could not change execution profile — the station kept the prior profile', 'bad');
+              else notify('execution profile → ' + b.getAttribute('data-name'), b.getAttribute('data-perm-profile') === 'this-computer' ? 'warn' : 'good');
+              refreshExecutionProfiles();
+            }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); refreshExecutionProfiles(); });
+          };
+          if (b.getAttribute('data-perm-profile') === 'this-computer' && !b.classList.contains('sel')) ArmConfirm.wire(b, { armedLabel: 'SURE? BROAD HOST PATHS', restLabel: 'THIS COMPUTER', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          else b.addEventListener('click', () => { sfx('click'); apply(); });
+        });
+      };
+      const refreshExecutionProfiles = () => Harness.api.get('/api/execution-profiles').then(paintExecutionProfiles).catch(() => paintExecutionProfiles(null));
+      paintExecutionProfiles(null);
+      refreshExecutionProfiles();
+
+      /* ── 2 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
          (not copies), so approvalMode read here is the same truth pushRoster ships to the sidecar; a flip goes
          through access.config.setApproval — the identical path the dossier CONFIG card and /yolo use — so the
          per-run consent gate follows it. Escalation (→ FULL ACCESS) keeps the house two-press confirm; taking
@@ -5502,9 +5601,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const full = !!(a && a.approvalMode === 'full');
           return '<div class="perm-agent' + (full ? ' full' : '') + '">' +
             '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-            '<span class="pa-mode">' + (full ? 'FULL ACCESS' : 'ASKS') + '</span>' +
-            '<span class="pa-state">' + (full ? 'runs everything itself, no prompts' : 'stops before it writes, runs, or reaches out') + '</span>' +
-            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? 'MAKE IT ASK' : 'GIVE FULL ACCESS') + '</button>' : '') +
+            '<span class="pa-mode">' + (full ? 'NO PROMPTS' : 'ASKS') + '</span>' +
+            '<span class="pa-state">' + (full ? 'uses its current execution profile without pausing' : 'stops before it writes, runs, or reaches out') + '</span>' +
+            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? 'MAKE IT ASK' : 'RUN WITHOUT PROMPTS') + '</button>' : '') +
             '</div>';
         }).join('');
         apWrap.querySelectorAll('[data-ap-flip]').forEach(b => {
@@ -5517,7 +5616,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             paintApproval();
             if (!ok) notify('that agent is no longer on the roster — the list has been refreshed', 'warn');
           };
-          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? NO PROMPTS', restLabel: 'GIVE FULL ACCESS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? NO PROMPTS', restLabel: 'RUN WITHOUT PROMPTS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
           else b.addEventListener('click', () => { sfx('click'); apply(); });
         });
       };
@@ -5533,14 +5632,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       };
       const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
       if (fullAll) ArmConfirm.wire(fullAll, {
-        armedLabel: 'SURE? EVERY AGENT, NO PROMPTS', restLabel: 'FULL ACCESS — WHOLE STATION', timeoutMs: 4000,
+        armedLabel: 'SURE? EVERY AGENT, NO PROMPTS', restLabel: 'NO PROMPTS — WHOLE STATION', timeoutMs: 4000,
         onArm: () => sfx('bad'),
         onConfirm: () => {
           const r = sweepApproval('full');
           if (!r) return;
           sfx('bad');
           notify(r.done
-            ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' now run with FULL ACCESS — no approval prompts (the hard safety floor still applies)'
+            ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' now run their current execution profiles without approval prompts (the hard safety floor still applies)'
             : 'no crew to change — summon an agent first', r.done ? 'warn' : 'bad');
         }
       });
@@ -5584,7 +5683,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // a hairline-separated floor note. The button never sits inside the prose (it read as part of
         // the sentence), and the state is a chip so ON/OFF is legible without reading the paragraph.
         const floorNote = 'Still standing either way: the protected-file floor (.env / .git) and real mouse &amp; screen control (desktop pairing only).';
-        const head = (chip, chipCls) => '<div class="perm-m-head"><span class="perm-m-title">FULL BYPASS</span>' +
+        const head = (chip, chipCls) => '<div class="perm-m-head"><span class="perm-m-title">NO-PROMPT OVERRIDE</span>' +
           '<span class="perm-m-chip' + (chipCls ? ' ' + chipCls : '') + '">' + chip + '</span></div>';
         const errLine = bypassErr ? '<p class="perm-m-err">⚠ ' + esc(bypassErr) + ' — the switch is unchanged.</p>' : '';
         if (snap.envFullAccess) {
@@ -5595,12 +5694,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         bypassWrap.innerHTML = snap.masterBypass
           ? (head('ON', 'on') +
-             '<p class="perm-m-desc">Every agent, every surface — chat, Telegram, routines, night shift — runs everything without asking, shell included. Survives restarts until you turn it off.</p>' +
+             '<p class="perm-m-desc">Every agent and surface skips approval prompts within its execution profile. This does not change runtime, filesystem scope, projected tools, or desktop leases. Survives restarts until you turn it off.</p>' +
              errLine +
              '<div class="perm-m-act"><button class="bb sm" id="perm-bypass-off">✕ TURN OFF</button></div>' +
              '<p class="perm-m-floor">' + floorNote + '</p>')
           : (head('OFF', '') +
-             '<p class="perm-m-desc">One switch, no permission prompts anywhere: every agent, every surface — chat, Telegram, routines, night shift — shell included. Persists until you turn it off.</p>' +
+             '<p class="perm-m-desc">One switch removes approval prompts station-wide within each agent’s execution profile. It does not change runtime, filesystem scope, projected tools, or desktop leases.</p>' +
              errLine +
              '<div class="perm-m-act"><button class="bb sm danger" id="perm-bypass-on">TURN ON</button></div>' +
              '<p class="perm-m-floor">' + floorNote + '</p>');
