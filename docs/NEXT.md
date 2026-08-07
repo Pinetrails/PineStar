@@ -2584,3 +2584,17 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   workspace back afterward using exact `scp` argv. Sync never deletes either side, reports its real state/error,
   and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
   capability flag rather than snapshotting an unrelated local tree.
+
+# READY TO MERGE 2026-08-07 — FULL ACCESS LABEL (`agent/full-access-label`)
+
+The approval posture again uses the familiar `FULL ACCESS` name across onboarding, agent configuration,
+Permissions, `/yolo` feedback, and the execution-profile API readout. The scoped explanation remains: Full
+Access skips approval prompts only within the agent's selected execution profile and does not add tools, widen
+filesystem scope, choose a runtime, grant desktop control, or bypass the protected-action floor. The generated
+website mirror is synchronized.
+
+Live seeded proof at `localhost:8796`: the dossier rendered `ASK FOR APPROVAL / FULL ACCESS`; Permissions
+rendered `GIVE FULL ACCESS` and `FULL ACCESS — WHOLE STATION`; no visible `RUN(S) WITHOUT PROMPTS` label remained;
+browser warnings/errors were empty. Focused regressions: 76 assertions; `test:fast`: 572/572 green;
+`test:http`: 68/68 green. Installed-desktop verification was not run. No merge, push, PR, deployment, publish,
+production-data, credential, or secret change was performed.
