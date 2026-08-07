@@ -226,6 +226,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const diagBlob = JSON.stringify(diag.body);
     A.ok(diagBlob.indexOf('sk-or-v1-fake-discord') < 0, 'diagnostics never leaks the seeded provider key');
     A.ok(diagBlob.indexOf('discord-token') < 0, 'diagnostics never leaks the seeded channel token');
+    // LIVE doctor is never an accidental GET/background action: token + explicit second consent are both
+    // required before any provider/execution/connector/channel probe can start.
+    const doctorNoToken = await fetch(B + '/api/diagnostics/live', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    A.eq(doctorNoToken.status, 403, 'POST /api/diagnostics/live WITHOUT a token -> 403');
+    const doctorNoConsent = await j('POST', '/api/diagnostics/live', {});
+    A.eq(doctorNoConsent.status, 409, 'POST /api/diagnostics/live without explicit consent -> 409 before any probe');
+    A.eq(doctorNoConsent.body.code, 'LIVE_DOCTOR_CONSENT_REQUIRED', 'live doctor refusal names the missing consent gate');
 
     // ---- managed credits: UNCONFIGURED boot exposes ZERO surface (honesty law — no dead STORE, no fake balance) ----
     // This boot sets no STARNET_CREDITS_URL, so /api/credits must 404 with { configured: false } — the frontend

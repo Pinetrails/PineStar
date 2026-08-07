@@ -14,6 +14,61 @@ current trunk with only its own commits so dropped artifact work was not silentl
 claims were re-locked for 205 surface files. Full `npm run test:fast` was **574/574 GREEN** both before merge and
 again on the exact merged trunk. Frontend-only: `test:http` was not required.
 
+## 2026-08-07 — STARNET 0.10 FINAL HERMES PARITY MAP (`agent/hermes-final-gap-audit`)
+
+G0 AND G2 LANE COMPLETE; G1 PACKAGED BASELINE PARTIAL; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
+`origin/main` at `10a2b3d7` (2026-08-07), rather than the stale July Hermes checkout. The full evidence map and
+observable exit tests live in `docs/HARNESS_GAP_2026-08-07.md`.
+
+The 0.10 release-confidence gates are: **G0** operator-visible crash review plus safe resume, **G1** packaged
+Windows/macOS background-lifecycle proof, **G2** a unified opt-in live doctor/support receipt, **G3** MCP
+schema-cache/lazy-start/recycle/orphan lifecycle, and **G4** complete multi-file skill distribution with
+discovery, update generations, rollback, and lossless export/re-import. G0 is implemented in lane commit
+`65b90b78`: authenticated operator resolution, complete-known-outcome continuation, one-shot durable consume,
+provider-valid recovered history, and a host replay barrier that runs before consent or dispatch. The in-app
+fixture proved `happened` -> continuation `done`, the deterministic counter remained exactly one, finished linkage
+survived a second sidecar boot without a retry control, unknown remained non-continuable, and corrupt repair stayed
+forensic-only. Focused recovery coverage is 190 assertions; the current-tree fast gate has a complete 574-step green
+receipt, and the post-live-fix rerun stopped only on a timing-sensitive browser assertion that then passed 293/293
+isolated. HTTP recovery is 26/26; the standard HTTP wrapper timed out with all shown assertions green, its one later
+loop-check timing failure passed 33/33 isolated, and every remaining 38 HTTP entries passed in order. This lane is
+not trunk capability until merged.
+
+G2 is implemented in lane commits `14e256ba` + `712b0de0`. Static diagnostics remain an inert GET; the new live
+doctor is an authenticated POST behind a second explicit checkbox and a server-side consent bit. One bounded action
+runs independent probes concurrently for the selected model, the agent's effective execution backend, every enabled
+MCP server, and every supported/configured channel. Receipts use only `not-configured`, `refused`, `unreachable`,
+`authenticated`, and `round-trip-proven`, include per-row timestamps/latency, redact credential shapes, and contain no
+prompts, transcripts, command output, or message content. The doctor never sends a channel message; a channel only
+earns delivery round-trip from a real prior successful delivery receipt. The live app proof refused the unchecked
+button, then rendered a receipt with provider + local execution round-trip proven, reset the checkbox, exposed copy,
+and logged zero browser warnings/errors. The real-host proof additionally enabled a fake HTTP MCP server and Telegram
+adapter: MCP re-initialized/listed, Telegram re-authenticated but remained only `authenticated`, and zero messages were
+sent. Focused coverage is 8/8; `sidecar.http.test` is 471 assertions; website mirror is 3,883 + 2 embed-only green. The
+canonical fast gate passed all new doctor tests, then stopped at the existing candidate-bound claims seal at step
+228/576 (10 problems / 54 ok); this isolated lane did not rewrite shared release claims.
+
+G1 now has a cryptographically verified **0.9.0 baseline**, not a completed lifecycle matrix. Receipt
+`C:\Users\andro\gen-trees\release-090-final\.dogfood\g1-packaged-lifecycle\20260807T175943\g1-packaged-lifecycle-receipt.json`
+has SHA-256 `827D9A5C11290293EA845D58547F834CEF7B6D03260F96AA46AD79D3E3425C57` and status `partial_blocked`.
+The public installer digest matches GitHub, Authenticode and detached updater signatures pass, extraction and embedded
+binary/runtime signatures pass, and live Windows + both macOS update assets are reachable and version-pinned. The
+seven interactive Windows lifecycle cases were not run because the same installed identity/path/canonical workspace
+is owned by the healthy 48-hour provider soak; macOS runtime remains unverified without a Mac. This evidence is
+explicitly baseline-only and cannot authorize the eventual 0.10 candidate.
+
+The remaining parity lanes are cross-surface session handoff plus authenticated relay/webhooks (G5), live
+subagent steering and structured result contracts (G6), config-blocked/hash-suppressed autonomous monitors
+(G7), remote execution continuity/checkpoints/conflict-aware sync (G8), and recoverable full-output plus verified
+workspace-mutation receipts (G9). Serverless backend breadth, additional push channels, enterprise-native
+provider auth, A2A/MoA, wake word, bulk-corpus learning, and portable profiles require explicit build/defer/
+do-not-claim decisions; they are not automatic 0.10 blockers.
+
+Do not reopen the old generic claims that StarNet lacks a serious core loop, tool breadth, compaction/caching,
+approvals, durable schedules, background delegation, session management, checkpoints, execution profiles,
+MCP OAuth/stdio, skills authoring, or provider breadth. Those are now confirmed peer capabilities. No row turns
+green from unit tests alone: final authority is a packaged live or fault-injection receipt at the exact release
+candidate SHA.
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that

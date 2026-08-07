@@ -1,5 +1,9 @@
 # HARNESS GAP — 2026-07-25
 
+> **Historical baseline only.** Superseded for 0.10 release decisions by
+> [`HARNESS_GAP_2026-08-07.md`](HARNESS_GAP_2026-08-07.md), which compares StarNet 0.9.0 with the
+> 2026-08-07 Hermes `origin/main`. Keep this document as evidence of which gaps were subsequently closed.
+
 Where StarNet's agent runtime stands against the reference harness, measured against the friction
 users have actually reported. Code-verified at trunk `dc594624`; plan docs were not trusted.
 

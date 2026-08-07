@@ -58,6 +58,24 @@ const uncertainRetirement = unknown.finishAndRetire('unknown', { reason: 'error'
 A.eq(uncertainRetirement.retired, false, 'an unmatched side-effect intent is never retired');
 A.eq(uncertainRetirement.state.status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
 A.ok(unknownIo.files.has('unknown'), 'the review-required journal remains durable and discoverable');
+const resolved = unknown.resolve('unknown', {
+  resolutionId: 'resolution-1', operator: 'local',
+  outcomes: [{ callId: 'side-effect', outcome: 'happened' }],
+  note: 'verified in the target system'
+});
+A.eq(resolved.status, 'resolved', 'an explicit operator verdict closes review without replaying the tool');
+A.eq(resolved.uncertain.length, 1, 'resolution retains the original uncertain boundary as audit evidence');
+A.eq(resolved.resolution.outcomes[0].outcome, 'happened', 'the verified outcome is durable and inspectable');
+A.eq(resolved.finish.reason, 'error', 'the original terminal evidence remains inspectable after an additive resolution');
+A.eq(unknown.resolve('unknown', {
+  resolutionId: 'resolution-1', operator: 'local',
+  outcomes: [{ callId: 'side-effect', outcome: 'happened' }],
+  note: 'verified in the target system'
+}).records, resolved.records, 'retrying the same resolution id is idempotent and appends nothing');
+A.throws(() => unknown.resolve('unknown', {
+  resolutionId: 'resolution-2', operator: 'local',
+  outcomes: [{ callId: 'side-effect', outcome: 'did_not_happen' }]
+}), 'a different verdict cannot overwrite the durable operator resolution');
 
 const retiredIo = memoryIo();
 const retired = J.makeRunJournal({ io: retiredIo, clock: { now: () => 2 } });
