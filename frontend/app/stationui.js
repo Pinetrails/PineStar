@@ -1660,11 +1660,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
       }).join('') +
       '</div>' +
-      // one note, not two: the same two facts (capabilities come from placed objects; the switches live in
-      // ABILITIES) were previously stated across two stacked paragraphs of near-identical weight.
+      /* one note, not two: the facts were previously spread across two stacked paragraphs of identical weight.
+         The consent sentence is NOT editorial — "File writes and commands pause for one-click approval in COMMS"
+         is a locked advertised claim (qa/product-perfect/claims.json → one-click-mutation-approval), and this
+         node is its surface locator. Reword the surrounding prose freely; that clause stays verbatim. */
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
-      'permission system. Read-only here: the on/off switches and the station’s skill library live in ' +
-      '<b>⇄ ABILITIES</b> on the bottom bar.</p>';
+      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the ' +
+      'private <b>notebook</b> saves freely. Read-only here: the on/off switches and the station’s skill ' +
+      'library live in <b>⇄ ABILITIES</b> on the bottom bar.</p>';
   }
 
   function fileCard(a, f) {
