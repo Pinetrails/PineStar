@@ -80,11 +80,20 @@
     } catch (_) { return false; }
   }
 
+  async function keepsRunningAfterClose(deps) {
+    try {
+      return !!(deps && typeof deps.keepsRunning === 'function' && await deps.keepsRunning());
+    } catch (_) { return false; }
+  }
+
   async function handleCloseRequested(ev, deps) {
     deps = deps || {};
     const doc = deps.doc || root.document;
     if (deps.confirmed && deps.confirmed()) { await drainState(deps); return; } // allow: API destroys
     if (updateInstalling(deps)) { await drainState(deps); return; }              // allow: update restart
+    // If the native supervisor proves this close only HIDES the window (the explicit close-to-tray preference,
+    // or armed background work), there is no run-kill to warn about. Flush browser state and let Rust hide it.
+    if (await keepsRunningAfterClose(deps)) { await drainState(deps); return; }
     const n = liveRunCount(deps.channels);
     if (!n) { await drainState(deps); return; }                                  // allow: nothing live
     ev.preventDefault();                                                          // block; ask first
@@ -100,6 +109,12 @@
     let confirmed = false;
     const deps = {
       confirmed: () => confirmed,
+      keepsRunning: async () => {
+        const lifecycle = root && root.Lifecycle;
+        if (!lifecycle || typeof lifecycle.status !== 'function') return false;
+        const state = await lifecycle.status();
+        return !!(state && state.supervised && (state.closeToTray || state.armed));
+      },
       destroy: async () => {
         confirmed = true;
         await drainState(null);
@@ -126,5 +141,5 @@
     }
   }
 
-  return { liveRunCount, handleCloseRequested, install, _removeOverlay: removeOverlay };
+  return { liveRunCount, keepsRunningAfterClose, handleCloseRequested, install, _removeOverlay: removeOverlay };
 });

@@ -12,6 +12,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod credentials;
+mod lifecycle_preferences;
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -40,6 +41,10 @@ use credentials::{
     restore_credential, rollback_error, KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS,
     SIDECAR_PROVIDER_KEY_ENVS,
 };
+use lifecycle_preferences::{
+    load as load_lifecycle_preferences, save_verified as save_lifecycle_preferences,
+    LifecyclePreferences,
+};
 
 /// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
 /// only with the sidecar), the project root, and the live child.
@@ -52,6 +57,8 @@ struct AppState {
     startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
     keep_awake: Mutex<KeepAwakeState>,
+    lifecycle_preferences_path: PathBuf,
+    lifecycle_preferences: Mutex<LifecyclePreferences>,
     // Flipped true the instant the app starts exiting, so the guardian thread stops
     // respawning the sidecar during an intentional quit.
     shutting_down: AtomicBool,
@@ -311,6 +318,18 @@ fn startup_log_path(app: &tauri::AppHandle) -> Option<PathBuf> {
         let _ = std::fs::create_dir_all(&dir);
         dir.join("startup.log")
     })
+}
+
+fn lifecycle_preferences_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| {
+            workspace_path(app)
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+        .join("lifecycle.json")
 }
 
 fn workspace_path(app: &tauri::AppHandle) -> PathBuf {
@@ -1955,6 +1974,28 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+fn lifecycle_preferences_snapshot(state: &AppState) -> LifecyclePreferences {
+    match state.lifecycle_preferences.lock() {
+        Ok(value) => value.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+fn update_lifecycle_preferences(
+    state: &AppState,
+    update: impl FnOnce(&mut LifecyclePreferences),
+) -> Result<LifecyclePreferences, String> {
+    let mut current = state
+        .lifecycle_preferences
+        .lock()
+        .map_err(|_| "lifecycle preferences are temporarily unavailable".to_string())?;
+    let mut next = current.clone();
+    update(&mut next);
+    save_lifecycle_preferences(&state.lifecycle_preferences_path, &next)?;
+    *current = next.clone();
+    Ok(next)
+}
+
 /// Tray menu dispatch. Open reveals the window; Pause Automation fires the E-STOP so background work stops even
 /// with the window closed; Quit drains + kills the sidecar and exits the app (no daemon left behind).
 /// Pause/Quit run their bounded network work on a worker thread — tray menu events arrive on the main loop and
@@ -1996,6 +2037,7 @@ fn spawn_tray_updater(app: AppHandle) {
             if state.shutting_down.load(Ordering::SeqCst) {
                 break;
             }
+            let close_to_tray = lifecycle_preferences_snapshot(state.inner()).close_to_tray;
             let probe =
                 probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
             let (tooltip, status_text) = match probe {
@@ -2010,6 +2052,14 @@ fn spawn_tray_updater(app: AppHandle) {
                         format!("Background: {summary}"),
                     )
                 }
+                LifecycleProbe::Armed(_) if close_to_tray => (
+                    "StarNet — idle in tray".to_string(),
+                    "Background: idle — close keeps StarNet running".to_string(),
+                ),
+                LifecycleProbe::NotRunning if close_to_tray => (
+                    "StarNet — engine offline (kept in tray)".to_string(),
+                    "Background: engine offline — close keeps StarNet running".to_string(),
+                ),
                 LifecycleProbe::Armed(_) | LifecycleProbe::NotRunning => (
                     // Nothing armed (or no engine at all): closing quits — the same rule the close path applies.
                     "StarNet — idle (closing quits)".to_string(),
@@ -2583,22 +2633,45 @@ struct LifecycleView {
     supervised: bool,
     armed: bool,
     reasons: Vec<String>,
+    start_minimized: bool,
+    close_to_tray: bool,
 }
 
 #[tauri::command]
 fn starnet_lifecycle_status(state: State<AppState>) -> LifecycleView {
+    let preferences = lifecycle_preferences_snapshot(state.inner());
     match query_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500)) {
         Some(l) => LifecycleView {
             supervised: true,
             armed: l.armed,
             reasons: l.reasons,
+            start_minimized: preferences.start_minimized,
+            close_to_tray: preferences.close_to_tray,
         },
         None => LifecycleView {
             supervised: true,
             armed: false,
             reasons: Vec::new(),
+            start_minimized: preferences.start_minimized,
+            close_to_tray: preferences.close_to_tray,
         },
     }
+}
+
+#[tauri::command]
+fn starnet_set_start_minimized(
+    state: State<AppState>,
+    enabled: bool,
+) -> Result<LifecyclePreferences, String> {
+    update_lifecycle_preferences(state.inner(), |value| value.start_minimized = enabled)
+}
+
+#[tauri::command]
+fn starnet_set_close_to_tray(
+    state: State<AppState>,
+    enabled: bool,
+) -> Result<LifecyclePreferences, String> {
+    update_lifecycle_preferences(state.inner(), |value| value.close_to_tray = enabled)
 }
 
 fn main() {
@@ -2639,7 +2712,9 @@ fn main() {
             starnet_build_info,
             starnet_autostart_status,
             starnet_set_autostart,
-            starnet_lifecycle_status
+            starnet_lifecycle_status,
+            starnet_set_start_minimized,
+            starnet_set_close_to_tray
         ])
         .setup(|app| {
             let root = project_root(app.handle());
@@ -2650,6 +2725,9 @@ fn main() {
             let api_token = uuid::Uuid::new_v4().to_string();
             let startup_log = startup_log_path(app.handle());
             let workspaces = workspace_path(app.handle());
+            let lifecycle_preferences_path = lifecycle_preferences_path(app.handle());
+            let lifecycle_preferences = load_lifecycle_preferences(&lifecycle_preferences_path);
+            let start_minimized = lifecycle_preferences.start_minimized;
             let migrated_workspaces = migrate_workspace_data(
                 &workspaces,
                 &legacy_workspace_paths(&root, &workspaces),
@@ -2658,13 +2736,15 @@ fn main() {
             log_startup(
                 &startup_log,
                 format!(
-                    "startup exe={:?} resource_dir={:?} root={} workspaces={} migrated_from={:?} port={}",
+                    "startup exe={:?} resource_dir={:?} root={} workspaces={} migrated_from={:?} port={} start_minimized={} close_to_tray={}",
                     std::env::current_exe(),
                     app.path().resource_dir(),
                     root.display(),
                     workspaces.display(),
                     migrated_workspaces,
-                    port
+                    port,
+                    lifecycle_preferences.start_minimized,
+                    lifecycle_preferences.close_to_tray
                 ),
             );
             // One-time: lift any plaintext channel bot tokens into the keychain and strip them from the file,
@@ -2679,6 +2759,8 @@ fn main() {
                 startup_log,
                 sidecar: Mutex::new(None),
                 keep_awake: Mutex::new(KeepAwakeState::new()),
+                lifecycle_preferences_path,
+                lifecycle_preferences: Mutex::new(lifecycle_preferences),
                 shutting_down: AtomicBool::new(false),
             };
             // Before spawning OUR sidecar: terminate any orphan sidecars left behind by a
@@ -2778,8 +2860,10 @@ fn main() {
                 .center()
                 .visible(false)
                 // Reveal only after the document paints — avoids a white flash.
-                .on_page_load(|window, _payload| {
-                    let _ = window.show();
+                .on_page_load(move |window, _payload| {
+                    if !start_minimized {
+                        let _ = window.show();
+                    }
                 });
             // Windows: drop the stock titlebar/border — the frontend draws its own themed
             // chrome (titlebar.js, gated on __STARNET_CUSTOM_CHROME__ above). shadow(true)
@@ -2790,7 +2874,7 @@ fn main() {
             let main_window = main_window.decorations(false).shadow(true);
             let main_window = main_window.build()?;
 
-            // ---- Lane 4D: close-to-tray, gated on REAL armed work ----
+            // ---- Lane 4D: close-to-tray, explicitly selected or gated on REAL armed work ----
             // On a close request: ALWAYS intercept + hide immediately (instant feedback, and the poll must not
             // block the UI thread — review m1), then decide on a worker thread from the classified probe (M2):
             //   Armed{armed:true}  -> keep the ONE sidecar running, window lives in the tray (explicit there).
@@ -2817,6 +2901,11 @@ fn main() {
                                 return;
                             };
                             let st = state.inner();
+                            if lifecycle_preferences_snapshot(st).close_to_tray {
+                                // Explicit authority to keep the supervised process alive even when no scheduled
+                                // work is armed. Tray Quit remains the only full-stop action in this mode.
+                                return;
+                            }
                             let mut probe = probe_lifecycle_armed(
                                 st.port,
                                 &st.api_token,

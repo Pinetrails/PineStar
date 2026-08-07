@@ -1,5 +1,13 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-07 — USER-SELECTABLE TRAY START/CLOSE (`agent/tray-background`)
+
+IN PROGRESS. Extend the existing Lane 4D tray supervisor only: add durable desktop preferences for
+START MINIMIZED TO TRAY and CLOSE WINDOW TO TRAY, keep explicit tray Quit as the sole full-stop action
+when close-to-tray is enabled, and preserve the existing armed-work safety behavior when it is disabled.
+Done means the real desktop can relaunch hidden, reopen from the tray, survive an idle window close, then
+terminate its sidecar through tray Quit; the native preference round-trip and canonical fast gate are green.
+
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that
