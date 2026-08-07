@@ -510,9 +510,14 @@ const WorldModel = (() => {
     const snap = () => clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid, props: doc.props, belts: doc.belts, edges: doc.edges });
     function snapshot() { undoStack.push(snap()); if (undoStack.length > 120) undoStack.shift(); redoStack.length = 0; }
     function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; doc.belts = s.belts || {}; doc.edges = s.edges || []; }
-    function emit(dirtyRects) {
+    /* `global: true` means THIS EDIT CANNOT BE INVALIDATED BY A RECTANGLE — a listener holding a
+       tile-cached render must throw the whole cache away, not just the chunks the rects touch.
+       Additive: the field is simply absent on every other mutation, and a listener that ignores it
+       behaves exactly as before. The one edit that needs it today is the HULL — see setHull. */
+    function emit(dirtyRects, opts) {
       seq++;
       const patch = { seq, dirtyRects: dirtyRects || [] };
+      if (opts && opts.global) patch.global = true;
       subs.forEach(fn => { try { fn(patch); } catch (e) { /* a listener must never break a mutation */ } });
       return patch;
     }
@@ -670,7 +675,16 @@ const WorldModel = (() => {
       snapshot();
       rm.hullStyle = nextStyle;
       rm.hullMat = nextMat;
-      emit(rm.rects.slice());
+      /* ⛔ THE SHELL IS A STATION-WIDE COMPOSITE, SO ITS INVALIDATION CANNOT BE A RECTANGLE.
+         The bake groups footprints by SKIN and resolves every skirt pixel to the nearest footprint
+         above it — both station-global. Re-cladding ONE room therefore changes which group its
+         neighbours belong to and can change what their skirts look like anywhere on the map.
+         Emitting only this room's rects let REFIT (which caches the bake in CHUNKS) re-bake the
+         chunks near the edit and keep every other chunk from the PREVIOUS grouping — so earlier
+         re-clads came back unrendered or wearing the shell they used to have, and it got worse the
+         more rooms you clad (Andrew, 2026-08-06: "the more u add, the more likely the chance one of
+         the previous ones will result unrendered, or appear as the old textures"). */
+      emit(rm.rects.slice(), { global: true });
       return { ok: true };
     }
 
