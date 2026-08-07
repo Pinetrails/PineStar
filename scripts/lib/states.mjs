@@ -103,10 +103,10 @@ export function buildStates() {
     // before the enumerator probe runs (finding 206d3ceb).
     { name: 'work-deliverables', drive: openSel('[data-term="deliverables"]', 'DELIVERABLES'), wait: 1200 },
     { name: 'work-recipes',    drive: openSel('#bb-missions', 'RECIPES') },
-    // AUTOMATION replaced the ROUTINES door when ROUTINES+LOOPS merged into one window. Keep the
-    // historical golden-frame name while driving the live AUTOMATION selector so existing visual
-    // baselines remain comparable.
-    { name: 'work-routines',   drive: openSel('[data-term="automation"]', 'AUTOMATION') },
+    // AUTOMATION replaced the ROUTINES door when ROUTINES+LOOPS merged into one window
+    // (nav-condense, 2026-08-04) — keep the canonical post-condense state key so the
+    // state enumerator and golden baseline describe the same live surface.
+    { name: 'work-automation', drive: openSel('[data-term="automation"]', 'AUTOMATION') },
     { name: 'work-quests',     drive: openSel('[data-term="quests"]', 'QUESTS') },
     // BUILD group
     { name: 'build-station',   drive: openSel('#bb-build', 'REFIT STATION'),       wait: 2000 },

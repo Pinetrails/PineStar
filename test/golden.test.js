@@ -130,14 +130,14 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
 }
 
 // The navigation-condense change merged ROUTINES + LOOPS behind the AUTOMATION dock entry. The
-// golden frame deliberately keeps its old name (and therefore its baseline identity), but its
-// driver must follow the live navigation contract or every visual run aborts before comparison.
+// state key and driver both follow that live navigation contract so the current AUTOMATION
+// baseline cannot be orphaned behind the retired ROUTINES name.
 {
   const states = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'lib', 'states.mjs'), 'utf8');
-  A.ok(/name: 'work-routines'[\s\S]{0,120}data-term="automation"[\s\S]{0,80}'AUTOMATION'/.test(states),
-    'work-routines golden frame opens the merged AUTOMATION dock entry');
-  A.ok(!/name: 'work-routines'[\s\S]{0,120}data-term="routines"/.test(states),
-    'work-routines golden frame does not target the removed ROUTINES dock entry');
+  A.ok(/name: 'work-automation'[\s\S]{0,160}data-term="automation"[\s\S]{0,80}'AUTOMATION'/.test(states),
+    'work-automation golden frame opens the merged AUTOMATION dock entry');
+  A.ok(!/name: 'work-routines'/.test(states),
+    'golden states retire the obsolete work-routines baseline key');
 }
 
 A.report('golden.test');

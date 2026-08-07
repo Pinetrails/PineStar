@@ -554,8 +554,9 @@ if (INVOKED_DIRECTLY) {
     return r.code === 0 ? r.out : '';
   }
 
-  // First-run: create the pinned worktree (detached at trunk head) + npm install. Later
-  // runs: fetch nothing (shared object store), just hard-reset to the current trunk head.
+  // First-run: create the pinned worktree (detached at trunk head). Every run refreshes
+  // dependencies after reset: the pin keeps ignored node_modules between cycles, and reusing
+  // that tree after package-lock changes produces a false-red gate on missing new packages.
   function ensurePinnedCheckout(sha) {
     const exists = fs.existsSync(path.join(PIN_DIR, '.git'));
     if (!exists) {
@@ -563,14 +564,14 @@ if (INVOKED_DIRECTLY) {
       fs.mkdirSync(path.dirname(PIN_DIR), { recursive: true });
       const add = git(['worktree', 'add', '--detach', PIN_DIR, sha]);
       if (add.code !== 0) return { ok: false, reason: 'git worktree add failed: ' + (add.err || add.out) };
-      log('installing deps in the pinned checkout (one-time)...');
-      const inst = spawnSync(npmCmd, ['install', '--no-audit', '--no-fund'], { cwd: PIN_DIR, encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' });
-      if ((inst.status == null ? 1 : inst.status) !== 0) return { ok: false, reason: 'npm install in pinned checkout failed: ' + str(inst.stderr).slice(-400) };
     }
     // Reset the pinned checkout to the target trunk head, clean of any prior cycle's spew.
     const reset = git(['reset', '--hard', sha], PIN_DIR);
     if (reset.code !== 0) return { ok: false, reason: 'git reset --hard ' + shortSha(sha) + ' failed: ' + (reset.err || reset.out) };
     git(['clean', '-fd', '.bugloops', '.uishots', '.uishots-x', '.uigolden', '.uiaudit'], PIN_DIR); // best-effort scrub of gate artifacts
+    log('refreshing pinned dependencies...');
+    const inst = spawnSync(npmCmd, ['install', '--no-audit', '--no-fund'], { cwd: PIN_DIR, encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' });
+    if ((inst.status == null ? 1 : inst.status) !== 0) return { ok: false, reason: 'npm install in pinned checkout failed: ' + str(inst.stderr).slice(-400) };
     return { ok: true };
   }
 
