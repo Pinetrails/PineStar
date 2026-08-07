@@ -615,6 +615,24 @@ const Voice = (() => {
   function localVoiceId() {
     try { return String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) { return ''; }
   }
+  // A Live Voice room has ONE speaker. Snapshot the selected identity when it opens, then pin whichever
+  // engine actually serves the first audible chunk (Kokoro or its mapped Edge floor). Without both locks,
+  // every streamed sentence independently reread Settings and retried the ladder, so one transient model
+  // failure could make the same reply alternate between two people. A locked engine may miss a chunk, but
+  // it may never impersonate another speaker mid-session.
+  let sessionLocalVoiceId = '';
+  let sessionVoiceEngine = '';
+  function setLocalTts(value) {
+    const next = !!value;
+    if (next && !preferLocalTts) {
+      sessionLocalVoiceId = localVoiceId();
+      sessionVoiceEngine = '';
+    } else if (!next) {
+      sessionLocalVoiceId = '';
+      sessionVoiceEngine = '';
+    }
+    preferLocalTts = next;
+  }
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -642,9 +660,21 @@ const Voice = (() => {
       body: JSON.stringify({
         key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
         text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
-        local: preferLocalTts, localVoice: localVoiceId(), speed: cfg.speed
+        local: preferLocalTts,
+        localVoice: preferLocalTts ? sessionLocalVoiceId : localVoiceId(),
+        localEngine: preferLocalTts ? sessionVoiceEngine : '',
+        speed: cfg.speed
       })
     }).then(async r => {
+      if (preferLocalTts && job.seq === speakSeq && !sessionVoiceEngine) {
+        const servedBy = String(r.headers.get('X-Voice-Provider') || '').toLowerCase();
+        const engine = servedBy === 'local-kokoro' ? 'local-kokoro' : (servedBy.indexOf('edge:') === 0 ? 'edge' : '');
+        if (engine) {
+          sessionVoiceEngine = engine;
+          // The first request runs alone until it establishes the speaker. Resume normal prefetch now.
+          pumpSynth();
+        }
+      }
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
       let reason = 'http ' + r.status;
@@ -685,7 +715,10 @@ const Voice = (() => {
         return { kind: 'silent' };
       });
   }
-  function pumpSynth() { while (synthIdx < jobs.length && (synthIdx - playIdx) < MAX_INFLIGHT) startSynth(jobs[synthIdx++]); }
+  function pumpSynth() {
+    const limit = preferLocalTts && !sessionVoiceEngine ? 1 : MAX_INFLIGHT;
+    while (synthIdx < jobs.length && (synthIdx - playIdx) < limit) startSynth(jobs[synthIdx++]);
+  }
 
   function pumpPlay() {
     if (playing) return;
@@ -1571,7 +1604,7 @@ const Voice = (() => {
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
     canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
-    setLocalTts: value => { preferLocalTts = !!value; },
+    setLocalTts,
     /* LIVE VOICE MUST ARRIVE AUDIBLE. Opening a hands-free session with the speaker muted is a room where you
        talk and nothing answers — the Commander then has to find a toggle to make the feature work at all.
        Classic voice mode already force-enables the speaker in toggleVoiceMode(); the Local Live panel does not

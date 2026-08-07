@@ -1543,8 +1543,8 @@ const VoiceLive = (() => {
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && active) end(); });
   }
 
-  /* Pick the spoken voice. Persisted, and applied on the NEXT call — a live WebRTC session's voice is fixed
-     for its lifetime, so changing it mid-call would silently do nothing and that would be a lie. Returns the
+  /* Pick the spoken voice. Persisted, and applied on the NEXT session — every Live Voice session fixes both
+     its selected voice and serving engine for its lifetime, so changing it mid-call would silently do nothing. Returns the
      names the provider actually offers, read from status() rather than a list copied here. */
   /* The voice picker now describes the BUILT-IN engine, because that is the only engine live voice uses.
      Read from the sidecar's own catalogue rather than a list copied here, so it cannot drift from the voice
@@ -1555,15 +1555,15 @@ const VoiceLive = (() => {
     try {
       const r = await fetch('/api/local-voice/status', { cache: 'no-store' });
       const j = await r.json();
-      return { available: j.voices || [], current: cur || j.voice || '', engine: 'built-in', appliesOn: 'the next reply' };
+      return { available: j.voices || [], current: cur || j.voice || '', engine: 'built-in', appliesOn: 'the next Live Voice session' };
     } catch (_) {
-      return { available: [], current: cur, engine: 'built-in', appliesOn: 'the next reply' };
+      return { available: [], current: cur, engine: 'built-in', appliesOn: 'the next Live Voice session' };
     }
   }
   function setVoice(id) {
     const want = String(id || '').trim();
     try { if (want) localStorage.setItem(LOCAL_VOICE_KEY, want); else localStorage.removeItem(LOCAL_VOICE_KEY); } catch (_) {}
-    return { voice: want, appliesOn: 'the next reply' };
+    return { voice: want, appliesOn: 'the next Live Voice session' };
   }
 
   return { init, start, end, isActive: () => active, statusSnapshot, voices, setVoice, rebind, boundSessionId: () => boundWsId };

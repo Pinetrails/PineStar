@@ -68,6 +68,15 @@ class MockAudio {
   play() { return Promise.resolve(); }
   pause() {} load() {} addEventListener() {} removeEventListener() {}
 }
+class AutoEndAudio extends MockAudio {
+  play() {
+    setTimeout(() => {
+      if (this.onplay) this.onplay();
+      setTimeout(() => { if (this.onended) this.onended(); }, 0);
+    }, 0);
+    return Promise.resolve();
+  }
+}
 class MockAC {
   constructor() { this.state = 'running'; this.sampleRate = 48000; this.destination = {}; }
   createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
@@ -97,9 +106,9 @@ function boot(opts) {
   const statusLog = [];
   const win = {};
   // TIME-COMPRESS the long ceilings (12s gUM, 30s hard cap) so the test runs fast; short timers unchanged.
-  // Keep the compressed ceiling above the test's 30ms successful-audio injection. At 20ms the hard cap could
-  // fire first on a quiet event loop, turning the success assertion into a path/CPU-timing coin flip.
-  const st = (fn, ms, ...a) => setTimeout(fn, ms >= 1000 ? Math.min(ms, 50) : ms, ...a);
+  // Keep the compressed ceiling above the test's successful-audio injection AND its async live-preview
+  // round-trip. An aggressively tiny cap can abort a healthy preview before its promise settles on a busy gate.
+  const st = (fn, ms, ...a) => setTimeout(fn, ms >= 30000 ? 200 : (ms >= 1000 ? 50 : ms), ...a);
   const sandbox = {
     window: win,
     document: { getElementById: id => nodes[id] || null, addEventListener() {} },
@@ -423,6 +432,38 @@ async function opensWithin(t, ms) {
     A.ok(state.spoken.some(s => /fourth to close/.test(s)), 'blip: the LAST sentence of the reply is still synthesized (reply spoken through to the end)');
     A.ok(state.spoken.some(s => /second sentence/.test(s)), 'blip: the sentence after the failure is spoken (cold-off never guillotines a live reply)');
     A.ok(state.spoken.some(s => /Third sentence/.test(s)), 'blip: every remaining sentence is spoken, not just the one after the failure');
+  }
+
+  // --- Local Live pins one voice AND one serving engine for the whole conversation ------------
+  // Without this pin, every streamed sentence reread localStorage and independently chose Kokoro vs Edge.
+  // A settings click or one transient local-engine failure could therefore change speaker mid-conversation.
+  {
+    const requests = [];
+    const stableVoiceFetch = (url, o) => {
+      if (String(url).indexOf('/api/tts') >= 0) {
+        const body = JSON.parse(o.body); requests.push(body);
+        const provider = body.localEngine === 'edge' ? 'edge:en-US-MichelleNeural' : 'local-kokoro';
+        return Promise.resolve({
+          ok: true, status: 200,
+          headers: { get: name => String(name).toLowerCase() === 'content-type' ? 'audio/wav' : (String(name).toLowerCase() === 'x-voice-provider' ? provider : '') },
+          blob: () => Promise.resolve({ size: 128 })
+        });
+      }
+      return Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) });
+    };
+    const t = boot({ audio: true, Audio: AutoEndAudio, fetch: stableVoiceFetch });
+    t.sandbox.localStorage.setItem('starnet.liveVoice.localVoice.v1', 'am_onyx');
+    t.Voice.setSpeakReplies(true);
+    t.Voice.setLocalTts(true);
+    t.Voice.speak('First sentence establishes the speaker.', 'agent');
+    await until(() => requests.length >= 1 && !t.Voice.isSpeaking(), 1000);
+    t.sandbox.localStorage.setItem('starnet.liveVoice.localVoice.v1', 'af_nova');
+    t.Voice.speak('Second sentence must keep that same speaker.', 'agent');
+    await until(() => requests.length >= 2, 1000);
+    A.eq(requests[0].localVoice, 'am_onyx', 'Local Live snapshots the selected voice when the session begins');
+    A.eq(requests[1].localVoice, 'am_onyx', 'a mid-session picker change cannot switch the conversation voice');
+    A.eq(requests[1].localEngine, 'local-kokoro', 'the first serving engine is pinned on later turns');
+    A.ok(requests.every(r => r.local === true), 'the stable-voice requests remain on the built-in Live Voice path');
   }
 
   // --- a transient failure is RETRIED once, so a one-shot blip loses NOTHING -------------------
