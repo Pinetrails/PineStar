@@ -104,7 +104,6 @@ const Build = (() => {
   }
 
   const SEEN_KEY = 'starnet.refit.seen';
-  const LINE_INVITE_KEY = 'starnet.refit.lineinvited';   // set once this station has ever carried a line
   // machines the BELT tool connects with two clicks (mirrors worldmodel CONNECTABLE)
   const CONNECT_TYPES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
 
@@ -154,8 +153,6 @@ const Build = (() => {
      and NEVER inside the frame loop's hot path (a full scan is ~thousands of checkBlueprint calls
      — per frame it would melt). station.onChange drops the whole map; that is the only invalidation. */
   const lineFields = Object.create(null);   // bpId -> { set:Set('tx,ty'), list:[{tx,ty}], runs:[…], edges:[…] }
-  let lineInviteHit = null;   // world rect of the START-A-WORK-LINE prompt, IF the arbiter painted it this frame
-  let lineInviteAnchor;       // cached anchor tile (undefined = not computed, null = nowhere legal)
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let ghost = null;                     // GHOST PROJECTION (Phase 3): dedicated engine — never mixes with convey
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
@@ -1096,7 +1093,7 @@ const Build = (() => {
      so a legal anchor can never be more than half a footprint outside the station bounds. */
   const FIELD_MARGIN = 2;   // tiles of slack around the bounds — a centred footprint may hang its anchor just outside
   const SNAP_R = 3;         // "roughly there" = within this many tiles of a legal anchor
-  function clearLineFields() { for (const k of Object.keys(lineFields)) delete lineFields[k]; lineInviteAnchor = undefined; }
+  function clearLineFields() { for (const k of Object.keys(lineFields)) delete lineFields[k]; }
   function lineField(bpId) {
     const bp = blueprintOf(bpId);
     if (!bp || !station) return null;
@@ -1182,66 +1179,13 @@ const Build = (() => {
     }
   }
 
-  /* ---------- INVITE THE FIRST LINE ----------
-     REFIT on a fresh station opens on a large empty deck whose only guidance is "click a machine to
-     open it" — and there are no machines. Nothing invites the workflow the whole mode exists for.
-     One prompt, anchored on real open deck where a line actually fits, says what to do and arms the
-     tool when clicked.
-
-     It is a FIRST-LINE invitation, not a nag: the moment this floor carries any line piece it
-     retires for good (the flag persists, so deleting the line later does not summon it back).
-     ONE-VOICE LAW: it never paints itself — it registers with the arbiter like every other label,
-     and it stands down entirely for the tutorial's coaching and the first-run card. */
-  // read the latch ONCE per session, not once per frame — localStorage is synchronous and this is
-  // checked from the draw loop (60fps × getItem is a real cost, and the answer cannot change under us)
-  let inviteRetiredMemo = null;
-  function lineInviteRetired() {
-    if (inviteRetiredMemo === null) { try { inviteRetiredMemo = !!localStorage.getItem(LINE_INVITE_KEY); } catch (e) { inviteRetiredMemo = false; } }
-    return inviteRetiredMemo;
-  }
-  function retireLineInvite() { inviteRetiredMemo = true; try { localStorage.setItem(LINE_INVITE_KEY, '1'); } catch (e) {} }
-  // any belt or any line machine (CONNECT_TYPES is exactly the set a line is built from) counts
-  function floorHasLine() {
-    if (!station) return true;
-    try {
-      if (station.belts().length) return true;
-      for (const p of station.props()) if (CONNECT_TYPES[p.t]) return true;
-    } catch (e) { return true; }   // can't prove it's empty → don't invite (never assert what we can't read)
-    return false;
-  }
-  // the blueprint the invite points at: the armed one if it fits here, else the first that does
-  function inviteBlueprint() {
-    if (lineFits(lineType)) return blueprintOf(lineType);
-    for (const bp of blueprints()) if (lineFits(bp.id)) return bp;
-    return null;
-  }
-  /* the anchor: the legal cursor tile nearest the middle of the deck. Cached with the fields (both
-     die on station.onChange) — this is a scan, never a per-frame search. */
-  function lineInviteSpot() {
-    if (lineInviteAnchor !== undefined) return lineInviteAnchor;
-    lineInviteAnchor = null;
-    const bp = inviteBlueprint();
-    const f = bp && lineField(bp.id);
-    if (!f || !f.list.length) return lineInviteAnchor;
-    const b = station.bounds();
-    const cx = (b.minTx + b.maxTx + 1) / 2, cy = (b.minTy + b.maxTy + 1) / 2;
-    let best = null, bestD = Infinity;
-    for (const c of f.list) {   // scan order breaks ties → the same floor always picks the same tile
-      const d = (c.tx - cx) * (c.tx - cx) + (c.ty - cy) * (c.ty - cy);
-      if (d < bestD) { bestD = d; best = c; }
-    }
-    lineInviteAnchor = best ? { tx: best.tx, ty: best.ty, bp } : null;
-    return lineInviteAnchor;
-  }
-  // should the invite speak THIS frame? (the retire check also latches the flag the first time a line exists)
-  function lineInviteActive() {
-    if (!running || lineInviteRetired()) return false;
-    if (floorHasLine()) { retireLineInvite(); return false; }
-    // it has done its job the moment a build tool is armed — and its voice must never fight a ghost
-    if (tool !== 'select') return false;
-    if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) return false;
-    return !!lineInviteSpot();
-  }
+  /* NO STANDALONE CANVAS INVITATION (2026-08-07). A floating "START A WORK LINE HERE" prompt used
+     to live here, painted on an empty deck. It was retired: STATION ORDERS (renderOrders) already
+     sequences build mode — ① a second space → ② a deck → ③ a workstation → ④ STAMP A WORK LINE —
+     and its step ④ arms this very tool. Two invitations to the same act is exactly the stacking the
+     one-voice law forbids, and leading with the line reframed the whole mode as conveyor-first.
+     The guidance path is: ORDERS invites → the tool arms → the candidate wash + snap below help
+     you land it. Do not reinstate a second voice for the same step. */
 
   function selectTool(id, o) {
     tool = id; drag = null; connectFrom = null; dupe = null; hideTip(); hidePropCard();
@@ -2580,14 +2524,6 @@ const Build = (() => {
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
     if (tool === 'select') {
-      /* THE FIRST-LINE INVITATION IS A CONTROL. It only exists while the arbiter is painting it
-         (lineInviteHit is re-earned each frame), so this can never swallow a click on empty deck
-         after the prompt is gone. Clicking it arms LINES — the same thing key 9 does. */
-      if (lineInviteHit) {
-        const c = toCanvas(ev), wx = (c.x - panX) / zoom, wy = (c.y - panY) / zoom;
-        const h = lineInviteHit;
-        if (wx >= h.x && wx <= h.x + h.w && wy >= h.y && wy <= h.y + h.h) { selectTool('line'); return; }
-      }
       // SELECT (the default): a click INSPECTS what's under it — machine → its editor/picker/flow
       // card, belt tile → where this lane goes. Empty deck does nothing (space-drag still pans).
       const pid = station.propAt(w.tx, w.ty);
@@ -3321,7 +3257,6 @@ const Build = (() => {
     drawLayer('hover', () => drawHover(t));
     drawLayer('agentTag', () => drawAgentTag(t));   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
     drawLayer('ghost', () => drawGhost(t, now));
-    drawLayer('lineInvite', () => drawLineInvite(t));   // registers with the arbiter; paints only if granted
     // every voice has registered — the arbiter now paints AT MOST one label per anchor region.
     // overFloor: the pointer is on the station (or a gesture is live) → the projection stays quiet.
     // guarded too: the registered labels PAINT here, so a throwing caption would otherwise take the frame
@@ -3604,14 +3539,9 @@ const Build = (() => {
      Ghost captions additionally mute while ANY other layer speaks anywhere, or while the pointer
      is over the floor (the user is looking at machines, not the projection).
      All rects are WORLD px (the frame's zoom/pan transform is live at flush time). */
-  /* lineInvite sits just under `hover`: it is the loudest thing on an empty floor (where nothing
-     else speaks at all), but a pointer resting on real machinery, a live gesture, or a nag about a
-     broken piece all outrank an invitation to start. It cannot collide with a ghost caption in
-     practice — the invite stands down the moment any tool is armed (lineInviteActive). */
-  const LAYER_PRI = { activeFlow: 5, hover: 4, lineInvite: 3.5, topNag: 3, ghostCaption: 2, rolePlacard: 1 };
+  const LAYER_PRI = { activeFlow: 5, hover: 4, topNag: 3, ghostCaption: 2, rolePlacard: 1 };
   const voiceReqs = [];
-  // the invite's click target is re-earned every frame: cleared here, re-set only if the arbiter paints it
-  function voiceBegin() { voiceReqs.length = 0; lineInviteHit = null; }
+  function voiceBegin() { voiceReqs.length = 0; }
   // anchor = the machine/tile the label speaks about; box = the label's own rect; draw paints it
   function voiceSay(layer, anchor, box, draw) { voiceReqs.push({ layer, pri: LAYER_PRI[layer] || 0, anchor, box, draw }); }
   const voiceHit = (a, b, pad) => !!(a && b) && a.x - pad < b.x + b.w && a.x + a.w + pad > b.x && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
@@ -3969,66 +3899,6 @@ const Build = (() => {
     ctx.restore();
   }
 
-  /* THE FIRST-LINE INVITATION, drawn. A bracketed footprint on real open deck plus a two-rank
-     plate — the imperative in phosphor, the key underneath, dim. Both the brackets and the text
-     live INSIDE the arbiter's draw callback: if a louder voice owns this region the whole
-     invitation stays silent rather than leaving orphaned marks on the floor. `lineInviteHit` is
-     set only when the arbiter actually granted the voice, so the click target can never outlive
-     what is on screen. */
-  function drawLineInvite(t) {
-    if (!lineInviteActive()) return;
-    const spot = lineInviteSpot();
-    if (!spot) return;
-    const bp = spot.bp, hw = bp.w >> 1, hh = bp.h >> 1;
-    const X = (spot.tx - hw) * t, Y = (spot.ty - hh) * t, Wd = bp.w * t, Hd = bp.h * t;
-    const fs = Math.max(11, 15 / zoom), fs2 = Math.max(8, 11 / zoom);
-    const pad = fs * 0.42, lh = fs * 1.12, lh2 = fs2 * 1.15;
-    const L1 = 'START A WORK LINE HERE', L2 = 'pick a starter line — press 9';
-    ctx.save();
-    ctx.font = fs + "px 'VT323','Courier New',monospace";
-    const w1 = ctx.measureText(L1).width;
-    ctx.font = fs2 + "px 'VT323','Courier New',monospace";
-    const w2 = ctx.measureText(L2).width;
-    ctx.restore();
-    const bw = Math.max(w1, w2) + pad * 2, bh = lh + lh2 + pad * 1.8;
-    // above the footprint by default; flip below when that would leave the glass (same rule as the badge)
-    const ins = viewInsetsFrame();
-    const topWorld = (ins.t - panY) / zoom, leftWorld = (ins.l - panX) / zoom, rightWorld = (cv.width - panX) / zoom, m = 6 / zoom;
-    const above = Y - bh - fs * 0.5;
-    const by = above > topWorld + fs ? above : Y + Hd + fs * 0.5;
-    let bx = clamp(X + Wd / 2 - bw / 2, leftWorld + m, Math.max(leftWorld + m, rightWorld - bw - m));
-    const box = { x: bx, y: by, w: bw, h: bh };
-    voiceSay('lineInvite', { x: X, y: Y, w: Wd, h: Hd }, box, () => {
-      // the footprint it is pointing at — corner brackets, the editor's own "this region" marking
-      const B = Math.max(3, Math.floor(t / 2.5));
-      ctx.save();
-      ctx.strokeStyle = 'rgba(120,200,255,0.5)';
-      ctx.lineWidth = 1.5 / zoom;
-      ctx.beginPath();
-      ctx.moveTo(X, Y + B); ctx.lineTo(X, Y); ctx.lineTo(X + B, Y);
-      ctx.moveTo(X + Wd - B, Y); ctx.lineTo(X + Wd, Y); ctx.lineTo(X + Wd, Y + B);
-      ctx.moveTo(X, Y + Hd - B); ctx.lineTo(X, Y + Hd); ctx.lineTo(X + B, Y + Hd);
-      ctx.moveTo(X + Wd - B, Y + Hd); ctx.lineTo(X + Wd, Y + Hd); ctx.lineTo(X + Wd, Y + Hd - B);
-      ctx.stroke();
-      // the plate — matte, never glossy: flat ink, one hairline frame, no glow
-      ctx.fillStyle = 'rgba(4,6,8,0.88)';
-      ctx.fillRect(bx, by, bw, bh);
-      ctx.strokeStyle = 'rgba(120,200,255,0.75)';
-      ctx.lineWidth = 1 / zoom;
-      ctx.strokeRect(bx + 0.5 / zoom, by + 0.5 / zoom, bw - 1 / zoom, bh - 1 / zoom);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.font = fs + "px 'VT323','Courier New',monospace";
-      ctx.fillStyle = 'rgba(190,235,255,0.98)';
-      ctx.fillText(L1, bx + bw / 2, by + pad * 0.8);
-      ctx.font = fs2 + "px 'VT323','Courier New',monospace";
-      ctx.fillStyle = 'rgba(120,200,255,0.72)';
-      ctx.fillText(L2, bx + bw / 2, by + pad * 0.8 + lh);
-      ctx.restore();
-      // granted + painted → it is now a real target (cleared every frame in voiceBegin)
-      lineInviteHit = { x: Math.min(bx, X), y: Math.min(by, Y), w: Math.max(bx + bw, X + Wd) - Math.min(bx, X), h: Math.max(by + bh, Y + Hd) - Math.min(by, Y) };
-    });
-  }
-
   function drawGhost(t, now) {
     // paint brush: tint the crossed tiles with the chosen deck colour
     if (drag && drag.mode === 'paint' && drag.moved) {
@@ -4264,11 +4134,6 @@ const Build = (() => {
     },
     lineFits: (bpId) => lineFits(bpId || lineType),
     lineSnapAt: (tx, ty) => lineSnap(tx, ty),
-    lineInvite: () => ({
-      active: lineInviteActive(), retired: lineInviteRetired(), hasLine: floorHasLine(),
-      spot: (() => { const s = lineInviteSpot(); return s ? { tx: s.tx, ty: s.ty, bp: s.bp.id } : null; })(),
-      painted: !!lineInviteHit, hit: lineInviteHit,
-    }),
     // which draw layers have failed this session (empty = every layer is painting)
     degradedLayers: () => Object.keys(layerFailed),
     // camera + the dock/top insets, so a harness can assert framing against the VISIBLE glass
