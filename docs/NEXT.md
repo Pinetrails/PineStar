@@ -2,7 +2,7 @@
 
 ## 2026-08-07 — PER-BLOCK CODE COPY (`agent/response-section-copy`)
 
-IMPLEMENTED; MERGE GATE NEEDS A QUIET-RUN RECEIPT. Fenced code in COMMS previously rendered as a bare
+MERGE-PREP SWEPT; GATE NEEDS A QUIET-RUN RECEIPT. Fenced code in COMMS previously rendered as a bare
 `.md-pre` span, while the only copy action belonged to the whole message. Each fenced block now owns a
 top-right, keyboard-labelled copy control that targets only its exact code text. Clipboard success renders
 `Copied` / ✓; failure renders `Copy failed` / ! and directs the user to manual selection. The packaged website
@@ -22,6 +22,14 @@ gate path, but concurrent repository gates prevented a terminal receipt: one lau
 mid-suite, and a directly tracked retry hit the 600-second repository ceiling without a verdict. Re-run
 `npm run test:fast` on a quiet integration candidate before merge; do not rewrite shared candidate evidence for
 this frontend lane.
+
+Merge-prep refresh: current trunk `e9c134c8` merged cleanly into the lane as `b4bd222d`; the incoming change was
+limited to `qa/STATUS.md`, with no overlap or conflict. Post-sync syntax, focused coverage, mirror parity, and the
+real seeded clipboard round-trip all passed again. A new sealed-base full-manifest attempt passed steps 1–149,
+then `boot-security.test.js` timed out starting its disposable sidecar; the unchanged isolated retry timed out at
+the same boot boundary while four other full fast gates were active. No assertion in this frontend lane failed.
+The branch is clean and current with trunk, but remains intentionally short of READY TO MERGE until the canonical
+gate obtains a quiet-host receipt.
 
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
