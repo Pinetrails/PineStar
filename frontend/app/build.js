@@ -1115,6 +1115,62 @@ const Build = (() => {
     if (redoBtn) redoBtn.disabled = !station.canRedo();
   }
 
+  /* ---------- first-use guide: the three beats, drawn ----------
+     One painter per beat, on a 128×72 board of 4px cells (canvas is 3× that for crispness). Every
+     mark is a rect — this is the same pixel vocabulary the station is built out of, and it renders
+     the GESTURE, so the words underneath only have to name it. Colours come from the same three
+     roles the live editor uses: phosphor for structure, green for a legal ghost, gold for a machine. */
+  function guideStepArt(c, kind) {
+    const x = c.getContext('2d'); if (!x) return;
+    const S = c.width / 128;                       // one board unit in device px
+    const R = (bx, by, bw, bh, fill) => { x.fillStyle = fill; x.fillRect(bx * S, by * S, bw * S, bh * S); };
+    const PH = 'rgba(120,200,255,.55)', DIM = 'rgba(120,200,255,.16)', OK = 'rgba(120,255,170,.95)',
+          OKF = 'rgba(80,255,140,.20)', GOLD = 'rgba(240,196,90,.95)', INK = 'rgba(6,9,12,.9)', LIT = 'rgba(180,240,255,.9)';
+    x.clearRect(0, 0, c.width, c.height);
+    R(0, 0, 128, 72, 'rgba(8,12,16,.75)');
+    // the deck grid every beat happens on — 8-unit cells, the editor's own minor lattice
+    for (let gx = 0; gx <= 128; gx += 8) R(gx, 0, 1, 72, DIM);
+    for (let gy = 0; gy <= 72; gy += 8) R(0, gy, 128, 1, DIM);
+
+    if (kind === 'room') {
+      // a room being dragged out: a green footprint with corner brackets and the cursor at its far corner
+      R(24, 16, 56, 40, OKF);
+      R(24, 16, 56, 1, OK); R(24, 55, 56, 1, OK); R(24, 16, 1, 40, OK); R(79, 16, 1, 40, OK);
+      // corner brackets — (cx,cy) is the corner itself, sx/sy point INTO the rect
+      const br = (cx, cy, sx, sy) => {
+        R(sx > 0 ? cx : cx - 9, cy - 1, 10, 3, OK);
+        R(cx - 1, sy > 0 ? cy : cy - 9, 3, 10, OK);
+      };
+      br(24, 16, 1, 1); br(80, 16, -1, 1); br(24, 56, 1, -1); br(80, 56, -1, -1);
+      // the size badge the real drag prints on the ghost
+      R(40, 4, 26, 10, INK); R(40, 4, 26, 1, OK); R(40, 13, 26, 1, OK); R(40, 4, 1, 10, OK); R(65, 4, 1, 10, OK);
+      for (let i = 0; i < 5; i++) R(44 + i * 4, 8, 2, 2, OK);
+      // cursor arrow at the drag's live corner
+      for (let i = 0; i < 9; i++) R(80, 56 + i, Math.max(1, 8 - i), 1, LIT);
+      R(84, 62, 2, 5, LIT);
+    } else if (kind === 'bay') {
+      // a dock with an agent walking into it: the machine, the crew body, the bind arrow
+      R(64, 24, 32, 26, 'rgba(52,58,64,.95)'); R(64, 24, 32, 2, GOLD); R(64, 48, 32, 2, GOLD);
+      R(68, 30, 24, 10, 'rgba(20,26,30,.95)');
+      for (let i = 0; i < 5; i++) R(70 + i * 5, 33, 3, 4, GOLD);
+      // the crew body (head + torso), reading left-to-right into the dock
+      R(24, 26, 8, 8, 'rgba(226,206,170,.95)'); R(22, 36, 12, 14, 'rgba(120,200,255,.8)');
+      R(22, 50, 4, 6, 'rgba(60,70,80,.95)'); R(30, 50, 4, 6, 'rgba(60,70,80,.95)');
+      // bind arrow
+      R(38, 36, 20, 2, PH); R(56, 33, 2, 8, PH); R(54, 35, 2, 4, PH);
+    } else {
+      // two machines and the belt the click-click lays between them, crates riding it
+      R(6, 26, 26, 22, 'rgba(52,58,64,.95)'); R(6, 26, 26, 2, PH);
+      R(96, 26, 26, 22, 'rgba(52,58,64,.95)'); R(96, 26, 26, 2, GOLD);
+      R(32, 32, 64, 10, 'rgba(24,30,34,.95)'); R(32, 32, 64, 1, PH); R(32, 41, 64, 1, PH);
+      for (let i = 0; i < 6; i++) { const bx = 36 + i * 10; R(bx, 34, 2, 2, PH); R(bx + 2, 36, 2, 2, PH); R(bx, 38, 2, 2, PH); }
+      R(58, 22, 12, 10, GOLD); R(60, 24, 8, 6, 'rgba(120,90,30,.9)');   // a crate on the line
+      // the two clicks
+      R(14, 16, 10, 2, LIT); R(18, 12, 2, 10, LIT);
+      R(104, 16, 10, 2, LIT); R(108, 12, 2, 10, LIT);
+    }
+  }
+
   /* ---------- first-use guide ---------- */
   function hasSeen() { try { return !!localStorage.getItem(SEEN_KEY); } catch (e) { return false; } }
   function markSeen() { try { localStorage.setItem(SEEN_KEY, '1'); } catch (e) {} }
@@ -1131,20 +1187,41 @@ const Build = (() => {
     g.className = 'refit-guide refit-firstrun';   // refit-firstrun marks THIS card (not the pickers/editors that share .refit-guide) so tutorial.js can avoid painting a coachmark over it
     // Three beats, not a wall — place a room, place+assign a BAY, wire it with a BELT. The full reference (every prop
     // & mechanic) lives in the FIELD MANUAL, so we point there instead of front-loading it all here.
+    /* SHOWN, not told (2026-08-07). This card was four prose bullets — the first thing a Commander
+       ever sees of build mode, and it read like documentation. The three beats are the same three
+       beats; each now leads with a PICTURE of the gesture (drawn in the station's own pixel language
+       by guideStepArt) and carries one line of words under it. */
     g.innerHTML = `
-      <div class="refit-guide-card">
+      <div class="refit-guide-card refit-guide-wide">
         <h3>▮ BUILD YOUR STATION</h3>
         <p class="refit-guide-lead">Your floor is a flowchart — work arrives at the <b>INBOX</b>, every <b>BAY</b> is an agent doing one step, and the belts you draw are the order the work flows.</p>
-        <ul>
-          <li><b>Drag</b> on the grid to place a <b>ROOM</b> — your agent walks the rooms you build.</li>
-          <li>Place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, <b>assign an agent</b> — work for that agent lands at its dock.</li>
-          <li>Wire it with <b>BELT (7)</b>: click one machine, then another. <span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked · <b>UNDO</b> anything.</li>
-          <li>Or stamp a whole working <b>STARTER LINE (9)</b> and edit it into your own.</li>
-        </ul>
-        <p style="opacity:.7;font-size:12px;margin:8px 0 0">Every prop &amp; mechanic is spelled out in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
+        <div class="refit-steps">
+          <div class="refit-step" data-art="room">
+            <span class="refit-step-n">1</span>
+            <b>DRAG A ROOM</b>
+            <span>Pick <b>ROOM</b>, drag on the grid. Your agent walks what you build.</span>
+          </div>
+          <div class="refit-step" data-art="bay">
+            <span class="refit-step-n">2</span>
+            <b>CREW A BAY</b>
+            <span>Drop a <b>BAY</b> (PROP ▸ WORKFLOW), click it, assign an agent.</span>
+          </div>
+          <div class="refit-step" data-art="belt">
+            <span class="refit-step-n">3</span>
+            <b>WIRE THE BELT</b>
+            <span>Pick <b>BELT</b>, click one machine then the next. The belt lays itself.</span>
+          </div>
+        </div>
+        <p class="refit-guide-foot">In a hurry? <b>LINES (9)</b> stamps a whole working layout you can edit. Every prop &amp; mechanic is in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
     root.appendChild(g);
+    g.querySelectorAll('.refit-step').forEach(s => {
+      const c = document.createElement('canvas');
+      c.className = 'refit-step-art'; c.width = 384; c.height = 216;   // 3× the 128×72 display box
+      s.insertBefore(c, s.firstChild);
+      try { guideStepArt(c, s.dataset.art); } catch (e) { c.remove(); }   // art must never break the card
+    });
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const dismiss = () => { markSeen(); if (g.parentNode) g.parentNode.removeChild(g); };
     g.querySelector('#refit-guide-go').onclick = dismiss;
@@ -2788,6 +2865,7 @@ const Build = (() => {
     drawFlashes(now, t);
     drawRoutingValidation(t, now);   // plain-words callouts on any broken piece, IN build mode (cost-safety + guidance)
     drawBeltEndpointGlow(t, now);    // BELT tool armed → INTAKE glows FROM, BAY/OUTBOX glow TO (what connects to what)
+    drawCrosshair(t);   // the aim instrument — ABOVE the light layer, or the deck swallows it
     drawHover(t);
     drawAgentTag(t);   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
     drawGhost(t, now);
@@ -2885,29 +2963,42 @@ const Build = (() => {
       }
       ctx.stroke();
     }
-
-    drawCrosshair(t, armed, lw);
   }
 
   /* The alignment crosshair: with a build tool armed, the tile under the pointer lights up and its
      row + column rule out across the view. This is the single thing that turns "drag somewhere and
      hope" into "line this up with that" — you can see, before you press, exactly which column your
      next room will start on and what it lines up with across the floor. Muted during a drag: the
-     ghost's own rulers take over there (drawGhost), and two sets of guides is a clusterfuck. */
-  function drawCrosshair(t, armed, lw) {
-    if (!armed || drag || !hoverTile) return;
+     ghost's own rulers take over there (drawGhost), and two sets of guides is a clusterfuck.
+
+     Drawn in the OVERLAY pass, not inside drawGrid. The grid is painted before StationBake.drawLight,
+     which is right for a lattice that should read as part of the floor and wrong for an instrument:
+     the light canvas multiplied a .22 rule down to nothing over the very deck you aim at, so the
+     crosshair was invisible in exactly the place it exists to serve. */
+  function drawCrosshair(t) {
+    if (!PLACING[tool] || drag || !hoverTile) return;
     const x0 = (-panX) / zoom, y0 = (-panY) / zoom, x1 = (cv.width - panX) / zoom, y1 = (cv.height - panY) / zoom;
     const hx = hoverTile.tx, hy = hoverTile.ty;
-    ctx.lineWidth = lw;
-    ctx.strokeStyle = 'rgba(150,225,255,0.22)';
+    ctx.lineWidth = 1 / zoom;
+    ctx.strokeStyle = 'rgba(150,225,255,0.34)';
     ctx.beginPath();
     ctx.moveTo(hx * t + 0.5 / zoom, y0); ctx.lineTo(hx * t + 0.5 / zoom, y1);
     ctx.moveTo((hx + 1) * t - 0.5 / zoom, y0); ctx.lineTo((hx + 1) * t - 0.5 / zoom, y1);
     ctx.moveTo(x0, hy * t + 0.5 / zoom); ctx.lineTo(x1, hy * t + 0.5 / zoom);
     ctx.moveTo(x0, (hy + 1) * t - 0.5 / zoom); ctx.lineTo(x1, (hy + 1) * t - 0.5 / zoom);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(150,225,255,0.10)';
+    ctx.fillStyle = 'rgba(150,225,255,0.16)';
     ctx.fillRect(hx * t, hy * t, t, t);
+    // corner ticks on the aimed tile — the "you are here" the flat fill alone doesn't carry
+    const k = Math.min(t * 0.34, 5 / zoom);
+    ctx.strokeStyle = 'rgba(190,240,255,0.85)'; ctx.lineWidth = 1.4 / zoom;
+    const X = hx * t, Y = hy * t;
+    ctx.beginPath();
+    ctx.moveTo(X, Y + k); ctx.lineTo(X, Y); ctx.lineTo(X + k, Y);
+    ctx.moveTo(X + t - k, Y); ctx.lineTo(X + t, Y); ctx.lineTo(X + t, Y + k);
+    ctx.moveTo(X + t, Y + t - k); ctx.lineTo(X + t, Y + t); ctx.lineTo(X + t - k, Y + t);
+    ctx.moveTo(X + k, Y + t); ctx.lineTo(X, Y + t); ctx.lineTo(X, Y + t - k);
+    ctx.stroke();
   }
 
   function drawGlows(now) {
