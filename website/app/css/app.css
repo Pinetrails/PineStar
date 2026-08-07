@@ -3240,8 +3240,16 @@ body.crew-rail-off #screen-game.active {
   background: linear-gradient(180deg, rgba(3,2,1,.92), rgba(3,2,1,.4) 78%, transparent);
 }
 .refit-title { color: var(--ink); background: var(--ph); padding: 3px 14px; letter-spacing: 3px; font-size: 18px; text-shadow: none; box-shadow: 0 0 14px var(--ph-glow2); }
-.refit-sub { color: var(--ph-dim); letter-spacing: 2px; font-size: 13px; }
+.refit-sub { color: var(--ph-dim); letter-spacing: 2px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .refit-spacer { flex: 1; }
+/* ZOOM — one welded cluster (– % +) so it reads as a single instrument, not three loose keys.
+   Zoom used to be wheel-only, discoverable only from a hint line at the bottom of the dock. */
+.refit-zoom { display: flex; align-items: stretch; gap: 0; flex: 0 0 auto; }
+.refit-top .refit-zoom .bb { border-radius: 0; margin: 0; }
+.refit-top .refit-zoom .bb:first-child { border-radius: 4px 0 0 4px; }
+.refit-top .refit-zoom .bb:last-child { border-radius: 0 4px 4px 0; }
+.refit-zoomb { min-width: 26px; padding-inline: 0; justify-content: center; font-size: 17px; line-height: 1; }
+.refit-zoomlvl { min-width: 54px; justify-content: center; font-size: 12px; letter-spacing: 1px; border-inline: 0 !important; }
 
 /* The build panel — a full-height left sidebar in the station's premium window chrome.
    MODE (tool grid) is fixed at the top, OPTIONS is the ONE scroll region (the palette can
@@ -3280,7 +3288,11 @@ body.crew-rail-off #screen-game.active {
     letter-spacing: 2px;
   }
   .refit-sub,
-  .refit-spacer { display: none; }
+  .refit-spacer,
+  /* the phone deck is measured at EXACTLY six action columns (see mobile-control-reachability):
+     a fourth+fifth+sixth key from the zoom cluster would wrap the row past the 68px it is given.
+     Pinch and wheel still zoom; only the on-glass stepper stands down. */
+  .refit-zoom { display: none; }
   .refit-top .bb {
     width: 100%;
     min-width: 0;
@@ -3306,6 +3318,52 @@ body.crew-rail-off #screen-game.active {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch; gap: 5px; min-width: 0;
 }
+
+/* ---------- THE BUILD KIT (2026-08-07 build-mode overhaul) ----------
+   The dock used to open with a tiny grey "MODE" caption over ten identical buttons — station
+   hardware with no faceplate. It now leads with an inverse-phosphor header plate (the same
+   vocabulary as .refit-title and every window titlebar), and the ten verbs are banded into four
+   named groups, each with the QUESTION it answers in lowercase under the band name. */
+.refit-dock-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+  padding: 7px 10px 6px; border-bottom: 1px solid var(--ph-faint);
+  background: linear-gradient(180deg, rgba(120,200,255,.07), transparent);
+}
+.refit-dock-head-t {
+  color: var(--ink); background: var(--ph); padding: 2px 10px;
+  font-size: 13px; letter-spacing: 3px; text-shadow: none;
+  box-shadow: 0 0 12px var(--ph-glow2);
+}
+#refit-tools { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.refit-toolgroup { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.refit-group-label {
+  display: flex; align-items: baseline; gap: 6px; min-width: 0;
+  font-size: 9.5px; letter-spacing: 2px; color: var(--ph); opacity: .6;
+  border-bottom: 1px dashed rgba(120,200,255,.13); padding-bottom: 1px; line-height: 1.15;
+}
+.refit-group-why {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: right; font-size: 9.5px; letter-spacing: .6px; text-transform: lowercase; opacity: .7;
+}
+/* The bands cost vertical room the OPTIONS palette used to have. Give it back here: the tool rows
+   are the one thing in this dock whose height is pure padding, and they still clear the 26px
+   touch-row the mobile sheet is measured against. */
+.refit-dock .refit-tool { min-height: 26px; padding: 3px 7px; }
+/* SELECT owns a full-width row: it is the cursor you fall back to, not a fifth kind of building */
+.refit-tools-sel { grid-template-columns: 1fr; }
+/* RECLAIM is destructive — its own full-width row, so it is never a mis-click neighbour */
+.refit-tool-reclaim { grid-column: 1 / -1; }
+/* NOT image-rendering:pixelated — the canvas is an 8× supersample downscaled to this box, and a
+   nearest-neighbour downscale is what makes a bitmap icon look lopsided (see build.js toolBtn). */
+.refit-toolicon { flex: 0 0 auto; width: 16px; height: 16px; pointer-events: none; opacity: .8; }
+.refit-tool.active .refit-toolicon { opacity: 1; }
+.refit-toolname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+/* the one destructive verb reads red the whole time, not only once it is armed */
+.refit-tool-reclaim { color: rgba(255,150,138,.85); border-color: rgba(255,92,77,.22) !important; }
+.refit-tool-reclaim:hover { color: #ffb0a8; border-color: var(--bad) !important; background: rgba(255,92,77,.08) !important; }
+.refit-tool-reclaim.active { box-shadow: inset 0 0 0 2px var(--bad), 0 0 10px rgba(255,92,77,.3) !important; color: #ffb0a8; }
+/* SELECT is the resting state — phosphor-cool, so an armed build tool is the only warm thing here */
+.refit-tools-sel .refit-tool.active { box-shadow: inset 0 0 0 2px var(--ph-dim), 0 0 8px var(--ph-glow2); opacity: .92; }
 /* THE scroll fix: the palette owns the panel's remaining height and scrolls as one column —
    nothing in the options region is ever clipped again. */
 .refit-palette {
@@ -3574,6 +3632,17 @@ body.crew-rail-off #screen-game.active {
   .refit-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .refit-tool { min-width: 0; font-size: 13px; }
   .refit-hint { min-height: 32px; }
+  /* The bottom sheet has only 48% of the glass, so the four BUILD KIT band captions are the first
+     thing to go: at three columns per group the ten modes already fit in five rows (2/2/2/3 + the
+     SELECT row), exactly the row budget the sheet was tuned for. Groups keep their order — the
+     grouping still reads from the tool order, just without headings eating the scroll viewport. */
+  .refit-group-label { display: none; }
+  #refit-tools, .refit-toolgroup { gap: 4px; }
+  .refit-dock-head { padding: 5px 8px 4px; }
+  .refit-dock-head-t { font-size: 11px; letter-spacing: 2px; }
+  .refit-toolname { letter-spacing: .5px; }
+  /* three columns means RECLAIM is no longer a lone widow — let it sit in the flow */
+  .refit-tool-reclaim { grid-column: auto; }
 }
 
 /* disabled undo/redo (and any .bb) */
