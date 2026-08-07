@@ -566,3 +566,5 @@ test/station-tools.test.js
 test/code-mode.test.js
 test/station-recovery.test.js
 test/station-recovery-cli.test.js
+test/execution-profiles.test.js
+test/execution-profiles-ui.test.js
