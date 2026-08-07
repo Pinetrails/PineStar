@@ -2567,6 +2567,33 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       for (const l of lanes) for (const s of l.sections) if (s.id === id) return s;
       return null;
     };
+    /* Build a jump row from the `.sec` block headers a pane ALREADY rendered, and prepend it. Reading the DOM
+       instead of taking a list means the contents can never drift from the contents page — the failure this
+       exists to prevent is a block being present but unreachable, which is exactly what folding LOGBOOK and
+       RESTORE into one lane risked. Stamps an id on each header so the click has something to scroll to; the
+       scroll math matches CONFIG's (offsetTop delta, never scrollIntoView). No-ops below two blocks — a table
+       of contents for one thing is noise. */
+    const addSectionJumpNav = (elx) => {
+      const heads = Array.from(elx.querySelectorAll(':scope > .sec, :scope > .con-lane > .sec'));
+      if (heads.length < 2) return;
+      const items = heads.map((h, i) => {
+        const id = 'rec-blk-' + i;
+        h.id = id;
+        const l = h.querySelector('.sec-l');
+        return { id, label: (l ? l.textContent : '').trim() };
+      }).filter(it => it.label);
+      if (items.length < 2) return;
+      const nav = mkEl('div', 'cf-nav',
+        items.map(it => '<button type="button" class="cf-nav-b" data-secjump="' + it.id + '">' + esc(it.label) + '</button>').join(''));
+      elx.insertBefore(nav, elx.firstChild);
+      nav.querySelectorAll('[data-secjump]').forEach(b => b.addEventListener('click', () => {
+        const target = elx.querySelector('#' + b.dataset.secjump);
+        const pane = elx.closest('.con-pane');
+        if (!target || !pane) return;
+        sfx('click');
+        pane.scrollTop = Math.max(0, target.offsetTop - pane.offsetTop - 8);
+      }));
+    };
     const mountLane = (id) => (elx) => {
       const s = laneSec(id);
       if (!s) { elx.innerHTML = ''; return; }
@@ -2582,6 +2609,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           mountLane('logbook')(elx);
           elx.insertAdjacentHTML('beforeend', '<div class="sec"><span class="sec-l">RESTORE POINTS</span><span class="sec-r"></span><span class="sec-nd"></span></div>');
           mountLane('restore')(elx);
+          /* RECORD merges what were two separate tabs, and it measures 808px inside a 720px pane — so RESTORE
+             POINTS, a whole former tab, landed just under the fold with nothing on screen saying it exists.
+             Folding a tab away is only allowed if what it held stays FINDABLE. Same jump row CONFIG carries,
+             built by reading the block headers this pane actually rendered (rather than a hardcoded list) so a
+             lane that adds or renames a block cannot silently fall out of its own contents. */
+          addSectionJumpNav(elx);
         } },
       { id: 'memory', label: 'MEMORY', glyph: '◈', desc: 'Every belief this agent has kept, traced to the run that earned it.',
         build: frag(agMemory(a)) },

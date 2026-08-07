@@ -76,11 +76,25 @@ async function main() {
     const strips = rows.map(r => r.stripTop);
     console.log('STRIP TOP SPREAD:', Math.max(...strips) - Math.min(...strips), 'px', JSON.stringify(strips));
 
-    // RECORD really contains the restore lane
+    // RECORD really contains BOTH former tabs, and both are reachable without a scroll hunt
     await evalJS(cdp, pick('record')); await sleep(900);
-    console.log('RECORD has restore lane:', await evalJS(cdp, `(() => { const w = ${WIN}; return !!w.querySelector('#rw-list') && !!w.querySelector('#lb-list'); })()`));
-    await evalJS(cdp, `(() => { const w = ${WIN}; const p = w.querySelector('.con-pane'); p.scrollTop = p.scrollHeight; return 1; })()`);
-    await sleep(500); await capture(cdp, OUT, 'record-bottom');
+    console.log('RECORD has both lanes:', await evalJS(cdp, `(() => { const w = ${WIN}; return !!w.querySelector('#rw-list') && !!w.querySelector('#lb-list'); })()`));
+    console.log('RECORD jump row:', await evalJS(cdp, `(() => { const w = ${WIN}; return [...w.querySelectorAll('.con-sec:not(.con-sec-hidden) [data-secjump]')].map(b => b.textContent); })()`));
+    await capture(cdp, OUT, 'record-top');
+    // click RESTORE POINTS in the jump row and prove the restore list lands in view
+    const rec = await evalJS(cdp, `(() => {
+      const w = ${WIN};
+      const b = [...w.querySelectorAll('[data-secjump]')].find(x => /RESTORE/i.test(x.textContent));
+      if (!b) return 'no button'; b.click(); return 'clicked';
+    })()`);
+    await sleep(900);
+    console.log('RESTORE jump:', rec, await evalJS(cdp, `(() => {
+      const w = ${WIN}; const pane = w.querySelector('.con-pane'); const list = w.querySelector('#rw-list');
+      if (!pane || !list) return { err: 'missing' };
+      const lr = list.getBoundingClientRect(), pr = pane.getBoundingClientRect();
+      return { offsetFromPaneTop: Math.round(lr.top - pr.top), visible: lr.top >= pr.top - 2 && lr.top < pr.bottom };
+    })()`));
+    await capture(cdp, OUT, 'record-restore');
 
     // CONFIG group rules present
     await evalJS(cdp, pick('config')); await sleep(900);
