@@ -1335,27 +1335,31 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    smearing. What it replaced (and why): a borderless, radius-0 button wearing a pulsing `box-shadow`
    painted a soft red RECTANGLE with no edge — a bleed, not a control — behind a ◉ ring-and-dot glyph
    that reads RECORD in every UI vocabulary there is, at 16px inside a 38x34 box it did not fill.
-   The shape carries the meaning now: targeting-reticle corner ticks (the composer's own corner-bracket
-   language — see #chat-inputrow's ⌐⌙ marks and [ SEND ]) around a SOLID halt square. The live-run pulse
-   rides the TICKS' opacity, never a glow: defined geometry breathing, so it reads as an instrument lamp
-   arming rather than something bleeding through the glass. Hover/press take the RobCo invert block
-   (solid field, --ink glyph) exactly like the voice chips beside it. */
+   The shape carries the meaning now: ONE solid halt square, 22px, nothing drawn around it — the plainest
+   thing that can only mean stop, sitting in the same bare-glyph register as the paperclip and mic beside
+   it. The live-run signal is a FLASH on the glyph, on the station's own terminal cadence: 1s `steps(1)`,
+   the same hard snap as the COMMS caret (@keyframes blink) — no easing, because RobCo terminals snap.
+   It flashes to a DIM FLOOR, never to 0: this is a control you are reaching for mid-run, and a target
+   that blinks out from under the cursor is a target you misclick. Hover/press take the RobCo invert
+   block (solid field, --ink glyph) like the voice chips, and HOLD the glyph lit — nothing you are
+   actively clicking should still be blinking. */
 .chat-stop {
-  flex: 0 0 auto; font-size: 21px; line-height: 0; color: var(--bad);
+  flex: 0 0 auto; font-size: 22px; line-height: 0; color: var(--bad);
   background: transparent; border: none; border-radius: 0;
   width: 38px; height: 34px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
   transition: none;
 }
 .chat-stop[hidden] { display: none; }
-.chat-stop svg { width: 1em; height: 1em; display: block; pointer-events: none; }
-/* only the reticle breathes — the halt square you are aiming at stays solid, so the target never moves */
-.chat-stop .stop-ret { opacity: .5; animation: stop-arm 1.6s ease-in-out infinite; }
+.chat-stop svg {
+  width: 1em; height: 1em; display: block; pointer-events: none;
+  animation: stop-flash 1s steps(1) infinite;
+}
 .chat-stop:hover, .chat-stop:active { background: var(--bad); color: var(--ink); }
-.chat-stop:hover .stop-ret, .chat-stop:active .stop-ret { opacity: 1; animation: none; }
-@keyframes stop-arm { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
-/* motion off: hold the ticks LIT rather than at the trough — the control must read at full strength */
-@media (prefers-reduced-motion: reduce) { .chat-stop .stop-ret { animation: none; opacity: .85; } }
+.chat-stop:hover svg, .chat-stop:active svg { animation: none; opacity: 1; }
+@keyframes stop-flash { 50% { opacity: .22; } }
+/* motion off: hold the square solid — the control must still read at full strength */
+@media (prefers-reduced-motion: reduce) { .chat-stop svg { animation: none; } }
 
 /* ---------- voice controls: a matched set of bordered phosphor chips in the COMMS input row.
    Defined dark boxes (not bare glyphs) so they punctuate the amber UI and read as real controls;
