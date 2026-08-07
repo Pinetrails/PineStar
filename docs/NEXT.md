@@ -1,5 +1,30 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-07 — STARNET 0.10 FINAL HERMES PARITY MAP (`agent/hermes-final-gap-audit`)
+
+AUDIT READY. The current comparison is now pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
+`origin/main` at `10a2b3d7` (2026-08-07), rather than the stale July Hermes checkout. The full evidence map and
+observable exit tests live in `docs/HARNESS_GAP_2026-08-07.md`.
+
+The 0.10 release-confidence gates are: **G0** operator-visible crash review plus safe resume, **G1** packaged
+Windows/macOS background-lifecycle proof, **G2** a unified opt-in live doctor/support receipt, **G3** MCP
+schema-cache/lazy-start/recycle/orphan lifecycle, and **G4** complete multi-file skill distribution with
+discovery, update generations, rollback, and lossless export/re-import. G0 is actively being implemented in the
+unmerged `codex/operator-run-recovery` worktree; that work is not counted as trunk capability.
+
+The remaining parity lanes are cross-surface session handoff plus authenticated relay/webhooks (G5), live
+subagent steering and structured result contracts (G6), config-blocked/hash-suppressed autonomous monitors
+(G7), remote execution continuity/checkpoints/conflict-aware sync (G8), and recoverable full-output plus verified
+workspace-mutation receipts (G9). Serverless backend breadth, additional push channels, enterprise-native
+provider auth, A2A/MoA, wake word, bulk-corpus learning, and portable profiles require explicit build/defer/
+do-not-claim decisions; they are not automatic 0.10 blockers.
+
+Do not reopen the old generic claims that StarNet lacks a serious core loop, tool breadth, compaction/caching,
+approvals, durable schedules, background delegation, session management, checkpoints, execution profiles,
+MCP OAuth/stdio, skills authoring, or provider breadth. Those are now confirmed peer capabilities. No row turns
+green from unit tests alone: final authority is a packaged live or fault-injection receipt at the exact release
+candidate SHA.
+
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that
