@@ -2020,10 +2020,78 @@ const Build = (() => {
     if (next) finKeySel = next.key;
     return next;
   }
+  /* ---------- STATION ORDERS (2026-08-07 round 3) ----------
+     FINISH THE LINE only appears once a work line already compiles — so the Commander who most
+     needs a next step, the one standing on a bare starter HAB, was the one shown nothing. ORDERS
+     is the stage before it, in the SAME card slot (never a second floating panel — the one-voice
+     law), handing off the moment a line exists.
+
+     Every step is a live projection of the model, and every step ARMS THE TOOL that does it —
+     the checklist is the control, not a description of one. It gates NOTHING: this is the station
+     arc vocabulary quests.js already ships ("honest-loot… like everything here it gates nothing"),
+     brought to where the work happens. Dismissable forever. */
+  const ORDERS_KEY = 'starnet.refit.orders.dis';
+  const ordersDismissed = () => { try { return !!localStorage.getItem(ORDERS_KEY); } catch (e) { return false; } };
+  let ordersSeenDone = null;   // which steps were already done last render (so a NEW completion can chime)
+
+  function ordersSteps() {
+    const rooms = station.rooms(), props = station.props();
+    const kinds = station.ROOM_KINDS || {};
+    const spaces = rooms.length;
+    // "dressed" = the Commander made an explicit surface choice somewhere. A room carries null on
+    // every surface field until they do, so this can never read true off a fresh station.
+    const dressed = rooms.some(r => r.floorMat || r.wallMat || r.hullMat || r.wallStyle || r.hullStyle
+      || (r.floorPaint && Object.keys(r.floorPaint).length)
+      || (r.floorStyle && kinds[r.kind] && r.floorStyle !== kinds[r.kind].floor));
+    const desk = props.some(p => WORKSTATION_TYPES[p.t]);
+    const line = props.some(p => p.t === 'intake') && props.some(p => p.t === 'bay');
+    return [
+      { id: 'grow', done: spaces >= 2, label: 'ADD A SECOND SPACE', tool: 'room', tip: 'a room or a hallway — your agent walks what you build' },
+      { id: 'dress', done: dressed, label: 'LAY A DECK YOU LIKE', tool: 'paint', tip: 'pick a material and a colour, then click a room' },
+      { id: 'desk', done: desk, label: 'PUT DOWN A WORKSTATION', tool: 'prop', tip: 'an agent walks to its desk to do real work' },
+      { id: 'line', done: line, label: 'STAMP A WORK LINE', tool: 'line', tip: 'a whole working layout in one click — yours to edit' },
+    ];
+  }
+
+  function renderOrders() {
+    if (ordersDismissed()) {
+      if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl);
+      finCardEl = null; finComp = null; finSig = '';
+      return;
+    }
+    const steps = ordersSteps();
+    const done = steps.filter(s => s.done).length;
+    const sig = 'orders|' + steps.map(s => (s.done ? 1 : 0)).join('');
+    if (!finCardEl) {
+      finCardEl = document.createElement('div');
+      finCardEl.className = 'refit-finline refit-orders';
+      root.appendChild(finCardEl);
+    } else if (sig === finSig) return;
+    // a step that flipped to done SINCE the last render earns the cue — never on the first paint,
+    // or every reopened session would replay the whole checklist at you
+    if (ordersSeenDone) { for (const s of steps) if (s.done && !ordersSeenDone[s.id]) { sfx('quest'); break; } }
+    ordersSeenDone = {}; for (const s of steps) if (s.done) ordersSeenDone[s.id] = 1;
+    finSig = sig; finComp = null;
+    finCardEl.className = 'refit-finline refit-orders';
+    finCardEl.innerHTML = '<div class="fl-head"><span class="fl-title">▸ STATION ORDERS</span>'
+      + '<span class="fl-count">' + done + '/' + steps.length + '</span>'
+      + '<button type="button" class="bb sm fl-x" title="dismiss — you know the controls">✕</button></div>'
+      + steps.map((s, i) => '<button type="button" class="bb fl-step' + (s.done ? ' done' : '') + '" data-ord="' + s.id + '"'
+        + ' title="' + esc(s.tip) + '">' + (s.done ? '✓ ' : '①②③④'[i] + ' ') + esc(s.label) + '</button>').join('');
+    finCardEl.querySelector('.fl-x').onclick = () => {
+      try { localStorage.setItem(ORDERS_KEY, '1'); } catch (e) {}
+      sfx('click'); renderOrders();
+    };
+    finCardEl.querySelectorAll('[data-ord]').forEach(b => {
+      const s = steps.find(x => x.id === b.dataset.ord);
+      b.onclick = () => { if (s) { selectTool(s.tool); flashTip(null, s.tip, true); } };
+    });
+  }
+
   function renderFinCard() {
     if (!root || !running) return;
     const c = finPick();
-    if (!c) { if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl); finCardEl = null; finComp = null; finSig = ''; return; }
+    if (!c) { renderOrders(); return; }   // no line yet → the stage BEFORE it, in the same slot
     finComp = c;
     const st = finState(c);
     // the card is titled with the LINE'S NAME (the intake's saved label — line naming); unnamed lines
@@ -2093,6 +2161,19 @@ const Build = (() => {
     if (!finCardEl) return;
     if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) { finCardEl.style.display = 'none'; return; }
     const c = finComp;
+    /* ORDERS mode has no line to anchor to (that is the whole point of it), so it parks in the top
+       right of the glass — clear of the left dock and of the action deck above. FINISH THE LINE
+       still tracks its own line's bbox below. */
+    if (!c && finCardEl.classList.contains('refit-orders')) {
+      if (!cv) return;
+      finCardEl.style.display = '';
+      const r0 = cv.getBoundingClientRect();
+      if (!r0.width) return;
+      const z = U.uiZoom(), cr0 = finCardEl.getBoundingClientRect();
+      finCardEl.style.left = Math.round((r0.right - (cr0.width || 236 * z) - 14 * z) / z) + 'px';
+      finCardEl.style.top = Math.round((r0.top + 58 * z) / z) + 'px';
+      return;
+    }
     if (!c || !c.bbox || !cacheGeo || !cv) return;
     finCardEl.style.display = '';
     const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
@@ -2405,7 +2486,7 @@ const Build = (() => {
     }
     const w = toWorldTile(ev);
     if (drag) {
-      if (w.tx !== drag.cur.tx || w.ty !== drag.cur.ty) drag.moved = true;
+      if (w.tx !== drag.cur.tx || w.ty !== drag.cur.ty) { drag.moved = true; snapTick(drag.mode); }
       if (drag.mode === 'paint' || drag.mode === 'reclaim') rasterTo(drag, w);   // accumulate every tile the brush crosses
       drag.cur = w;
     } else {
@@ -2738,12 +2819,31 @@ const Build = (() => {
     const machines = station.props().length;
     const sig = rooms + '/' + halls + '/' + tiles + '/' + machines;
     if (sig === statSig) return;   // the sub is re-read every frame; only touch the DOM when it moved
+    const first = statSig === '';
     statSig = sig;
     const bits = [rooms + (rooms === 1 ? ' ROOM' : ' ROOMS')];
     if (halls) bits.push(halls + (halls === 1 ? ' HALL' : ' HALLS'));
     bits.push(tiles + ' TILES');
     if (machines) bits.push(machines + (machines === 1 ? ' MACHINE' : ' MACHINES'));
-    sub.textContent = bits.join(' · ');
+    /* THE STATION'S OWN NAME FOR ITS SIZE. A pure LABEL on a number already shown — no gauge, no
+       gate, nothing unlocks at a threshold (sandbox law); crossing one is simply the floor earning
+       a bigger word, which is the whole point of building. Announced once, when it happens. */
+    const tier = tierFor(tiles);
+    if (!first && tier !== lastTier) { sfx('milestone'); announceTier(tier); }
+    lastTier = tier;
+    sub.innerHTML = '<span class="refit-tier">' + esc(tier) + '</span>' + esc(' · ' + bits.join(' · '));
+  }
+  // deck tiles → the station's size word. Thresholds are round numbers, not tuned: they exist to
+  // give a growing floor a few named landmarks, and every one is reachable from minute one.
+  const TIER_STEPS = [[3000, 'CITADEL'], [1200, 'COMPLEX'], [400, 'STATION'], [0, 'OUTPOST']];
+  const tierFor = tiles => (TIER_STEPS.find(s => tiles >= s[0]) || TIER_STEPS[TIER_STEPS.length - 1])[1];
+  let lastTier = '';
+  function announceTier(tier) {
+    if (!root) return;
+    const el = root.querySelector('.refit-tier');
+    const el2 = root.querySelector('.refit-title');
+    [el, el2].forEach(n => { if (!n) return; n.classList.remove('refit-levelup'); void n.offsetWidth; n.classList.add('refit-levelup'); });
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Your station is now a ' + tier, 'gold');
   }
 
   function onKey(ev) {
@@ -3146,15 +3246,62 @@ const Build = (() => {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  // place/delete confirmation flashes — a quick bright pulse that fades over ~500ms
+  /* ---------- PLACEMENT JUICE (2026-08-07 round 3) ----------
+     A placement used to answer with a flat colour wash that faded in half a second — the same mark
+     for building a room and for tearing one down, and nothing that felt like the station DID
+     something. It now reads as fabrication: a phosphor SCAN sweeps the footprint (left→right as
+     structure materializes, right→left as it is stripped), a RING pushes out past the edge and
+     fades, and the body glow decays under both. Eerie, not cute — it is the same construction
+     vocabulary the bake and the CRT already speak, no particles and no confetti. */
+  const FLASH_MS = 620;
   function drawFlashes(now, t) {
     for (let i = flashes.length - 1; i >= 0; i--) {
-      const fl = flashes[i], k = (now - fl.t0) / 500;
+      const fl = flashes[i], k = (now - fl.t0) / FLASH_MS;
       if (k >= 1) { flashes.splice(i, 1); continue; }
-      const a = (1 - k) * 0.5;
-      ctx.fillStyle = fl.bad ? 'rgba(255,110,90,' + a + ')' : 'rgba(170,255,210,' + a + ')';
-      for (const r of fl.rects) ctx.fillRect(r.x1 * t, r.y1 * t, (r.x2 - r.x1 + 1) * t, (r.y2 - r.y1 + 1) * t);
+      const ease = 1 - (1 - k) * (1 - k);         // fast out — the sweep leads, the glow trails
+      const body = (1 - k) * (fl.bad ? 0.34 : 0.30);
+      const hue = fl.bad ? '255,110,90' : '170,255,210';
+      for (const r of fl.rects) {
+        const X = r.x1 * t, Y = r.y1 * t, W = (r.x2 - r.x1 + 1) * t, H = (r.y2 - r.y1 + 1) * t;
+        ctx.fillStyle = 'rgba(' + hue + ',' + body.toFixed(3) + ')';
+        ctx.fillRect(X, Y, W, H);
+        // THE SCAN — a bright band crossing the footprint once
+        const band = Math.max(t * 0.9, W * 0.14);
+        const head = fl.bad ? (X + W - ease * (W + band)) : (X - band + ease * (W + band));
+        const bx0 = Math.max(X, head), bx1 = Math.min(X + W, head + band);
+        if (bx1 > bx0) {
+          const g = ctx.createLinearGradient(head, 0, head + band, 0);
+          const peak = (0.55 * (1 - k * 0.5)).toFixed(3);
+          g.addColorStop(0, 'rgba(' + hue + ',0)');
+          g.addColorStop(0.5, 'rgba(' + hue + ',' + peak + ')');
+          g.addColorStop(1, 'rgba(' + hue + ',0)');
+          ctx.fillStyle = g; ctx.fillRect(bx0, Y, bx1 - bx0, H);
+        }
+        // THE RING — the footprint's own outline pushing outward as it settles
+        const grow = ease * t * 0.9, ra = (1 - ease) * 0.85;
+        if (ra > 0.02) {
+          ctx.lineWidth = 2 / zoom;
+          ctx.strokeStyle = 'rgba(' + hue + ',' + ra.toFixed(3) + ')';
+          ctx.strokeRect(X - grow, Y - grow, W + grow * 2, H + grow * 2);
+        }
+      }
     }
+  }
+
+  /* THE SNAP TICK. Sizing a footprint is the core gesture of build mode and it was silent: the
+     ghost changed by a tile and nothing marked it, so a drag felt like moving a rectangle instead
+     of laying out a room. Every tile the gesture snaps through now ticks. Rate-limited, because a
+     fast drag crosses tiles faster than a cue can decay, and restricted to gestures where the SNAP
+     is the point — the paint and delete brushes raster whole runs of tiles per frame and would
+     machine-gun it. */
+  let lastTick = 0;
+  const SNAP_GESTURES = { draw: 1, beltrun: 1, move: 1, propmove: 1, propstamp: 1 };
+  function snapTick(mode) {
+    if (!SNAP_GESTURES[mode]) return;
+    const n = performance.now();
+    if (n - lastTick < 55) return;
+    lastTick = n;
+    sfx('tick');
   }
 
   // placeable props — drawn in WORLD tile coords (camera maps world*t, the bake is origin-shifted
