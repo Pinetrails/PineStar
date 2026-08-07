@@ -882,16 +882,16 @@ const Chat = (() => {
     if (input.value) input.style.height = input.scrollHeight + 'px';
     updateCharCount();   // the char counter rides every value change (typed, recalled, recipe-filled, send-reset)
   }
-  // COMPOSER CAP READOUT — the textarea maxlength is 4000; a dim counter appears only as the message NEARS the
+  // COMPOSER CAP READOUT — the textarea maxlength is 100,000; a dim counter appears only as the message NEARS the
   // cap (so it never nags a normal message) and turns --warn at the very edge. Truthful: it reads the real length.
-  const COMPOSER_MAX = 4000, COMPOSER_WARN_AT = 3600;
+  const COMPOSER_MAX = 100000, COMPOSER_WARN_AT = 90000, COMPOSER_WARN_CHARS = 1000;
   function updateCharCount() {
     const cc = el('chat-charcount'); if (!cc) return;
     const n = input ? input.value.length : 0;
     if (n < COMPOSER_WARN_AT) { if (!cc.hidden) { cc.hidden = true; cc.textContent = ''; cc.classList.remove('warn'); } return; }
     cc.hidden = false;
     cc.textContent = n + ' / ' + COMPOSER_MAX;
-    cc.classList.toggle('warn', n >= COMPOSER_MAX - 100);
+    cc.classList.toggle('warn', n >= COMPOSER_MAX - COMPOSER_WARN_CHARS);
   }
 
   /* ── COMMS AGENT LINE ────────────────────────────────────────────────────────────────────────────────
