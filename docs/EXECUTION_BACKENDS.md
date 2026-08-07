@@ -16,13 +16,12 @@ Default. Commands run on the host machine inside the agent's per-agent workspace
 
 This preserves the existing behavior: persistent cwd, `shell.exec`, `verify.run`, `shell.exec background:true`,
 `shell.bg.status`, `shell.bg.read`, `shell.bg.write`, `shell.bg.kill`, checkpoints, and `fs.*` all keep working.
-(The `docker` backend does not implement background processes at all, so `read`/`write` refuse there the same
-way `start` already does.)
 
 ### `docker`
 
-Opt-in. Foreground commands run in a one-shot Docker container with the agent workspace bind-mounted at
-`/workspace`:
+Opt-in. Each agent gets one deterministically named, ownership-labeled Docker container with its workspace
+bind-mounted at `/workspace`. StarNet inspects and reuses that container across commands and sidecar restarts;
+it creates, starts, and probes the container on first use when no owned environment exists:
 
 ```powershell
 $env:STARNET_EXEC_BACKEND = "docker"
@@ -36,11 +35,18 @@ Docker execution currently supports:
 - `verify.run`
 - shared `fs.*` workspace persistence via the host bind mount
 - host-side checkpoints for the bind-mounted workspace
-- container cwd persistence under `/workspace`
+- writable-layer persistence for installed packages and container caches
+- container cwd persistence under `/workspace`, including sidecar restarts
+- `shell.exec background:true` plus status, paged logs, stdin, EOF, and kill through the existing background manager
 - capability drop, `no-new-privileges`, and a PID limit by default
+- deterministic container names plus `ai.starnet.managed`, workspace, and agent ownership labels
+- an explicit startup probe before any command is accepted
 
-Docker execution intentionally does not yet support background processes. `shell.exec` with `background:true`
-returns a clear unavailable message while `local` remains the background-capable backend.
+The container is deliberately not removed on ordinary sidecar shutdown: that is what preserves its writable
+layer. Backend owners can call `cleanupAgent(agentId)` for explicit removal, or
+`cleanupAgent(agentId, { remove:false })` to stop it without deleting state. Background process records remain
+owned by the sidecar process; a restart reuses the container but does not claim that an old interactive stdin or
+log ring can be resumed.
 
 ## Runtime Status
 
@@ -50,8 +56,10 @@ The sidecar exposes the active execution cell at:
 GET /api/execution
 ```
 
-The response names the backend, workspace mapping, background support, and safe-cell controls. Local is the
-zero-friction default; Docker is the opt-in hostile-code boundary.
+The response names the backend, workspace mapping, background support, persistence contract, and safe-cell
+controls. Docker availability is `unknown` before its first real probe, `ready` after a successful probe, and
+`unavailable` with the bounded failure reason after a failed probe. Local is the zero-friction default; Docker
+is the opt-in hostile-code boundary.
 
 Background subagents are managed above this environment seam. They can start on the local safe cell today, and
 their durable records are exposed through:
@@ -80,12 +88,11 @@ Legacy `SKYNET_EXEC_BACKEND`, `SKYNET_DOCKER_BIN`, and `SKYNET_DOCKER_IMAGE` are
 
 ## Parity Direction
 
-the reference harness's production shape includes a richer environment manager with Docker, SSH, Modal, Singularity, Daytona,
-background process tracking, cleanup/reuse, and file synchronization for non-bind-mounted backends. StarNet now
-has the same architectural seam, and the next parity steps are:
+the reference harness's production shape includes a richer environment manager with SSH, Modal, Singularity,
+Daytona, idle cleanup, and file synchronization for non-bind-mounted backends. StarNet now has the same
+architectural seam plus durable Docker reuse/background execution. The next parity steps are:
 
-1. Add Docker background process tracking with status/log/kill.
-2. Add long-lived Docker container reuse and idle cleanup.
-3. Add SSH as the first non-local, non-container backend.
-4. Add file sync for backends that cannot share the host workspace by bind mount.
-5. Move checkpoint support behind environment capability flags for remote backends.
+1. Add an owner-visible idle cleanup policy without deleting active or unowned containers.
+2. Add SSH as the first non-local, non-container backend.
+3. Add file sync for backends that cannot share the host workspace by bind mount.
+4. Move checkpoint support behind environment capability flags for remote backends.
