@@ -69,10 +69,10 @@ A.ok(/classList\.add\('tool'\)/.test(recap) && /classList\.add\('recap'\)/.test(
   'the recap renders in the work-log .tool register with its own .recap class');
 A.ok(!/activeNudge/.test(recap), 'the recap never touches the activeNudge beat-slot state');
 
-// file artifacts: open via the SAME jailed /api/file path every deliverable row uses + click-to-copy the path
+// file artifacts: use the same open helper as inline deliverables and copy the resolved absolute path
 A.ok(/wireFileOpen\(link, path, agentId\)/.test(recap), 'file artifacts open through the existing jailed file-open helper');
-A.ok(/copyText\(path\)/.test(recap), 'the reveal action is click-to-copy of the path (no invented Tauri permissions)');
-A.ok(!/__TAURI__/.test(recap), 'no new Tauri capability is reached for the recap');
+A.ok(/copyPathButton\(agentId, path\)/.test(recap), 'the recap offers the shared absolute-path copy action');
+A.ok(/folderButton\(agentId, path\)/.test(recap), 'the recap offers the shared exact-artifact reveal action');
 
 // the card carries the promised trio: outcome line, artifact list, cost + duration + model
 A.ok(/fmtRecapCost\(entry\)/.test(recap) && /fmtMs\(durMs\)/.test(recap) && /entry\.model/.test(recap),
