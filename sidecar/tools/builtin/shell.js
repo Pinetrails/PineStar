@@ -721,6 +721,9 @@
         // claim or a cached capability. It is the one path allowed to leave the agent workspace and use host tools.
         const remoteOwner = ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner';
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
+        const environmentBackendId = environment
+          ? (typeof environment.backendIdFor === 'function' ? environment.backendIdFor(aid) : environment.backendId)
+          : null;
         const cmd = String((args && args.cmd) || '').trim();
         if (!cmd) throw new Error('empty command');
         const deny = remoteOwner ? null : escapesWorkspace(cmd);
@@ -732,20 +735,20 @@
         let cwd = environment ? environment.getCwd(aid) : jailRoot;
         // Scheduled project work is run-scoped. Prefer the host-validated project cwd without writing it to
         // the agent-wide persistent cwd session (concurrent routines of one agent must not cross-contaminate).
-        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' });
+        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environmentBackendId === 'local' });
         if (sess && sess.cwd) {
-          try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || (environment && environment.backendId === 'local'), allowProtected: remoteOwner }); }
+          try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || environmentBackendId === 'local', allowProtected: remoteOwner }); }
           catch (_) {}
         }
         if (!environment && sess && sess.cwd && (remoteOwner || withinJail(P, sess.cwd, jailRoot)) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
         if (args && args.cwd != null) {
-          if (environment && environment.backendId !== 'local' && !remoteOwner) throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
-          cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || (environment ? environment.backendId === 'local' : false), allowProtected: remoteOwner });
+          if (environment && environmentBackendId !== 'local' && !remoteOwner) throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
+          cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || environmentBackendId === 'local', allowProtected: remoteOwner });
           sessions.set(aid, { cwd: cwd });
         }
-        const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environment.backendId !== 'local'
+        const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environmentBackendId !== 'local'
           ? environment.workspaceRoot(aid) : cwd;
-        const shellDialect = environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
+        const shellDialect = environment && environmentBackendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
         const safetyDeny = remoteOwner ? null : commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P, dialect: shellDialect, isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this command ' + safetyDeny.reason + '. StarNet task processes preserve the user\'s control of their computer; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
@@ -769,7 +772,7 @@
           });
         });
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
-        const markerIsWin = environment && environment.backendId !== 'local' ? false : isWin;
+        const markerIsWin = environment && environmentBackendId !== 'local' ? false : isWin;
         const run = checkpoint.then(function () {
           return environment && typeof environment.execute === 'function'
             ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, surface: ctx.surface })
@@ -778,9 +781,9 @@
         return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
           const pm = parseMarker(res.out);
-          if (environment && pm.cwd && environment.backendId !== 'local') environment.rememberCwd(aid, pm.cwd);
+          if (environment && pm.cwd && environmentBackendId !== 'local') environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && withinJail(P, pm.cwd, jailRoot)) environment.rememberCwd(aid, pm.cwd);
-          else if (environment && pm.cwd && environment.backendId === 'local') {
+          else if (environment && pm.cwd && environmentBackendId === 'local') {
             try { sessions.set(aid, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true, allowProtected: remoteOwner }) }); } catch (_) {}
           }
           else if (pm.cwd && (remoteOwner || withinJail(P, pm.cwd, jailRoot))) sessions.set(aid, { cwd: pm.cwd });
@@ -885,7 +888,10 @@
         const input = String((args && args.input) || '');
         if (!input) throw new Error('input is required (or pass eof:true to close stdin)');
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
-        const dialect = environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
+        const environmentBackendId = environment
+          ? (typeof environment.backendIdFor === 'function' ? environment.backendIdFor(aid) : environment.backendId)
+          : null;
+        const dialect = environment && environmentBackendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
         const remoteOwner = !!(ctx && ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner');
         const risk = remoteOwner ? null : commandSafetyRisk(input, { cwd: jailRoot, fs: fs, pathMod: P, dialect: dialect, isWin: isWin });
         if (risk) throw new Error('refused [' + risk.kind + ']: this input ' + risk.reason + '. A line sent to a shell or REPL runs like a command, so it is screened the same way.');

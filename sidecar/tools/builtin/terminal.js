@@ -61,7 +61,8 @@ function makeTerminalTools(deps) {
     run: async function (args, ctx) {
       const agentId = aid(ctx), command = String((args && args.command) || '').trim();
       if (!command) throw new Error('empty command');
-      if (environment.backendId !== 'local') throw new Error('interactive terminal sessions currently require the local execution backend');
+      const environmentBackendId = typeof environment.backendIdFor === 'function' ? environment.backendIdFor(agentId) : environment.backendId;
+      if (environmentBackendId !== 'local') throw new Error('interactive terminal sessions currently require the Trusted Project or This Computer local execution profile');
       const where = resolveCwd(args, ctx || {}, agentId);
       const risk = safety(command, where.cwd, ctx || {});
       if (risk) throw new Error('refused [' + risk.kind + ']: this terminal command ' + risk.reason);

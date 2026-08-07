@@ -250,6 +250,7 @@ const { makeProcLedger } = require('./procledger.js');              // persisten
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
 const { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, makeRunAuthority, runInputContext, impactOfTool, normalizeUnattendedGrants, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
 const { makeEnvironmentManager, sanitizeChildEnv } = require('./environment.js');     // execution backend boundary (reference-harness-style)
+const { makeExecutionRouter } = require('./execution-router.js');                     // per-agent profile -> real backend routing
 const executionProfiles = require('./execution-profiles.js');       // per-agent runtime/scope envelope; approval + desktop lease stay separate
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
@@ -3036,7 +3037,18 @@ const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: (
 // `surface` is the RUN's surface, forwarded by the backend from the shell/verify call: an unattended run only
 // receives the keys whose unattended grant is flipped ON, the SAME rule resolveForRequest enforces on
 // web_request. Host authority — it comes from the run, never from tool args.
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) });
+const executionEnvironmentDeps = { spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) };
+const configuredExecutionBackend = String(process.env.STARNET_EXEC_BACKEND || process.env.SKYNET_EXEC_BACKEND || 'local').trim().toLowerCase();
+if (configuredExecutionBackend !== 'local' && configuredExecutionBackend !== 'docker') throw new Error('unknown execution backend "' + configuredExecutionBackend + '" (expected local or docker)');
+const executionEnvironments = {
+  local: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'local' } })),
+  docker: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'docker' } }))
+};
+const executionEnvironment = makeExecutionRouter({
+  environments: executionEnvironments,
+  defaultBackendId: configuredExecutionBackend,
+  profileForAgent: (agentId) => ((agentRoster.get(String(agentId || '')) || {}).executionProfile || 'station-gear')
+});
 // Real terminal sessions are a distinct rail from shell.bg: node-pty supplies POSIX forkpty / Windows ConPTY,
 // while this host owns durability, cwd policy, orphan receipts and lifecycle cleanup. Native loading is caught
 // here (not at module top): an unsupported/broken binding leaves terminal.start honestly unavailable without
@@ -7477,16 +7489,19 @@ const ROUTES = [
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
   { m: 'GET', exact: '/api/execution-profiles', h: (req, res) => {
     const backend = executionEnvironment.describe();
-    const agents = [...agentRoster].map(([agentId, rec]) => ({
-      agentId,
-      profile: executionProfiles.resolve(rec.executionProfile, {
+    const agents = [...agentRoster].map(([agentId, rec]) => {
+      const environment = executionEnvironment.describeAgent(agentId);
+      return { agentId, environment, profile: executionProfiles.resolve(rec.executionProfile, {
         approvalMode: rec.approvalMode,
-        backendId: executionEnvironment.backendId,
+        backendId: environment.effectiveBackend,
         physicalDesktopLease: false
-      })
-    }));
+      }) };
+    });
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ profiles: executionProfiles.catalog({ backendId: executionEnvironment.backendId }), backend, agents }));
+    return res.end(JSON.stringify({
+      profiles: executionProfiles.IDS.map(id => executionProfiles.resolve(id, { backendId: executionEnvironment.backendIdForProfile(id) })),
+      backend, agents
+    }));
   } },
   { m: 'GET', exact: '/api/execution', h: (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); } },
   { m: 'GET', prefix: '/api/subagents', h: handleSubagentsList },
@@ -11636,13 +11651,13 @@ async function runOnce(o) {
     const rec = agentRoster.get(String(agentId || '')) || {};
     return executionProfiles.resolve(rec.executionProfile, {
       approvalMode: rec.approvalMode,
-      backendId: executionEnvironment.backendId,
+      backendId: executionEnvironment.backendIdFor(agentId),
       physicalDesktopLease: remoteDesktopAuthorized
     });
   };
   const executionProfile = agentExecutionProfileNow();
   const userControlAuthority = makeRunAuthority({
-    surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted,
+    surface, isTask, environment: executionEnvironment.forAgent(agentId), confirm: o.prompt, unattendedGrants, ownerTrusted,
     remoteDesktopAuthorized, masterBypass: FULL_ACCESS || masterBypassOn(), fullAccess: agentFullAccessNow
   });
   const prompt = o.prompt;

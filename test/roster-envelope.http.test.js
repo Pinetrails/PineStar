@@ -111,6 +111,11 @@ const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
     const saved2 = (afterSave.agents || []).find(a => a.agentId === 'agent') || {};
     A.eq(saved2.approvalMode, 'full', 'the second sidecar RE-SAVES approvalMode:full (save->load->save round-trip is closed)');
     A.eq(saved2.executionProfile, 'safe-cell', 'profile changes without changing approval posture');
+    const routed = await jj('GET', '/api/execution-profiles');
+    const routedAgent = ((routed.body && routed.body.agents) || []).find(a => a.agentId === 'agent') || {};
+    A.eq(routedAgent.profile && routedAgent.profile.effectiveBackend, 'docker', 'Safe Cell routes this agent to Docker immediately');
+    A.eq(routedAgent.environment && routedAgent.environment.effectiveBackend, 'docker', 'runtime truth agrees with the profile authority');
+    A.eq(routed.body && routed.body.backend && routed.body.backend.routing && routed.body.backend.routing.perAgent, true, 'station status exposes per-agent backend routing');
   } finally {
     await fixture.dispose();
   }

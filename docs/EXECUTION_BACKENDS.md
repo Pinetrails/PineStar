@@ -1,8 +1,8 @@
 # Execution Backends
 
-StarNet's workbench tools now run through a single execution environment boundary. The shape is intentionally
-ref-inspired: tools ask the active environment to execute, while the environment decides whether that means
-the host shell or an isolated sandbox.
+StarNet's workbench tools run through a per-agent execution router. Tools ask the router to execute for an
+agent; that agent's execution profile selects the host shell or isolated sandbox on the next command. The
+legacy `STATION GEAR` profile follows the boot default for backward compatibility.
 
 ## Current Backends
 
@@ -19,7 +19,8 @@ This preserves the existing behavior: persistent cwd, `shell.exec`, `verify.run`
 
 ### `docker`
 
-Opt-in. Each agent gets one deterministically named, ownership-labeled Docker container with its workspace
+Selected by the per-agent `SAFE CELL` profile (or as the legacy boot default). Each agent gets one
+deterministically named, ownership-labeled Docker container with its workspace
 bind-mounted at `/workspace`. StarNet inspects and reuses that container across commands and sidecar restarts;
 it creates, starts, and probes the container on first use when no owned environment exists:
 
@@ -50,16 +51,33 @@ log ring can be resumed.
 
 ## Runtime Status
 
-The sidecar exposes the active execution cell at:
+The sidecar exposes the station default and per-agent routing at:
 
 ```text
 GET /api/execution
+GET /api/execution-profiles
 ```
 
-The response names the backend, workspace mapping, background support, persistence contract, and safe-cell
-controls. Docker availability is `unknown` before its first real probe, `ready` after a successful probe, and
-`unavailable` with the bounded failure reason after a failed probe. Local is the zero-friction default; Docker
-is the opt-in hostile-code boundary.
+The responses name the station default, each agent's routed backend, workspace mapping, background support,
+persistence contract, and safe-cell controls. Docker availability is `unknown` before its first real probe,
+`ready` after a successful probe, and `unavailable` with the bounded failure reason after a failed probe.
+Profile changes are live for the next command and do not require a station restart.
+
+## Execution Profiles
+
+- `SAFE CELL` routes terminal/build work to that agent's persistent Docker container.
+- `TRUSTED PROJECT` routes locally with terminal, files, connected services, and approved project roots.
+- `THIS COMPUTER` routes locally with non-protected host paths in scope. Protected files and physical desktop
+  input remain separate hard floors.
+
+Approval prompts are an independent posture: `ASK` or `RUN WITHOUT PROMPTS`. Changing that posture never
+changes runtime, tools, filesystem scope, or desktop authority.
+
+## Interactive Terminal Sessions
+
+The Workbench also exposes `terminal.start/status/read/write/resize/interrupt/stop`. These use a real POSIX PTY
+or Windows ConPTY, keep bounded scrollback, and persist lifecycle metadata. An active record from a prior
+sidecar life is reported `unknown` and unattached; StarNet never claims it reattached from a stored PID.
 
 Background subagents are managed above this environment seam. They can start on the local safe cell today, and
 their durable records are exposed through:

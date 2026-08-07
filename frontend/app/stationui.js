@@ -1945,7 +1945,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="cf-head"><span class="cf-file">▣ execution profile</span><span class="cf-badge">PER-AGENT</span></div>' +
       '<div class="cf-desc">Where this agent runs and what scope it receives. This is separate from approval prompts and never grants real mouse, keyboard, or screen control.</div>' +
       '<div class="ov-vchips" id="ag-execution-chips">' + chips + '</div>' +
-      '<div class="mc-hint" id="ag-execution-truth">REQUESTS <b>' + esc(p.backend.toUpperCase()) + '</b> · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop) + ' · checking the active backend…</div>' +
+      '<div class="mc-hint" id="ag-execution-truth">ROUTES NEXT COMMAND TO <b>' + esc(p.backend.toUpperCase()) + '</b> · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop) + ' · checking availability…</div>' +
       '<div id="ag-execution-msg" class="msg"></div>' +
     '</div>';
   }
@@ -2102,22 +2102,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       }));
     }
     // EXECUTION PROFILE chips — capability/runtime/filesystem envelope only. This never changes approvalMode.
-    // The active backend is fetched from sidecar truth; requested != active is rendered as pending instead of
-    // pretending Safe Cell isolation exists while the boot-wide manager is still local.
+    // The routed backend is fetched from sidecar truth for THIS agent. Profile changes apply to the next
+    // command; availability stays explicit (Docker is not claimed ready before its startup probe).
     const epWrap = body.querySelector('#ag-execution-chips');
     if (epWrap) {
       const epTruth = body.querySelector('#ag-execution-truth');
       const currentId = executionProfileId(a);
-      const paintBackendTruth = (backend) => {
+      const paintBackendTruth = (row) => {
         const p = EXECUTION_PROFILES.find(x => x.id === executionProfileId(a)) || EXECUTION_PROFILES[0];
-        const active = String(backend || 'unknown').toUpperCase();
-        const requested = p.backend === 'current' ? active.toLowerCase() : p.backend;
-        const match = active.toLowerCase() === requested;
-        if (epTruth) epTruth.innerHTML = 'REQUESTS <b>' + esc(requested.toUpperCase()) + '</b> · ACTIVE <b>' + esc(active) + '</b>' +
-          (match ? '' : ' <b class="warn">— backend change requires a station restart</b>') +
+        const routed = String((row && row.profile && row.profile.effectiveBackend) || 'unknown').toUpperCase();
+        const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
+        if (epTruth) epTruth.innerHTML = 'ROUTES NEXT COMMAND TO <b>' + esc(routed) + '</b> · AVAILABILITY <b>' + esc(availability) + '</b>' +
           ' · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop);
       };
-      Harness.api.get('/api/execution-profiles').then(j => paintBackendTruth(j && j.backend && j.backend.backend)).catch(() => paintBackendTruth('unavailable'));
+      Harness.api.get('/api/execution-profiles').then(j => paintBackendTruth((j && j.agents || []).find(x => x.agentId === (a && a.id)))).catch(() => paintBackendTruth(null));
       let epArmed = null;
       const epDisarm = () => { if (epArmed) { epArmed.textContent = epArmed.dataset.name; epArmed.classList.remove('arm'); epArmed = null; } };
       epWrap.querySelectorAll('[data-execution-profile]').forEach(chip => chip.addEventListener('click', () => {
@@ -5550,19 +5548,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       /* ── 1 · EXECUTION PROFILE rows — a real capability/runtime/filesystem envelope, independent of approval.
          Each choice writes the same roster field consumed by runOnce's capability projection. */
       const epList = host.querySelector('#perm-execution');
-      const paintExecutionProfiles = (activeBackend) => {
+      const paintExecutionProfiles = (truth) => {
         if (!epList) return;
         if (!present.length) { epList.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
         const can = !!(access.config && access.config.setExecutionProfile);
         epList.innerHTML = present.map(a => {
           const id = executionProfileId(a);
           const p = EXECUTION_PROFILES.find(x => x.id === id) || EXECUTION_PROFILES[0];
-          const active = String(activeBackend || 'checking…').toUpperCase();
-          const requested = p.backend === 'current' ? active : p.backend.toUpperCase();
+          const row = ((truth && truth.agents) || []).find(x => x.agentId === a.id);
+          const routed = String((row && row.profile && row.profile.effectiveBackend) || 'checking…').toUpperCase();
+          const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
           return '<div class="perm-agent">' +
             '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
             '<span class="pa-mode">' + esc(p.label) + '</span>' +
-            '<span class="pa-state">requests ' + esc(requested) + ' · active ' + esc(active) + ' · ' + esc(p.files) + ' · ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</span>' +
+            '<span class="pa-state">routes next command to ' + esc(routed) + ' · availability ' + esc(availability) + ' · ' + esc(p.files) + ' · ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</span>' +
             (can ? '<div class="ov-vchips">' + EXECUTION_PROFILES.map(x => '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('') + '</div>' : '') +
             '</div>';
         }).join('');
@@ -5572,15 +5571,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             Promise.resolve(access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'))).then(ok => {
               if (!ok) notify('could not change execution profile — the station kept the prior profile', 'bad');
               else notify('execution profile → ' + b.getAttribute('data-name'), b.getAttribute('data-perm-profile') === 'this-computer' ? 'warn' : 'good');
-              paintExecutionProfiles(activeBackend);
-            }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); paintExecutionProfiles(activeBackend); });
+              refreshExecutionProfiles();
+            }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); refreshExecutionProfiles(); });
           };
           if (b.getAttribute('data-perm-profile') === 'this-computer' && !b.classList.contains('sel')) ArmConfirm.wire(b, { armedLabel: 'SURE? BROAD HOST PATHS', restLabel: 'THIS COMPUTER', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
           else b.addEventListener('click', () => { sfx('click'); apply(); });
         });
       };
-      paintExecutionProfiles('checking…');
-      Harness.api.get('/api/execution-profiles').then(j => paintExecutionProfiles(j && j.backend && j.backend.backend)).catch(() => paintExecutionProfiles('unavailable'));
+      const refreshExecutionProfiles = () => Harness.api.get('/api/execution-profiles').then(paintExecutionProfiles).catch(() => paintExecutionProfiles(null));
+      paintExecutionProfiles(null);
+      refreshExecutionProfiles();
 
       /* ── 2 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
          (not copies), so approvalMode read here is the same truth pushRoster ships to the sidecar; a flip goes
