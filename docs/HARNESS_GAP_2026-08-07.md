@@ -43,6 +43,44 @@ forensic-only. Automated evidence: focused recovery matrix 190 assertions; compl
 26/26; remaining HTTP tail 38/38 after the aggregate wrapper exceeded its time budget and one loop-check timing case
 passed 33/33 isolated. This receipt closes the lane acceptance test, not the shipped-application claim before merge.
 
+### G1 packaged-lifecycle baseline receipt (published `0.9.0`)
+
+The baseline receipt is
+`C:\Users\andro\gen-trees\release-090-final\.dogfood\g1-packaged-lifecycle\20260807T175943\g1-packaged-lifecycle-receipt.json`
+(SHA-256 `827D9A5C11290293EA845D58547F834CEF7B6D03260F96AA46AD79D3E3425C57`). Its outcome is
+`partial_blocked`: package integrity and public update delivery pass, while interactive Windows lifecycle is
+`blocked_not_run` and macOS lifecycle is `unverified_no_mac_host`. The public `0.9.0` installer SHA-256
+`2FEE98EFC9D1C01BD9711C7196F82EB3B814572A8A3574EAD63CE7180A963ADE` matches the GitHub asset digest;
+Authenticode is valid; the detached updater signature verifies; extraction yields 7,114 files; and the embedded
+desktop reports `0.9.0` with a signed bundled Node runtime. Live `latest.json` delivery passes for Windows x64 and
+both macOS architectures with reachable version-pinned assets.
+
+Idle close, armed close, tray reopen, launch at login, durable E-STOP, reboot/relaunch while armed, and updater
+restart were not exercised. A healthy qualifying 48-hour provider soak owns the installed path, canonical workspace,
+and single-instance identity; controlling or rebooting it would invalidate that evidence, and no VM/Sandbox/separate
+Windows host was available. No real Mac host was connected. This receipt is baseline evidence for the already-
+published package only, not release authority for an eventual `0.10` candidate.
+
+### G2 candidate receipt (lane commits `14e256ba` + `712b0de0`)
+
+G2's lane acceptance test is closed; integration and exact-candidate packaged proof remain pending. The authenticated
+`POST /api/diagnostics/live` refuses absent explicit consent, runs independent probes concurrently under a per-probe
+deadline, and exports a sanitized timestamped receipt. The selected model must return content to earn
+`round-trip-proven`; the execution sentinel travels through the agent's effective local/Docker/SSH router; every
+enabled MCP server is freshly initialized/listed; Telegram receives a fresh non-delivery authentication request; and
+other channel adapters are classified from live gateway/poll evidence. No doctor probe sends a message, and no
+channel earns delivery round-trip without a real successful delivery receipt.
+
+The in-app browser proof exercised the actual SETTINGS → RUNTIME panel. An unchecked RUN LIVE DOCTOR was refused;
+after explicit opt-in the rendered receipt showed the selected model and effective local backend as
+`round-trip-proven`, left absent MCP/channels `not-configured`, reset consent, exposed COPY RECEIPT, and produced zero
+browser warnings/errors. The real-host E2E then made the matrix non-vacuous with an enabled HTTP MCP server and
+enabled Telegram adapter: a fresh MCP initialize/list completed, a fresh Telegram `getMe` completed and remained
+only `authenticated`, and the fake transport observed zero sends. Focused doctor coverage is 8/8; the touched
+boot-level host suite is 471 assertions; generated website parity is green (3,883 mirrored + 2 embed-only). The full
+fast gate passed both new fast entries and stopped at the pre-existing candidate-bound claims seal (step 228/576,
+10 problems / 54 ok), which this isolated lane intentionally did not rewrite.
+
 ## Remaining parity lanes
 
 | ID | Priority | Confirmed delta at the audit baseline | Observable exit test |
