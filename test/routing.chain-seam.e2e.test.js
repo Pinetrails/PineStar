@@ -51,12 +51,16 @@ function boot(port, env, attemptsLeft) {
     const token = await bootToken(B, B);
     A.ok(token.length >= 32, 'got a session API token');
     const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
-    const chainAsk = async (agentId, tag) => {
-      const r = await fetch(B + '/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { headers });
+    /* `lineId` = the line the browser's work ENTERED on (work belongs to a line, 2026-08-07). Every ask
+       below that expects a hop carries it, because only work fed in through a line's own trigger may run
+       that line; the no-lineId case gets its own block (§6). */
+    const chainAsk = async (agentId, tag, lineId) => {
+      const r = await fetch(B + '/api/routing/chain?agentId=' + encodeURIComponent(agentId)
+        + '&tag=' + encodeURIComponent(tag || '') + '&lineId=' + encodeURIComponent(lineId || ''), { headers });
       A.eq(r.status, 200, 'chain seam answers 200 for ' + agentId);
       return r.json();
     };
-    const chainOf = async (agentId, tag) => (await chainAsk(agentId, tag)).next;
+    const chainOf = async (agentId, tag, lineId) => (await chainAsk(agentId, tag, lineId)).next;
 
     // ---- 1. the seam is behind the SAME per-launch token gate as every /api route (not TOKEN_EXEMPT) ----
     const bare = await fetch(B + '/api/routing/chain?agentId=research-agent', { headers: { Origin: B } });
@@ -83,16 +87,28 @@ function boot(port, env, attemptsLeft) {
     // ---- 4. a dock with a chain edge names its downstream agent; a terminal dock answers null ----
     // (+ step editor: the answer carries the NEXT dock's standing brief, so the browser's work line
     //    composes the same handoff turn the sidecar executor does — chat.js nextStageOf reads it.)
-    const hop = await chainAsk('research-agent');
+    const lineId = plan.lineOfAgent['research-agent'];
+    A.ok(!!lineId && lineId === plan.lineOfAgent['writer-agent'], 'the compiled plan puts both docks on ONE line');
+    const hop = await chainAsk('research-agent', '', lineId);
     A.eq(hop.next, 'writer-agent', 'chained dock -> the downstream agent');
     A.eq(hop.brief, 'Draft the result in press style.', 'and the RECEIVING dock\'s standing brief rides the answer');
-    A.eq(await chainOf('writer-agent'), null, 'terminal dock -> null');
-    A.eq(await chainOf('no-such-agent'), null, 'unknown agent -> null');
+    A.eq(await chainOf('writer-agent', '', lineId), null, 'terminal dock -> null');
+    A.eq(await chainOf('no-such-agent', '', lineId), null, 'unknown agent -> null');
+
+    /* ---- 6. WORK BELONGS TO A LINE: an ad-hoc turn at the SAME dock advances nothing ----
+       Andrew's ruling (2026-08-07): the conveyor should run only when its own workflow is running. A COMMS
+       directive did not come in through this line's trigger, so chat.js sends no lineId and the sidecar
+       must refuse the hop — otherwise a one-off task handed to a docked agent silently buys a run on every
+       later dock. The refusal is decided by the compiled plan, so a forged id cannot buy them either. */
+    A.eq(await chainOf('research-agent'), null, 'NO lineId (a direct COMMS order) -> terminal, no downstream stage');
+    A.eq(await chainOf('research-agent', '', 'not-a-real-line'), null, 'a lineId the plan does not know -> still terminal');
+    A.eq(await chainOf('research-agent', '', 'writer-agent'), null, 'and an agent id in the lineId slot is not a skeleton key');
+    A.eq((await chainAsk('research-agent', '', lineId)).next, 'writer-agent', 'while the line’s own trigger still runs it — the gate narrows, it never breaks the line');
 
     // ---- 5. clearing the floor makes every dock terminal again (the browser line honestly stops) ----
     const cleared = await fetch(B + '/api/routing', { method: 'POST', headers, body: JSON.stringify(null) });
     A.eq(cleared.status, 200, 'the floor clears');
-    A.eq(await chainOf('research-agent'), null, 'cleared floor -> next is null again');
+    A.eq(await chainOf('research-agent', '', lineId), null, 'cleared floor -> next is null again');
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);

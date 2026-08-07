@@ -251,6 +251,16 @@ function twoStagePlan() {
     A.eq(entry.queueId, 'research-agent', 'the entry crate queues at the routed dock');
     A.eq(entry.sample, true, 'the entry crate carries the additive sample:true marker');
     A.ok(placed.some(p => p.kind === 'chain' && p.agentId === 'writer-agent'), 'the chain hop placed its own crate at the downstream dock');
+    /* WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07): the sample IS one of the line's own triggers,
+       so its crates carry the line they were fired for — derived server-side from the compiled plan
+       (router.lineOriginFor), never taken from the request body. This is what lets the floor animate the
+       handoff for line-owned work and stay still for a direct order. */
+    const planLineId = require('../frontend/app/pipeline.js').lineOf(twoStagePlan(), 'research-agent');
+    A.ok(!!planLineId, 'the compiled floor names the line these docks belong to');
+    A.eq(entry.lineId, planLineId, 'the sample entry crate carries the line it was fired for');
+    const hopCrate = placed.find(p => p.kind === 'chain' && p.agentId === 'writer-agent');
+    A.eq(hopCrate.lineId, planLineId, 'and the handoff crate carries the SAME line end to end');
+    A.ok(Events.validate('workitem.placed', hopCrate).ok, 'the additive lineId validates against the frozen workitem.placed contract');
     const outDel = deliveredEv.find(p => p.finalQueueId === 'outbox');
     A.ok(outDel, 'the sample crate DELIVERED to the outbox');
     A.eq(outDel.sample, true, 'the delivery carries the sample:true marker too');

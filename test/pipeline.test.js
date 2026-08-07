@@ -6,6 +6,11 @@ const P = require('../frontend/app/pipeline.js');
 
 const geo = (props, belts) => ({ props, belts });
 const belt = (x, y, dir) => ({ x, y, dir });
+/* WORK BELONGS TO A LINE (2026-08-07): chainNext advances a dock ONLY for work that entered through that
+   dock's own line. `onLine(plan, agentId)` is the ctx such a run carries — the shape every trigger
+   (channel/routine/sample/INBOX crate) produces. A ctx WITHOUT lineId is a direct order and is terminal;
+   that is asserted explicitly in the dedicated block near the end of this file. */
+const onLine = (plan, aid, extra) => Object.assign({ lineId: P.lineOf(plan, aid) }, extra || {});
 
 /* ---- a complete INTAKE -> belt -> BAY floor routes + validates clean ---- */
 {
@@ -448,8 +453,52 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.eq(plan.chains.researcher.tile, { x: 5, y: 0 }, 'it ships from the hookup whose flow reaches the next dock');
   A.eq(plan.chains.writer.next, [], 'the writer is the terminal stage');
   A.eq(plan.chains.writer.outbox, true, "the writer's output ships out");
-  A.eq(P.chainNext(plan, 'researcher', {}), 'writer', 'chainNext walks the belt to the next stage');
-  A.eq(P.chainNext(plan, 'writer', {}), null, 'a terminal stage hands off to nobody (its reply IS the answer)');
+  A.eq(P.chainNext(plan, 'researcher', onLine(plan, 'researcher')), 'writer', 'chainNext walks the belt to the next stage');
+  A.eq(P.chainNext(plan, 'writer', onLine(plan, 'writer')), null, 'a terminal stage hands off to nobody (its reply IS the answer)');
+}
+
+/* ---- WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07) — line identity + the dispatch gate ----
+   "each conveyor system built has a purpose and a different workflow — the conveyor system should visually
+   run ONLY when the specific workflow is running." Two independent lines on ONE floor; each keeps its own
+   identity, and neither can advance the other. */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'a_i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'a_1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'a1' },
+     { id: 'a_2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'a2' },
+     { id: 'b_i', t: 'intake', x: 0, y: 6, w: 1, h: 1 },
+     { id: 'b_1', t: 'bay', x: 4, y: 6, w: 1, h: 1, agentId: 'b1' },
+     { id: 'b_2', t: 'bay', x: 7, y: 6, w: 1, h: 1, agentId: 'b2' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'),
+     belt(1, 6, 'E'), belt(2, 6, 'E'), belt(3, 6, 'E'), belt(5, 6, 'E'), belt(6, 6, 'E')]
+  ));
+  A.eq(plan.lines.length, 2, 'two separate belt networks compile to TWO lines');
+  const la = P.lineOf(plan, 'a1'), lb = P.lineOf(plan, 'b1');
+  A.eq(la, 'a_1', 'the line id is the lexicographically smallest member PROP id (stable in the save doc)');
+  A.ok(la !== lb, 'the two lines have different ids');
+  A.eq(P.lineOf(plan, 'a2'), la, 'every dock on a line answers that line');
+  A.eq(P.lineOf(plan, 'b2'), lb, '...for both lines');
+  A.eq(P.lineOf(plan, 'nobody'), null, 'an agent that crews no dock belongs to no line');
+  A.eq(plan.dockBays.find(d => d.propId === 'a_2').lineId, la, 'each dock entry on the plan is stamped with its line');
+  A.ok(plan.bays.every(b => b.lineId === undefined), 'the HASHED bay records are untouched — line identity rides outside the topology hash');
+  // the gate
+  A.eq(P.chainNext(plan, 'a1', { lineId: la }), 'a2', "work fed to line A's door advances line A");
+  A.eq(P.chainNext(plan, 'a1', {}), null, 'a run with NO line — a direct order — is TERMINAL, nothing downstream fires');
+  A.eq(P.chainNext(plan, 'a1', { lineId: lb }), null, "line B's trigger cannot advance a dock on line A");
+  A.eq(P.chainNext(plan, 'a1', { lineId: 'made-up' }), null, 'an unknown line id is not a key — the plan decides');
+  // work origin: only a dock the line's own door FEEDS is a line trigger
+  A.eq(P.lineOriginOf(plan, 'a1'), la, "outside work arriving at a dock the line's own door feeds IS that line running");
+  A.eq(P.lineOriginOf(plan, 'a2'), null, 'a MID-LINE stage no door feeds was triggered by nothing — no line, no downstream spend');
+  A.eq(P.lineOriginOf(plan, 'nobody'), null, 'and an agent on no dock has no origin at all');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'a1', 'resolveTarget still answers exactly what it always did');
+}
+
+/* ---- a LONE dock is terminal work by construction: no door feeds it, nothing is downstream ---- */
+{
+  const plan = P.compileRoutingPlan(geo([{ id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'solo' }], []));
+  A.eq(plan.lines.length, 0, 'a beltless dock is on no line at all');
+  A.eq(P.lineOf(plan, 'solo'), null, 'so it names none');
+  A.eq(P.lineOriginOf(plan, 'solo'), null, 'and its work is always direct');
 }
 
 /* ---- a dock NEVER eats its own output: a lane running along the dock's edge is ridden through ---- */
@@ -464,7 +513,7 @@ const belt = (x, y, dir) => ({ x, y, dir });
   ));
   A.eq(plan.bayTileToAgent['5,0'], 'alpha', 'the lane touches alpha\'s ring three times');
   A.eq(plan.chains.alpha.next, ['beta'], "alpha's handoff rides past its own ring tiles to beta");
-  A.eq(P.chainNext(plan, 'alpha', {}), 'beta', 'a dock never consumes the crate it just shipped');
+  A.eq(P.chainNext(plan, 'alpha', onLine(plan, 'alpha')), 'beta', 'a dock never consumes the crate it just shipped');
 }
 
 /* ---- CHAIN_CYCLE: A ships into B's dock, B ships into A's dock — no BELT cycle anywhere ---- */
@@ -494,8 +543,8 @@ const belt = (x, y, dir) => ({ x, y, dir });
      belt(3, 3, 'E'), belt(4, 3, 'E')]          // S lane -> writer
   ));
   A.eq(plan.chains.triage.next, ['coder', 'writer'], 'both branches are reachable from the triage dock');
-  A.eq(P.chainNext(plan, 'triage', { tag: 'code' }), 'coder', "a 'code' result takes the routed lane");
-  A.eq(P.chainNext(plan, 'triage', { tag: 'prose' }), 'writer', 'anything else takes the default lane');
+  A.eq(P.chainNext(plan, 'triage', onLine(plan, 'triage', { tag: 'code' })), 'coder', "a 'code' result takes the routed lane");
+  A.eq(P.chainNext(plan, 'triage', onLine(plan, 'triage', { tag: 'prose' })), 'writer', 'anything else takes the default lane');
 }
 
 /* ---- a SPLIT downstream of a dock round-robins: ONE output crate is ONE downstream run, never a fan-out ---- */
@@ -512,9 +561,9 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.eq(plan.chains.lead.next, ['w1', 'w2'], 'both lanes are reachable');
   let n = 0; const pick = (k, len) => (n++ % len);
   // lane 0 is 'S' (LANE_ORDER = E,S,W,N — the same fixed order resolveTarget and the engine use)
-  A.eq(P.chainNext(plan, 'lead', {}, pick), 'w2', 'first handoff takes lane 0');
-  A.eq(P.chainNext(plan, 'lead', {}, pick), 'w1', 'the next handoff spreads to lane 1');
-  A.eq(P.chainNext(plan, 'lead', {}, pick), 'w2', 'and it round-robins back — one crate, one downstream run');
+  A.eq(P.chainNext(plan, 'lead', onLine(plan, 'lead'), pick), 'w2', 'first handoff takes lane 0');
+  A.eq(P.chainNext(plan, 'lead', onLine(plan, 'lead'), pick), 'w1', 'the next handoff spreads to lane 1');
+  A.eq(P.chainNext(plan, 'lead', onLine(plan, 'lead'), pick), 'w2', 'and it round-robins back — one crate, one downstream run');
 }
 
 /* ---- a HANDOFF lane renders ENERGIZED: it carries real crates and buys real runs ---- */
@@ -542,9 +591,9 @@ const belt = (x, y, dir) => ({ x, y, dir });
      { id: 'bB', t: 'bay', x: 9, y: 9, w: 1, h: 1, agentId: 'hermit' }],
     [belt(1, 0, 'E'), belt(2, 0, 'E')]
   ));
-  A.eq(P.chainNext(plan, 'solo', {}), null, 'a dock at the end of the line hands off to nobody');
+  A.eq(P.chainNext(plan, 'solo', onLine(plan, 'solo')), null, 'a dock at the end of the line hands off to nobody');
   A.eq(plan.chains.hermit, undefined, 'a beltless dock has no chain record at all');
-  A.eq(P.chainNext(plan, 'hermit', {}), null, 'and chainNext answers null for it');
+  A.eq(P.chainNext(plan, 'hermit', onLine(plan, 'hermit')), null, 'and chainNext answers null for it');
   A.ok(P.ok(plan), 'neither is a deploy blocker');
 }
 
