@@ -2,11 +2,29 @@
 
 ## 2026-08-07 — USER-SELECTABLE TRAY START/CLOSE (`agent/tray-background`)
 
-IN PROGRESS. Extend the existing Lane 4D tray supervisor only: add durable desktop preferences for
-START MINIMIZED TO TRAY and CLOSE WINDOW TO TRAY, keep explicit tray Quit as the sole full-stop action
-when close-to-tray is enabled, and preserve the existing armed-work safety behavior when it is disabled.
-Done means the real desktop can relaunch hidden, reopen from the tray, survive an idle window close, then
-terminate its sidecar through tray Quit; the native preference round-trip and canonical fast gate are green.
+READY TO MERGE. The existing Lane 4D tray supervisor now has two independent, opt-in desktop preferences:
+START MINIMIZED TO TRAY and CLOSE WINDOW TO TRAY. Both default off, persist through a versioned native JSON
+record with exact read-back and backup recovery, and surface verified native state in Settings. Enabling
+close-to-tray keeps the one supervised shell/sidecar alive even while idle; disabling it preserves the prior
+armed-work safety decision. Browser preview stays disabled and makes no native lifecycle claim. Tray Quit
+remains the explicit drain/kill/full-exit path.
+
+The first native live pass exposed a real Tauri seam: preventing `CloseRequested` alone did not prevent the
+event loop from exiting. The final implementation pairs that window event with one atomic pending-close flag
+and prevents only its corresponding user exit request. Programmatic exits, updater exit, OS exit, and the
+short-lived second-instance reveal process are not trapped. An isolated Windows debug build under identifier
+`ai.skynet.harness.traytest` persisted `{startMinimized:true,closeToTray:true}` through real Tauri IPC; a real
+window close logged `close_to_tray=true`, hid StarNet, and left the exact shell and sidecar alive. On restart,
+Win32 top-level-title inspection saw no visible `StarNet` window; a second launch exited 0, revealed `StarNet`,
+and left the primary alive. The existing tray Open/Quit handlers were compiled and covered by the focused
+seam but were not mouse-clicked in this isolated proof. The disposable test profile and WebView data were
+moved to the Recycle Bin; the installed StarNet process/data were never touched.
+
+Verification: `npm run test:fast` is **573/573 GREEN**; desktop lifecycle preference coverage is 14 assertions,
+quitguard is 27, claims authority is 64, and native preference tests are 3/3. The isolated Tauri debug build
+completed successfully. `test:http` was not run because this slice changes no sidecar route or HTTP contract.
+No shared event/schema edit, integration-tree edit, external message, provider spend, push, PR, deploy, tag,
+installer, or publication occurred.
 
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
