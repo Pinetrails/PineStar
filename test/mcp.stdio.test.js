@@ -85,6 +85,7 @@ function writeServer(dir) {
       const mgr = makeConnectorManager({
         makeTransport: cfg => {
           A.eq(cfg.transport, 'stdio', 'manager passes the stdio transport kind to the transport factory');
+          A.eq(cfg.agentId, 'safe-agent', 'manager passes the durable Safe Cell owner to the transport factory');
           return makeStdioTransport(Object.assign({}, cfg, {
             userControlIsolated: true,
             processEnv: { PATH: process.env.PATH || '', OPENROUTER_KEY: 'ambient-secret' },
@@ -101,12 +102,14 @@ function writeServer(dir) {
         args: [server, '--token', 'synthetic-arg-secret', '--api-key=synthetic-inline-secret', 'https://local.invalid/mcp?password=synthetic-query-secret'],
         cwd: os.tmpdir(),
         env: { SECRET_TOKEN: 'explicit-secret' },
+        agentId: 'safe-agent',
         label: 'Local'
       });
       A.eq(r.ok, true, 'stdio connector configured through manager');
       A.eq(r.state, 'up', 'stdio connector reaches up state');
       const status = mgr.status('local');
       A.eq(status.transport, 'stdio', 'status records stdio transport');
+      A.eq(status.agentId, 'safe-agent', 'status names the Safe Cell agent that owns the stdio child');
       A.eq(status.url, undefined, 'stdio status does not pretend to have an HTTP URL');
       A.eq(status.env.SECRET_TOKEN, '<redacted>', 'manager summary redacts stdio env values');
       A.eq(JSON.stringify(status).indexOf('explicit-secret'), -1, 'manager summary never leaks the env secret');

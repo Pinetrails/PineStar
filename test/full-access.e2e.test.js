@@ -56,7 +56,7 @@ async function driveShell(fixture, decision) {
     body: JSON.stringify({
       key: 'sk-or-v1-full-access-fake', provider: 'openrouter', model: 'test/model',
       agentId: 'david', streamId: 'full-access-' + Date.now(), isTask: true,
-      placed: ['workbench'], messages: [{ role: 'user', content: 'FULL_ACCESS_SHELL run the command' }]
+      placed: [], messages: [{ role: 'user', content: 'FULL_ACCESS_SHELL run the command' }]
     })
   });
   A.eq(response.status, 200, 'real /api/run admitted the shell task');
@@ -97,17 +97,18 @@ async function driveShell(fixture, decision) {
     await fixture.start();
     const seeded = await fixture.json('POST', '/api/roster', {
       updatedAt: 100,
-      agents: [{ agentId: 'david', system: 'You are DAVID.', name: 'DAVID', provider: 'openrouter', model: 'test/model', approvalMode: 'ask' }]
+      agents: [{ agentId: 'david', system: 'You are DAVID.', name: 'DAVID', provider: 'openrouter', model: 'test/model', approvalMode: 'ask', executionProfile: 'trusted-project' }]
     });
     A.ok(seeded.body && seeded.body.ok === true, 'DAVID starts in ASK mode');
 
     const first = await driveShell(fixture, 'full');
     const firstDiag = JSON.stringify(first.map(e => ({ name: e.name, payload: e.payload })));
     A.eq(first.filter(e => e.name === 'permission.prompt').length, 1, 'ASK mode raises the first real shell permission card; events=' + firstDiag);
-    A.ok(first.some(e => e.name === 'agent.tool_result' && e.payload && e.payload.callId === 'shell_1' && e.payload.ok === true), 'the shell call resumes and succeeds after Full Access');
+    A.ok(first.some(e => e.name === 'agent.tool_result' && e.payload && e.payload.callId === 'shell_1' && e.payload.ok === true), 'Trusted Project projects the real shell without a placed workbench, then the call succeeds after approval');
     const rosterFile = path.join(fixture.workspace, 'agent.roster.json');
     const disk = JSON.parse(fs.readFileSync(rosterFile, 'utf8'));
     A.eq(((disk.agents || []).find(a => a.agentId === 'david') || {}).approvalMode, 'full', 'the permission-card answer durably writes DAVID approvalMode:full');
+    A.eq(((disk.agents || []).find(a => a.agentId === 'david') || {}).executionProfile, 'trusted-project', 'approval escalation does not rewrite the execution profile');
 
     const later = await driveShell(fixture);
     A.eq(later.filter(e => e.name === 'permission.prompt').length, 0, 'a later shell task emits ZERO permission prompts');

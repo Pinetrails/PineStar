@@ -6281,13 +6281,13 @@ const Chat = (() => {
     const a = activeAgent();
     if (!a) return localLine('Approval mode is not available yet.');
     const raw = String(args || '').trim().toLowerCase();
-    const was = a.approvalMode === 'full' ? 'full access' : 'ask first';
+    const was = a.approvalMode === 'full' ? 'run without prompts' : 'ask first';
     const want = raw ? /^(1|true|yes|on|full|yolo)$/i.test(raw) : a.approvalMode !== 'full';
     if (applyAgentPatch({ approvalMode: want ? 'full' : 'ask' })) {
       // State the TRANSITION, not just the resulting state. A bare /yolo TOGGLES, so the old wording
       // ("Approval mode: full access…") read like a status report when it had in fact just switched the
       // approval gate off — the one setting where mistaking a change for a readout actually matters.
-      const now = want ? 'full access' : 'ask first';
+      const now = want ? 'run without prompts' : 'ask first';
       localLine(was === now
         ? ('Approval mode unchanged: ' + now + '.')
         : ('Approval mode: ' + was + ' → ' + now + '. ' + (want

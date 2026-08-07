@@ -43,12 +43,15 @@
 <p class="doc-sub">// Printify, Etsy, Shopify, Stripe, your own internal API — the whole decision in one page</p>
 
 <h2>Which route do I need?</h2>
-<p>There are two, and the right one depends on the platform, not on you. Check in this order:</p>
+<p>There are three, and the right one depends on what the platform publishes. Check in this order:</p>
 
 <ol>
   <li><b>Does the platform publish a <i>remote</i> MCP server?</b> Then add it in
     <b>TOOLSETS &amp; CONNECTORS &rarr; MCP CONNECTORS</b>, or find it already sitting in <b>CATALOG</b>.
     You get ready-made tools, and it is the least work. Notion, Linear, Stripe, GitHub and Sentry are here.</li>
+  <li><b>Does it publish only a local stdio MCP server?</b> Put an agent on the <b>SAFE CELL</b> execution
+    profile, choose <b>STDIO (Safe Cell)</b> in MCP CONNECTORS, and enter the command and exact arguments.
+    StarNet runs it inside that agent's persistent Docker environment, never as an interactive host child.</li>
   <li><b>Otherwise it has a plain REST API.</b> Paste its key in <b>KEYS</b> and your agent calls the API
     directly with <code>web_request</code>. This is the route for most of the long tail — including every
     print-on-demand and marketplace service we checked.</li>
@@ -56,8 +59,8 @@
 
 <div class="callout">Print-on-demand and marketplace platforms are route 2 today. As of July 2026 there is no
 remote MCP server for Printify, Printful, Etsy or WooCommerce — the only Printify MCP that exists is a
-<i>local</i> <code>npx</code> server, and StarNet will not spawn unsandboxed child processes on your machine.
-Route 2 works for all of them.</div>
+<i>local</i> <code>npx</code> server. StarNet can run that server in a Safe Cell; the REST-key route remains
+the lighter option when you do not want to maintain a container command.</div>
 
 <h2>Route 1 — a remote MCP server</h2>
 <p>Open <b>TOOLSETS &amp; CONNECTORS</b> (dock: <b>&#8644; TOOLSETS</b>).</p>
@@ -67,10 +70,10 @@ Route 2 works for all of them.</div>
   <li><b>MCP CONNECTORS</b> — for anything not in the catalog. Give it a short id, paste the server's
     <b>Streamable-HTTP endpoint</b> (usually ending <code>/mcp</code>), and a bearer token if it needs one.</li>
 </ul>
-<p>The connector must be a <b>remote http(s)</b> server. A local <code>stdio</code> command
-(<code>npx …</code>, <code>uvx …</code>) cannot run here — StarNet refuses to spawn unsandboxed child
-processes on your machine, and the panel says so rather than offering a form that would never connect.
-If a service only ships a local server, use route 2.</p>
+<p>A local <code>stdio</code> command (<code>npx …</code>, <code>uvx …</code>) requires a named agent on the
+<b>SAFE CELL</b> profile and a working Docker runtime. Its command uses exact argv with no shell. If Docker is
+unavailable, the connector stays honestly disconnected; StarNet never falls back to spawning it on the
+interactive host.</p>
 
 <h2>Route 2 — an API key + <code>web_request</code></h2>
 
@@ -134,8 +137,8 @@ cannot spend any key you have not ticked.</p>
       <td>The key reached the platform and the platform rejected it — wrong key, wrong scope, or the wrong
           header name. Check the platform's docs for the header it expects.</td></tr>
   <tr><td>A connector sits red on &ldquo;stdio&rdquo;</td>
-      <td>Local <code>stdio</code> servers cannot run here. Remove it and use route 1 with a remote URL, or
-          route 2 with a key.</td></tr>
+      <td>The selected owner is no longer on <b>SAFE CELL</b>, Docker is unavailable, or the command failed
+          inside the container. Restore that profile/runtime and reload; StarNet will not run it on the host.</td></tr>
   <tr><td>&ldquo;refusing private/loopback/intranet host&rdquo;</td>
       <td>Working as intended: agents cannot reach your local network or cloud metadata endpoints.</td></tr>
   <tr><td>&ldquo;the page did not finish loading within 30s&rdquo; (browser)</td>
@@ -152,7 +155,7 @@ cannot spend any key you have not ticked.</p>
 <ul>
   <li>Show your key to the model, write it to a file, or send it anywhere except the platform you named.</li>
   <li>Forward your credential across a redirect to a different host.</li>
-  <li>Spawn a local MCP child process on your machine.</li>
+  <li>Spawn a local MCP child directly in your interactive host session; stdio is Safe-Cell-only.</li>
   <li>Spend a key in an unattended run you did not explicitly approve for that.</li>
 </ul>
 

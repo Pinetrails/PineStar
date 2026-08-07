@@ -355,6 +355,7 @@ test/pathtrust.test.js
 test/nightfocus.test.js
 test/nightpatch.test.js
 test/projectscan.test.js
+test/project-discovery.test.js
 test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js
@@ -541,6 +542,8 @@ test/widgetfeed.test.js
 test/terminal-resize.test.js
 test/terminal-position.test.js
 test/poweruser-shell-repairs.test.js
+test/terminal-sessions.test.js
+test/terminal-tools.test.js
 test/release-bump.test.js
 test/release-cut.test.js
 test/opensource-readiness.test.js
@@ -564,3 +567,7 @@ test/station-tools.test.js
 test/code-mode.test.js
 test/station-recovery.test.js
 test/station-recovery-cli.test.js
+test/execution-profiles.test.js
+test/execution-settings.test.js
+test/execution-router.test.js
+test/execution-profiles-ui.test.js

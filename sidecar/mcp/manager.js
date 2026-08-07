@@ -6,7 +6,7 @@
    with fakes and stays free of ambient time/randomness (clock injected).
 
    makeConnectorManager({ makeTransport, makeClient?, makeToolDef?, clock?, timeoutMs?, onEvent? }) -> {
-     configure(id, { transport?, url?, token?, command?, args?, cwd?, env?, label?, enabled? }) -> Promise<{ ok, state, toolCount, error? }>,
+     configure(id, { transport?, url?, token?, command?, args?, cwd?, env?, agentId?, label?, enabled? }) -> Promise<{ ok, state, toolCount, error? }>,
      remove(id) -> Promise, refresh(id) -> Promise<...>, close() -> Promise,
      status(id) -> summary | null, list() -> summary[],            // summaries NEVER include the token
      has(id), ids(),
@@ -202,6 +202,7 @@
           args: c.args,
           cwd: c.cwd,
           env: c.env,
+          agentId: c.agentId,
           timeoutMs: connTimeout,
           // DEATH HOOK: the transport reports child-exit / repeated failure here. Bound to THIS epoch so a stale
           // callback from a torn-down transport can't flip a reconnected connector back to error.
@@ -287,6 +288,9 @@
         args: normalizeArgs(cfg, prev),
         cwd: String(cfg.cwd || (prev && prev.cwd) || ''),
         env: normalizeEnv(cfg, prev),
+        // Stdio servers execute in one named agent's isolated environment. The binding is durable and
+        // public (not a secret), so status can explain exactly whose Safe Cell owns the child.
+        agentId: String(cfg.agentId || (prev && prev.agentId) || ''),
         headers: normalizeHeaders(cfg, prev),
         timeoutMs: normalizeTimeout(cfg, prev),
         label: String(cfg.label || (prev && prev.label) || id),
@@ -340,6 +344,7 @@
       if (c.transportKind === 'stdio') {
         out.command = c.command;
         out.args = redactArgs(c.args);
+        out.agentId = c.agentId;
         // A full cwd leaks usernames and the location/name of another workspace. The panel only needs to know
         // whether a custom working directory exists; the raw path remains server-side for process launch.
         out.hasCwd = !!c.cwd;

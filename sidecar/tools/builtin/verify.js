@@ -52,11 +52,14 @@
       run: function (args, ctx) {
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
+        const environmentBackendId = environment
+          ? (typeof environment.backendIdFor === 'function' ? environment.backendIdFor(aid) : environment.backendId)
+          : null;
         let cwd = environment ? environment.getCwd(aid) : P.join(ROOT, aid);
-        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid), root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' });
+        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid), root: ROOT, isWin: isWin, allowExternal: environmentBackendId === 'local' });
         // Local execution may be inside a nested project after shell.cd. Inspect the
         // exact directory that will execute; only mapped backends need the host root.
-        const hostCwd = environment && environment.backendId !== 'local' && typeof environment.workspaceRoot === 'function'
+        const hostCwd = environment && environmentBackendId !== 'local' && typeof environment.workspaceRoot === 'function'
           ? environment.workspaceRoot(aid) : cwd;
         let cmd = String((args && args.cmd) || '').trim();
         if (!cmd) {
@@ -66,7 +69,7 @@
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
         const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P,
-          dialect: environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix'), isWin: isWin });
+          dialect: environment && environmentBackendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix'), isWin: isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this check ' + safetyDeny.reason + '. verify.run cannot change the user\'s screen, session, processes, input, or network exposure; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         const checkpoint = typeof ctx.checkpointMutation === 'function'

@@ -77,7 +77,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const off = await j('GET', '/api/lifecycle/armed');
     A.eq(off.status, 200, 'GET /api/lifecycle/armed -> 200');
     A.eq(off.body.armed, false, 'fresh boot: armed:false (nothing requires a background process)');
-    A.ok(off.body.categories && off.body.categories.routines && off.body.categories.channels && off.body.categories.nightshift, 'all three categories present in the snapshot');
+    A.ok(off.body.categories && off.body.categories.routines && off.body.categories.channels && off.body.categories.nightshift && off.body.categories.terminals, 'all background-work categories present in the snapshot');
+    A.eq(off.body.categories.terminals, { armed: false, count: 0 }, 'fresh boot reports no attached terminal work');
     A.eq(off.body.categories.routines.armed, false, 'routines not armed on a fresh boot');
     A.eq(off.body.categories.channels.armed, false, 'no channel connected on a fresh boot');
     A.eq(off.body.categories.nightshift.armed, false, 'night shift not armed on a fresh boot');
@@ -109,6 +110,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     // count a frozen shift as armed work. (The same POST also durably halts cron — asserted in the next phase.)
     const halt = await j('POST', '/api/halt', {});
     A.eq(halt.status, 200, 'POST /api/halt (E-STOP) -> 200');
+    A.eq(halt.body.terminalStops, 0, 'E-STOP reports the exact number of attached terminal trees it asked to stop');
     A.eq(halt.body.cronHaltPersisted, true, 'E-STOP proves the routine halt reached durable storage');
     A.eq(halt.body.loopsHaltPersisted, true, 'E-STOP proves the loops halt reached durable storage');
     const nsHalted = await j('GET', '/api/lifecycle/armed');

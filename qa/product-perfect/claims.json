@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "41af893454accceaa029afa1912921c58e5ab143",
+    "sourceCommit": "1230e8bebbae1d3897d6a4d846d7fc9c9d9b7425",
     "pathSetSha256": "1dbea34b120662d77bb0e3ed28e0428655952023ac3ef2d929da5f8b60558068",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 319656,
-        "sha256": "6837495f66d38df6b5f31d669f3efcfd0d2258e8632223ed479f24162243602b"
+        "bytes": 323226,
+        "sha256": "2ff0995cee461c1ca816683e2efc8106e4c17050b8395a939c1990000483afbe"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 562778,
-        "sha256": "94a544963c0e135417b9573b1ab0e82547f3dee9c0a26058497c0f609660fa79"
+        "bytes": 562794,
+        "sha256": "876e68d1c176b77bcb0acc255f92946ca070d579568d30210d8f25a0508a1aa1"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -718,8 +718,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 489276,
-        "sha256": "8d8832e9eb6e7c6964a3318cb8dae49e13893461dc11edc7b24e6ed73eafe4a8"
+        "bytes": 505778,
+        "sha256": "fedd0969fff096ee70aa182e50e1b664420ca210db4457710f9cc9c54e1c5666"
       },
       {
         "path": "frontend/app/study.js",
@@ -853,8 +853,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 97198,
-        "sha256": "603ee33ca1b66386c1c65213cb4aca58f7860c5d7f93f01a69801c1b45a1058b"
+        "bytes": 98543,
+        "sha256": "20d5594bf46b333bb45a965fda6f89a5204f493254738e692489e800c7c12775"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -948,8 +948,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 306295,
-        "sha256": "a875be74c0b88740a016ce81e875b438dd0d738a180471f96fd215c187a9a011"
+        "bytes": 308008,
+        "sha256": "77075ed6cf6ed5d3a8af39b7ea90c2acac9e7d0c24c07c490519faba0defb8db"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -1018,8 +1018,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 72284,
-        "sha256": "ba5ea009c6bd03c0ba9a0f87572701617ae634c3168d33e9242a781f8025554f"
+        "bytes": 72357,
+        "sha256": "e6d747e96b0507b48fa27245fafdfa73d5a3e1af5a27ab102dbf2b6f7b27e5e2"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -1948,7 +1948,7 @@
     {
       "id": "manual-mcp-connect",
       "domain": "integrations",
-      "claim": "Users can connect remote HTTP MCP servers and discover their tools. Local stdio servers are refused on the desktop host, and the panel says so instead of offering a form that cannot work.",
+      "claim": "Users can connect remote HTTP MCP servers or run local stdio MCP servers inside a named agent's isolated Safe Cell, then discover their tools. Stdio never falls back to an interactive host child.",
       "surfaceLocators": [
         {
           "path": "frontend/app/windows/connectors.js",
@@ -1956,7 +1956,7 @@
         },
         {
           "path": "frontend/app/windows/connectors.js",
-          "needle": "Local <code>stdio</code> MCP servers can’t run here."
+          "needle": "persistent Safe Cell"
         }
       ],
       "authorityChecks": [
@@ -1979,7 +1979,7 @@
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W6",
-      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence. 2026-07-24: the previous wording claimed local stdio connectivity, which the shipped app never had — the installed desktop pins STARNET_MCP_STDIO=0 and makeStdioTransport requires a broker-proven isolated cell that no production path sets, so the stdio form was withdrawn in favour of an in-panel explanation.",
+      "qualification": "Remote HTTP remains the broadest connector route. Local stdio requires an existing SAFE CELL agent plus a working Docker runtime; the installed desktop still pins host stdio off, and the only production opt-in is the exact Docker broker path.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [

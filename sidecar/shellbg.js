@@ -108,7 +108,23 @@
       let child;
       // detached on POSIX so the child leads its own group (clean tree-kill); windowsHide everywhere. unref so a
       // live bg child never keeps the sidecar process alive on its own.
-      try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin, env: o.env }); }
+      try {
+        /* Environment backends may own the shell boundary themselves (Docker uses `docker exec`, for
+           example). Accept an argv-form child without changing the long-standing local shell path. Exact
+           argv keeps the backend command out of a host shell and therefore avoids a second quoting/parser
+           boundary around agent-authored text. */
+        if (o.file && Array.isArray(o.args)) {
+          child = spawn(String(o.file), o.args.map(String), Object.assign({}, o.spawnOptions || {}, {
+            cwd: o.cwd,
+            shell: false,
+            windowsHide: true,
+            detached: !isWin,
+            env: o.env
+          }));
+        } else {
+          child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin, env: o.env });
+        }
+      }
       catch (e) { return { ok: false, error: 'could not start: ' + ((e && e.message) || e) }; }
       try { if (typeof child.unref === 'function') child.unref(); } catch (_) {}
       // record a REDACTED command to the on-disk ledger — a backgrounded command can carry a secret on its argv

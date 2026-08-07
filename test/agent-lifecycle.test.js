@@ -51,8 +51,10 @@ const { makeAgentLifecycle } = require('../sidecar/agent-lifecycle.js');
     'run admission rejects work while deletion is reserved');
   A.ok(/checkpointMutation:\s*async[\s\S]{0,1800}checkpointStore\.snapshot\(agentId,[\s\S]{0,500}workTree: workTree/.test(source),
     'run context snapshots the resolved mutation root instead of assuming the agent jail');
-  A.ok(/preciseCheckpoint[\s\S]{0,350}!preciseCheckpoint/.test(source),
+  A.ok(/preciseCheckpoint[\s\S]{0,900}environmentCheckpoints && mutatesWorkspace[\s\S]{0,200}!preciseCheckpoint/.test(source),
     'generic checkpoint hook defers fs, shell.exec, and verify.run to their precise-root boundary');
+  A.ok(/checkpointMutation:\s*async[\s\S]{0,500}supports\.checkpoints === false\) return null/.test(source),
+    'precise checkpoint hook honors the selected backend capability instead of snapshotting an unrelated local tree');
 
   const rewind = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'rewind.js'), 'utf8');
   A.ok(/s\.workTree[\s\S]{0,260}PROJECT ROOT/.test(rewind),

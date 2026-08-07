@@ -177,6 +177,7 @@ const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
 const nightfocus = require('./nightfocus.js');            // NS-5b: pure single-priority FOCUS resolver (evidence-ranked, steer-aware)
 const { makeProjectScan } = require('./projectscan.js');  // NS-5b: bounded harness-side PROJECT SNAPSHOT scan (consumes NS-5 blessed roots)
+const { makeProjectDiscovery } = require('./project-discovery.js'); // bounded candidate scan; never grants access
 const nightpatch = require('./nightpatch.js');            // NS-5b: pure patch-apply target resolver (never touches an un-blessed root / main)
 const Autopilot = require('../frontend/app/autopilot.js'); // NS-1: the pure, node-exportable anti-slop ACT pipeline (reused, not rewritten)
 const Autonomy = require('../frontend/app/autonomy.js');   // NS-1: the pure posture engine (summary/normalize) — the SERVER reads the same shape the dial writes
@@ -244,10 +245,15 @@ const Recipes = require('../frontend/app/recipes.js');     // built-in mission r
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability: shell.exec (+ the shared spawn primitive the LOOP host-check reuses verbatim)
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
+const { makeTerminalSessions } = require('./terminal-sessions.js');
+const { makeTerminalTools } = require('./tools/builtin/terminal.js');
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
 const { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, makeRunAuthority, runInputContext, impactOfTool, normalizeUnattendedGrants, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
-const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
+const { makeEnvironmentManager, sanitizeChildEnv } = require('./environment.js');     // execution backend boundary (reference-harness-style)
+const { makeExecutionRouter } = require('./execution-router.js');                     // per-agent profile -> real backend routing
+const executionProfiles = require('./execution-profiles.js');       // per-agent runtime/scope envelope; approval + desktop lease stay separate
+const executionSettingsMod = require('./execution-settings.js');    // owner policy: idle cells + nonsecret per-agent SSH destinations
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeLspManager } = require('./lsp-manager.js');             // lazy installed-language-server edit diagnostics
@@ -1118,13 +1124,18 @@ function replaceAgentRoster(list) {
     const id = a && String(a.agentId || '');
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
     if (a && typeof a === 'object') agentRosterRaw.set(id, a);   // stash the raw record so unknown fields survive re-save
+    const approvalMode = ((a && a.approvalMode) === 'full') ? 'full' : 'ask';
     agentRoster.set(id, {
       system: String((a && a.system) || ''),
       name: String((a && a.name) || id).slice(0, 40),
       model: (a && a.model) ? String(a.model) : null,
       provider: normalizeProviderId((a && a.provider) || ''),
       role: String((a && a.role) || '').slice(0, 120),
-      approvalMode: ((a && a.approvalMode) === 'full') ? 'full' : 'ask',   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
+      approvalMode: approvalMode,   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
+      executionProfile: executionProfiles.normalizeId(a && a.executionProfile, {
+        approvalMode,
+        backendId: process.env.STARNET_EXEC_BACKEND || process.env.SKYNET_EXEC_BACKEND || 'local'
+      }),
       // Class Loadouts S1 (additive): the agent's class SKILL PACKAGE + applied reasoning effort. Old rosters
       // without these load unchanged (skills -> [], reasoningEffort -> null). skills are slugs, deduped + capped.
       skills: Array.isArray(a && a.skills) ? [...new Set(a.skills.map(s => String(s || '').trim()).filter(Boolean))].slice(0, 40) : [],
@@ -1151,7 +1162,7 @@ function loadAgentRoster() {
 // P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
 // key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
 // re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
-const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort', 'track'];
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'executionProfile', 'skills', 'reasoningEffort', 'track'];
 // saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
 // (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
 // stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
@@ -1161,7 +1172,7 @@ function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => {
-      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', executionProfile: executionProfiles.normalizeId(a.executionProfile, { approvalMode: a.approvalMode, backendId: executionEnvironment && executionEnvironment.backendId }), skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: per-agent package + execution envelope persist beside approval posture.
       // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
       // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
       const rawRec = agentRosterRaw.get(agentId);
@@ -1190,7 +1201,7 @@ function persistAgentFullAccess(agentId) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return false;
   const had = agentRoster.has(id);
   const previous = agentRoster.get(id);
-  const base = previous || { system: '', name: id, model: null, provider: null, role: '', approvalMode: 'ask', skills: [], reasoningEffort: null, track: '' };
+  const base = previous || { system: '', name: id, model: null, provider: null, role: '', approvalMode: 'ask', executionProfile: 'station-gear', skills: [], reasoningEffort: null, track: '' };
   agentRoster.set(id, Object.assign({}, base, { approvalMode: 'full' }));
   if (saveAgentRoster()) return true;
   if (had) agentRoster.set(id, previous); else agentRoster.delete(id);
@@ -2446,6 +2457,22 @@ const projectScan = makeProjectScan({
   }),
   fsp, pathMod: path, isBlessed: isBlessedRoot
 });
+// Candidate discovery is an explicit Projects-rail action and is strictly read-only. These conventional
+// shelves are directory-name/marker scanned with hard ceilings; a result does not become authority until
+// the Commander selects it and the existing /api/projects/bless route durably records path:<real-root>.
+const projectDiscoveryRoots = (() => {
+  const configured = String(process.env.STARNET_PROJECT_DISCOVERY_ROOTS || '').split(path.delimiter).map(x => x.trim()).filter(Boolean);
+  const home = os.homedir();
+  return configured.concat([
+    path.join(home, 'Desktop'), path.join(home, 'Documents'),
+    path.join(home, 'Projects'), path.join(home, 'projects'),
+    path.join(home, 'Code'), path.join(home, 'code'),
+    path.join(home, 'source'), path.join(home, 'repos'), path.join(home, 'src')
+  ]);
+})();
+const projectDiscovery = makeProjectDiscovery({
+  fsp, pathMod: path, roots: () => projectDiscoveryRoots, isBlessed: isBlessedRoot
+});
 // The blessed project's OWN house rules (AGENTS.md / CLAUDE.md / .cursorrules). Same trust gate as the folder
 // line below it: nothing is read for a root that is not a standing blessed grant.
 const projectInstructions = makeProjectInstructions({ fsp, pathMod: path, redact });
@@ -3023,12 +3050,83 @@ if (require.main === module) {
   inputGuard.observe('boot').catch(() => {});
 }
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
+const EXECUTION_SETTINGS_FILE = path.join(WORKSPACES, 'execution-settings.json');
+const executionIdleDefault = Math.max(0, Math.min(1440, Number(process.env.STARNET_DOCKER_IDLE_MINUTES == null ? 60 : process.env.STARNET_DOCKER_IDLE_MINUTES) || 0));
+let executionSettings = (() => {
+  try { return executionSettingsMod.normalize(loadResilient(EXECUTION_SETTINGS_FILE, 'execution settings'), { idleCleanupMinutes: executionIdleDefault }); }
+  catch (_) { return executionSettingsMod.normalize(null, { idleCleanupMinutes: executionIdleDefault }); }
+})();
+function saveExecutionSettings(next) {
+  const normalized = executionSettingsMod.normalize(next, { idleCleanupMinutes: executionIdleDefault });
+  saveResilient(EXECUTION_SETTINGS_FILE, normalized);
+  executionSettings = normalized;
+  return executionSettings;
+}
 // serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
 // *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
 // `surface` is the RUN's surface, forwarded by the backend from the shell/verify call: an unattended run only
 // receives the keys whose unattended grant is flipped ON, the SAME rule resolveForRequest enforces on
 // web_request. Host authority — it comes from the run, never from tool args.
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) });
+const executionEnvironmentDeps = { spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env,
+  serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }),
+  idleCleanupMs: () => Number(executionSettings.idleCleanupMinutes || 0) * 60000,
+  sshConfig: (agentId) => executionSettingsMod.targetFor(executionSettings, agentId) };
+const configuredExecutionBackend = String(process.env.STARNET_EXEC_BACKEND || process.env.SKYNET_EXEC_BACKEND || 'local').trim().toLowerCase();
+if (configuredExecutionBackend !== 'local' && configuredExecutionBackend !== 'docker' && configuredExecutionBackend !== 'ssh') throw new Error('unknown execution backend "' + configuredExecutionBackend + '" (expected local, docker, or ssh)');
+const executionEnvironments = {
+  local: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'local' } })),
+  docker: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'docker' } })),
+  ssh: makeEnvironmentManager(Object.assign({}, executionEnvironmentDeps, { config: { backend: 'ssh' } }))
+};
+const executionEnvironment = makeExecutionRouter({
+  environments: executionEnvironments,
+  defaultBackendId: configuredExecutionBackend,
+  profileForAgent: (agentId) => ((agentRoster.get(String(agentId || '')) || {}).executionProfile || 'station-gear')
+});
+let executionCleanupTimer = null;
+async function sweepIdleExecutionEnvironments() {
+  const ids = [...agentRoster].filter(([, rec]) => rec && rec.executionProfile === 'safe-cell').map(([agentId]) => agentId);
+  try { return await executionEnvironment.cleanupIdle(ids, { idleMs: Number(executionSettings.idleCleanupMinutes || 0) * 60000, now: Date.now() }); }
+  catch (e) { return { ok: false, error: String((e && e.message) || e || 'idle cleanup failed') }; }
+}
+if (require.main === module) {
+  executionCleanupTimer = setInterval(() => { sweepIdleExecutionEnvironments().catch(() => {}); }, 60000);
+  try { executionCleanupTimer.unref(); } catch (_) {}
+}
+// Real terminal sessions are a distinct rail from shell.bg: node-pty supplies POSIX forkpty / Windows ConPTY,
+// while this host owns durability, cwd policy, orphan receipts and lifecycle cleanup. Native loading is caught
+// here (not at module top): an unsupported/broken binding leaves terminal.start honestly unavailable without
+// preventing every other StarNet capability from booting.
+let terminalPty = null, terminalPtyLoadError = '';
+try { terminalPty = require('node-pty'); }
+catch (e) { terminalPtyLoadError = String((e && e.message) || e || 'node-pty unavailable'); }
+const terminalMetadataStore = makeDurableJsonStore({
+  fs: fs, path: path, fileFor: () => path.join(WORKSPACES, 'terminal-sessions.json'),
+  onRecover: () => console.warn('[terminal] recovered terminal metadata from last-known-good backup'),
+  onCorrupt: (key, file, result) => console.warn('[terminal] terminal metadata is ' + result.status + ' at ' + file + ' — history is unavailable and will not be overwritten')
+});
+function stopTerminalTree(pid, handle) {
+  pid = Number(pid);
+  if (process.platform === 'win32' && pid > 0) {
+    try {
+      const killer = execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 15000 }, (err) => {
+        if (err) { try { if (handle && handle.kill) handle.kill(); } catch (_) {} }
+      });
+      try { if (killer && killer.unref) killer.unref(); } catch (_) {}
+      return;
+    } catch (_) {}
+  } else if (pid > 0) {
+    try { process.kill(-pid, 'SIGTERM'); return; } catch (_) {}
+  }
+  try { if (handle && handle.kill) handle.kill(); } catch (_) {}
+}
+const terminalSessions = makeTerminalSessions({
+  pty: terminalPty, clock: { now: () => Date.now() }, newId: () => crypto.randomUUID(),
+  load: () => terminalMetadataStore.readKey('all'), save: (value) => terminalMetadataStore.set('all', value),
+  redact: redact, ledger: procLedger, stopTree: stopTerminalTree,
+  onExit: (s) => { try { console.log('[terminal] ' + s.agentId + '/' + s.name + ' ' + s.state + (s.exitCode == null ? '' : ' exit=' + s.exitCode)); } catch (_) {} }
+});
+if (terminalPtyLoadError && require.main === module) console.warn('[terminal] PTY runtime unavailable: ' + terminalPtyLoadError);
 const cronScriptTool = makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).execTool;
 
 function cronStringList(v, max, pattern) {
@@ -3237,7 +3335,25 @@ function saveServiceKeys() {
   return r.ok;
 }
 const connectors = makeConnectorManager({
-  makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
+  makeTransport: (cfg) => {
+    if (!cfg || cfg.transport !== 'stdio') return makeHttpTransport(cfg);
+    const aid = String(cfg.agentId || '');
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('mcp stdio requires a Safe Cell agent binding');
+    const owner = agentRoster.get(aid) || {};
+    const isolated = executionEnvironment.forAgent(aid);
+    if (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(aid) !== 'docker' || !isolated.supports || isolated.supports.hostileCodeSandbox !== true || isolated.supports.stdioMcp !== true) {
+      throw new Error('mcp stdio requires agent "' + aid + '" to use the Safe Cell execution profile');
+    }
+    return makeStdioTransport(Object.assign({}, cfg, {
+      // The installed sidecar correctly pins host stdio OFF. This broker proof opts in only for the
+      // exact child below, whose process is docker exec into the selected agent's owned Safe Cell.
+      userControlIsolated: true,
+      processEnv: {},
+      spawnImpl: (command, args, spawnOptions) => executionEnvironment.spawnStdio({
+        agentId: aid, command, args, cwd: cfg.cwd || '', env: cfg.env || {}, spawnOptions
+      })
+    }));
+  },
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
   // AUTO-RECONNECT: on transport death (stdio child exit / repeated HTTP failure) the manager flips to 'error'
   // (honest status — the panel no longer shows a dead connector as 'up') and retries with bounded backoff. Real
@@ -3282,6 +3398,15 @@ async function ensureConnectorOauthToken(id) {
 }
 // configure a connector, injecting a fresh OAuth bearer for oauth connectors (kept out of the persisted config).
 async function configureConnectorCfg(cfg) {
+  if (cfg && cfg.transport === 'stdio' && cfg.enabled !== false) {
+    const aid = String(cfg.agentId || '');
+    // Preparing a persistent cell is asynchronous; the stdio transport itself remains synchronous/lazy.
+    // Swallow readiness here only so the manager can record an honest connector error ("not ready") in
+    // its public status instead of leaving a saved connector with no runtime row at all.
+    if (/^[A-Za-z0-9_-]{1,40}$/.test(aid) && executionEnvironment.backendIdFor(aid) === 'docker') {
+      try { await executionEnvironment.ensureReady(aid); } catch (_) {}
+    }
+  }
   if (cfg && cfg.oauth) {
     // Pass a tokenProvider (NOT a frozen token) so the manager fetches a FRESH bearer on every connect / auto-
     // reconnect / Reload — an oauth connector no longer dies ~1h in when the access token expires. We ALWAYS
@@ -6248,7 +6373,7 @@ const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') 
 // and the one the system prompt actively recommends over fs.edit for real edits), so leaving it out meant the
 // single most destructive tool ran with NO workspace lease and NO checkpoint snapshot — the exact combination
 // the net exists to prevent. Keep this pattern in sync with the fs writers in tools/builtin/fs.js.
-const mutatesWorkspace = (name) => /^fs\.(write|append|edit|patch)$/.test(name) || /^(shell|verify)\./.test(name);
+const mutatesWorkspace = (name) => /^fs\.(write|append|edit|patch)$/.test(name) || /^(shell|verify)\./.test(name) || /^terminal\.(start|write)$/.test(name);
 // WORKSPACE LEASE (concurrent-sessions lane): same-agent runs are now admitted concurrently; the ONE thing
 // they can't share — the workspace dir + shadow-git checkpoint repo — is guarded here instead, at the first
 // workspace-MUTATING tool call. Held from first touch until run end (checkpoint chain stays contiguous per
@@ -7206,6 +7331,57 @@ const TG_BOT_RX = {
   act: /^\/api\/channels\/telegram\/bots\/(\d+)\/(connect|disconnect)$/,
   owner: /^\/api\/channels\/telegram\/bots\/(\d+)\/owner\/(pair|revoke)$/
 };
+function sendExecutionJson(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+async function handleExecutionPolicy(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 8192)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  try {
+    saveExecutionSettings(executionSettingsMod.setIdleCleanupMinutes(executionSettings, body.idleCleanupMinutes));
+    return sendExecutionJson(res, 200, { ok: true, idleCleanupMinutes: executionSettings.idleCleanupMinutes, deletesContainers: false });
+  } catch (e) { return sendExecutionJson(res, 500, { ok: false, error: 'could not save execution policy: ' + String((e && e.message) || e) }); }
+}
+async function handleExecutionSsh(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 16384)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  if (!agentRoster.has(agentId)) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
+  try {
+    const next = executionSettingsMod.setTarget(executionSettings, agentId, body.clear ? {} : body);
+    saveExecutionSettings(next);
+    executionEnvironments.ssh.invalidateAgent(agentId);
+  } catch (e) { return sendExecutionJson(res, 400, { ok: false, saved: false, error: String((e && e.message) || e) }); }
+  const target = executionSettingsMod.targetFor(executionSettings, agentId);
+  if (!target.configured) return sendExecutionJson(res, 200, { ok: true, saved: true, ready: false, target });
+  if (body.probe === false) return sendExecutionJson(res, 200, { ok: true, saved: true, ready: false, target, environment: executionEnvironments.ssh.describe(agentId) });
+  try {
+    await executionEnvironments.ssh.ensureReady(agentId);
+    return sendExecutionJson(res, 200, { ok: true, saved: true, ready: true, target, environment: executionEnvironments.ssh.describe(agentId) });
+  } catch (e) {
+    return sendExecutionJson(res, 200, { ok: false, saved: true, ready: false, target, error: String((e && e.message) || e), environment: executionEnvironments.ssh.describe(agentId) });
+  }
+}
+async function handleExecutionSync(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 8192)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  const rec = agentRoster.get(agentId);
+  if (!rec) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
+  if (rec.executionProfile !== 'remote-ssh') return sendExecutionJson(res, 409, { ok: false, error: 'select the Remote SSH execution profile before synchronizing' });
+  try { return sendExecutionJson(res, 200, await executionEnvironment.syncWorkspace(agentId, { direction: body.direction })); }
+  catch (e) { return sendExecutionJson(res, 502, { ok: false, error: String((e && e.message) || e), environment: executionEnvironment.describeAgent(agentId) }); }
+}
+async function handleExecutionCleanup(req, res) {
+  let body; try { body = JSON.parse((await readBody(req, 8192)) || '{}'); } catch (_) { return sendExecutionJson(res, 400, { ok: false, error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  const rec = agentRoster.get(agentId);
+  if (!rec) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
+  if (rec.executionProfile !== 'safe-cell') return sendExecutionJson(res, 409, { ok: false, error: 'only a Safe Cell can be stopped by this control' });
+  try {
+    const result = await executionEnvironments.docker.cleanupAgent(agentId, { remove: false, onlyIfIdle: true });
+    return sendExecutionJson(res, result && result.ok ? 200 : 409, result || { ok: false, error: 'cell stop failed' });
+  } catch (e) { return sendExecutionJson(res, 502, { ok: false, error: String((e && e.message) || e) }); }
+}
+
 const ROUTES = [
   { m: 'POST', exact: '/api/update/prepare', h: handleUpdatePrepare },
   { m: 'POST', exact: '/api/update/cancel', h: handleUpdateCancel },
@@ -7240,6 +7416,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/permissions/bypass', h: handlePermissionsBypass },
   { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
+  { m: 'POST', exact: '/api/projects/discover', h: handleProjectDiscover }, // explicit bounded scan; returns candidates and grants nothing
   { m: 'POST', exact: '/api/projects/forget', h: handleProjectForget },   // Projects rail: hard-forget revoked metadata (never withdraws trust)
   { m: 'POST', exact: '/api/projects/pickfolder', h: handleProjectPickFolder },   // Projects rail "browse": native OS folder chooser (grants nothing)
   { m: 'POST', exact: '/api/pickpath', h: handlePickPath },   // typed recipe fill-ins: native file OR folder chooser (grants nothing)
@@ -7433,6 +7610,26 @@ const ROUTES = [
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
+  { m: 'GET', exact: '/api/execution-profiles', h: (req, res) => {
+    const backend = executionEnvironment.describe();
+    const agents = [...agentRoster].map(([agentId, rec]) => {
+      const environment = executionEnvironment.describeAgent(agentId);
+      return { agentId, environment, sshTarget: executionSettingsMod.targetFor(executionSettings, agentId), profile: executionProfiles.resolve(rec.executionProfile, {
+        approvalMode: rec.approvalMode,
+        backendId: environment.effectiveBackend,
+        physicalDesktopLease: false
+      }) };
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({
+      profiles: executionProfiles.IDS.map(id => executionProfiles.resolve(id, { backendId: executionEnvironment.backendIdForProfile(id) })),
+      backend, policy: { idleCleanupMinutes: executionSettings.idleCleanupMinutes, deletesContainers: false }, agents
+    }));
+  } },
+  { m: 'POST', exact: '/api/execution/policy', h: handleExecutionPolicy },
+  { m: 'POST', exact: '/api/execution/ssh', h: handleExecutionSsh },
+  { m: 'POST', exact: '/api/execution/sync', h: handleExecutionSync },
+  { m: 'POST', exact: '/api/execution/cleanup', h: handleExecutionCleanup },
   { m: 'GET', exact: '/api/execution', h: (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); } },
   { m: 'GET', prefix: '/api/subagents', h: handleSubagentsList },
   { m: 'POST', exact: '/api/subagents/interrupt', h: handleSubagentInterrupt },
@@ -7682,6 +7879,7 @@ function gracefulShutdown(signal) {
   try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
   try { if (typeof nightshiftTimer !== 'undefined' && nightshiftTimer) { clearInterval(nightshiftTimer); } } catch (_) {}   // NS-1: stop the night-shift ticker on shutdown
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
+  try { if (typeof terminalSessions !== 'undefined' && terminalSessions && terminalSessions.stopAll) terminalSessions.stopAll(); } catch (_) {}   // reap owned PTY/ConPTY trees
   // release any cursor confinement a reaped child leaves stuck (the PS one-shot outlives our exit; best-effort —
   // the boot-time ensureFree is the reliable cover for the force-kill path this handler can't see at all)
   try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.observe('shutdown').catch(() => {}); } catch (_) {}
@@ -8547,6 +8745,17 @@ async function handleConnectorUpsert(req, res) {
   const command = String(body.command || (transport === 'stdio' ? (prev.command || '') : '')).trim();
   if (transport === 'http' && !url) return json(400, { error: 'a server URL is required' });
   if (transport === 'stdio' && !command) return json(400, { error: 'a stdio command is required' });
+  const agentId = String(body.agentId || (transport === 'stdio' ? (prev.agentId || '') : '')).trim();
+  if (transport === 'stdio') {
+    const enabling = body.enabled !== false;
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId) || (enabling && !agentRoster.has(agentId))) {
+      return json(400, { ok: false, saved: false, connected: false, code: 'STDIO_AGENT_REQUIRED', error: 'choose an existing Safe Cell agent for this stdio server' });
+    }
+    const owner = agentRoster.get(agentId) || {};
+    if (enabling && (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(agentId) !== 'docker')) {
+      return json(409, { ok: false, saved: false, connected: false, code: 'SAFE_CELL_REQUIRED', error: 'agent "' + agentId + '" must use the Safe Cell execution profile before it can own a stdio MCP server' });
+    }
+  }
   // PL-06: scheme/URL syntax is permanent INPUT validity, not connector reachability. Validate it before
   // constructing cfg (which carries the bearer) and before saveConnectorConfigs(), so a failed Connect click
   // cannot silently persist an enabled file:// record + secret and feed it into the reconnect scheduler.
@@ -8597,6 +8806,7 @@ async function handleConnectorUpsert(req, res) {
     args: transport === 'stdio' ? args : [],
     cwd: transport === 'stdio' ? String(body.cwd || prev.cwd || '') : '',
     env: transport === 'stdio' ? env : {},
+    agentId: transport === 'stdio' ? agentId : '',
     headers: transport === 'http' ? headers : {},
     label: String(body.label || prev.label || id),
     enabled: body.enabled !== false
@@ -8646,7 +8856,10 @@ async function handleConnectorRefresh(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const id = String(body.id || '').trim();
-  let result; try { result = await connectors.refresh(id); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
+  const cfg = connectorConfigs.find(c => c && c.id === id);
+  let result;
+  try { result = cfg ? await configureConnectorCfg(cfg) : await connectors.refresh(id); }
+  catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
   json(200, Object.assign({ status: connectors.status(id) }, result));
 }
 
@@ -8935,8 +9148,8 @@ function handleCronList(req, res) {
 
 /* GET /api/lifecycle/armed — Lane 4D: the ONE aggregate the desktop tray supervisor polls to decide whether
    closing the window may keep the sidecar alive. "Armed work" = background work that genuinely needs a live
-   process after the window is gone: a cron scheduler with routines, a connected messaging channel, or an
-   armed night-shift. TRUTHFUL TELEMETRY: every field reads REAL in-memory server state (the same sources the
+   process after the window is gone: a cron scheduler with routines, a connected messaging channel, an armed
+   night-shift, or an attached terminal process. TRUTHFUL TELEMETRY: every field reads REAL in-memory server state (the same sources the
    ROUTINES / CHANNELS / night-shift panels read) — nothing is synthesized. When nothing is armed, `armed:false`
    and the tray quits the whole app on window close (no hidden daemon). Reasons are short human strings the tray
    can show verbatim ("2 routines armed", "Telegram connected"). Defensive: a failing subsystem degrades to
@@ -8961,6 +9174,13 @@ function lifecycleArmedSnapshot(now) {
     for (const d of channelRegistry.list()) { try { if (channelStatusPayload(d.id).connected) connected.push(d.id); } catch (_) {} }
     channels = { armed: connected.length > 0, connected: connected };
   } catch (_) {}
+  // TERMINALS — an attached PTY/ConPTY is real ongoing work. A prior-life metadata row is attached:false and
+  // therefore never holds the app open; only a live handle owned by this sidecar process contributes here.
+  let terminals = { armed: false, count: 0 };
+  try {
+    const count = terminalSessions.countRunning();
+    terminals = { armed: count > 0, count: count };
+  } catch (_) {}
   // NIGHT SHIFT / AUTONOMY — armed = the beat timer is live (nightshiftTimer). This subsumes the autonomy dial:
   // the timer arms only when the Commander set an unattended posture (nightshiftShouldArm reads actsUnattended),
   // so a live timer IS the provable "autonomy will act while you're away" signal. `halted` is the durable E-STOP
@@ -8973,12 +9193,13 @@ function lifecycleArmedSnapshot(now) {
   // A halted night shift is not doing work — reflect that in `armed` (truthful: don't hold the process for a
   // frozen shift). Routines/channels are independent of the NS halt.
   const nsArmedActive = nightshift.armed && !nightshift.halted;
-  const armed = routines.armed || channels.armed || nsArmedActive;
+  const armed = routines.armed || channels.armed || nsArmedActive || terminals.armed;
   const reasons = [];
   if (routines.armed) reasons.push(routines.count === 1 ? '1 routine armed' : (routines.count + ' routines armed'));
   for (const id of channels.connected) reasons.push((id.charAt(0).toUpperCase() + id.slice(1)) + ' connected');
   if (nsArmedActive) reasons.push('Night shift armed');
-  return { armed: armed, categories: { routines: routines, channels: channels, nightshift: nightshift }, reasons: reasons, ts: now };
+  if (terminals.armed) reasons.push(terminals.count === 1 ? '1 terminal running' : (terminals.count + ' terminals running'));
+  return { armed: armed, categories: { routines: routines, channels: channels, nightshift: nightshift, terminals: terminals }, reasons: reasons, ts: now };
 }
 // small wrapper so lifecycleArmedSnapshot never throws on the nightshift day-roll (state may be uninitialized
 // in edge boots); returns a benign shape rather than propagating.
@@ -11566,8 +11787,19 @@ async function runOnce(o) {
   // run, every later run/surface, and every run after restart. None of these switches mints the separate
   // physical-desktop lease above.
   const agentFullAccessNow = () => ((agentRoster.get(String(agentId || '')) || {}).approvalMode === 'full');
+  // The execution profile is snapshotted for this run's tool projection. Approval remains live and revocable
+  // through agentFullAccessNow(); the profile never mints the separate physical-desktop lease.
+  const agentExecutionProfileNow = () => {
+    const rec = agentRoster.get(String(agentId || '')) || {};
+    return executionProfiles.resolve(rec.executionProfile, {
+      approvalMode: rec.approvalMode,
+      backendId: executionEnvironment.backendIdFor(agentId),
+      physicalDesktopLease: remoteDesktopAuthorized
+    });
+  };
+  const executionProfile = agentExecutionProfileNow();
   const userControlAuthority = makeRunAuthority({
-    surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted,
+    surface, isTask, environment: executionEnvironment.forAgent(agentId), confirm: o.prompt, unattendedGrants, ownerTrusted,
     remoteDesktopAuthorized, masterBypass: FULL_ACCESS || masterBypassOn(), fullAccess: agentFullAccessNow
   });
   const prompt = o.prompt;
@@ -11866,7 +12098,9 @@ async function runOnce(o) {
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, {
     scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null,
     agentId: (o2 && o2.agentId) || agentId,
-    fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow()
+    // This Computer widens the path envelope without changing approval posture: ASK still prompts before
+    // mutations, while reads of non-protected host paths no longer need a second project-root card.
+    fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow() || executionProfile.filesystemScope === 'host-paths-except-hard-floor'
   });
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire, editDiagnostics: lspManager }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6); baseline-before-edit LSP feedback
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
@@ -11901,6 +12135,10 @@ async function runOnce(o) {
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
+  makeTerminalTools({
+    manager: terminalSessions, environment: executionEnvironment, fs: fs, pathMod: path, root: WORKSPACES,
+    platform: process.platform, envFor: () => sanitizeChildEnv(process.env)
+  }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   // Native driver registration is harmless by itself: the per-run remote-owner lease below is still required
@@ -12191,6 +12429,11 @@ async function runOnce(o) {
   if (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
   if (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
   if (ownerTrusted) station = stationWithObject(station, agentId, 'orchestrator');
+  // EXECUTION PROFILE — actual capability projection, not approval theater. Every named profile carries the
+  // file cabinet and workbench it advertises; trusted host profiles also carry every enabled connector.
+  // Toolset kill-switches, consent, taint, hardlines and the desktop lease are still enforced below.
+  for (const objectType of executionProfile.capabilityObjects) station = stationWithObject(station, agentId, objectType);
+  if (executionProfile.connectors) station = stationWithConnectors(station, agentId, connectors.ids());
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
@@ -12326,6 +12569,8 @@ async function runOnce(o) {
     checkpointMutation: async (rootCandidate, label, opts2) => {
       if (!rootCandidate) return null;
       if (!CHECKPOINTS_ENABLED && !(opts2 && opts2.always === true)) return null;
+      const selectedEnvironment = executionEnvironment.forAgent(agentId);
+      if (selectedEnvironment && selectedEnvironment.supports && selectedEnvironment.supports.checkpoints === false) return null;
       const aid = fsJail.safeAgentId(agentId || 'agent');
       const workspace = path.resolve(WORKSPACES, aid);
       const candidate = path.resolve(String(rootCandidate));
@@ -12717,8 +12962,10 @@ async function runOnce(o) {
     // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
-    const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run)$/.test(c.name);
-    if (mutatesWorkspace(c.name) && !preciseCheckpoint && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
+    const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run|terminal\.(?:start|write))$/.test(c.name);
+    const selectedEnvironment = executionEnvironment.forAgent(agentId);
+    const environmentCheckpoints = !(selectedEnvironment && selectedEnvironment.supports && selectedEnvironment.supports.checkpoints === false);
+    if (environmentCheckpoints && mutatesWorkspace(c.name) && !preciseCheckpoint && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
       try {
         const turn = execution.checkpointTurn();
         const snap = await checkpointStore.snapshot(agentId, { runId, turn, label: c.name });
@@ -13652,6 +13899,24 @@ function handleProjectsList(req, res) {
   res.end(JSON.stringify({ projects: projects }));
 }
 
+// POST /api/projects/discover — user-triggered, bounded marker scan of conventional project shelves.
+// This is intentionally a POST because the click is what authorizes the local directory-name scan. It
+// never invokes blessProjectRoot; every returned candidate remains inaccessible until a separate explicit
+// ADD reaches /api/projects/bless.
+async function handleProjectDiscover(req, res) {
+  const sendJson = (code, obj) => respondJson(res, code, obj);
+  let body = {};
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) { return sendJson(400, { ok: false, reason: 'bad json' }); }
+  try {
+    const r = await projectDiscovery.discover({
+      maxDirs: body.maxDirs, maxProjects: body.maxProjects, maxDepth: body.maxDepth
+    });
+    return sendJson(200, r);
+  } catch (e) {
+    return sendJson(500, { ok: false, reason: 'project discovery failed: ' + String((e && e.message) || e), grantsChanged: false });
+  }
+}
+
 // POST /api/projects/bless { path } — NS-5c: the ADD-A-PROJECT doorway. Blesses a user-typed/-picked folder as a
 // trusted project root through the SAME standing path-grant machinery as the conversational prompt (blessProjectRoot
 // → path:<root> + projects-store row). The CLICK is the consent: interactive-only (surface hardcoded — this route is
@@ -14428,11 +14693,13 @@ function handleHalt(req, res) {
   try { saveLoopsHalted(true); }
   catch (e) { loopsHaltPersisted = false; console.warn('[loops] halt persist failed:', (e && e.message) || e); }
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
+  let terminalStops = 0;
+  try { terminalStops = terminalSessions.stopAll(); } catch (_) {}  // E-STOP covers interactive terminal trees too
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, nightshiftHaltPersisted, cronHaltPersisted, loopsHaltPersisted }));   // honest counts + per-subsystem restart-durability receipts
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, terminalStops, nightshiftHaltPersisted, cronHaltPersisted, loopsHaltPersisted }));   // honest counts + per-subsystem restart-durability receipts
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the

@@ -185,7 +185,16 @@
       // H2.3: stdin. CONSENT-GATED unlike its bg siblings — a line sent to a shell or REPL executes like a
       // command, so it carries shell.exec's gate, not shell.bg.status's.
       { capId: 'workbench', tool: 'shell.bg.write', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
+      { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false },     // H2.2: stop a background process you started
+      // A real PTY/ConPTY rail for interactive programs. Start + input carry the same execution/consent posture
+      // as shell.exec; observation, resize, Ctrl-C and stop remain agent-owned control operations.
+      { capId: 'workbench', tool: 'terminal.start', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'terminal.status', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.read', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.write', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'terminal.resize', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.interrupt', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.stop', scope: 'write', requiresConsent: false, network: false }
     ],
     // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,
     // each of which runs its OWN real agent loop. dispatch/spawn are CONSENT-GATED (2026-07-14, closes the parked
