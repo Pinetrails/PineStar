@@ -2231,6 +2231,321 @@ fn harness_has_channel_token(channel: String) -> bool {
     is_known_channel(&channel) && read_channel_token(&channel).is_some()
 }
 
+fn path_is_within(path: &Path, root: &Path) -> bool {
+    let path = strip_verbatim(path);
+    let root = strip_verbatim(root);
+    #[cfg(windows)]
+    {
+        let path = path.to_string_lossy().to_lowercase();
+        let root = root.to_string_lossy().to_lowercase();
+        path == root || path.starts_with(&(root + "\\"))
+    }
+    #[cfg(not(windows))]
+    {
+        path == root || path.starts_with(&root)
+    }
+}
+
+fn artifact_path_hits_hard_floor(path: &Path) -> bool {
+    path.components().any(|component| {
+        let value = component.as_os_str().to_string_lossy().to_ascii_lowercase();
+        value == ".git" || value == ".env" || value.starts_with(".env.")
+    })
+}
+
+fn artifact_roots(workspaces: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![workspaces.to_path_buf()];
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from);
+    if let Some(home) = home {
+        roots.push(home);
+    }
+
+    // The workspace and home roots cover agent-owned files plus user-chosen local output
+    // folders. Standing path:<root> grants extend that set to trusted projects or drives.
+    // Read the same secret-free allowlist the sidecar owns so those deliverables can still
+    // be opened from COMMS. A missing/torn file contributes no extra roots: fail closed.
+    let allow_file = workspaces.join("permissions.allow.json");
+    if let Ok(raw) = std::fs::read_to_string(allow_file) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(rows) = value.get("allow").and_then(|row| row.as_array()) {
+                for row in rows.iter().filter_map(|row| row.as_str()) {
+                    if let Some(root) = row.strip_prefix("path:") {
+                        if !root.trim().is_empty() {
+                            roots.push(PathBuf::from(root));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    roots
+}
+
+fn resolve_artifact_path(
+    workspaces: &Path,
+    agent_id: Option<&str>,
+    raw_path: &str,
+) -> Result<PathBuf, String> {
+    let raw = raw_path.trim();
+    if raw.is_empty() || raw.contains('\0') {
+        return Err("artifact path is empty or invalid".to_string());
+    }
+    if raw.starts_with("\\\\") || raw.starts_with("//") {
+        return Err("network artifact paths are not supported".to_string());
+    }
+
+    let supplied = PathBuf::from(raw);
+    let supplied_is_absolute = supplied.is_absolute();
+    let relative_root;
+    let candidate = if supplied_is_absolute {
+        relative_root = None;
+        supplied
+    } else {
+        let agent = agent_id.unwrap_or("agent");
+        if !agent
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            || agent.is_empty()
+            || agent.len() > 40
+        {
+            return Err("invalid artifact owner".to_string());
+        }
+        let root = workspaces.join(agent);
+        relative_root = Some(root.clone());
+        root.join(supplied)
+    };
+    if artifact_path_hits_hard_floor(&candidate) {
+        return Err("protected station paths cannot be opened".to_string());
+    }
+
+    let canonical = std::fs::canonicalize(&candidate)
+        .map(|path| strip_verbatim(&path))
+        .map_err(|_| "the saved artifact no longer exists".to_string())?;
+    if artifact_path_hits_hard_floor(&canonical) {
+        return Err("protected station paths cannot be opened".to_string());
+    }
+
+    let mut allowed = false;
+    if let Some(root) = relative_root {
+        if let Ok(root) = std::fs::canonicalize(root).map(|path| strip_verbatim(&path)) {
+            allowed = path_is_within(&canonical, &root);
+        }
+    } else {
+        for root in artifact_roots(workspaces) {
+            if let Ok(root) = std::fs::canonicalize(root).map(|path| strip_verbatim(&path)) {
+                if path_is_within(&canonical, &root) {
+                    allowed = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !allowed {
+        return Err("artifact is outside the station workspace and trusted folders".to_string());
+    }
+    Ok(canonical)
+}
+
+fn safe_native_artifact_extension(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(
+        ext.as_str(),
+        "md" | "markdown"
+            | "txt"
+            | "rst"
+            | "pdf"
+            | "csv"
+            | "tsv"
+            | "json"
+            | "yaml"
+            | "yml"
+            | "doc"
+            | "docx"
+            | "xls"
+            | "xlsx"
+            | "ppt"
+            | "pptx"
+            | "odt"
+            | "ods"
+            | "odp"
+            | "rtf"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "svg"
+            | "mp3"
+            | "m4a"
+            | "ogg"
+            | "wav"
+            | "flac"
+            | "opus"
+            | "mp4"
+            | "webm"
+            | "mov"
+            | "mkv"
+            | "avi"
+    )
+}
+
+/// Open a proven, non-executable deliverable with the user's OS file association. The
+/// renderer supplies the artifact identity, not an unrestricted command: this re-resolves
+/// relative paths beneath the owning agent workspace, canonicalizes symlinks, and accepts
+/// absolute paths only beneath the user's home or a standing trusted-project root.
+#[tauri::command]
+fn starnet_open_artifact(
+    path: String,
+    agent_id: Option<String>,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let artifact = resolve_artifact_path(&state.workspaces, agent_id.as_deref(), &path)?;
+    if !artifact.is_file() {
+        return Err("that artifact is not a file".to_string());
+    }
+    if !safe_native_artifact_extension(&artifact) {
+        return Err("that file type stays in the station preview for safety".to_string());
+    }
+
+    #[cfg(windows)]
+    Command::new("rundll32.exe")
+        .arg("url.dll,FileProtocolHandler")
+        .arg(&artifact)
+        .spawn()
+        .map_err(|e| format!("Failed to open artifact: {e}"))?;
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(&artifact)
+        .spawn()
+        .map_err(|e| format!("Failed to open artifact: {e}"))?;
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("xdg-open")
+        .arg(&artifact)
+        .spawn()
+        .map_err(|e| format!("Failed to open artifact: {e}"))?;
+
+    Ok(())
+}
+
+/// Reveal a proven deliverable in Explorer/Finder (or open its containing directory on
+/// Linux). Directories are opened directly so the existing Workshop "open folder" action
+/// uses the same constrained command.
+#[tauri::command]
+fn starnet_reveal_path(
+    path: String,
+    agent_id: Option<String>,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let artifact = resolve_artifact_path(&state.workspaces, agent_id.as_deref(), &path)?;
+    let is_dir = artifact.is_dir();
+
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("explorer.exe");
+        if is_dir {
+            command.arg(&artifact);
+        } else {
+            command.arg(format!("/select,{}", artifact.display()));
+        }
+        command
+            .spawn()
+            .map_err(|e| format!("Failed to reveal artifact: {e}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        if !is_dir {
+            command.arg("-R");
+        }
+        command
+            .arg(&artifact)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal artifact: {e}"))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("xdg-open")
+        .arg(if is_dir {
+            artifact.clone()
+        } else {
+            artifact
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| "artifact has no containing folder".to_string())?
+        })
+        .spawn()
+        .map_err(|e| format!("Failed to reveal artifact: {e}"))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod artifact_open_tests {
+    use super::{resolve_artifact_path, safe_native_artifact_extension, strip_verbatim};
+    use std::path::Path;
+
+    fn temp_root() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "starnet-artifact-open-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    #[test]
+    fn resolves_only_existing_files_inside_the_owning_agent_workspace() {
+        let root = temp_root();
+        let workspaces = root.join("workspaces");
+        let owned = workspaces.join("nova").join("reports").join("handoff.md");
+        let escaped = workspaces.join("outside.md");
+        std::fs::create_dir_all(owned.parent().unwrap()).unwrap();
+        std::fs::write(&owned, b"handoff").unwrap();
+        std::fs::write(&escaped, b"outside").unwrap();
+
+        let resolved = resolve_artifact_path(&workspaces, Some("nova"), "reports/handoff.md")
+            .expect("owned deliverable resolves");
+        assert_eq!(
+            resolved,
+            strip_verbatim(&std::fs::canonicalize(&owned).unwrap())
+        );
+        assert!(resolve_artifact_path(&workspaces, Some("nova"), "../outside.md").is_err());
+        assert!(
+            resolve_artifact_path(&workspaces, Some("../../bad"), "reports/handoff.md").is_err()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn refuses_protected_and_executable_artifacts() {
+        let root = temp_root();
+        let workspaces = root.join("workspaces");
+        let protected = workspaces.join("nova").join(".env");
+        std::fs::create_dir_all(protected.parent().unwrap()).unwrap();
+        std::fs::write(&protected, b"secret").unwrap();
+
+        assert!(resolve_artifact_path(&workspaces, Some("nova"), ".env").is_err());
+        assert!(safe_native_artifact_extension(Path::new("handoff.md")));
+        assert!(!safe_native_artifact_extension(Path::new("installer.exe")));
+        assert!(!safe_native_artifact_extension(Path::new("script.ps1")));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
 /// Open an OAuth/device-auth URL in the user's default system browser.
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
@@ -2629,6 +2944,8 @@ fn main() {
             harness_clear_key,
             harness_store_channel_token,
             harness_has_channel_token,
+            starnet_open_artifact,
+            starnet_reveal_path,
             open_external_url,
             starnet_toggle_fullscreen,
             starnet_set_keep_awake,

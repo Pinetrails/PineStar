@@ -2584,3 +2584,18 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   workspace back afterward using exact `scp` argv. Sync never deletes either side, reports its real state/error,
   and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
   capability flag rather than snapshotting an unrelated local tree.
+
+# READY TO MERGE 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
+
+Commit `b5854dba` makes a saved file's name open that file through the desktop OS association instead of
+opening the jailed preview in the default browser. The folder control now reveals/selects the exact artifact
+rather than the default workspace root, and a separate copy-path action preserves the useful clipboard flow.
+Plain-browser builds truthfully label the filesystem action `copy path` and copy the resolved absolute path.
+
+The native boundary canonicalizes every requested path, confines relative paths to the owning agent workspace,
+allows absolute paths only below the workspace, user home, or a standing `path:<root>` grant, and rejects UNC,
+missing, `.env`, `.git`, executable, and script targets before shelling out. Focused frontend contracts are
+12/12 green; Rust resolver/security tests are 2/2 green; recap and website-sync suites are green; and
+`npm run test:fast` is 573/573 green. A seeded live run wrote `KaloDataCredentialHandoff.md`, rendered the saved
+row plus `copy path`, copied the exact per-agent absolute path, and produced no browser warnings/errors. The
+packaged Tauri click-through remains to be exercised on an installed desktop candidate before release.
