@@ -2878,34 +2878,71 @@ const StationBake = (() => {
        Ownership is not a draw order, it is a fact about the geometry: a skirt is the wall you see
        hanging below a footprint, so a pixel belongs to the footprint DIRECTLY ABOVE IT, and where
        two are above it, to the NEARER one. One downward scan per column settles it exactly.
-       Cheap, and it makes the group masks disjoint, so composite order stops mattering at all. */
-    let own = null;
-    if (list.length > 1) {
+       Cheap, and it makes the group masks disjoint, so composite order stops mattering at all.
+
+       ⛔⛔ OWNERSHIP IS PER FOOTPRINT, NOT PER GROUP — AND THE VEINS PASS NEEDS IT THAT WAY.
+       (2026-08-06, Andrew, with the decisive repro: "it works perfectly fine, unless u place
+       something in front of the shell, then it will glitch and destroy the texture".)
+       `skirtTops` answers ONE row per column: the row below the LOWEST silhouette pixel there. That
+       is the whole truth only while a column holds a single footprint. Put a second room SOUTH of
+       the first — "in front of" it — and both are in the same column, so the answer jumps to the
+       southern room's underside and the northern room's skirt has its courses, rivets and bricks
+       anchored somewhere below the room in front of it. Its BANDS still stamp (those come from the
+       silhouette itself), which is why the wall keeps its shape and loses its material: it goes flat
+       the instant you build in front of it, and comes back if you delete what you built.
+       So the raster is keyed per RECT, and the veins pass runs once PER FOOTPRINT with that
+       footprint's own skirt top, masked to the pixels it owns. Bands and the panel seam stay
+       per-group: a ramp is stamped from the silhouette and a seam is a vertical line, and neither
+       has anything to anchor to a column. */
+    const rects = G.allRects;
+    let own = null, tops = null;
+    {
       const idxCv = canvas(CW, CH2), ig = idxCv.getContext('2d');
       ig.imageSmoothingEnabled = false;
-      sils.forEach((sil, i) => {
-        tg.globalCompositeOperation = 'source-over';
-        tg.clearRect(0, 0, CW, CH2); tg.drawImage(sil, 0, 0);
-        tg.globalCompositeOperation = 'source-in';
-        tg.fillStyle = 'rgb(' + (i + 1) + ',0,0)'; tg.fillRect(0, 0, CW, CH2);
-        tg.globalCompositeOperation = 'source-over';
-        ig.drawImage(tmp, 0, 0);
+      ig.save();
+      ig.translate(-VX, -(VY - M));
+      rects.forEach((r, i) => {
+        const n = i + 1;   // 0 means "no footprint"; 16 bits is far past MAX rects
+        ig.fillStyle = 'rgb(' + (n & 255) + ',' + ((n >> 8) & 255) + ',0)';
+        ig.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
       });
+      // the same all-chamfers erase the silhouettes take, so ownership follows the rounded corners
+      for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(ig, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
+      ig.restore();
       let img = null;
       try { img = ig.getImageData(0, 0, CW, CH2); } catch (e) { img = null; }
       if (img) {
         const d = img.data;
-        own = new Uint8Array(CW * CH2);
+        own = new Uint16Array(CW * CH2);
         for (let x = 0; x < CW; x++) {
           let last = 0, lastY = -1e9;
           for (let y = 0; y < CH2; y++) {
             const i = ((y * CW) + x) << 2;
-            if (d[i + 3]) { last = d[i]; lastY = y; }
+            if (d[i + 3]) { last = d[i] | (d[i + 1] << 8); lastY = y; }
             else if (last && y - lastY <= skirt) own[y * CW + x] = last;
+          }
+        }
+        // ...and each footprint's own skirt top per column, in one pass over the ownership map
+        tops = rects.map(() => new Int32Array(CW).fill(-1));
+        for (let x = 0; x < CW; x++) {
+          for (let y = 0; y < CH2; y++) {
+            const n = own[y * CW + x];
+            if (n && tops[n - 1][x] < 0) tops[n - 1][x] = y;
           }
         }
       }
     }
+    // rect index -> its group's index, so a group can be masked to the union of its footprints
+    const groupOfRect = new Int32Array(rects.length).fill(-1);
+    list.forEach((grp, gi) => { for (const r of grp.rects) { const i = rects.indexOf(r); if (i >= 0) groupOfRect[i] = gi; } });
+    const maskTo = (ctx, keep) => {   // cut ctx back to the pixels `keep(rectIndex)` accepts
+      const mask = tg.createImageData(CW, CH2), md = mask.data;
+      for (let p = 0, q = 3; p < own.length; p++, q += 4) { const n = own[p]; if (n && keep(n - 1)) md[q] = 255; }
+      tg.globalCompositeOperation = 'source-over';
+      tg.clearRect(0, 0, CW, CH2); tg.putImageData(mask, 0, 0);
+      ctx.globalCompositeOperation = 'destination-in'; ctx.drawImage(tmp, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+    };
 
     list.forEach((grp, gi) => {
       const pal = hullPal(grp.z);
@@ -2921,24 +2958,37 @@ const StationBake = (() => {
       };
       for (const [dy, c] of (recipe.bands || rampBands)(pal, skirt)) stamp(dy, c);
       fg.globalCompositeOperation = 'destination-out'; fg.drawImage(sil, 0, 0);
-      if (recipe.veins || recipe.seam) {
-        fg.globalCompositeOperation = 'source-atop';
-        // world-coord keying: the canvas' top-left is world (VX, VY - M), so a recipe adding these
-        // offsets gets marks that land on the same world pixel in every chunk that shows them
-        if (recipe.veins) recipe.veins(fg, pal, CW, CH2, VX, VY - M, skirtTops(sil, CW, CH2));
-        panelSeam(fg, CW, CH2, VX, recipe.seam == null ? SHARED_SEAM : recipe.seam);
-      }
       fg.globalCompositeOperation = 'source-over';
       /* cut this group back to the pixels it actually owns. Without it the group that drew first
          kept every contested pixel — see the ownership note above. Built as a mask and applied with
-         destination-in so the band ramp and veins underneath are untouched. */
-      if (own) {
-        const mask = tg.createImageData(CW, CH2), md = mask.data;
-        const want = gi + 1;
-        for (let p = 0, q = 3; p < own.length; p++, q += 4) if (own[p] === want) md[q] = 255;
-        tg.globalCompositeOperation = 'source-over';
-        tg.clearRect(0, 0, CW, CH2); tg.putImageData(mask, 0, 0);
-        fg.globalCompositeOperation = 'destination-in'; fg.drawImage(tmp, 0, 0);
+         destination-in so the band ramp underneath is untouched. */
+      if (own) maskTo(fg, i => groupOfRect[i] === gi);
+
+      if (recipe.veins || recipe.seam) {
+        /* THE VEINS RUN PER FOOTPRINT. Each one is anchored to ITS OWN skirt top and clipped to the
+           pixels it owns, so a room standing in front of another can no longer drag its neighbour's
+           coursing down with it. Rendered to a scratch layer and folded in source-atop, because the
+           marks must land only where this group's skirt already is. */
+        const marks = canvas(CW, CH2), mg = marks.getContext('2d');
+        mg.imageSmoothingEnabled = false;
+        if (recipe.veins && own && tops) {
+          for (let i = 0; i < rects.length; i++) {
+            if (groupOfRect[i] !== gi) continue;
+            const one = canvas(CW, CH2), og = one.getContext('2d');
+            og.imageSmoothingEnabled = false;
+            // world-coord keying: the canvas' top-left is world (VX, VY - M), so a recipe adding
+            // these offsets gets marks that land on the same world pixel in every chunk showing them
+            recipe.veins(og, pal, CW, CH2, VX, VY - M, tops[i]);
+            maskTo(og, k => k === i);
+            mg.drawImage(one, 0, 0);
+          }
+        } else if (recipe.veins) {
+          // headless / no getImageData: the pre-ownership behaviour, one anchor for the whole group
+          recipe.veins(mg, pal, CW, CH2, VX, VY - M, skirtTops(sil, CW, CH2));
+        }
+        panelSeam(mg, CW, CH2, VX, recipe.seam == null ? SHARED_SEAM : recipe.seam);
+        fg.globalCompositeOperation = 'source-atop';
+        fg.drawImage(marks, 0, 0);
         fg.globalCompositeOperation = 'source-over';
       }
       b.globalCompositeOperation = 'destination-over';

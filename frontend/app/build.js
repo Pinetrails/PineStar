@@ -38,7 +38,7 @@ const Build = (() => {
   let connectFrom = null;   // connect-mode state: the armed FROM machine's propId (null = not connecting)
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, frameRetryTimer = 0, running = false, frameFailures = 0;
-  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
+  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeDirtyRectsGlobal = false, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
   let planDirty = true;   // routing-plan cache flag: set by EDITS (station.onChange / open), never by pure pans — see rebake()
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
@@ -101,11 +101,20 @@ const Build = (() => {
     updateSafetyClearance();
     unsub = station.onChange(p => {
       bakeDirty = true; planDirty = true;   // a real floor edit — the compiled plan is stale
+      /* A GLOBAL EDIT CANNOT BE INVALIDATED BY A RECTANGLE. The bake is cached in CHUNKS here, and
+         `bakeDirtyRects` re-bakes only the chunks a rect touches — right for a deck or a prop, and
+         WRONG for the shell, whose skin grouping and skirt ownership are station-wide. Drop the
+         rect list entirely (null = re-bake everything) and latch it so a later rect-scoped edit in
+         the same frame cannot re-narrow it. See the note on emit({global}) in worldmodel. */
+      // ...and clear the pan-only flag, or a global edit arriving right after a pan would be
+      // swallowed by `onlyMissingVisible` (which skips the dirty list entirely).
+      if (p && p.global) { bakeDirtyRectsGlobal = true; bakeVisibleOnly = false; }
       const rects = p && p.dirtyRects;
       bakeDirtyRects = bakeDirtyRects && rects ? bakeDirtyRects.concat(rects) : (rects || bakeDirtyRects);
+      if (bakeDirtyRectsGlobal) bakeDirtyRects = null;
       updateUndoRedo();
     });
-    bakeDirty = true; bakeDirtyRects = null; planDirty = true;
+    bakeDirty = true; bakeDirtyRects = null; bakeDirtyRectsGlobal = false; planDirty = true;
     frameFailures = 0;
     clearTimeout(frameRetryTimer); frameRetryTimer = 0;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
@@ -2510,7 +2519,7 @@ const Build = (() => {
       // ghost projection (Phase 3): same plan, same components, same frame rebase as everything above
       if (ghost) ghost.setContext({ plan: valPlan, comps: valComps, offset: (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 } });
     }
-    bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
+    bakeDirty = false; bakeDirtyRects = null; bakeDirtyRectsGlobal = false; bakeVisibleOnly = false;
   }
 
   // A browser animation callback has no supervisor: if one draw dependency throws, the callback exits before
@@ -2539,7 +2548,7 @@ const Build = (() => {
     // report only every tenth attempt instead of flooding the desktop console at 60fps.
     if (frameFailures <= 5 || frameFailures % 10 === 0) console.error('[refit] render failed; retrying', err);
     cache = null; cacheGeo = null;
-    bakeDirty = true; bakeDirtyRects = null; bakeVisibleOnly = false; planDirty = true;
+    bakeDirty = true; bakeDirtyRects = null; bakeDirtyRectsGlobal = false; bakeVisibleOnly = false; planDirty = true;
     // A first desktop layout pass can change the backing size between open() and the first paint. Re-measure and
     // frame the canonical bounds during recovery so a stale 0/small viewport cannot leave the station offscreen.
     try { resize(); fitCamera(); } catch (_) {}

@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 213625,
-        "sha256": "c819f47a20a12bdabc1ef4a0dadd1442316d1c66ca5bfc2a51f88323c255dfd5"
+        "bytes": 214552,
+        "sha256": "73cccd356f035650ffad2a598089cae926f4ccbdfe5c8f0c84e80504a265ffa5"
       },
       {
         "path": "frontend/app/channels.js",
@@ -698,8 +698,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 236461,
-        "sha256": "037bc384ee9426e5b9329c891ec73667d439604f15744ca5c8e9569e2bfe29b7"
+        "bytes": 239935,
+        "sha256": "faa2e3e1604d72a7c27c65f4aa7a1312a7b5d6b495663bc870bb140e2069c756"
       },
       {
         "path": "frontend/app/stationcommands.js",
@@ -928,8 +928,8 @@
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 99263,
-        "sha256": "b7e6e5b6e2d09c0461ea970eb06e02de1b266a24ca0a3b279d96fd89b1bd7639"
+        "bytes": 100605,
+        "sha256": "b441c88409fc779602ff0490faf649e60771b1eaae560175e4d22e13881f041d"
       },
       {
         "path": "frontend/app/xp.js",
