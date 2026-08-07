@@ -1801,8 +1801,9 @@ const Chat = (() => {
   // window.open AFTER an async fetch) was a silent no-op everywhere it mattered: popup blockers kill a
   // post-async window.open, the desktop Tauri window policy kills it always, and right-click opened '#'.
   // On desktop a _blank navigation is equally dead under that policy (the same law as the delegated
-  // prose-link handler in init), so hand the URL to the OS browser; stopPropagation so that delegated
-  // handler can't open it a second time.
+  // prose-link handler in init), so hand the saved path to the OS default app. If native opening rejects
+  // the path or file type, the jailed browser preview remains a safe fallback. stopPropagation prevents
+  // the delegated prose-link handler from opening it a second time.
   function wireFileOpen(a, title, agentId) {
     a.href = fileUrl(title, agentId);
     a.target = '_blank'; a.rel = 'noopener';
@@ -1811,8 +1812,9 @@ const Chat = (() => {
       a.addEventListener('click', ev => {
         ev.preventDefault(); ev.stopPropagation();
         if (window.getSelection && String(window.getSelection())) return;   // a drag-selection release is not an open (the delegated handler's SELECTION GUARD law)
-        Promise.resolve(core.invoke('open_external_url', { url: a.href }))
-          .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file in your browser — the folder button copies its path on disk', 'warn'); });
+        Promise.resolve(core.invoke('starnet_open_artifact', { path: String(title || ''), agentId: agentId || 'agent' }))
+          .catch(() => Promise.resolve(core.invoke('open_external_url', { url: a.href })))
+          .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — use folder or copy path to find it on disk', 'warn'); });
       });
     }
   }
@@ -1879,9 +1881,9 @@ const Chat = (() => {
   // ── "OPEN FOLDER" AFFORDANCE (Theme 4: outputs are findable) ──────────────────────────────────
   // A deliverable landed on disk in the agent's workspace; a beginner needs to be able to FIND it.
   // The absolute per-agent dir comes from the additive /api/workspace/dir route (the frontend otherwise
-  // only knows the relative filename). On desktop we try a native reveal-in-folder command IF the shell
-  // ever exposes one (starnet_reveal_path), and ALWAYS fall back to copying the real path; in the browser
-  // there is no filesystem to open, so the button copies the path. Truthful: the button does exactly what
+  // only knows the relative filename). Desktop reveals the exact artifact through the native shell and
+  // falls back to copying that exact path if the shell refuses it. A plain browser cannot reveal a local
+  // folder, so its button says and does "copy path". Truthful: the button does exactly what
   // its label says — it never claims to open a folder it can't.
   const _wsDirCache = new Map();   // agentId -> Promise<absolute dir | ''>
   function workspaceDir(agentId) {
@@ -1896,39 +1898,66 @@ const Chat = (() => {
   function tauriCore() {
     return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
   }
-  // Build a small folder control (a themed folder glyph + a label). `relPath` (optional) is the deliverable's
-  // own path so a future native reveal can select the file; today it reveals/copies the containing workspace dir.
+  function isAbsoluteArtifactPath(p) {
+    return /^(?:[A-Za-z]:[\\/]|[\\/]{2}|\/)/.test(String(p || ''));
+  }
+  function absoluteArtifactPath(agentId, artifactPath) {
+    const raw = String(artifactPath || '');
+    if (isAbsoluteArtifactPath(raw)) return Promise.resolve(raw);
+    return workspaceDir(agentId).then(dir => {
+      if (!dir) return '';
+      const sep = dir.indexOf('\\') >= 0 ? '\\' : '/';
+      return dir.replace(/[\\/]+$/, '') + sep + raw.replace(/^[\\/]+/, '').replace(/[\\/]/g, sep);
+    });
+  }
+  function resetFeedbackLabel(btn) {
+    const lbl = btn.querySelector('.fb-label');
+    if (lbl) lbl.textContent = btn.getAttribute('data-default-label') || 'folder';
+  }
+  function copyArtifactPath(btn, agentId, artifactPath) {
+    return absoluteArtifactPath(agentId, artifactPath).then(abs => {
+      const lbl = btn.querySelector('.fb-label');
+      if (!abs) {
+        if (lbl) lbl.textContent = 'no path';
+        setTimeout(() => resetFeedbackLabel(btn), 1600);
+        return false;
+      }
+      return copyText(abs).then(ok => {
+        if (lbl) lbl.textContent = ok ? 'path copied' : abs;
+        setTimeout(() => resetFeedbackLabel(btn), 1600);
+        return ok;
+      });
+    });
+  }
+  function copyPathButton(agentId, artifactPath) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'deliverable-folder deliverable-copy-path';
+    b.setAttribute('data-default-label', 'copy path');
+    b.appendChild(document.createTextNode('⧉'));
+    const lbl = document.createElement('span'); lbl.className = 'fb-label'; lbl.textContent = 'copy path'; b.appendChild(lbl);
+    b.title = 'copy the full saved path';
+    b.addEventListener('click', () => copyArtifactPath(b, agentId, artifactPath));
+    return b;
+  }
+  // Resolve from the deliverable's own path so an authorized custom output location reveals correctly.
   function folderButton(agentId, relPath) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'deliverable-folder';
     b.appendChild(glyphSpan(SVG_FOLDER));
-    const lbl = document.createElement('span'); lbl.className = 'fb-label'; lbl.textContent = 'folder'; b.appendChild(lbl);
     const desktop = !!tauriCore();
-    b.title = desktop ? 'reveal this deliverable’s folder on disk' : 'copy the folder path on disk';
-    let dirP = null;
+    const defaultLabel = desktop ? 'folder' : 'copy path';
+    b.setAttribute('data-default-label', defaultLabel);
+    const lbl = document.createElement('span'); lbl.className = 'fb-label'; lbl.textContent = defaultLabel; b.appendChild(lbl);
+    b.title = desktop ? 'reveal this saved file in its folder' : 'copy the full saved path';
     b.addEventListener('click', () => {
-      if (!dirP) dirP = workspaceDir(agentId);
-      dirP.then(dir => {
-        if (!dir) { lbl.textContent = 'no path'; setTimeout(() => { lbl.textContent = 'folder'; }, 1400); return; }
-        const core = tauriCore();
-        if (core && core.invoke) {
-          // native reveal IF the shell exposes it; otherwise fall through to copy (never a silent no-op)
-          Promise.resolve(core.invoke('starnet_reveal_path', { path: dir })).then(() => {
-            lbl.textContent = 'opened'; setTimeout(() => { lbl.textContent = 'folder'; }, 1400);
-          }).catch(() => copyPathFeedback(b, dir));
-        } else {
-          copyPathFeedback(b, dir);
-        }
-      });
+      const core = tauriCore();
+      if (core && core.invoke) {
+        Promise.resolve(core.invoke('starnet_reveal_path', { path: String(relPath || ''), agentId: agentId || 'agent' })).then(() => {
+          lbl.textContent = 'opened'; setTimeout(() => resetFeedbackLabel(b), 1400);
+        }).catch(() => copyArtifactPath(b, agentId, relPath));
+      } else copyArtifactPath(b, agentId, relPath);
     });
     return b;
-  }
-  function copyPathFeedback(btn, dir) {
-    const lbl = btn.querySelector('.fb-label');
-    copyText(dir).then(ok => {
-      if (lbl) lbl.textContent = ok ? 'path copied' : dir;
-      setTimeout(() => { if (lbl) lbl.textContent = 'folder'; }, 1600);
-    });
   }
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
@@ -1939,7 +1968,8 @@ const Chat = (() => {
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
     r.body.appendChild(a);
-    r.body.appendChild(folderButton(agentId, title));             // Theme 4: make the file findable on disk
+    r.body.appendChild(folderButton(agentId, title));             // reveal the exact saved location
+    if (tauriCore()) r.body.appendChild(copyPathButton(agentId, title));
     autoscroll();
   }
   // an image the agent generated (image_generate / the `studio` capability) — render it INLINE as a small
@@ -2063,13 +2093,10 @@ const Chat = (() => {
     d.appendChild(link);
     if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
     if (echo) return d;   // the copy + folder buttons are already on the inline row above — one set, not two
-    // click-to-copy of the deliverable's own (relative) path — kept for quick reference.
-    const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
-    cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
-    cp.onclick = () => copyText(path).then(ok => { if (!ok) return; cp.textContent = '✓'; setTimeout(() => { cp.textContent = '⧉'; }, 1100); });
-    d.appendChild(cp);
-    // Theme 4: an "open folder" affordance that resolves the REAL absolute workspace dir on disk
-    // (desktop reveals if the shell supports it; browser copies the path) so the file is findable.
+    // Copy the authoritative absolute path, not the model-facing relative workspace path.
+    d.appendChild(copyPathButton(agentId, path));
+    // Reveal the exact artifact so a custom output path selects the right file instead of opening the
+    // default AppData workspace root.
     if (a.kind !== 'message') d.appendChild(folderButton(agentId, path));
     return d;
   }
