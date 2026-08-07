@@ -162,16 +162,26 @@ function harness(hostEnv, getKeys) {
 }
 
 // ---- E. the DOCKER backend gets the same keys, without ever putting one on the command line ----
-{
+async function dockerKeyCase() {
   const host = { PATH: 'p', OPENROUTER_API_KEY: 'BILLING-SECRET' };
   let keys = K.upsert([], { name: 'Printify', key: 'docker-secret-xyz' }, 1, { reservedEnv: RESERVED }).list;
   // runEnv RESOLVES values out of the host env (that is what preserves applyEnv's ambient-wins rule), so the
   // host must be populated first — exactly as the sidecar does on every save via applyServiceKeysEnv().
   let owned = K.applyEnv(keys, host, {}, { reservedEnv: RESERVED });
-  let captured = null;
+  const calls = [];
   const spawn = (file, a, b) => {
-    captured = { file, args: Array.isArray(a) ? a : null, opts: Array.isArray(a) ? b : a };
-    return { on() {}, kill() {}, stdout: { on() {} }, stderr: { on() {} } };
+    const EventEmitter = require('events').EventEmitter;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.kill = () => {};
+    const call = { file, args: Array.isArray(a) ? a : null, opts: Array.isArray(a) ? b : a };
+    calls.push(call);
+    setImmediate(() => {
+      let out = 'ok\n', code = 0;
+      if (call.args && call.args[0] === 'inspect') code = 1;
+      if (call.args && call.args[0] === 'exec' && call.args[call.args.length - 1].indexOf('starnet-ready') >= 0) out = 'starnet-ready';
+      child.stdout.emit('data', Buffer.from(out)); child.emit('close', code);
+    });
+    return child;
   };
   const env = makeEnvironmentManager({
     spawn, fs: require('fs'), pathMod: require('path'), root: OS.tmpdir() + '/starnet-sk-docker-test',
@@ -180,7 +190,8 @@ function harness(hostEnv, getKeys) {
   });
   A.eq(env.backendId, 'docker', 'the docker backend is under test');
 
-  env.execute({ agentId: 'a', cmd: 'echo hi' }).catch(() => {});
+  await env.execute({ agentId: 'a', cmd: 'echo hi' });
+  let captured = calls.find(c => c.args && c.args[0] === 'exec' && c.args[c.args.length - 1] === 'echo hi');
   const argv = (captured.args || []).join(' ');
   // `-e NAME` (no =value) tells docker to forward the variable from its OWN env. This is the whole point:
   // the name is safe in a `ps` listing, the value never touches argv or a temp file on disk.
@@ -193,11 +204,14 @@ function harness(hostEnv, getKeys) {
   // revoked -> gone on the very next call, and with no keys the argv gains no -e flags at all
   keys = K.setEnabled(keys, 'printify', false).list;
   owned = K.applyEnv(keys, host, owned, { reservedEnv: RESERVED });   // scrubs the var it owns, as the sidecar does
-  captured = null;
-  env.execute({ agentId: 'a', cmd: 'echo hi' }).catch(() => {});
+  await env.execute({ agentId: 'a', cmd: 'echo hi' });
+  captured = calls.filter(c => c.args && c.args[0] === 'exec' && c.args[c.args.length - 1] === 'echo hi').pop();
   A.ok((captured.args || []).join(' ').indexOf('-e PRINTIFY_API_KEY') < 0, 'disabling removes it from the next container');
 }
 
 // report() LAST — it is what calls process.exit(fail?1:0); a file ending in a bare console.log prints FAIL
 // and still exits 0. test/lint-gate-can-fail.js now enforces this across every gate step.
-A.report('servicekeys.env.test.js');
+dockerKeyCase().then(() => A.report('servicekeys.env.test.js')).catch((e) => {
+  console.log('FAIL: servicekeys docker case threw - ' + (e && e.stack || e));
+  process.exit(1);
+});

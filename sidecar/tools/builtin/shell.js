@@ -756,15 +756,17 @@
         // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
         if (args && args.background) return checkpoint.then(function () {
           if (!environment && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
-          const r = environment && typeof environment.startBackground === 'function'
+          const started = environment && typeof environment.startBackground === 'function'
             // ctx.surface (host authority, from runInputContext) rides along so the backend hands this child only
             // the service keys the Commander granted for unattended use — see servicekeys.runEnv.
             ? environment.startBackground({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin, surface: ctx.surface })
             : bg.start({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin });
+          return Promise.resolve(started).then(function (r) {
           const content = r.ok
             ? 'Started background process ' + r.bgId + ' in your workspace. It keeps running while you work — check it with shell.bg.status (id "' + r.bgId + '"), read its full log with shell.bg.read, send it input with shell.bg.write, stop it with shell.bg.kill.'
             : 'Could not start a background process: ' + r.error;
           return { content: content, summary: r.ok ? ('bg started ' + r.bgId) : 'bg refused' };
+          });
         });
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         const markerIsWin = environment && environment.backendId !== 'local' ? false : isWin;

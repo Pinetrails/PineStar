@@ -28,8 +28,7 @@ function makeFakeSpawn() {
       child
     };
     calls.push(call);
-    const next = spawn.next || { out: 'ok\n', code: 0 };
-    spawn.next = null;
+    const next = spawn.queue.length ? spawn.queue.shift() : { out: 'ok\n', code: 0 };
     setImmediate(function () {
       if (next.out) child.stdout.emit('data', Buffer.from(next.out));
       child.emit('close', next.code);
@@ -37,7 +36,8 @@ function makeFakeSpawn() {
     return child;
   }
   spawn.calls = calls;
-  spawn.setNext = function (out, code) { spawn.next = { out: out, code: code == null ? 0 : code }; };
+  spawn.queue = [];
+  spawn.setNext = function (out, code) { spawn.queue.push({ out: out, code: code == null ? 0 : code }); };
   return spawn;
 }
 
@@ -81,35 +81,96 @@ function makeFakeSpawn() {
       A.ok(!('SKYNET_API_TOKEN' in bgCalls[0].env), 'background processes receive no sidecar token');
     }
 
-    // ---- docker backend: builds a hardened run command around the same workspace ----
+    // ---- docker backend: creates and reuses one hardened per-agent environment ----
     {
       const spawn = makeFakeSpawn();
-      const env = makeEnvironmentManager({ spawn, fs, pathMod: path, root, clock, config: {
+      const bgCalls = [];
+      const bg = {
+        start: (o) => { bgCalls.push(o); return { ok: true, bgId: 'bg_docker' }; },
+        status: () => [], read: () => ({ ok: true }), write: () => ({ ok: true }), closeStdin: () => ({ ok: true }), kill: () => ({ ok: true }), killAll: () => 0
+      };
+      const env = makeEnvironmentManager({ spawn, fs, pathMod: path, root, clock, bg, config: {
         backend: 'docker',
         dockerBin: 'dockerx',
         dockerImage: 'starnet-node:test',
         dockerNetwork: 'none',
         dockerCpus: '2',
         dockerMemory: '1g',
-        dockerExtraArgs: ['--read-only']
+        dockerExtraArgs: ['--hostname', 'starnet-test']
       } });
+      spawn.setNext('missing\n', 1);       // inspect: first use has no container
+      spawn.setNext('container-id\n', 0);  // create
+      spawn.setNext('container-name\n', 0);// start
+      spawn.setNext('starnet-ready', 0);   // startup probe
+      spawn.setNext('/workspace\n', 0);    // command
       await env.execute({ agentId: 'a2', cmd: 'pwd', timeoutMs: 1000 });
-      const c = spawn.calls[0];
+      const c = spawn.calls.find(x => x.args && x.args[0] === 'create');
       A.eq(c.file, 'dockerx', 'docker backend invokes configured docker binary');
-      A.ok(c.args.indexOf('run') >= 0 && c.args.indexOf('--rm') >= 0, 'docker uses one-shot removable container');
+      A.ok(c.args.indexOf('create') >= 0 && c.args.indexOf('--rm') < 0, 'docker creates a durable named container');
+      A.ok(c.args.indexOf('--name') >= 0 && /^starnet-[a-f0-9]{8}-[a-f0-9]{8}-a2$/.test(c.args[c.args.indexOf('--name') + 1]), 'container identity is deterministic and scoped to workspace plus agent');
+      A.ok(c.args.indexOf('ai.starnet.managed=1') >= 0 && c.args.indexOf('ai.starnet.agent=a2') >= 0, 'container carries ownership labels');
       A.ok(c.args.indexOf('--cap-drop') >= 0 && c.args.indexOf('ALL') >= 0, 'docker drops capabilities');
       A.ok(c.args.indexOf('no-new-privileges') >= 0, 'docker enables no-new-privileges');
       A.ok(c.args.indexOf('--network') >= 0 && c.args[c.args.indexOf('--network') + 1] === 'none', 'docker network policy is configurable');
-      A.ok(c.args.indexOf('--read-only') >= 0, 'docker extra args pass through as JSON list only');
+      A.ok(c.args.indexOf('--hostname') >= 0 && c.args[c.args.indexOf('--hostname') + 1] === 'starnet-test', 'docker extra args pass through as a JSON list');
       A.ok(c.args.indexOf('--volume') >= 0 && /a2:\/workspace$/.test(c.args[c.args.indexOf('--volume') + 1].replace(/\\/g, '/')), 'docker bind-mounts the agent workspace');
       A.ok(c.args.indexOf('--workdir') >= 0 && c.args[c.args.indexOf('--workdir') + 1] === '/workspace', 'docker starts in container workspace');
       A.ok(c.args.indexOf('starnet-node:test') >= 0, 'docker image is configurable');
-      A.eq(c.args[c.args.length - 3], 'sh', 'docker uses POSIX shell');
-      A.eq(c.args[c.args.length - 1], 'pwd', 'docker passes the command as shell payload');
+      const exec = spawn.calls.find(x => x.args && x.args[0] === 'exec' && x.args[x.args.length - 1] === 'pwd');
+      A.ok(exec && exec.args.indexOf(c.args[c.args.indexOf('--name') + 1]) >= 0, 'command executes inside the named container');
+      A.eq(env.describe().persistence.restartReuse, true, 'descriptor truthfully advertises restart reuse');
+      A.eq(env.supports.persistentSession, true, 'backend capability advertises persistent sessions');
+      spawn.setNext('installed\n', 0);
+      await env.execute({ agentId: 'a2', cmd: 'touch /usr/local/bin/example-package', timeoutMs: 1000 });
+      spawn.setNext('found\n', 0);
+      await env.execute({ agentId: 'a2', cmd: 'test -e /usr/local/bin/example-package', timeoutMs: 1000 });
+      const taskExecs = spawn.calls.filter(x => x.args && x.args[0] === 'exec' && x.args[x.args.length - 1].indexOf('starnet-ready') < 0);
+      const taskNames = taskExecs.map(x => x.args[x.args.indexOf('--workdir') + 2]);
+      A.ok(taskNames.every(x => x === taskNames[0]), 'successive commands target the same writable container layer');
+      A.eq(spawn.calls.filter(x => x.args && x.args[0] === 'create').length, 1, 'successive commands do not recreate the container');
       env.rememberCwd('a2', '/workspace/src');
       A.eq(env.getCwd('a2'), '/workspace/src', 'docker persists container cwd');
       env.rememberCwd('a2', '/etc');
       A.eq(env.getCwd('a2'), '/workspace/src', 'docker refuses out-of-workspace cwd persistence');
+
+      // A fresh manager (sidecar restart) recovers cwd from host-owned state and reuses the labeled container.
+      const spawn2 = makeFakeSpawn();
+      const label = c.args.find(x => /^ai\.starnet\.workspace=/.test(x)).split('=')[1];
+      spawn2.setNext('true\t' + label + '\ta2\n', 0);
+      spawn2.setNext('starnet-ready', 0);
+      spawn2.setNext('still-here\n', 0);
+      const restarted = makeEnvironmentManager({ spawn: spawn2, fs, pathMod: path, root, clock, bg, config: {
+        backend: 'docker', dockerBin: 'dockerx', dockerImage: 'starnet-node:test'
+      } });
+      A.eq(restarted.getCwd('a2'), '/workspace/src', 'container cwd survives sidecar reconstruction');
+      await restarted.execute({ agentId: 'a2', cmd: 'printf still-here', timeoutMs: 1000 });
+      A.ok(!spawn2.calls.some(x => x.args && x.args[0] === 'create'), 'restart path discovers rather than recreates an owned container');
+
+      spawn.setNext('bg-ready\n', 0);
+      const bgResult = await env.startBackground({ agentId: 'a2', cmd: 'node server.js' });
+      A.eq(bgResult.bgId, 'bg_docker', 'docker background start uses the shared process manager');
+      A.eq(bgCalls[0].file, 'dockerx', 'background child uses argv-form docker exec');
+      A.eq(bgCalls[0].args[0], 'exec', 'background process executes inside the persistent container');
+
+      spawn.setNext(c.args[c.args.indexOf('--name') + 1] + '\n', 0);
+      const cleaned = await env.cleanupAgent('a2');
+      A.ok(cleaned.ok && cleaned.removed, 'explicit cleanup removes the owned persistent environment');
+      const rm = spawn.calls.filter(x => x.args && x.args[0] === 'rm').pop();
+      A.ok(rm.args.indexOf('--force') >= 0 && rm.args.indexOf(c.args[c.args.indexOf('--name') + 1]) >= 0, 'cleanup targets only the deterministic agent container');
+    }
+
+    // ---- unavailable Docker is reported as checked failure, never as a ready Safe Cell ----
+    {
+      const missing = makeEnvironmentManager({
+        spawn: () => { throw new Error('spawn docker ENOENT'); }, fs, pathMod: path, root, clock,
+        config: { backend: 'docker', dockerBin: 'missing-docker' }
+      });
+      A.eq(missing.describe().availability.state, 'unknown', 'availability is unknown before the first real probe');
+      let refused = false;
+      try { await missing.ensureReady('missing'); } catch (_) { refused = true; }
+      A.ok(refused, 'missing Docker refuses environment readiness');
+      A.eq(missing.describe().availability.state, 'unavailable', 'failed probe is exposed truthfully');
+      A.eq(missing.describe().availability.checked, true, 'descriptor distinguishes checked failure from unknown');
     }
 
     // ---- shell tool: Docker-like environments get POSIX cwd markers, never Windows %CD% markers ----
