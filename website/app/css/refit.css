@@ -82,6 +82,19 @@
 
 /* ---------- action row (ASSIGN · CANCEL · …) ---------- */
 .refit-actions { display: flex; gap: 6px; margin-top: 8px; }
+.refit-actions { flex-wrap: wrap; }
+
+/* ---------- the destructive action on a card (2026-08-07) ----------
+   Reads as the one dangerous verb in the row without being a red slab, and takes the ArmConfirm
+   two-step (never window.confirm — the station owns its own dialogs). `.armed` is the class
+   ArmConfirm stamps while the second click is pending. */
+.btn-sm.refit-danger { color: rgba(255,150,138,.9); border-color: rgba(255,92,77,.3); }
+.btn-sm.refit-danger:hover:not(:disabled) { color: #ffb0a8; border-color: var(--bad); background: rgba(255,92,77,.10); }
+.btn-sm.refit-danger.armed { color: var(--ink); background: var(--bad); border-color: var(--bad); text-shadow: none; }
+
+/* ---------- ROOM CARD: the room's own sheet (name · size · deck · the three verbs) ---------- */
+.refit-room-card .refit-guide-card { width: min(340px, 90vw); }
+.refit-room-card .step-fact { margin: 3px 0; }
 
 /* ---------- connector-portal editor state dot (a coloured ● glyph, so it themes via `color`) ---------- */
 .refit-conn-rows .conn-dot { background: none; width: auto; height: auto; border-radius: 0; color: var(--ph-dim); }
