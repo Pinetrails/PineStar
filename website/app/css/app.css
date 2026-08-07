@@ -514,14 +514,23 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
 .key-cta-act:hover { filter: brightness(1.12); }
 
 /* ---- CRT TUBE FACE: a curved-glass overlay so the feed reads as a convex tube.
-   Pure overlay (specular sweep + bowed corner vignette + edge rim) — the pixel
-   canvas underneath stays crisp; only the glass implies the bulge. Sits above the
-   canvas but UNDER .cam-hud (z3) so REC/FEED labels stay legible. Toggle off with
-   body.no-curve. True geometric barrel-warp would need a shader pass, not CSS. */
+   Pure overlay (bowed corner vignette + edge rim) — the pixel canvas underneath
+   stays crisp; only the glass implies the bulge. Sits above the canvas but UNDER
+   .cam-hud (z3) so REC/FEED labels stay legible. Toggle off with body.no-curve.
+   True geometric barrel-warp would need a shader pass, not CSS.
+
+   NO SPECULAR SWEEP (2026-08-07). There used to be a second gradient here —
+   `ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17)` — a big warm bloom pinned to
+   the upper-left of the glass. On a station-only frame it passes as a reflection;
+   over open void it is a fixed cream haze sitting in DEEP SPACE, brighter than the
+   nebulas it covers and nailed to the screen while the sky drifts under it. Andrew
+   called it out as "this prefixed light" and had it removed. The rim highlight in
+   the box-shadow below (inset 0 2px 1px) is the glass edge and STAYS — that is a
+   1-2px line on the bezel, not a light in the sky. Do not re-add a large soft
+   highlight to this overlay. */
 #stage-wrap::before {
   content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 9px;
   background:
-    radial-gradient(ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17), transparent 52%),   /* bright specular sweep across the top of the glass */
     radial-gradient(ellipse 142% 136% at 50% 48%, transparent var(--tube-clear), rgba(0,0,0,var(--tube-mid-a)) var(--tube-mid), rgba(0,0,0,var(--tube-edge-a)) 100%);  /* bowed corner vignette → convex tube; stops are crtlab dials */
   box-shadow: inset 0 0 30px rgba(0,0,0,0.6), inset 0 2px 1px rgba(255,243,220,0.11), inset 0 0 0 1px rgba(255,238,210,0.04);   /* tube rim + top edge glass highlight */
 }
@@ -3652,6 +3661,16 @@ body.crew-rail-off #screen-game.active {
 .refit-linetile-why {
   font-size: 11px; line-height: 1.3; letter-spacing: .4px; min-height: 29px;
   color: var(--ph-dim); opacity: .9;
+}
+/* DECK-FIT HONESTY: a blueprint the current floor has nowhere to put. The card stays armable
+   (never gate the sandbox) — it just stops pretending. Dimmed schematic + the reason in the
+   warn amber the rest of REFIT uses for "this won't work yet", matte: no glow, no fill. */
+.refit-linetile.nofit { border-style: dashed; opacity: .82; }
+.refit-linetile.nofit .refit-linetile-view { opacity: .5; }
+.refit-linetile-nofit {
+  width: 100%; margin-top: 1px; font-family: 'VT323', monospace;
+  font-size: 10.5px; letter-spacing: 1px; line-height: 1.3;
+  color: var(--warn); opacity: .9;
 }
 /* the operational footing sits INSIDE the shelf, directly under the cards */
 .refit-linenote {
