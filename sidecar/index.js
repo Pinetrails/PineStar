@@ -130,6 +130,7 @@ const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } =
 let Study = null; try { Study = require('../frontend/app/study.js'); } catch (_) { Study = null; }
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
 const { makeDiagnostics, proxyHostOnly } = require('./diagnostics.js');   // T3.9: pure paste-ready bug-report assembler (redacted, truthful)
+const LiveDoctor = require('./live-doctor.js');                           // opt-in bounded live proof + secret-free receipt
 const { makeStationInspectTool } = require('./tools/builtin/station-inspect.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -7410,6 +7411,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/run/steer', h: handleRunSteer },
   { m: 'GET', exact: '/api/version', h: handleVersion },
   { m: 'GET', exact: '/api/diagnostics', h: handleDiagnostics },   // T3.9 paste-ready bug report
+  { m: 'POST', exact: '/api/diagnostics/live', h: handleLiveDoctor }, // opt-in live model/execution/MCP/channel proof
   { m: 'POST', exact: '/api/halt', h: handleHalt },
   { m: 'POST', exact: '/api/consent', h: handleConsent },
   { m: 'POST', exact: '/api/consent/ack', h: handleConsentAck },   // EL-11: the browser attests the prompt is human-visible
@@ -14667,6 +14669,129 @@ function handleDiagnostics(req, res) {
     return json(500, { error: 'diagnostics failed' });
   }
   json(200, out);   // { report, text } — the app copies `text`
+}
+
+/* POST /api/diagnostics/live { confirmedLiveProbes:true, agentId? }
+
+   GET diagnostics stays inert. This route deliberately performs bounded real I/O and may spend one tiny model
+   response, so it is POST-only and refuses without a second explicit consent bit. It sends no channel messages.
+   A channel earns round-trip-proven only from an existing successful delivery receipt. */
+async function handleLiveDoctor(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 13)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  if (body.confirmedLiveProbes !== true) return json(409, { error: 'explicit live-probe consent is required', code: 'LIVE_DOCTOR_CONSENT_REQUIRED' });
+  const requested = String(body.agentId || '').trim();
+  const agentId = requested || (agentRoster.size ? String(agentRoster.keys().next().value) : '');
+  const rec = agentId ? agentRoster.get(agentId) : null;
+  if (requested && !rec) return json(404, { error: 'unknown agent' });
+  const targets = [];
+
+  // SELECTED MODEL: one tiny inference through the exact provider adapter + credential source a normal run uses.
+  const providerId = normalizeProvider((rec && rec.provider) || (runtimeKey ? 'openrouter' : (codexTokens && codexTokens.access_token ? 'codex' : 'openrouter')));
+  const model = String((rec && rec.model) || '').trim();
+  targets.push({ kind: 'provider', id: providerId, label: providerId + (model ? ' / ' + model : ''), probe: async () => {
+    const profile = getProviderProfile(providerId);
+    const baseUrl = providerRuntimeBaseUrl(providerId, '');
+    const key = providerRuntimeKey(providerId, '');
+    if (!model || !profile || !providerHasCredential(providerId, key, baseUrl)) {
+      return { state: LiveDoctor.STATES.NOT_CONFIGURED, detail: !model ? 'no model selected' : providerCredentialError(providerId) };
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000); if (timer && timer.unref) timer.unref();
+    try {
+      let provider;
+      if (providerUsesCodex(providerId)) {
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureCodexAccessToken(), baseUrl, reasoningEffort: 'none' });
+      } else if (providerUsesDeviceOAuth(providerId)) {
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureOAuthAccessToken(providerId), headers: oauthInferenceHeaders(providerId), baseUrl, reasoningEffort: 'none' });
+      } else {
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key, baseUrl, reasoningEffort: 'none' });
+      }
+      let answered = false;
+      for await (const ev of provider.stream({ model, messages: [{ role: 'user', content: 'Reply exactly OK.' }], reasoningEffort: 'none', signal: ctrl.signal })) {
+        if (ev && ((ev.type === 'text' && ev.delta) || ev.type === 'done')) answered = true;
+      }
+      return answered
+        ? { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'selected model returned a response' }
+        : { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'request accepted; no response content was observed' };
+    } catch (e) {
+      return { state: LiveDoctor.failureState(e), detail: ctrl.signal.aborted ? 'selected-model probe timed out' : ((e && e.message) || 'provider probe failed') };
+    } finally { clearTimeout(timer); }
+  } });
+
+  // EXECUTION PROFILE: the sentinel travels through the router, so Safe Cell/SSH cannot pass on local fallback.
+  const executionProfile = String((rec && rec.executionProfile) || 'station-gear');
+  targets.push({ kind: 'execution', id: executionProfile, label: executionProfile, probe: async () => {
+    if (!agentId || !rec) return { state: LiveDoctor.STATES.NOT_CONFIGURED, detail: 'no agent is configured' };
+    const backend = executionEnvironment.backendIdFor(agentId);
+    const command = (backend === 'local' && process.platform === 'win32') ? 'echo starnet-live-doctor' : 'printf starnet-live-doctor';
+    try {
+      const result = await executionEnvironment.execute({ agentId, cmd: command, timeoutMs: 12000, maxTimeoutMs: 12000, maxBytes: 4096, surface: 'interactive' });
+      const output = String((result && (result.out || result.output || result.stdout)) || '');
+      if (result && result.exitCode === 0 && output.indexOf('starnet-live-doctor') >= 0) {
+        return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'effective ' + backend + ' backend executed the sentinel' };
+      }
+      return { state: LiveDoctor.STATES.REFUSED, detail: 'effective ' + backend + ' backend did not complete the sentinel' };
+    } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'execution probe failed' }; }
+  } });
+
+  // MCP refresh performs a real initialize + capability-list round-trip with the manager's bounded timeout.
+  const connectorRows = connectors.list();
+  if (!connectorRows.length) {
+    targets.push({ kind: 'mcp', id: 'enabled-connectors', label: 'enabled connectors', probe: async () => ({ state: LiveDoctor.STATES.NOT_CONFIGURED, detail: 'no MCP servers configured' }) });
+  } else for (const c of connectorRows) {
+    targets.push({ kind: 'mcp', id: c.id, label: c.label || c.id, probe: async () => {
+      if (!c.enabled) return { state: LiveDoctor.STATES.REFUSED, detail: 'configured but disabled by operator' };
+      try {
+        const result = await connectors.refresh(c.id);
+        return result && result.ok && result.state === 'up'
+          ? { state: LiveDoctor.STATES.ROUND_TRIP, detail: c.transport + ' initialize/list completed' }
+          : { state: LiveDoctor.failureState(result && result.error), detail: (result && result.error) || 'connector did not come up' };
+      } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'connector probe failed' }; }
+    } });
+  }
+
+  // CHANNELS: Telegram has a harmless fresh getMe auth round-trip. Other adapters expose live gateway/poll
+  // status but no side-effect-free request seam, so an up adapter earns AUTHENTICATED only. Nothing is sent.
+  for (const descriptor of channelRegistry.list()) {
+    const id = descriptor.id;
+    const saved = (channelSecrets && channelSecrets[id]) || {};
+    const status = channelStatusPayload(id);
+    targets.push({ kind: 'channel', id, label: descriptor.label || id, probe: async () => {
+      if (!status.configured) return { state: LiveDoctor.STATES.NOT_CONFIGURED, detail: 'channel is not configured' };
+      if (saved.enabled === false) return { state: LiveDoctor.STATES.REFUSED, detail: 'configured but disabled by operator' };
+      if (id === 'telegram') {
+        try {
+          const token = channelToken('telegram', '', saved);
+          const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token, apiBase: TELEGRAM_API_BASE }).getMe();
+          if (!me || !me.ok) return { state: LiveDoctor.STATES.REFUSED, detail: 'Telegram rejected the configured bot credential' };
+          if (status.delivery && status.delivery.state === 'up') return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'authentication answered; prior delivery receipt is successful' };
+          return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'authentication answered; message delivery was not exercised' };
+        } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'Telegram probe failed' }; }
+      }
+      if (status.connected && status.state === 'up') return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'live adapter is up; message delivery was not exercised' };
+      return { state: LiveDoctor.failureState(status.detail || status.state), detail: status.detail || ('adapter state is ' + status.state) };
+    } });
+  }
+  for (const bot of telegramBotsStatusList()) {
+    if (!bot.configured) continue;
+    targets.push({ kind: 'channel', id: 'telegram:' + bot.botId, label: bot.username ? ('Telegram @' + bot.username) : ('Telegram bot ' + bot.botId), probe: async () => {
+      const saved = telegramBotRecords()[bot.botId] || {};
+      if (saved.enabled === false) return { state: LiveDoctor.STATES.REFUSED, detail: 'configured but disabled by operator' };
+      try {
+        const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token: String(saved.token || ''), apiBase: TELEGRAM_API_BASE }).getMe();
+        if (!me || !me.ok) return { state: LiveDoctor.STATES.REFUSED, detail: 'Telegram rejected the configured bot credential' };
+        if (bot.delivery && bot.delivery.state === 'up') return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'authentication answered; prior delivery receipt is successful' };
+        return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'authentication answered; message delivery was not exercised' };
+      } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'Telegram probe failed' }; }
+    } });
+  }
+
+  try {
+    const out = await LiveDoctor.runLiveDoctor({ confirmed: true, agentId, targets });
+    out.report.build = computeVersionSurface();
+    return json(200, out);
+  } catch (e) { return json(500, { error: 'live doctor failed', detail: redact((e && e.message) || e) }); }
 }
 
 // POST /api/halt — the E-STOP. Abort EVERY in-flight run so one click stops all spend immediately: the browser

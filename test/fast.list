@@ -11,6 +11,8 @@ test/diagnostics.test.js
 test/diagnostics-support-email.test.js
 test/diagnostics-build.test.js
 test/diagnostics-dead-engine.test.js
+test/live-doctor.test.js
+test/live-doctor-ui.test.js
 test/outbound-failure-diagnosability.test.js
 test/reflect.test.js
 test/memcore.test.js
