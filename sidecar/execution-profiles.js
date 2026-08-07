@@ -83,7 +83,7 @@ function resolve(value, runtime) {
     effectiveBackend,
     backendMatched: requestedBackend === effectiveBackend,
     approvalMode,
-    approvalLabel: approvalMode === 'full' ? 'RUN WITHOUT PROMPTS' : 'ASK BEFORE RISKY ACTIONS',
+    approvalLabel: approvalMode === 'full' ? 'FULL ACCESS' : 'ASK BEFORE RISKY ACTIONS',
     physicalDesktopGranted: runtime.physicalDesktopLease === true
   });
 }

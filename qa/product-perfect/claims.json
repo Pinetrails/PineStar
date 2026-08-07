@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "e077389ff3e6b6195ea0ccd32c755dae6eebbeec",
+    "sourceCommit": "47f09e56b36473688bcc8c0e1bc49325aae003be",
     "pathSetSha256": "1dbea34b120662d77bb0e3ed28e0428655952023ac3ef2d929da5f8b60558068",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 323226,
-        "sha256": "2ff0995cee461c1ca816683e2efc8106e4c17050b8395a939c1990000483afbe"
+        "bytes": 323210,
+        "sha256": "bfc410650efd4aef17e150e8066012f9ea5198c1a3e6ff65630a17e7ee4c92b8"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 562794,
-        "sha256": "876e68d1c176b77bcb0acc255f92946ca070d579568d30210d8f25a0508a1aa1"
+        "bytes": 562778,
+        "sha256": "94a544963c0e135417b9573b1ab0e82547f3dee9c0a26058497c0f609660fa79"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -718,8 +718,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 505778,
-        "sha256": "fedd0969fff096ee70aa182e50e1b664420ca210db4457710f9cc9c54e1c5666"
+        "bytes": 505839,
+        "sha256": "1fe946f133c602949d9b943d35217f9d9443e0a10f5a90fd7c677564db9be08a"
       },
       {
         "path": "frontend/app/study.js",
@@ -1018,8 +1018,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 72207,
-        "sha256": "8c649af8d8a9ba9ed9637b091a0cc71a984c95e6758eea857b30e0e57d8c598e"
+        "bytes": 72181,
+        "sha256": "4baf0d49f57dc536dfdbef178b3a2d77a92ca90000104468eaabc7235ee9398c"
       },
       {
         "path": "frontend/js/arcade.js",

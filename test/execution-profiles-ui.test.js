@@ -14,12 +14,12 @@ A.ok(/ROUTES NEXT COMMAND TO <b>/.test(ui) && /AVAILABILITY <b>/.test(ui), 'doss
 A.ok(/routes next command to/.test(ui) && /availability/.test(ui), 'Settings shows the per-agent runtime selected for the next command');
 A.ok(!/backend change requires a station restart/.test(ui), 'profile selection is not falsely described as a boot-only setting');
 A.ok(/never grants real mouse, keyboard, or screen control/.test(ui), 'profile card names the separate desktop lease');
-A.ok(/RUN WITHOUT PROMPTS/.test(ui) && /does not add tools, widen filesystem scope, choose a runtime/.test(ui), 'approval copy is narrow and honest');
-A.ok(!/holds <b>FULL ACCESS<\/b>/.test(ui), 'Settings no longer presents approval bypass as machine-wide access');
+A.ok(/FULL ACCESS/.test(ui) && /does not add tools, widen filesystem scope, choose a runtime/.test(ui), 'familiar Full Access label keeps the scoped, honest explanation');
+A.ok(!/RUN(?:S)? WITHOUT PROMPTS/.test(ui), 'approval controls do not rename Full Access to Run Without Prompts');
 A.ok(/executionProfile: executionProfileOf\(a\)/.test(app), 'profile persists in the browser save and roster push');
 A.ok(/setAgentExecutionProfile/.test(app), 'profile has an independent app setter');
 A.ok(/approvalMode: .*executionProfile:/.test(app), 'approval and profile ride the roster as separate fields');
-A.ok(/approval prompts and execution scope are separate/.test(html), 'genesis teaches the separated axes');
+A.ok(/<b>FULL ACCESS<\/b> skips approval prompts within the chosen execution profile/.test(html), 'genesis uses the familiar Full Access label while teaching the separated axes');
 A.ok(/data-ssh-host/.test(ui) && /data-ssh-root/.test(ui) && /SAVE &amp; PROBE/.test(ui), 'Settings exposes owner-configured SSH target fields');
 A.ok(/StrictHostKeyChecking|strict known_hosts/.test(ui), 'SSH copy names the strict host-key boundary');
 A.ok(/\/api\/execution\/sync/.test(ui) && /PUSH NOW/.test(ui) && /PULL NOW/.test(ui), 'Settings exposes explicit remote workspace sync controls');

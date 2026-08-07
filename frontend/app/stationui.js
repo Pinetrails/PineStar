@@ -1960,7 +1960,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="cf-desc">Whether risky calls pause for your answer. This does not add tools, widen filesystem scope, choose a runtime, or grant real desktop control. <code>/yolo</code> remains the shortcut for the zero-prompt posture.</div>' +
       '<div class="ov-vchips" id="ag-approval-chips">' +
         chip('ask', 'ASK FOR APPROVAL', 'stops to check with you before it writes, runs, or reaches out', !full) +
-        chip('full', 'RUN WITHOUT PROMPTS', 'uses its current execution profile without approval prompts', full) +
+        chip('full', 'FULL ACCESS', 'uses its current execution profile without approval prompts', full) +
       '</div>' +
       '<div id="ag-approval-msg" class="msg"></div>' +
     '</div>';
@@ -2152,7 +2152,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (id === 'full' && apArmed !== chip) {
           apDisarm(); apArmed = chip;
           chip.classList.add('arm');
-          chip.textContent = 'RUN WITHOUT PROMPTS — SURE?';
+          chip.textContent = 'FULL ACCESS — SURE?';
           sfx('click');
           return;
         }
@@ -4702,10 +4702,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="perm-list" id="perm-execution"></div>' +
       // ── 2 · APPROVAL ──
       '<h4 class="ms-h">2 · APPROVAL PROMPTS <span class="dim">— whether risky calls pause for you</span></h4>' +
-      '<p class="set-about perm-lede">Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>. This posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. <code>/yolo</code> remains the shortcut.</p>' +
+      '<p class="set-about perm-lede">Each crew member either <b>ASKS</b> or has <b>FULL ACCESS</b>. Full Access skips approval prompts within that agent’s execution profile; it does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. <code>/yolo</code> remains the shortcut.</p>' +
       '<div class="perm-list" id="perm-approval"></div>' +
       '<div class="mc-acts perm-allacts">' +
-        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
+        '<button class="bb sm danger" id="perm-full-all">FULL ACCESS — WHOLE STATION</button>' +
         '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
       '</div>' +
       '<div class="mc-hint">The zero-prompt posture applies watched or unattended, within each agent’s execution profile. Protected host actions remain blocked automatically.</div>' +
@@ -5664,9 +5664,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const full = !!(a && a.approvalMode === 'full');
           return '<div class="perm-agent' + (full ? ' full' : '') + '">' +
             '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-            '<span class="pa-mode">' + (full ? 'NO PROMPTS' : 'ASKS') + '</span>' +
+            '<span class="pa-mode">' + (full ? 'FULL ACCESS' : 'ASKS') + '</span>' +
             '<span class="pa-state">' + (full ? 'uses its current execution profile without pausing' : 'stops before it writes, runs, or reaches out') + '</span>' +
-            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? 'MAKE IT ASK' : 'RUN WITHOUT PROMPTS') + '</button>' : '') +
+            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? 'MAKE IT ASK' : 'GIVE FULL ACCESS') + '</button>' : '') +
             '</div>';
         }).join('');
         apWrap.querySelectorAll('[data-ap-flip]').forEach(b => {
@@ -5679,7 +5679,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             paintApproval();
             if (!ok) notify('that agent is no longer on the roster — the list has been refreshed', 'warn');
           };
-          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? NO PROMPTS', restLabel: 'RUN WITHOUT PROMPTS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? NO PROMPTS', restLabel: 'GIVE FULL ACCESS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
           else b.addEventListener('click', () => { sfx('click'); apply(); });
         });
       };
@@ -5695,14 +5695,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       };
       const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
       if (fullAll) ArmConfirm.wire(fullAll, {
-        armedLabel: 'SURE? EVERY AGENT, NO PROMPTS', restLabel: 'NO PROMPTS — WHOLE STATION', timeoutMs: 4000,
+        armedLabel: 'SURE? EVERY AGENT, NO PROMPTS', restLabel: 'FULL ACCESS — WHOLE STATION', timeoutMs: 4000,
         onArm: () => sfx('bad'),
         onConfirm: () => {
           const r = sweepApproval('full');
           if (!r) return;
           sfx('bad');
           notify(r.done
-            ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' now run their current execution profiles without approval prompts (the hard safety floor still applies)'
+            ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' now have FULL ACCESS — no approval prompts within their current execution profiles (the hard safety floor still applies)'
             : 'no crew to change — summon an agent first', r.done ? 'warn' : 'bad');
         }
       });
