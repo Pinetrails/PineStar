@@ -10,7 +10,12 @@
  *   3. office-mid-connect.png — BELT armed + first machine clicked: the FROM ▸ / CLICK TO CONNECT
  *                               labels exist ONLY now, mid-gesture.
  *   4. esc-deselect-inspect.png — PROP tool armed → ESC drops to SELECT → clicking a bay opens its
- *                               picker instead of placing anything.
+ *                               STEP CARD instead of placing anything.
+ *
+ * 2026-08-07: this asserted `.refit-bay-picker`, the bare agent picker a bay click used to open.
+ * The STEP CARD (`.refit-step-card`) replaced it and that class no longer exists anywhere in
+ * frontend/, so the check had become a guaranteed failure — the harness was lying about a surface
+ * that works. Assert the card that actually opens.
  *
  *   node dev/refit-select-shots.mjs      (ports: SKYNET_SHOT_PORT / SKYNET_CDP_PORT)
  */
@@ -178,7 +183,7 @@ async function main() {
     console.log('TOOL AFTER RIGHT-CLICK (must be select):', rcTool);
     if (rcTool !== 'select') throw new Error('right-click did not drop the tool to select: ' + rcTool);
 
-    // ---- SHOT 4: ESC deselect → click a bay opens its PICKER (inspect, never place) ----
+    // ---- SHOT 4: ESC deselect → click a bay opens its STEP CARD (inspect, never place) ----
     await evalJS(cdp, `document.querySelector('.refit-tool[data-tool="prop"]').click()`);
     await sleep(300);
     const escProof = await evalJS(cdp, `JSON.stringify((() => {
@@ -194,12 +199,12 @@ async function main() {
     await evalJS(cdp, clickTile(eng.x, eng.y + 1));          // click the ENGINEER bay in select mode
     await sleep(500);
     const inspectProof = await evalJS(cdp, `JSON.stringify({
-      pickerOpen: !!document.querySelector('.refit-bay-picker'),
+      stepCardOpen: !!document.querySelector('.refit-step-card'),
       props: Build.__test__.station().props().length
     })`);
     console.log('INSPECT ON CLICK:', inspectProof, '(props before:', before + ')');
     const ins = JSON.parse(inspectProof);
-    if (!ins.pickerOpen) throw new Error('bay click in select mode did not open the picker');
+    if (!ins.stepCardOpen) throw new Error('bay click in select mode did not open the step card');
     if (ins.props !== before) throw new Error('bay click placed something: ' + before + ' -> ' + ins.props);
     shots.push(await capture(cdp, OUT, 'esc-deselect-inspect'));
 
