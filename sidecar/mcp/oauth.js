@@ -139,9 +139,15 @@
     return u.origin + '/.well-known/oauth-protected-resource' + path;
   }
   function asMetadataUrls(authServer) {
-    const base = String(authServer).replace(/\/$/, '');
-    // RFC 8414 places the well-known between host and path; we probe the common host-level forms first, then OIDC.
-    return [base + '/.well-known/oauth-authorization-server', base + '/.well-known/openid-configuration'];
+    const u = new URL(String(authServer));
+    const path = u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/$/, '') : '';
+    const base = u.origin + path;
+    // RFC 8414 inserts the well-known segment between the authority and an issuer path. This matters for
+    // providers such as monday.com, whose protected-resource metadata advertises
+    // `https://auth.monday.com/mcp`: its metadata lives at
+    // `https://auth.monday.com/.well-known/oauth-authorization-server/mcp`, not below `/mcp/.well-known/`.
+    // OIDC discovery keeps its established issuer-relative form as the compatibility fallback.
+    return [u.origin + '/.well-known/oauth-authorization-server' + path, base + '/.well-known/openid-configuration'];
   }
 
   // DISCOVERY: server URL (+ optional WWW-Authenticate header) -> the AS endpoints the flow needs.

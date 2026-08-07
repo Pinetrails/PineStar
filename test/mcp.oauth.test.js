@@ -76,6 +76,22 @@ const REDIRECT = 'http://127.0.0.1:8787/api/connectors/oauth/callback';
   A.eq(d.registrationEndpoint, '', 'no registration_endpoint → empty (caller must handle no-DCR)');
 }
 
+// ---- B3. RFC 8414 inserts metadata before a pathful authorization-server issuer ----
+{
+  const f = fakeFetch([
+    ['/.well-known/oauth-protected-resource/mcp', { json: { authorization_servers: ['https://auth.monday.com/mcp'] } }],
+    ['https://auth.monday.com/.well-known/oauth-authorization-server/mcp', { json: {
+      authorization_endpoint: 'https://auth.monday.com/oauth2/authorize',
+      token_endpoint: 'https://auth.monday.com/oauth_ms/oauth/token',
+      registration_endpoint: 'https://auth.monday.com/oauth_ms/oauth/register',
+      code_challenge_methods_supported: ['S256']
+    } }]
+  ]);
+  const d = await O.discover({ fetchImpl: f, serverUrl: 'https://mcp.monday.com/mcp' });
+  A.eq(d.authorizationEndpoint, 'https://auth.monday.com/oauth2/authorize', 'pathful issuer uses the RFC 8414 metadata location');
+  A.eq(d.registrationEndpoint, 'https://auth.monday.com/oauth_ms/oauth/register', 'pathful issuer discovery retains DCR');
+}
+
 // ---- C. dynamic client registration (RFC 7591): public client, PKCE, our loopback redirect ----
 {
   let seen = null;
