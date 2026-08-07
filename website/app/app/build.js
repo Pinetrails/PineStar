@@ -1429,6 +1429,20 @@ const Build = (() => {
     const stepTxt = roleInfo
       ? 'THIS STEP WANTS A <b>' + esc(p.role) + '</b> — ' + esc(roleInfo.desc)
       : 'a dock — work routed here runs as its agent';
+    /* WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07): "each conveyor system built has a purpose and
+       a different workflow — the conveyor system should visually run ONLY when the specific workflow is
+       running." So the dock has to SAY what makes its line distinct and when it runs. Both facts are read
+       off the compiled plan, never guessed: whether this line has a front door of its own (comp.intakes)
+       and whether there is anything downstream of this dock at all (valPlan.chains). Plain language only —
+       no ids, no "lineId", no belt vocabulary. */
+    const handsOn = !!(cur && valPlan && valPlan.chains && valPlan.chains[cur] && (valPlan.chains[cur].next || []).length);
+    const runsTxt = !comp ? null
+      : comp.intakes.length
+      ? 'IT RUNS when work arrives at this line’s <b>INBOX</b> — or when one of its routines fires.'
+      : 'IT RUNS when one of this line’s routines fires at a dock on it.';
+    const restTxt = (comp && (handsOn || comp.bays.length > 1))
+      ? 'A job you hand this agent yourself is answered right here and stops here — it does not run the rest of the line.'
+      : null;
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
     const briefPh0 = 'what this step does with arriving work' + (roleInfo ? ' — e.g. ' + roleInfo.desc : '');
     const briefPh = BRIEF_PH[stepPositionOf(cur)] || briefPh0;
@@ -1442,6 +1456,8 @@ const Build = (() => {
         <div class="refit-sec">THE STEP</div>
         <div class="step-fact">${stepTxt}</div>
         <div class="step-fact">${lineTxt}</div>
+        ${runsTxt ? '<div class="step-fact">' + runsTxt + '</div>' : ''}
+        ${restTxt ? '<div class="refit-note">' + esc(restTxt) + '</div>' : ''}
         <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(cur) : 'uncrewed'}</span></div>
         ${canSummon ? '<button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
         ${agents.length ? '<div class="refit-agents refit-bay-agents" id="step-rows">' + rows + '</div>' : ''}
@@ -1664,6 +1680,10 @@ const Build = (() => {
     const TRG_PRESETS = [['EVERY 30M', 'every 30m'], ['EVERY 1H', 'every 1h'], ['DAILY 9:00', '0 9 * * *']];
     const trgHtml = isIntake
       ? '<div class="refit-sec">TRIGGERS — WHY THIS LINE RUNS</div>'
+        // WORK BELONGS TO A LINE (2026-08-07): the trigger zone is where the Commander decides WHY this line
+        // runs, so it is where the rule belongs — only work that comes in through one of these triggers runs
+        // the whole line. Plain language; the same fact the STEP card states from the dock's side.
+        + '<div class="refit-note">Only work that comes in one of these ways runs this whole line. A job you hand an agent yourself is answered at its own dock and stops there.</div>'
         + '<div class="step-fact" id="trg-feed">checking the wires…</div>'
         + '<div id="trg-routines" class="trg-list"></div>'
         + '<button type="button" class="bb sm refit-primary refit-summon" id="trg-new">⊕ NEW ROUTINE FOR THIS LINE</button>'
