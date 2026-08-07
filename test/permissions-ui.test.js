@@ -9,13 +9,14 @@ const appSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'ap
 
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 
-// the reorganized pane (2026-08-05): three numbered blocks under the console's own PERMISSIONS section head
+// the reorganized pane: execution profile is independent from approval, then unattended + standing grants
 // (no duplicated inner h4 for the SECTION — the PROVIDERS rule), topped by the master FULL BYPASS switch.
 // Each block header is a real .ms-h (the shared divider-rule idiom), not body-weight .set-row prose —
 // that flatness is exactly what made the pane unreadable before the 08-05 spacing pass.
-ok(/<h4 class="ms-h">1 · APPROVAL <span class="dim">— who stops to ask you first/.test(src), 'block 1: per-agent APPROVAL header is a real section header');
-ok(/<h4 class="ms-h">2 · UNATTENDED LEVEL/.test(src), 'block 2: unattended-level header is a real section header');
-ok(/<h4 class="ms-h">3 · STANDING APPROVALS/.test(src), 'block 3: standing-approvals header is a real section header');
+ok(/<h4 class="ms-h">1 · EXECUTION PROFILE/.test(src), 'block 1: execution profile is a real section header');
+ok(/<h4 class="ms-h">2 · APPROVAL PROMPTS/.test(src), 'block 2: approval posture is a real section header');
+ok(/<h4 class="ms-h">3 · UNATTENDED LEVEL/.test(src), 'block 3: unattended-level header is a real section header');
+ok(/<h4 class="ms-h">4 · STANDING APPROVALS/.test(src), 'block 4: standing-approvals header is a real section header');
 // the flip button may never go back to sitting inline after the row's sentence (the collision bug)
 ok(/class="perm-agent/.test(src) && /class="pa-state"/.test(src), 'agent rows are structured (name/state/button), not one inline sentence');
 ok(/id="perm-bypass" class="perm-master"/.test(src), 'the master switch is a CARD, not a key-list row');
@@ -66,15 +67,15 @@ ok(/emptyApprovals|No standing approvals yet/.test(src), 'teaching empty state (
 ok(/\[data-perm-revoke\]'\)\.forEach\(b => ArmConfirm\.wire\(b/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
 ok(/held\.filter\(k => curated\.indexOf\(k\) < 0\)/.test(src), 'NON-curated standing grants are listed too (nothing hidden/irrevocable)');
 ok(/pre-approve a capability|pre-bless/i.test(src), 'the curated GRANT offer is kept separate from the active-approvals ledger');
-ok(/holds <b>FULL ACCESS<\/b> and runs everything itself, no prompts/.test(src),
-  'the per-agent approval copy states the canonical no-prompts meaning');
-ok(/every approval prompt on every task, watched or unattended/.test(src),
-  'the permissions panel explicitly applies Full Access to unattended tasks too');
+ok(/<b>RUNS WITHOUT PROMPTS<\/b>/.test(src),
+  'the per-agent approval copy states the canonical no-prompts meaning without claiming machine access');
+ok(/zero-prompt posture applies watched or unattended/.test(src),
+  'the permissions panel explicitly applies the posture to unattended tasks too');
 ok(!/unattended runs[^.]*never inherit it/.test(src),
   'the panel never contradicts the persisted Full Access contract');
 ok(/Full Access is represented only by the canonical per-agent APPROVAL rows/.test(src),
   'Full Access is not duplicated as an ephemeral standing-grant wildcard');
-ok(/no approval prompts \(the hard safety floor still applies\)/.test(src),
+ok(/without approval prompts \(the hard safety floor still applies\)/.test(src),
   'the whole-station copy preserves the automatic hard safety floor');
 
 // the store hooks

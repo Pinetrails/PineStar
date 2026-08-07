@@ -293,9 +293,17 @@ const App = (() => {
   // the APPROVAL clause folded into the system prompt — it MUST match the real consent broker (sidecar) so the
   // agent's words and its actual behaviour never diverge (truthful-telemetry law). 'full' = the broker bypasses
   // the consent gate; 'ask' = the broker prompts the Commander on any mutation/network call.
+  const EXECUTION_PROFILE_IDS = ['station-gear', 'safe-cell', 'trusted-project', 'this-computer'];
+  function executionProfileOf(a) {
+    const id = String((a && a.executionProfile) || '');
+    if (EXECUTION_PROFILE_IDS.indexOf(id) >= 0) return id;
+    // Legacy saves had only approvalMode. Preserve their exact object=capability behavior; choosing one of the
+    // new named profiles is the explicit act that adds its advertised baseline tools and scope.
+    return 'station-gear';
+  }
   function approvalClause(a) {
     const full = a && a.approvalMode === 'full';
-    if (full) return '\n\nAPPROVAL — FULL ACCESS: the Commander has granted you full access. Run your tools directly — file writes, shell commands, network — without pausing to ask; never request approval in a chat message, and never wait for a go-ahead before acting. A hard safety floor in the harness still blocks the most dangerous actions automatically. For anything truly irreversible (deleting data, messaging outside the station, spending money), briefly state what you are doing AS you do it — the way to act is always the tool call itself, never a request for permission.';
+    if (full) return '\n\nAPPROVAL — RUN WITHOUT PROMPTS: the Commander chose the zero-prompt posture. Run the tools this execution profile actually grants without pausing to ask; never request approval in a chat message. This posture does not add tools, widen filesystem scope, choose a runtime, or grant real screen/input control. The hard safety floor still blocks protected actions automatically.';
     return '\n\nAPPROVAL — ASK FIRST: actions that write files, run commands, or reach the network need the Commander\'s approval — but you NEVER ask for it in a chat message. The approval system cannot see chat text; typed replies like "I approve" grant nothing. Instead, just make the tool call: the harness pauses it and shows the Commander a real approval prompt with Approve/Deny buttons, and the decision comes back to you automatically. Reasoning over what you already have needs no approval.';
   }
   // an always-appended SYSTEM truth: what the agent ACTUALLY runs on. Mirrors approvalClause — derived fresh each
@@ -416,6 +424,9 @@ const App = (() => {
       if (typeof patch.approvalMode === 'string') {
         a.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
       }
+      if (typeof patch.executionProfile === 'string' && EXECUTION_PROFILE_IDS.indexOf(patch.executionProfile) >= 0) {
+        a.executionProfile = patch.executionProfile;
+      }
       // REASONING EFFORT: a real per-provider dial (Harness scopes it by provider and every run payload carries
       // it). Mirrors what the model dock does when it sets model+provider+effort together — the harness store is
       // what the next run reads, and the copy on the agent is what persists + reaches the sidecar roster below.
@@ -523,6 +534,19 @@ const App = (() => {
     const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
     if (!a) return false;
     a.approvalMode = mode === 'full' ? 'full' : 'ask';
+    pushRoster();
+    persist();
+    return true;
+  }
+
+  // Execution profile is runtime/capability/filesystem scope only. It never changes approvalMode and never
+  // grants the physical-desktop lease. The roster POST is the backend authority; local save keeps the control
+  // stable across a renderer reload while the sidecar mirror provides restart durability.
+  function setAgentExecutionProfile(agentId, profileId) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    const id = String(profileId || '');
+    if (!a || EXECUTION_PROFILE_IDS.indexOf(id) < 0) return false;
+    a.executionProfile = id;
     pushRoster();
     persist();
     return true;
@@ -807,7 +831,7 @@ const App = (() => {
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, provider: a.provider || null, reasoningEffort: a.reasoningEffort || null, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
-             approvalMode: a.approvalMode || 'ask', workshop: !!a.workshop, purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
+             approvalMode: a.approvalMode || 'ask', executionProfile: executionProfileOf(a), workshop: !!a.workshop, purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
              skills: Array.isArray(a.skills) ? a.skills.slice() : [],   // Class Loadouts S1: per-agent skill package persists
              stats: a.stats || null, createdAt: a.createdAt };
   }
@@ -820,7 +844,7 @@ const App = (() => {
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   provider: s.provider || (agent && agent.provider) || null, reasoningEffort: s.reasoningEffort || (agent && agent.reasoningEffort) || null,   // #4: per-agent provider+effort (fall back to the hero's)
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
-                  approvalMode: s.approvalMode || 'ask', workshop: !!s.workshop, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  approvalMode: s.approvalMode || 'ask', executionProfile: executionProfileOf(s), workshop: !!s.workshop, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   skills: Array.isArray(s.skills) ? s.skills.slice() : [],   // Class Loadouts S1: restore the per-agent skill package
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
@@ -973,6 +997,7 @@ const App = (() => {
       provider: (pin && pin.provider) || agent.provider || null,
       reasoningEffort: (pin && pin.effort) || agent.reasoningEffort || null,
       personaId: (spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) ? spec.persona : agent.personaId,
+      approvalMode: 'ask', executionProfile: 'trusted-project',
       purpose: null, createdAt: Date.now()
     };
     agentDocs(a);
@@ -1313,7 +1338,7 @@ const App = (() => {
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
-      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'), executionProfile: executionProfileOf(a),
         track: rosterTrack(a),    // S3: this agent's EARNED track record, so the lead's dispatch briefing can pick on evidence (see rosterTrack)
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
@@ -1527,7 +1552,7 @@ const App = (() => {
   // mutation/network call), threaded through pushRoster → /api/roster. `np` is the nameplate readout.
   const APPROVAL = Object.freeze([
     Object.freeze({ id: 'ask',  label: 'ASK FOR APPROVAL', icon: '✋', desc: 'stops to check with you before it writes, runs, or reaches out', np: 'asks for approval' }),
-    Object.freeze({ id: 'full', label: 'FULL ACCESS',      icon: '⚡', desc: 'runs everything itself — no approval prompts',                  np: 'full access' })
+    Object.freeze({ id: 'full', label: 'RUN WITHOUT PROMPTS', icon: '⚡', desc: 'uses its execution profile without approval prompts',          np: 'no prompts' })
   ]);
   const approvalById = id => APPROVAL.find(a => a.id === id) || APPROVAL[0];
   function applyTheme(t) {
@@ -2459,7 +2484,7 @@ const App = (() => {
               provider: (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter',   // #4: stamp the chosen provider+effort onto the hero so a later agent-switch can restore them
               reasoningEffort: (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : 'medium',
               personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
-              approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
+              approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), executionProfile: (pickedApproval === 'full' ? 'this-computer' : 'trusted-project'), purpose: null, onboarded: false, createdAt: Date.now() };   // legacy approval choice seeds an honest host profile; the two axes are independently changeable in the dossier
     agentDocs(agent);                              // seed identity.md (overseer-aware) / purpose.md / operating-manual.md
     registerHero(agent);   // found the multi-agent registry with the hero BEFORE composing — rosterClause reads the registry, and a same-session re-wake must not see the prior crew
     agent.systemPrompt = composeSystemPrompt(agent);
@@ -2617,7 +2642,7 @@ const App = (() => {
             : Harness.contextState(agent ? agent.id : 'agent');
         },
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setApproval: setAgentApproval, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setApproval: setAgentApproval, setExecutionProfile: setAgentExecutionProfile, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // approval posture and execution profile are independent controls; both persist through the roster
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
       });
       // Presence is already proven by the live roster, link indicator, and COMMS state. Do not
@@ -4303,5 +4328,6 @@ const App = (() => {
     openClassDossier: openClassDossier,   // intent-offer beat: accepting a class offer opens the bay ON that class's dossier
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
     applyConfig: applyAgentConfig,
-    setApproval: setAgentApproval };
+    setApproval: setAgentApproval,
+    setExecutionProfile: setAgentExecutionProfile };
 })();
