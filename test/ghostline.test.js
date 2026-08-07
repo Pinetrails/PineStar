@@ -96,7 +96,10 @@ const geoChain = bound => ({
   const { plan, log, g } = run(geoChain(true), { steps: 2200 });
   A.ok(P.ok(plan), 'chain floor compiles deployable');
   A.eq(P.resolveTarget(plan, { tag: 'general' }), 'up', 'dispatch truth: inbound work runs at the up dock');
-  A.eq(P.chainNext(plan, 'up', { tag: 'general' }), 'down', 'dispatch truth: up hands off to down');
+  // work belongs to a line (2026-08-07): the ctx carries the line the work ENTERED on — which for the
+  // GHOST is by definition this line's own trigger, since the ghost is a projection of THIS line running.
+  A.eq(P.chainNext(plan, 'up', { tag: 'general', lineId: P.lineOf(plan, 'up') }), 'down', 'dispatch truth: up hands off to down');
+  A.eq(P.chainNext(plan, 'up', { tag: 'general' }), null, 'and a run that did NOT come in through this line advances nothing');
   const kinds = log.filter(e => e.kind !== 'sort' && e.kind !== 'split').map(e => e.kind + (e.owner ? ':' + e.owner : ''));
   const firstPass = kinds.slice(0, 4).join(' ');
   A.eq(firstPass, 'spawn dock:up dock:down out', 'one pass = arrive, run at up, hand off to down, ship out (got: ' + firstPass + ')');

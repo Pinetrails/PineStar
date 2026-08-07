@@ -153,5 +153,48 @@ async function fireAndSettle(s, reply) {
     A.eq(lastOf(s.events, 'cron.result').outcome, 'failed', 'and the routine reports the failure honestly');
   }
 
+  /* ---- A ROUTINE IS ITS LINE'S OWN TRIGGER — AND ONLY ITS OWN LINE'S ----
+     Work belongs to a line (Andrew's ruling, 2026-08-07). A routine fires AT a dock, so the work it starts
+     belongs to THAT dock's line and may run its stages. Wired here exactly as the composition root does
+     (sidecar/index.js: `lineId: router.lineOfAgent(o.agentId)`), over the REAL router and the REAL chain
+     runner, so this proves the semantics rather than a mock's opinion of them. */
+  {
+    const Pipeline = require('../frontend/app/pipeline.js');
+    const { makeRouter } = require('../sidecar/routing/router.js');
+    const { makeChainRunner } = require('../sidecar/routing/chain.js');
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const router = makeRouter();
+    A.ok(router.setPlan(Pipeline.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' },
+              { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer' }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E')]
+    })).ok, 'the routine floor deploys');
+
+    const hopRuns = [];
+    const chain = makeChainRunner({
+      nextAgent: (a, ctx) => router.chainNext(a, ctx),
+      runAgent: async (h) => { hopRuns.push(h.agentId); return { text: h.agentId + ' output' }; },
+      now: () => 0
+    });
+    // the EXACT shape index.js injects, quoted so the two cannot drift apart unnoticed
+    const advanceChain = (o) => chain.advance({
+      agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+      lineId: router.lineOfAgent(o.agentId)
+    });
+
+    const s = setup({ advanceChain });
+    await fireAndSettle(s, 'raw findings about the thing');
+    A.eq(s.chainCalls.length, 1, 'the routine advanced its line');
+    A.eq(hopRuns, ['writer'], "a routine at a DOCK runs that line's next stage — the routine IS the line");
+
+    // the same routine at an agent that crews NO dock: no line to run, and nothing downstream is bought
+    hopRuns.length = 0;
+    A.eq(router.lineOfAgent('freelancer'), null, 'an undocked agent belongs to no line');
+    const off = await chain.advance({ agentId: 'freelancer', text: 'raw findings', lineId: router.lineOfAgent('freelancer') });
+    A.eq(off.hops.length, 0, 'so its routine is terminal');
+    A.eq(hopRuns.length, 0, 'PROVIDER CALLS: zero — a routine can never spend on a line it is not on');
+  }
+
   A.report('cron.chain');
 })();

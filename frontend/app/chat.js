@@ -7088,11 +7088,14 @@ const Chat = (() => {
   // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides. Returns
   // { next, brief } — `brief` is the NEXT dock's standing job brief (step editor; the same router fact the
   // sidecar's chain runner injects), so both surfaces compose one handoff turn. null = terminal stage.
-  async function nextStageOf(agentId, tag) {
+  async function nextStageOf(agentId, tag, lineId) {
     try {
       const h = {}, tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) || '';
       if (tok) h['X-StarNet-Token'] = String(tok);
-      const r = await fetch('/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { cache: 'no-store', headers: h });
+      // `lineId` = the line this work ENTERED on (work belongs to a line, 2026-08-07). The sidecar's plan is
+      // still the decider — it refuses any id that is not this dock's own line — so this only ever narrows.
+      const r = await fetch('/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || '')
+        + '&lineId=' + encodeURIComponent(lineId || ''), { cache: 'no-store', headers: h });
       if (!r || !r.ok) return null;
       const j = await r.json();
       return (j && j.next) ? { next: String(j.next), brief: (typeof j.brief === 'string' && j.brief) ? j.brief : null } : null;
@@ -7105,12 +7108,15 @@ const Chat = (() => {
   async function runWorkLine(ws, seed) {
     const out = { text: seed.text, agentId: seed.fromAgentId, hops: 0, usd: 0 };
     if (!seed.fromAgentId || !String(seed.text || '').trim()) return out;
+    // WORK BELONGS TO A LINE (2026-08-07): a line advances only for work that entered through ITS OWN
+    // trigger. `seed.lineId` is that origin; without one this dock is terminal and nothing downstream runs.
+    if (!seed.lineId) return out;
     const visited = {}; visited[seed.fromAgentId] = true;
     let cur = seed.fromAgentId;
     for (let hop = 1; hop <= LINE_MAX_HOPS; hop++) {
       if (seed.signal && seed.signal.aborted) return out;
       if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
-      const nxr = await nextStageOf(cur, lineTag(out.text));
+      const nxr = await nextStageOf(cur, lineTag(out.text), seed.lineId);
       const nx = nxr && nxr.next;
       if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
       // THE LINE'S SPEND CEILING — the same pre-hop check as the sidecar executor (chain.js: out.usd >= maxUsd
@@ -7130,7 +7136,7 @@ const Chat = (() => {
       // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next.
       // `from` = the PRODUCER dock (mirrors chain.js's placed event — must not drift): world.js spawns the
       // crate at THIS dock instead of guessing the upstream dock from the compiled plan.
-      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', from: cur, preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
+      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', from: cur, lineId: seed.lineId, preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
       if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
 
       // the RECEIVING dock's standing brief rides the shared handoff turn — the same 5th param the sidecar's
@@ -7533,9 +7539,20 @@ const Chat = (() => {
            (the belt is work-only — "hello" never rides), on a clean finish, and never on a run that ended by
            ASKING something: a question is the turn's answer, and handing it downstream would answer it on the
            Commander's behalf. finalReply is re-pointed at the line's last stage so voice speaks, and the
-           session titles from, the answer that actually leaves. */
-        if (isTask && !taskQuestion && !cutShort && (!endReason || endReason === 'done') && replyText.trim()) {
-          const line = await runWorkLine(ws, { fromAgentId: turnAgentId, text: replyText, originalText: text, signal: ac.signal });
+           session titles from, the answer that actually leaves.
+
+           AND — WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07): "each conveyor system built has a
+           purpose and a different workflow — the conveyor system should visually run ONLY when the specific
+           workflow is running." A COMMS directive is a DIRECT ORDER handed to an agent in person; it did not
+           arrive through any line's trigger, so it is TERMINAL at the dock that answers it — no downstream
+           stage runs, nothing is spent past this agent, and the floor draws no handoff. `wsLineOrigin` is
+           the origin line a turn entered on: today only line-triggered work carries one, and every such
+           trigger (a channel message routed down the belts, a routine, the sample job, a crate at an INBOX)
+           runs its line INSIDE the sidecar, where the origin is provable. The sidecar applies the identical
+           gate on the compiled plan, so this surface cannot disagree with that one. */
+        const wsLineOrigin = (opts && opts.lineId) ? String(opts.lineId) : null;
+        if (wsLineOrigin && isTask && !taskQuestion && !cutShort && (!endReason || endReason === 'done') && replyText.trim()) {
+          const line = await runWorkLine(ws, { fromAgentId: turnAgentId, text: replyText, originalText: text, signal: ac.signal, lineId: wsLineOrigin });
           if (line.hops) { finalReply = line.text; replyText = line.text; titleOk = !!line.text.trim(); }
         }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as

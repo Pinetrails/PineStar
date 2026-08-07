@@ -5328,10 +5328,18 @@ const World = (() => {
   // a real inbound message arrived — drop a box at the INTAKE so it rides the belts to the desk. The box carries
   // a CONTENT TAG (the same getTag the sidecar routes by) so a FILTER junction visibly sorts it toward the
   // matching agent's bay — frontend sort == backend dispatch.
+  /* WHOSE WORK IS THIS? (work belongs to a line, 2026-08-07 — Andrew's ruling.) A work-item that entered
+     through a LINE'S OWN TRIGGER carries that line's `lineId` on its crate; a direct order (a COMMS
+     directive, an ad-hoc job) carries none. The floor keeps the last answer per dock so the SHIP decision
+     below can tell the two apart. Keyed by agentId exactly like `runWork` — same one-item-in-flight-per-dock
+     basis the queue gauge already runs on. Truthful telemetry cuts both ways: never draw a workflow that
+     didn't run, never hide a run that did. */
+  const dockLineWork = new Map();   // agentId -> lineId of the work-item most recently placed at this dock (or absent)
   function intakeMessage(payload) {
     if (!convey) return;
     // tag the box with its content kind (the same getTag the sidecar routes by) so a FILTER sorts it visibly
     const p = payload || {};
+    if (p.agentId) { if (p.lineId) dockLineWork.set(p.agentId, String(p.lineId)); else dockLineWork.delete(p.agentId); }
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
     // ride inbound work as ORE — a UNIFORM raw chunk: every incoming request is one identical piece of raw
     // material on the line. We deliberately DON'T size it; product-vs-slag is the rewarded signal,
@@ -5471,12 +5479,16 @@ const World = (() => {
   }
   function shipProductCrate(p) {
     if (!convey) return;
-    // A NON-TERMINAL STAGE SHIPS NOTHING OUT. If this dock's output hands off to another dock, its product IS
-    // the handoff crate (drawn when the sidecar places the next stage's work-item) — also spawning a ship-out
-    // crate here would draw the same work leaving twice, once toward a door it never went through.
+    // A NON-TERMINAL STAGE SHIPS NOTHING OUT — *WHEN ITS WORK IS THE LINE'S*. If this dock's output hands off
+    // to another dock, its product IS the handoff crate (drawn when the sidecar places the next stage's
+    // work-item) — also spawning a ship-out crate here would draw the same work leaving twice, once toward a
+    // door it never went through.
+    // BUT a DIRECT ORDER at the same dock hands off to nobody (work belongs to a line, 2026-08-07): no chain
+    // crate is coming, so suppressing this one would erase real, delivered work from the floor. The dock's
+    // belts still say "hands off to X"; what decides is whether THIS run's work belonged to X's line.
     const cAid = (p && p.agentId) || '';
     const ch = (cAid && routingPlan && routingPlan.chains) ? routingPlan.chains[cAid] : null;
-    if (ch && ch.next && ch.next.length) return;
+    if (ch && ch.next && ch.next.length && dockLineWork.get(cAid)) return;
     const rid = (p && p.runId) || '';
     if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
     const t = outboundBeltTile(p && p.agentId);

@@ -87,8 +87,12 @@ const lineGeo = withBriefs => ({
   // ROUTING NEUTRALITY (the mandate's explicit assertion): same resolveTarget, same chainNext.
   A.eq(P.resolveTarget(plain, { tag: 'general' }), P.resolveTarget(briefed, { tag: 'general' }), 'resolveTarget is identical with and without briefs');
   A.eq(P.resolveTarget(briefed, { tag: 'general' }), 'researcher', '(and it is the drawn entry dock)');
-  A.eq(P.chainNext(plain, 'researcher', {}), P.chainNext(briefed, 'researcher', {}), 'chainNext is identical with and without briefs');
-  A.eq(P.chainNext(briefed, 'researcher', {}), 'writer', '(and it is the drawn downstream dock)');
+  // ctx carries the LINE the work entered on (work belongs to a line, 2026-08-07) — a brief must not
+  // change that either: same line, same answer, briefed or not.
+  const ctxP = { lineId: P.lineOf(plain, 'researcher') }, ctxB = { lineId: P.lineOf(briefed, 'researcher') };
+  A.eq(ctxP.lineId, ctxB.lineId, 'a brief does not move the dock to another line');
+  A.eq(P.chainNext(plain, 'researcher', ctxP), P.chainNext(briefed, 'researcher', ctxB), 'chainNext is identical with and without briefs');
+  A.eq(P.chainNext(briefed, 'researcher', ctxB), 'writer', '(and it is the drawn downstream dock)');
 
   // an over-long brief is bounded AT COMPILE (no surface can post an unbounded blob)
   const geo = lineGeo(true); geo.props[1].brief = 'z'.repeat(9000);

@@ -295,6 +295,10 @@
     // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
     // byte-identical to the behaviour before work lines existed.
     const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
+    /* WORK BELONGS TO A LINE (2026-08-07): lineOriginFor(agentId) -> the lineId work ARRIVING at this dock
+       belongs to, or null when nothing triggered a workflow. Injected (index.js passes router.lineOriginFor)
+       so the compiled plan alone decides; absent -> null -> the chain never advances, the safe default. */
+    const lineOriginFor = typeof o.lineOriginFor === 'function' ? o.lineOriginFor : null;
     // Target-agent runtime identity for downstream work-line hops. The connection's own secrets belong only
     // to stage one; reusing them would silently run every later dock on the upstream model/provider.
     const resolveRunConfig = typeof o.resolveRunConfig === 'function' ? o.resolveRunConfig : null;
@@ -1313,7 +1317,17 @@
       // exist. (The belt crate + onResolved fire here, before the audio is downloaded, so a spoken directive
       // still visualizes as talk — visualization only; the RUN gets the right prompt.)
       let isTask = !!classify(msg.text);
-      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask };
+      /* THE WORK'S ORIGIN LINE, or null (work belongs to a line, 2026-08-07 — Andrew's ruling). A channel
+         message is OUTSIDE work arriving at the station, so if the dock that will run it is one a line's
+         own INBOX feeds, this IS that line running and its drawn stages may follow. Asked of the FINAL
+         agentId — however it was resolved — because the per-agent bots deliberately hard-lock stage one to
+         their bound agent and never consult floor routing; keying this on the resolution would have said
+         "no line" for exactly the floor the Commander drew. The seam is injected (router.lineOriginFor) so
+         the compiled plan stays the only authority; absent -> null -> every dock terminal, which is the
+         safe direction. It rides `resolvedInfo` (so the host stamps the crate with it) and the chain seed
+         below (so the gate can read it). */
+      const lineId = lineOriginFor ? (lineOriginFor(agentId) || null) : null;
+      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask, lineId: lineId };
       if (onResolved) { try { onResolved(resolvedInfo); } catch (_) {} }
       if (intake && typeof intake.onResolved === 'function') { try { intake.onResolved(resolvedInfo); } catch (_) {} }
 
@@ -1555,6 +1569,9 @@
       if (chain && !state.errMsg && !myRec.superseded && String(state.buf || '').trim()) {
         const line = await chain.advance({
           agentId: agentId, text: state.buf, originalText: msg.text,
+          // WORK BELONGS TO A LINE: only work the floor routed in through this line's own INBOX advances it.
+          // A /talk-bound or fallback-resolved message carries no lineId and stops at the dock that answered.
+          lineId: lineId,
           signal: myRec.abort ? myRec.abort.signal : null,
           runAgent: async function (h) {
             // a hop is a plain autonomous run of ANOTHER agent: its OWN composed persona (never this channel's
