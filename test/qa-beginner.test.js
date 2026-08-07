@@ -11,7 +11,8 @@ const fs = require('fs');
 const A = require('./_assert.js');
 const {
   makeRunAccountant, stepsForMode, firstBootAdvanceKey, makeFirstBootAdvanceController,
-  BEGINNER_PROVIDER, beginnerKeyFieldValue, uiOnlyProviderBaseEnv,
+  BEGINNER_PROVIDER, beginnerKeyFieldValue, uiOnlyProviderBaseEnv, isolatedOsDataEnv,
+  ceremonyAdvanceKey,
   buildStallFinding, stampFor, STEP_DEFS, TOTAL_BUDGET_MS
 } = require('../scripts/qa/beginner-run.mjs');
 const { makeLedger, fingerprintOf } = require('../scripts/qa/ledger.mjs');
@@ -35,6 +36,22 @@ const clock = { now: () => clk };
   // selection never mutates the shared defs (returns copies).
   ui[0].budgetMs = -1;
   A.ok(STEP_DEFS[0].budgetMs > 0, 'stepsForMode returns copies — mutating a result never corrupts STEP_DEFS');
+}
+
+// ---- A5. production-mode lineage scanning is isolated from the operator's real OS profile ----
+{
+  const env = isolatedOsDataEnv('C:\\qa-profile', require('node:path').win32);
+  A.eq(env.LOCALAPPDATA, 'C:\\qa-profile\\Local', 'local app data points inside the QA profile');
+  A.eq(env.APPDATA, 'C:\\qa-profile\\Roaming', 'roaming app data points inside the QA profile');
+  A.eq(env.XDG_DATA_HOME, 'C:\\qa-profile\\Xdg', 'the cross-platform data root is isolated too');
+  A.eq(Object.keys(isolatedOsDataEnv('')).length, 0, 'an absent isolation root never invents ambient paths');
+}
+
+// ---- A6. the awakening read gate is advanced only when the product proves it is armed ----
+{
+  A.eq(ceremonyAdvanceKey(true), ' ', 'an armed narration gate receives one real Space keypress');
+  A.eq(ceremonyAdvanceKey(false), '', 'ordinary dialogue receives no synthetic key');
+  A.eq(ceremonyAdvanceKey('true'), '', 'truthy non-boolean detector noise cannot advance the ceremony');
 }
 
 // ---- A3. first-boot splash is advanced only when the product proves that screen is active ----
