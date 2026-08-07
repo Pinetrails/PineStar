@@ -15,21 +15,89 @@ const Build = (() => {
     // SELECT is the DEFAULT mode (2026-08-05 interaction reshape): entering REFIT arms NO placement
     // tool — a click INSPECTS the machine under it (its picker/editor/flow card) instead of trying to
     // place something. Key 0, ESC and right-click all return here from any armed tool.
-    { id: 'select', key: '0', label: '◎ SELECT', hint: 'click any machine or belt to open it — its picker, its routes, where its lane goes', cursor: 'default' },
-    { id: 'room', key: '1', label: '▦ ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
-    { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
+    // labels are WORDS ONLY — the leading symbol each one used to carry (◎ ▦ ═ …) is now a pixel
+    // icon painted on the button's canvas, because those glyphs fall back to a system font
+    { id: 'select', key: '0', label: 'SELECT', hint: 'click any machine or belt to open it — its picker, its routes, where its lane goes', cursor: 'default' },
+    { id: 'room', key: '1', label: 'ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
+    { id: 'hall', key: '2', label: 'HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
     // 'paint' stays the INTERNAL id (the drag mode, the model's paintTiles verb, the key map and every
     // saved reference key off it) — only the display name changed. The tool stopped being "paint" the
     // day it grew wall cladding and a material axis: it now sets what a room's surfaces are MADE OF,
     // deck and walls, so it's SURFACE. Same law as the skynet.* keys: rename the label, never the key.
-    { id: 'paint', key: '3', label: '▧ SURFACE', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
-    { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
-    { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
-    { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
-    { id: 'belt', key: '7', label: '⇶ BELT', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
-    { id: 'dupe', key: '8', label: '⧉ DUPE', hint: 'click a room or prop to copy it · then every click stamps a copy — mirror your build fast', cursor: 'copy' },
-    { id: 'line', key: '9', label: '⇉ LINES', hint: 'pick a STARTER LINE below, then click the deck — a whole working layout stamps at once, yours to edit', cursor: 'copy' },
+    { id: 'paint', key: '3', label: 'SURFACE', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
+    { id: 'move', key: '4', label: 'MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
+    { id: 'reclaim', key: '5', label: 'RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
+    { id: 'prop', key: '6', label: 'PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
+    { id: 'belt', key: '7', label: 'BELT', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
+    { id: 'dupe', key: '8', label: 'DUPE', hint: 'click a room or prop to copy it · then every click stamps a copy — mirror your build fast', cursor: 'copy' },
+    { id: 'line', key: '9', label: 'LINES', hint: 'pick a STARTER LINE below, then click the deck — a whole working layout stamps at once, yours to edit', cursor: 'copy' },
   ];
+  /* ---------- TOOL GROUPS (2026-08-07 build-mode overhaul) ----------
+     Ten equal-weight buttons in a flat 2×5 grid is a debug menu, not a build mode: nothing said
+     which tool comes FIRST, which ones change what already exists, or which ones are about work
+     rather than architecture. The same ten verbs now read as four answers to "what am I doing?":
+
+       STRUCTURE  make the space      ROOM · HALLWAY
+       SURFACES   dress it            SURFACE · PROP
+       WORKFLOW   make it run         BELT · LINES
+       EDIT       change what's there MOVE · DUPE · RECLAIM
+
+     SELECT sits ABOVE the groups on its own full-width row — it is not a fifth kind of building,
+     it's the cursor you fall back to (ESC / right-click / re-clicking the armed tool all land here).
+     Number keys are UNCHANGED: the quest system and the guide card cite them by number
+     (quests.js "drag a BELT (7)"), so grouping reorders the buttons, never the shortcuts. */
+  const TOOL_GROUPS = [
+    { label: 'STRUCTURE', why: 'make the space',       tools: ['room', 'hall'] },
+    { label: 'SURFACES',  why: 'dress it',             tools: ['paint', 'prop'] },
+    { label: 'WORKFLOW',  why: 'make it run',          tools: ['belt', 'line'] },
+    { label: 'EDIT',      why: 'change what is there', tools: ['move', 'dupe', 'reclaim'] },
+    // (no fifth band — SELECT rides its own row above these, see buildDOM)
+  ];
+
+  /* ---------- PIXEL TOOL ICONS ----------
+     Every tool used to label itself with a unicode symbol (◎ ▦ ═ ▧ ✥ ⌫ ⚇ ⇶ ⧉ ⇉). Those glyphs are
+     NOT in VT323 — the browser silently falls back to a system font for the symbol and keeps VT323
+     for the word, so each button rendered in two typefaces at two weights (the standing
+     symbol-glyph law). These are 12×12 pixel bitmaps painted on a canvas in the button's own
+     phosphor colour: one typeface, in the station's own art language, crisp at any DPR. */
+  const ICON_PX = [
+    ['select', '#...........,##..........,###.........,####........,#####.......,######......,#######.....,########....,#####.......,##.###......,#...###.....,.....###....'],
+    ['room',   '############,#..........#,#..........#,#..........#,#..........#,#..........#,#..........#,#..........#,#..........#,#..........#,#..........#,#####..#####'],
+    ['hall',   '............,............,............,############,............,..##..##..##,............,............,############,............,............,............'],
+    ['paint',  '############,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,############'],
+    ['move',   '.....##.....,....####....,...##..##...,.....##.....,.#...##...#.,##.######.##,##.######.##,.#...##...#.,.....##.....,...##..##...,....####....,.....##.....'],
+    ['reclaim','##........##,###......###,.###....###.,..###..###..,...######...,....####....,....####....,...######...,..###..###..,.###....###.,###......###,##........##'],
+    ['prop',   '..########..,..#......#..,..#.####.#..,..#.####.#..,..#......#..,..########..,.....##.....,.....##.....,############,#..........#,#..........#,############'],
+    ['belt',   '............,............,############,............,.##..##..##.,..##..##..##,.##..##..##.,............,############,............,............,............'],
+    ['dupe',   '............,..########..,..#......#..,..#......#..,..#..#######,..#..#....#.,..####....#.,.....#....#.,.....#....#.,.....######.,............,............'],
+    ['line',   '............,.##########.,.#........#.,.#.##..##.#.,.#.##..##.#.,.#........#.,.#..####..#.,.#..####..#.,.#........#.,.##########.,............,............'],
+  ].reduce((m, [k, v]) => (m[k] = v.split(','), m), {});
+  const ICON_N = 12;   // bitmap side, in icon pixels
+
+  // Paint a tool's bitmap into its <canvas> in `colour`. Re-run on activation so the icon tracks
+  // the button's own phosphor state (dim → bright) instead of being baked once at build time.
+  function paintIcon(cvEl, id, colour) {
+    const rows = ICON_PX[id]; if (!cvEl || !rows) return;
+    const c = cvEl.getContext('2d'); if (!c) return;
+    const s = cvEl.width / ICON_N;
+    c.clearRect(0, 0, cvEl.width, cvEl.height);
+    c.fillStyle = colour;
+    for (let y = 0; y < rows.length; y++) {
+      const row = rows[y];
+      for (let x = 0; x < row.length; x++) if (row[x] === '#') c.fillRect(x * s, y * s, s, s);
+    }
+  }
+  // the icon colour for a tool button in its current state — read off the live button so a theme
+  // switch (or the RECLAIM red) is honoured without a second colour table to keep in sync
+  const iconColour = btn => getComputedStyle(btn).color || '#f0e6ce';
+  function repaintIcons() {
+    if (!root) return;
+    root.querySelectorAll('.refit-tool').forEach(b => {
+      const c = b.querySelector('canvas');
+      if (c) paintIcon(c, b.dataset.tool, iconColour(b));
+    });
+  }
+
   const SEEN_KEY = 'starnet.refit.seen';
   // machines the BELT tool connects with two clicks (mirrors worldmodel CONNECTABLE)
   const CONNECT_TYPES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
@@ -120,6 +188,7 @@ const Build = (() => {
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
     ghost = (typeof GhostLine !== 'undefined') ? GhostLine.create() : null;   // Phase 3: fresh projection per session
     testNotes.length = 0;   // never carry a prior session's ride captions into a fresh REFIT
+    statSig = zoomSig = '';   // the top readout re-derives from THIS session's station, never a stale signature
     lastFrameTs = 0;
     resize();
     fitCamera();
@@ -171,8 +240,13 @@ const Build = (() => {
       <canvas class="refit-canvas"></canvas>
       <div class="refit-top">
         <span class="refit-title">▮ REFIT MODE</span>
-        <span class="refit-sub" id="refit-sub">DRAG TO PLACE ROOMS · RUN CORRIDORS · SURFACE DECKS &amp; WALLS</span>
+        <span class="refit-sub" id="refit-sub"></span>
         <span class="refit-spacer"></span>
+        <span class="refit-zoom" id="refit-zoom">
+          <button class="bb sm refit-zoomb" id="refit-zout" title="zoom out (or scroll the wheel)">–</button>
+          <button class="bb sm refit-zoomlvl" id="refit-zlvl" title="reset zoom to 1 tile = 1 tile">100%</button>
+          <button class="bb sm refit-zoomb" id="refit-zin" title="zoom in (or scroll the wheel)">+</button>
+        </span>
         <button class="bb sm" id="refit-help" title="how to build">? HELP</button>
         <button class="bb sm" id="refit-undo" title="undo (Ctrl+Z)">↶ UNDO</button>
         <button class="bb sm" id="refit-redo" title="redo (Ctrl+Shift+Z)">↷ REDO</button>
@@ -181,9 +255,9 @@ const Build = (() => {
         <button class="bb sm refit-primary" id="refit-done" title="finish + save (Esc)">✓ DONE</button>
       </div>
       <div class="refit-dock" role="toolbar" aria-label="Refit mode controls">
+        <div class="refit-dock-head"><span class="refit-dock-head-t">BUILD KIT</span></div>
         <div class="refit-dock-section refit-mode-section">
-          <div class="refit-section-label">MODE</div>
-          <div class="refit-tools" id="refit-tools"></div>
+          <div id="refit-tools"></div>
         </div>
         <div class="refit-dock-section refit-option-section" id="refit-option-section">
           <div class="refit-section-label" id="refit-palette-label">OPTIONS</div>
@@ -203,24 +277,55 @@ const Build = (() => {
     redoBtn = root.querySelector('#refit-redo');
 
     const tools = root.querySelector('#refit-tools');
-    TOOLS.forEach(t => {
+    const toolBtn = (t) => {
       const btn = document.createElement('button');
-      btn.className = 'bb refit-tool' + (t.id === tool ? ' active' : '');
+      btn.className = 'bb refit-tool refit-tool-' + t.id + (t.id === tool ? ' active' : '');
       btn.type = 'button';
       btn.setAttribute('aria-pressed', t.id === tool ? 'true' : 'false');
-      btn.dataset.tool = t.id; btn.innerHTML = t.label + ' <span class="refit-key">' + t.key + '</span>';
+      btn.dataset.tool = t.id;
+      const ico = document.createElement('canvas');
+      ico.className = 'refit-toolicon';
+      // 8× supersample: every icon pixel lands on an exact 8px block in the backing store, so the
+      // browser's downscale to the 16px display box is a clean box filter. Painting at ~1.3 device
+      // px per icon pixel instead (with image-rendering:pixelated) doubles some rows and not others
+      // — the bitmap comes out visibly lopsided, which is exactly what these icons are replacing.
+      ico.width = ico.height = ICON_N * 8;
+      btn.appendChild(ico);
+      const nm = document.createElement('span'); nm.className = 'refit-toolname'; nm.textContent = t.label;
+      btn.appendChild(nm);
+      const k = document.createElement('span'); k.className = 'refit-key'; k.textContent = t.key;
+      btn.appendChild(k);
       btn.title = t.hint + '  (' + t.key + ')';
       // clicking the ARMED tool's own button again DESELECTS it (back to select) — a tool must
       // always have an obvious off switch, not just eight other on switches.
       btn.onclick = () => selectTool(t.id === tool ? 'select' : t.id);
-      tools.appendChild(btn);
+      return btn;
+    };
+    const byId = id => TOOLS.find(x => x.id === id);
+    // SELECT rides its own full-width row above the groups — the cursor, not a fifth kind of build
+    const selRow = document.createElement('div'); selRow.className = 'refit-tools refit-tools-sel';
+    selRow.appendChild(toolBtn(byId('select')));
+    tools.appendChild(selRow);
+    TOOL_GROUPS.forEach(g => {
+      const wrap = document.createElement('div'); wrap.className = 'refit-toolgroup';
+      const lab = document.createElement('div'); lab.className = 'refit-group-label';
+      lab.innerHTML = '<span class="refit-group-n">' + esc(g.label) + '</span><span class="refit-group-why">' + esc(g.why) + '</span>';
+      wrap.appendChild(lab);
+      const grid = document.createElement('div'); grid.className = 'refit-tools';
+      g.tools.forEach(id => { const t = byId(id); if (t) grid.appendChild(toolBtn(t)); });
+      wrap.appendChild(grid);
+      tools.appendChild(wrap);
     });
     renderPalette();
+    repaintIcons();
     setCursor();
 
     root.querySelector('#refit-done').onclick = close;
     root.querySelector('#refit-help').onclick = showGuide;
     root.querySelector('#refit-fit').onclick = () => { fitCamera(); };
+    root.querySelector('#refit-zin').onclick = () => zoomStep(+1);
+    root.querySelector('#refit-zout').onclick = () => zoomStep(-1);
+    root.querySelector('#refit-zlvl').onclick = () => zoomTo(2);   // 2 = the entering default (a tile reads at 24px)
     root.querySelector('#refit-test').onclick = (e) => sendTestBoxes(e);
     undoBtn.onclick = () => { if (station.undo().ok) sfx('click'); else sfx('bad'); };
     redoBtn.onclick = () => { if (station.redo().ok) sfx('click'); else sfx('bad'); };
@@ -384,16 +489,37 @@ const Build = (() => {
       note.textContent = 'Click a machine to open it · click a belt to see where its lane goes. Keys 1–9 arm a build tool; ESC / right-click always returns here.';
       pal.appendChild(note);
     } else if (tool === 'room') {
+      /* ROOM TYPE was the last palette in REFIT still made of bare text chips, next to a prop
+         gallery of live animated previews and a material grid painted by the real bake. A room
+         kind IS a deck (a hue × a material), so it can preview itself the same honest way every
+         other surface here does — through StationBake, so the chip can never promise a floor the
+         station won't deliver. Now you pick FOUNDRY because you can see the rust tread. */
       paletteLabel = 'ROOM TYPE';
+      const grid = document.createElement('div'); grid.className = 'refit-matgrid refit-kindgrid';
+      grid.setAttribute('aria-label', 'Room types');
       station.KIND_ORDER.forEach(k => {
+        const def = station.ROOM_KINDS[k]; if (!def) return;
+        const active = k === kind;
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'bb sm refit-kind' + (k === kind ? ' active' : '');
-        b.setAttribute('aria-pressed', k === kind ? 'true' : 'false');
-        b.textContent = station.ROOM_KINDS[k].label;
+        b.className = 'refit-mattile refit-kindtile' + (active ? ' active' : '');
+        b.dataset.kind = k;
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+        const hue = (station.FLOOR_STYLES[def.floor] || station.FLOOR_STYLES.hull).base;
+        b.appendChild(matSwatchCanvas(def.mat || 'plate', hue, 5, 3));
+        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = def.label;
+        b.appendChild(nm);
+        const hueDef = station.FLOOR_STYLES[def.floor];
+        b.title = def.label + ' — ' + ((station.FLOOR_MATERIALS[def.mat] || {}).label || def.mat || 'plate')
+          + ' deck in ' + ((hueDef && hueDef.label) || def.floor) + ' (SURFACE re-lays it any time)';
         b.onclick = () => { kind = k; renderPalette(); setHint(); sfx('click'); };
-        pal.appendChild(b);
+        grid.appendChild(b);
       });
+      pal.appendChild(grid);
+      const note = document.createElement('div');
+      note.className = 'refit-linenote';
+      note.textContent = 'A type is just the deck it starts with — SURFACE (3) re-lays any room later.';
+      pal.appendChild(note);
     } else if (tool === 'hall') {
       paletteLabel = 'HALL WIDTH';
       [1, 2, 3].forEach(w => {
@@ -961,7 +1087,7 @@ const Build = (() => {
       b.classList.toggle('active', active);
       b.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
-    renderPalette(); setHint(); setCursor();
+    renderPalette(); repaintIcons(); setHint(); setCursor();
     if (!(o && o.silent)) sfx('click');
   }
   // every "drop whatever is armed" gesture (ESC, right-click, post-stamp) lands here
@@ -989,6 +1115,62 @@ const Build = (() => {
     if (redoBtn) redoBtn.disabled = !station.canRedo();
   }
 
+  /* ---------- first-use guide: the three beats, drawn ----------
+     One painter per beat, on a 128×72 board of 4px cells (canvas is 3× that for crispness). Every
+     mark is a rect — this is the same pixel vocabulary the station is built out of, and it renders
+     the GESTURE, so the words underneath only have to name it. Colours come from the same three
+     roles the live editor uses: phosphor for structure, green for a legal ghost, gold for a machine. */
+  function guideStepArt(c, kind) {
+    const x = c.getContext('2d'); if (!x) return;
+    const S = c.width / 128;                       // one board unit in device px
+    const R = (bx, by, bw, bh, fill) => { x.fillStyle = fill; x.fillRect(bx * S, by * S, bw * S, bh * S); };
+    const PH = 'rgba(120,200,255,.55)', DIM = 'rgba(120,200,255,.16)', OK = 'rgba(120,255,170,.95)',
+          OKF = 'rgba(80,255,140,.20)', GOLD = 'rgba(240,196,90,.95)', INK = 'rgba(6,9,12,.9)', LIT = 'rgba(180,240,255,.9)';
+    x.clearRect(0, 0, c.width, c.height);
+    R(0, 0, 128, 72, 'rgba(8,12,16,.75)');
+    // the deck grid every beat happens on — 8-unit cells, the editor's own minor lattice
+    for (let gx = 0; gx <= 128; gx += 8) R(gx, 0, 1, 72, DIM);
+    for (let gy = 0; gy <= 72; gy += 8) R(0, gy, 128, 1, DIM);
+
+    if (kind === 'room') {
+      // a room being dragged out: a green footprint with corner brackets and the cursor at its far corner
+      R(24, 16, 56, 40, OKF);
+      R(24, 16, 56, 1, OK); R(24, 55, 56, 1, OK); R(24, 16, 1, 40, OK); R(79, 16, 1, 40, OK);
+      // corner brackets — (cx,cy) is the corner itself, sx/sy point INTO the rect
+      const br = (cx, cy, sx, sy) => {
+        R(sx > 0 ? cx : cx - 9, cy - 1, 10, 3, OK);
+        R(cx - 1, sy > 0 ? cy : cy - 9, 3, 10, OK);
+      };
+      br(24, 16, 1, 1); br(80, 16, -1, 1); br(24, 56, 1, -1); br(80, 56, -1, -1);
+      // the size badge the real drag prints on the ghost
+      R(40, 4, 26, 10, INK); R(40, 4, 26, 1, OK); R(40, 13, 26, 1, OK); R(40, 4, 1, 10, OK); R(65, 4, 1, 10, OK);
+      for (let i = 0; i < 5; i++) R(44 + i * 4, 8, 2, 2, OK);
+      // cursor arrow at the drag's live corner
+      for (let i = 0; i < 9; i++) R(80, 56 + i, Math.max(1, 8 - i), 1, LIT);
+      R(84, 62, 2, 5, LIT);
+    } else if (kind === 'bay') {
+      // a dock with an agent walking into it: the machine, the crew body, the bind arrow
+      R(64, 24, 32, 26, 'rgba(52,58,64,.95)'); R(64, 24, 32, 2, GOLD); R(64, 48, 32, 2, GOLD);
+      R(68, 30, 24, 10, 'rgba(20,26,30,.95)');
+      for (let i = 0; i < 5; i++) R(70 + i * 5, 33, 3, 4, GOLD);
+      // the crew body (head + torso), reading left-to-right into the dock
+      R(24, 26, 8, 8, 'rgba(226,206,170,.95)'); R(22, 36, 12, 14, 'rgba(120,200,255,.8)');
+      R(22, 50, 4, 6, 'rgba(60,70,80,.95)'); R(30, 50, 4, 6, 'rgba(60,70,80,.95)');
+      // bind arrow
+      R(38, 36, 20, 2, PH); R(56, 33, 2, 8, PH); R(54, 35, 2, 4, PH);
+    } else {
+      // two machines and the belt the click-click lays between them, crates riding it
+      R(6, 26, 26, 22, 'rgba(52,58,64,.95)'); R(6, 26, 26, 2, PH);
+      R(96, 26, 26, 22, 'rgba(52,58,64,.95)'); R(96, 26, 26, 2, GOLD);
+      R(32, 32, 64, 10, 'rgba(24,30,34,.95)'); R(32, 32, 64, 1, PH); R(32, 41, 64, 1, PH);
+      for (let i = 0; i < 6; i++) { const bx = 36 + i * 10; R(bx, 34, 2, 2, PH); R(bx + 2, 36, 2, 2, PH); R(bx, 38, 2, 2, PH); }
+      R(58, 22, 12, 10, GOLD); R(60, 24, 8, 6, 'rgba(120,90,30,.9)');   // a crate on the line
+      // the two clicks
+      R(14, 16, 10, 2, LIT); R(18, 12, 2, 10, LIT);
+      R(104, 16, 10, 2, LIT); R(108, 12, 2, 10, LIT);
+    }
+  }
+
   /* ---------- first-use guide ---------- */
   function hasSeen() { try { return !!localStorage.getItem(SEEN_KEY); } catch (e) { return false; } }
   function markSeen() { try { localStorage.setItem(SEEN_KEY, '1'); } catch (e) {} }
@@ -1005,20 +1187,41 @@ const Build = (() => {
     g.className = 'refit-guide refit-firstrun';   // refit-firstrun marks THIS card (not the pickers/editors that share .refit-guide) so tutorial.js can avoid painting a coachmark over it
     // Three beats, not a wall — place a room, place+assign a BAY, wire it with a BELT. The full reference (every prop
     // & mechanic) lives in the FIELD MANUAL, so we point there instead of front-loading it all here.
+    /* SHOWN, not told (2026-08-07). This card was four prose bullets — the first thing a Commander
+       ever sees of build mode, and it read like documentation. The three beats are the same three
+       beats; each now leads with a PICTURE of the gesture (drawn in the station's own pixel language
+       by guideStepArt) and carries one line of words under it. */
     g.innerHTML = `
-      <div class="refit-guide-card">
+      <div class="refit-guide-card refit-guide-wide">
         <h3>▮ BUILD YOUR STATION</h3>
         <p class="refit-guide-lead">Your floor is a flowchart — work arrives at the <b>INBOX</b>, every <b>BAY</b> is an agent doing one step, and the belts you draw are the order the work flows.</p>
-        <ul>
-          <li><b>Drag</b> on the grid to place a <b>ROOM</b> — your agent walks the rooms you build.</li>
-          <li>Place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, <b>assign an agent</b> — work for that agent lands at its dock.</li>
-          <li>Wire it with <b>BELT (7)</b>: click one machine, then another. <span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked · <b>UNDO</b> anything.</li>
-          <li>Or stamp a whole working <b>STARTER LINE (9)</b> and edit it into your own.</li>
-        </ul>
-        <p style="opacity:.7;font-size:12px;margin:8px 0 0">Every prop &amp; mechanic is spelled out in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
+        <div class="refit-steps">
+          <div class="refit-step" data-art="room">
+            <span class="refit-step-n">1</span>
+            <b>DRAG A ROOM</b>
+            <span>Pick <b>ROOM</b>, drag on the grid. Your agent walks what you build.</span>
+          </div>
+          <div class="refit-step" data-art="bay">
+            <span class="refit-step-n">2</span>
+            <b>CREW A BAY</b>
+            <span>Drop a <b>BAY</b> (PROP ▸ WORKFLOW), click it, assign an agent.</span>
+          </div>
+          <div class="refit-step" data-art="belt">
+            <span class="refit-step-n">3</span>
+            <b>WIRE THE BELT</b>
+            <span>Pick <b>BELT</b>, click one machine then the next. The belt lays itself.</span>
+          </div>
+        </div>
+        <p class="refit-guide-foot">In a hurry? <b>LINES (9)</b> stamps a whole working layout you can edit. Every prop &amp; mechanic is in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
     root.appendChild(g);
+    g.querySelectorAll('.refit-step').forEach(s => {
+      const c = document.createElement('canvas');
+      c.className = 'refit-step-art'; c.width = 384; c.height = 216;   // 3× the 128×72 display box
+      s.insertBefore(c, s.firstChild);
+      try { guideStepArt(c, s.dataset.art); } catch (e) { c.remove(); }   // art must never break the card
+    });
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const dismiss = () => { markSeen(); if (g.parentNode) g.parentNode.removeChild(g); };
     g.querySelector('#refit-guide-go').onclick = dismiss;
@@ -2395,6 +2598,55 @@ const Build = (() => {
     panX = c.x - wx * zoom; panY = c.y - wy * zoom;
   }
 
+  /* ---------- the zoom control (2026-08-07) ----------
+     Zoom was wheel-only and said so nowhere but a hint line: a Commander on a trackpad, or one who
+     simply never scrolled over the canvas, had no way to find it. – / % / + in the action deck makes
+     it a control you can SEE, and the readout doubles as a "you are here" for the camera. Both keep
+     the VIEW CENTRE fixed (the wheel anchors on the pointer; a button has no pointer to anchor on,
+     and anchoring on the last pointer position would make the floor lurch away from the button). */
+  function zoomAboutCentre(next) {
+    const ins = viewInsets();
+    const cx = ins.l + (cv.width - ins.l) / 2, cy = ins.t + (cv.height - ins.t - ins.b) / 2;
+    const wx = (cx - panX) / zoom, wy = (cy - panY) / zoom;
+    zoom = clamp(next, MINZ, MAXZ);
+    panX = cx - wx * zoom; panY = cy - wy * zoom;
+  }
+  const zoomStep = dir => zoomAboutCentre(zoom * (dir > 0 ? 1.25 : 1 / 1.25));
+  const zoomTo = z => zoomAboutCentre(z);
+
+  /* The action deck's subtitle used to be a fixed sentence repeating what the dock already says.
+     It now carries the one thing nothing else on screen does: how big the station you are editing
+     actually IS. Every number is counted off the model on the frame it is shown — rooms and deck
+     tiles from the room rects, machines from the prop list — so it can never claim a station the
+     save doesn't hold (truthful telemetry). */
+  let statSig = '', zoomSig = '';
+  function updateTopReadout() {
+    if (!root) return;
+    const zt = Math.round(zoom * 50) + '%';   // 100% = zoom 2, the entering default
+    if (zt !== zoomSig) {
+      zoomSig = zt;
+      const zl = root.querySelector('#refit-zlvl');
+      if (zl) zl.textContent = zt;
+    }
+    const sub = root.querySelector('#refit-sub');
+    if (!sub) return;
+    const list = station.rooms();
+    let tiles = 0, halls = 0, rooms = 0;
+    for (const rm of list) {
+      if (rm.kind === 'corridor') halls++; else rooms++;
+      for (const r of rm.rects) tiles += (r.x2 - r.x1 + 1) * (r.y2 - r.y1 + 1);
+    }
+    const machines = station.props().length;
+    const sig = rooms + '/' + halls + '/' + tiles + '/' + machines;
+    if (sig === statSig) return;   // the sub is re-read every frame; only touch the DOM when it moved
+    statSig = sig;
+    const bits = [rooms + (rooms === 1 ? ' ROOM' : ' ROOMS')];
+    if (halls) bits.push(halls + (halls === 1 ? ' HALL' : ' HALLS'));
+    bits.push(tiles + ' TILES');
+    if (machines) bits.push(machines + (machines === 1 ? ' MACHINE' : ' MACHINES'));
+    sub.textContent = bits.join(' · ');
+  }
+
   function onKey(ev) {
     const a = ev.target;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
@@ -2568,6 +2820,7 @@ const Build = (() => {
     // finish-the-line card: slow re-derive (feed truth changes on the world's poll, not on edits) + per-frame pin
     if (finCardEl && now - finPollTs > 2000) { finPollTs = now; renderFinCard(); }
     positionFinCard();
+    updateTopReadout();   // station stats + the live zoom % (both self-throttle on an unchanged value)
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -2612,6 +2865,7 @@ const Build = (() => {
     drawFlashes(now, t);
     drawRoutingValidation(t, now);   // plain-words callouts on any broken piece, IN build mode (cost-safety + guidance)
     drawBeltEndpointGlow(t, now);    // BELT tool armed → INTAKE glows FROM, BAY/OUTBOX glow TO (what connects to what)
+    drawCrosshair(t);   // the aim instrument — ABOVE the light layer, or the deck swallows it
     drawHover(t);
     drawAgentTag(t);   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
     drawGhost(t, now);
@@ -2635,19 +2889,72 @@ const Build = (() => {
     }
   }
 
+  /* ---------- THE BLUEPRINT GRID (2026-08-07 build-mode overhaul) ----------
+     The old grid was ONE uniform screen-door at alpha .07 across the whole viewport: the void and
+     the deck read identically, nothing said where you could build, and no rhythm let you COUNT
+     tiles. It is now three concentric readings of the same lattice:
+
+       DECK   — the real footprint. Per-tile cells, brightest: this is floor that exists.
+       APRON  — GRID_APRON tiles of open space around the station bounds. Full minor grid: the
+                ground you actually build on next, so a drag has something to snap against.
+       VOID   — beyond that, MAJOR divisions only, faint. Open space, with a coarse ruler.
+
+     Majors land every GRID_MAJOR tiles (a "bay") so 8 tiles is countable at a glance, and minor
+     lines fade out entirely once a tile is only a few device px (below that they alias into a grey
+     wash that reads as fog, not grid). The whole lattice steps UP while a placement tool is armed
+     and back DOWN in SELECT — in SELECT you're reading the floor, not aligning to it. */
+  const GRID_MAJOR = 8;    // tiles per major division — one "bay" of station
+  const GRID_APRON = 16;   // tiles of full-resolution grid around the station bounds
+  // tools where alignment matters (the grid + crosshair come up for these; SELECT stays quiet)
+  const PLACING = { room: 1, hall: 1, paint: 1, move: 1, reclaim: 1, prop: 1, belt: 1, dupe: 1, line: 1 };
+
   function drawGrid(t) {
     const x0 = (-panX) / zoom, y0 = (-panY) / zoom, x1 = (cv.width - panX) / zoom, y1 = (cv.height - panY) / zoom;
     const tx0 = Math.floor(x0 / t) - 1, ty0 = Math.floor(y0 / t) - 1, tx1 = Math.ceil(x1 / t) + 1, ty1 = Math.ceil(y1 / t) + 1;
-    ctx.lineWidth = 1 / zoom;
-    ctx.strokeStyle = 'rgba(120,200,255,0.07)';
+    const armed = !!PLACING[tool];
+    const lw = 1 / zoom;
+    // minor lines below ~5 device px per tile are noise, not grid — fade them out rather than alias
+    const px = t * zoom;
+    const minorK = clamp((px - 5) / 7, 0, 1);
+    const b = station.bounds();
+    const ax0 = b.minTx - GRID_APRON, ay0 = b.minTy - GRID_APRON;
+    const ax1 = b.maxTx + 1 + GRID_APRON, ay1 = b.maxTy + 1 + GRID_APRON;
+
+    // ---- MINOR: the apron only. Clipped to the buildable neighbourhood, so the void stays open. ----
+    const mx0 = Math.max(tx0, ax0), my0 = Math.max(ty0, ay0), mx1 = Math.min(tx1, ax1), my1 = Math.min(ty1, ay1);
+    const hasApron = mx1 > mx0 && my1 > my0;
+    if (minorK > 0.02 && hasApron) {
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = 'rgba(120,200,255,' + (minorK * (armed ? 0.15 : 0.075)).toFixed(3) + ')';
+      ctx.beginPath();
+      for (let gx = mx0; gx <= mx1; gx++) { ctx.moveTo(gx * t, my0 * t); ctx.lineTo(gx * t, my1 * t); }
+      for (let gy = my0; gy <= my1; gy++) { ctx.moveTo(mx0 * t, gy * t); ctx.lineTo(mx1 * t, gy * t); }
+      ctx.stroke();
+    }
+
+    // ---- MAJOR: every GRID_MAJOR tiles. Faint across the whole view (a horizon ruler), then a
+    //      second brighter pass clipped to the apron so the falloff reads as depth, not a hard edge.
+    const majX = [], majY = [];
+    for (let gx = Math.ceil(tx0 / GRID_MAJOR) * GRID_MAJOR; gx <= tx1; gx += GRID_MAJOR) majX.push(gx);
+    for (let gy = Math.ceil(ty0 / GRID_MAJOR) * GRID_MAJOR; gy <= ty1; gy += GRID_MAJOR) majY.push(gy);
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = 'rgba(130,205,255,' + (armed ? 0.10 : 0.06) + ')';
     ctx.beginPath();
-    for (let gx = tx0; gx <= tx1; gx++) { ctx.moveTo(gx * t, y0); ctx.lineTo(gx * t, y1); }
-    for (let gy = ty0; gy <= ty1; gy++) { ctx.moveTo(x0, gy * t); ctx.lineTo(x1, gy * t); }
+    for (const gx of majX) { ctx.moveTo(gx * t, y0); ctx.lineTo(gx * t, y1); }
+    for (const gy of majY) { ctx.moveTo(x0, gy * t); ctx.lineTo(x1, gy * t); }
     ctx.stroke();
-    // brighter cells over the actual footprint (the comment's promise, now real)
+    if (hasApron) {
+      ctx.strokeStyle = 'rgba(160,220,255,' + (armed ? 0.17 : 0.10) + ')';
+      ctx.beginPath();
+      for (const gx of majX) { if (gx < mx0 || gx > mx1) continue; ctx.moveTo(gx * t, my0 * t); ctx.lineTo(gx * t, my1 * t); }
+      for (const gy of majY) { if (gy < my0 || gy > my1) continue; ctx.moveTo(mx0 * t, gy * t); ctx.lineTo(mx1 * t, gy * t); }
+      ctx.stroke();
+    }
+
+    // ---- DECK: per-tile cells over the real footprint — the brightest reading, floor that exists ----
     if (cacheGeo && (tx1 - tx0) * (ty1 - ty0) < 6000) {
       const ox = cacheGeo.origin.tx, oy = cacheGeo.origin.ty, zg = cacheGeo.zoneGrid, idx = cacheGeo.idx, C = cacheGeo.COLS, R = cacheGeo.ROWS;
-      ctx.strokeStyle = 'rgba(140,210,255,0.16)';
+      ctx.strokeStyle = 'rgba(140,210,255,' + (minorK * (armed ? 0.20 : 0.13) + 0.03).toFixed(3) + ')';
       ctx.beginPath();
       for (let gy = ty0; gy <= ty1; gy++) for (let gx = tx0; gx <= tx1; gx++) {
         const lx = gx - ox, ly = gy - oy;
@@ -2656,6 +2963,42 @@ const Build = (() => {
       }
       ctx.stroke();
     }
+  }
+
+  /* The alignment crosshair: with a build tool armed, the tile under the pointer lights up and its
+     row + column rule out across the view. This is the single thing that turns "drag somewhere and
+     hope" into "line this up with that" — you can see, before you press, exactly which column your
+     next room will start on and what it lines up with across the floor. Muted during a drag: the
+     ghost's own rulers take over there (drawGhost), and two sets of guides is a clusterfuck.
+
+     Drawn in the OVERLAY pass, not inside drawGrid. The grid is painted before StationBake.drawLight,
+     which is right for a lattice that should read as part of the floor and wrong for an instrument:
+     the light canvas multiplied a .22 rule down to nothing over the very deck you aim at, so the
+     crosshair was invisible in exactly the place it exists to serve. */
+  function drawCrosshair(t) {
+    if (!PLACING[tool] || drag || !hoverTile) return;
+    const x0 = (-panX) / zoom, y0 = (-panY) / zoom, x1 = (cv.width - panX) / zoom, y1 = (cv.height - panY) / zoom;
+    const hx = hoverTile.tx, hy = hoverTile.ty;
+    ctx.lineWidth = 1 / zoom;
+    ctx.strokeStyle = 'rgba(150,225,255,0.34)';
+    ctx.beginPath();
+    ctx.moveTo(hx * t + 0.5 / zoom, y0); ctx.lineTo(hx * t + 0.5 / zoom, y1);
+    ctx.moveTo((hx + 1) * t - 0.5 / zoom, y0); ctx.lineTo((hx + 1) * t - 0.5 / zoom, y1);
+    ctx.moveTo(x0, hy * t + 0.5 / zoom); ctx.lineTo(x1, hy * t + 0.5 / zoom);
+    ctx.moveTo(x0, (hy + 1) * t - 0.5 / zoom); ctx.lineTo(x1, (hy + 1) * t - 0.5 / zoom);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(150,225,255,0.16)';
+    ctx.fillRect(hx * t, hy * t, t, t);
+    // corner ticks on the aimed tile — the "you are here" the flat fill alone doesn't carry
+    const k = Math.min(t * 0.34, 5 / zoom);
+    ctx.strokeStyle = 'rgba(190,240,255,0.85)'; ctx.lineWidth = 1.4 / zoom;
+    const X = hx * t, Y = hy * t;
+    ctx.beginPath();
+    ctx.moveTo(X, Y + k); ctx.lineTo(X, Y); ctx.lineTo(X + k, Y);
+    ctx.moveTo(X + t - k, Y); ctx.lineTo(X + t, Y); ctx.lineTo(X + t, Y + k);
+    ctx.moveTo(X + t, Y + t - k); ctx.lineTo(X + t, Y + t); ctx.lineTo(X + t - k, Y + t);
+    ctx.moveTo(X + k, Y + t); ctx.lineTo(X, Y + t); ctx.lineTo(X, Y + t - k);
+    ctx.stroke();
   }
 
   function drawGlows(now) {
@@ -3020,14 +3363,91 @@ const Build = (() => {
     }
   }
 
+  /* ---------- THE GESTURE BADGE (2026-08-07 build-mode overhaul) ----------
+     What you are about to do, printed ON the thing you are about to do it to. The dimensions used
+     to live in the DOM action tip trailing the cursor into a screen corner — you dragged a room in
+     the middle of the floor and read its size at the bottom-right of the glass. Now it is a small
+     phosphor plate pinned to the ghost's own top edge, green when the model says the placement is
+     legal and red with the REASON on a second line when it isn't.
+     It registers as `activeFlow` (top priority) so the one-voice arbiter mutes every lower label
+     near it — the ghost speaks alone while a gesture is live. */
+  function ghostBadge(t, lines, ok, rect) {
+    const fs = Math.max(9, 11 / zoom), lh = fs * 1.08, pad = fs * 0.34;
+    ctx.font = fs + "px 'VT323','Courier New',monospace";
+    let wMax = 0;
+    for (const s of lines) wMax = Math.max(wMax, ctx.measureText(s).width);
+    const bw = wMax + pad * 2, bh = lh * lines.length + pad * 1.6;
+    // above the ghost by default; flip below when that would land off the top of the glass
+    const above = rect.y1 * t - bh - fs * 0.35;
+    const topWorld = (-panY) / zoom;
+    const by = above > topWorld + fs ? above : (rect.y2 + 1) * t + fs * 0.35;
+    /* CLAMP TO THE GLASS. Drag a footprint against the right edge of the screen and a badge centred
+       on the ghost runs straight off it — you lose the half of the readout that carries the reason.
+       The badge slides along the ghost instead of vanishing with it. */
+    const leftWorld = (-panX) / zoom, rightWorld = (cv.width - panX) / zoom, m = 4 / zoom;
+    let bx = (rect.x1 + rect.x2 + 1) / 2 * t - bw / 2;
+    bx = clamp(bx, leftWorld + m, Math.max(leftWorld + m, rightWorld - bw - m));
+    const cx = bx + bw / 2;
+    const box = { x: bx, y: by, w: bw, h: bh };
+    voiceSay('activeFlow', box, box, () => {
+      ctx.fillStyle = 'rgba(4,6,8,0.86)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.lineWidth = 1 / zoom;
+      ctx.strokeStyle = ok ? 'rgba(120,255,170,0.9)' : 'rgba(255,120,110,0.9)';
+      ctx.strokeRect(bx + 0.5 / zoom, by + 0.5 / zoom, bw - 1 / zoom, bh - 1 / zoom);
+      ctx.font = fs + "px 'VT323','Courier New',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillStyle = i === 0
+          ? (ok ? 'rgba(180,255,215,1)' : 'rgba(255,190,180,1)')
+          : (ok ? 'rgba(150,220,190,.85)' : 'rgba(255,150,140,.95)');
+        ctx.fillText(lines[i], cx, by + pad * 0.8 + i * lh);
+      }
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    });
+  }
+
+  /* Corner brackets + per-tile edge ticks on the ghost. The brackets read as a targeting reticle
+     instead of a flat highlighted rectangle, and the ticks let you COUNT the footprint against the
+     grid without moving your eyes off it (the badge gives the number; the ticks prove it). */
+  function ghostReticle(t, rect, line) {
+    const X = rect.x1 * t, Y = rect.y1 * t, Wd = (rect.x2 - rect.x1 + 1) * t, Hd = (rect.y2 - rect.y1 + 1) * t;
+    const arm = Math.min(Wd, Hd) * 0.3, cap = Math.min(arm, t * 2.2);
+    // 3 SCREEN px, not 3 world px — a reticle that thins out as you zoom out stops reading as one
+    ctx.strokeStyle = line; ctx.lineWidth = 3 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(X, Y + cap); ctx.lineTo(X, Y); ctx.lineTo(X + cap, Y);
+    ctx.moveTo(X + Wd - cap, Y); ctx.lineTo(X + Wd, Y); ctx.lineTo(X + Wd, Y + cap);
+    ctx.moveTo(X + Wd, Y + Hd - cap); ctx.lineTo(X + Wd, Y + Hd); ctx.lineTo(X + Wd - cap, Y + Hd);
+    ctx.moveTo(X + cap, Y + Hd); ctx.lineTo(X, Y + Hd); ctx.lineTo(X, Y + Hd - cap);
+    ctx.stroke();
+    if (t * zoom < 7) return;   // ticks turn to mush below ~7 device px per tile
+    const tick = Math.min(t * 0.3, 4 / zoom);
+    ctx.lineWidth = 1 / zoom; ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    for (let gx = rect.x1 + 1; gx <= rect.x2; gx++) { const px2 = gx * t; ctx.moveTo(px2, Y); ctx.lineTo(px2, Y + tick); ctx.moveTo(px2, Y + Hd); ctx.lineTo(px2, Y + Hd - tick); }
+    for (let gy = rect.y1 + 1; gy <= rect.y2; gy++) { const py2 = gy * t; ctx.moveTo(X, py2); ctx.lineTo(X + tick, py2); ctx.moveTo(X + Wd, py2); ctx.lineTo(X + Wd - tick, py2); }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // the bounding rect of a brush stroke's cells — the badge needs something to pin itself to
+  function cellsRect(cells) {
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const k of cells) { const p = k.split(','), x = +p[0], y = +p[1]; if (x < x1) x1 = x; if (y < y1) y1 = y; if (x > x2) x2 = x; if (y > y2) y2 = y; }
+    return x2 < x1 ? null : { x1, y1, x2, y2 };
+  }
+
   function drawGhost(t, now) {
     // paint brush: tint the crossed tiles with the chosen deck colour
     if (drag && drag.mode === 'paint' && drag.moved) {
       const base = station.FLOOR_STYLES[style] ? station.FLOOR_STYLES[style].base : '#888';
       ctx.globalAlpha = 0.55; ctx.fillStyle = base;
-      for (const k of drag.cells) { const p = k.split(','); if (station.roomAt(+p[0], +p[1]) === drag.roomId) ctx.fillRect(+p[0] * t, +p[1] * t, t, t); }
+      let n = 0;
+      for (const k of drag.cells) { const p = k.split(','); if (station.roomAt(+p[0], +p[1]) === drag.roomId) { ctx.fillRect(+p[0] * t, +p[1] * t, t, t); n++; } }
       ctx.globalAlpha = 1;
-      showTip(drag.cells.size + ' tiles', true);
+      const bb = cellsRect(drag.cells);
+      if (bb) ghostBadge(t, [n + (n === 1 ? ' TILE' : ' TILES')], true, bb);
       return;
     }
     // reclaim drag: tint the belt tiles the drag will clear (destructive red), like the paint brush
@@ -3036,7 +3456,8 @@ const Build = (() => {
       ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,92,77,0.9)';
       for (const k of drag.cells) { const p = k.split(','); if (station.beltAt(+p[0], +p[1])) { ctx.fillRect(+p[0] * t, +p[1] * t, t, t); n++; } }
       ctx.globalAlpha = 1;
-      showTip(n ? (n + (n === 1 ? ' belt' : ' belts')) : 'drag along a belt', n > 0);
+      const bb = cellsRect(drag.cells);
+      if (bb) ghostBadge(t, n ? [n + (n === 1 ? ' BELT' : ' BELTS'), 'RELEASE TO CLEAR'] : ['DRAG ALONG A BELT'], n > 0, bb);
       return;
     }
     const g = ghostInfo();
@@ -3050,6 +3471,7 @@ const Build = (() => {
       ctx.fillStyle = fill; ctx.fillRect(X, Y, Wd, Hd);
       ctx.strokeStyle = line; ctx.strokeRect(X + 0.5 / zoom, Y + 0.5 / zoom, Wd - 1 / zoom, Hd - 1 / zoom);
     }
+    for (const r of g.rects) ghostReticle(t, r, line);
     // belt: draw flow arrows along the run so the direction reads at a glance
     if (g.belt) {
       const V = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] }[g.dir];
@@ -3063,13 +3485,20 @@ const Build = (() => {
         ctx.stroke();
       }
     }
-    // live readout: dimensions while placing/sizing; the reason when blocked
+    // live readout, pinned to the ghost: the dimensions you are drawing, and — when the model says
+    // no — the reason on its own line right under them. (Was a DOM tip trailing into a screen corner.)
     const r0 = g.rects[0], w = r0.x2 - r0.x1 + 1, h = r0.y2 - r0.y1 + 1;
-    let dims = g.belt ? ('belt → ' + g.dir + ' · ' + Math.max(w, h) + ' long')
-      : g.kind === 'line' ? (g.label + ' — click to stamp')
-      : g.move ? ('move ' + (g.dx >= 0 ? '+' : '') + g.dx + ',' + (g.dy >= 0 ? '+' : '') + g.dy)
-      : (tool === 'hall' ? (Math.max(w, h) + ' long × ' + Math.min(w, h)) : (w + '×' + h));
-    showTip(ok ? dims : (dims + ' · ' + ((g.v && g.v.msg) || 'blocked')), ok);
+    let dims = g.belt ? ('BELT ' + g.dir + ' · ' + Math.max(w, h) + ' LONG')
+      : g.kind === 'line' ? (String(g.label || '').toUpperCase() + ' — CLICK TO STAMP')
+      : g.move ? ('MOVE ' + (g.dx >= 0 ? '+' : '') + g.dx + ', ' + (g.dy >= 0 ? '+' : '') + g.dy)
+      : (tool === 'hall' ? (Math.max(w, h) + ' LONG × ' + Math.min(w, h) + ' WIDE') : (w + ' × ' + h));
+    const lines = [dims];
+    // a sized footprint also gets its area — "how much floor is this?" is the other question a drag asks
+    if (!g.belt && !g.move && g.kind !== 'line' && w * h > 1) lines[0] = dims + '   ' + (w * h) + ' TILES';
+    if (!ok) lines.push(((g.v && g.v.msg) || 'blocked').toUpperCase());
+    ghostBadge(t, lines, ok, r0);
+    // NOTE: deliberately does NOT hideTip() — flashTip's transient confirmations ("room placed")
+    // fire while a ghost is still on screen, and hiding here every frame would eat them instantly.
   }
 
   /* ---------- tooltip ---------- */
