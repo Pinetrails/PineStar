@@ -2654,7 +2654,7 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
   capability flag rather than snapshotting an unrelated local tree.
 
-# BLOCKED 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
+# DONE 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
 
 Commit `b5854dba` makes a saved file's name open that file through the desktop OS association instead of
 opening the jailed preview in the default browser. The folder control now reveals/selects the exact artifact
@@ -2665,9 +2665,9 @@ The native boundary canonicalizes every requested path, confines relative paths 
 allows absolute paths only below the workspace, user home, or a standing `path:<root>` grant, and rejects UNC,
 missing, `.env`, `.git`, executable, and script targets before shelling out. Focused frontend contracts are
 12/12 green; Rust resolver/security tests are 2/2 green; recap and website-sync suites are green; and
-`npm run test:fast` is 573/573 green. A seeded live run wrote `KaloDataCredentialHandoff.md`, rendered the saved
-row plus `copy path`, copied the exact per-agent absolute path, and produced no browser warnings/errors. The
-packaged Tauri click-through remains to be exercised on an installed desktop candidate before release.
+`npm run test:fast` was 573/573 green at the original handoff. A seeded live run wrote
+`KaloDataCredentialHandoff.md`, rendered the saved row plus `copy path`, copied the exact per-agent absolute path,
+and produced no browser warnings/errors.
 
 Integration was attempted twice from clean trunk snapshot `46b54c10` and rolled back both times under the
 mandatory merge ritual. Attempt 1 failed at fast-gate step 150/573 when `boot-security.test.js` exceeded its
@@ -2684,3 +2684,19 @@ but the merged candidate failed at fast-gate step 224/574 with nine
 surface. `qa/STATUS.md` already documents this authority model: a descendant that changes source-locked
 public files requires a W0 claims-ledger re-stamp. The lane therefore needs that reviewed re-stamp before
 another merge attempt; retrying unchanged bytes cannot turn this deterministic gate green.
+
+Closure: trunk was synchronized into the lane without rebasing, the reviewed 37-claim inventory was preserved,
+and the mechanical W0 surface was re-locked at `9367569c` over 205 files. Focused authority passed 64/64,
+the native-open contract passed 12/12, Rust passed 34 tests with one intentional ignore, and both the exact
+synced lane and post-merge trunk gates passed 575/575. The branch landed through public-safe merge `4d5356a5`
+from snapshot `c683b59e`; the required digest is `223f8c06`. No push or publication occurred.
+
+Installed proof is bound to clean merged candidate `223f8c063de807efea0d6a4e2ab6e753d064ffc5` and installed
+executable SHA-256 `b1276cfcec428b0a7e4a798e27a1f4f6326f22c7c4cbf0d961d31115cbbe6a5`.
+`qa:smoke:installed` returned GREEN. In that running installed Tauri UI, a disposable agent-workspace artifact
+`native-open-proof-223f8c06.md` rendered through the real saved-deliverable callback. One CDP-dispatched left
+click on its filename launched Windows Notepad with the exact full path on the process command line and the
+window title `native-open-proof-223f8c06.md - Notepad`. The folder control opened Explorer with that exact file
+both focused and selected, and copy-path placed the exact 95-character absolute path on the clipboard. The
+temporary session, artifact, proof-specific Notepad process, and Explorer window were then removed; the prior
+clipboard text was restored.
