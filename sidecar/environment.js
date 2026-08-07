@@ -4,11 +4,11 @@
    environment to execute, while the environment decides whether that means host
    shell, Docker, SSH, or a cloud sandbox. StarNet's first parity step is the same
    seam. This module keeps the local backend behavior-compatible, and adds a
-   Docker backend that runs commands against the same per-agent workspace via a
-   bind mount.
+   Docker backend that runs commands in one durable, per-agent container against
+   the same workspace bind mount.
 
    makeEnvironmentManager({ spawn, fs, pathMod, root, bg?, clock?, env?, config? })
-     -> { backendId, describe, ensureWorkspace, workspaceRoot, getCwd,
+     -> { backendId, describe, ensureReady, cleanupAgent, ensureWorkspace, workspaceRoot, getCwd,
           rememberCwd, execute, startBackground, statusBackground, readBackground,
           writeBackground, closeBackgroundStdin, killBackground }
 */
@@ -114,6 +114,17 @@
     cwd = String(cwd || '');
     base = String(base || '/workspace').replace(/\/+$/, '') || '/';
     return cwd === base || cwd.indexOf(base + '/') === 0;
+  }
+  // Docker names must be stable across sidecar restarts without leaking an absolute host path. FNV-1a is
+  // sufficient here: this is a collision-avoidance suffix, not an authority or cryptographic identity.
+  function stableHash(value) {
+    let h = 0x811c9dc5;
+    const s = String(value == null ? '' : value);
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return ('00000000' + h.toString(16)).slice(-8);
   }
   function killTree(spawn, child, isWin) {
     try { child.kill(); } catch (_) {}
@@ -245,7 +256,7 @@
 
     return {
       id: 'local',
-      supports: { shell: true, background: !!bg, hostWorkspace: true, checkpoints: true, hostileCodeSandbox: false },
+      supports: { shell: true, background: !!bg, hostWorkspace: true, checkpoints: true, hostileCodeSandbox: false, persistentSession: false },
       describe: function () { return {
         backend: 'local', workspace: ROOT, background: !!bg,
         safeCell: {
@@ -305,6 +316,10 @@
     const clock = deps.clock || { now: function () { return 0; } };
     const cfg = deps.config || {};
     const sessions = new Map();
+    const ready = new Set();
+    const ensuring = new Map();
+    const runtimeStatus = { state: 'unknown', error: null };
+    const rootIdentity = stableHash(P.resolve ? P.resolve(ROOT) : ROOT);
     const containerRoot = String(cfg.dockerWorkspace || '/workspace').replace(/\/+$/, '') || '/workspace';
     // Same contract as the local backend: resolved PER CALL, fail-open, never a boot-time snapshot.
     const serviceEnvFn = typeof deps.serviceEnv === 'function' ? deps.serviceEnv : null;
@@ -327,6 +342,13 @@
     function workspaceRoot(agentId) {
       return P.join(ROOT, safeAgentId(agentId || 'agent'));
     }
+    function cwdStatePath(agentId) {
+      return P.join(ROOT, '.environment', safeAgentId(agentId || 'agent') + '.cwd');
+    }
+    function containerName(agentId) {
+      const aid = safeAgentId(agentId || 'agent');
+      return 'starnet-' + rootIdentity + '-' + stableHash(aid) + '-' + aid.toLowerCase();
+    }
     function ensureWorkspace(agentId) {
       const dir = workspaceRoot(agentId);
       try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
@@ -335,49 +357,173 @@
     function getCwd(agentId) {
       const aid = safeAgentId(agentId || 'agent');
       ensureWorkspace(aid);
-      const cwd = sessions.get(aid);
+      let cwd = sessions.get(aid);
+      if (!cwd && fs.readFileSync) {
+        try { cwd = String(fs.readFileSync(cwdStatePath(aid), 'utf8') || '').trim(); } catch (_) {}
+        if (cwd && posixInside(cwd, containerRoot)) sessions.set(aid, cwd);
+      }
       return cwd && posixInside(cwd, containerRoot) ? cwd : containerRoot;
     }
     function rememberCwd(agentId, cwd) {
       const aid = safeAgentId(agentId || 'agent');
-      if (cwd && posixInside(cwd, containerRoot)) sessions.set(aid, cwd);
+      if (cwd && posixInside(cwd, containerRoot)) {
+        sessions.set(aid, cwd);
+        // The file lives outside the mounted agent workspace, so task code cannot forge a cwd receipt. It is
+        // only convenience state and is revalidated against containerRoot on every read.
+        try {
+          const state = cwdStatePath(aid);
+          fs.mkdirSync(P.dirname(state), { recursive: true });
+          const tmp = state + '.tmp-' + String((typeof process !== 'undefined' && process.pid) || 0);
+          fs.writeFileSync(tmp, String(cwd), 'utf8');
+          fs.renameSync(tmp, state);
+        } catch (_) {}
+      }
       return getCwd(aid);
     }
-    // Service keys reach the container WITHOUT ever appearing on the command line. `docker run -e NAME`
+    // Service keys reach the container WITHOUT ever appearing on the command line. `docker exec -e NAME`
     // with NO `=value` tells docker to read that variable from ITS OWN environment and forward it, so the
     // argv carries only the NAME (safe in any `ps` listing) while the value travels in the docker client's
     // env — which is why serviceEnvFor() is merged into spawnOptions.env below rather than interpolated
     // here. This is the reason not to use `-e NAME=value` or a temp --env-file: no secret on argv, no
     // secret on disk. Resolved per call, so a key added or revoked after boot takes effect on the next run.
-    function dockerArgs(agentId, cmd, cwd, envNames) {
+    function dockerCreateArgs(agentId) {
       const hostRoot = workspaceRoot(agentId);
-      const args = ['run', '--rm', '-i'];
-      for (const n of (envNames || [])) args.push('-e', n);
+      const args = ['create'];
       if (cfg.dockerSecurity !== false) args.push('--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '256');
       if (cfg.dockerNetwork) args.push('--network', String(cfg.dockerNetwork));
       if (cfg.dockerCpus) args.push('--cpus', String(cfg.dockerCpus));
       if (cfg.dockerMemory) args.push('--memory', String(cfg.dockerMemory));
       for (let i = 0; i < (cfg.dockerExtraArgs || []).length; i++) args.push(String(cfg.dockerExtraArgs[i]));
+      // Put identity after owner-configurable extras so duplicate --name/--label flags cannot make StarNet
+      // lose the deterministic handle or ownership receipt it later verifies before reuse.
+      args.push('--name', containerName(agentId),
+        '--label', 'ai.starnet.managed=1',
+        '--label', 'ai.starnet.workspace=' + rootIdentity,
+        '--label', 'ai.starnet.agent=' + agentId);
       args.push('--volume', hostRoot + ':' + containerRoot);
-      args.push('--workdir', cwd || containerRoot);
+      args.push('--workdir', containerRoot);
       args.push(String(cfg.dockerImage || DEFAULT_DOCKER_IMAGE));
-      args.push('sh', '-lc', String(cmd || ''));
+      // A boring PID 1 keeps the writable container layer (installed packages, caches, image env) alive.
+      // Foreground/background work is always a separately owned `docker exec` child.
+      args.push('sh', '-lc', 'trap "exit 0" TERM INT; while :; do sleep 3600; done');
       return args;
+    }
+
+    function dockerExecArgs(agentId, cmd, cwd, envNames) {
+      const args = ['exec', '-i'];
+      for (const n of (envNames || [])) args.push('-e', n);
+      args.push('--workdir', cwd || containerRoot, containerName(agentId), 'sh', '-lc', String(cmd || ''));
+      return args;
+    }
+
+    function dockerClientEnv(extra) {
+      const names = Object.keys(extra || {});
+      return names.length
+        ? mergeServiceEnv(sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {})), extra)
+        : undefined;
+    }
+
+    function dockerRun(args, opts) {
+      opts = opts || {};
+      return runProcess({
+        spawn: spawn,
+        file: cfg.dockerBin || 'docker',
+        args: args,
+        spawnOptions: opts.env ? { windowsHide: true, env: opts.env } : { windowsHide: true },
+        timeoutMs: opts.timeoutMs || 30000,
+        maxTimeoutMs: opts.maxTimeoutMs || 600000,
+        maxBytes: opts.maxBytes || 64000,
+        signal: opts.signal,
+        clock: opts.clock || clock,
+        isWin: WIN
+      });
+    }
+
+    function inspectContainer(agentId) {
+      const format = '{{.State.Running}}\t{{index .Config.Labels "ai.starnet.workspace"}}\t{{index .Config.Labels "ai.starnet.agent"}}';
+      return dockerRun(['inspect', '--format', format, containerName(agentId)], { timeoutMs: 10000, maxBytes: 4096 })
+        .then(function (r) {
+          if (r.exitCode !== 0) return { exists: false, running: false };
+          const parts = String(r.out || '').trim().split('\t');
+          if (parts[1] !== rootIdentity || parts[2] !== agentId) {
+            throw new Error('refusing Docker container name collision for ' + containerName(agentId));
+          }
+          return { exists: true, running: parts[0] === 'true' };
+        });
+    }
+
+    function ensureContainer(agentId, force) {
+      const aid = safeAgentId(agentId || 'agent');
+      ensureWorkspace(aid);
+      if (!force && ready.has(aid)) return Promise.resolve({ ok: true, reused: true, container: containerName(aid) });
+      if (ensuring.has(aid)) return ensuring.get(aid);
+      const promise = inspectContainer(aid).then(function (state) {
+        if (state.exists && state.running) return { reused: true };
+        if (state.exists) {
+          return dockerRun(['start', containerName(aid)], { timeoutMs: 30000 }).then(function (r) {
+            if (r.exitCode !== 0) throw new Error('could not start persistent Docker environment: ' + String(r.out || '').trim());
+            return { reused: true };
+          });
+        }
+        return dockerRun(dockerCreateArgs(aid), { timeoutMs: 120000 }).then(function (created) {
+          if (created.exitCode !== 0) throw new Error('could not create persistent Docker environment: ' + String(created.out || '').trim());
+          return dockerRun(['start', containerName(aid)], { timeoutMs: 30000 }).then(function (started) {
+            if (started.exitCode !== 0) throw new Error('could not start persistent Docker environment: ' + String(started.out || '').trim());
+            return { reused: false };
+          });
+        });
+      }).then(function (state) {
+        return dockerRun(['exec', '--workdir', containerRoot, containerName(aid), 'sh', '-lc', 'test -d . && printf starnet-ready'], { timeoutMs: 10000, maxBytes: 4096 })
+          .then(function (probe) {
+            if (probe.exitCode !== 0 || String(probe.out || '').indexOf('starnet-ready') < 0) {
+              throw new Error('persistent Docker environment failed its startup probe');
+            }
+            ready.add(aid);
+            runtimeStatus.state = 'ready'; runtimeStatus.error = null;
+            return { ok: true, reused: state.reused, container: containerName(aid) };
+          });
+      });
+      ensuring.set(aid, promise);
+      return promise.then(function (v) { ensuring.delete(aid); return v; }, function (e) {
+        ensuring.delete(aid); ready.delete(aid);
+        runtimeStatus.state = 'unavailable';
+        runtimeStatus.error = String((e && e.message) || e || 'Docker environment unavailable').slice(0, 300);
+        throw e;
+      });
+    }
+
+    function cleanupAgent(agentId, opts) {
+      const aid = safeAgentId(agentId || 'agent');
+      opts = opts || {};
+      ready.delete(aid);
+      sessions.delete(aid);
+      const args = opts.remove === false
+        ? ['stop', '--time', String(clamp(opts.timeoutSeconds || 3, 0, 30)), containerName(aid)]
+        : ['rm', '--force', containerName(aid)];
+      return dockerRun(args, { timeoutMs: 30000 }).then(function (r) {
+        if (opts.remove !== false) { try { fs.unlinkSync(cwdStatePath(aid)); } catch (_) {} }
+        return { ok: r.exitCode === 0, removed: opts.remove !== false, container: containerName(aid), out: String(r.out || '').trim() };
+      });
     }
 
     return {
       id: 'docker',
-      supports: { shell: true, background: false, hostWorkspace: true, checkpoints: true, hostileCodeSandbox: true },
+      supports: { shell: true, background: !!(deps.bg && typeof deps.bg.start === 'function'), hostWorkspace: true, checkpoints: true, hostileCodeSandbox: true, persistentSession: true },
       describe: function () {
         return {
-          backend: 'docker', image: cfg.dockerImage || DEFAULT_DOCKER_IMAGE, workspace: containerRoot, hostRoot: ROOT, background: false,
+          backend: 'docker', image: cfg.dockerImage || DEFAULT_DOCKER_IMAGE, workspace: containerRoot, hostRoot: ROOT,
+          background: !!(deps.bg && typeof deps.bg.start === 'function'),
+          availability: { state: runtimeStatus.state, checked: runtimeStatus.state !== 'unknown', error: runtimeStatus.error },
+          persistence: { container: 'per-agent', restartReuse: true, writableLayer: true, cwd: true, readyAgents: ready.size },
           safeCell: {
             default: false,
             hostileCodeSandbox: true,
-            controls: ['per-agent bind mount', 'container cwd clamp', 'cap-drop ALL', 'no-new-privileges', 'PID limit', 'foreground timeout/abort kill']
+            controls: ['per-agent bind mount', 'container cwd clamp', 'cap-drop ALL', 'no-new-privileges', 'PID limit', 'startup probe', 'foreground timeout/abort kill', 'deterministic labeled ownership']
           }
         };
       },
+      ensureReady: function (agentId) { return ensureContainer(agentId, false); },
+      cleanupAgent: cleanupAgent,
       workspaceRoot: workspaceRoot,
       ensureWorkspace: ensureWorkspace,
       getCwd: getCwd,
@@ -390,31 +536,34 @@
         // in a command line, and a container only ever receives keys the Commander connected.
         const svc = serviceEnvFor(opts.surface);
         const names = Object.keys(svc);
-        return runProcess({
-          spawn: spawn,
-          file: cfg.dockerBin || 'docker',
-          args: dockerArgs(aid, opts.cmd, cwd, names),
-          spawnOptions: names.length
-            ? { windowsHide: true, env: mergeServiceEnv(sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {})), svc) }
-            : { windowsHide: true },
-          timeoutMs: opts.timeoutMs,
-          maxTimeoutMs: opts.maxTimeoutMs,
-          maxBytes: opts.maxBytes,
-          signal: opts.signal,
-          clock: opts.clock || clock,
-          isWin: WIN
+        return ensureContainer(aid, false).then(function () {
+          return dockerRun(dockerExecArgs(aid, opts.cmd, cwd, names), {
+            env: dockerClientEnv(svc), timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs,
+            maxBytes: opts.maxBytes, signal: opts.signal, clock: opts.clock || clock
+          });
         });
       },
-      startBackground: function () {
-        return { ok: false, error: 'background processes are not available for the docker backend yet; run a foreground command or switch STARNET_EXEC_BACKEND=local' };
+      startBackground: function (opts) {
+        opts = opts || {};
+        const bg = deps.bg;
+        if (!bg || typeof bg.start !== 'function') return Promise.resolve({ ok: false, error: 'background processes are not available for the docker backend' });
+        const aid = safeAgentId(opts.agentId || 'agent');
+        const svc = serviceEnvFor(opts.surface);
+        return ensureContainer(aid, false).then(function () {
+          return bg.start({
+            agentId: aid, cmd: String(opts.cmd || ''), cwd: workspaceRoot(aid), isWin: WIN,
+            file: cfg.dockerBin || 'docker', args: dockerExecArgs(aid, opts.cmd, opts.cwd || getCwd(aid), Object.keys(svc)),
+            env: dockerClientEnv(svc)
+          });
+        });
       },
-      statusBackground: function () { return []; },
-      readBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
-      writeBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
-      closeBackgroundStdin: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
-      killBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
-      killAllBackground: function () { return 0; },
-      _internals: { dockerArgs: dockerArgs, posixInside: posixInside }
+      statusBackground: function (agentId, bgId) { return deps.bg && deps.bg.status ? deps.bg.status(safeAgentId(agentId || 'agent'), bgId) : (bgId ? null : []); },
+      readBackground: function (agentId, bgId, opts) { return deps.bg && deps.bg.read ? deps.bg.read(safeAgentId(agentId || 'agent'), bgId, opts) : { ok: false, error: 'background processes are not available for the docker backend' }; },
+      writeBackground: function (agentId, bgId, opts) { return deps.bg && deps.bg.write ? deps.bg.write(safeAgentId(agentId || 'agent'), bgId, opts) : { ok: false, error: 'background processes are not available for the docker backend' }; },
+      closeBackgroundStdin: function (agentId, bgId) { return deps.bg && deps.bg.closeStdin ? deps.bg.closeStdin(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the docker backend' }; },
+      killBackground: function (agentId, bgId) { return deps.bg && deps.bg.kill ? deps.bg.kill(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the docker backend' }; },
+      killAllBackground: function (agentId) { return deps.bg && deps.bg.killAll ? deps.bg.killAll(agentId) : 0; },
+      _internals: { dockerCreateArgs: dockerCreateArgs, dockerExecArgs: dockerExecArgs, containerName: containerName, inspectContainer: inspectContainer, posixInside: posixInside }
     };
   }
 
@@ -432,6 +581,8 @@
       backendId: backend.id,
       supports: backend.supports,
       describe: backend.describe,
+      ensureReady: backend.ensureReady || function (agentId) { backend.ensureWorkspace(agentId); return Promise.resolve({ ok: true, backend: backend.id }); },
+      cleanupAgent: backend.cleanupAgent || function () { return Promise.resolve({ ok: false, error: 'the local backend has no persistent environment to remove' }); },
       workspaceRoot: backend.workspaceRoot,
       ensureWorkspace: backend.ensureWorkspace,
       getCwd: backend.getCwd,
@@ -445,7 +596,7 @@
       killBackground: backend.killBackground,
       killAllBackground: backend.killAllBackground,
       _backend: backend,
-      _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, mergeServiceEnv: mergeServiceEnv, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside }
+      _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, mergeServiceEnv: mergeServiceEnv, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside, stableHash: stableHash }
     };
   }
 
