@@ -1,35 +1,18 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-08-07 — PER-BLOCK CODE COPY (`agent/response-section-copy`)
+## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
-MERGE-PREP SWEPT; GATE NEEDS A QUIET-RUN RECEIPT. Fenced code in COMMS previously rendered as a bare
-`.md-pre` span, while the only copy action belonged to the whole message. Each fenced block now owns a
-top-right, keyboard-labelled copy control that targets only its exact code text. Clipboard success renders
-`Copied` / ✓; failure renders `Copy failed` / ! and directs the user to manual selection. The packaged website
-mirror is synchronized, and the existing whole-message copy control now uses the same truthful feedback path.
+Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have
+independent top-right, keyboard-labelled copy controls that copy only the exact code text. Success renders
+`Copied` / ✓; failure renders `Copy failed` / ! and leaves truthful manual-selection guidance. The existing
+whole-message copy action uses the same feedback path, and the packaged website mirror is synchronized.
 
-Live seeded proof: a real NOVA response containing prose plus `console.log("hello");` exposed one independent
-`Copy code block` button; clicking it changed the control to `Copied` and the browser clipboard read back exactly
-`console.log("hello");`, excluding the surrounding prose. Focused copy/linkify/control-floor/tooltip/website-sync
-coverage is green (523 assertions across five suites), including a new 20-assertion multi-block/XSS/accessibility
-regression. `node --check` is green for every touched JavaScript file. Frontend-only change, so `test:http` is not
-required. Commit: `74d2ad2a`.
-
-Canonical `test:fast` on the committed feature branch passed through step 223, then correctly stopped at the
-candidate-bound claims audit because HEAD no longer equals the sealed trunk candidate; that audit is 64/64 green
-on untouched trunk. A detached sealed-base worktree with the fix applied uncommitted was then used for the honest
-gate path, but concurrent repository gates prevented a terminal receipt: one launch lost its Windows runner parent
-mid-suite, and a directly tracked retry hit the 600-second repository ceiling without a verdict. Re-run
-`npm run test:fast` on a quiet integration candidate before merge; do not rewrite shared candidate evidence for
-this frontend lane.
-
-Merge-prep refresh: current trunk `e9c134c8` merged cleanly into the lane as `b4bd222d`; the incoming change was
-limited to `qa/STATUS.md`, with no overlap or conflict. Post-sync syntax, focused coverage, mirror parity, and the
-real seeded clipboard round-trip all passed again. A new sealed-base full-manifest attempt passed steps 1–149,
-then `boot-security.test.js` timed out starting its disposable sidecar; the unchanged isolated retry timed out at
-the same boot boundary while four other full fast gates were active. No assertion in this frontend lane failed.
-The branch is clean and current with trunk, but remains intentionally short of READY TO MERGE until the canonical
-gate obtains a quiet-host receipt.
+Live seeded proof clicked `Copy code block` on a response containing prose plus `console.log("hello");`; the
+browser clipboard contained exactly `console.log("hello");`, excluding the prose. The new regression contributes
+20 multi-block/XSS/accessibility assertions. After a mid-ritual trunk reset, the lane was reconstructed from the
+current trunk with only its own commits so dropped artifact work was not silently reintroduced. Product-perfect
+claims were re-locked for 205 surface files. Full `npm run test:fast` was **574/574 GREEN** both before merge and
+again on the exact merged trunk. Frontend-only: `test:http` was not required.
 
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
