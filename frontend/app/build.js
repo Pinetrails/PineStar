@@ -177,6 +177,7 @@ const Build = (() => {
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
     finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
     for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
+    clearLineFields();   // a fresh session never inherits a prior floor's "where can this go" answers
     probeSampleSeam();
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
@@ -1191,8 +1192,14 @@ const Build = (() => {
      retires for good (the flag persists, so deleting the line later does not summon it back).
      ONE-VOICE LAW: it never paints itself — it registers with the arbiter like every other label,
      and it stands down entirely for the tutorial's coaching and the first-run card. */
-  function lineInviteRetired() { try { return !!localStorage.getItem(LINE_INVITE_KEY); } catch (e) { return false; } }
-  function retireLineInvite() { try { localStorage.setItem(LINE_INVITE_KEY, '1'); } catch (e) {} }
+  // read the latch ONCE per session, not once per frame — localStorage is synchronous and this is
+  // checked from the draw loop (60fps × getItem is a real cost, and the answer cannot change under us)
+  let inviteRetiredMemo = null;
+  function lineInviteRetired() {
+    if (inviteRetiredMemo === null) { try { inviteRetiredMemo = !!localStorage.getItem(LINE_INVITE_KEY); } catch (e) { inviteRetiredMemo = false; } }
+    return inviteRetiredMemo;
+  }
+  function retireLineInvite() { inviteRetiredMemo = true; try { localStorage.setItem(LINE_INVITE_KEY, '1'); } catch (e) {} }
   // any belt or any line machine (CONNECT_TYPES is exactly the set a line is built from) counts
   function floorHasLine() {
     if (!station) return true;
@@ -2503,6 +2510,12 @@ const Build = (() => {
   // the chrome-occluded margins of the canvas (device px): the build panel (left sidebar on
   // desktop, bottom sheet on narrow screens) + the top bar — so FIT frames the station in the
   // VISIBLE viewport instead of centering half of it behind the panel.
+  /* viewInsets reads three getBoundingClientRects — cheap once, but it is now consulted from the
+     draw loop (the gesture badge and the invitation clamp to the VISIBLE glass, not the raw
+     canvas), and three forced layouts per frame is exactly how a canvas app starts stuttering.
+     The measurement cannot change within a frame, so memoize it for the frame; frame() drops it. */
+  let insMemo = null;
+  const viewInsetsFrame = () => (insMemo || (insMemo = viewInsets()));
   function viewInsets() {
     const out = { l: 0, t: 0, b: 0 };
     if (!cv || !root) return out;
@@ -3240,6 +3253,7 @@ const Build = (() => {
   function frame(now) {
     if (!running) return;
     let failed = false;
+    insMemo = null;   // one layout measurement per frame at most (viewInsetsFrame)
     try {
     const visibleRect = cacheGeo ? visibleBakeRect(cacheGeo) : null;
     if (visibleRect && cache && StationBake.missingVisibleChunks && StationBake.missingVisibleChunks(cache, visibleRect).length) {
@@ -3870,7 +3884,7 @@ const Build = (() => {
        clamping to the canvas edge is not clamping to anything the user can read. A ghost near the
        left of the floor put its badge behind the dock and you lost the first words of the readout
        ("…SEARCH LINE — CLICK TO STAMP"). viewInsets is the same measurement fitCamera frames by. */
-    const ins = viewInsets();
+    const ins = viewInsetsFrame();
     const topWorld = (ins.t - panY) / zoom;
     // above the ghost by default; flip below when that would land off the top of the glass
     const above = rect.y1 * t - bh - fs * 0.35;
@@ -3975,7 +3989,7 @@ const Build = (() => {
     ctx.restore();
     const bw = Math.max(w1, w2) + pad * 2, bh = lh + lh2 + pad * 1.8;
     // above the footprint by default; flip below when that would leave the glass (same rule as the badge)
-    const ins = viewInsets();
+    const ins = viewInsetsFrame();
     const topWorld = (ins.t - panY) / zoom, leftWorld = (ins.l - panX) / zoom, rightWorld = (cv.width - panX) / zoom, m = 6 / zoom;
     const above = Y - bh - fs * 0.5;
     const by = above > topWorld + fs ? above : Y + Hd + fs * 0.5;

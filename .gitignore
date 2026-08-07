@@ -147,3 +147,7 @@ website-deploy/
 # ABILITIES lane visual-proof screenshots (headless capture output; never committed)
 dev/.shots-abilities/
 .shots-before/
+
+# LINE PLACEMENT lane visual-proof screenshots (headless capture output; never committed)
+dev/.shots-line-placement/
+dev/.shots-ux-walk/
