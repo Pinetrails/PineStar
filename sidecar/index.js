@@ -74,6 +74,7 @@ const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
 const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
 const { makeRunJournal } = require('./run-journal.js');
+const RunRecovery = require('./run-recovery.js');
 const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
@@ -949,7 +950,8 @@ const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: ()
 // Active runs journal their provider-valid message and tool side-effect boundaries outside the agent fs jail.
 // Finished journals remain until the segmented transcript store acknowledges their final durable checkpoint;
 // this avoids deleting the only recovery copy after the legacy transcript writer's fail-open append.
-const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
+const RUN_JOURNAL_DIR = path.join(WORKSPACES, '.run-journal');
+const runJournal = makeRunJournal({ dir: RUN_JOURNAL_DIR, fs, path, clock: { now: () => Date.now() }, redact });
 // Recovery is intentionally lazy. Thousands of unresolved/failed journals are audit evidence and
 // must not be discarded, but parsing all of them synchronously before server.listen made startup
 // proportional to lifetime failures. GET /api/run-recoveries pages through the durable files.
@@ -7399,6 +7401,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/local-voice/warm', h: media.handleLocalVoiceWarm },
   { m: 'POST', exact: '/api/local-voice/transcribe', h: media.handleLocalVoiceTranscribe },
   { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
+  { m: 'POST', exact: '/api/run-recoveries/resolve', h: handleRunRecoveryResolve },
+  { m: 'POST', exact: '/api/run-recoveries/continue', h: handleRunRecoveryContinue },
   { m: 'POST', exact: '/api/tts', h: media.handleTts, errorPolicy: media.ttsFailOpenPolicy },
   // stt: qsplit == the old (url === '/api/stt' || url.indexOf('/api/stt?') === 0) disjunction, verbatim.
   { m: 'POST', qsplit: '/api/stt', h: media.handleStt, errorPolicy: media.sttFailOpenPolicy },
@@ -11492,6 +11496,17 @@ async function handleRun(req, res) {
   const key = providerRuntimeKey(runProvider, body && body.key);
   if (!model || !providerHasCredential(runProvider, key, baseUrl)) { res.writeHead(400); return res.end('missing key/model'); }
 
+  // Consume a continuation before opening the response stream or doing provider/tool work. The durable start
+  // record is intentionally one-way: losing this response may require another review, but retrying cannot run
+  // the same continuation twice and duplicate an external effect.
+  const runId = crypto.randomUUID();
+  let recovery = null;
+  if (body && body.recovery) {
+    const accepted = consumeRunRecoveryContinuation(body.recovery, agentId, runId);
+    if (!accepted.ok) { res.writeHead(accepted.code || 409); return res.end(accepted.error || 'continuation blocked'); }
+    recovery = accepted.plan;
+  }
+
   res.writeHead(200, {
     'Content-Type': 'application/x-ndjson; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -11502,7 +11517,6 @@ async function handleRun(req, res) {
   const kaOff = attachStreamKeepAlive(res);
 
   const ac = new AbortController();
-  const runId = crypto.randomUUID();
   runs.set(runId, ac);
   runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive', streamId: streamId || '' });
   // NS-1 AWAY DETECTION: a browser /api/run is genuinely user-triggered work — stamp the away clock so the
@@ -11617,7 +11631,7 @@ async function handleRun(req, res) {
     try { runMessages = await attachments.expandUserAttachments(messages, agentId); } catch (_) { runMessages = messages; }
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
-    await runOnce({
+    const continuedResult = await runOnce({
       key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal, evidence,
       initialTaint: hasUserAttachments ? 'user attachment' : null,
@@ -11646,11 +11660,14 @@ async function handleRun(req, res) {
          bounded exactly as before: AuxGovernor's per-run-end budget, the per-agent cooldown, and the salience gate
          all sit downstream of this flag. */
       reflect: true,
+      recovery,
       recurring,      // salience signal: did the mint detector see this task shape before? (decision 3)
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
                       // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
     });
+    if (recovery) settleRunRecoveryContinuation(recovery, runId, (continuedResult && continuedResult.reason) || 'error');
   } catch (e) {
+    if (recovery) settleRunRecoveryContinuation(recovery, runId, 'error');
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
@@ -12836,6 +12853,7 @@ async function runOnce(o) {
   // calls a GRANTED tool by its real dotted name also misses fromWire, and must keep falling through to the
   // ordinary capability/consent path exactly as before.
   const grantedSet = new Set(resolved.tools || []);
+  const recoveryReplayBarrier = RunRecovery.makeReplayBarrier(o.recovery && o.recovery.blockedFingerprints);
 
   /* PARALLEL-SAFE PREDICATE — the host half of loop.js's batch planner. The loop sees a name and args; only
      here does the registry exist to say what a tool actually IS. A batch runs concurrently only when EVERY
@@ -12892,6 +12910,17 @@ async function runOnce(o) {
       };
     }
     const liveTool = registry.get(c.name);
+    // This no-replay authority runs before taint, budgets, consent, workspace leases, checkpoints, journaling,
+    // and registry dispatch. A model cannot repeat an operator-reviewed mutation by ignoring the prompt or by
+    // merely changing JSON property order.
+    const replayCheck = recoveryReplayBarrier.check(c.name, c.argsRaw || '{}', !!(liveTool && liveTool.scope !== 'read'));
+    if (!replayCheck.ok) {
+      return {
+        ok: false, isError: true, summary: 'recovery-replay-blocked',
+        content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
+          + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
+      };
+    }
     if (directDomainTask && directDomainWithheld(c.name)) {
       return { ok: false, isError: true, summary: 'direct-domain-local', content: 'This is a bounded check of the exact host ' + directDomainTask.host + '. Do not delegate, search, browse, or call archives; fetch that host directly with web_fetch.' };
     }
@@ -12999,6 +13028,7 @@ async function runOnce(o) {
       try {
         runJournal.toolIntent(runId, {
           callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
+          replayFingerprint: RunRecovery.replayFingerprint(c.name, c.argsRaw || '{}'),
           mutating: !!(liveTool && liveTool.scope !== 'read')
         });
       } catch (e) {
@@ -13398,12 +13428,16 @@ async function runOnce(o) {
   // history the caller already supplied; gated to an explicit streamId (the global catch-all is not auto-seeded).
   let convo = messages;
   try {
-    if (!internal && streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
+    if (!o.recovery && !internal && streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
       const seed = transcriptStore.reconstruct(streamId, { limit: 100 });
       if (seed.length) convo = seed.concat(messages);   // prior dialogue first, the new directive stays last
     }
   } catch (_) { /* resume is best-effort; a bad transcript never blocks a run */ }
-  let msgs = sys ? [{ role: 'system', content: sys }, ...convo] : convo.slice();
+  // Recovery history is already a provider-valid, fully-paired durable checkpoint. Do not prepend a new
+  // prompt, transcript seed, or memory turn between an assistant tool call and its verified result.
+  let msgs = o.recovery
+    ? JSON.parse(JSON.stringify(o.recovery.messages || []))
+    : (sys ? [{ role: 'system', content: sys }, ...convo] : convo.slice());
   // Cortex (M-mem.3): surface the agent's OWN memory in-prompt — RANK it by relevance to this message
   // (BM25 + recency/trust/pin), inject the top few as a recalled-memory fence before the triggering user
   // message, and emit memory.used per surfaced record (-> useCount/trust + the XP reuse path). The recency
@@ -13413,7 +13447,7 @@ async function runOnce(o) {
   // (a title call crediting memory.used would fake the Memory Core stats).
   if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
-    const recs = Array.isArray(stored) ? stored : [];
+    const recs = o.recovery ? [] : (Array.isArray(stored) ? stored : []);
     const q = latestUserText(messages);   // an attachment turn must rank recall against ITS text, not the previous turn's
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
@@ -13455,6 +13489,7 @@ async function runOnce(o) {
     try {
       runJournal.begin({
         runId, agentId, streamId: o.streamId || 'global', trigger, model,
+        recoveryOf: o.recovery ? String(o.recovery.sourceRunId || '') : '',
         userTitle: latestUserText(msgs), startedAt: Date.now(),
         cronJobId: trigger === 'schedule' ? String(o.cronJobId || '') : '',
         cronJobName: trigger === 'schedule' ? String(o.cronJobName || '').slice(0, 200) : ''
@@ -13682,7 +13717,10 @@ async function runOnce(o) {
   const _fr = result && result.finishReason;
   const _truncated = _fr === 'length' || _fr === 'content_filter';
   const _qualifies = !_truncated;   // true when finishReason is absent or a clean value
-  const _auxDone = !!(result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
+  // A recovery continuation is a narrowly authorized completion of the interrupted run. Do not fan it out into
+  // reflection/study/scout/skill auxiliary model calls; those are separate work, complicate auditability, and
+  // could outlive the one-shot continuation response.
+  const _auxDone = !!(!o.recovery && result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
   const _auxNow = Date.now();       // one clock read for the scout cadence fold + curator-due check below
   const _auxModel = _auxDone ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
 
@@ -15759,20 +15797,45 @@ function serveRuns(req, res) {
 // GET /api/run-recoveries — authenticated by the shared /api gate, read-only, and intentionally conservative.
 // It exposes safe checkpoint dialogue plus tool names/call ids, never raw tool arguments or results. An uncertain
 // side effect is review-required; the harness does not replay it or claim that it did/didn't happen.
-function serveRunRecoveries(req, res) {
-  const u = new URL(req.url, 'http://127.0.0.1');
-  const offset = Math.max(0, Number(u.searchParams.get('offset')) || 0);
-  const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
-  let page;
-  try { page = runJournal.recoverPage({ offset, limit }); }
-  catch (e) { return respondJson(res, 500, { error: 'could not read run recoveries' }); }
-  const recoveredRunJournals = page.rows.filter(r => {
-    if (!r) return false;
-    // A durable transcript acknowledgement is the commit record. If the process died between that record and
-    // unlink, finish the idempotent retirement when its page is inspected; all other states remain visible.
-    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
-    return true;
-  });
+function runRecoveryToken(r) {
+  const uncertainty = (r.uncertain || []).map(x => [String(x.callId || ''), String(x.name || '')]);
+  return crypto.createHash('sha256').update(JSON.stringify([
+    String(r.runId || ''), String((r.meta && r.meta.agentId) || ''), String(r.status || ''),
+    Number(r.records || 0), uncertainty
+  ])).digest('hex');
+}
+function constantTimeTextEqual(a, b) {
+  const left = crypto.createHash('sha256').update(String(a || ''), 'utf8').digest();
+  const right = crypto.createHash('sha256').update(String(b || ''), 'utf8').digest();
+  return crypto.timingSafeEqual(left, right);
+}
+function runContinuationToken(r) {
+  const c = (r && r.continuation) || {};
+  return crypto.createHmac('sha256', API_TOKEN).update(JSON.stringify([
+    String((r && r.runId) || ''), String((r && r.meta && r.meta.agentId) || ''),
+    String(c.continuationId || ''), String(c.state || ''), Number((r && r.records) || 0)
+  ])).digest('hex');
+}
+function markRunRecoveryForensic(r) {
+  if (!r) return r;
+  r.forensicOnly = !!r.corrupt;
+  try {
+    const file = r.file || path.join(RUN_JOURNAL_DIR, runJournal._internals.runFileName(r.runId));
+    const base = path.basename(file);
+    if (!r.forensicOnly) {
+      r.forensicOnly = fs.readdirSync(path.dirname(file)).some(name => name.indexOf(base + '.corrupt') === 0);
+    }
+  } catch (_) { r.forensicOnly = true; }
+  return r;
+}
+function inspectRunRecovery(runId) {
+  return markRunRecoveryForensic(runJournal.inspect(String(runId || '')));
+}
+function canContinueRunRecovery(r) {
+  if (!r || r.status !== 'resolved' || (r.continuation && r.continuation.state !== 'ready')) return false;
+  try { RunRecovery.continuationPlan(r); return true; } catch (_) { return false; }
+}
+function runRecoveryDto(r) {
   const safeMessage = m => {
     const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
     if (m && m.tool_call_id) out.tool_call_id = String(m.tool_call_id);
@@ -15781,7 +15844,7 @@ function serveRunRecoveries(req, res) {
     }));
     return out;
   };
-  const rows = recoveredRunJournals.map(r => ({
+  return {
     runId: String(r.runId || ''),
     agentId: String((r.meta && r.meta.agentId) || ''),
     streamId: String((r.meta && r.meta.streamId) || 'global'),
@@ -15795,13 +15858,190 @@ function serveRunRecoveries(req, res) {
     repaired: !!r.repairedFrom,
     repairError: r.repairError ? String(r.repairError).slice(0, 500) : '',
     uncertain: (r.uncertain || []).map(x => ({ callId: String(x.callId || ''), name: String(x.name || '') })),
+    recoveryToken: runRecoveryToken(r),
+    forensicOnly: !!r.forensicOnly,
+    canResolve: r.status === 'needs_review' && !r.corrupt && !r.repairError && !r.forensicOnly,
+    canContinue: canContinueRunRecovery(r),
+    resolution: r.resolution ? {
+      resolutionId: String(r.resolution.resolutionId || ''),
+      operator: String(r.resolution.operator || ''),
+      resolvedAt: Number(r.resolution.resolvedAt || 0),
+      outcomes: (r.resolution.outcomes || []).map(x => ({ callId: String(x.callId || ''), outcome: String(x.outcome || '') })),
+      note: String(r.resolution.note || '').slice(0, 500)
+    } : null,
+    continuation: r.continuation ? {
+      continuationId: String(r.continuation.continuationId || ''),
+      state: String(r.continuation.state || ''),
+      preparedAt: Number(r.continuation.preparedAt || 0),
+      startedAt: Number(r.continuation.startedAt || 0),
+      finishedAt: Number(r.continuation.finishedAt || 0),
+      continuedRunId: String(r.continuation.continuedRunId || ''),
+      reason: String(r.continuation.reason || '')
+    } : null,
     checkpoint: {
       phase: String((r.checkpoint && r.checkpoint.phase) || ''),
       turn: Number((r.checkpoint && r.checkpoint.turn) || 0),
       messages: Array.isArray(r.checkpoint && r.checkpoint.messages) ? r.checkpoint.messages.slice(-200).map(safeMessage) : []
     }
-  }));
+  };
+}
+function serveRunRecoveries(req, res) {
+  const u = new URL(req.url, 'http://127.0.0.1');
+  const offset = Math.max(0, Number(u.searchParams.get('offset')) || 0);
+  const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+  let page;
+  try { page = runJournal.recoverPage({ offset, limit }); }
+  catch (e) { return respondJson(res, 500, { error: 'could not read run recoveries' }); }
+  const rows = page.rows.filter(r => {
+    if (!r) return false;
+    // A durable transcript acknowledgement is the commit record. If the process died between that record and
+    // unlink, finish the idempotent retirement when its page is inspected; all other states remain visible.
+    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
+    return true;
+  }).map(markRunRecoveryForensic).map(runRecoveryDto);
   respondJson(res, 200, { recoveries: rows, total: page.total, offset: page.offset, limit: page.limit, nextOffset: page.offset + page.limit < page.total ? page.offset + page.limit : null });
+}
+
+// The local operator records what they verified; this never dispatches or replays a tool. Ownership, a current
+// snapshot token, complete call coverage, and explicit no-replay consent are required before the fsync'd record.
+async function handleRunRecoveryResolve(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; }
+  catch (_) { return json(400, { error: 'bad json' }); }
+  const runId = String(body.runId || '');
+  const agentId = String(body.agentId || '');
+  const resolutionId = String(body.resolutionId || '');
+  if (!runId || runId.length > 500 || !isAgentId(agentId)
+    || !/^[A-Za-z0-9._:-]{8,100}$/.test(resolutionId)) {
+    return json(400, { error: 'runId, owned agentId, and resolutionId are required' });
+  }
+  let current;
+  try { current = inspectRunRecovery(runId); }
+  catch (_) { return json(404, { error: 'recovery not found' }); }
+  if (String((current.meta && current.meta.agentId) || '') !== agentId) return json(403, { error: 'forbidden' });
+  const outcomes = Array.isArray(body.outcomes) ? body.outcomes.map(x => ({
+    callId: String((x && x.callId) || ''), outcome: String((x && x.outcome) || '')
+  })) : [];
+  const note = String(body.note || '').slice(0, 500);
+
+  // A network retry of the exact accepted decision is answered from durable state before the old snapshot
+  // token is considered. Reusing the key for a changed decision is a conflict, never an overwrite.
+  if (current.resolution) {
+    try {
+      const same = markRunRecoveryForensic(runJournal.resolve(runId, { resolutionId, operator: 'local', outcomes, note }));
+      return json(200, { ok: true, idempotent: true, replayed: false, recovery: runRecoveryDto(same) });
+    } catch (e) { return json(409, { error: String((e && e.message) || e) }); }
+  }
+  if (body.confirmedNoReplay !== true) return json(400, { error: 'explicit no-replay confirmation is required' });
+  if (current.status !== 'needs_review' || current.corrupt || current.repairError || current.forensicOnly) {
+    return json(409, { error: 'this recovery is not safely resolvable' });
+  }
+  if (!constantTimeTextEqual(body.recoveryToken, runRecoveryToken(current))) {
+    return json(409, { error: 'recovery changed; reload before deciding' });
+  }
+  const expected = (current.uncertain || []).map(x => String(x.callId || '')).sort();
+  const actual = outcomes.map(x => x.callId).sort();
+  if (!expected.length || JSON.stringify(expected) !== JSON.stringify(actual)
+    || new Set(actual).size !== actual.length
+    || outcomes.some(x => !/^(?:happened|did_not_happen|unknown)$/.test(x.outcome))) {
+    return json(409, { error: 'record one outcome for every uncertain call' });
+  }
+  try {
+    const next = markRunRecoveryForensic(runJournal.resolve(runId, {
+      resolutionId, operator: 'local', resolvedAt: Date.now(), outcomes, note
+    }));
+    return json(200, { ok: true, idempotent: false, replayed: false, recovery: runRecoveryDto(next) });
+  } catch (e) {
+    const code = e && e.code === 'RUN_RESOLUTION_CONFLICT' ? 409 : 500;
+    return json(code, { error: code === 500 ? 'could not durably record resolution' : String(e.message || e) });
+  }
+}
+
+// Preparation freezes the exact replay barrier and operator context in the append-only journal. The subsequent
+// /api/run consumes that one prepared identity before opening its stream; this route never dispatches the old call.
+async function handleRunRecoveryContinue(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; }
+  catch (_) { return json(400, { error: 'bad json' }); }
+  const runId = String(body.runId || '');
+  const agentId = String(body.agentId || '');
+  const continuationId = String(body.continuationId || '');
+  if (!runId || runId.length > 500 || !isAgentId(agentId)
+    || !/^[A-Za-z0-9._:-]{8,100}$/.test(continuationId)) {
+    return json(400, { error: 'runId, owned agentId, and continuationId are required' });
+  }
+  if (body.confirmedSafeContinuation !== true) {
+    return json(400, { error: 'explicit safe-continuation confirmation is required' });
+  }
+  let current;
+  try { current = inspectRunRecovery(runId); }
+  catch (_) { return json(404, { error: 'recovery not found' }); }
+  if (String((current.meta && current.meta.agentId) || '') !== agentId) return json(403, { error: 'forbidden' });
+  if (current.continuation) {
+    if (current.continuation.continuationId !== continuationId) return json(409, { error: 'a different continuation already exists' });
+    return json(200, {
+      ok: true, idempotent: true, canStart: current.continuation.state === 'ready',
+      continuationToken: current.continuation.state === 'ready' ? runContinuationToken(current) : '',
+      recovery: runRecoveryDto(current)
+    });
+  }
+  if (!constantTimeTextEqual(body.recoveryToken, runRecoveryToken(current))) {
+    return json(409, { error: 'recovery changed; reload before continuing' });
+  }
+  let plan;
+  try { plan = RunRecovery.continuationPlan(current); }
+  catch (e) { return json(409, { error: String((e && e.message) || e) }); }
+  try {
+    const next = markRunRecoveryForensic(runJournal.prepareContinuation(runId, {
+      continuationId, operator: 'local', preparedAt: Date.now(),
+      blockedFingerprints: plan.blockedFingerprints, context: plan.context
+    }));
+    return json(200, {
+      ok: true, idempotent: false, canStart: true,
+      continuationToken: runContinuationToken(next),
+      recovery: runRecoveryDto(next)
+    });
+  } catch (e) {
+    const code = e && e.code === 'RUN_RESOLUTION_CONFLICT' ? 409 : 500;
+    return json(code, { error: code === 500 ? 'could not durably prepare continuation' : String(e.message || e) });
+  }
+}
+
+function consumeRunRecoveryContinuation(request, agentId, continuedRunId) {
+  const body = request || {};
+  const sourceRunId = String(body.sourceRunId || '');
+  const continuationId = String(body.continuationId || '');
+  if (!sourceRunId || !continuationId || !isAgentId(String(agentId || ''))) return { ok: false, code: 400, error: 'invalid continuation identity' };
+  let current;
+  try { current = inspectRunRecovery(sourceRunId); }
+  catch (_) { return { ok: false, code: 404, error: 'recovery not found' }; }
+  if (String((current.meta && current.meta.agentId) || '') !== String(agentId)) return { ok: false, code: 403, error: 'forbidden' };
+  const c = current.continuation;
+  if (!c || c.state !== 'ready' || c.continuationId !== continuationId) return { ok: false, code: 409, error: 'continuation is not ready or was already consumed' };
+  if (!constantTimeTextEqual(body.continuationToken, runContinuationToken(current))) return { ok: false, code: 409, error: 'continuation token is stale' };
+  let plan;
+  try { plan = RunRecovery.continuationPlan(current); }
+  catch (e) { return { ok: false, code: 409, error: String((e && e.message) || e) }; }
+  if (JSON.stringify(plan.blockedFingerprints) !== JSON.stringify(c.blockedFingerprints || [])
+    || String(plan.context || '') !== String(c.context || '')) {
+    return { ok: false, code: 409, error: 'durable continuation plan no longer matches the recovery' };
+  }
+  try {
+    runJournal.startContinuation(sourceRunId, { continuationId, continuedRunId, startedAt: Date.now() });
+  } catch (e) { return { ok: false, code: 409, error: String((e && e.message) || e) }; }
+  return { ok: true, plan: Object.assign({}, plan, { sourceRunId, continuationId }) };
+}
+
+function settleRunRecoveryContinuation(recovery, continuedRunId, reason) {
+  const sourceRunId = String((recovery && recovery.sourceRunId) || '');
+  const continuationId = String((recovery && recovery.continuationId) || '');
+  try {
+    runJournal.finishContinuation(sourceRunId, { continuationId, continuedRunId, reason });
+  } catch (e) {
+    console.warn('[run-journal] could not settle continuation:', String((e && e.message) || e));
+  }
 }
 
 // GET /api/autonomy/ledger?limit=N&source=&kind= — NS-0: the recent AUTONOMY DECISION LEDGER (cron fire/skip/
