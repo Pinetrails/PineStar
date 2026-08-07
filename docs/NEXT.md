@@ -2609,17 +2609,42 @@ Skill Exchange feedback use polite live regions, and the procedure count says sk
 colliding with the separate RECIPES product. MCP removal now uses the shared two-click armed
 confirmation before deleting the endpoint and its stored credential. The website mirror is synced.
 
-Live seeded proof at `localhost:8897`: all eight sections and six intent routes opened; empty form
-validation, catalog filtering, search/Escape, tool inventories, placement deep-link, and native-control
-paint were exercised with no browser warning/error. AWS Knowledge installed as a real connected MCP
-with 5 tools, reloaded, survived restart, required arm + confirm to remove, and stayed removed after a
-second restart. WEB & BROWSER and 1-3-1 Decision Framework switches each survived a changed-state
-restart and a restored-state restart. Focused gates: connectors UI 95 assertions, Skills lane 9,
-website sync 8; the canonical affected-domain slice is 26/26 steps green.
+The connector audit also closed three provider-specific authentication defects. RFC 8414 discovery now
+handles pathful issuers such as monday.com's `/mcp` issuer. Dynamic registration preserves the protected
+client secret and advertised token-endpoint method for confidential clients (currently Supabase and
+monday.com), and uses them for both code exchange and refresh after restart. Composio keys now travel in
+the provider-required `x-consumer-api-key` header, including verified migration of an already-saved Bearer
+token; the catalog and KEYS UI describe that header truthfully instead of calling it a Bearer token.
 
-NOT READY TO MERGE: `npm run test:fast` twice reached `boot-security.test.js` and timed out while that
-same test passed 16/16 alone; a third full attempt exited after `hooks.wiring` without a failing assertion
-or runner summary. `npm run test:http` reached `sidecar.http.test.js`, whose sidecar missed its boot
-deadline both in-suite and alone (only the pre-existing transcript warning was emitted). No OAuth
-provider consent, real API-key connector, Spotify account, stdio Safe Cell, installed desktop, merge,
-push, PR, deployment, credential, or production-data change was performed.
+Live provider proof: all 15 directly sign-in-able OAuth catalog entries completed resource/authorization
+server discovery, S256 validation, and dynamic registration; 13 registered public clients and Supabase +
+monday.com registered confidential `client_secret_post` clients. Seeded `/oauth/start` flows for both
+confidential providers saved their client id, secret, and method in the protected envelope and retained
+them after sidecar restart. All 9 no-auth catalog endpoints initialized through the MCP manager (including
+their real tool/resource/prompt inventories). All advertised API-key endpoints were reachable and refused
+the deliberately invalid probes with authentication responses rather than transport/discovery failures.
+No third-party user consent or valid paid-service API key was supplied during this audit, so those
+account-specific consent screens and post-auth tool calls remain release-candidate acceptance work.
+
+Live seeded UI proof at `localhost:8897`: all eight sections and six intent routes opened; empty form
+validation, catalog filtering, search/Escape, tool inventories, placement deep-link, and native-control
+paint were exercised without browser warnings/errors. AWS Knowledge installed as a connected MCP with
+5 tools, reloaded, survived restart, required arm + confirm to remove, and stayed removed after a second
+restart. A Composio probe saved only the custom header, appeared under KEYS as `HEADER SAVED`, survived a
+restart with its value redacted from API output, reported the expected 401 instead of claiming connection,
+and was removed afterward. WEB & BROWSER and 1-3-1 Decision Framework switches each survived changed and
+restored-state restarts.
+
+Focused connector gates are 764 assertions green; the affected-domain slice is 26/26; `qa:journeys` is
+129/129 and the UI-only Beginner Run passed. One full `npm run test:fast` completed 573/573 before the
+latest trunk sync. Every one of the 68 HTTP integration files passed during this audit, including
+`sidecar.http` (468 assertions) and the live MCP connector E2E (87), but the canonical seven-minute
+`npm run test:http` wrapper timed out twice under sustained shared-host CPU pressure before it could run
+the whole list in one process. The omitted 12-file tail passed separately (374 assertions).
+
+NOT READY TO MERGE OR RELEASE: the post-sync full fast gate still must be re-run; the canonical HTTP gate
+does not have one uninterrupted green receipt; Guardian did not complete before its ten-minute invocation
+ceiling; and installed-exe smoke is truthfully BLOCKED because no exact candidate SHA/artifact was supplied
+and no installed candidate was listening on CDP. `qa:ready` must remain NOT READY until those receipts are
+green. No production account, valid third-party credential, merge to trunk, push, PR, deployment, or
+publication was performed.
