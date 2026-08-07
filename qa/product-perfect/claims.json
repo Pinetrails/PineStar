@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "7d2782afe282bc2b2c92dd3c51d8f6fbea094b54",
+    "sourceCommit": "2a67183c64ad00b90ef8acc1d7c5dd9a01eb5457",
     "pathSetSha256": "1dbea34b120662d77bb0e3ed28e0428655952023ac3ef2d929da5f8b60558068",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 570417,
-        "sha256": "14b2bb62852998caecc356d7d4805e50a7b751ddbd8242b35127264a32ad9fd4"
+        "bytes": 572019,
+        "sha256": "0cda155a82856919fc0ffd91543cbc264489b95ec991c021fb19fbb98e944662"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -958,8 +958,8 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 44366,
-        "sha256": "48aef1bb717eed8845e2ba4088bf4674b8ea5470f203bf37b86539769846370d"
+        "bytes": 45108,
+        "sha256": "7ac501555ee3e5bd15a0c7bc2d3a41da5bd8139015719e02b579bd76bb69e1df"
       },
       {
         "path": "frontend/css/marketplace.css",
