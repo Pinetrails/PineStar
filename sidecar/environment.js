@@ -10,7 +10,7 @@
    makeEnvironmentManager({ spawn, fs, pathMod, root, bg?, clock?, env?, config? })
      -> { backendId, describe, ensureReady, cleanupAgent, ensureWorkspace, workspaceRoot, getCwd,
           rememberCwd, execute, startBackground, statusBackground, readBackground,
-          writeBackground, closeBackgroundStdin, killBackground }
+          writeBackground, closeBackgroundStdin, killBackground, spawnStdio }
 */
 'use strict';
 (function (root, factory) {
@@ -256,7 +256,7 @@
 
     return {
       id: 'local',
-      supports: { shell: true, background: !!bg, hostWorkspace: true, checkpoints: true, hostileCodeSandbox: false, persistentSession: false },
+      supports: { shell: true, background: !!bg, hostWorkspace: true, checkpoints: true, hostileCodeSandbox: false, persistentSession: false, stdioMcp: false },
       describe: function () { return {
         backend: 'local', workspace: ROOT, background: !!bg,
         safeCell: {
@@ -307,6 +307,11 @@
       },
       killAllBackground: function (agentId) {
         return bg && typeof bg.killAll === 'function' ? bg.killAll(agentId) : 0;
+      },
+      // MCP stdio is arbitrary local code. The interactive host backend is intentionally never a
+      // process broker for it; callers must select an environment that proves hostile-code isolation.
+      spawnStdio: function () {
+        throw new Error('mcp stdio requires an isolated execution backend');
       }
     };
   }
@@ -423,6 +428,52 @@
         : undefined;
     }
 
+    /* Start one duplex MCP child INSIDE an already-probed per-agent container. This is deliberately
+       synchronous because the stdio transport lazily asks for a ChildProcess when its first JSON-RPC
+       frame is sent; configureConnectorCfg performs the asynchronous ensureReady() before the manager
+       is allowed to build this transport.
+
+       No shell is involved. The connector command and every argument become exact docker-exec argv.
+       Environment VALUES ride only in the docker client's environment; `docker exec -e NAME` forwards
+       them by name, keeping tokens out of process listings. Host secrets were removed by
+       sanitizeChildEnv(), while the user-supplied connector env is the only secret-bearing overlay. */
+    function spawnStdio(opts) {
+      opts = opts || {};
+      const aid = safeAgentId(opts.agentId || 'agent');
+      if (!ready.has(aid)) throw new Error('isolated MCP environment is not ready for ' + aid);
+      const command = String(opts.command || '').trim();
+      if (!command || /[\0\r\n]/.test(command)) throw new Error('invalid mcp stdio command');
+      const commandArgs = Array.isArray(opts.args) ? opts.args.map(function (v) { return String(v == null ? '' : v); }) : [];
+      const cwd = opts.cwd ? String(opts.cwd) : getCwd(aid);
+      if (!posixInside(cwd, containerRoot)) throw new Error('mcp stdio cwd must stay inside ' + containerRoot);
+
+      const supplied = opts.env && typeof opts.env === 'object' && !Array.isArray(opts.env) ? opts.env : {};
+      const forwarded = {};
+      for (const k of Object.keys(supplied)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) throw new Error('invalid mcp stdio env name: ' + k);
+        if (INTERNAL_ENV_NAME_RE.test(k) || EXECUTION_HOOK_ENV_RE.test(k)) continue;
+        if (supplied[k] != null) forwarded[k] = String(supplied[k]);
+      }
+      // These host-owned values are the defense-in-depth floor inside the MCP server too. They are
+      // added after the connector overlay, so a saved connector can never replace them.
+      forwarded.STARNET_USER_CONTROL_MODE = 'preserve';
+      forwarded.STARNET_COMPUTER_DRIVER = '0';
+      forwarded.STARNET_BROWSER_HEADLESS = '1';
+      forwarded.STARNET_MCP_STDIO = '0';
+      forwarded.BROWSER = 'none';
+
+      const args = ['exec', '-i'];
+      for (const name of Object.keys(forwarded).sort()) args.push('-e', name);
+      args.push('--workdir', cwd, containerName(aid), command);
+      for (const value of commandArgs) args.push(value);
+      const clientEnv = Object.assign({}, sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {})), forwarded);
+      const spawnOptions = opts.spawnOptions || {};
+      return spawn(cfg.dockerBin || 'docker', args, {
+        stdio: ['pipe', 'pipe', 'pipe'], shell: false, windowsHide: true,
+        detached: !!spawnOptions.detached, env: clientEnv
+      });
+    }
+
     function dockerRun(args, opts) {
       opts = opts || {};
       return runProcess({
@@ -508,7 +559,7 @@
 
     return {
       id: 'docker',
-      supports: { shell: true, background: !!(deps.bg && typeof deps.bg.start === 'function'), hostWorkspace: true, checkpoints: true, hostileCodeSandbox: true, persistentSession: true },
+      supports: { shell: true, background: !!(deps.bg && typeof deps.bg.start === 'function'), hostWorkspace: true, checkpoints: true, hostileCodeSandbox: true, persistentSession: true, stdioMcp: true },
       describe: function () {
         return {
           backend: 'docker', image: cfg.dockerImage || DEFAULT_DOCKER_IMAGE, workspace: containerRoot, hostRoot: ROOT,
@@ -563,7 +614,8 @@
       closeBackgroundStdin: function (agentId, bgId) { return deps.bg && deps.bg.closeStdin ? deps.bg.closeStdin(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the docker backend' }; },
       killBackground: function (agentId, bgId) { return deps.bg && deps.bg.kill ? deps.bg.kill(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the docker backend' }; },
       killAllBackground: function (agentId) { return deps.bg && deps.bg.killAll ? deps.bg.killAll(agentId) : 0; },
-      _internals: { dockerCreateArgs: dockerCreateArgs, dockerExecArgs: dockerExecArgs, containerName: containerName, inspectContainer: inspectContainer, posixInside: posixInside }
+      spawnStdio: spawnStdio,
+      _internals: { dockerCreateArgs: dockerCreateArgs, dockerExecArgs: dockerExecArgs, containerName: containerName, inspectContainer: inspectContainer, posixInside: posixInside, spawnStdio: spawnStdio }
     };
   }
 
@@ -595,6 +647,7 @@
       closeBackgroundStdin: backend.closeBackgroundStdin,
       killBackground: backend.killBackground,
       killAllBackground: backend.killAllBackground,
+      spawnStdio: backend.spawnStdio,
       _backend: backend,
       _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, mergeServiceEnv: mergeServiceEnv, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside, stableHash: stableHash }
     };

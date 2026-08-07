@@ -152,6 +152,21 @@ function makeFakeSpawn() {
       A.eq(bgCalls[0].file, 'dockerx', 'background child uses argv-form docker exec');
       A.eq(bgCalls[0].args[0], 'exec', 'background process executes inside the persistent container');
 
+      // A local stdio MCP server uses the same owned container, but exact argv rather than sh -lc.
+      const mcpChild = env.spawnStdio({ agentId: 'a2', command: 'node', args: ['server.js', '--mode', 'stdio'], cwd: '/workspace/src', env: { SERVICE_TOKEN: 'connector-secret' } });
+      A.ok(!!mcpChild, 'isolated stdio spawn returns the docker client child');
+      const mcp = spawn.calls[spawn.calls.length - 1];
+      A.eq(mcp.file, 'dockerx', 'stdio MCP starts through the configured Docker broker');
+      A.eq(mcp.args[0], 'exec', 'stdio MCP is a docker exec child');
+      A.eq(mcp.args.indexOf('sh'), -1, 'stdio MCP never inserts a shell');
+      A.eq(mcp.args.indexOf('-lc'), -1, 'stdio MCP never inserts a shell command string');
+      A.eq(mcp.args[mcp.args.indexOf(c.args[c.args.indexOf('--name') + 1]) + 1], 'node', 'allowlisted command is exact argv after the owned container id');
+      A.ok(mcp.args.indexOf('SERVICE_TOKEN') >= 0 && mcp.args.indexOf('connector-secret') < 0, 'connector secret travels by env name, never argv');
+      A.eq(mcp.opts.env.SERVICE_TOKEN, 'connector-secret', 'docker client env carries the explicit connector secret');
+      A.eq(mcp.opts.env.STARNET_COMPUTER_DRIVER, '0', 'isolated MCP inherits the physical-input hard floor');
+      A.eq(mcp.opts.shell, false, 'docker stdio broker explicitly disables shell parsing');
+      A.throws(() => env.spawnStdio({ agentId: 'a2', command: 'node', cwd: '/etc' }), 'stdio MCP cwd cannot escape the mounted workspace');
+
       spawn.setNext(c.args[c.args.indexOf('--name') + 1] + '\n', 0);
       const cleaned = await env.cleanupAgent('a2');
       A.ok(cleaned.ok && cleaned.removed, 'explicit cleanup removes the owned persistent environment');

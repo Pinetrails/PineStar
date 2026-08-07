@@ -42,6 +42,8 @@ Docker execution currently supports:
 - capability drop, `no-new-privileges`, and a PID limit by default
 - deterministic container names plus `ai.starnet.managed`, workspace, and agent ownership labels
 - an explicit startup probe before any command is accepted
+- local stdio MCP servers bound to a named Safe Cell agent: exact `docker exec` argv, no shell,
+  connector env values kept off argv, and no fallback to an interactive host child
 
 The container is deliberately not removed on ordinary sidecar shutdown: that is what preserves its writable
 layer. Backend owners can call `cleanupAgent(agentId)` for explicit removal, or
@@ -62,6 +64,29 @@ The responses name the station default, each agent's routed backend, workspace m
 persistence contract, and safe-cell controls. Docker availability is `unknown` before its first real probe,
 `ready` after a successful probe, and `unavailable` with the bounded failure reason after a failed probe.
 Profile changes are live for the next command and do not require a station restart.
+
+## Local stdio MCP
+
+The Connectors panel can run command-based MCP servers such as `npx …` only through `STDIO (Safe Cell)`.
+The user chooses the owning agent; that agent must use the `SAFE CELL` profile, and Docker must pass its real
+startup probe. The connector binding persists with its configuration and the public status names the owner.
+
+The desktop sidecar still pins host stdio off. The isolated broker is the only production path that supplies
+the transport's `userControlIsolated` proof. It starts the command as exact container argv, forwards only
+explicit connector environment values plus host-owned safety pins, and never falls back to `shell:true` or a
+host process when Docker is absent. A missing Docker runtime therefore produces an honest saved-but-not-connected
+status instead of silently weakening the execution boundary.
+
+Agent-authored skills remain a separate built-in lifecycle: `skill.write` and `skill.manage` can create, edit,
+patch, archive, restore, pin, and attach package files, with the skill guard re-checking content before use.
+
+## Project scopes
+
+The Projects rail can run a bounded, user-triggered marker scan over conventional project shelves (or
+`STARNET_PROJECT_DISCOVERY_ROOTS`). Discovery reads directory/marker names only, follows no symlinks, stops at
+hard depth/count limits, and changes no grants. Selecting a candidate only fills the Add form. The separate
+`ADD` action still canonicalizes the root and records the durable `path:<root>` owner grant; revocation remains
+available through the Permissions/Projects surfaces.
 
 ## Execution Profiles
 

@@ -2558,3 +2558,18 @@ selected COMMS option immediately; non-focused specialist `STRATEGIST → VEGA` 
 and COMMS option while ORION stayed selected. After stopping and restarting the seeded sidecar with
 `--keep`, both surfaces rehydrated as `ORION / VEGA`. Focused regression: 61 assertions; website
 sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verification was not run.
+## 2026-08-07 — HERMES-CLASS PARITY 4–6 (`agent/hermes-access-gap`)
+
+- **4 · Attended browser authentication:** closed by verification of the existing production path. Watched
+  COMMS runs expose the two-phase `browser.login` handoff, visible Chrome uses the station-owned persistent
+  profile, profile ownership is single-run leased, ordinary later runs reuse the authenticated profile, and
+  unattended/headless/contention paths fail honestly. The focused browser suite is green.
+- **5 · Isolated stdio MCP + agent-authored skills:** stdio connectors now bind to a named `SAFE CELL` agent.
+  The Docker environment is probed before connect; the broker uses exact `docker exec` argv with no shell,
+  keeps connector secrets out of argv, and has no host fallback. Connector configuration/status persists the
+  owner and the UI offers the form only when a real Safe Cell agent exists. Existing `skill.write` /
+  `skill.manage` lifecycle and guard coverage were re-proved rather than duplicated.
+- **6 · Project discovery + owner grants:** Add Project now offers a bounded explicit discovery scan of common
+  project shelves. It follows no symlinks, skips dependency/system trees, stops at hard ceilings, and returns
+  candidates with `grantsChanged:false`. Selecting one grants nothing; the existing separate ADD click remains
+  the only durable `path:<canonical-root>` authority transition, with revocation unchanged.

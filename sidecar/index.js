@@ -177,6 +177,7 @@ const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
 const nightfocus = require('./nightfocus.js');            // NS-5b: pure single-priority FOCUS resolver (evidence-ranked, steer-aware)
 const { makeProjectScan } = require('./projectscan.js');  // NS-5b: bounded harness-side PROJECT SNAPSHOT scan (consumes NS-5 blessed roots)
+const { makeProjectDiscovery } = require('./project-discovery.js'); // bounded candidate scan; never grants access
 const nightpatch = require('./nightpatch.js');            // NS-5b: pure patch-apply target resolver (never touches an un-blessed root / main)
 const Autopilot = require('../frontend/app/autopilot.js'); // NS-1: the pure, node-exportable anti-slop ACT pipeline (reused, not rewritten)
 const Autonomy = require('../frontend/app/autonomy.js');   // NS-1: the pure posture engine (summary/normalize) — the SERVER reads the same shape the dial writes
@@ -2455,6 +2456,22 @@ const projectScan = makeProjectScan({
   }),
   fsp, pathMod: path, isBlessed: isBlessedRoot
 });
+// Candidate discovery is an explicit Projects-rail action and is strictly read-only. These conventional
+// shelves are directory-name/marker scanned with hard ceilings; a result does not become authority until
+// the Commander selects it and the existing /api/projects/bless route durably records path:<real-root>.
+const projectDiscoveryRoots = (() => {
+  const configured = String(process.env.STARNET_PROJECT_DISCOVERY_ROOTS || '').split(path.delimiter).map(x => x.trim()).filter(Boolean);
+  const home = os.homedir();
+  return configured.concat([
+    path.join(home, 'Desktop'), path.join(home, 'Documents'),
+    path.join(home, 'Projects'), path.join(home, 'projects'),
+    path.join(home, 'Code'), path.join(home, 'code'),
+    path.join(home, 'source'), path.join(home, 'repos'), path.join(home, 'src')
+  ]);
+})();
+const projectDiscovery = makeProjectDiscovery({
+  fsp, pathMod: path, roots: () => projectDiscoveryRoots, isBlessed: isBlessedRoot
+});
 // The blessed project's OWN house rules (AGENTS.md / CLAUDE.md / .cursorrules). Same trust gate as the folder
 // line below it: nothing is read for a root that is not a standing blessed grant.
 const projectInstructions = makeProjectInstructions({ fsp, pathMod: path, redact });
@@ -3291,7 +3308,25 @@ function saveServiceKeys() {
   return r.ok;
 }
 const connectors = makeConnectorManager({
-  makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
+  makeTransport: (cfg) => {
+    if (!cfg || cfg.transport !== 'stdio') return makeHttpTransport(cfg);
+    const aid = String(cfg.agentId || '');
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('mcp stdio requires a Safe Cell agent binding');
+    const owner = agentRoster.get(aid) || {};
+    const isolated = executionEnvironment.forAgent(aid);
+    if (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(aid) !== 'docker' || !isolated.supports || isolated.supports.hostileCodeSandbox !== true || isolated.supports.stdioMcp !== true) {
+      throw new Error('mcp stdio requires agent "' + aid + '" to use the Safe Cell execution profile');
+    }
+    return makeStdioTransport(Object.assign({}, cfg, {
+      // The installed sidecar correctly pins host stdio OFF. This broker proof opts in only for the
+      // exact child below, whose process is docker exec into the selected agent's owned Safe Cell.
+      userControlIsolated: true,
+      processEnv: {},
+      spawnImpl: (command, args, spawnOptions) => executionEnvironment.spawnStdio({
+        agentId: aid, command, args, cwd: cfg.cwd || '', env: cfg.env || {}, spawnOptions
+      })
+    }));
+  },
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
   // AUTO-RECONNECT: on transport death (stdio child exit / repeated HTTP failure) the manager flips to 'error'
   // (honest status — the panel no longer shows a dead connector as 'up') and retries with bounded backoff. Real
@@ -3336,6 +3371,15 @@ async function ensureConnectorOauthToken(id) {
 }
 // configure a connector, injecting a fresh OAuth bearer for oauth connectors (kept out of the persisted config).
 async function configureConnectorCfg(cfg) {
+  if (cfg && cfg.transport === 'stdio' && cfg.enabled !== false) {
+    const aid = String(cfg.agentId || '');
+    // Preparing a persistent cell is asynchronous; the stdio transport itself remains synchronous/lazy.
+    // Swallow readiness here only so the manager can record an honest connector error ("not ready") in
+    // its public status instead of leaving a saved connector with no runtime row at all.
+    if (/^[A-Za-z0-9_-]{1,40}$/.test(aid) && executionEnvironment.backendIdFor(aid) === 'docker') {
+      try { await executionEnvironment.ensureReady(aid); } catch (_) {}
+    }
+  }
   if (cfg && cfg.oauth) {
     // Pass a tokenProvider (NOT a frozen token) so the manager fetches a FRESH bearer on every connect / auto-
     // reconnect / Reload — an oauth connector no longer dies ~1h in when the access token expires. We ALWAYS
@@ -7294,6 +7338,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/permissions/bypass', h: handlePermissionsBypass },
   { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
+  { m: 'POST', exact: '/api/projects/discover', h: handleProjectDiscover }, // explicit bounded scan; returns candidates and grants nothing
   { m: 'POST', exact: '/api/projects/forget', h: handleProjectForget },   // Projects rail: hard-forget revoked metadata (never withdraws trust)
   { m: 'POST', exact: '/api/projects/pickfolder', h: handleProjectPickFolder },   // Projects rail "browse": native OS folder chooser (grants nothing)
   { m: 'POST', exact: '/api/pickpath', h: handlePickPath },   // typed recipe fill-ins: native file OR folder chooser (grants nothing)
@@ -8618,6 +8663,17 @@ async function handleConnectorUpsert(req, res) {
   const command = String(body.command || (transport === 'stdio' ? (prev.command || '') : '')).trim();
   if (transport === 'http' && !url) return json(400, { error: 'a server URL is required' });
   if (transport === 'stdio' && !command) return json(400, { error: 'a stdio command is required' });
+  const agentId = String(body.agentId || (transport === 'stdio' ? (prev.agentId || '') : '')).trim();
+  if (transport === 'stdio') {
+    const enabling = body.enabled !== false;
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId) || (enabling && !agentRoster.has(agentId))) {
+      return json(400, { ok: false, saved: false, connected: false, code: 'STDIO_AGENT_REQUIRED', error: 'choose an existing Safe Cell agent for this stdio server' });
+    }
+    const owner = agentRoster.get(agentId) || {};
+    if (enabling && (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(agentId) !== 'docker')) {
+      return json(409, { ok: false, saved: false, connected: false, code: 'SAFE_CELL_REQUIRED', error: 'agent "' + agentId + '" must use the Safe Cell execution profile before it can own a stdio MCP server' });
+    }
+  }
   // PL-06: scheme/URL syntax is permanent INPUT validity, not connector reachability. Validate it before
   // constructing cfg (which carries the bearer) and before saveConnectorConfigs(), so a failed Connect click
   // cannot silently persist an enabled file:// record + secret and feed it into the reconnect scheduler.
@@ -8668,6 +8724,7 @@ async function handleConnectorUpsert(req, res) {
     args: transport === 'stdio' ? args : [],
     cwd: transport === 'stdio' ? String(body.cwd || prev.cwd || '') : '',
     env: transport === 'stdio' ? env : {},
+    agentId: transport === 'stdio' ? agentId : '',
     headers: transport === 'http' ? headers : {},
     label: String(body.label || prev.label || id),
     enabled: body.enabled !== false
@@ -8717,7 +8774,10 @@ async function handleConnectorRefresh(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const id = String(body.id || '').trim();
-  let result; try { result = await connectors.refresh(id); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
+  const cfg = connectorConfigs.find(c => c && c.id === id);
+  let result;
+  try { result = cfg ? await configureConnectorCfg(cfg) : await connectors.refresh(id); }
+  catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
   json(200, Object.assign({ status: connectors.status(id) }, result));
 }
 
@@ -13751,6 +13811,24 @@ function handleProjectsList(req, res) {
   const projects = snap.projects.map(p => Object.assign({}, p, { blessed: grantsPermanent.has('path:' + p.root) }));
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ projects: projects }));
+}
+
+// POST /api/projects/discover — user-triggered, bounded marker scan of conventional project shelves.
+// This is intentionally a POST because the click is what authorizes the local directory-name scan. It
+// never invokes blessProjectRoot; every returned candidate remains inaccessible until a separate explicit
+// ADD reaches /api/projects/bless.
+async function handleProjectDiscover(req, res) {
+  const sendJson = (code, obj) => respondJson(res, code, obj);
+  let body = {};
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) { return sendJson(400, { ok: false, reason: 'bad json' }); }
+  try {
+    const r = await projectDiscovery.discover({
+      maxDirs: body.maxDirs, maxProjects: body.maxProjects, maxDepth: body.maxDepth
+    });
+    return sendJson(200, r);
+  } catch (e) {
+    return sendJson(500, { ok: false, reason: 'project discovery failed: ' + String((e && e.message) || e), grantsChanged: false });
+  }
 }
 
 // POST /api/projects/bless { path } — NS-5c: the ADD-A-PROJECT doorway. Blesses a user-typed/-picked folder as a

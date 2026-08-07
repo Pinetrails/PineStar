@@ -71,9 +71,7 @@
         '<input id="mc-label" class="key-input" placeholder="label (optional) — e.g. GitHub" autocomplete="off" spellcheck="false">' +
         '<div class="mc-seg" id="mc-transport" role="tablist">' +
           '<button type="button" class="mc-seg-btn active" data-tp="http" role="tab" aria-selected="true">HTTP</button>' +
-          '<button type="button" class="mc-seg-btn" data-tp="stdio" role="tab" aria-selected="false">STDIO (local)</button>' +
-          // kept as a TAB, not deleted: someone arriving with an `npx …` config from another harness needs to be
-          // told WHY it has no home here and what to do instead. Selecting it shows an explanation, never inputs.
+          '<button type="button" class="mc-seg-btn" data-tp="stdio" role="tab" aria-selected="false">STDIO (Safe Cell)</button>' +
         '</div>' +
         // ---- HTTP fields ----
         '<div class="mc-tp-fields" data-tp="http">' +
@@ -83,20 +81,15 @@
           '<div class="mc-hint">Sent as <code>Authorization: Bearer …</code>. Leave blank when editing to keep the saved token.</div>' +
         '</div>' +
         // ---- STDIO fields ----
-        // NO INPUTS HERE, DELIBERATELY. The installed app pins STARNET_MCP_STDIO=0 (src-tauri/src/main.rs) and
-        // makeStdioTransport refuses without a broker-proven isolated cell (sidecar/mcp/transport.stdio.js), so a
-        // local child MCP server can NEVER connect on the desktop host. This pane used to offer command/args/cwd/env
-        // fields: the config saved, the connect threw, and the doomed row sat red in the list forever. Offering the
-        // form was a truthful-telemetry violation — a UI asserting a capability the backend permanently refuses.
+        // Arbitrary stdio server code is bound to one named agent's persistent Docker Safe Cell.
         '<div class="mc-tp-fields" data-tp="stdio" style="display:none">' +
-          '<div class="mc-detail">Local <code>stdio</code> MCP servers can’t run here.</div>' +
-          '<div class="mc-hint">StarNet will not spawn an unsandboxed child process on your machine, so a ' +
-            '<code>npx …</code> / <code>uvx …</code> server (the kind most desktop MCP clients use) has no way to start. ' +
-            'Saving one would leave a connector that never connects.</div>' +
-          '<div class="mc-hint"><b>Instead:</b> if the service publishes a <b>remote</b> MCP endpoint, add it on the ' +
-            '<b>HTTP</b> tab. If it only ships a local server — or only a plain REST API — paste the service’s API key ' +
-            'on the <b>KEYS</b> tab and give the agent a <b>workbench</b>; it can then call the API directly from its ' +
-            'terminal, with the key supplied as an environment variable that never enters the prompt.</div>' +
+          '<select id="mc-agent" class="key-input" aria-label="Safe Cell owner"><option value="">loading Safe Cell agents…</option></select>' +
+          '<div class="mc-hint" id="mc-agent-hint">The server runs inside this agent’s persistent Safe Cell, never as an interactive host child.</div>' +
+          '<input id="mc-command" class="key-input" placeholder="command — e.g. npx" autocomplete="off" spellcheck="false">' +
+          '<textarea id="mc-args" class="key-input mc-kv" placeholder="arguments, one per line:&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;/workspace" spellcheck="false" rows="3"></textarea>' +
+          '<input id="mc-cwd" class="key-input" placeholder="container cwd (optional; default /workspace)" autocomplete="off" spellcheck="false">' +
+          '<textarea id="mc-env" class="key-input mc-kv" placeholder="environment (optional), one per line:&#10;SERVICE_TOKEN=value" spellcheck="false" rows="2"></textarea>' +
+          '<div class="mc-hint">Command and arguments use exact argv with no shell. Secrets stay out of process listings; blank env while editing keeps the saved values.</div>' +
         '</div>' +
         // FOLDED, NOT REMOVED. Adding a server needs an id and a URL; custom headers and a hand-set
         // timeout are power-user fields, and stacked open they made the common path look like a
@@ -562,21 +555,37 @@
     const cancelBtn = body.querySelector('#mc-cancel');
     const idInput = body.querySelector('#mc-id');
     let editing = null;   // id being edited (null = adding a new connector)
+    let stdioAgents = [];
 
     // ----- transport segmented toggle -----
     function transport() { const on = body.querySelector('.mc-seg-btn.active'); return (on && on.dataset.tp) || 'http'; }
     function setTransport(tp) {
       body.querySelectorAll('.mc-seg-btn').forEach(b => { const a = b.dataset.tp === tp; b.classList.toggle('active', a); b.setAttribute('aria-selected', a ? 'true' : 'false'); });
       body.querySelectorAll('.mc-tp-fields').forEach(f => { f.style.display = f.dataset.tp === tp ? '' : 'none'; });
-      // stdio can never connect on this host, so the commit action is disabled rather than offering a save that
-      // is guaranteed to end in a permanently-red row. The pane still explains where to go instead.
-      const dead = tp === 'stdio';
+      const dead = tp === 'stdio' && stdioAgents.length === 0;
       addBtn.disabled = dead;
-      addBtn.title = dead ? 'local stdio MCP servers cannot run on this host — use the HTTP tab, or the KEYS tab + a workbench' : '';
+      addBtn.title = dead ? 'set an agent’s execution profile to SAFE CELL first' : '';
     }
     body.querySelector('#mc-transport').addEventListener('click', ev => {
       const b = ev.target.closest('.mc-seg-btn'); if (!b) return; setTransport(b.dataset.tp); sfx('tick');
     });
+
+    async function loadStdioAgents(selected) {
+      const sel = body.querySelector('#mc-agent'); if (!sel) return;
+      try {
+        const j = await Harness.api.get('/api/execution-profiles');
+        stdioAgents = ((j && j.agents) || []).filter(x => x && x.agentId && x.profile && x.profile.id === 'safe-cell' && x.environment && x.environment.effectiveBackend === 'docker' && x.environment.safeCell && x.environment.safeCell.hostileCodeSandbox === true);
+      } catch (_) { stdioAgents = []; }
+      sel.innerHTML = stdioAgents.length
+        ? '<option value="">choose a Safe Cell agent…</option>' + stdioAgents.map(x => '<option value="' + esc(x.agentId) + '">' + esc(x.agentId) + ' — SAFE CELL</option>').join('')
+        : '<option value="">no Safe Cell agents available</option>';
+      if (selected && stdioAgents.some(x => x.agentId === selected)) sel.value = selected;
+      const hint = body.querySelector('#mc-agent-hint');
+      if (hint) hint.textContent = stdioAgents.length
+        ? 'The server runs inside this agent’s persistent Safe Cell, never as an interactive host child.'
+        : 'Set an agent’s execution profile to SAFE CELL first, then return here. Docker must also be available on this machine.';
+      if (transport() === 'stdio') setTransport('stdio');
+    }
 
     // ----- key:value textarea parsers (headers use ':' , env uses '=') -----
     function parseKV(text, sep) {
@@ -595,7 +604,7 @@
       addBtn.textContent = '+ ADD & CONNECT';
       cancelBtn.style.display = 'none';
       idInput.disabled = false;
-      ['#mc-id', '#mc-label', '#mc-url', '#mc-token', '#mc-headers', '#mc-timeout']
+      ['#mc-id', '#mc-label', '#mc-url', '#mc-token', '#mc-headers', '#mc-timeout', '#mc-command', '#mc-args', '#mc-cwd', '#mc-env']
         .forEach(s => { const el = body.querySelector(s); if (el) el.value = ''; });
       const adv = body.querySelector('.mc-adv'); if (adv) adv.open = false;   // a cleared form is the simple form again
       setTransport('http');
@@ -614,10 +623,13 @@
       body.querySelector('#mc-timeout').value = (c.timeoutMs && c.timeoutMs !== 30000) ? c.timeoutMs : '';
       setTransport(c.transport === 'stdio' ? 'stdio' : 'http');
       if (c.transport === 'stdio') {
-        // A legacy stdio row from before this pane stopped offering the form. There is nothing editable that
-        // could make it connect on this host, so EDIT shows the explanation and leaves REMOVE as the cure.
+        body.querySelector('#mc-command').value = c.command || '';
+        body.querySelector('#mc-args').value = (c.args || []).some(x => x === '<redacted>') ? '' : (c.args || []).join('\n');
+        body.querySelector('#mc-cwd').value = '';
+        body.querySelector('#mc-env').value = '';
+        loadStdioAgents(c.agentId || '');
         msgEl.classList.remove('ok');
-        msgEl.textContent = 'stdio connectors cannot run on this host — remove it, or re-add the server on the HTTP tab.';
+        msgEl.textContent = c.hasEnv ? 'Saved environment values are hidden; leave env blank to keep them.' : '';
       } else {
         body.querySelector('#mc-url').value = c.url || '';
         body.querySelector('#mc-token').value = '';   // never round-trip the token
@@ -643,9 +655,7 @@
       const detail = (c.state === 'error' && c.detail) ? '<div class="mc-detail">' + esc(c.detail) + '</div>' : '';
       const where = c.transport === 'stdio'
         ? ('<span class="mc-tag">stdio</span> <code>' + esc([c.command].concat(c.args || []).join(' ')) + '</code>' + (c.hasEnv ? ' · env set' : '') +
-           // a legacy row from before the form was withdrawn: say plainly that it cannot come up, so its red
-           // state reads as "unsupported here", not "flaky server the user should keep retrying".
-           '<div class="mc-hint">Local stdio servers cannot run on this host — this connector will never connect. Remove it, or re-add the server on the HTTP tab.</div>')
+           '<div class="mc-hint">isolated owner: ' + esc(c.agentId || 'unbound') + ' · persistent Safe Cell</div>')
         : ('<span class="mc-tag">http</span> ' + esc(c.url) + (c.hasToken ? ' · token saved' : '') + (c.hasHeaders ? ' · headers set' : ''));
       const timeout = (c.timeoutMs && c.timeoutMs !== 30000) ? '<span class="dim"> · ' + Math.round(c.timeoutMs / 1000) + 's</span>' : '';
       return '<div class="mc-row" data-id="' + esc(c.id) + '" data-enabled="' + (c.enabled ? '1' : '0') + '" style="--ci:' + (ri || 0) + '">' +
@@ -768,10 +778,22 @@
         if (h.bad) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'header needs "Name: value" — check: ' + h.bad; return; }
         payload.headers = h.out;
       } else {
-        // belt for the disabled ADD button: never POST a stdio config the host is guaranteed to refuse.
-        sfx('bad'); msgEl.classList.remove('ok');
-        msgEl.textContent = 'local stdio MCP servers cannot run on this host — use the HTTP tab, or the KEYS tab + a workbench.';
-        return;
+        const agentId = (body.querySelector('#mc-agent').value || '').trim();
+        const command = (body.querySelector('#mc-command').value || '').trim();
+        if (!agentId) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'choose a Safe Cell agent'; return; }
+        if (!command) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'a stdio command is required'; return; }
+        payload.agentId = agentId;
+        payload.command = command;
+        const argText = body.querySelector('#mc-args').value || '';
+        if (argText.trim() || !editing) payload.args = argText.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+        const cwd = (body.querySelector('#mc-cwd').value || '').trim();
+        if (cwd) payload.cwd = cwd;
+        const envText = body.querySelector('#mc-env').value || '';
+        if (envText.trim()) {
+          const e = parseKV(envText, '=');
+          if (e.bad) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'environment needs "NAME=value" — check: ' + e.bad; return; }
+          payload.env = e.out;
+        }
       }
       const to = (body.querySelector('#mc-timeout').value || '').trim();
       if (to) payload.timeout = Number(to);
@@ -788,6 +810,7 @@
       refresh();
     });
     refresh();
+    loadStdioAgents('');
     // NB: setupSpotify(body) is invoked from tsRefresh() above, once the JUKEBOX toolset row has mounted the sp-* markup.
 
     // ===== CATALOG: one-click browse-and-add over GET /api/connectors/catalog =====

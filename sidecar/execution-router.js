@@ -80,6 +80,7 @@ function makeExecutionRouter(deps) {
     writeBackground: (agentId, bgId, opts) => callAgent('writeBackground', agentId, [bgId, opts]),
     closeBackgroundStdin: (agentId, bgId) => callAgent('closeBackgroundStdin', agentId, [bgId]),
     killBackground: (agentId, bgId) => callAgent('killBackground', agentId, [bgId]),
+    spawnStdio: opts => fromOpts(opts).spawnStdio(opts),
     killAllBackground,
     _environments: environments
   };

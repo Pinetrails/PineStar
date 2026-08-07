@@ -3911,12 +3911,15 @@ const App = (() => {
       '<input type="text" spellcheck="false" placeholder="C:\\Users\\you\\project" aria-label="project folder path">' +
       '<div class="proj-add-row">' +
         '<button class="proj-add-pick" title="browse for a folder with the system dialog">BROWSE…</button>' +
+        '<button class="proj-add-discover" title="scan common project folders; grants nothing">DISCOVER</button>' +
         '<button class="proj-add-go">ADD</button>' +
       '</div>' +
+      '<div class="proj-discover-results" hidden></div>' +
       '<div class="proj-add-hint" hidden></div>';
     ul.insertBefore(li, ul.firstChild);
     const input = li.querySelector('input');
     const hint = li.querySelector('.proj-add-hint');
+    const discovered = li.querySelector('.proj-discover-results');
     const showHint = (msg, isErr) => { hint.hidden = !msg; hint.textContent = msg || ''; hint.classList.toggle('err', !!isErr); };
     const cancel = () => { li.remove(); };
     const submit = () => {
@@ -3945,6 +3948,29 @@ const App = (() => {
             else if (!hint.classList.contains('err') || hint.hidden) showHint('', false);   // cancel: clear the "open…" note, keep any real error
           })
           .finally(() => { if (pk.isConnected) pk.disabled = false; input.focus(); });
+      };
+    }
+    { const db = li.querySelector('.proj-add-discover');
+      if (db) db.onclick = () => {
+        if (db.disabled) return;
+        db.disabled = true; showHint('scanning common project folders…', false);
+        fetch('/api/projects/discover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then(res => res.json().then(j => ({ ok: res.ok, j })).catch(() => ({ ok: false, j: null })))
+          .then(({ ok, j }) => {
+            if (!ok || !j || !j.ok) { showHint((j && j.reason) || 'could not discover projects', true); return; }
+            const rows = (j.candidates || []).filter(x => x && x.root && !x.blessed).slice(0, 24);
+            if (!rows.length) {
+              discovered.hidden = true; discovered.innerHTML = '';
+              showHint('No ungranted projects found in the common folders. Browse or type a path instead.', false);
+              return;
+            }
+            discovered.innerHTML = rows.map(x => '<button type="button" class="proj-discover-pick" data-path="' + U.esc(x.root) + '"><b>' + U.esc(x.name || x.root) + '</b><span>' + U.esc(x.root) + '</span><em>' + U.esc(x.kind || 'project') + '</em></button>').join('');
+            discovered.hidden = false;
+            discovered.querySelectorAll('.proj-discover-pick').forEach(b => { b.onclick = () => { input.value = b.dataset.path || ''; showHint('Candidate selected. ADD grants this folder to StarNet.', false); input.focus(); }; });
+            showHint('Found ' + rows.length + ' candidate' + (rows.length === 1 ? '' : 's') + '. Select one, then ADD to grant access.' + (j.truncated ? ' Search stopped at its safety limit.' : ''), false);
+          })
+          .catch(() => showHint('could not reach the station', true))
+          .finally(() => { if (db.isConnected) db.disabled = false; });
       };
     }
     input.focus();

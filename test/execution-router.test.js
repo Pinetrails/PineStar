@@ -20,6 +20,7 @@ function fake(id) {
     writeBackground: (agentId, bgId) => ({ ok: true, backend: id, agentId, bgId }),
     closeBackgroundStdin: (agentId, bgId) => ({ ok: true, backend: id, agentId, bgId }),
     killBackground: (agentId, bgId) => ({ ok: true, backend: id, agentId, bgId }),
+    spawnStdio: opts => ({ backend: id, opts }),
     killAllBackground: () => 1
   };
 }
@@ -41,6 +42,7 @@ router.execute({ agentId: 'safe', cmd: 'x' }).then(result => {
   A.eq(result.backend, 'docker', 'foreground execution uses the profile backend');
   A.eq(router.startBackground({ agentId: 'trusted', cmd: 'x' }).backend, 'local', 'background execution uses the profile backend');
   A.eq(router.statusBackground('safe', 'bg_1').backend, 'docker', 'background inspection uses the profile backend');
+  A.eq(router.spawnStdio({ agentId: 'safe', command: 'node' }).backend, 'docker', 'stdio MCP spawn routes through the selected agent environment');
   A.eq(router.describeAgent('safe').effectiveBackend, 'docker', 'per-agent runtime truth names Docker');
   A.eq(router.describe().routing.perAgent, true, 'station execution status exposes dynamic routing');
   A.eq(router.killAllBackground(), 2, 'station halt reaches every distinct backend');
