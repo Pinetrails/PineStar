@@ -248,6 +248,7 @@ const { makeProcLedger } = require('./procledger.js');              // persisten
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
 const { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, makeRunAuthority, runInputContext, impactOfTool, normalizeUnattendedGrants, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
+const executionProfiles = require('./execution-profiles.js');       // per-agent runtime/scope envelope; approval + desktop lease stay separate
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeLspManager } = require('./lsp-manager.js');             // lazy installed-language-server edit diagnostics
@@ -1118,13 +1119,18 @@ function replaceAgentRoster(list) {
     const id = a && String(a.agentId || '');
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
     if (a && typeof a === 'object') agentRosterRaw.set(id, a);   // stash the raw record so unknown fields survive re-save
+    const approvalMode = ((a && a.approvalMode) === 'full') ? 'full' : 'ask';
     agentRoster.set(id, {
       system: String((a && a.system) || ''),
       name: String((a && a.name) || id).slice(0, 40),
       model: (a && a.model) ? String(a.model) : null,
       provider: normalizeProviderId((a && a.provider) || ''),
       role: String((a && a.role) || '').slice(0, 120),
-      approvalMode: ((a && a.approvalMode) === 'full') ? 'full' : 'ask',   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
+      approvalMode: approvalMode,   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
+      executionProfile: executionProfiles.normalizeId(a && a.executionProfile, {
+        approvalMode,
+        backendId: process.env.STARNET_EXEC_BACKEND || process.env.SKYNET_EXEC_BACKEND || 'local'
+      }),
       // Class Loadouts S1 (additive): the agent's class SKILL PACKAGE + applied reasoning effort. Old rosters
       // without these load unchanged (skills -> [], reasoningEffort -> null). skills are slugs, deduped + capped.
       skills: Array.isArray(a && a.skills) ? [...new Set(a.skills.map(s => String(s || '').trim()).filter(Boolean))].slice(0, 40) : [],
@@ -1151,7 +1157,7 @@ function loadAgentRoster() {
 // P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
 // key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
 // re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
-const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort', 'track'];
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'executionProfile', 'skills', 'reasoningEffort', 'track'];
 // saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
 // (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
 // stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
@@ -1161,7 +1167,7 @@ function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => {
-      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', executionProfile: executionProfiles.normalizeId(a.executionProfile, { approvalMode: a.approvalMode, backendId: executionEnvironment && executionEnvironment.backendId }), skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: per-agent package + execution envelope persist beside approval posture.
       // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
       // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
       const rawRec = agentRosterRaw.get(agentId);
@@ -1190,7 +1196,7 @@ function persistAgentFullAccess(agentId) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return false;
   const had = agentRoster.has(id);
   const previous = agentRoster.get(id);
-  const base = previous || { system: '', name: id, model: null, provider: null, role: '', approvalMode: 'ask', skills: [], reasoningEffort: null, track: '' };
+  const base = previous || { system: '', name: id, model: null, provider: null, role: '', approvalMode: 'ask', executionProfile: 'station-gear', skills: [], reasoningEffort: null, track: '' };
   agentRoster.set(id, Object.assign({}, base, { approvalMode: 'full' }));
   if (saveAgentRoster()) return true;
   if (had) agentRoster.set(id, previous); else agentRoster.delete(id);
@@ -7433,6 +7439,19 @@ const ROUTES = [
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
+  { m: 'GET', exact: '/api/execution-profiles', h: (req, res) => {
+    const backend = executionEnvironment.describe();
+    const agents = [...agentRoster].map(([agentId, rec]) => ({
+      agentId,
+      profile: executionProfiles.resolve(rec.executionProfile, {
+        approvalMode: rec.approvalMode,
+        backendId: executionEnvironment.backendId,
+        physicalDesktopLease: false
+      })
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ profiles: executionProfiles.catalog({ backendId: executionEnvironment.backendId }), backend, agents }));
+  } },
   { m: 'GET', exact: '/api/execution', h: (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); } },
   { m: 'GET', prefix: '/api/subagents', h: handleSubagentsList },
   { m: 'POST', exact: '/api/subagents/interrupt', h: handleSubagentInterrupt },
@@ -11566,6 +11585,17 @@ async function runOnce(o) {
   // run, every later run/surface, and every run after restart. None of these switches mints the separate
   // physical-desktop lease above.
   const agentFullAccessNow = () => ((agentRoster.get(String(agentId || '')) || {}).approvalMode === 'full');
+  // The execution profile is snapshotted for this run's tool projection. Approval remains live and revocable
+  // through agentFullAccessNow(); the profile never mints the separate physical-desktop lease.
+  const agentExecutionProfileNow = () => {
+    const rec = agentRoster.get(String(agentId || '')) || {};
+    return executionProfiles.resolve(rec.executionProfile, {
+      approvalMode: rec.approvalMode,
+      backendId: executionEnvironment.backendId,
+      physicalDesktopLease: remoteDesktopAuthorized
+    });
+  };
+  const executionProfile = agentExecutionProfileNow();
   const userControlAuthority = makeRunAuthority({
     surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted,
     remoteDesktopAuthorized, masterBypass: FULL_ACCESS || masterBypassOn(), fullAccess: agentFullAccessNow
@@ -11866,7 +11896,9 @@ async function runOnce(o) {
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, {
     scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null,
     agentId: (o2 && o2.agentId) || agentId,
-    fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow()
+    // This Computer widens the path envelope without changing approval posture: ASK still prompts before
+    // mutations, while reads of non-protected host paths no longer need a second project-root card.
+    fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow() || executionProfile.filesystemScope === 'host-paths-except-hard-floor'
   });
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire, editDiagnostics: lspManager }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6); baseline-before-edit LSP feedback
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
@@ -12191,6 +12223,11 @@ async function runOnce(o) {
   if (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
   if (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
   if (ownerTrusted) station = stationWithObject(station, agentId, 'orchestrator');
+  // EXECUTION PROFILE — actual capability projection, not approval theater. Every named profile carries the
+  // file cabinet and workbench it advertises; trusted host profiles also carry every enabled connector.
+  // Toolset kill-switches, consent, taint, hardlines and the desktop lease are still enforced below.
+  for (const objectType of executionProfile.capabilityObjects) station = stationWithObject(station, agentId, objectType);
+  if (executionProfile.connectors) station = stationWithConnectors(station, agentId, connectors.ids());
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
