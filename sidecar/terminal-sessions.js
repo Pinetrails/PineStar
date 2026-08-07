@@ -56,7 +56,9 @@ function defaultSpawnSpec(command, platform, env) {
 function makeTerminalSessions(deps) {
   deps = deps || {};
   const pty = deps.pty || null;
-  const now = deps.clock && typeof deps.clock.now === 'function' ? deps.clock.now : () => Date.now();
+  // The host owns wall-clock authority. A deterministic zero keeps the pure manager usable in
+  // availability-only tests without smuggling ambient time into durable lifecycle metadata.
+  const now = deps.clock && typeof deps.clock.now === 'function' ? deps.clock.now : (() => 0);
   const newId = typeof deps.newId === 'function' ? deps.newId : (() => String(now()));
   const load = typeof deps.load === 'function' ? deps.load : (() => ({ status: 'absent', value: null }));
   const save = typeof deps.save === 'function' ? deps.save : (() => {});
