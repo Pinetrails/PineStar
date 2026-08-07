@@ -551,7 +551,8 @@ const WorldModel = (() => {
     function removeRoom(id) {
       const rm = doc.rooms[id];
       if (!rm) return fail('NOT_FOUND', 'no such room');
-      if (id === doc.meta.spawnRoomId) return fail('SPAWN_ROOM', 'can’t reclaim the spawn room');
+      // "delete", not "reclaim" — the REFIT tool this message answers is labelled DELETE (build.js)
+      if (id === doc.meta.spawnRoomId) return fail('SPAWN_ROOM', 'can’t delete the spawn room');
       snapshot();
       const dirty = rm.rects.slice();
       delete doc.rooms[id];
