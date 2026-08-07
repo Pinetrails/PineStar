@@ -244,10 +244,12 @@ const Recipes = require('../frontend/app/recipes.js');     // built-in mission r
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability: shell.exec (+ the shared spawn primitive the LOOP host-check reuses verbatim)
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
+const { makeTerminalSessions } = require('./terminal-sessions.js');
+const { makeTerminalTools } = require('./tools/builtin/terminal.js');
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
 const { enforceSyntheticOnly, enforceRunAuthority, enforceEnabledToolsets, makeRunAuthority, runInputContext, impactOfTool, normalizeUnattendedGrants, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
-const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
+const { makeEnvironmentManager, sanitizeChildEnv } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeLspManager } = require('./lsp-manager.js');             // lazy installed-language-server edit diagnostics
@@ -3029,6 +3031,40 @@ const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: (
 // receives the keys whose unattended grant is flipped ON, the SAME rule resolveForRequest enforces on
 // web_request. Host authority — it comes from the run, never from tool args.
 const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) });
+// Real terminal sessions are a distinct rail from shell.bg: node-pty supplies POSIX forkpty / Windows ConPTY,
+// while this host owns durability, cwd policy, orphan receipts and lifecycle cleanup. Native loading is caught
+// here (not at module top): an unsupported/broken binding leaves terminal.start honestly unavailable without
+// preventing every other StarNet capability from booting.
+let terminalPty = null, terminalPtyLoadError = '';
+try { terminalPty = require('node-pty'); }
+catch (e) { terminalPtyLoadError = String((e && e.message) || e || 'node-pty unavailable'); }
+const terminalMetadataStore = makeDurableJsonStore({
+  fs: fs, path: path, fileFor: () => path.join(WORKSPACES, 'terminal-sessions.json'),
+  onRecover: () => console.warn('[terminal] recovered terminal metadata from last-known-good backup'),
+  onCorrupt: (key, file, result) => console.warn('[terminal] terminal metadata is ' + result.status + ' at ' + file + ' — history is unavailable and will not be overwritten')
+});
+function stopTerminalTree(pid, handle) {
+  pid = Number(pid);
+  if (process.platform === 'win32' && pid > 0) {
+    try {
+      const killer = execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 15000 }, (err) => {
+        if (err) { try { if (handle && handle.kill) handle.kill(); } catch (_) {} }
+      });
+      try { if (killer && killer.unref) killer.unref(); } catch (_) {}
+      return;
+    } catch (_) {}
+  } else if (pid > 0) {
+    try { process.kill(-pid, 'SIGTERM'); return; } catch (_) {}
+  }
+  try { if (handle && handle.kill) handle.kill(); } catch (_) {}
+}
+const terminalSessions = makeTerminalSessions({
+  pty: terminalPty, clock: { now: () => Date.now() }, newId: () => crypto.randomUUID(),
+  load: () => terminalMetadataStore.readKey('all'), save: (value) => terminalMetadataStore.set('all', value),
+  redact: redact, ledger: procLedger, stopTree: stopTerminalTree,
+  onExit: (s) => { try { console.log('[terminal] ' + s.agentId + '/' + s.name + ' ' + s.state + (s.exitCode == null ? '' : ' exit=' + s.exitCode)); } catch (_) {} }
+});
+if (terminalPtyLoadError && require.main === module) console.warn('[terminal] PTY runtime unavailable: ' + terminalPtyLoadError);
 const cronScriptTool = makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).execTool;
 
 function cronStringList(v, max, pattern) {
@@ -6248,7 +6284,7 @@ const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') 
 // and the one the system prompt actively recommends over fs.edit for real edits), so leaving it out meant the
 // single most destructive tool ran with NO workspace lease and NO checkpoint snapshot — the exact combination
 // the net exists to prevent. Keep this pattern in sync with the fs writers in tools/builtin/fs.js.
-const mutatesWorkspace = (name) => /^fs\.(write|append|edit|patch)$/.test(name) || /^(shell|verify)\./.test(name);
+const mutatesWorkspace = (name) => /^fs\.(write|append|edit|patch)$/.test(name) || /^(shell|verify)\./.test(name) || /^terminal\.(start|write)$/.test(name);
 // WORKSPACE LEASE (concurrent-sessions lane): same-agent runs are now admitted concurrently; the ONE thing
 // they can't share — the workspace dir + shadow-git checkpoint repo — is guarded here instead, at the first
 // workspace-MUTATING tool call. Held from first touch until run end (checkpoint chain stays contiguous per
@@ -7682,6 +7718,7 @@ function gracefulShutdown(signal) {
   try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
   try { if (typeof nightshiftTimer !== 'undefined' && nightshiftTimer) { clearInterval(nightshiftTimer); } } catch (_) {}   // NS-1: stop the night-shift ticker on shutdown
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
+  try { if (typeof terminalSessions !== 'undefined' && terminalSessions && terminalSessions.stopAll) terminalSessions.stopAll(); } catch (_) {}   // reap owned PTY/ConPTY trees
   // release any cursor confinement a reaped child leaves stuck (the PS one-shot outlives our exit; best-effort —
   // the boot-time ensureFree is the reliable cover for the force-kill path this handler can't see at all)
   try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.observe('shutdown').catch(() => {}); } catch (_) {}
@@ -11901,6 +11938,10 @@ async function runOnce(o) {
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
+  makeTerminalTools({
+    manager: terminalSessions, environment: executionEnvironment, fs: fs, pathMod: path, root: WORKSPACES,
+    platform: process.platform, envFor: () => sanitizeChildEnv(process.env)
+  }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   // Native driver registration is harmless by itself: the per-run remote-owner lease below is still required
@@ -12717,7 +12758,7 @@ async function runOnce(o) {
     // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
-    const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run)$/.test(c.name);
+    const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run|terminal\.(?:start|write))$/.test(c.name);
     if (mutatesWorkspace(c.name) && !preciseCheckpoint && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
       try {
         const turn = execution.checkpointTurn();
@@ -14428,11 +14469,13 @@ function handleHalt(req, res) {
   try { saveLoopsHalted(true); }
   catch (e) { loopsHaltPersisted = false; console.warn('[loops] halt persist failed:', (e && e.message) || e); }
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
+  let terminalStops = 0;
+  try { terminalStops = terminalSessions.stopAll(); } catch (_) {}  // E-STOP covers interactive terminal trees too
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, nightshiftHaltPersisted, cronHaltPersisted, loopsHaltPersisted }));   // honest counts + per-subsystem restart-durability receipts
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted, terminalStops, nightshiftHaltPersisted, cronHaltPersisted, loopsHaltPersisted }));   // honest counts + per-subsystem restart-durability receipts
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
