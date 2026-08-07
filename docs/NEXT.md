@@ -1,5 +1,29 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
+
+READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that
+vanished on restart. The live run authority never read the agent roster posture, and the post-web/MCP taint
+boundary could force a new prompt even for an agent already marked Full Access. This produced the broken
+contract shown in the live UI: the user repeatedly granted Full Access and the same agent kept asking.
+
+FULL ACCESS now has one canonical meaning and one durable authority source: the agent roster's persisted
+`approvalMode: "full"`. The permission-card endpoint saves that posture before completing the pending tool
+call; run authority, consent, taint handling, external-path trust, and autonomous writes read it live. It applies to
+every later task on every surface, including unattended work, and survives a sidecar restart. It never emits
+another permission card. Protected physical-input and visible-desktop actions remain hard-floor denials and
+are blocked automatically without asking. The obsolete process-lifetime wildcard, ledger row, revoke path,
+store plumbing, CSS, and tests were removed; live copy now states the same contract without contradiction.
+
+Verification: the new real-sidecar test clicks the actual permission-card endpoint, executes `shell.exec`,
+restarts the sidecar, and executes shell again with zero later prompts (11 assertions). The real MCP flow is
+87 assertions green; focused authority/consent/taint/UI coverage is green. `npm run test:fast` is **565/565
+GREEN** and `npm run test:http` is **68/68 GREEN**. In the real seeded app, NOVA was switched to FULL ACCESS
+through SETTINGS, the sidecar was restarted with its workspace preserved, and the live panel still rendered
+`FULL ACCESS — runs everything itself, no prompts`; it also rendered the corrected watched-or-unattended and
+automatic-hard-floor explanation. The live process and browser tab were stopped/finalized. No external
+message, production-data mutation, integration-tree edit, push, PR, deploy, tag, or publication occurred.
+
 ## 2026-08-04 — TELEGRAM POLLING / OWNER-PAIRING TRUTH (`agent/telegram-polling-truth`)
 
 READY TO MERGE. A Telegram Bot API poller could be genuinely healthy while owner enrollment was still

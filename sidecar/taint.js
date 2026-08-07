@@ -71,6 +71,9 @@
   function postTaintBoundary(tool, opts) {
     opts = opts || {};
     if (!opts.taintedBy || allowedWhenTainted(tool)) return { allow: true, needsConfirmation: false, oneShot: false };
+    // FULL ACCESS is the Commander's explicit zero-prompt posture. Taint still remains latched and fenced, but it
+    // cannot silently downgrade Full Access into ASK mode. Hardline floors live outside this policy and still win.
+    if (opts.fullAccess === true) return { allow: true, needsConfirmation: false, oneShot: false };
     if (opts.surface !== 'interactive' || opts.hasPrompt !== true) return { allow: false, needsConfirmation: false, oneShot: false };
     if (opts.decision == null) return { allow: false, needsConfirmation: true, oneShot: false };
     const allow = /^(?:once|session|always|full)$/i.test(String(opts.decision || ''));

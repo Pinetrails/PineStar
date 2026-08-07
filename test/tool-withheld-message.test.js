@@ -111,12 +111,12 @@ const capsum = fs.readFileSync(path.join(root, 'sidecar', 'capability', 'capsumm
 A.ok(!/shell\/terminal, desktop control and live connector tools/.test(capsum),
   'the unattended note no longer hardcodes a blanket no-shell/no-connector claim');
 A.ok(/lackAutonomous/.test(capsum), 'the unattended note names only what is genuinely absent from THIS run');
-// `trusted` = ownerTrusted || masterBypass (2026-08-05): the ONLY two host-sourced wideners — an admitted
-// owner DM, or the Commander's persisted FULL BYPASS switch. Neither is reachable from prompt text.
+// `trustedNow()` includes only host-sourced wideners: admitted owner DM, persisted master bypass, or the
+// persisted per-agent Full Access posture. None is reachable from prompt text.
 A.ok(/if \(!trusted && surface !== 'interactive' && impact === IMPACTS\.MEDIA_CONTROL\) return false;/.test(policy),
-  'media-control stays denied to ordinary unattended automation — only a host-admitted owner DM or the persisted FULL BYPASS switch widens it');
-A.ok(/const trusted = ownerTrusted \|\| masterBypass;/.test(policy),
-  'trusted is exactly ownerTrusted-or-masterBypass — no third widener');
+  'media-control stays denied to ordinary ASK-mode unattended automation');
+A.ok(/const trustedNow = \(\) => ownerTrusted \|\| masterBypass \|\| fullAccessNow\(\);/.test(policy),
+  'trusted is exactly the three host-sourced authority postures, including persisted per-agent Full Access');
 A.ok(/terminalAutonomy\(call, tool\)\) return \{ allow: true/.test(perms), 'the consent broker has the matching grant tier');
 // ORDERING IS LOAD-BEARING: below the exec lockout the tier would be dead code.
 A.ok(perms.indexOf('terminalAutonomy(call, tool)) return { allow: true') <

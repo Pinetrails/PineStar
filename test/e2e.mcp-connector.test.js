@@ -461,47 +461,41 @@ async function readNdjson(res) {
       return { prompts, calls, results };
     }
 
-    // A standing grant covers the first call only. Its result is remote-authored content, so each later call
-    // crosses a fresh exact boundary. Even "Full access" collapses to one-shot authority after taint.
+    // Full Access is the durable zero-prompt posture. The first call asks because this agent starts in ASK mode;
+    // the answer is persisted before the tool resumes, so later calls — including post-taint calls — never ask.
     const full = await driveWatched('mcp-agent', 'FOURLOOKUPS please read four theme assets', 'full');
     A.eq(full.calls.length, 4, 'the watched run made four connector tool calls');
-    A.eq(full.prompts.length, 4, 'each connector call after remote content gets an exact confirmation');
+    A.eq(full.prompts.length, 1, 'Full Access raises exactly one prompt — the card where it was selected');
     A.eq(full.prompts[0].tool, 'mcp__demo__lookup', 'the approval names the connector tool');
-    A.eq(full.results.filter(r => r.ok === true).length, 4, 'all four connector calls succeeded after four confirmations');
+    A.eq(full.results.filter(r => r.ok === true).length, 4, 'all four connector calls succeeded with no post-taint re-prompts');
 
-    // Full Access covers the next run's first call; the returned remote content re-arms the boundary.
+    // A later watched run is entirely zero-prompt; the supplied deny answer is never needed or sent.
     const again = await driveWatched('mcp-agent', 'FOURLOOKUPS read them again', 'deny');
     A.eq(again.calls.length, 4, 'the follow-up run made four connector calls');
-    A.eq(again.prompts.length, 3, 'a granted agent is re-asked only after the next run reads connector content');
-    A.eq(again.results.filter(r => r.ok === true).length, 1, 'denying fresh prompts leaves only the pre-taint call successful');
+    A.eq(again.prompts.length, 0, 'a Full Access agent emits ZERO prompts on the follow-up run');
+    A.eq(again.results.filter(r => r.ok === true).length, 4, 'all follow-up connector calls succeed');
 
-    // The wildcard is now part of the REAL permissions authority surface, rather than invisible process state.
-    const afterFullPermissions = await (await fetch(B + '/api/permissions', {
-      headers: { 'X-StarNet-Token': token, Origin: B }
-    })).json();
-    const fullRow = (afterFullPermissions.blanket || []).find(b => b && b.agentId === 'mcp-agent');
-    A.ok(fullRow && fullRow.key === 'blanket:mcp-agent', 'GET /api/permissions exposes the exact agent wildcard');
-    A.eq(fullRow.scope, 'watched sessions, until the app restarts', 'the authority readout truthfully bounds Full Access to watched sessions');
+    const rosterFile = path.join(ws, 'agent.roster.json');
+    const fullRoster = JSON.parse(fs.readFileSync(rosterFile, 'utf8'));
+    A.eq(((fullRoster.agents || []).find(a => a.agentId === 'mcp-agent') || {}).approvalMode, 'full',
+      'the permission-card answer persists the canonical per-agent approvalMode:full');
 
-    // ORIGINAL unattended escape: the same agent's ungranted routine must remain unable to call the connector,
-    // even while its watched-session wildcard is live. Consent to a watched card is not cron/Telegram/night-shift consent.
+    // Full Access follows the AGENT across surfaces: its unattended routine also runs without a prompt.
+    const unattendedBefore = mcp.calls.filter(c => c.msg && c.msg.method === 'tools/call').length;
     const unattendedAfterFull = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: job.id }) });
     const unattendedAfterFullPanel = await readNdjson(unattendedAfterFull);
-    A.ok(!unattendedAfterFullPanel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'),
-      'a watched Full Access wildcard does NOT authorize the same agent\'s unattended routine');
+    A.ok(unattendedAfterFullPanel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'),
+      'Full Access authorizes the same agent\'s unattended routine');
+    A.ok(mcp.calls.filter(c => c.msg && c.msg.method === 'tools/call').length > unattendedBefore,
+      'the unattended Full Access routine reaches the real connector endpoint');
 
-    // The row's REVOKE door must remove the live process-lifetime authority, not merely repaint the panel.
-    const revokeFullRes = await fetch(B + '/api/permissions/revoke', {
-      method: 'POST', headers, body: JSON.stringify({ key: fullRow.key })
+    // Revocation uses the same canonical roster setting — no hidden wildcard or second authority exists.
+    const askAgents = (fullRoster.agents || []).map(a => a.agentId === 'mcp-agent' ? Object.assign({}, a, { approvalMode: 'ask' }) : a);
+    const revokeFullRes = await fetch(B + '/api/roster', {
+      method: 'POST', headers, body: JSON.stringify({ agents: askAgents, updatedAt: Date.now() + 1000 })
     });
     const revokeFull = await revokeFullRes.json();
-    A.ok(revokeFullRes.status === 200 && revokeFull.ok === true && revokeFull.revoked === true,
-      'POST /api/permissions/revoke withdraws the live wildcard');
-    const afterRevokePermissions = await (await fetch(B + '/api/permissions', {
-      headers: { 'X-StarNet-Token': token, Origin: B }
-    })).json();
-    A.ok(!(afterRevokePermissions.blanket || []).some(b => b && b.agentId === 'mcp-agent'),
-      'the next authoritative permissions read no longer lists the revoked wildcard');
+    A.ok(revokeFullRes.status === 200 && revokeFull.ok === true, 'setting canonical approvalMode:ask revokes Full Access');
     const afterRevoke = await driveWatched('mcp-agent', 'FOURLOOKUPS after revoke', 'deny');
     A.ok(afterRevoke.prompts.length >= 1, 'the same watched agent is asked again after REVOKE');
     A.eq(afterRevoke.results.filter(r => r.ok === true).length, 0, 'a denied post-revoke run performs no connector action');

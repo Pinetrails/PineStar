@@ -237,11 +237,12 @@ function makeFakeTransport(handle) {
       mcpTool: { name: 'get_draft_asset', annotations: { readOnlyHint: true }, inputSchema: { type: 'object', required: ['key'], properties: { key: { type: 'string' } } } },
       call: () => { runs++; return Promise.resolve({ content: [{ type: 'text', text: 'asset' }] }); }
     }));
-    const ask = async () => { asks++; return 'full'; };
+    let full = false;
+    const ask = async () => { asks++; full = true; return 'full'; };
     const ctx = {
       canUse: () => ({ ok: true }),
-      authorize: makeRunAuthority({ surface: 'interactive', isTask: false, confirm: ask }).authorize,
-      consent: makeConsentBroker({ surface: 'interactive', sessionKey: 'run1', grantsBlanket: new Set(), networkOf: () => true, prompt: ask })
+      authorize: makeRunAuthority({ surface: 'interactive', isTask: false, confirm: ask, fullAccess: () => full }).authorize,
+      consent: makeConsentBroker({ surface: 'interactive', sessionKey: 'run1', bypass: () => full, networkOf: () => true, prompt: ask })
     };
     const call = (key) => ({ id: key, name: 'mcp__shopify__get_draft_asset', args: { key }, argsRaw: JSON.stringify({ key }), parseError: null });
     // the four calls from the reported video, in order

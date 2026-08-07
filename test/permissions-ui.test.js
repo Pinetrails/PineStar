@@ -66,10 +66,16 @@ ok(/emptyApprovals|No standing approvals yet/.test(src), 'teaching empty state (
 ok(/\[data-perm-revoke\]'\)\.forEach\(b => ArmConfirm\.wire\(b/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
 ok(/held\.filter\(k => curated\.indexOf\(k\) < 0\)/.test(src), 'NON-curated standing grants are listed too (nothing hidden/irrevocable)');
 ok(/pre-approve a capability|pre-bless/i.test(src), 'the curated GRANT offer is kept separate from the active-approvals ledger');
-ok(/FULL ACCESS<\/b>/.test(src), 'the process-lifetime Full Access wildcard has its own visible row');
-ok(/watched sessions may reuse allowed danger-class approvals without asking again/.test(src),
-  'the wildcard row names its watched-session boundary instead of implying unattended authority');
-ok(/host hardlines still apply/.test(src), 'the wildcard row does not overstate authority beyond host hardlines');
+ok(/holds <b>FULL ACCESS<\/b> and runs everything itself, no prompts/.test(src),
+  'the per-agent approval copy states the canonical no-prompts meaning');
+ok(/every approval prompt on every task, watched or unattended/.test(src),
+  'the permissions panel explicitly applies Full Access to unattended tasks too');
+ok(!/unattended runs[^.]*never inherit it/.test(src),
+  'the panel never contradicts the persisted Full Access contract');
+ok(/Full Access is represented only by the canonical per-agent APPROVAL rows/.test(src),
+  'Full Access is not duplicated as an ephemeral standing-grant wildcard');
+ok(/no approval prompts \(the hard safety floor still applies\)/.test(src),
+  'the whole-station copy preserves the automatic hard safety floor');
 
 // the store hooks
 ok(/PermissionsStore\.setLevel\(/.test(src), 'level click drives PermissionsStore.setLevel');

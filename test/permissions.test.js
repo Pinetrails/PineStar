@@ -126,13 +126,16 @@ const hardline = (call) => (call && call.args && /(^|\/)(\.env|permissions\.allo
   const again = bAlways(writeCall, WRITE);   // CACHE tier now -> a SYNC object, proving no second prompt
   A.ok(again.allow === true && again.reason === 'previously granted', 'a granted class no longer prompts');
 
-  // 10. full access: a blanket grant covers EVERY danger class, but the hardline floor still wins
-  const blanket = new Set();
-  const bFull = makeConsentBroker({ surface: 'interactive', prompt: () => Promise.resolve('full'), grantsBlanket: blanket, hardline: hardline });
+  // 10. full access: the host-persisted live posture covers every danger class, but the hardline still wins
+  let full = false;
+  const bFull = makeConsentBroker({
+    surface: 'interactive', bypass: () => full,
+    prompt: () => { full = true; return Promise.resolve('full'); }, hardline: hardline
+  });
   A.ok((await bFull(writeCall, WRITE)).allow, 'full access -> allow');
-  A.ok(blanket.has('*'), 'full access recorded the blanket wildcard');
+  A.ok(full, 'the host posture changed to full');
   const otherClass = bFull({ name: 'shell.exec', args: {} }, { name: 'shell.exec', capability: 'shell', scope: 'write' });
-  A.ok(otherClass.allow === true && otherClass.reason === 'previously granted', 'blanket covers a DIFFERENT danger class without asking');
+  A.ok(otherClass.allow === true && otherClass.reason === 'full-access', 'live Full Access covers a different danger class without asking');
   const floor = bFull({ name: 'fs.write', args: { path: '.env' } }, WRITE);
   A.ok(!floor.allow && floor.hardline === true, 'hardline still denies under full access');
 
@@ -203,39 +206,24 @@ const hardline = (call) => (call && call.args && /(^|\/)(\.env|permissions\.allo
     A.ok(!connOn(writeCall, WRITE).allow, 'a connector grant does NOT unlock ordinary writes');
   }
 
-  /* ---- the mid-run FULL ACCESS wildcard is watched-surface only, listed, and revocable ----------------
-     The blanket is per-AGENT and process-lifetime, and runOnce is the SAME host the messaging hub drives with
-     surface:'autonomous'. So one "Full access" click in a watched session also blessed that agent's Telegram /
-     cron / night-shift file and memory writes until the sidecar exited — with no readout in the PERMISSIONS
-     panel (whose header promises "every capability it may use unattended … and a REVOKE for each"), and no
-     clear path anywhere. Consent for a watched surface is not consent for an unattended one. */
+  /* ---- Full Access has one canonical persisted meaning ---------------------------------------------- */
   {
-    const shared = new Set(['*']);   // as if a watched click had already written it
-    // an AUTONOMOUS broker must be handed no blanket at all — index.js now passes null on that surface
-    const auto = makeConsentBroker({ surface: 'autonomous', grantsBlanket: null, hardline: hardline });
+    const auto = makeConsentBroker({ surface: 'autonomous', bypass: () => true, hardline: hardline });
     const r = auto({ name: 'fs.write', args: { path: 'notes.md' } }, WRITE);
-    A.ok(!r.allow, 'an unattended run is NOT covered by a watched-session full-access click');
-    // ...while the watched surface still honors it exactly as before
-    const watched = makeConsentBroker({ surface: 'interactive', prompt: () => Promise.resolve('once'), grantsBlanket: shared, hardline: hardline });
-    const w = watched({ name: 'fs.write', args: { path: 'notes.md' } }, WRITE);
-    A.ok(w.allow === true && w.reason === 'previously granted', 'the watched surface still honors the blanket');
-    const floor2 = watched({ name: 'fs.write', args: { path: '.env' } }, WRITE);
+    A.ok(r.allow && r.reason === 'full-access', 'Full Access applies to unattended runs too');
+    const floor2 = auto({ name: 'fs.write', args: { path: '.env' } }, WRITE);
     A.ok(!floor2.allow && floor2.hardline === true, 'and the hardline floor still wins over it');
   }
-  // the WIRING: the surface gate, the readout, and the revoke (index.js is not loadable in isolation)
+  // Structural wiring lock: the endpoint persists roster Full Access and run authority reads it live.
   {
     const fs = require('fs'); const path = require('path');
     const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
-    A.ok(/grantsBlanket: surface === 'interactive' \? blanketSetFor\(agentId\) : null/.test(src),
-      "runOnce hands the blanket ONLY to a watched surface");
-    A.ok(/grantsBlanket: null, surface: 'autonomous'/.test(src),
-      'the autonomy-write broker is never given it either');
-    A.ok(/blanket\.push\(\{ key: 'blanket:'/.test(src), 'GET /api/permissions REPORTS a standing wildcard');
-    A.ok(/rawKey\.indexOf\('blanket:'\) === 0/.test(src), 'and POST /api/permissions/revoke can withdraw it');
-    const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
-    A.ok(/FULL ACCESS<\/b>/.test(ui), 'the PERMISSIONS ledger renders the wildcard row');
-    A.ok(/data-perm-revoke="' \+ esc\(String\(b\.key\)\)/.test(ui), 'with a REVOKE button, as its own header promises');
-    A.ok(/else if \(!blanket\.length\)/.test(ui), 'and never prints "no standing approvals" over a live wildcard');
+    A.ok(/persistAgentFullAccess\(agentId\)/.test(src), 'the permission-card endpoint persists Full Access');
+    A.ok(/fullAccess: agentFullAccessNow/.test(src), 'run authority receives the live per-agent predicate');
+    A.ok(/agentFullAccessNow\(\)/.test(src), 'the consent broker reads that posture on every call');
+    A.ok(!/grantsBlanketByAgent|blanketSetFor|grantsBlanket:/.test(src), 'the obsolete process-memory wildcard is gone');
+    const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'chat.js'), 'utf8');
+    A.ok(/App\.setApproval\([^\n]+, 'full'\)/.test(ui), 'the confirmed permission-card choice updates the visible roster posture');
   }
 
   A.report('permissions.test');

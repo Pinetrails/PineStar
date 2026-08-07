@@ -83,4 +83,22 @@ const hardline = (call) => (call && call.args && /(^|\/)\.env$/.test(call.args.p
   A.ok(media.ok === false, 'OFF: unattended media denial unchanged');
 }
 
+// ---- 8. per-agent Full Access is the same zero-prompt authority, and is live within a run ----
+{
+  let full = true, prompts = 0;
+  const auth = makeRunAuthority({
+    surface: 'autonomous',
+    fullAccess: () => full,
+    confirm: async () => { prompts++; return 'deny'; }
+  });
+  const unknownTool = { name: 'x.custom', capability: 'mystery', scope: 'execute' };
+  const after = auth.authorize({ name: 'x.custom' }, unknownTool);
+  A.ok(after.ok === true && prompts === 0, 'Full Access emits no exact permission prompt');
+  A.ok(after.fullAccess === true, 'the allow is stamped as per-agent Full Access, not owner identity or master bypass');
+  A.ok(auth.project({ name: 'shell.exec', capability: 'workbench' }) === true, 'Full Access projects unattended workbench authority too');
+  full = false;
+  A.ok(auth.project({ name: 'shell.exec', capability: 'workbench' }) === false,
+    'revoking Full Access bites the same authority object on the next call');
+}
+
 A.report('master-bypass.test');

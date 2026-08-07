@@ -19,10 +19,6 @@ const PermissionsStore = (() => {
   let grants = [];        // cached standing grants (dangerKey strings) — last seen from the server
   let grantable = [];     // cached curated catalog keys the server will accept
   let meta = {};          // cached provenance { dangerKey: { grantedAt } } — additive, may be {} for legacy stores
-  /* The mid-run FULL ACCESS wildcards the server reports. Kept separate from `grants` on purpose: a blanket is
-     NOT a danger key, so normalizeGrants would drop it (that is the same shape as the path:/mcp: bug), and it is
-     process-lifetime rather than durable. The ledger renders it above the durable rows with its own REVOKE. */
-  let blanket = [];
   /* The master FULL BYPASS switch (2026-08-05) — server truth from /api/permissions (additive fields).
      envFullAccess = the boot SKYNET_FULL_ACCESS env forces bypass regardless of the switch; the panel
      renders the toggle pinned + explained rather than a switch that appears to do nothing. */
@@ -57,10 +53,6 @@ const PermissionsStore = (() => {
         if (r && Array.isArray(r.grants)) grants = norm(r.grants);
         if (r && Array.isArray(r.grantable)) grantable = r.grantable.slice();
         meta = normMeta(r && r.meta);   // additive: absent → {}, no provenance shown (legacy store)
-        // additive: a server with no blanket support, or none standing, yields []
-        blanket = Array.isArray(r && r.blanket)
-          ? r.blanket.filter(b => b && b.key).map(b => ({ key: String(b.key), agentId: String(b.agentId || ''), scope: String(b.scope || '') }))
-          : [];
         masterBypass = !!(r && r.masterBypass);
         envFullAccess = !!(r && r.envFullAccess);
         loaded = true;
@@ -78,7 +70,6 @@ const PermissionsStore = (() => {
       grants: grants.slice(),
       grantable: grantable.length ? grantable.slice() : (ready() ? Permissions.grantableKeys() : []),
       meta: Object.assign({}, meta),   // provenance { key: { grantedAt } } — additive; {} when the store is legacy
-      blanket: blanket.map(b => Object.assign({}, b)),
       masterBypass,
       envFullAccess,
       level: currentLevel(),
@@ -154,26 +145,17 @@ const PermissionsStore = (() => {
   // while the server still held cabinet:write. Non-curated grants remain visible and untouched.
   async function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
-    const had = blanket.slice();
     if (!deps.api || typeof deps.api.revoke !== 'function') {
-      grants = []; grantable = []; meta = {}; blanket = []; loaded = false; error = '';
+      grants = []; grantable = []; meta = {}; loaded = false; error = '';
       return snapshot();
     }
     error = '';
-    // Curated grants first, then any standing FULL ACCESS wildcard: a lockdown that left the broadest grant
-    // standing would be the same lie as the ledger not listing it. Both go through the local revoke() so a
-    // server refusal lands in `error` and REJECTS here — and note nothing is cleared optimistically, because
-    // blanket is only ever refreshed from the server; wiping it locally is precisely the claim we cannot make.
     for (const k of keys) {
       const snap = await revoke(k);
       if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
     }
-    for (const b of had) {
-      const snap = await revoke(b.key);
-      if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
-    }
     // the master FULL BYPASS switch outranks every row above — a "lockdown" that left it ON would be the
-    // same lie as leaving the blanket standing. Same fail-closed contract: a refused flip REJECTS.
+    // same lie as leaving any broader authority standing. Same fail-closed contract: a refused flip REJECTS.
     if (masterBypass) {
       const snap = await setBypass(false);
       if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);

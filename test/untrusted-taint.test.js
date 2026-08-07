@@ -111,6 +111,10 @@ A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interact
   { allow: true, needsConfirmation: false, oneShot: true }, 'even Always collapses to this exact post-taint call');
 A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interactive', hasPrompt: true, decision: 'deny' }),
   { allow: false, needsConfirmation: false, oneShot: false }, 'denial remains fail-closed');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interactive', hasPrompt: true, fullAccess: true }),
+  { allow: true, needsConfirmation: false, oneShot: false }, 'Full Access survives taint without asking — full means zero permission prompts');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'autonomous', hasPrompt: false, fullAccess: true }),
+  { allow: true, needsConfirmation: false, oneShot: false }, 'Full Access survives taint on unattended task surfaces too');
 A.eq(taint.postTaintBoundary(FS_WRITE, { taintedBy: 'web_fetch', surface: 'autonomous', hasPrompt: false }),
   { allow: true, needsConfirmation: false, oneShot: false }, 'ordinary jailed file analysis remains usable');
 

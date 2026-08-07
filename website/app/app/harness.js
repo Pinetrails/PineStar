@@ -812,8 +812,12 @@ const Harness = (() => {
   // answer a live permission.prompt: decision ∈ once|always|full|deny. Resolves the run's paused dispatch so it
   // continues (or denies). Separate request from the open /api/run stream — no deadlock.
   async function consent(runId, promptId, decision) {
-    if (!runId || !promptId) return;
-    try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
+    if (!runId || !promptId) return { ok: false, decision: 'deny' };
+    try {
+      const r = await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) });
+      const j = await r.json().catch(() => null);
+      return (j && typeof j === 'object') ? j : { ok: false, decision: 'deny' };
+    } catch (_) { return { ok: false, decision: 'deny' }; }
   }
 
   // EL-11 FIX 1c: attest to the sidecar that a live permission.prompt is now RENDERED to a human (the active

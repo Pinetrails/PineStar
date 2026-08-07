@@ -7,6 +7,7 @@ test/update-preparation.http.test.js
 test/codex-status.e2e.test.js
 test/oauth-status.e2e.test.js
 test/roster-envelope.http.test.js
+test/full-access.e2e.test.js
 test/scout.http.test.js
 test/scout.e2e.test.js
 test/auxbudget.e2e.test.js

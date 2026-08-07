@@ -97,7 +97,16 @@ function makeRunAuthority(opts) {
      remote-desktop lease: physical mouse/real-screen control still requires the host-minted desktop pairing
      (it takes over the user's live pointer — a switch cannot prove someone is watching). */
   const masterBypass = !!opts.masterBypass;
-  const trusted = ownerTrusted || masterBypass;
+  // PER-AGENT FULL ACCESS is live authority, not a prompt-cache hint. Accept a thunk so selecting Full Access
+  // while a run is paused takes effect on that run's very next tool call; revocation is equally immediate.
+  // The host supplies this from the persisted roster. Model text and tool output cannot mutate it.
+  const fullAccessFn = typeof opts.fullAccess === 'function' ? opts.fullAccess : null;
+  const fullAccess = fullAccessFn ? false : opts.fullAccess === true;
+  const fullAccessNow = () => {
+    if (!fullAccessFn) return fullAccess;
+    try { return fullAccessFn() === true; } catch (_) { return false; }
+  };
+  const trustedNow = () => ownerTrusted || masterBypass || fullAccessNow();
   // This bit is minted by the desktop host only when a locally paired Telegram owner reaches this run. It is
   // deliberately separate from ownerTrusted: a bare sidecar or ordinary web session cannot turn an identity
   // claim into control of the foreground Windows desktop.
@@ -110,10 +119,10 @@ function makeRunAuthority(opts) {
      The record is durable, per-routine and revocable, read off the persisted job by the composition root.
 
      THE SAFETY PROPERTY, stated exactly: this value is NEVER derived from prompt text, model output, tool
-     results, Full Access, or a cached/blanket consent grant. The model cannot reach this path, so a prompt
+     results, or a cached consent grant. The model cannot reach this path, so a prompt
      injection cannot mint one — the worst an injected routine prompt can do is use a power its Commander had
-     already, deliberately, granted to that specific routine. That is why this widening is safe where
-     "Full Access implies shell" would not be, and why the blanket-grant escape below stays closed. */
+     already, deliberately, granted to that specific routine. In ASK mode this is the only unattended widening;
+     the separate Full Access posture is a host-persisted operator choice checked by trustedNow(). */
   const unattendedGrants = normalizeUnattendedGrants(opts.unattendedGrants);
   const workbenchGranted = unattendedGrants.has('workbench');
   const connectorsGranted = unattendedGrants.has('connectors');
@@ -126,6 +135,7 @@ function makeRunAuthority(opts) {
   }
   function project(tool) {
     const impact = impactOfTool(tool);
+    const trusted = trustedNow();
     if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return remoteDesktopAuthorized;
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
       if (trusted) return true;
@@ -133,20 +143,21 @@ function makeRunAuthority(opts) {
       return connectorAllowedUnattended(tool);
     }
     if (!trusted && surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) return false;
-    // A host-process capability unattended requires the explicit per-run grant above — absent it, the
-    // pre-2026-07-25 blanket denial is unchanged.
+    // In ASK mode a host-process capability unattended requires the explicit per-run grant above.
     if (!trusted && surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS) return workbenchGranted;
     return true;
   }
   function authorize(call, tool) {
     const impact = impactOfTool(tool);
+    const agentFullAccess = fullAccessNow();
+    const trusted = ownerTrusted || masterBypass || agentFullAccess;
     if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) {
       return remoteDesktopAuthorized
         ? { ok: true, impact, surface: 'interactive', isTask, isolated, ownerTrusted: true, remoteDesktopAuthorized: true }
         : { ok: false, impact, reason: impact + ' is unavailable without an authenticated remote-owner desktop lease' };
     }
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
-      if (trusted) return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, masterBypass: masterBypass || undefined };
+      if (trusted) return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, masterBypass: masterBypass || undefined, fullAccess: agentFullAccess || undefined };
       // A granted routine calling one of the Commander's own connected MCP servers: the recorded per-routine
       // grant IS the approval, so this needs no live confirmation. Returned BEFORE the interactive-confirm
       // branch and deliberately WITHOUT oneShot, so the ordinary consent broker still runs for it downstream.
@@ -178,21 +189,22 @@ function makeRunAuthority(opts) {
           : { ok: false, impact, reason: 'exact external-effect confirmation was denied' };
       }, () => ({ ok: false, impact, reason: 'exact external-effect confirmation failed' }));
     }
-    // Full Access, cached grants, and task text never turn an unattended run into authority over a host
-    // process or the user's active media session. This gate runs before consent. Apart from a host-minted
+    // Cached grants and task text never turn an ASK-mode unattended run into authority over a host
+    // process or the user's active media session. This gate runs before consent. Apart from Full Access or a host-minted
     // authenticated owner DM, the ONLY key that opens the host-process door unattended is the host-recorded
     // per-run grant above — see its comment for why that is not the same escape: it cannot be minted by
     // anything the model can influence.
     if (!trusted && surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) {
-      return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' even under Full Access' };
+      return { ok: false, impact, reason: 'ASK-mode unattended runs cannot use ' + impact };
     }
     if (!trusted && surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS && !workbenchGranted) {
-      return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' without an explicit per-routine terminal grant (Full Access does not imply one)' };
+      return { ok: false, impact, reason: 'ASK-mode unattended runs cannot use ' + impact + ' without an explicit per-routine terminal grant' };
     }
-    return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, masterBypass: masterBypass || undefined, granted: (!trusted && impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
+    return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, masterBypass: masterBypass || undefined, fullAccess: agentFullAccess || undefined, granted: (!trusted && impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
   }
   return Object.freeze({
     mode: remoteDesktopAuthorized ? 'remote-owner-desktop' : 'preserve-user-control', surface, isTask, isolated, ownerTrusted, masterBypass, remoteDesktopAuthorized, project, authorize,
+    fullAccess: fullAccessNow,
     unattendedGrants: Object.freeze(Array.from(unattendedGrants).sort())   // diagnostics/telemetry: what this run was actually granted
   });
 }

@@ -2137,19 +2137,30 @@ const Chat = (() => {
     r.body.appendChild(document.createTextNode('▣ ' + name + ' wants to ' + actionPhrase(p) + ' '));
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     let decided = false;
-    function decide(decision, doneLabel, isDeny) {
+    async function decide(decision, doneLabel, isDeny) {
       if (decided) return; decided = true;
+      for (const b of btns.querySelectorAll('button')) b.disabled = true;
       const rid = (ws && typeof Channels !== 'undefined') ? Channels.runIdOf(ws.id) : null;
-      Harness.consent(rid, p.promptId, decision);
+      const answer = await Harness.consent(rid, p.promptId, decision);
+      const appliedDecision = (answer && answer.decision) || 'deny';
+      if (decision === 'full') {
+        const saved = !!(answer && answer.ok && answer.approvalMode === 'full');
+        const adopted = saved && typeof App !== 'undefined' && App.setApproval
+          ? App.setApproval((answer && answer.agentId) || p.agentId || (ws && ws.agentId), 'full')
+          : false;
+        if (!saved || !adopted) { doneLabel = '✕ full access was not saved'; isDeny = true; }
+      } else if (appliedDecision === 'deny' && decision !== 'deny') {
+        doneLabel = '✕ approval was not applied'; isDeny = true;
+      }
       // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
-      try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
+      try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: appliedDecision }); } catch (_) {}
       // NS conversational anchor: "Always" — and now "Full access" — on a path.trust card IS the project bless
       // (a standing path grant + known-projects row land on the sidecar). Stamp the origin session's projectRoot
       // with the SAME proposed root so the PROJECTS rail lists this session under its project — the identical
       // anchor "Work here" stamps. Both standing grades, never "once" (it grants nothing standing, so there is
       // no project row to attach to), and never overwrite an anchor the session already has.
-      if (p.tool === 'path.trust' && (decision === 'always' || decision === 'full') && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
+      if (p.tool === 'path.trust' && (appliedDecision === 'always' || appliedDecision === 'full') && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
         try { if (p.argsSummary && !(Workstreams.get(ws.id) || {}).projectRoot) Workstreams.setProjectRoot(ws.id, p.argsSummary); } catch (_) {}
       }
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // closes the paused span — approval wait never counts as run time
@@ -7250,7 +7261,7 @@ const Chat = (() => {
         // a background stream fires the global clickable toast + rail marker (backgroundPermissionNotify). Both
         // paths then ACK the sidecar (consentAck) that the prompt is human-visible, earning the paused run its
         // one bounded extension of the fail-closed auto-deny timer.
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }, Date.now()); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } else { backgroundPermissionNotify(ev, ws); } try { Harness.consentAck(Channels.runIdOf(ws.id), ev.promptId); } catch (_) {} },
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, agentId: ev.agentId || ws.agentId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }, Date.now()); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } else { backgroundPermissionNotify(ev, ws); } try { Harness.consentAck(Channels.runIdOf(ws.id), ev.promptId); } catch (_) {} },
         // the lead's team.summon tool asked the station to create a worker: run the REAL summon (App.summonForRequest
         // → the Recruitment Bay's own summonAgent), then ack with the new id so the lead can delegate to it. The id
         // resolves only after the roster POST lands (App awaits it), so the lead's next team.dispatch finds the worker.

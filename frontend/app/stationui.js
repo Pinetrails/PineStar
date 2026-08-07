@@ -4645,7 +4645,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<button class="bb sm danger" id="perm-full-all">FULL ACCESS — WHOLE STATION</button>' +
         '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
       '</div>' +
-      '<div class="mc-hint">full access skips the prompts, not the floor: a hard safety floor still blocks the most dangerous host actions, and unattended runs (night shift, routines) never inherit it — those follow the level and approvals below.</div>' +
+      '<div class="mc-hint">full access skips every approval prompt on every task, watched or unattended. It does not skip the hard safety floor: protected host actions are blocked automatically, without asking.</div>' +
       // ── 2 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
@@ -5438,18 +5438,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         : 'No standing approvals yet — when you answer ALWAYS to a permission prompt, it appears here.';
       const renderGrants = (snap) => {
         const curated = pcurated(); const caps = heroCapsNow(); const rows = [];
-        /* THE MID-RUN "FULL ACCESS" WILDCARD. One click on a consent card wrote a per-agent '*' that short-circuits
-           EVERY danger class, and this ledger — whose header promises "every capability it may use unattended …
-           and a REVOKE for each" — listed nothing, because consent.snapshot() only ever returned
-           { permanent, session }. Nothing in the app could withdraw it either; only restarting the sidecar did.
-           It rides at the TOP because it outranks every row below it. */
-        const blanket = Array.isArray(snap.blanket) ? snap.blanket : [];
-        blanket.forEach(b => {
-          rows.push('<div class="set-row"><span>⚠ <b>FULL ACCESS</b> — you clicked "Full access" on a permission card for ' +
-            esc(String(b.agentId || 'this agent')) + ', so its watched sessions may reuse allowed danger-class approvals without asking again; host hardlines still apply' +
-            (b.scope ? ' <span class="dim">(' + esc(String(b.scope)) + ')</span>' : '') +
-            '</span> <button class="bb sm danger" data-perm-revoke="' + esc(String(b.key)) + '">✕ REVOKE</button></div>');
-        });
         // THE LEDGER (P0-5) — every capability ACTUALLY blessed right now: what, WHEN, and a per-row REVOKE. A held
         // CURATED cap shows its friendly label + object-effect hint; a NON-curated class (blessed via a past "always"
         // prompt) shows its raw danger key — so nothing the agent can do unattended is ever hidden or irrevocable.
@@ -5479,10 +5467,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span>' +
               ' <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
           });
-        } else if (!blanket.length) {
-          // teaching empty state (P0-5): explains how a row lands here instead of looking broken. Suppressed when a
-          // FULL ACCESS wildcard is standing — "no standing approvals" over the broadest grant in the product
-          // would be the exact lie this ledger exists to prevent.
+        } else {
+          // Full Access is represented only by the canonical per-agent APPROVAL rows above; this ledger remains
+          // capability-specific (the meaning of ALWAYS) and therefore has no hidden wildcard state.
           rows.push('<p class="set-about">' + esc(pempty()) + '</p>');
         }
         // BELOW the ledger: the curated capabilities NOT yet granted — an explicit "pre-bless this" offer (GRANT).

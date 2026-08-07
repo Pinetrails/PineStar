@@ -4302,5 +4302,6 @@ const App = (() => {
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     openClassDossier: openClassDossier,   // intent-offer beat: accepting a class offer opens the bay ON that class's dossier
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
-    applyConfig: applyAgentConfig };
+    applyConfig: applyAgentConfig,
+    setApproval: setAgentApproval };
 })();

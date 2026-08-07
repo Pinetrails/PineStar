@@ -115,6 +115,7 @@
       const scope = o.scope === 'write' ? 'write' : 'read';
       const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
       const prompt = typeof o.prompt === 'function' ? o.prompt : null;
+      const fullAccess = o.fullAccess === true;
 
       const raw = String(absPath == null ? '' : absPath);
       const norm = P.resolve(raw);
@@ -137,12 +138,13 @@
         if (pathInside(real, R)) { touch(R, norm); return { base: R, abs: norm }; }
       }
 
-      // 2. not blessed. THE UNATTENDED RULE: only a watched, prompt-wired interactive run may bless a new root.
-      if (surface !== 'interactive' || !prompt)
+      // 2. not blessed. In ASK mode only a watched, prompt-wired run may approve a new root. Full Access is
+      // already the operator's authority for every non-hardline path, so it must never manufacture a prompt.
+      if (!fullAccess && (surface !== 'interactive' || !prompt))
         throw new Error('path is outside the agent workspace and no project root grant covers it: ' + norm +
           ' — an autonomous run cannot bless a new folder; grant it from a watched session first.');
 
-      // 3. ask ONCE about the proposed project root.
+      // 3. Resolve and re-prove the proposed project boundary before either Full Access or a live answer proceeds.
       const proposed = normalizeRoot(await detectRoot(norm));
       const phr = hardlineReason(proposed, proposed);
       if (phr) throw new Error(phr);
@@ -150,6 +152,10 @@
       // the referenced target must actually live under the proposed root's REAL path (symlink re-proof).
       if (!pathInside(real, proposedReal))
         throw new Error('path escapes the proposed project root via symlink: ' + norm);
+
+      // Full Access is live and revocable, so do not silently convert it into a permanent path grant. While the
+      // posture remains full every access flows here without asking; revoking it restores the ordinary path card.
+      if (fullAccess) return { base: proposedReal, abs: norm, fullAccess: true };
 
       /* BLESS THE REAL PATH. The header calls the grant key "realpath (canonical)", but normalizeRoot is only
          P.resolve — so a root reached through a symlinked ancestor (~/code -> /mnt/data/code, the ordinary
@@ -161,8 +167,8 @@
       const decision = await prompt(proposed, { path: norm, scope: scope });
       /* "always" AND "full" both RECORD the standing root grant. "full" used to fall through to the one-time
          branch below on the reasoning that "a directory bless is never a side effect of a blanket capability
-         grant" — which is still true and still enforced, because this module never reads grantsBlanket/'*' at
-         all. But that reasoning was applied to the wrong value: `decision` here is not a leaked blanket grant,
+         grant" — which is still true and still enforced, because this module does not interpret the agent's
+         global approval posture. But that reasoning was applied to the wrong value: `decision` here is not leaked state,
          it is the Commander's DIRECT answer to a card that names THIS folder. Treating their strongest answer
          as weaker than "Always" meant clicking "Full access" recorded nothing, so the very next file touch in
          the same folder asked again — live-caught 2026-07-27: five reads in one project folder raised five

@@ -92,6 +92,20 @@ function scriptPrompt(decision) {
     A.ok(r3 && r3.base, 'once blessed, an autonomous run reads under the root with no prompt');
   }
 
+  // ---- Full Access: every non-hardline path flows without a card on watched and unattended surfaces ----
+  {
+    const h = harness();
+    const never = scriptPrompt('deny');
+    const watched = await h.pt.guard(fileAbs, { scope: 'read', surface: 'interactive', prompt: never, fullAccess: true });
+    A.ok(watched && watched.fullAccess === true, 'Full Access allows a new external project path');
+    A.eq(never.calls.length, 0, 'Full Access never raises a path-trust card');
+    const unattended = await h.pt.guard(fileAbs, { scope: 'read', surface: 'autonomous', prompt: null, fullAccess: true });
+    A.ok(unattended && unattended.fullAccess === true, 'Full Access applies to unattended path access too');
+    A.eq(h.roots.size, 0, 'live Full Access is not silently converted into a permanent path grant');
+    await rejects(h.pt.guard(path.join(proj, '.env'), { scope: 'read', surface: 'autonomous', fullAccess: true }),
+      'the protected-file floor still denies under Full Access');
+  }
+
   // ---- 4. "once" allows THIS access but does NOT persist a root (next reference re-prompts) ----
   {
     const h = harness();

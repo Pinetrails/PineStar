@@ -1178,7 +1178,23 @@ function saveAgentRoster(updatedAt) {
     const stamp = Number(updatedAt);
     agentRosterUpdatedAt = (Number.isFinite(stamp) && stamp > 0) ? stamp : Math.max(agentRosterUpdatedAt + 1, Date.now());
     saveResilient(AGENT_ROSTER_FILE, { version: 1, updatedAt: agentRosterUpdatedAt, agents });   // fsync-durable + .bak last-known-good
-  } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
+    return true;
+  } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); return false; }
+}
+
+// A permission card's FULL ACCESS answer commits the SAME durable per-agent posture used by onboarding,
+// DOSSIER, /yolo, unattended runs and restart rehydration. There is deliberately no second, temporary meaning
+// of "full". Returns false without leaving an in-memory lie when the durable roster write cannot be proven.
+function persistAgentFullAccess(agentId) {
+  const id = String(agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return false;
+  const had = agentRoster.has(id);
+  const previous = agentRoster.get(id);
+  const base = previous || { system: '', name: id, model: null, provider: null, role: '', approvalMode: 'ask', skills: [], reasoningEffort: null, track: '' };
+  agentRoster.set(id, Object.assign({}, base, { approvalMode: 'full' }));
+  if (saveAgentRoster()) return true;
+  if (had) agentRoster.set(id, previous); else agentRoster.delete(id);
+  return false;
 }
 loadAgentRoster();
 
@@ -2435,15 +2451,6 @@ const projectScan = makeProjectScan({
 const projectInstructions = makeProjectInstructions({ fsp, pathMod: path, redact });
 
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
-// full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
-// single click stops the prompts for the rest of this session but RESETS on sidecar restart — never persisted
-// (permanent machine-wide YOLO stays the explicit SKYNET_FULL_ACCESS env, frozen at boot).
-const grantsBlanketByAgent = new Map();    // agentId -> Set('*')
-function blanketSetFor(agentId) {
-  let s = grantsBlanketByAgent.get(agentId);
-  if (!s) { s = new Set(); grantsBlanketByAgent.set(agentId, s); }
-  return s;
-}
 const pendingByRun = new Map();            // runId -> Map(promptId -> resolve(decision)); the live consent prompts
 const pendingSummonByRun = new Map();      // runId -> Map(requestId -> resolve(newAgentId|null)); live team.summon requests awaiting the browser
 
@@ -11554,9 +11561,15 @@ async function runOnce(o) {
   // remote desktop lease; no prompt text, task flag, stored approval, or generic API caller can manufacture it.
   const remoteDesktopAuthorized = ownerTrusted && DESKTOP_SHELL
     && /^(1|true|yes|on|win32|windows)$/i.test(String(ENV('COMPUTER_DRIVER') || '').trim());
-  // masterBypass is read ONCE at run admission (authority objects are per-run and frozen); the consent broker
-  // below re-reads it per call, so turning FULL BYPASS OFF still bites mid-run at the consent tier.
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted, remoteDesktopAuthorized, masterBypass: masterBypassOn() });
+  // Per-agent Full Access is re-read on every authority and consent check. This is load-bearing for a run that
+  // is already paused on its first permission card: selecting Full Access must suppress the next call in THIS
+  // run, every later run/surface, and every run after restart. None of these switches mints the separate
+  // physical-desktop lease above.
+  const agentFullAccessNow = () => ((agentRoster.get(String(agentId || '')) || {}).approvalMode === 'full');
+  const userControlAuthority = makeRunAuthority({
+    surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants, ownerTrusted,
+    remoteDesktopAuthorized, masterBypass: FULL_ACCESS || masterBypassOn(), fullAccess: agentFullAccessNow
+  });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -11850,7 +11863,11 @@ async function runOnce(o) {
   // NS-5: bind the per-run path-trust guard — the ONE way an fs call may reach outside the jail, mediated
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
-  const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
+  const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, {
+    scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null,
+    agentId: (o2 && o2.agentId) || agentId,
+    fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow()
+  });
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire, editDiagnostics: lspManager }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6); baseline-before-edit LSP feedback
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
@@ -12243,7 +12260,6 @@ async function runOnce(o) {
   // (silence is not consent). Read-only/non-network auto-allows; the hardline floor sits below Full Access.
   // per-agent FULL ACCESS (chosen at create / in the dossier) bypasses the gate too — same effect as the global
   // SKYNET_FULL_ACCESS env, but scoped to this agent. The hardline floor still applies below it.
-  const agentFullAccess = ((agentRoster.get(agentId) || {}).approvalMode === 'full');
   // A delegated/summoned worker SHARES the lead's consent broker (o.consent) so it has the SAME access the
   // orchestrator has: the lead's APPROVAL posture (full-auto bypass, or a live prompt forwarded to the WATCHED
   // lead's COMMS) and its session grants. A top-level run builds its own. Safe across surfaces: a headless cron
@@ -12254,14 +12270,10 @@ async function runOnce(o) {
     // channel. If that chat explicitly enables approvals, preserve the chosen in-chat prompt behavior instead.
     // a FUNCTION, re-read every call: the master FULL BYPASS switch must take effect — and revoke — on the
     // very next tool call without a restart. The frozen env flag and the per-agent posture ride inside it.
-    bypass: () => FULL_ACCESS || masterBypassOn() || agentFullAccess || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
+    bypass: () => FULL_ACCESS || masterBypassOn() || agentFullAccessNow() || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist,
-    /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
-       is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
-       a watched session also blessed that agent's Telegram / cron / night-shift file and memory writes until the
-       sidecar exited, with no readout and no revoke anywhere. A watched click is consent for the watched surface;
-       widening unattended reach is a separate, explicit decision everywhere else in this product. */
-    grantsBlanket: surface === 'interactive' ? blanketSetFor(agentId) : null,
+    // Full Access is the persisted per-agent posture, so it applies on every surface and every later task.
+    // The hardline floor remains above this broker and still denies protected physical/desktop effects.
     networkOf: (call) => !!resolved.networkCaps[call.name],
     // AWAY WORKSHOP (W1): the Commander's recorded per-agent grant. The broker only consults it for an autonomous
     // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
@@ -12647,13 +12659,15 @@ async function runOnce(o) {
     // to one-shot here and never create or consult a standing grant. Owner identity is not a substitute for that
     // temporal boundary: an owner chat with approvals off has no live confirmation channel and therefore blocks.
     let postTaint = revokedByTaint.boundary(liveTool, {
-      taintedBy: execution.taintedBy(), surface, hasPrompt: typeof prompt === 'function'
+      taintedBy: execution.taintedBy(), surface, hasPrompt: typeof prompt === 'function',
+      fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow()
     });
     if (postTaint.needsConfirmation) {
       let decision = 'deny';
       try { decision = await prompt(c, liveTool); } catch (_) {}
       postTaint = revokedByTaint.boundary(liveTool, {
-        taintedBy: execution.taintedBy(), surface, hasPrompt: true, decision
+        taintedBy: execution.taintedBy(), surface, hasPrompt: true, decision,
+        fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow()
       });
     }
     const postTaintConfirmed = postTaint.oneShot;
@@ -13540,8 +13554,16 @@ async function handleConsent(req, res) {
   if (decision !== 'once' && decision !== 'session' && decision !== 'always' && decision !== 'full') decision = 'deny';
   const pend = pendingByRun.get(body.runId);
   const finish = pend && pend.get(body.promptId);
+  const meta = finish ? runsMeta.get(body.runId) : null;
+  const agentId = meta && meta.agentId;
+  let persisted = true;
+  if (finish && decision === 'full') {
+    persisted = persistAgentFullAccess(agentId);
+    if (!persisted) decision = 'deny';
+  }
   if (finish) finish(decision);
-  res.writeHead(200); res.end('ok');
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: !!finish && persisted, decision, agentId: agentId || null, approvalMode: persisted && decision === 'full' ? 'full' : null }));
 }
 
 /* POST /api/consent/answer { runId, promptId, answer } — the in-turn clarify reply (2026-07-31). A SIBLING
@@ -13580,19 +13602,11 @@ async function handleConsentAck(req, res) {
 // (honest — includes any non-curated class blessed via a past prompt) + the curated catalog the panel may add.
 // Privileged: behind the same x-starnet-token + loopback gate as every other /api route (apiauth, not TOKEN_EXEMPT).
 function handlePermissionsList(req, res) {
-  /* The panel's own header promises "every capability it may use unattended … and a REVOKE for each", and the
-     mid-run "Full access" wildcard appeared in NEITHER: consent.snapshot() returns only { permanent, session },
-     so one click bought a per-agent '*' that no surface listed and no action could withdraw — only restarting
-     the sidecar cleared it. Report it beside the durable grants, keyed so the existing revoke can take it. */
   const snap = grantManager.snapshot() || {};
-  const blanket = [];
-  for (const [aid, set] of grantsBlanketByAgent) {
-    if (set && set.has('*')) blanket.push({ key: 'blanket:' + aid, agentId: aid, scope: 'watched sessions, until the app restarts' });
-  }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   // additive: the master FULL BYPASS switch + whether the boot env forces it (so the panel can say WHY the
   // toggle is pinned on rather than rendering a switch that appears to do nothing).
-  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket, masterBypass: masterBypassOn(), envFullAccess: FULL_ACCESS })));
+  res.end(JSON.stringify(Object.assign({}, snap, { masterBypass: masterBypassOn(), envFullAccess: FULL_ACCESS })));
 }
 // POST /api/permissions/bypass { on } — flip the master FULL BYPASS switch. The click IS the consent: this
 // route is reachable only through the token-gated loopback API (a human in settings), never from a tool.
@@ -13621,15 +13635,6 @@ async function handlePermissionsGrant(req, res) {
 // non-curated class). Fail-closed: a torn persist keeps the grant rather than reporting a phantom revoke.
 async function handlePermissionsRevoke(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
-  // the mid-run full-access wildcard is revocable through the same door as any other standing grant
-  const rawKey = String((body && body.key) || '');
-  if (rawKey.indexOf('blanket:') === 0) {
-    const aid = rawKey.slice('blanket:'.length);
-    const had = grantsBlanketByAgent.has(aid) && grantsBlanketByAgent.get(aid).has('*');
-    grantsBlanketByAgent.delete(aid);
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ ok: true, key: rawKey, revoked: had }));
-  }
   const r = grantManager.revoke(body && body.key);
   res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(r));
@@ -13838,7 +13843,7 @@ async function handleAutonomyWrite(req, res) {
   const sendJson = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const agentId = String(body.agentId || 'agent');
-  // agentId keys the workspace jail + the checkpoint store + the blanket-grant set; validate it to the same
+  // agentId keys the workspace jail + checkpoint store + persisted roster posture; validate it to the same
   // shape every sibling route enforces so a crafted id can't reach outside its lane (defense in depth on top of
   // the fs-jail resolveInside below). Matches ID_RE used across the roster/cron/orchestration surfaces.
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return sendJson(400, { ok: false, reason: 'invalid agentId' });
@@ -13850,7 +13855,11 @@ async function handleAutonomyWrite(req, res) {
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
   const sessionKey = 'autowrite-' + crypto.randomUUID();
-  const consent = makeConsentBroker({ bypass: () => FULL_ACCESS || masterBypassOn(), hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce; the master FULL BYPASS switch (like the env) covers this surface too
+  const consent = makeConsentBroker({
+    bypass: () => FULL_ACCESS || masterBypassOn() || ((agentRoster.get(agentId) || {}).approvalMode === 'full'),
+    hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent,
+    persist: persistAllowlist, surface: 'autonomous'
+  });
   const lifecycle = await agentLifecycle.acquireMutation(agentId, sessionKey);
   if (!lifecycle.ok) return sendJson(409, { ok: false, reason: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
   try {

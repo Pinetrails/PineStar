@@ -202,10 +202,11 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
      REGRESSION (2026-07-27): the one-shot path collapsed once/always/full to a boolean, so a user clicking
      "Full access" was re-prompted on every single connector call — four times in a row on a live Shopify run. */
   let connPrompts = 0, connRuns = 0;
+  let connectorFull = false;
   const connAuthority = makeRunAuthority({
     surface: 'interactive', isTask: true,
     environment: { supports: { hostileCodeSandbox: false } },
-    confirm: async () => 'full'
+    confirm: async () => 'once', fullAccess: () => connectorFull
   });
   const connRegistry = makeRegistry();
   connRegistry.register({
@@ -214,9 +215,9 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
     run: async () => { connRuns++; return { content: 'ok' }; }
   });
   const connBroker = makeConsentBroker({
-    surface: 'interactive', sessionKey: 'r1', grantsBlanket: new Set(),
+    surface: 'interactive', sessionKey: 'r1', bypass: () => connectorFull,
     networkOf: () => true,                                   // every MCP call is an outward network effect
-    prompt: async () => { connPrompts++; return 'full'; }
+    prompt: async () => { connPrompts++; connectorFull = true; return 'full'; }
   });
   const connCtx = { authorize: connAuthority.authorize, consent: connBroker };
   const c1 = await connRegistry.dispatch({ id: 'c1', name: 'mcp__custom__maybe_read', args: {} }, connCtx);
@@ -229,7 +230,7 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
   // "Always" records the danger CLASS (capability:scope) rather than the blanket — same no-re-prompt result.
   let alwaysPrompts = 0;
   const alwaysBroker = makeConsentBroker({
-    surface: 'interactive', sessionKey: 'r2', grantsBlanket: new Set(), networkOf: () => true,
+    surface: 'interactive', sessionKey: 'r2', networkOf: () => true,
     prompt: async () => { alwaysPrompts++; return 'always'; }
   });
   const alwaysCtx = { authorize: connAuthority.authorize, consent: alwaysBroker };
@@ -246,7 +247,7 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
     run: async () => { denyRuns++; return { content: 'ok' }; }
   });
   const denyBroker = makeConsentBroker({
-    surface: 'interactive', sessionKey: 'r3', grantsBlanket: new Set(), networkOf: () => true,
+    surface: 'interactive', sessionKey: 'r3', networkOf: () => true,
     prompt: async () => { denyPrompts++; return 'deny'; }
   });
   const denied1 = await denyRegistry.dispatch({ id: 'd1', name: 'mcp__custom__maybe_read', args: {} }, { authorize: connAuthority.authorize, consent: denyBroker });
