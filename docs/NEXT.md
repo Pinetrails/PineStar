@@ -1,5 +1,19 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
+
+Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have
+independent top-right, keyboard-labelled copy controls that copy only the exact code text. Success renders
+`Copied` / ✓; failure renders `Copy failed` / ! and leaves truthful manual-selection guidance. The existing
+whole-message copy action uses the same feedback path, and the packaged website mirror is synchronized.
+
+Live seeded proof clicked `Copy code block` on a response containing prose plus `console.log("hello");`; the
+browser clipboard contained exactly `console.log("hello");`, excluding the prose. The new regression contributes
+20 multi-block/XSS/accessibility assertions. After a mid-ritual trunk reset, the lane was reconstructed from the
+current trunk with only its own commits so dropped artifact work was not silently reintroduced. Product-perfect
+claims were re-locked for 205 surface files. Full `npm run test:fast` was **574/574 GREEN** both before merge and
+again on the exact merged trunk. Frontend-only: `test:http` was not required.
+
 ## 2026-08-07 — STARNET 0.10 FINAL HERMES PARITY MAP (`agent/hermes-final-gap-audit`)
 
 G0 AND G2 LANE COMPLETE; G1 PACKAGED BASELINE PARTIAL; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
@@ -55,7 +69,6 @@ approvals, durable schedules, background delegation, session management, checkpo
 MCP OAuth/stdio, skills authoring, or provider breadth. Those are now confirmed peer capabilities. No row turns
 green from unit tests alone: final authority is a packaged live or fault-injection receipt at the exact release
 candidate SHA.
-
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that

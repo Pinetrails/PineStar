@@ -455,13 +455,19 @@ const Chat = (() => {
     s = s.replace(/(\d+)/g, (m, i) => '<code class="md-code">' + codes[+i] + '</code>');
     return s;
   }
+  function renderFence(lines) {
+    return '<span class="md-pre-wrap">' +
+      '<button class="md-copy" type="button" data-copy-label="Copy code block" data-tip="copy code" aria-label="Copy code block">⧉</button>' +
+      '<span class="md-pre">' + escapeHtml(lines.join('\n')) + '</span>' +
+      '</span>';
+  }
   function renderMarkdown(raw) {
     const lines = String(raw).split('\n');
     const parts = [];
     let fence = null;   // collecting a ``` fenced block
     for (const ln of lines) {
       if (/^[ \t]*```/.test(ln)) {
-        if (fence) { parts.push('<span class="md-pre">' + escapeHtml(fence.join('\n')) + '</span>'); fence = null; }
+        if (fence) { parts.push(renderFence(fence)); fence = null; }
         else fence = [];
         continue;
       }
@@ -472,7 +478,7 @@ const Chat = (() => {
       if (li) { parts.push('<span class="md-li"><span class="md-bul">▪ </span>' + mdInline(linkify(li[2])) + '</span>'); continue; }
       parts.push(mdInline(linkify(ln)));
     }
-    if (fence) parts.push('<span class="md-pre">' + escapeHtml(fence.join('\n')) + '</span>');   // unterminated (mid-stream) — render what we have
+    if (fence) parts.push(renderFence(fence));   // unterminated (mid-stream) — render what we have
     return parts.join('\n');
   }
   // render agent prose into a body span. Fast textContent path when there's no URL AND no markdown marker (the
@@ -499,6 +505,22 @@ const Chat = (() => {
       document.body.appendChild(ta); ta.focus(); ta.select();
       const ok = document.execCommand('copy'); ta.remove(); return ok;
     } catch (_) { return false; }
+  }
+  function showCopyResult(btn, ok) {
+    if (!btn) return;
+    const idleLabel = btn.getAttribute('data-copy-label') || 'Copy';
+    if (btn.__copyResultTimer) clearTimeout(btn.__copyResultTimer);
+    btn.classList.toggle('copied', !!ok);
+    btn.classList.toggle('copy-failed', !ok);
+    btn.textContent = ok ? '✓' : '!';
+    btn.setAttribute('aria-label', ok ? 'Copied' : 'Copy failed');
+    btn.setAttribute('data-tip', ok ? 'copied' : 'copy failed — select manually');
+    btn.__copyResultTimer = setTimeout(() => {
+      btn.classList.remove('copied', 'copy-failed'); btn.textContent = '⧉';
+      btn.setAttribute('aria-label', idleLabel);
+      btn.setAttribute('data-tip', idleLabel === 'Copy code block' ? 'copy code' : 'copy message');
+      btn.__copyResultTimer = null;
+    }, 1100);
   }
 
   // INPUT HISTORY — terminal-style recall of what the Commander already sent this session. ArrowUp in an
@@ -563,15 +585,26 @@ const Chat = (() => {
         // TOOL CHIP: clicking a chip's head toggles its expanded detail (checked before the copy button)
         const chipHead = e.target.closest('.tc-head');
         if (chipHead) { if (selecting) return; toggleChip(chipHead); if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); return; }
+        // FENCED CODE: each block owns a copy control. Resolve the text from that exact wrapper so one click
+        // never sweeps up the surrounding prose or a neighboring block in the same response.
+        const codeBtn = e.target.closest('.md-copy');
+        if (codeBtn) {
+          const wrap = codeBtn.closest('.md-pre-wrap');
+          const codeEl = wrap && wrap.querySelector('.md-pre');
+          if (!codeEl) return;
+          copyText(codeEl.textContent || '').then(ok => {
+            showCopyResult(codeBtn, ok);
+            if (ok && typeof SFX !== 'undefined' && SFX.click) SFX.click();
+          });
+          return;
+        }
         const btn = e.target.closest('.cmsg-copy'); if (!btn) return;
         const bodyEl = btn.closest('.cmsg') && btn.closest('.cmsg').querySelector('.body');
         const txt = bodyEl ? bodyEl.textContent : '';
         if (!txt) return;
         copyText(txt).then(ok => {
-          if (!ok) return;
-          btn.classList.add('copied'); btn.textContent = '✓';
-          if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
-          setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '⧉'; }, 1100);
+          showCopyResult(btn, ok);
+          if (ok && typeof SFX !== 'undefined' && SFX.click) SFX.click();
         });
       });
     }
@@ -1437,7 +1470,8 @@ const Chat = (() => {
     // in init() reads the row's .body text, so a streamed reply gains the button the moment its row exists.
     if (role === 'agent' || role === 'user') {
       const cp = document.createElement('button'); cp.className = 'cmsg-copy'; cp.type = 'button';
-      cp.title = 'copy message'; cp.setAttribute('aria-label', 'Copy message'); cp.textContent = '⧉';
+      cp.setAttribute('data-copy-label', 'Copy message'); cp.setAttribute('data-tip', 'copy message');
+      cp.setAttribute('aria-label', 'Copy message'); cp.textContent = '⧉';
       d.appendChild(cp);
     }
     log.appendChild(d);   // CHRONOLOGICAL: every row lands at the bottom, in the order it happened (classic chat)
