@@ -2598,3 +2598,26 @@ rendered `GIVE FULL ACCESS` and `FULL ACCESS — WHOLE STATION`; no visible `RUN
 browser warnings/errors were empty. Focused regressions: 76 assertions; `test:fast`: 572/572 green;
 `test:http`: 68/68 green. Installed-desktop verification was not run. No merge, push, PR, deployment, publish,
 production-data, credential, or secret change was performed.
+# IN PROGRESS 2026-08-07 — CONNECTORS & ABILITIES AUDIT (`agent/connector-abilities-audit-0807`)
+
+The ABILITIES console now gives a truthful, announced zero-result state instead of turning into a
+blank window and clearing the selected tab; its search is named for abilities rather than only
+connectors. Catalog setup filters expose their pressed state, connector/key/extension/Spotify and
+Skill Exchange feedback use polite live regions, and the procedure count says skills rather than
+colliding with the separate RECIPES product. MCP removal now uses the shared two-click armed
+confirmation before deleting the endpoint and its stored credential. The website mirror is synced.
+
+Live seeded proof at `localhost:8897`: all eight sections and six intent routes opened; empty form
+validation, catalog filtering, search/Escape, tool inventories, placement deep-link, and native-control
+paint were exercised with no browser warning/error. AWS Knowledge installed as a real connected MCP
+with 5 tools, reloaded, survived restart, required arm + confirm to remove, and stayed removed after a
+second restart. WEB & BROWSER and 1-3-1 Decision Framework switches each survived a changed-state
+restart and a restored-state restart. Focused gates: connectors UI 95 assertions, Skills lane 9,
+website sync 8; the canonical affected-domain slice is 26/26 steps green.
+
+NOT READY TO MERGE: `npm run test:fast` twice reached `boot-security.test.js` and timed out while that
+same test passed 16/16 alone; a third full attempt exited after `hooks.wiring` without a failing assertion
+or runner summary. `npm run test:http` reached `sidecar.http.test.js`, whose sidecar missed its boot
+deadline both in-suite and alone (only the pre-existing transcript warning was emitted). No OAuth
+provider consent, real API-key connector, Spotify account, stdio Safe Cell, installed desktop, merge,
+push, PR, deployment, credential, or production-data change was performed.
