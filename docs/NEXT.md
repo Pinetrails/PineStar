@@ -2636,14 +2636,14 @@ and was removed afterward. WEB & BROWSER and 1-3-1 Decision Framework switches e
 restored-state restarts.
 
 Focused connector gates are 764 assertions green; the affected-domain slice is 26/26; `qa:journeys` is
-129/129 and the UI-only Beginner Run passed. One full `npm run test:fast` completed 573/573 before the
-latest trunk sync. Every one of the 68 HTTP integration files passed during this audit, including
+129/129 and the UI-only Beginner Run passed. The post-sync `npm run test:fast` is 573/573 green. Every
+one of the 68 HTTP integration files passed during this audit, including
 `sidecar.http` (468 assertions) and the live MCP connector E2E (87), but the canonical seven-minute
 `npm run test:http` wrapper timed out twice under sustained shared-host CPU pressure before it could run
 the whole list in one process. The omitted 12-file tail passed separately (374 assertions).
 
-NOT READY TO MERGE OR RELEASE: the post-sync full fast gate still must be re-run; the canonical HTTP gate
-does not have one uninterrupted green receipt; Guardian did not complete before its ten-minute invocation
+NOT READY TO MERGE OR RELEASE: the canonical HTTP gate does not have one uninterrupted green receipt;
+Guardian did not complete before its ten-minute invocation
 ceiling; and installed-exe smoke is truthfully BLOCKED because no exact candidate SHA/artifact was supplied
 and no installed candidate was listening on CDP. `qa:ready` must remain NOT READY until those receipts are
 green. No production account, valid third-party credential, merge to trunk, push, PR, deployment, or
