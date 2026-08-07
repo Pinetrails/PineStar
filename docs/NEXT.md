@@ -2607,3 +2607,11 @@ branch. Attempt 2 passed `boot-security` and every executed test but the overall
 600-second process ceiling after roughly 350/573 steps. The branch's own complete fast gate remains 573/573
 green, but trunk is intentionally unmerged because neither integration run produced the required full green
 receipt. No installed candidate was built or clicked from an unmerged SHA.
+
+Heartbeat retry 2026-08-07 used current trunk snapshot `f7ecaa40`. The trunk boot preflight passed 16/16,
+but the merged candidate failed at fast-gate step 224/574 with nine
+`qa-product-perfect-claims.test.js` planning-authority assertions. After rollback, that same test passed
+64/64 on unchanged trunk, proving the failure is introduced by the candidate's changed tracked release
+surface. `qa/STATUS.md` already documents this authority model: a descendant that changes source-locked
+public files requires a W0 claims-ledger re-stamp. The lane therefore needs that reviewed re-stamp before
+another merge attempt; retrying unchanged bytes cannot turn this deterministic gate green.
