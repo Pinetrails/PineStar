@@ -1,5 +1,22 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-07 — VOICE TURN BOUNDARIES + LIVE DICTATION (`agent/voice-realtime-boundaries`)
+
+READY TO MERGE. Conversation mode now keeps a 900 ms pre-roll, uses a quieter-room-safe
+speech threshold, permits utterances up to 60 seconds, and exposes a persistent TURN END
+control with 1.2, 1.8, and 2.6 second pause choices. Transcription mode now renders genuine
+local speech-recognition previews in the composer while the user is still speaking; the
+synthetic bullet/dot progress text is gone, and typed drafts remain protected.
+
+Verification: focused live-voice, voice-button, and draft-guard suites are green; mirrored
+website assets are exact; JavaScript syntax checks are green; and `npm run test:fast` is
+**572/572 GREEN**. In the real seeded app, the TURN END control rendered with the persisted
+NORMAL 1.8S value after closing and reopening Local Live, using the station-native dark skin.
+The in-app browser denied microphone capture, so real acoustic boundary/transcript proof
+remains for an installed-desktop pass; production callback behavior is covered deterministically.
+No route, sidecar, shared-contract, integration-tree, external-service, push, PR, or deploy
+change occurred.
+
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that

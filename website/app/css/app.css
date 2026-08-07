@@ -1760,6 +1760,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   text-shadow: 0 0 8px var(--ph-glow2);
 }
 .live-voice-panel:focus-within .lv-heard { display: -webkit-box; }
+.live-voice-panel[data-state="hearing"] .lv-heard,
+.live-voice-panel[data-state="transcribing"] .lv-heard { display: -webkit-box; }
 .lv-say { display: none; }
 .lv-say.on { display: none; }
 .live-voice-panel:focus-within .lv-say.on {
@@ -1768,6 +1770,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--ph-dim); font-size: 10px; line-height: 1.3; letter-spacing: var(--ls-1);
 }
 .lv-say.on::before { content: '▸ '; color: var(--ph); }
+
+.lv-end-control {
+  position: relative; z-index: 7; flex: 1 0 100%; min-width: 0;
+  display: flex; align-items: center; gap: 5px; margin: 1px 1px 0;
+  color: var(--ph-dim); font-size: 9px; letter-spacing: var(--ls-2);
+}
+.lv-end-control span { flex: 0 0 auto; opacity: .65; }
 
 /* ---- ROUTE / SPEECH / TASK are diagnostics, not glanceable state, and carrying them at rest is
    what forced a 300px panel. Hidden at rest, wrapped onto one line on hover — HIDDEN, never faked:
@@ -1789,6 +1798,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--ph); font-size: 9px; letter-spacing: var(--ls-1);
 }
+.lv-endpoint {
+  flex: 1 1 auto; min-width: 0; max-width: 98px; padding: 0 13px 0 2px; border: 0; border-bottom: 1px solid var(--ph-faint);
+  color: var(--ph-bright); background: transparent; box-shadow: none; border-radius: 0;
+  font: inherit; letter-spacing: inherit; line-height: 1.2; appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ph-dim) 50%),
+    linear-gradient(135deg, var(--ph-dim) 50%, transparent 50%);
+  background-position: calc(100% - 6px) 45%, calc(100% - 3px) 45%;
+  background-size: 3px 3px, 3px 3px; background-repeat: no-repeat;
+}
+.lv-endpoint:focus { outline: 1px solid var(--ph); outline-offset: 1px; }
 /* model download: a real fill sweeps the SPEECH row, driven by the sidecar's reported percent */
 .lv-row-dl::before {
   content: ''; position: absolute; left: -3px; top: -1px; bottom: -1px; width: var(--lv-dl);

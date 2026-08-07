@@ -25,6 +25,12 @@ const VoiceLive = (() => {
   const POSITION_KEY = 'starnet.liveVoice.position.v1';
   // Which of the provider's voices speaks. Empty = the provider descriptor's default.
   const LOCAL_VOICE_KEY = 'starnet.liveVoice.localVoice.v1';
+  const TURN_END_KEY = 'starnet.liveVoice.turnEndMs.v1';
+  const DEFAULT_TURN_END_MS = 1800;
+  const TURN_END_CHOICES = [1200, DEFAULT_TURN_END_MS, 2600];
+  const PRE_ROLL_MS = 900;
+  const MAX_UTTERANCE_MS = 60000;
+  const CALIBRATION_FLOOR_CEILING = 0.016;
   // SETTLED (Andrew, 2026-07-29): a small pop-up module with NO icon — a state line, the volume
   // indicator, and the transcript. The four-shape and four-icon switchers that got us here are
   // deleted; shipping the candidates was never the goal, choosing one was.
@@ -133,6 +139,11 @@ const VoiceLive = (() => {
       '</div>',
       '<p id="lv-heard" class="lv-heard" aria-live="polite">Speak naturally — the transcript lands in COMMS.</p>',
       '<p id="lv-agent" class="lv-say"></p>',
+      '<label class="lv-end-control"><span>TURN END</span><select id="lv-endpoint" class="lv-endpoint" aria-label="Pause before sending your turn">',
+        '<option value="1200">QUICK · 1.2S</option>',
+        '<option value="1800">NORMAL · 1.8S</option>',
+        '<option value="2600">PATIENT · 2.6S</option>',
+      '</select></label>',
       '<dl class="lv-rail">',
         '<div class="lv-row"><dt>ROUTE</dt><dd id="lv-route">LOCAL SPEECH · ACTIVE STARNET AGENT</dd></div>',
         '<div class="lv-row lv-row-dl"><dt>SPEECH</dt><dd id="lv-model">LOCAL MODELS: CHECKING</dd></div>',
@@ -155,6 +166,15 @@ const VoiceLive = (() => {
     $('lv-close').onclick = end;
     $('lv-retry').onclick = () => start(true);
     $('lv-barge').onclick = bargeIn;
+    const endpoint = $('lv-endpoint');
+    if (endpoint) {
+      endpoint.value = String(savedTurnEndDelayMs());
+      endpoint.onchange = () => {
+        const selected = normalizeTurnEndMs(endpoint.value);
+        endpoint.value = String(selected);
+        try { localStorage.setItem(TURN_END_KEY, String(selected)); } catch (_) {}
+      };
+    }
   }
 
   // Amplitude drives the meter AND the module's own bloom, so the whole light level of the thing is
@@ -654,17 +674,37 @@ const VoiceLive = (() => {
     });
   }
 
-  function endpointSilenceMs(durationMs, text) {
-    // Human turns contain thinking pauses. The old 560–850ms endpoint was excellent for commands
-    // and poor for conversation: it routinely submitted while someone was deciding how to finish
-    // a sentence. Keep short turns the most patient, and never make a long reflective turn faster
-    // than 950ms. If the partial transcript visibly trails off, grant another half beat.
-    let wait = durationMs < 1200 ? 1350 : durationMs < 3200 ? 1150 : 950;
+  function normalizeTurnEndMs(value) {
+    const parsed = Math.round(Number(value));
+    return TURN_END_CHOICES.indexOf(parsed) >= 0 ? parsed : DEFAULT_TURN_END_MS;
+  }
+
+  function savedTurnEndDelayMs() {
+    try { return normalizeTurnEndMs(localStorage.getItem(TURN_END_KEY)); } catch (_) { return DEFAULT_TURN_END_MS; }
+  }
+
+  function turnEndDelayMs() {
+    const control = $('lv-endpoint');
+    if (control && control.value) return normalizeTurnEndMs(control.value);
+    return savedTurnEndDelayMs();
+  }
+
+  function endpointSilenceMs(text, baseMs) {
+    // Turn closure is a Commander choice, not a hidden timing guess. The selected pause is the exact base
+    // wait; a visibly unfinished partial gets one bounded extra beat so a correction or spelled-out name
+    // remains attached to the sentence that introduced it.
+    let wait = Number.isFinite(baseMs) ? baseMs : DEFAULT_TURN_END_MS;
     const partial = String(text || '').trim().toLowerCase();
     const continues = /[,;:—-]\s*$/.test(partial)
       || /\b(?:and|but|or|so|because|then|like|well|actually|basically|uh|um|hmm|i|i'm|we|to|the|a|an|my|your|that|which|if|when|while|with|for|of)\s*[.!?]?$/.test(partial);
-    if (continues) wait = Math.min(1750, wait + 450);
+    if (continues) wait = Math.min(3600, wait + 600);
     return wait;
+  }
+
+  function keepPreRoll(frame, frameMs) {
+    preRoll.push(frame);
+    const limit = Math.max(8, Math.ceil(PRE_ROLL_MS / Math.max(1, frameMs)));
+    while (preRoll.length > limit) preRoll.shift();
   }
 
   async function transcribe(frames, seq = sessionSeq) {
@@ -716,17 +756,19 @@ const VoiceLive = (() => {
     if (realtime) return;
     const frameMs = frame.length / context.sampleRate * 1000;
     if (performance.now() < calibratedUntil) {
-      noiseFloor = noiseFloor * 0.92 + rms * 0.08;
-      preRoll.push(frame);
-      if (preRoll.length > 8) preRoll.shift();
+      // Starting to speak immediately must not teach the calibrator that the Commander's voice is room noise.
+      // Cap the learned floor while the complete calibration window remains in pre-roll below.
+      noiseFloor = Math.min(CALIBRATION_FLOOR_CEILING, noiseFloor * 0.92 + rms * 0.08);
+      keepPreRoll(frame, frameMs);
       return;
     }
-    const threshold = Math.max(0.012, noiseFloor * (agentTalking ? 5.5 : 2.8));
+    // An additive margin remains usable for a distant microphone; multiplying a slightly noisy floor by 2.8
+    // classified quiet syllables as silence and closed the turn while the Commander was still speaking.
+    const threshold = Math.max(0.008, noiseFloor + (agentTalking ? 0.025 : 0.006));
     const voiced = rms > threshold;
     if (!recording) {
       if (!voiced) noiseFloor = noiseFloor * 0.995 + rms * 0.005;
-      preRoll.push(frame);
-      if (preRoll.length > 8) preRoll.shift();
+      keepPreRoll(frame, frameMs);
       speechFrames = voiced ? speechFrames + 1 : 0;
       if (speechFrames >= 3) {
         recording = true;
@@ -747,8 +789,8 @@ const VoiceLive = (() => {
     silenceMs = voiced ? 0 : silenceMs + frameMs;
     const durationMs = utteranceSamples / context.sampleRate * 1000;
     if (durationMs >= 1000) requestPartial(utterance, utteranceSeq);
-    const endSilenceMs = endpointSilenceMs(durationMs, partialText);
-    if (silenceMs >= endSilenceMs || durationMs >= 20000) {
+    const endSilenceMs = endpointSilenceMs(partialText, turnEndDelayMs());
+    if (silenceMs >= endSilenceMs || durationMs >= MAX_UTTERANCE_MS) {
       const captured = utterance;
       recording = false;
       utterance = [];

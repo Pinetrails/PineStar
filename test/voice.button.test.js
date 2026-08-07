@@ -202,29 +202,43 @@ async function opensWithin(t, ms) {
   {
     const calls = [];
     let pcmBody = null;
+    let localTranscribes = 0;
     const fetch = (url, init) => {
       calls.push(String(url));
       if (url === '/api/stt/status') return Promise.resolve({ ok: true, json: () => Promise.resolve({ available: true, preferred: 'local' }) });
       if (url === '/api/local-voice/transcribe') {
         pcmBody = init && init.body;
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, text: 'mac local dictation' }) });
+        localTranscribes++;
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          ok: true,
+          text: localTranscribes === 1 ? 'Acme Corporation' : 'Acme Corporation, A C M E'
+        }) });
       }
       return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
     };
     const t = boot({ desktop: true, fetch });
     await tick();
-    t.Voice.startListening(); await tick(30);
+    t.Voice.startListening();
+    await until(() => processorInstances.length > 0, 500);
     A.ok(processorInstances.length > 0, 'local push-to-talk captures PCM alongside the level meter');
-    processorInstances[processorInstances.length - 1].fire();
+    const processor = processorInstances[processorInstances.length - 1];
+    const voiced = new Float32Array(2048); voiced.fill(0.18);
+    for (let i = 0; i < 18; i++) processor.fire(voiced);
+    await until(() => t.nodes['chat-input'].value === 'Acme Corporation', 1000);
+    A.eq(t.nodes['chat-input'].value, 'Acme Corporation', 'local push-to-talk renders real recognized words in the composer before finalize');
+    A.ok(!/^[·•]+$/.test(t.nodes['chat-input'].value), 'the composer never substitutes bullet progress for the words being recognized');
     t.Voice.stopListening();
     await until(() => t.sandbox.__sent.length === 1, 1000);
     A.eq(t.Voice.sttEngine(), 'recorder', 'macOS/local push-to-talk keeps the one-shot recorder UI');
-    A.eq(t.sandbox.__sent[0], 'mac local dictation', 'macOS local dictation is sent as a regular typed message');
+    A.eq(t.sandbox.__sent[0], 'Acme Corporation, A C M E', 'the final local dictation is sent as a regular typed message');
+    A.eq(t.nodes['chat-input'].value, '', 'finalize clears only the live preview that dictation itself wrote');
     A.ok(pcmBody && typeof pcmBody.byteLength === 'number' && pcmBody.byteLength > 0 && pcmBody.byteLength % 4 === 0,
       'local push-to-talk posts decoded Float32 PCM, never WebM/MP4 bytes');
     A.ok(calls.includes('/api/local-voice/transcribe') && !calls.includes('/api/stt/native'), 'local dictation does not invoke the native/live provider');
     A.ok(t.Voice.inVoiceMode() === false, 'local push-to-talk remains separate from hands-free/live voice mode');
   }
+
+  A.ok(!/cb\.onInterim\([\s\S]{0,100}repeat\(/.test(SRC), 'recorder progress never writes fake dot or bullet text into the composer');
 
   // --- webSpeech: recognition.start() throws (double-start / InvalidStateError) -----------------
   {
