@@ -102,6 +102,7 @@ const App = (() => {
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
+  let pendingGrowthSyncAt = 0;    // durable-run catch-up floor (server snapshot; legacy saves use their write time once)
   let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
   let pendingWorkSignal = null;   // a saved capability-usage histogram slice awaiting WorkSignalStore.init() in enterGame()
   let pendingDossier = null;      // a saved Commander-dossier slice awaiting DossierStore.init() in enterGame()
@@ -2525,6 +2526,7 @@ const App = (() => {
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
+    pendingGrowthSyncAt = 0;
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
     persist();   // so a refresh mid-onboarding resumes to the purpose step
     return true;
@@ -2550,6 +2552,7 @@ const App = (() => {
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo, deletedIds: saved.deletedIds });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
+    pendingGrowthSyncAt = Math.max(0, Number((saved.stationStats && saved.stationStats.runSyncAt) || saved.updatedAt || 0));
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
     pendingWorkSignal = saved.worksignal || null;   // restore the capability-usage histogram (adaptive recruitment)
     pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
@@ -2656,7 +2659,7 @@ const App = (() => {
     // S3: onCredential fires only on a coarse track-record change (tier crossing / band flip), and re-pushes
     // the roster so the lead's next dispatch briefing describes its crew truthfully. Rare by construction.
     // S4: `agents` lets the boot-time trophy reconcile reach every specialist's case, not just the hero's.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, syncSince: pendingGrowthSyncAt, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; pendingGrowthSyncAt = 0; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.

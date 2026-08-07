@@ -2238,8 +2238,13 @@ const Chat = (() => {
     const raw = Math.log2(1 + tools) * 2.2 + deliv * 1.2 + Math.min(usd * 6, 3);
     return Math.max(1, Math.min(10, Math.round(raw) || 1));
   }
+  function foldWorkRating(payload) {
+    if (typeof XpStore === 'undefined' || !XpStore.onEvent) return true;
+    const r = XpStore.onEvent('memory.feedback', payload);
+    return !!(r && r.agentApplied);
+  }
   function rateWork(agentId, runId, verdict) {
-    if (!runId || workRatedRuns.has(runId)) return;
+    if (!runId || workRatedRuns.has(runId)) return false;
     workRatedRuns.add(runId);
     if (workRatedRuns.size > 120) workRatedRuns.delete(workRatedRuns.values().next().value);
     const reason = verdict === 'great' ? 'work_great' : verdict === 'ok' ? 'work_ok' : 'work_miss';
@@ -2250,7 +2255,7 @@ const Chat = (() => {
     const size = (typeof Xp !== 'undefined' && Xp.workSize) ? Xp.workSize({ tools: (w && w.toolsOk) || 0, usd: (w && w.cost) || 0 }) : undefined;
     // DIRECT call — never U.bus.emit / never /api/memory/turnin. The 'work:'+runId id resolves to NO memory
     // record, so the sidecar memcore trust path is never touched (delta here is an XP size only).
-    if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size });
+    let accepted = foldWorkRating({ agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size });
     // P3.2 CREW-RUN RATEABILITY — if this LEAD run dispatched crew whose spend is provable, split the SAME verdict
     // across them HONESTLY: each worker earns a cost-proportional share of the size-weighted mint (crewSplit), riding
     // the identical direct memory.feedback path into ITS OWN XpStore identity. Truthful attribution: a worker earns
@@ -2264,10 +2269,11 @@ const Chat = (() => {
         for (const wk of split.workers) {
           if (!wk || !wk.agentId) continue;
           // a worker's share rides the SAME synthetic-id mint path — its own agentId resolves to its roster stats.
-          XpStore.onEvent('memory.feedback', { agentId: wk.agentId, id: 'work:' + runId + ':' + wk.agentId, runId: runId, delta: wk.delta, reason: reason, size: wk.size });
+          accepted = foldWorkRating({ agentId: wk.agentId, id: 'work:' + runId + ':' + wk.agentId, runId: runId, delta: wk.delta, reason: reason, size: wk.size }) || accepted;
         }
       }
     } catch (_) {}
+    if (!accepted) return false;
     // G3a confidence narrative: the same DIRECT hand-off (this verdict never rides the bus, so the fire-once
     // calibration/TRUSTED beats must be told here, AFTER the meter folded). Speaks at most twice, ever; mints nothing.
     if (typeof ConfBeats !== 'undefined' && ConfBeats.onFeedback) { try { ConfBeats.onFeedback({ agentId: agentId || 'agent', id: 'work:' + runId, delta: delta, reason: reason }); } catch (_) {} }
@@ -2309,6 +2315,7 @@ const Chat = (() => {
     // written onto RUN_META at run start), the Commander's verdict on the work is the strongest honest evidence
     // there is about whether that channel's offers are worth making. Unattributed runs say nothing. Fail-open.
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteVerdict) RecQualityStore.noteVerdict(runId, verdict); } catch (_) {}
+    return true;
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   const WORKRATE_COACH_KEY = 'starnet.workrate.seen';
@@ -2338,9 +2345,9 @@ const Chat = (() => {
     let done = false;
     function settle(verdict, flash, isDeny) {
       if (done) return; done = true;
-      rateWork(agentId, runId, verdict);
+      const accepted = rateWork(agentId, runId, verdict);
       btns.remove();
-      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = flash;
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = accepted ? flash : 'already rated';
       host.appendChild(tag);
       if (onSettle) setTimeout(onSettle, 700);   // flash the verdict, then let the caller fade the beat
     }

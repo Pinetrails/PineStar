@@ -286,7 +286,7 @@ A.ok(/function claimCrew/.test(chatSrc), 'chat.js defines claimCrew (attributes 
 A.ok(/\/\^sub-\//.test(chatSrc), 'ephemeral team.spawn clones (sub-* ids) are filtered from crew attribution (no persistent identity → never credited)');
 const iSplit = rateBody.indexOf('Xp.crewSplit');
 A.ok(iSplit > 0, 'rateWork splits a crew run\'s mint via Xp.crewSplit');
-A.ok(/XpStore\.onEvent\('memory\.feedback', \{ agentId: wk\.agentId/.test(rateBody),
+A.ok(/foldWorkRating\(\{ agentId: wk\.agentId/.test(rateBody),
   'each proven worker\'s share rides the SAME direct memory.feedback mint path under ITS OWN agentId');
 
 A.report('beat-coordination.test');

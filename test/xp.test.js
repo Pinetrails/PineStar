@@ -13,12 +13,18 @@ function run(events, start) {
   for (const e of events) { const r = Xp.applyEvent(s, e); s = r.stats; awards.push(r.awards); }
   return { stats: s, awards };
 }
-// run.end carries a runId in production (schema-required) — the helpers default to 'r' so a [memUsed(), done()]
-// sequence shares one run and the buffered memory-reuse credit commits (or, for errd(), is discarded) correctly.
-const done = (usd, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason: 'done', turns: 1, usd: usd == null ? 1 : usd } });
-const errd = runId => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason: 'error', turns: 1, usd: 0 } });
-const ended = (reason, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason, turns: 1, usd: 0 } });
-const memUsed = (id, runId) => ({ name: 'memory.used', payload: { agentId: 'a', runId: runId || 'r', id: id || 'm1' } });
+// Production run ids are unique. The helpers generate one per default run while keeping [memUsed(), done()]
+// on the same id so buffered memory-reuse credit still commits (or is discarded) correctly.
+let helperRunSeq = 0, pendingHelperRun = null;
+function nextHelperRun() { return 'helper-' + (++helperRunSeq); }
+function endHelperRun(runId) { const id = runId || pendingHelperRun || nextHelperRun(); pendingHelperRun = null; return id; }
+const done = (usd, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: endHelperRun(runId), reason: 'done', turns: 1, usd: usd == null ? 1 : usd } });
+const errd = runId => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: endHelperRun(runId), reason: 'error', turns: 1, usd: 0 } });
+const ended = (reason, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: endHelperRun(runId), reason, turns: 1, usd: 0 } });
+const memUsed = (id, runId) => {
+  const rid = runId || pendingHelperRun || (pendingHelperRun = nextHelperRun());
+  return { name: 'memory.used', payload: { agentId: 'a', runId: rid, id: id || 'm1' } };
+};
 const feedback = (delta, reason) => ({ name: 'memory.feedback', payload: { agentId: 'a', id: 'm1', delta, reason: reason || 'kept' } });
 const keep = () => feedback(2, 'kept');
 const edit = () => feedback(1, 'edited');
@@ -530,5 +536,28 @@ A.ok(Xp.credential(flipped).key !== keyBefore, 'a band flip moves the key even w
 
 // the credential is a READOUT — it never mints anything
 A.eq(Xp.credential(crossed).text === '' ? 0 : crossed.xp, crossed.xp, 'credential() is pure readout — it mints no XP');
+
+/* ---- LONGEVITY: an earned level is a floor, and replayed facts are idempotent ---- */
+const splitBrain = { xp: 10, level: 5, lifetimeXp: 10, confidence: 50, samples: 0, counters: {}, milestones: [] };
+const repaired = Xp.reconcile(splitBrain).stats;
+A.eq(repaired.level, 5, 'reconcile never demotes an already-earned level');
+A.eq(repaired.xp, Xp.xpForLevel(5), 'reconcile restores the minimum XP implied by the saved level');
+A.ok(repaired.lifetimeXp >= repaired.xp, 'lifetime XP is repaired to at least the spendable XP total');
+const afterRepairRating = Xp.applyEvent(repaired, { name: 'memory.feedback', payload: { agentId: 'a', id: 'work:repair-run', runId: 'repair-run', delta: 2, reason: 'work_great' } }).stats;
+A.ok(afterRepairRating.level >= 5, 'the next positive rating cannot demote a repaired veteran');
+
+const onceRun = Xp.applyEvent(Xp.fresh(), done(0, 'receipt-run'));
+const twiceRun = Xp.applyEvent(onceRun.stats, done(0, 'receipt-run'));
+A.eq(twiceRun.stats.counters.tasksDone, 1, 'a replayed run.end receipt cannot count the same shipped task twice');
+A.eq(twiceRun.awards.duplicate, true, 'the duplicate run receipt is explicit to callers');
+let partialCrash = Xp.applyEvent(Xp.fresh(), { name: 'agent.tool_result', payload: { agentId: 'a', runId: 'partial-run', callId: 'c1', ok: true, isError: false } }).stats;
+partialCrash = Xp.applyEvent(partialCrash, { name: 'agent.run.end', payload: { agentId: 'a', runId: 'partial-run', reason: 'done', _historyToolsOk: 3 } }).stats;
+A.eq(partialCrash.counters.toolsOk, 3, 'history catch-up adds only tool successes not already persisted before a mid-run crash');
+const ratingEvent = { name: 'memory.feedback', payload: { agentId: 'a', id: 'work:receipt-run', runId: 'receipt-run', delta: 5, reason: 'work_great', size: 'large' } };
+const onceRating = Xp.applyEvent(twiceRun.stats, ratingEvent);
+const twiceRating = Xp.applyEvent(onceRating.stats, ratingEvent);
+A.eq(twiceRating.stats.xp, onceRating.stats.xp, 'a replayed work rating cannot mint XP twice');
+A.eq(twiceRating.stats.samples, onceRating.stats.samples, 'a replayed work rating cannot skew confidence twice');
+A.eq(twiceRating.awards.duplicate, true, 'the duplicate rating receipt is explicit to callers');
 
 A.report('xp.test');

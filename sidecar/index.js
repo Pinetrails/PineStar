@@ -13617,7 +13617,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback });   // H3.2/H3.3/G6 + hierarchical timing/work visibility + P1.2 identity-honesty
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || 'done'), turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // H3.2/H3.3/G6 + hierarchical timing/work visibility + P1.2 identity-honesty
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
@@ -15743,9 +15743,15 @@ function serveRuns(req, res) {
     }
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
-    let rows = runStore.list(agent === '*' ? null : agent, { limit });
-    if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
-    json(200, { runs: rows });
+    const requestedThrough = Math.max(0, Number(u.searchParams.get('through')) || 0);
+    // Leave a one-millisecond overlap at the live edge: a run appended later in this same clock tick must
+    // land strictly AFTER the returned watermark, never share it and get excluded by the next `since` query.
+    const snapshotAt = requestedThrough || Math.max(1, Date.now() - 1);
+    const beforeRunId = u.searchParams.get('beforeRunId') || '';
+    const page = runStore.list(agent === '*' ? null : agent, { limit: limit + 1, since, through: snapshotAt, beforeRunId });
+    const rows = page.slice(0, limit);
+    const nextCursor = page.length > limit && rows.length ? rows[rows.length - 1].runId : '';
+    json(200, { runs: rows, nextCursor, snapshotAt });
   } catch (e) {
     // HONESTY (GROUND_UP_AUDIT P2): a store read that THROWS is a real failure, not "no history" — a
     // 200-empty here makes an auth/crash indistinguishable from a genuinely-empty log, so support can't

@@ -37,6 +37,8 @@
   const FEEDBACK_XP_PER_DELTA = 10; // explicit positive user turn-in feedback is the only XP mint
   const FEEDBACK_XP_CAP = 50;       // cap one feedback event so one huge delta cannot jump many levels
   const MIN_RUNS = 3;               // attributable runs needed before RELIABILITY is "known" (cf. MIN_SAMPLES)
+  const MAX_WHOLE = Number.MAX_SAFE_INTEGER;
+  const RECEIPT_CAP = 10000;        // exact replay horizon; compacted after each durable-history checkpoint
 
   /* S2 — RELIABILITY: the SECOND axis, and deliberately NOT a second XP faucet.
      CONFIDENCE answers "what did the Commander SAY about this agent"; RELIABILITY answers "what did the
@@ -186,17 +188,35 @@
   }
 
   // ---- the stats shape (used for BOTH a single agent and the station rollup) ----
-  function fresh() { return { xp: 0, level: 1, lifetimeXp: 0, confidence: SEED_CONF, samples: 0, counters: {}, milestones: [] }; }
+  function fresh() { return { xp: 0, level: 1, lifetimeXp: 0, confidence: SEED_CONF, samples: 0, counters: {}, milestones: [], receipts: { runs: [], feedback: [] } }; }
   function clone(s) { return s ? JSON.parse(JSON.stringify(s)) : fresh(); }
   // defensive: a corrupted / hand-edited save must never let a non-finite value (NaN/Infinity) poison the
   // meters. The schema validator blocks these at the bus; this is belt-and-suspenders on the persisted state.
   function num(v, d) { return Number.isFinite(v) ? v : d; }
+  function whole(v, d) { return Math.max(0, Math.min(MAX_WHOLE, Math.floor(num(v, d)))); }
+  function receiptList(v) {
+    if (!Array.isArray(v)) return [];
+    const seen = new Set(), out = [];
+    for (let i = Math.max(0, v.length - RECEIPT_CAP); i < v.length; i++) {
+      const id = String(v[i] == null ? '' : v[i]);
+      if (id && !seen.has(id)) { seen.add(id); out.push(id); }
+    }
+    return out;
+  }
   function sanitize(s) {
     s.confidence = Math.max(0, Math.min(100, num(s.confidence, SEED_CONF)));
-    s.xp = Math.max(0, Math.floor(num(s.xp, 0)));
-    s.lifetimeXp = Math.max(0, Math.floor(num(s.lifetimeXp, 0)));
-    s.samples = Math.max(0, Math.floor(num(s.samples, 0)));
-    s.level = Math.max(1, Math.floor(num(s.level, 1)));
+    s.xp = whole(s.xp, 0);
+    s.samples = whole(s.samples, 0);
+    const maxLevel = levelForXp(MAX_WHOLE);
+    s.level = Math.max(1, Math.min(maxLevel, whole(s.level, 1)));
+    s.level = Math.max(s.level, levelForXp(s.xp));
+    s.xp = Math.max(s.xp, xpForLevel(s.level));
+    s.lifetimeXp = Math.max(whole(s.lifetimeXp, 0), s.xp);
+    if (!s.counters || typeof s.counters !== 'object' || Array.isArray(s.counters)) s.counters = {};
+    for (const k of Object.keys(s.counters)) s.counters[k] = whole(s.counters[k], 0);
+    s.milestones = Array.isArray(s.milestones) ? Array.from(new Set(s.milestones.map(String))) : [];
+    if (!s.receipts || typeof s.receipts !== 'object' || Array.isArray(s.receipts)) s.receipts = {};
+    s.receipts = { runs: receiptList(s.receipts.runs), feedback: receiptList(s.receipts.feedback) };
     return s;
   }
 
@@ -241,7 +261,22 @@
     }
     return into;
   }
-  function bump(c, k) { c[k] = (c[k] || 0) + 1; }
+  function bump(c, k, by) { c[k] = whole((c[k] || 0) + (by == null ? 1 : by), 0); }
+  function receiptFor(name, p) {
+    if (name === 'agent.run.end' && p.runId != null) return { bucket: 'runs', id: String(p.runId) };
+    if (name === 'memory.feedback' && turnInFeedbackQuality(feedbackReason(p)) !== null &&
+        (p.receiptId != null || String(p.id || '').indexOf('work:') === 0)) {
+      return { bucket: 'feedback', id: String(p.receiptId == null ? p.id : p.receiptId) };
+    }
+    return null;
+  }
+  function hasReceipt(s, receipt) { return receipt && s.receipts[receipt.bucket].indexOf(receipt.id) !== -1; }
+  function addReceipt(s, receipt) {
+    if (!receipt || hasReceipt(s, receipt)) return;
+    const list = s.receipts[receipt.bucket];
+    list.push(receipt.id);
+    if (list.length > RECEIPT_CAP) list.splice(0, list.length - RECEIPT_CAP);
+  }
 
   // ---- the one transform: fold a real event into a stats object (pure: returns a NEW object) ----
   // ev = { name, payload }.  returns { stats, awards } where
@@ -249,7 +284,7 @@
   // a fresh per-run buffer for credit that must wait for the run's outcome (see applyEvent COUNTERS). Keyed by
   // runId so a new run starts a clean tally even if a prior run's end was never seen. usedMemory is a FLAG (one
   // reuse EVENT per run — never one per recalled chunk), matching the "reuse a memory" trophy copy.
-  function freshRun(id) { return { id: id == null ? null : id, usedMemory: false }; }
+  function freshRun(id) { return { id: id == null ? null : id, usedMemory: false, toolsOk: 0 }; }
   // Did the run produce anything? 'error' (the model call failed / 404) and 'empty' (a degraded provider streamed a
   // zero-tool, zero-text turn) both mean "no work happened", so buffered credit is DISCARDED. Every other terminal
   // reason (done, and the ceiling/abort reasons max_iters/budget/cancelled/refusal, where the model DID engage) keeps
@@ -263,7 +298,9 @@
     if (!s.run || typeof s.run !== 'object') s.run = freshRun(null);
     const name = (ev && ev.name) || '', p = (ev && ev.payload) || {};
     const sc = scoreEvent(name, p);
-    const awards = { xp: 0, levelFrom: s.level, levelTo: s.level, levelUp: false, milestones: [] };
+    const awards = { xp: 0, levelFrom: s.level, levelTo: s.level, levelUp: false, milestones: [], duplicate: false };
+    const receipt = receiptFor(name, p);
+    if (hasReceipt(s, receipt)) { awards.duplicate = true; return { stats: s, awards }; }
 
     // base XP: explicit positive user feedback only. Operational events can still update counters below,
     // but they cannot mint XP or move the level ladder by themselves.
@@ -273,7 +310,7 @@
     if (base > 0) {
       const gained = Math.round(base * trustMult(s));
       s.xp += gained; s.lifetimeXp += gained; awards.xp = gained;
-      const lvl = levelForXp(s.xp);
+      const lvl = Math.max(s.level, levelForXp(s.xp));
       if (lvl > s.level) { awards.levelUp = true; awards.levelTo = lvl; }
       s.level = lvl;
     }
@@ -302,8 +339,10 @@
     //     also credited at most ONCE per run (a flag, not a per-chunk tally), matching the "reuse a memory" copy —
     //     memory.used fires once PER recalled chunk (7× for a 7-record recall), which would otherwise over-count.
     if (name === 'agent.run.end') {
+      const sameRun = s.run && s.run.id === p.runId;
       bump(s.counters, 'runs');
       if (p.reason === 'done') bump(s.counters, 'tasksDone');
+      if (p._historyToolsOk) bump(s.counters, 'toolsOk', Math.max(0, p._historyToolsOk - (sameRun ? (s.run.toolsOk || 0) : 0)));
       /* S2 RELIABILITY buckets — provable outcome facts, no XP consequence.
          `runsOwned` is bumped for EVERY attributable run (including the completions), even though
          `tasksDone` already counts the done ones. That duplication is deliberate and load-bearing: these
@@ -319,7 +358,6 @@
       else if (RELIABILITY_EXCLUDED[p.reason] === 'neutral') bump(s.counters, 'runsNeutral');
       // COMMIT-OR-DISCARD this run's buffered memory reuse, then reset for the next run. A run that produced nothing
       // (error/empty) forfeits it — no PACK RAT for a recall that never fed a real turn.
-      const sameRun = s.run && s.run.id === p.runId;
       if (sameRun && s.run.usedMemory && runDidWork(p.reason)) bump(s.counters, 'memReused');
       s.run = freshRun(null);   // whatever the outcome, the tally is spent — the next run starts clean
     }
@@ -329,7 +367,11 @@
       if (s.run.id !== p.runId) s.run = freshRun(p.runId);
       s.run.usedMemory = true;
     }
-    else if (name === 'agent.tool_result' && p.ok && !p.isError) bump(s.counters, 'toolsOk');
+    else if (name === 'agent.tool_result' && p.ok && !p.isError) {
+      if (s.run.id !== p.runId) s.run = freshRun(p.runId);
+      bump(s.run, 'toolsOk');
+      bump(s.counters, 'toolsOk');
+    }
     else if (name === 'memory.write') bump(s.counters, 'memWrites');
     else if (name === 'workitem.delivered') bump(s.counters, 'delivered');
     else if (name === 'memory.feedback') {
@@ -340,6 +382,7 @@
 
     // MILESTONES — fire once
     fireMilestones(s, awards.milestones);
+    addReceipt(s, receipt);
     return { stats: s, awards };
   }
 
