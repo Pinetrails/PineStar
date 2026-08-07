@@ -649,12 +649,12 @@ const Chat = (() => {
     const t = input.value.trim();
     const hasStaged = pendingAtts.length > 0;   // ANY staged file (uploading or ready) makes this a valid send
     if (!t && !hasStaged) return;
-    if (t) recordSent(t);   // history records every sent line — commands included, like a shell
     // SLASH: a "/name …" line dispatches as a command, never chat. A recognised command runs; an UNKNOWN one
     // (a typo like "/hlep") gets a local "unknown command" line — NOT sent to the agent as a paid model turn.
     // Gate on a command-SHAPED first token (letters/digits/hyphen) so a real message that starts with a path
     // ("/etc/hosts is broken") still goes to the agent instead of tripping the unknown-command line.
     if (t && /^\/[a-z][\w-]*(?:\s|$)/i.test(t)) {
+      recordSent(t);   // history records commands too, like a shell
       const cmd = commandFromLine(t);
       closeSlash();
       if (cmd) { runSlash(cmd); return; }
@@ -663,6 +663,20 @@ const Chat = (() => {
       localLine('Unknown command: /' + nm + '. Type "/" to browse commands, or /help.');
       return;
     }
+    // LARGE-PASTE CONTEXT GUARD: the 100K composer ceiling is a transport allowance, not a promise that every
+    // model has room for 100K characters plus StarNet's system/tool context. When the live catalog or an honest
+    // per-conversation projection proves the selected model is too small, keep the paste byte-for-byte in the
+    // composer and explain the remedy instead of clearing it into a provider context-overflow failure.
+    const contextIssue = t ? composerContextIssue(activeWs, t) : null;
+    if (contextIssue) {
+      const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : 'this model';
+      const limit = (typeof U !== 'undefined' && U.tokens) ? U.tokens(contextIssue.limit) : contextIssue.limit;
+      const note = 'Paste kept — it may exceed ' + model + '\'s ' + limit + '-token context once StarNet\'s working context is included. Choose a larger-context model or split the text; nothing was sent.';
+      localLine(note);
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('paste kept — selected model context is too small', 'warn');
+      return;
+    }
+    if (t) recordSent(t);
     // BUSY: type-ahead queues TEXT; staged files wait in the strip for the next idle send (one run per stream).
     if (isBusy()) { if (t) { input.value = ''; closeSlash(); autoGrowInput(); enqueue(t); } return; }
     // SETTLE UPLOADS: a staged attachment still uploading must not be silently dropped — uploads to the local
@@ -883,16 +897,16 @@ const Chat = (() => {
     if (input.value) input.style.height = input.scrollHeight + 'px';
     updateCharCount();   // the char counter rides every value change (typed, recalled, recipe-filled, send-reset)
   }
-  // COMPOSER CAP READOUT — the textarea maxlength is 4000; a dim counter appears only as the message NEARS the
+  // COMPOSER CAP READOUT — the textarea maxlength is 100,000; a dim counter appears only as the message NEARS the
   // cap (so it never nags a normal message) and turns --warn at the very edge. Truthful: it reads the real length.
-  const COMPOSER_MAX = 4000, COMPOSER_WARN_AT = 3600;
+  const COMPOSER_MAX = 100000, COMPOSER_WARN_AT = 90000, COMPOSER_WARN_CHARS = 1000;
   function updateCharCount() {
     const cc = el('chat-charcount'); if (!cc) return;
     const n = input ? input.value.length : 0;
     if (n < COMPOSER_WARN_AT) { if (!cc.hidden) { cc.hidden = true; cc.textContent = ''; cc.classList.remove('warn'); } return; }
     cc.hidden = false;
     cc.textContent = n + ' / ' + COMPOSER_MAX;
-    cc.classList.toggle('warn', n >= COMPOSER_MAX - 100);
+    cc.classList.toggle('warn', n >= COMPOSER_MAX - COMPOSER_WARN_CHARS);
   }
 
   /* ── COMMS AGENT LINE ────────────────────────────────────────────────────────────────────────────────
@@ -1058,6 +1072,10 @@ const Chat = (() => {
   // bites pathologically long ones — exactly where the server would have compacted anyway. A single truncation
   // marker object (role:'system', truncated:true) records the drop honestly for readers of the array.
   const HISTORY_CAP = 120;
+  // `/api/run` accepts a 2 MiB JSON body. Reserve half for the system prompt, capability metadata, project
+  // context, and JSON envelope; the dialogue gets one UTF-8-measured MiB. This keeps repeated 100K pastes from
+  // turning a later send into HTTP 413 while preserving the newest message intact and retaining local history.
+  const HISTORY_WIRE_MAX_BYTES = 1 << 20;
   function capHistory(ws) {
     if (!ws || !Array.isArray(ws.history)) return;
     // count only real dialogue turns (skip a prior truncation marker) so the marker never inflates the count
@@ -1067,15 +1085,120 @@ const Chat = (() => {
     const kept = real.slice(-HISTORY_CAP);
     ws.history = [{ role: 'system', truncated: true, content: '…(' + dropped + ' earlier turn' + (dropped === 1 ? '' : 's') + ' trimmed from local history)' }].concat(kept);
   }
-  // the outbound window: the messages actually POSTed as `messages`. Drops the local-only truncation marker (the
-  // server never expects it) and hard-caps to HISTORY_CAP dialogue turns as a belt-and-suspenders bound.
-  function historyWindow(ws) {
-    if (!ws || !Array.isArray(ws.history)) return [];
+  function utf8Bytes(s) {
+    s = String(s == null ? '' : s);
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(s).length;
+    let n = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c < 0x80) n++;
+      else if (c < 0x800) n += 2;
+      else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && s.charCodeAt(i + 1) >= 0xDC00 && s.charCodeAt(i + 1) <= 0xDFFF) { n += 4; i++; }
+      else n += 3;
+    }
+    return n;
+  }
+  function fitHistoryBytes(messages, maxBytes) {
+    const src = Array.isArray(messages) ? messages : [];
+    const limit = Math.max(1, Number(maxBytes) || HISTORY_WIRE_MAX_BYTES);
+    const kept = [];
+    let used = 2;   // `[]`
+    for (let i = src.length - 1; i >= 0; i--) {
+      const bytes = utf8Bytes(JSON.stringify(src[i])) + (kept.length ? 1 : 0);   // comma between array items
+      // The newest turn is sacred: the composer already bounds it below this byte budget. Older history is the
+      // expendable part, and we keep a contiguous suffix so the model never sees a temporally disjoint thread.
+      if (kept.length && used + bytes > limit) break;
+      kept.unshift(src[i]); used += bytes;
+    }
+    return kept;
+  }
+  // char/4 is StarNet's calibrated dialogue estimate, but it can undercount dense Unicode. Half the real UTF-8
+  // bytes is a deliberately cautious second lens that still lets a full 100K English paste fit a 128K model.
+  function contextEstimateMessages(messages) {
+    const src = Array.isArray(messages) ? messages : [];
+    const dialogue = (typeof CtxGauge !== 'undefined' && CtxGauge.estimateMessages) ? CtxGauge.estimateMessages(src) : 0;
+    return Math.max(dialogue, Math.ceil(utf8Bytes(JSON.stringify(src)) / 2));
+  }
+  // the outbound window: the messages actually POSTed as `messages`. Drops local-only markers, caps turns, then
+  // caps UTF-8 bytes. The local transcript is untouched; only stale wire history yields to a giant new paste.
+  function historyWindowFrom(history) {
+    if (!Array.isArray(history)) return [];
     // drop LOCAL markers that are records, not dialogue: the history-cap marker (truncated) and any system status
     // line (sys — e.g. an autosessions "routine ran, nothing to report" / "couldn't load the output" framing line).
     // These must NEVER be replayed to the model as prior turns (a frontend-authored string is not the agent's word).
-    const real = ws.history.filter(m => !(m && (m.truncated || m.sys)));
-    return real.length > HISTORY_CAP ? real.slice(-HISTORY_CAP) : real;
+    const real = history.filter(m => !(m && (m.truncated || m.sys)));
+    const turnCapped = real.length > HISTORY_CAP ? real.slice(-HISTORY_CAP) : real;
+    return fitHistoryBytes(turnCapped, HISTORY_WIRE_MAX_BYTES);
+  }
+  function fitHistoryTokens(messages, maxTokens) {
+    const src = Array.isArray(messages) ? messages : [];
+    const limit = Math.max(1, Number(maxTokens) || 1);
+    const kept = [];
+    let used = 0;
+    for (let i = src.length - 1; i >= 0; i--) {
+      const tokens = contextEstimateMessages([src[i]]);
+      if (kept.length && used + tokens > limit) break;
+      kept.unshift(src[i]); used += tokens;
+    }
+    return kept;
+  }
+  function modelFitHistory(history, ws) {
+    const base = historyWindowFrom(history);
+    if (!ws || typeof Harness === 'undefined' || typeof CtxGauge === 'undefined') return base;
+    let limit = 0, selectedModel = '';
+    try {
+      if (Harness.getModel) selectedModel = Harness.getModel() || '';
+      if (Harness.contextLimitOf) limit = Harness.contextLimitOf(selectedModel);
+    } catch (_) {}
+    if (!limit) return base;   // unknown catalog => byte-safe only; never invent a token ceiling
+    const reserve = Math.min(16000, Math.floor(limit / 2));
+    let budget = Math.max(1, Math.floor(limit * 0.85) - reserve);
+    let fitted = fitHistoryTokens(base, budget);
+    // Once this conversation has a real calibrated projection, replace the conservative 16K reserve with its
+    // measured overhead and fit again. Older turns yield; the newest Commander message remains sacred.
+    try {
+      const state = Harness.contextState && Harness.contextState(ws.agentId || 'agent', ws.id, fitted);
+      // A settled conversation may have been measured on a model the Commander has since switched away from.
+      // That old model's limit/projection cannot govern the next request; use it only when model identities match.
+      if (state && (!state.model || state.model === selectedModel) && state.limit) limit = state.limit;
+      if (state && (!state.model || state.model === selectedModel) && state.used > 0 && (state.measured || state.projected)) {
+        const dialogue = contextEstimateMessages(fitted);
+        const overhead = Math.max(0, state.used - dialogue);
+        budget = Math.max(1, Math.floor(limit * 0.85) - overhead);
+        fitted = fitHistoryTokens(base, budget);
+      }
+    } catch (_) {}
+    return fitted;
+  }
+  function historyWindow(ws) {
+    return ws ? modelFitHistory(ws.history, ws) : [];
+  }
+  function contextIssueFor(messages, limit, projectedUsed) {
+    limit = Math.max(0, Number(limit) || 0);
+    if (!limit) return null;   // unknown catalog => never invent a ceiling
+    const projected = Math.max(0, Number(projectedUsed) || 0);
+    if (projected >= limit * 0.9) return { limit, used: projected, projected: true };
+    // No calibrated overhead yet. Reserve up to 16K tokens (and never more than half the window) for the real
+    // system/tool prompt, then apply the Unicode-aware dialogue estimate. Keep this second check even when a
+    // calibrated char/4 projection exists: dense Unicode is exactly where that projection can be too optimistic.
+    const dialogue = contextEstimateMessages(messages);
+    const reserve = Math.min(16000, Math.floor(limit / 2));
+    const dialogueBudget = Math.max(1, Math.floor(limit * 0.85) - reserve);
+    return dialogue > dialogueBudget ? { limit, used: Math.max(projected, dialogue + reserve), projected: !!projected } : null;
+  }
+  function composerContextIssue(ws, text) {
+    if (!ws || typeof Harness === 'undefined') return null;
+    const proposed = modelFitHistory((Array.isArray(ws.history) ? ws.history : []).concat([{ role: 'user', content: String(text || '') }]), ws);
+    let state = null, selectedModel = '', selectedLimit = 0;
+    try {
+      if (Harness.getModel) selectedModel = Harness.getModel() || '';
+      if (Harness.contextLimitOf) selectedLimit = Harness.contextLimitOf(selectedModel);
+      if (Harness.contextState) state = Harness.contextState(ws.agentId || 'agent', ws.id, proposed);
+    } catch (_) {}
+    const currentState = state && (!state.model || state.model === selectedModel) ? state : null;
+    const limit = (currentState && currentState.limit) || selectedLimit;
+    const projected = currentState && currentState.used > 0 && (currentState.measured || currentState.projected) ? currentState.used : 0;
+    return contextIssueFor(proposed, limit, projected);
   }
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
   /* What the CONTEXT gauge needs to answer "how full is THIS chat?" — which conversation is on screen
@@ -1679,8 +1802,9 @@ const Chat = (() => {
   // window.open AFTER an async fetch) was a silent no-op everywhere it mattered: popup blockers kill a
   // post-async window.open, the desktop Tauri window policy kills it always, and right-click opened '#'.
   // On desktop a _blank navigation is equally dead under that policy (the same law as the delegated
-  // prose-link handler in init), so hand the URL to the OS browser; stopPropagation so that delegated
-  // handler can't open it a second time.
+  // prose-link handler in init), so hand the saved path to the OS default app. If native opening rejects
+  // the path or file type, the jailed browser preview remains a safe fallback. stopPropagation prevents
+  // the delegated prose-link handler from opening it a second time.
   function wireFileOpen(a, title, agentId) {
     a.href = fileUrl(title, agentId);
     a.target = '_blank'; a.rel = 'noopener';
@@ -1689,8 +1813,9 @@ const Chat = (() => {
       a.addEventListener('click', ev => {
         ev.preventDefault(); ev.stopPropagation();
         if (window.getSelection && String(window.getSelection())) return;   // a drag-selection release is not an open (the delegated handler's SELECTION GUARD law)
-        Promise.resolve(core.invoke('open_external_url', { url: a.href }))
-          .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file in your browser — the folder button copies its path on disk', 'warn'); });
+        Promise.resolve(core.invoke('starnet_open_artifact', { path: String(title || ''), agentId: agentId || 'agent' }))
+          .catch(() => Promise.resolve(core.invoke('open_external_url', { url: a.href })))
+          .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — use folder or copy path to find it on disk', 'warn'); });
       });
     }
   }
@@ -1757,9 +1882,9 @@ const Chat = (() => {
   // ── "OPEN FOLDER" AFFORDANCE (Theme 4: outputs are findable) ──────────────────────────────────
   // A deliverable landed on disk in the agent's workspace; a beginner needs to be able to FIND it.
   // The absolute per-agent dir comes from the additive /api/workspace/dir route (the frontend otherwise
-  // only knows the relative filename). On desktop we try a native reveal-in-folder command IF the shell
-  // ever exposes one (starnet_reveal_path), and ALWAYS fall back to copying the real path; in the browser
-  // there is no filesystem to open, so the button copies the path. Truthful: the button does exactly what
+  // only knows the relative filename). Desktop reveals the exact artifact through the native shell and
+  // falls back to copying that exact path if the shell refuses it. A plain browser cannot reveal a local
+  // folder, so its button says and does "copy path". Truthful: the button does exactly what
   // its label says — it never claims to open a folder it can't.
   const _wsDirCache = new Map();   // agentId -> Promise<absolute dir | ''>
   function workspaceDir(agentId) {
@@ -1774,39 +1899,66 @@ const Chat = (() => {
   function tauriCore() {
     return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
   }
-  // Build a small folder control (a themed folder glyph + a label). `relPath` (optional) is the deliverable's
-  // own path so a future native reveal can select the file; today it reveals/copies the containing workspace dir.
+  function isAbsoluteArtifactPath(p) {
+    return /^(?:[A-Za-z]:[\\/]|[\\/]{2}|\/)/.test(String(p || ''));
+  }
+  function absoluteArtifactPath(agentId, artifactPath) {
+    const raw = String(artifactPath || '');
+    if (isAbsoluteArtifactPath(raw)) return Promise.resolve(raw);
+    return workspaceDir(agentId).then(dir => {
+      if (!dir) return '';
+      const sep = dir.indexOf('\\') >= 0 ? '\\' : '/';
+      return dir.replace(/[\\/]+$/, '') + sep + raw.replace(/^[\\/]+/, '').replace(/[\\/]/g, sep);
+    });
+  }
+  function resetFeedbackLabel(btn) {
+    const lbl = btn.querySelector('.fb-label');
+    if (lbl) lbl.textContent = btn.getAttribute('data-default-label') || 'folder';
+  }
+  function copyArtifactPath(btn, agentId, artifactPath) {
+    return absoluteArtifactPath(agentId, artifactPath).then(abs => {
+      const lbl = btn.querySelector('.fb-label');
+      if (!abs) {
+        if (lbl) lbl.textContent = 'no path';
+        setTimeout(() => resetFeedbackLabel(btn), 1600);
+        return false;
+      }
+      return copyText(abs).then(ok => {
+        if (lbl) lbl.textContent = ok ? 'path copied' : abs;
+        setTimeout(() => resetFeedbackLabel(btn), 1600);
+        return ok;
+      });
+    });
+  }
+  function copyPathButton(agentId, artifactPath) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'deliverable-folder deliverable-copy-path';
+    b.setAttribute('data-default-label', 'copy path');
+    b.appendChild(document.createTextNode('⧉'));
+    const lbl = document.createElement('span'); lbl.className = 'fb-label'; lbl.textContent = 'copy path'; b.appendChild(lbl);
+    b.title = 'copy the full saved path';
+    b.addEventListener('click', () => copyArtifactPath(b, agentId, artifactPath));
+    return b;
+  }
+  // Resolve from the deliverable's own path so an authorized custom output location reveals correctly.
   function folderButton(agentId, relPath) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'deliverable-folder';
     b.appendChild(glyphSpan(SVG_FOLDER));
-    const lbl = document.createElement('span'); lbl.className = 'fb-label'; lbl.textContent = 'folder'; b.appendChild(lbl);
     const desktop = !!tauriCore();
-    b.title = desktop ? 'reveal this deliverable’s folder on disk' : 'copy the folder path on disk';
-    let dirP = null;
+    const defaultLabel = desktop ? 'folder' : 'copy path';
+    b.setAttribute('data-default-label', defaultLabel);
+    const lbl = document.createElement('span'); lbl.className = 'fb-label'; lbl.textContent = defaultLabel; b.appendChild(lbl);
+    b.title = desktop ? 'reveal this saved file in its folder' : 'copy the full saved path';
     b.addEventListener('click', () => {
-      if (!dirP) dirP = workspaceDir(agentId);
-      dirP.then(dir => {
-        if (!dir) { lbl.textContent = 'no path'; setTimeout(() => { lbl.textContent = 'folder'; }, 1400); return; }
-        const core = tauriCore();
-        if (core && core.invoke) {
-          // native reveal IF the shell exposes it; otherwise fall through to copy (never a silent no-op)
-          Promise.resolve(core.invoke('starnet_reveal_path', { path: dir })).then(() => {
-            lbl.textContent = 'opened'; setTimeout(() => { lbl.textContent = 'folder'; }, 1400);
-          }).catch(() => copyPathFeedback(b, dir));
-        } else {
-          copyPathFeedback(b, dir);
-        }
-      });
+      const core = tauriCore();
+      if (core && core.invoke) {
+        Promise.resolve(core.invoke('starnet_reveal_path', { path: String(relPath || ''), agentId: agentId || 'agent' })).then(() => {
+          lbl.textContent = 'opened'; setTimeout(() => resetFeedbackLabel(b), 1400);
+        }).catch(() => copyArtifactPath(b, agentId, relPath));
+      } else copyArtifactPath(b, agentId, relPath);
     });
     return b;
-  }
-  function copyPathFeedback(btn, dir) {
-    const lbl = btn.querySelector('.fb-label');
-    copyText(dir).then(ok => {
-      if (lbl) lbl.textContent = ok ? 'path copied' : dir;
-      setTimeout(() => { if (lbl) lbl.textContent = 'folder'; }, 1600);
-    });
   }
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
@@ -1817,7 +1969,8 @@ const Chat = (() => {
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
     r.body.appendChild(a);
-    r.body.appendChild(folderButton(agentId, title));             // Theme 4: make the file findable on disk
+    r.body.appendChild(folderButton(agentId, title));             // reveal the exact saved location
+    if (tauriCore()) r.body.appendChild(copyPathButton(agentId, title));
     autoscroll();
   }
   // an image the agent generated (image_generate / the `studio` capability) — render it INLINE as a small
@@ -1941,13 +2094,10 @@ const Chat = (() => {
     d.appendChild(link);
     if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
     if (echo) return d;   // the copy + folder buttons are already on the inline row above — one set, not two
-    // click-to-copy of the deliverable's own (relative) path — kept for quick reference.
-    const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
-    cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
-    cp.onclick = () => copyText(path).then(ok => { if (!ok) return; cp.textContent = '✓'; setTimeout(() => { cp.textContent = '⧉'; }, 1100); });
-    d.appendChild(cp);
-    // Theme 4: an "open folder" affordance that resolves the REAL absolute workspace dir on disk
-    // (desktop reveals if the shell supports it; browser copies the path) so the file is findable.
+    // Copy the authoritative absolute path, not the model-facing relative workspace path.
+    d.appendChild(copyPathButton(agentId, path));
+    // Reveal the exact artifact so a custom output path selects the right file instead of opening the
+    // default AppData workspace root.
     if (a.kind !== 'message') d.appendChild(folderButton(agentId, path));
     return d;
   }
