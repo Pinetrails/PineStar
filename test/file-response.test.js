@@ -1,11 +1,12 @@
 'use strict';
 
+const path = require('node:path');
 const A = require('./_assert.js');
 const F = require('../sidecar/file-response.js');
 
 A.eq(F.mimeForPath('report.HTML'), 'text/html', 'known MIME is case-insensitive and strips charset for multipart uploads');
 A.eq(F.mimeForPath('unknown.bin'), 'application/octet-stream', 'unknown extension fails to safe binary MIME');
-A.eq(F.safeDownloadName('C:\\drop\\a bad;name.html'), 'a_bad_name.html', 'download filename removes header-active punctuation');
+A.eq(F.safeDownloadName(path.join('drop', 'a bad;name.html')), 'a_bad_name.html', 'download filename removes header-active punctuation');
 A.ok(F.isActiveDeliverable('demo.svg') && F.isActiveDeliverable('code.mjs'), 'active browser formats are download-only');
 A.ok(!F.isActiveDeliverable('photo.png'), 'passive media may render inline');
 A.eq(F.parseRange('', 100), null, 'missing range requests the full file');
