@@ -540,7 +540,7 @@
 .chat-send:active { background: var(--ph-bright); }
 .chat-send:focus-visible { outline: 1px solid var(--ph-bright); outline-offset: 2px; }
 
-/* CHAR COUNTER — dim, right-aligned, appears only as the message nears the 4000-char cap so it never
+/* CHAR COUNTER — dim, right-aligned, appears only as the message nears the 100,000-char cap so it never
    competes for attention on a normal message. --warn tint at the edge. [hidden] until chat.js shows it. */
 .chat-charcount {
   font-size: 11px; letter-spacing: .5px; text-align: right; color: var(--ph-dim); opacity: .75;
