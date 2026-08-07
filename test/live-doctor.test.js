@@ -47,7 +47,7 @@ test('independent probes run concurrently and keep receipt order', async () => {
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   let secondStarted = false;
-  const running = Doctor.runLiveDoctor({ confirmed: true, targets: [
+  const running = Doctor.runLiveDoctor({ confirmed: true, clock: { now: () => 0 }, targets: [
     { kind: 'mcp', id: 'first', probe: async () => { await gate; return { state: Doctor.STATES.ROUND_TRIP }; } },
     { kind: 'channel', id: 'second', probe: async () => { secondStarted = true; return { state: Doctor.STATES.AUTHENTICATED }; } }
   ] });

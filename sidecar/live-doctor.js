@@ -59,7 +59,8 @@ async function runLiveDoctor(opts) {
   if (opts.confirmed !== true) {
     const e = new Error('explicit live-probe consent is required'); e.code = 'LIVE_DOCTOR_CONSENT_REQUIRED'; throw e;
   }
-  const clock = opts.clock || { now: () => Date.now() };
+  const clock = opts.clock;
+  if (!clock || typeof clock.now !== 'function') throw new TypeError('clock.now injection is required');
   const started = clock.now();
   const tasks = Array.isArray(opts.targets) ? opts.targets.slice(0, 64) : [];
   const probeTimeoutMs = Math.max(1000, Math.min(60000, Number(opts.probeTimeoutMs) || 35000));

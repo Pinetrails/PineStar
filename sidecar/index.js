@@ -14788,7 +14788,9 @@ async function handleLiveDoctor(req, res) {
   }
 
   try {
-    const out = await LiveDoctor.runLiveDoctor({ confirmed: true, agentId, targets });
+    const out = await LiveDoctor.runLiveDoctor({
+      confirmed: true, agentId, targets, clock: { now: () => Date.now() }
+    });
     out.report.build = computeVersionSurface();
     return json(200, out);
   } catch (e) { return json(500, { error: 'live doctor failed', detail: redact((e && e.message) || e) }); }
