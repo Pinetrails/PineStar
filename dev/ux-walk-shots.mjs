@@ -114,11 +114,16 @@ async function main() {
       // armed (research_line) at the sorting office's anchor, and the "stamp" never landed.
       await evalJS(cdp, `(() => { const c = document.querySelector('.refit-linetile[data-line="sorting_office"]'); if (c) c.click(); return !!c; })()`);
       await sleep(400);
-      // findSpot returns an ORIGIN; the pointer addresses a blueprint by its CENTRE tile
-      await evalJS(cdp, hoverTile(spot.tx, spot.ty));
+      /* findSpot returns an ORIGIN, but the pointer addresses a blueprint by its CENTRE tile (the
+         ghost is centred under the cursor). Aiming at the origin put the cursor ~4.5 tiles off any
+         legal placement — outside the snap radius, correctly red — so this walk never stamped and
+         reported `bay: null` while claiming to shoot a stamped line. sorting_office is 9×5. */
+      const aim = { tx: spot.tx + 4, ty: spot.ty + 2 };
+      notes.push('aim (centre tile): ' + JSON.stringify(aim));
+      await evalJS(cdp, hoverTile(aim.tx, aim.ty));
       await sleep(400);
       await capture(cdp, OUT, '04-blueprint-ghost');
-      await evalJS(cdp, clickTile(spot.tx, spot.ty));
+      await evalJS(cdp, clickTile(aim.tx, aim.ty));
       await sleep(1400);
       await capture(cdp, OUT, '05-stamped-line');
     }
