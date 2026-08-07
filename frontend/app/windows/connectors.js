@@ -881,9 +881,12 @@
           : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">SOON</button>');   // an oauth entry with no endpoint and no aggregator is honestly not sign-in-able
       else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
       else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
+      const keyDelivery = e.keyHeader
+        ? '<code>' + esc(e.keyHeader) + ': &hellip;</code>'
+        : '<code>Authorization: Bearer &hellip;</code>';
       const keyField = e.authType === 'apikey'
         ? '<div class="cc-key" style="display:none"><input type="password" class="key-input" data-cc-key="' + esc(e.id) + '" placeholder="' + esc(e.name) + ' API key / token" autocomplete="off" spellcheck="false">' +
-            '<div class="mc-hint">Stored locally by the sidecar, sent as <code>Authorization: Bearer …</code>, never displayed again.</div></div>'
+            '<div class="mc-hint">Stored locally by the sidecar, sent as ' + keyDelivery + ', never displayed again.</div></div>'
         : '';
       const home = e.homepage ? ' <a class="cc-home dim" href="' + esc(e.homepage) + '" target="_blank" rel="noopener">site ↗</a>' : '';
       // data-search: the console search box (stationui.js doFilter) matches textContent + this attribute, so a
@@ -1106,7 +1109,7 @@
     const kyKeyEl = body.querySelector('#ky-key');
     const kyDocsEl = body.querySelector('#ky-docs');
     // TOP: platforms whose credential is a saved key/token on a live connector config. Read-only here — each is
-    // managed where it was added (its CATALOG card / MCP CONNECTORS row). hasToken is the backend's honest flag;
+    // managed where it was added (its CATALOG card / MCP CONNECTORS row). hasToken/hasHeaders are the backend's honest flags;
     // we never see (or show) the value. OAuth connectors are keyless by design and stay off this list.
     async function kyPlatformsRefresh() {
       try {
@@ -1117,7 +1120,7 @@
         const cj = cRes.json, gj = gRes.json;
         const byId = {};
         for (const e of ((gj && gj.connectors) || [])) byId[e.id] = e;
-        const keyed = ((cj && cj.connectors) || []).filter(c => c.hasToken && !c.oauth);
+        const keyed = ((cj && cj.connectors) || []).filter(c => (c.hasToken || c.hasHeaders) && !c.oauth);
         const n = body.querySelector('#ky-plat-n'); if (n) n.textContent = String(keyed.length);
         if (!keyed.length) {
           // The sentence named a destination and gave nothing to click — the same dead-end shape as the
@@ -1132,7 +1135,7 @@
           return '<div class="mc-row" style="--ci:' + i + '">' +
             '<div class="mc-top"><b>' + esc((cat && cat.name) || c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
               '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
-            '<div class="mc-url dim"><span class="mc-tag">token saved</span> managed in ' + (cat ? 'CATALOG' : 'MCP CONNECTORS') + '</div>' +
+            '<div class="mc-url dim"><span class="mc-tag">' + (c.hasHeaders && !c.hasToken ? 'header saved' : 'token saved') + '</span> managed in ' + (cat ? 'CATALOG' : 'MCP CONNECTORS') + '</div>' +
           '</div>';
         }).join('');
       } catch (_) { kyPlatEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see connected platforms.</div>'; }

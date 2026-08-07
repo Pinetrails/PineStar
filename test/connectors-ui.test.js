@@ -194,6 +194,9 @@ function fakeStack(tools) {
   A.ok(/ccCache\.find\(/.test(station), 'install reads the authoritative url/name from the catalog, never a re-typed value');
   A.ok(/transport:\s*'http',\s*url:\s*e\.url/.test(station), 'install pre-fills the catalog entry url');
   A.ok(/if \(token\) payload\.token = token/.test(station), 'an API key is sent only when the user provided one');
+  A.ok(/const keyDelivery = e\.keyHeader/.test(station) && /esc\(e\.keyHeader\)/.test(station),
+    'custom-header API keys describe their real wire header instead of falsely claiming Bearer auth');
+  A.ok(/Authorization: Bearer &hellip;/.test(station), 'ordinary token connectors retain the Bearer-auth explanation');
   // truthful telemetry: ADDED state comes from the backend `installed` flag, and live state is re-read after add
   A.ok(/e\.installed/.test(station) && /✓ ADDED/.test(station), 'an already-installed connector shows ADDED (from backend state, not guessed)');
   A.ok(/state === 'up'/.test(station), 'the connect result badge reflects the real manager state, not an assumption');
@@ -231,6 +234,10 @@ function fakeStack(tools) {
       id + ' announces validation and connection feedback');
   }
   A.ok(/\.con-search-empty\s*\{/.test(css), 'zero-result search feedback has station-native styling');
+  A.ok(/\(c\.hasToken \|\| c\.hasHeaders\) && !c\.oauth/.test(station),
+    'KEYS recognizes catalog connectors authenticated through a protected custom header');
+  A.ok(/c\.hasHeaders && !c\.hasToken \? 'header saved' : 'token saved'/.test(station),
+    'KEYS labels custom-header credentials truthfully instead of calling every credential a token');
 
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });
