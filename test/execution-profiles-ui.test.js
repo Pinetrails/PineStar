@@ -5,6 +5,7 @@ const path = require('path');
 const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
 const app = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'css', 'app.css'), 'utf8');
 
 for (const id of ['safe-cell', 'remote-ssh', 'trusted-project', 'this-computer']) A.ok(ui.includes("id: '" + id + "'"), 'dossier offers ' + id);
 A.ok(/id="ag-execution-chips"/.test(ui) && /setExecutionProfile/.test(ui), 'dossier profile control writes the live roster');
@@ -23,5 +24,6 @@ A.ok(/data-ssh-host/.test(ui) && /data-ssh-root/.test(ui) && /SAVE &amp; PROBE/.
 A.ok(/StrictHostKeyChecking|strict known_hosts/.test(ui), 'SSH copy names the strict host-key boundary');
 A.ok(/\/api\/execution\/sync/.test(ui) && /PUSH NOW/.test(ui) && /PULL NOW/.test(ui), 'Settings exposes explicit remote workspace sync controls');
 A.ok(/\/api\/execution\/policy/.test(ui) && /STOP IDLE CELL/.test(ui), 'Settings exposes stop-only idle-cell policy and action');
+A.ok(/\.perm-agent\[data-profile-agent\][^{]*\{display:grid/.test(css) && />\.exec-ssh\{grid-column:1\/-1/.test(css), 'SSH disclosure occupies its own profile-row lane instead of sitting beneath cleanup controls');
 
 A.report('execution-profiles-ui.test');
