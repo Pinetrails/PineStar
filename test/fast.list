@@ -393,6 +393,7 @@ test/slaglog.test.js
 test/xp.test.js
 test/xp-crewsplit.test.js
 test/xpstore.test.js
+test/growthratings.test.js
 test/xp-upgrade.test.js
 test/dossier-reliability.test.js
 test/roster-track.test.js

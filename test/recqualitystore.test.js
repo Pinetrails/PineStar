@@ -189,7 +189,7 @@ const chatSrc = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'c
 A.ok(/rec: recClaimRun\(id, ws\.agentId \|\| 'agent'\)/.test(chatSrc),
   'the attribution stamp is written onto RUN_META at run start, beside every other piece of run provenance');
 const iRate = chatSrc.indexOf('function rateWork');
-A.ok(iRate > 0 && /RecQualityStore\.noteVerdict\(runId, verdict\)/.test(chatSrc.slice(iRate, iRate + 7600)),
+A.ok(iRate > 0 && /RecQualityStore\.noteVerdict\(runId, verdict\)/.test(chatSrc.slice(iRate, chatSrc.indexOf('const WORKRATE_COACH_KEY', iRate))),
   'rateWork hands its verdict to the loop DIRECTLY (it never rides the bus)');
 const iPass = chatSrc.indexOf('async function recommendPass');
 const passBody = chatSrc.slice(iPass, chatSrc.indexOf('function wireCuriosity'));

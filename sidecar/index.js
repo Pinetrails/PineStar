@@ -67,6 +67,7 @@ const spotifyPkce = require('./spotify/pkce.js');                          // pu
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
+const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growthratings.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
@@ -837,6 +838,23 @@ const runsIo = {
   }
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
+
+// Explicit Commander work verdicts are durable facts, separate from the mutable browser save projection.
+// Append+fsync must fail closed: the UI may only say "rated" after this ledger acknowledges the row.
+const GROWTH_RATINGS_FILE = path.join(WORKSPACES, 'growth-ratings.jsonl');
+const growthRatingsIo = {
+  readAll() { try { return readBoundedJsonl(GROWTH_RATINGS_FILE); } catch (_) { return []; } },
+  append(entry) {
+    let fd = null;
+    try {
+      fd = fs.openSync(GROWTH_RATINGS_FILE, 'a');
+      fs.writeSync(fd, JSON.stringify(entry) + '\n');
+      fs.fsyncSync(fd);
+    } finally { if (fd != null) fs.closeSync(fd); }
+    rotateJsonl(GROWTH_RATINGS_FILE);
+  }
+};
+const growthRatings = makeGrowthRatings({ io: growthRatingsIo, clock: { now: () => Date.now() } });
 
 // NS-0 AUTONOMY DECISION LEDGER: a durable, append-only, fsync'd JSONL sibling of runs.jsonl recording every
 // autonomous DECISION (cron fire/skip/defer today; night-shift beats next). runs.jsonl answers "what runs
@@ -7654,6 +7672,7 @@ const ROUTES = [
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
   { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
+  { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
@@ -15711,10 +15730,59 @@ async function handleSaveWrite(req, res) {
   // P2.1: DEGRADED — refuse a save write when this workspace was stamped by a NEWER StarNet (writing a newer save
   // envelope shape through older code risks silent field loss). Reads (GET /api/save) still serve; runs continue.
   if (workspaceDegraded) return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true });
+  // Once a rating is acknowledged, a stale tab without that ledger watermark may not replace the durable
+  // projection and temporarily erase XP. It can reload/replay the ledger, then save normally.
+  const ratingSyncAt = Math.max(0, Number(body.stationStats && body.stationStats.ratingSyncAt) || 0);
+  const growthEpoch = Math.max(1, Math.floor(Number(body.agent && body.agent.createdAt) || 1));
+  const latestRatingAt = growthRatings.latestTs(growthEpoch);
+  if (latestRatingAt > ratingSyncAt) return json(200, { ok: false, stale: true, growthStale: true, latestRatingAt });
   try {
     const result = saveStore.save(agentId, body);
     json(200, result);
   } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
+}
+
+// GET/POST /api/growth/ratings - the authoritative, idempotent ledger for explicit work verdicts.
+// The server derives eligible identities from the immutable run tree; a caller cannot mint XP for an
+// invented run/agent. First verdict wins, including across tabs and restarts.
+async function handleGrowthRatings(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  if (req.method === 'GET') {
+    try {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+      const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
+      const requestedThrough = Math.max(0, Number(u.searchParams.get('through')) || 0);
+      const epoch = Math.max(1, Math.floor(Number(u.searchParams.get('epoch')) || 1));
+      // Include every rating already acknowledged, including a monotonic timestamp that advanced one tick
+      // past the wall clock because two tabs rated within the same millisecond.
+      const snapshotAt = requestedThrough || Math.max(1, Date.now() - 1, growthRatings.latestTs(epoch));
+      const beforeRunId = u.searchParams.get('beforeRunId') || '';
+      const page = growthRatings.list({ limit: limit + 1, since, through: snapshotAt, beforeRunId, epoch });
+      const ratings = page.slice(0, limit);
+      return json(200, { ratings, nextCursor: page.length > limit && ratings.length ? ratings[ratings.length - 1].runId : '', snapshotAt });
+    } catch (e) { return json(500, { error: 'could not read rating history' }); }
+  }
+  let body;
+  try { body = JSON.parse(await readBody(req, 64 << 10)) || {}; }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  const runId = String(body.runId || '').trim();
+  const saved = (() => { try { return saveStore.load('agent') || null; } catch (_) { return null; } })();
+  const epoch = Math.max(1, Math.floor(Number(saved && saved.agent && saved.agent.createdAt) || 1));
+  if (Math.max(1, Math.floor(Number(body.epoch) || 1)) !== epoch) return json(409, { ok: false, error: 'station generation changed; reload before rating' });
+  const allRows = runStore.all();
+  const lead = allRows.find(r => r && r.runId === runId);
+  if (!lead || lead.internal || contextpack.isInternalStream(lead.streamId)) return json(404, { ok: false, error: 'rateable run not found' });
+  if (!new Set(['done', 'max_iters', 'budget', 'refusal']).has(String(lead.reason || ''))) {
+    return json(409, { ok: false, error: 'run did not produce rateable agent work' });
+  }
+  const children = allRows.filter(row => row && row.parentRunId === runId && !row.internal && !contextpack.isInternalStream(row.streamId));
+  const canonical = deriveGrowthRating(lead, children, body.verdict);
+  if (!canonical) return json(400, { ok: false, error: 'invalid rating verdict' });
+  canonical.epoch = epoch;
+  const result = growthRatings.record(canonical);
+  if (!result || result.error) return json(400, { ok: false, error: (result && result.error) || 'rating failed' });
+  return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating });
 }
 // GET /api/runs?agent=<id>&limit=<n>&since=<ms>[&runId=<id>] — the agent's run history (M-save P4), newest-first.
 // Rows carry the run's `artifacts` ledger (work-visibility); an explicit runId narrows to that single run's
@@ -15723,10 +15791,16 @@ async function handleSaveWrite(req, res) {
 // while-away digest covers crew routines too), and a since=<ms> filter keeps the answer to runs that finished
 // after the caller's last-attended stamp.
 function withRunChildren(row, allRows) {
-  const out = Object.assign({}, row);
+  const out = withRunTruth(row);
   out.children = (Array.isArray(allRows) ? allRows : [])
     .filter(r => r && r.parentRunId && r.parentRunId === row.runId)
-    .map(r => Object.assign({}, r));
+    .map(withRunTruth);
+  return out;
+}
+function withRunTruth(row) {
+  const out = Object.assign({}, row);
+  // Rows written before the explicit marker existed still carry canonical internal stream prefixes.
+  out.internal = !!out.internal || contextpack.isInternalStream(out.streamId);
   return out;
 }
 function serveRuns(req, res) {
@@ -15749,7 +15823,7 @@ function serveRuns(req, res) {
     const snapshotAt = requestedThrough || Math.max(1, Date.now() - 1);
     const beforeRunId = u.searchParams.get('beforeRunId') || '';
     const page = runStore.list(agent === '*' ? null : agent, { limit: limit + 1, since, through: snapshotAt, beforeRunId });
-    const rows = page.slice(0, limit);
+    const rows = page.slice(0, limit).map(withRunTruth);
     const nextCursor = page.length > limit && rows.length ? rows[rows.length - 1].runId : '';
     json(200, { runs: rows, nextCursor, snapshotAt });
   } catch (e) {

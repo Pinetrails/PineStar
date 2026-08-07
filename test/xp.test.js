@@ -215,6 +215,8 @@ A.eq(Xp.compute(Xp.fresh()).bonus, 0, 'no feedback bonus while calibrating');
 // ---- confidence-scaled feedback XP: satisfied agents grow faster, never a penalty ----
 const cal = { xp: 0, level: 1, lifetimeXp: 0, confidence: 90, samples: 5, counters: {}, milestones: [], run: { id: null, toolXp: 0 } };
 A.eq(Xp.applyEvent(cal, edit()).awards.xp, 15, 'trusted (90%): feedback 10 base x1.5 = 15');
+A.eq(Xp.applyEvent(cal, sized(4, 'work_great', 'large')).awards.xp, 50,
+  'trusted large-work feedback remains under the FINAL +50 per-verdict cap');
 A.eq(Xp.applyEvent(Object.assign({}, cal, { confidence: 70 }), edit()).awards.xp, 13, 'reliable (70%): feedback 10 x1.3 = 13');
 A.eq(Xp.applyEvent(Object.assign({}, cal, { confidence: 30 }), edit()).awards.xp, 10, 'low confidence: feedback earns base only, never a penalty');
 A.eq(Xp.applyEvent(Object.assign({}, cal, { samples: 1 }), edit()).awards.xp, 10, 'uncalibrated: no bonus regardless of confidence');

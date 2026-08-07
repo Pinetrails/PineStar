@@ -273,7 +273,7 @@ A.ok(iFinish > 0 && /maybeStandaloneRate\(batch\.agentId \|\| 'agent', batch\.ru
 // ONLY when a bottle offer will NOT (so a single 👍 shows at most one of the two; never a clobber/double-ask).
 const iRate = chatSrc.indexOf('function rateWork');
 A.ok(iRate > 0, 'chat.js defines rateWork (the 👍/👌/👎 direct mint hand-off)');
-const rateBody = chatSrc.slice(iRate, iRate + 6000);
+const rateBody = chatSrc.slice(iRate, chatSrc.indexOf('const WORKRATE_COACH_KEY', iRate));
 const iBottleCall = rateBody.indexOf('BottleStore.onVerdict');
 const iResummonCall = rateBody.indexOf('ResummonStore.onVerdict');
 A.ok(iBottleCall > 0 && iResummonCall > 0, 'rateWork hands the verdict to BOTH BottleStore and ResummonStore');
@@ -286,7 +286,7 @@ A.ok(/function claimCrew/.test(chatSrc), 'chat.js defines claimCrew (attributes 
 A.ok(/\/\^sub-\//.test(chatSrc), 'ephemeral team.spawn clones (sub-* ids) are filtered from crew attribution (no persistent identity → never credited)');
 const iSplit = rateBody.indexOf('Xp.crewSplit');
 A.ok(iSplit > 0, 'rateWork splits a crew run\'s mint via Xp.crewSplit');
-A.ok(/foldWorkRating\(\{ agentId: wk\.agentId/.test(rateBody),
-  'each proven worker\'s share rides the SAME direct memory.feedback mint path under ITS OWN agentId');
+A.ok(/entries\.push\(\{ agentId: wk\.agentId/.test(rateBody) && /XpStore\.recordWorkRating/.test(rateBody),
+  'each proven worker share enters the SAME durable canonical rating under ITS OWN agentId');
 
 A.report('beat-coordination.test');

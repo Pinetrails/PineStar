@@ -176,6 +176,7 @@ const catchup = XpStore.init({
       { runId: 'closed-3', agentId: 'scribe', reason: 'error', toolsOk: 0, ts: 400 },
       { runId: 'closed-4', agentId: 'scribe', reason: 'clarifying', toolsOk: 0, ts: 500 },
       { runId: 'closed-internal', agentId: 'scribe', reason: 'done', toolsOk: 9, internal: true, ts: 600 },
+      { runId: 'closed-legacy-internal', agentId: 'scribe', reason: 'done', toolsOk: 9, streamId: 'cron-old-row', ts: 700 },
       { runId: 'closed-1', agentId: 'scribe', reason: 'done', toolsOk: 4, ts: 200 }
     ] };
   },
@@ -218,5 +219,33 @@ Promise.resolve(catchup).then(async summary => {
   A.eq(failed.failed, true, 'a failed history read is reported, never treated as an empty successful sync');
   A.eq(XpStore.stationStats().runSyncAt, watermarkBeforeFailure, 'a failed catch-up never advances the watermark');
   A.eq(catchPersists, persistsBeforeFailure, 'a failed catch-up does not persist a false checkpoint');
+
+  const canonical = { runId: 'rated-1', verdict: 'great', ts: 1100, entries: [
+    { agentId: 'scribe', id: 'work:rated-1', runId: 'rated-1', delta: 4, reason: 'work_great', size: 'large' }
+  ] };
+  const beforeRatedXp = catchSpec.stats.xp;
+  const recorded = await XpStore.recordWorkRating({ runId: 'rated-1', verdict: 'great', entries: canonical.entries }, async () => ({
+    ok: true, json: async () => ({ ok: true, duplicate: false, rating: canonical })
+  }));
+  A.ok(recorded.ok && recorded.applied, 'live XP folds only after the durable rating endpoint acknowledges it');
+  A.eq(catchSpec.stats.xp - beforeRatedXp, 50, 'server-canonical large verdict obeys the final per-feedback cap');
+  A.eq(XpStore.stationStats().ratingSyncAt, 1100, 'live rating advances the dedicated ledger watermark');
+  const replayed = await XpStore.recordWorkRating({ runId: 'rated-1', verdict: 'miss', entries: canonical.entries }, async () => ({
+    ok: true, json: async () => ({ ok: true, duplicate: true, rating: canonical })
+  }));
+  A.eq(replayed.applied, false, 'same-tab canonical duplicate cannot mint XP twice');
+
+  const rollbackHero = { id: 'agent', name: 'OVERSEER', stats: Xp.fresh() };
+  const rollbackSpec = { id: 'scribe', name: 'SCRIBE', stats: Xp.fresh() };
+  const rollbackRoster = new Map([['agent', rollbackHero], ['scribe', rollbackSpec]]);
+  await XpStore.init({
+    getAgent: id => rollbackRoster.get(id || 'agent') || null,
+    agents: () => Array.from(rollbackRoster.values()),
+    station: Xp.fresh(), syncRatingsSince: 100,
+    loadRatings: async since => ({ snapshotAt: 1200, ratings: [canonical] }),
+    persist: () => { catchPersists++; }
+  });
+  A.eq(rollbackSpec.stats.xp, 50, 'boot replay repairs XP lost from a stale or rolled-back browser save');
+  A.eq(XpStore.stationStats().ratingSyncAt, 1200, 'successful rating replay checkpoints the server snapshot');
   A.report('xpstore.test');
 }).catch(err => { console.error(err); process.exitCode = 1; });

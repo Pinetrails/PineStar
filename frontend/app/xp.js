@@ -308,7 +308,9 @@
 
     // XP — monotonic, scaled by the agent's ESTABLISHED satisfaction (trust bonus uses pre-update confidence)
     if (base > 0) {
-      const gained = Math.round(base * trustMult(s));
+      // The event cap is final, not merely a pre-trust base cap: established trust may improve a normal
+      // award, but a single verdict must never jump past the documented +50 ceiling.
+      const gained = Math.min(FEEDBACK_XP_CAP, Math.round(base * trustMult(s)));
       s.xp += gained; s.lifetimeXp += gained; awards.xp = gained;
       const lvl = Math.max(s.level, levelForXp(s.xp));
       if (lvl > s.level) { awards.levelUp = true; awards.levelTo = lvl; }
