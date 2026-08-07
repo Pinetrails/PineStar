@@ -3,7 +3,7 @@
    Toggled from the dock. Dims the live sim and drops the Commander into an in-fiction
    station-editor over the SAME procedural art: pan/zoom camera, phosphor build grid,
    a ghost preview that snaps to tiles and tints green/red via the model's validators,
-   and an in-fiction toolbar — PLACE ROOM · HALLWAY · SURFACE · MOVE · RECLAIM · UNDO.
+   and an in-fiction toolbar — PLACE ROOM · HALLWAY · SURFACE · MOVE · DELETE · UNDO.
 
    It reads + mutates the canonical WorldModel station (the single source of truth) and
    re-bakes via StationBake on every change, then persists through the injected save hook.
@@ -17,20 +17,24 @@ const Build = (() => {
     // place something. Key 0, ESC and right-click all return here from any armed tool.
     // labels are WORDS ONLY — the leading symbol each one used to carry (◎ ▦ ═ …) is now a pixel
     // icon painted on the button's canvas, because those glyphs fall back to a system font
-    { id: 'select', key: '0', label: 'SELECT', hint: 'click any machine or belt to open it — its picker, its routes, where its lane goes', cursor: 'default' },
-    { id: 'room', key: '1', label: 'ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
-    { id: 'hall', key: '2', label: 'HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
+    { id: 'select', key: '0', label: 'SELECT', verb: 'click a machine to open it', hint: 'click any machine or belt to open it — its picker, its routes, where its lane goes', cursor: 'default' },
+    { id: 'room', key: '1', label: 'ROOM', verb: 'click to place · drag to size', hint: 'click the deck to place a room at the last size you drew, or drag out any size', cursor: 'crosshair' },
+    { id: 'hall', key: '2', label: 'HALLWAY', verb: 'click to run · drag to size', hint: 'click to run a corridor at the last length you drew, or drag along an axis for any length', cursor: 'crosshair' },
     // 'paint' stays the INTERNAL id (the drag mode, the model's paintTiles verb, the key map and every
     // saved reference key off it) — only the display name changed. The tool stopped being "paint" the
     // day it grew wall cladding and a material axis: it now sets what a room's surfaces are MADE OF,
     // deck and walls, so it's SURFACE. Same law as the skynet.* keys: rename the label, never the key.
-    { id: 'paint', key: '3', label: 'SURFACE', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
-    { id: 'move', key: '4', label: 'MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
-    { id: 'reclaim', key: '5', label: 'RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
-    { id: 'prop', key: '6', label: 'PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
-    { id: 'belt', key: '7', label: 'BELT', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
-    { id: 'dupe', key: '8', label: 'DUPE', hint: 'click a room or prop to copy it · then every click stamps a copy — mirror your build fast', cursor: 'copy' },
-    { id: 'line', key: '9', label: 'LINES', hint: 'pick a STARTER LINE below, then click the deck — a whole working layout stamps at once, yours to edit', cursor: 'copy' },
+    { id: 'paint', key: '3', label: 'SURFACE', verb: 'click a room to lay this deck', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
+    { id: 'move', key: '4', label: 'MOVE', verb: 'drag a room or machine', hint: 'drag a room to relocate it', cursor: 'move' },
+    /* DELETE, not RECLAIM (2026-08-07). "Reclaim" is salvage-economy fiction from a tier system
+       that was never built — the button's whole job is to remove a thing, and every player already
+       knows the word for that. Same law as SURFACE above: the LABEL changed, the tool id `reclaim`
+       did not (the key map, the drag mode, the model verb and every saved reference key ride it). */
+    { id: 'reclaim', key: '5', label: 'DELETE', verb: 'click anything to delete it', hint: 'click a room, prop, or belt to delete it · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
+    { id: 'prop', key: '6', label: 'PROP', verb: 'click the deck to place it', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
+    { id: 'belt', key: '7', label: 'BELT', verb: 'click one machine, then another', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
+    { id: 'dupe', key: '8', label: 'DUPE', verb: 'click a thing to copy it', hint: 'click a room or prop to copy it · then every click stamps a copy — mirror your build fast', cursor: 'copy' },
+    { id: 'line', key: '9', label: 'LINES', verb: 'pick a line, then click the deck', hint: 'pick a STARTER LINE below, then click the deck — a whole working layout stamps at once, yours to edit', cursor: 'copy' },
   ];
   /* ---------- TOOL GROUPS (2026-08-07 build-mode overhaul) ----------
      Ten equal-weight buttons in a flat 2×5 grid is a debug menu, not a build mode: nothing said
@@ -40,7 +44,7 @@ const Build = (() => {
        STRUCTURE  make the space      ROOM · HALLWAY
        SURFACES   dress it            SURFACE · PROP
        WORKFLOW   make it run         BELT · LINES
-       EDIT       change what's there MOVE · DUPE · RECLAIM
+       EDIT       change what's there MOVE · DUPE · DELETE
 
      SELECT sits ABOVE the groups on its own full-width row — it is not a fifth kind of building,
      it's the cursor you fall back to (ESC / right-click / re-clicking the armed tool all land here).
@@ -66,7 +70,8 @@ const Build = (() => {
     ['hall',   '............,............,............,############,............,..##..##..##,............,............,############,............,............,............'],
     ['paint',  '############,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,#.#..#..#..#,#..#..#..#.#,############'],
     ['move',   '.....##.....,....####....,...##..##...,.....##.....,.#...##...#.,##.######.##,##.######.##,.#...##...#.,.....##.....,...##..##...,....####....,.....##.....'],
-    ['reclaim','##........##,###......###,.###....###.,..###..###..,...######...,....####....,....####....,...######...,..###..###..,.###....###.,###......###,##........##'],
+    // a BIN, not an X — an X reads "cancel/close"; a bin reads "delete", in every UI there is
+    ['reclaim','....####....,############,............,.##########.,.#.##..##.#.,.#.##..##.#.,.#.##..##.#.,.#.##..##.#.,.#.##..##.#.,.#........#.,..########..,............'],
     ['prop',   '..########..,..#......#..,..#.####.#..,..#.####.#..,..#......#..,..########..,.....##.....,.....##.....,############,#..........#,#..........#,############'],
     ['belt',   '............,............,############,............,.##..##..##.,..##..##..##,.##..##..##.,............,############,............,............,............'],
     ['dupe',   '............,..########..,..#......#..,..#......#..,..#..#######,..#..#....#.,..####....#.,.....#....#.,.....#....#.,.....######.,............,............'],
@@ -88,7 +93,7 @@ const Build = (() => {
     }
   }
   // the icon colour for a tool button in its current state — read off the live button so a theme
-  // switch (or the RECLAIM red) is honoured without a second colour table to keep in sync
+  // switch (or the DELETE red) is honoured without a second colour table to keep in sync
   const iconColour = btn => getComputedStyle(btn).color || '#f0e6ce';
   function repaintIcons() {
     if (!root) return;
@@ -247,11 +252,13 @@ const Build = (() => {
           <button class="bb sm refit-zoomlvl" id="refit-zlvl" title="reset zoom to 1 tile = 1 tile">100%</button>
           <button class="bb sm refit-zoomb" id="refit-zin" title="zoom in (or scroll the wheel)">+</button>
         </span>
-        <button class="bb sm" id="refit-help" title="how to build">? HELP</button>
-        <button class="bb sm" id="refit-undo" title="undo (Ctrl+Z)">↶ UNDO</button>
-        <button class="bb sm" id="refit-redo" title="redo (Ctrl+Shift+Z)">↷ REDO</button>
+        <span class="refit-cluster" id="refit-history">
+          <button class="bb sm" id="refit-undo" title="undo (Ctrl+Z)">↶ UNDO</button>
+          <button class="bb sm" id="refit-redo" title="redo (Ctrl+Shift+Z)">↷ REDO</button>
+        </span>
         <button class="bb sm" id="refit-fit" title="frame the station">⊹ FIT</button>
         <button class="bb sm" id="refit-test" title="send test work down your belts — watch it sort to the bays (no bot needed)">▸ TEST</button>
+        <button class="bb sm" id="refit-help" title="how to build">? HELP</button>
         <button class="bb sm refit-primary" id="refit-done" title="finish + save (Esc)">✓ DONE</button>
       </div>
       <div class="refit-dock" role="toolbar" aria-label="Refit mode controls">
@@ -494,7 +501,7 @@ const Build = (() => {
          kind IS a deck (a hue × a material), so it can preview itself the same honest way every
          other surface here does — through StationBake, so the chip can never promise a floor the
          station won't deliver. Now you pick FOUNDRY because you can see the rust tread. */
-      paletteLabel = 'ROOM TYPE';
+      paletteLabel = 'TYPE';
       const grid = document.createElement('div'); grid.className = 'refit-matgrid refit-kindgrid';
       grid.setAttribute('aria-label', 'Room types');
       station.KIND_ORDER.forEach(k => {
@@ -521,7 +528,7 @@ const Build = (() => {
       note.textContent = 'A type is just the deck it starts with — SURFACE (3) re-lays any room later.';
       pal.appendChild(note);
     } else if (tool === 'hall') {
-      paletteLabel = 'HALL WIDTH';
+      paletteLabel = 'WIDTH';
       [1, 2, 3].forEach(w => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -532,7 +539,7 @@ const Build = (() => {
         pal.appendChild(b);
       });
     } else if (tool === 'prop') {
-      paletteLabel = 'PROPS';
+      paletteLabel = 'CATALOG';
       const CATS = (typeof PropSprites !== 'undefined') ? PropSprites.CATS : {};
       if (TIER_ORDER.indexOf(propTier) < 0) propTier = 'functional';
       let cats = catsForTier(propTier);
@@ -714,7 +721,7 @@ const Build = (() => {
          cards, every card the same anatomy: a schematic MINIATURE of what will stamp (drawn in
          the floor's own colour economy), the NAME + a footprint/dock chip, and a one-line
          purpose — so the shelf teaches what each line DOES before the first click. */
-      paletteLabel = 'STARTER LINES';
+      paletteLabel = 'BLUEPRINTS';
       const intro = document.createElement('div');
       intro.className = 'refit-lineintro';
       intro.textContent = LINE_SENTENCE + ' Stamp a working line, then make it yours.';
@@ -753,7 +760,17 @@ const Build = (() => {
       note.textContent = 'BAYS STAMP EMPTY — CLICK EACH ONE TO ASSIGN AN AGENT · ONE UNDO REMOVES THE WHOLE LINE';
       pal.appendChild(note);
     }
-    if (label) label.textContent = paletteLabel || 'OPTIONS';
+    /* NAME THE ARMED TOOL IN THE OPTIONS HEADER. The two zones of this dock — the tool you picked
+       and the options for it — were only related by adjacency: "ROOM TYPE" over a grid of decks
+       does not say WHICH tool it belongs to, and the connection is the whole reason the options
+       changed. The header now reads `ROOM ▸ TYPE`, the armed tool in phosphor. */
+    if (label) {
+      const t = TOOLS.find(x => x.id === tool);
+      label.innerHTML = t
+        ? '<span class="refit-pl-tool">' + esc(t.label) + '</span><span class="refit-pl-sep">▸</span>'
+          + '<span class="refit-pl-what">' + esc(paletteLabel || 'OPTIONS') + '</span>'
+        : esc(paletteLabel || 'OPTIONS');
+    }
     if (section) section.classList.toggle('is-empty', !pal.children.length);
     updateSafetyClearance();
   }
@@ -1093,17 +1110,23 @@ const Build = (() => {
   // every "drop whatever is armed" gesture (ESC, right-click, post-stamp) lands here
   function deselectTool(o) { if (tool !== 'select') selectTool('select', o); }
 
+  /* ---------- THE STATUS STRIP (2026-08-07) ----------
+     This was one run of 12px grey text in which the thing you most need — WHAT THE ARMED TOOL
+     DOES — was indistinguishable from the camera keys you already know. It is now two ranks: the
+     tool's imperative VERB in bright phosphor, and the standing camera/escape keys beneath it,
+     dim. A transient message (passed as `msg`) takes the verb rank alone, because a transient
+     message is always the more urgent of the two. */
+  const CAMERA_KEYS = 'wheel zoom · space-drag pan · ESC deselect';
   function setHint(msg) {
     if (!hintEl) return;
     const t = TOOLS.find(x => x.id === tool);
-    // SURFACE means two different gestures depending on which surface is targeted — say which
-    let base = t ? t.hint : '';
-    if (tool === 'paint') base = paintTarget === 'hull'
-      ? 'click a room to re-clad its outside — mix shells and the station reads as a street'
-      : paintTarget === 'walls'
-        ? 'click a room to clad its walls'
-        : 'click a room to lay the selected deck · drag to paint single tiles in the colour';
-    hintEl.textContent = msg || base + '  ·  wheel = zoom · space-drag = pan';
+    // SURFACE means three different gestures depending on which surface is targeted — say which
+    let verb = (t && t.verb) || (t && t.hint) || '';
+    if (tool === 'paint') verb = paintTarget === 'hull' ? 'click a room to re-clad its outside'
+      : paintTarget === 'walls' ? 'click a room to clad its walls'
+      : 'click a room to lay this deck · drag to paint tiles';
+    hintEl.innerHTML = '<span class="refit-hint-verb">' + esc(msg || verb) + '</span>'
+      + '<span class="refit-hint-keys">' + esc(CAMERA_KEYS) + '</span>';
   }
   function setCursor() {
     if (!cv) return;
@@ -2118,6 +2141,80 @@ const Build = (() => {
      isolation). closed/jammed SEAL the room — its agent's BODY can't path in or out (a staging seal, the
      unmerged-branch metaphor); open = connected to trunk. Sealing does NOT change the agent's run/tools/caps
      — the BAY governs capability. */
+  /* ---------- THE ROOM CARD (2026-08-07) ----------
+     SELECT's contract was "click a machine to open it", and clicking a ROOM — the thing you spend
+     build mode making — did nothing at all. The most-clicked surface in the editor was a dead
+     click, and `station.renameRoom` had shipped in the model with no UI anywhere to reach it.
+     This card is the room's own sheet: what it is, how big, what it's made of, and the three verbs
+     that already existed (rename · re-deck · delete), each routed through the same mutation API the
+     tools use — no new model surface, no state of its own. */
+  function openRoomCard(roomId, ev) {
+    if (!root || root.querySelector('.refit-room-card')) return;
+    const rm = station.roomById(roomId); if (!rm) return;
+    const isSpawn = roomId === station.spawnRoomId();
+    const kd = station.ROOM_KINDS[rm.kind] || {};
+    const matId = station.matOfRoom ? station.matOfRoom(roomId) : (rm.floorMat || kd.mat);
+    const matDef = station.FLOOR_MATERIALS[matId] || {};
+    const hueDef = station.FLOOR_STYLES[rm.floorStyle] || {};
+    let tiles = 0;
+    for (const r of rm.rects) tiles += (r.x2 - r.x1 + 1) * (r.y2 - r.y1 + 1);
+    const b = rm.rects[0], w = b.x2 - b.x1 + 1, h = b.y2 - b.y1 + 1;
+    const shape = rm.rects.length > 1 ? (rm.rects.length + ' SECTIONS') : (w + ' × ' + h);
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-room-card';
+    g.innerHTML = `
+      <div class="refit-guide-card">
+        <h3>▮ ${esc((rm.name || roomId).toUpperCase())}</h3>
+        <div class="refit-sec">THE ROOM</div>
+        <div class="step-fact"><b>${esc(kd.label || rm.kind)}</b>${isSpawn ? ' · the spawn room' : ''}</div>
+        <div class="step-fact">${esc(shape)} · <b>${tiles}</b> tiles of deck</div>
+        <div class="step-fact">deck: <b>${esc(matDef.label || matId || '—')}</b> in <b>${esc(hueDef.label || rm.floorStyle || '—')}</b></div>
+        <div class="refit-sec">NAME</div>
+        <input id="room-name" class="refit-input" type="text" maxlength="40" placeholder="name this room" value="${esc(rm.name || '')}" />
+        <div class="refit-note">saved on Enter — it labels the room on the floor</div>
+        <div class="refit-actions">
+          <button type="button" class="btn-sm" id="room-deck">▧ RE-DECK</button>
+          <button type="button" class="btn-sm" id="room-move">✥ MOVE</button>
+          <!-- NOT an emoji bin here: a colour-emoji glyph is a different font at a different weight
+               beside VT323 (the symbol-glyph law). ⌫ is the same mark the armed state uses. -->
+          <button type="button" class="btn-sm refit-danger" id="room-del">${isSpawn ? '⌂ PROTECTED' : '⌫ DELETE'}</button>
+          <button type="button" class="btn-sm" id="room-close">CLOSE</button>
+        </div>
+      </div>`;
+    root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));
+    const closeC = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    const nameEl = g.querySelector('#room-name');
+    const saveName = () => {
+      const v = (nameEl.value || '').trim();
+      if (v === (rm.name || '')) return;
+      const res = station.renameRoom(roomId, v);
+      if (res && res.ok) { sfx('click'); flashTip(ev, 'renamed', true); } else sfx('bad');
+    };
+    nameEl.onkeydown = e => { if (e.key === 'Enter') { saveName(); closeC(); } };
+    nameEl.onblur = saveName;
+    // the two verbs that are TOOLS: arm the tool on this room rather than duplicating its behaviour
+    g.querySelector('#room-deck').onclick = () => { closeC(); selectTool('paint'); flashTip(ev, 'SURFACE armed — click the room to lay this deck', true); };
+    g.querySelector('#room-move').onclick = () => { closeC(); selectTool('move'); flashTip(ev, 'MOVE armed — drag the room', true); };
+    const del = g.querySelector('#room-del');
+    if (isSpawn) { del.disabled = true; del.title = 'the spawn room can’t be deleted — MOVE it instead'; }
+    // two-step arm, never a native confirm() (no OS dialogs — the station owns its own chrome)
+    else if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+      ArmConfirm.wire(del, { armedLabel: '⌫ REALLY DELETE?', onConfirm: () => { doDeleteRoom(roomId, ev); closeC(); } });
+    } else del.onclick = () => { doDeleteRoom(roomId, ev); closeC(); };
+    g.querySelector('#room-close').onclick = closeC;
+    g.addEventListener('click', e => { if (e.target === g) closeC(); });
+    setTimeout(() => { try { nameEl.focus(); nameEl.select(); } catch (e) {} }, 30);
+  }
+  // the ONE room-removal path the card and the DELETE tool both take (flash, undo nudge, honest refusal)
+  function doDeleteRoom(roomId, ev) {
+    const rm = station.roomById(roomId);
+    const res = station.removeRoom(roomId);
+    if (res && res.ok) { if (rm) pushFlash(rm.rects, true); flashUndo(); flashTip(ev, 'deleted — UNDO to restore', true); sfx('click'); }
+    else if (res && res.error === 'SPAWN_ROOM') { flashTip(ev, 'spawn room — can’t delete (try MOVE)'); sfx('bad'); }
+    else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
+  }
+
   function openDoorPicker(propId, ev) {
     if (!root || root.querySelector('.refit-door-picker')) return;
     const p = station.propById(propId); if (!p || p.t !== 'airlock') return;
@@ -2237,6 +2334,10 @@ const Build = (() => {
       const p = pid && station.propById(pid);
       if (p) { onInspect(p, ev); return; }
       if (station.beltAt(w.tx, w.ty)) { openBeltCard(w.tx, w.ty, ev); return; }
+      // ...and a ROOM opens its own sheet. Clicking the thing you spent build mode MAKING used to
+      // be the one dead click in the editor.
+      const rid = station.roomAt(w.tx, w.ty);
+      if (rid) { openRoomCard(rid, ev); return; }
       return;
     }
     if (tool === 'belt') {
@@ -2358,9 +2459,11 @@ const Build = (() => {
       const ep = exist && station.propById(exist);
       if (ep) { onInspect(ep, ev); return; }
     }
-    const rect = (tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur);
+    // a click stamps the remembered size (what the hover ghost was showing); a drag draws its own
+    const rect = !d.moved ? stampRectFor(d.cur.tx, d.cur.ty)
+      : (tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur);
     const res = (tool === 'hall') ? station.placeHallway({ rect }) : station.addRoom({ kind, rect });
-    if (res && res.ok) pushFlash([rect], false);
+    if (res && res.ok) { pushFlash([rect], false); rememberDrawn(rect); }
     feedback(res, ev, tool === 'hall' ? 'hallway run' : 'room placed');
   }
   function commitMove(d, ev) {
@@ -2388,7 +2491,7 @@ const Build = (() => {
     if (t === 'intake' || t === 'outbox' || t === 'merger' || t === 'splitter') return openFlowCard(p.id);
     // no config surface: answer the click honestly instead of doing nothing
     const sp = propSpec(t);
-    flashTip(ev, ((sp.label || t) + '').toUpperCase() + ' — MOVE (4) relocates · RECLAIM (5) removes', true);
+    flashTip(ev, ((sp.label || t) + '').toUpperCase() + ' — MOVE (4) relocates · DELETE (5) removes', true);
   }
   const openPropEditor = (id, t, ev) => { const p = station && station.propById(id); if (p) onInspect(p, ev); };
   const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, splitter: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger/splitter = flow card only (no config)
@@ -2433,7 +2536,7 @@ const Build = (() => {
         else if ((!isEditableProp(propType) || CONNECT_TYPES[propType]) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
       }
       // PLACEMENT FLOW: one stamp done → the tool DROPS back to SELECT (silent — the place sound
-      // already fired). Drag-paint tools (BELT/RECLAIM/SURFACE) stay armed; stamping is a decision,
+      // already fired). Drag-paint tools (BELT/DELETE/SURFACE) stay armed; stamping is a decision,
       // painting is a stroke.
       deselectTool({ silent: true });
       if (isEditableProp(propType) && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
@@ -2494,7 +2597,7 @@ const Build = (() => {
       feedback(station.setDeck(d.roomId, { style, mat }), ev, 'deck laid');
     }
   }
-  function commitReclaim(d, ev) {   // RECLAIM
+  function commitReclaim(d, ev) {   // DELETE (tool id stays `reclaim`)
     // DRAG across tiles → clear every BELT crossed in ONE undo slot. A drag never removes rooms or
     // props (only single clicks do), so you can wipe a lane without fear of nuking the room under it.
     if (d.moved && d.cells) {
@@ -2509,7 +2612,7 @@ const Build = (() => {
     if (pid) {
       const p = station.propById(pid);
       const res = station.removeProp(pid);
-      if (res && res.ok) { if (p) pushFlash([{ x1: p.x, y1: p.y, x2: p.x + p.w - 1, y2: p.y + p.h - 1 }], true); flashUndo(); flashTip(ev, 'reclaimed — UNDO to restore', true); sfx('click'); }
+      if (res && res.ok) { if (p) pushFlash([{ x1: p.x, y1: p.y, x2: p.x + p.w - 1, y2: p.y + p.h - 1 }], true); flashUndo(); flashTip(ev, 'deleted — UNDO to restore', true); sfx('click'); }
       else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
       return;
     }
@@ -2521,11 +2624,7 @@ const Build = (() => {
     }
     const id = station.roomAt(d.cur.tx, d.cur.ty);
     if (!id) return;
-    const rm = station.roomById(id);
-    const res = station.removeRoom(id);
-    if (res && res.ok) { if (rm) pushFlash(rm.rects, true); flashUndo(); flashTip(ev, 'reclaimed — UNDO to restore', true); sfx('click'); }
-    else if (res && res.error === 'SPAWN_ROOM') { flashTip(ev, 'spawn room — can’t reclaim (try MOVE)'); sfx('bad'); }
-    else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
+    doDeleteRoom(id, ev);   // ONE room-removal path, shared with the room card's DELETE
   }
   /* ---------- DUPE tool: copy a room or prop, then stamp repeats — the symmetry workflow.
      Props copy their type/footprint + carried config (filter routes, airlock seal) but NEVER an
@@ -2674,6 +2773,31 @@ const Build = (() => {
 
   /* ---------- geometry helpers (world tiles) ---------- */
   function norm(a, b) { return { x1: Math.min(a.tx, b.tx), y1: Math.min(a.ty, b.ty), x2: Math.max(a.tx, b.tx), y2: Math.max(a.ty, b.ty) }; }
+
+  /* ---------- CLICK ALSO PLACES (2026-08-07) ----------
+     ROOM and HALLWAY were drag-ONLY, and a plain click was worse than nothing: it committed a 1×1
+     footprint, which the model correctly rejects ("room min 3×3", "hallway too short"). So the most
+     natural thing to try with a tool armed — point at the floor and click — was guaranteed to fail
+     and to teach a size rule by refusing you. Now a click stamps the LAST SIZE YOU DREW (seeded at
+     a sensible default), the same size the hover ghost has been previewing under the cursor the
+     whole time, so what a click does is visible BEFORE you commit to it. Dragging still does
+     exactly what it always did, and every drag re-teaches the click its size.
+     The cursor tile is the footprint's TOP-LEFT — identical to where a drag starts from — so the
+     ghost never jumps when you switch from clicking to dragging. */
+  const DEFAULT_ROOM = { w: 7, h: 5 };   // one screen-legible room; over MIN_ROOM (3) with room to spare
+  let stampW = DEFAULT_ROOM.w, stampH = DEFAULT_ROOM.h;   // last ROOM size drawn
+  let hallLen = 8, hallVert = false;                      // last HALLWAY run drawn (long axis + orientation)
+  const roomStampRect = (tx, ty) => ({ x1: tx, y1: ty, x2: tx + stampW - 1, y2: ty + stampH - 1 });
+  const hallStampRect = (tx, ty) => hallVert
+    ? { x1: tx, y1: ty, x2: tx + hallWidth - 1, y2: ty + hallLen - 1 }
+    : { x1: tx, y1: ty, x2: tx + hallLen - 1, y2: ty + hallWidth - 1 };
+  const stampRectFor = (tx, ty) => (tool === 'hall' ? hallStampRect(tx, ty) : roomStampRect(tx, ty));
+  // remember what a completed drag drew, so the next click repeats it
+  function rememberDrawn(rect) {
+    const w = rect.x2 - rect.x1 + 1, h = rect.y2 - rect.y1 + 1;
+    if (tool === 'hall') { hallVert = h > w; hallLen = Math.max(w, h); }
+    else { stampW = w; stampH = h; }
+  }
   // a corridor lane along the dominant drag axis; its WIDTH grows toward the drag, not always south/east
   function laneRect(a, b) {
     const dx = b.tx - a.tx, dy = b.ty - a.ty, w = hallWidth - 1;
@@ -2701,6 +2825,14 @@ const Build = (() => {
       if (tool === 'dupe' && dupe && hoverTile) return dupeGhost(hoverTile.tx, hoverTile.ty);
       // LINES armed: the whole blueprint ghosts under the cursor — click stamps, red stays red
       if (tool === 'line' && hoverTile) return lineGhost(hoverTile.tx, hoverTile.ty);
+      // ROOM / HALLWAY armed: the footprint a CLICK would stamp, previewed under the cursor and
+      // validated live — so "what happens if I press here" is answered before you press. A drag
+      // from the same tile takes over the moment you move (drag.mode 'draw' below).
+      if ((tool === 'room' || tool === 'hall') && hoverTile && !station.propAt(hoverTile.tx, hoverTile.ty)) {
+        const rect = stampRectFor(hoverTile.tx, hoverTile.ty);
+        const v = tool === 'hall' ? station.canPlaceHallway([rect]) : station.canPlaceRoom([rect], kind);
+        return { rects: [rect], v, kind: tool, stamp: true };
+      }
       return null;
     }
     if (drag.mode === 'draw') {
@@ -3463,8 +3595,14 @@ const Build = (() => {
     const g = ghostInfo();
     if (!g) return;
     const ok = g.v && g.v.ok;
-    const fill = ok ? 'rgba(80,255,140,0.16)' : 'rgba(255,90,80,0.18)';
-    const line = ok ? 'rgba(120,255,170,0.95)' : 'rgba(255,120,110,0.95)';
+    // a HOVER PREVIEW is quieter than a live gesture — it is showing you an option, not a commitment,
+    // and at full strength it read as "you are already dragging" every time the pointer crossed the floor
+    // ...and an INVALID preview is quieter still: with ROOM armed, every pass of the pointer over
+    // your own station would otherwise wash the whole floor red before you had asked for anything.
+    // The outline and the badge carry the refusal; the fill does not need to shout it.
+    const k = g.stamp ? (ok ? 0.6 : 0.3) : 1;
+    const fill = ok ? 'rgba(80,255,140,' + (0.16 * k).toFixed(3) + ')' : 'rgba(255,90,80,' + (0.18 * k).toFixed(3) + ')';
+    const line = ok ? 'rgba(120,255,170,' + (0.95 * k).toFixed(2) + ')' : 'rgba(255,120,110,' + (0.95 * k).toFixed(2) + ')';
     ctx.lineWidth = 1.5 / zoom;
     for (const r of g.rects) {
       const X = r.x1 * t, Y = r.y1 * t, Wd = (r.x2 - r.x1 + 1) * t, Hd = (r.y2 - r.y1 + 1) * t;
@@ -3496,6 +3634,8 @@ const Build = (() => {
     // a sized footprint also gets its area — "how much floor is this?" is the other question a drag asks
     if (!g.belt && !g.move && g.kind !== 'line' && w * h > 1) lines[0] = dims + '   ' + (w * h) + ' TILES';
     if (!ok) lines.push(((g.v && g.v.msg) || 'blocked').toUpperCase());
+    // the hover preview teaches BOTH gestures: this size on a click, any size on a drag
+    else if (g.stamp) lines.push('CLICK TO PLACE · DRAG TO SIZE');
     ghostBadge(t, lines, ok, r0);
     // NOTE: deliberately does NOT hideTip() — flashTip's transient confirmations ("room placed")
     // fire while a ghost is still on screen, and hiding here every frame would eat them instantly.

@@ -3269,12 +3269,16 @@ body.crew-rail-off #screen-game.active {
 .refit-title { color: var(--ink); background: var(--ph); padding: 3px 14px; letter-spacing: 3px; font-size: 18px; text-shadow: none; box-shadow: 0 0 14px var(--ph-glow2); }
 .refit-sub { color: var(--ph-dim); letter-spacing: 2px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .refit-spacer { flex: 1; }
-/* ZOOM — one welded cluster (– % +) so it reads as a single instrument, not three loose keys.
-   Zoom used to be wheel-only, discoverable only from a hint line at the bottom of the dock. */
-.refit-zoom { display: flex; align-items: stretch; gap: 0; flex: 0 0 auto; }
-.refit-top .refit-zoom .bb { border-radius: 0; margin: 0; }
-.refit-top .refit-zoom .bb:first-child { border-radius: 4px 0 0 4px; }
-.refit-top .refit-zoom .bb:last-child { border-radius: 0 4px 4px 0; }
+/* WELDED CLUSTERS — controls that are ONE instrument look like one: zoom (– % +) and the history
+   pair (UNDO/REDO). Six identical loose keys made the deck read as a menu bar; four groups read as
+   an instrument panel. Zoom used to be wheel-only, discoverable only from a hint line. */
+.refit-zoom, .refit-cluster { display: flex; align-items: stretch; gap: 0; flex: 0 0 auto; }
+.refit-top .refit-zoom .bb, .refit-top .refit-cluster .bb { border-radius: 0; margin: 0; }
+.refit-top .refit-zoom .bb:first-child, .refit-top .refit-cluster .bb:first-child { border-radius: 4px 0 0 4px; }
+.refit-top .refit-zoom .bb:last-child, .refit-top .refit-cluster .bb:last-child { border-radius: 0 4px 4px 0; }
+.refit-top .refit-cluster .bb + .bb { border-left-color: rgba(120,200,255,.18); }
+/* DONE is the way out and the save — it gets weight the other five don't */
+.refit-top .refit-primary { padding-inline: 16px; letter-spacing: 2px; }
 .refit-zoomb { min-width: 26px; padding-inline: 0; justify-content: center; font-size: 17px; line-height: 1; }
 .refit-zoomlvl { min-width: 54px; justify-content: center; font-size: 12px; letter-spacing: 1px; border-inline: 0 !important; }
 
@@ -3289,7 +3293,13 @@ body.crew-rail-off #screen-game.active {
 .refit-dock {
   position: absolute; left: 14px; top: 54px; z-index: 2;
   display: flex; flex-direction: column; align-items: stretch;
-  width: min(306px, calc(100% - 28px)); max-height: calc(100% - 68px);
+  /* 376px, not 306 (2026-08-07 round 2). The BUILD KIT bands cost the OPTIONS palette ~90px of
+     height and pushed SURFACE's COLOUR row below the fold. Width buys that back several times
+     over, because both dense palettes are gated on exactly this number: at 356px of content the
+     material grid goes 4 → 5 columns (13 recipes in 3 rows, not 4) and the prop gallery 3 → 4
+     (a whole category visible without scrolling). 376 also still reads as a SIDEBAR to
+     viewInsets (< 60% of the glass), so FIT keeps framing the station in the visible half. */
+  width: min(380px, calc(100% - 28px)); max-height: calc(100% - 68px);
   padding: 0; border-radius: 9px; overflow: hidden;
   background: var(--panel);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
@@ -3361,8 +3371,8 @@ body.crew-rail-off #screen-game.active {
   font-size: 13px; letter-spacing: 3px; text-shadow: none;
   box-shadow: 0 0 12px var(--ph-glow2);
 }
-#refit-tools { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.refit-toolgroup { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#refit-tools { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.refit-toolgroup { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .refit-group-label {
   display: flex; align-items: baseline; gap: 6px; min-width: 0;
   font-size: 9.5px; letter-spacing: 2px; color: var(--ph); opacity: .6;
@@ -3375,7 +3385,9 @@ body.crew-rail-off #screen-game.active {
 /* The bands cost vertical room the OPTIONS palette used to have. Give it back here: the tool rows
    are the one thing in this dock whose height is pure padding, and they still clear the 26px
    touch-row the mobile sheet is measured against. */
-.refit-dock .refit-tool { min-height: 26px; padding: 3px 7px; }
+.refit-dock .refit-tool { min-height: 25px; padding: 2px 7px; }
+.refit-dock-section { padding: 8px 10px 9px; }
+.refit-dock-head { padding: 6px 10px 5px; }
 /* SELECT owns a full-width row: it is the cursor you fall back to, not a fifth kind of building */
 .refit-tools-sel { grid-template-columns: 1fr; }
 /* RECLAIM is destructive — its own full-width row, so it is never a mis-click neighbour */
@@ -3383,6 +3395,49 @@ body.crew-rail-off #screen-game.active {
 /* NOT image-rendering:pixelated — the canvas is an 8× supersample downscaled to this box, and a
    nearest-neighbour downscale is what makes a bitmap icon look lopsided (see build.js toolBtn). */
 .refit-toolicon { flex: 0 0 auto; width: 16px; height: 16px; pointer-events: none; opacity: .8; }
+
+/* ---------- THE TOOLS AS HARDWARE (2026-08-07 round 2) ----------
+   Ten flat outlines on a flat field read as a list. These read as KEYS on a panel: a matte
+   top-lit face (a 1px highlight over a dark base — panel shading, never a gloss ramp), a seated
+   shadow under them, and a lit rim + a phosphor edge-bar when armed. Every value is a theme var
+   or a tint of one, so a theme switch carries it. */
+.refit-dock .refit-tool {
+  position: relative;
+  background: linear-gradient(180deg, rgba(120,200,255,.055), rgba(0,0,0,.30));
+  box-shadow: inset 0 1px 0 rgba(120,200,255,.11), 0 1px 0 rgba(0,0,0,.55);
+  border-radius: 4px;
+}
+.refit-dock .refit-tool:hover {
+  background: linear-gradient(180deg, rgba(120,200,255,.13), rgba(0,0,0,.22));
+  border-color: var(--ph-dim);
+}
+/* ARMED: the key is lit and carries a phosphor edge-bar on its leading edge — visible from the
+   corner of your eye, which a 2px inset rim alone was not. */
+.refit-tool.active::before {
+  content: ''; position: absolute; left: 0; top: 3px; bottom: 3px; width: 3px;
+  border-radius: 3px 0 0 3px; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow);
+}
+.refit-dock .refit-tool.active {
+  background: linear-gradient(180deg, rgba(120,200,255,.17), rgba(0,0,0,.18));
+  padding-left: 12px;
+}
+.refit-tool-reclaim.active::before { background: var(--bad); box-shadow: 0 0 8px rgba(255,92,77,.5); }
+
+/* ---------- OPTIONS header: `ROOM ▸ TYPE` ---------- */
+#refit-palette-label { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.refit-pl-tool { color: var(--ph-bright); text-shadow: 0 0 8px var(--ph-glow2); }
+.refit-pl-sep { opacity: .4; font-size: 9px; }
+.refit-pl-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- the status strip: the VERB, then the standing keys ---------- */
+.refit-hint-verb {
+  display: block; color: var(--ph-bright); font-size: 13.5px; letter-spacing: 1.2px;
+  line-height: 1.25; text-shadow: 0 0 8px var(--ph-glow2);
+}
+.refit-hint-keys {
+  display: block; margin-top: 3px; color: var(--ph-dim); opacity: .72;
+  font-size: 11px; letter-spacing: 1px; line-height: 1.2;
+}
 .refit-tool.active .refit-toolicon { opacity: 1; }
 .refit-toolname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 /* the one destructive verb reads red the whole time, not only once it is armed */
