@@ -3377,12 +3377,17 @@ const Build = (() => {
     let wMax = 0;
     for (const s of lines) wMax = Math.max(wMax, ctx.measureText(s).width);
     const bw = wMax + pad * 2, bh = lh * lines.length + pad * 1.6;
-    const cx = (rect.x1 + rect.x2 + 1) / 2 * t;
     // above the ghost by default; flip below when that would land off the top of the glass
     const above = rect.y1 * t - bh - fs * 0.35;
     const topWorld = (-panY) / zoom;
     const by = above > topWorld + fs ? above : (rect.y2 + 1) * t + fs * 0.35;
-    const bx = cx - bw / 2;
+    /* CLAMP TO THE GLASS. Drag a footprint against the right edge of the screen and a badge centred
+       on the ghost runs straight off it — you lose the half of the readout that carries the reason.
+       The badge slides along the ghost instead of vanishing with it. */
+    const leftWorld = (-panX) / zoom, rightWorld = (cv.width - panX) / zoom, m = 4 / zoom;
+    let bx = (rect.x1 + rect.x2 + 1) / 2 * t - bw / 2;
+    bx = clamp(bx, leftWorld + m, Math.max(leftWorld + m, rightWorld - bw - m));
+    const cx = bx + bw / 2;
     const box = { x: bx, y: by, w: bw, h: bh };
     voiceSay('activeFlow', box, box, () => {
       ctx.fillStyle = 'rgba(4,6,8,0.86)';
@@ -3408,7 +3413,8 @@ const Build = (() => {
   function ghostReticle(t, rect, line) {
     const X = rect.x1 * t, Y = rect.y1 * t, Wd = (rect.x2 - rect.x1 + 1) * t, Hd = (rect.y2 - rect.y1 + 1) * t;
     const arm = Math.min(Wd, Hd) * 0.3, cap = Math.min(arm, t * 2.2);
-    ctx.strokeStyle = line; ctx.lineWidth = 2.2 / zoom;
+    // 3 SCREEN px, not 3 world px — a reticle that thins out as you zoom out stops reading as one
+    ctx.strokeStyle = line; ctx.lineWidth = 3 / zoom;
     ctx.beginPath();
     ctx.moveTo(X, Y + cap); ctx.lineTo(X, Y); ctx.lineTo(X + cap, Y);
     ctx.moveTo(X + Wd - cap, Y); ctx.lineTo(X + Wd, Y); ctx.lineTo(X + Wd, Y + cap);
