@@ -147,3 +147,5 @@ website-deploy/
 # ABILITIES lane visual-proof screenshots (headless capture output; never committed)
 dev/.shots-abilities/
 .shots-before/
+# CREW rail roster-window proof shots (same pattern)
+dev/.shots-crew-fit/
