@@ -38,11 +38,12 @@ const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
   A.ok(/mod lifecycle_preferences;/.test(main), 'desktop shell owns one focused lifecycle-preference module');
   A.ok(/starnet_set_start_minimized[\s\S]*starnet_set_close_to_tray/.test(main), 'both native preference commands are registered');
   A.ok(/if !start_minimized\s*\{\s*let _ = window\.show\(\)/.test(main), 'stored start-minimized choice gates initial window reveal');
-  A.ok(/lifecycle_preferences_snapshot\(st\)\.close_to_tray[\s\S]{0,300}?return;/.test(main), 'stored close-to-tray choice keeps the supervised process alive before armed-work probing');
+  A.ok(/close_to_tray\s*=\s*lifecycle_preferences_snapshot\(st\)\.close_to_tray[\s\S]{0,500}?if close_to_tray[\s\S]{0,300}?return;/.test(main), 'stored close-to-tray choice keeps the supervised process alive before armed-work probing');
   A.ok(/"lifecycle_quit"[\s\S]{0,400}?drain_and_kill_sidecar/.test(main), 'explicit tray Quit still drains and stops the sidecar');
   A.ok(/save_verified[\s\S]*read_exact\(path\)/.test(prefs), 'native preferences require exact read-back before success');
   A.ok(/id="set-start-minimized"/.test(settings) && /Lifecycle\.setStartMinimized/.test(settings), 'Settings renders and wires START MINIMIZED TO TRAY');
   A.ok(/id="set-close-to-tray"/.test(settings) && /Lifecycle\.setCloseToTray/.test(settings), 'Settings renders and wires CLOSE WINDOW TO TRAY');
+  A.ok(/close_exit_pending\.store\(true[\s\S]*RunEvent::ExitRequested\s*\{\s*api,\s*code[\s\S]*close_exit_pending\.swap\(false[\s\S]*api\.prevent_exit\(\)/.test(main), 'only a paired main-window close prevents event-loop exit while the close worker decides');
 
   A.report('desktop-lifecycle-preferences');
 })().catch(error => { console.error(error); process.exit(1); });

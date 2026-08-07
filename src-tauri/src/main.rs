@@ -59,6 +59,7 @@ struct AppState {
     keep_awake: Mutex<KeepAwakeState>,
     lifecycle_preferences_path: PathBuf,
     lifecycle_preferences: Mutex<LifecyclePreferences>,
+    close_exit_pending: AtomicBool,
     // Flipped true the instant the app starts exiting, so the guardian thread stops
     // respawning the sidecar during an intentional quit.
     shutting_down: AtomicBool,
@@ -2761,6 +2762,7 @@ fn main() {
                 keep_awake: Mutex::new(KeepAwakeState::new()),
                 lifecycle_preferences_path,
                 lifecycle_preferences: Mutex::new(lifecycle_preferences),
+                close_exit_pending: AtomicBool::new(false),
                 shutting_down: AtomicBool::new(false),
             };
             // Before spawning OUR sidecar: terminate any orphan sidecars left behind by a
@@ -2890,6 +2892,9 @@ fn main() {
                 let app_handle = app.handle().clone();
                 main_window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
+                        if let Some(state) = app_handle.try_state::<AppState>() {
+                            state.close_exit_pending.store(true, Ordering::SeqCst);
+                        }
                         api.prevent_close();
                         if let Some(win) = app_handle.get_webview_window("main") {
                             let _ = win.hide();
@@ -2897,11 +2902,17 @@ fn main() {
                         let app2 = app_handle.clone();
                         std::thread::spawn(move || {
                             let Some(state) = app2.try_state::<AppState>() else {
+                                log_startup(&None, "close-request: managed app state unavailable; exiting");
                                 app2.exit(0);
                                 return;
                             };
                             let st = state.inner();
-                            if lifecycle_preferences_snapshot(st).close_to_tray {
+                            let close_to_tray = lifecycle_preferences_snapshot(st).close_to_tray;
+                            log_startup(
+                                &st.startup_log,
+                                format!("close-request: close_to_tray={close_to_tray}"),
+                            );
+                            if close_to_tray {
                                 // Explicit authority to keep the supervised process alive even when no scheduled
                                 // work is armed. Tray Quit remains the only full-stop action in this mode.
                                 return;
@@ -2939,7 +2950,20 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to build the StarNet desktop shell")
         .run(|app, event| {
-            if let RunEvent::ExitRequested { .. } = event {
+            if let RunEvent::ExitRequested { api, code, .. } = event {
+                // Window close and event-loop exit are separate decisions in Tauri. Hold only the exit paired
+                // with our main window's CloseRequested event while its worker decides from the explicit
+                // preference / armed-work proof. A second-instance process has no pending close, while the
+                // worker's full-quit branch (and Tray Quit / updater) calls app.exit(0) with Some(0).
+                let close_exit_pending = code.is_none()
+                    && app
+                        .try_state::<AppState>()
+                        .map(|state| state.close_exit_pending.swap(false, Ordering::SeqCst))
+                        .unwrap_or(false);
+                if close_exit_pending {
+                    api.prevent_exit();
+                    return;
+                }
                 if let Some(state) = app.try_state::<AppState>() {
                     // Stop the guardian from respawning before we kill the child.
                     state.shutting_down.store(true, Ordering::SeqCst);
