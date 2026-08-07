@@ -109,8 +109,12 @@ async function main() {
     const spot = await evalJS(cdp, findSpot('sorting_office'));
     notes.push('sorting_office spot: ' + JSON.stringify(spot));
     if (spot && spot.tx !== undefined) {
-      await evalJS(cdp, `(() => { const c = [...document.querySelectorAll('.refit-linecard,[data-bp]')].find(e => /SORTING/i.test(e.textContent||'')); if (c) c.click(); return !!c; })()`);
+      // the shelf cards are `.refit-linetile[data-line]` — the old `.refit-linecard,[data-bp]`
+      // selector matched NOTHING, so this walk silently ghosted whatever blueprint was already
+      // armed (research_line) at the sorting office's anchor, and the "stamp" never landed.
+      await evalJS(cdp, `(() => { const c = document.querySelector('.refit-linetile[data-line="sorting_office"]'); if (c) c.click(); return !!c; })()`);
       await sleep(400);
+      // findSpot returns an ORIGIN; the pointer addresses a blueprint by its CENTRE tile
       await evalJS(cdp, hoverTile(spot.tx, spot.ty));
       await sleep(400);
       await capture(cdp, OUT, '04-blueprint-ghost');
