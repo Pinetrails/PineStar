@@ -1,5 +1,28 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-07 — PER-BLOCK CODE COPY (`agent/response-section-copy`)
+
+IMPLEMENTED; MERGE GATE NEEDS A QUIET-RUN RECEIPT. Fenced code in COMMS previously rendered as a bare
+`.md-pre` span, while the only copy action belonged to the whole message. Each fenced block now owns a
+top-right, keyboard-labelled copy control that targets only its exact code text. Clipboard success renders
+`Copied` / ✓; failure renders `Copy failed` / ! and directs the user to manual selection. The packaged website
+mirror is synchronized, and the existing whole-message copy control now uses the same truthful feedback path.
+
+Live seeded proof: a real NOVA response containing prose plus `console.log("hello");` exposed one independent
+`Copy code block` button; clicking it changed the control to `Copied` and the browser clipboard read back exactly
+`console.log("hello");`, excluding the surrounding prose. Focused copy/linkify/control-floor/tooltip/website-sync
+coverage is green (523 assertions across five suites), including a new 20-assertion multi-block/XSS/accessibility
+regression. `node --check` is green for every touched JavaScript file. Frontend-only change, so `test:http` is not
+required. Commit: `74d2ad2a`.
+
+Canonical `test:fast` on the committed feature branch passed through step 223, then correctly stopped at the
+candidate-bound claims audit because HEAD no longer equals the sealed trunk candidate; that audit is 64/64 green
+on untouched trunk. A detached sealed-base worktree with the fix applied uncommitted was then used for the honest
+gate path, but concurrent repository gates prevented a terminal receipt: one launch lost its Windows runner parent
+mid-suite, and a directly tracked retry hit the 600-second repository ceiling without a verdict. Re-run
+`npm run test:fast` on a quiet integration candidate before merge; do not rewrite shared candidate evidence for
+this frontend lane.
+
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that
