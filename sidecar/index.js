@@ -3757,7 +3757,11 @@ function placeCronWorkitem(agentId, prompt, runId) {
     const workitemId = crypto.randomUUID();
     if (runId) cronItems.set(runId, { agentId, workitemId });
     const depth = bumpQueue(agentId, +1);
-    chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'cron', preview, queueDepth: depth, ts: Date.now() });
+    // A ROUTINE IS ONE OF ITS LINE'S OWN TRIGGERS (work belongs to a line, 2026-08-07): a routine firing at a
+    // docked agent is that line running on schedule, so its crate carries the dock's lineId. Derived here from
+    // the armed plan (server-side, never from a request body — a caller must not be able to NAME a line and so
+    // unlock downstream spend). No dock / no armed plan -> absent -> terminal, exactly like a direct order.
+    chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'cron', lineId: router.lineOfAgent(agentId) || undefined, preview, queueDepth: depth, ts: Date.now() });
     chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
   } catch (_) {}
 }
@@ -3918,6 +3922,9 @@ const cronDriver = makeCronDriver({
      no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
   advanceChain: (o) => chainRunner.advance({
     agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+    // the routine fired AT this dock, so the work belongs to that dock's line and may run its stages.
+    // A routine whose agent crews no dock resolves null here and stays terminal (nothing downstream spends).
+    lineId: router.lineOfAgent(o.agentId),
     runAgent: async (h) => {
       if (o.onHop) { try { o.onHop(); } catch (_) {} }
       const hs = { buf: '', errMsg: null, usd: 0 };
@@ -6544,6 +6551,7 @@ function startTelegram(token, key, model, agentCfg) {
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
     stageBriefFor: (agentId) => router.stageBrief(agentId),                     // the dock's standing brief rides the run's context (prompt text only)
@@ -6607,7 +6615,10 @@ function startTelegram(token, key, model, agentCfg) {
             activeItem.set(chatKey, { agentId, workitemId });
             const depth = bumpQueue(agentId, +1);
             const preview = String(info.text || '').replace(/\s+/g, ' ').slice(0, 40);
-            chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
+            // `lineId` (additive — obj() stanzas set no additionalProperties:false) stamps the crate with the
+            // LINE this work entered on, or is absent for a direct order. The floor reads it to decide whether
+            // the pipeline may animate the handoff (work belongs to a line, 2026-08-07).
+            chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', lineId: info.lineId || undefined, preview, queueDepth: depth, ts: Date.now() });
             chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
           } else {
             const prior = activeItem.get(chatKey);
@@ -6780,6 +6791,7 @@ function startTelegramBot(botId) {
     // that agent's bay run here too; without this seam the same floor did less work depending on which bot
     // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     resolveRunConfig: channelRunConfigFor,                                    // every downstream dock owns its roster provider/model/credential
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
@@ -6892,7 +6904,8 @@ function startDiscord(token, key, model, agentCfg) {
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
-      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+      chain: chainRunner,
+      lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
@@ -7000,6 +7013,7 @@ function getDevHub() {
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
@@ -7071,7 +7085,7 @@ async function handleDevInbound(req, res) {
         if (prior) chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() });
         activeItem.set(chatId, { agentId, workitemId });
         const depth = bumpQueue(agentId, +1);
-        chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'dev', preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
+        chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'dev', lineId: devResolved.lineId || undefined, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
         chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
       }
     }
@@ -7162,7 +7176,8 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       persona: channelPersona(desc.label), classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: desc.maxMessageLength,
       resolveAgent: (ctx) => router.resolveTarget(ctx),
-      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+      chain: chainRunner,
+      lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
@@ -7963,13 +7978,20 @@ function handleRouting(req, res) {
    browser asks the SAME router the same question and drives the same hops. `pick` advances the round-robin
    exactly like every other caller, so a SPLIT downstream of a dock spreads across surfaces instead of each
    one always taking lane 0. Read-only apart from that counter; { next: null } for a terminal stage, an
-   unknown agent, or no routing floor at all. ---- */
+   unknown agent, or no routing floor at all.
+
+   WORK BELONGS TO A LINE (2026-08-07). `lineId` names the line the browser's work ENTERED on. It is not a
+   grant the caller invents: the answer is still decided by the compiled plan (Pipeline.chainNext refuses
+   any lineId that isn't this dock's own line), so the worst a wrong id can do is get { next: null }. No
+   lineId — the ordinary case for a COMMS directive, which is a direct order — is terminal by construction,
+   which is exactly why the browser stops advancing lines it was never triggered to run. ---- */
 function handleRoutingChain(req, res) {
   const u = new URL(req.url, 'http://x');
   const agentId = String(u.searchParams.get('agentId') || '').trim();
   const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
+  const lineId = String(u.searchParams.get('lineId') || '').trim() || undefined;
   let next = null;
-  try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  try { next = agentId ? router.chainNext(agentId, { tag: tag, lineId: lineId }) : null; } catch (_) { next = null; }
   // `brief` (additive, step editor 2026-08-05): the NEXT dock's standing job brief, so the browser's COMMS
   // work line composes the SAME handoff turn the sidecar executor does (chat.js runWorkLine — must not drift).
   let brief = null;
@@ -8017,6 +8039,7 @@ function getSampleHub() {
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
@@ -8080,7 +8103,7 @@ async function handleRoutingSample(req, res) {
           workitemId = crypto.randomUUID();
           sampleInFlight.workitemId = workitemId;
           const depth = bumpQueue(agentId, +1);
-          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'sample', sample: true, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
+          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'sample', sample: true, lineId: sampleResolved.lineId || undefined, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
           chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
         }
       }
@@ -9641,6 +9664,10 @@ async function handleCronRun(req, res) {
       try {
         const line = await chainRunner.advance({
           agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
+          // SAME ORIGIN AS THE SCHEDULED FIRE (work belongs to a line, 2026-08-07): Run Now is this routine's
+          // own trigger pressed by hand, so it carries the dock's lineId and the line runs. The two paths must
+          // not drift — a routine that runs four stages on schedule must run four from the button.
+          lineId: router.lineOfAgent(job.agentId),
           runAgent: async (h) => {
             const hs = { buf: '', errMsg: null, usd: 0 };
             const hopSink = (name, payload) => {

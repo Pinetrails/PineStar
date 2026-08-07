@@ -67,6 +67,26 @@ function makeRouter(o) {
     return Pipeline.resolveTarget(p, ctx || {}, pick);
   }
 
+  /* WHICH LINE DOES THIS DOCK BELONG TO? Read straight off the compiled plan (never re-derived) — the
+     single fact the gate, the cron fire and the floor's crate honesty all quote. null = this agent crews
+     no dock on the armed plan, or the plan predates line identity (both TERMINAL — see Pipeline.chainNext).
+     Used by triggers that name their dock OUTRIGHT: a routine fires AT a dock, so it is that line's own
+     trigger whether or not a door also feeds that dock. */
+  function lineOfAgent(agentId) {
+    const p = activePlan();
+    return p ? Pipeline.lineOf(p, agentId) : null;
+  }
+
+  /* WORK ORIGIN for work ARRIVING FROM OUTSIDE (a channel message, a sample job): the line it belongs to,
+     or null when nothing triggered a workflow. Adds the door test to lineOfAgent — only a dock the plan's
+     INBOX sources actually reach counts as "it rode in through this line's front door" (see the full
+     reasoning on Pipeline.lineOriginOf). Asked of the agent that RUNS, never of how the message was
+     addressed, because the per-agent channel bots hard-lock stage one and consult no floor routing. */
+  function lineOriginFor(agentId) {
+    const p = activePlan();
+    return p ? Pipeline.lineOriginOf(p, agentId) : null;
+  }
+
   /* Phase B5 — per-bay capability isolation. The resolveTools-shaped station for a BAY-bound agent, built from
      the objects the floor placed in that bay's room (carried on the posted plan). null for any agent WITHOUT a
      bay (the caller then uses its own default office), so only bay-routed work is isolated; everything else is
@@ -127,7 +147,7 @@ function makeRouter(o) {
     return !!(rec && rec.outbox && !rec.deadEnd);
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, chainNext, chainShipsToOutbox, stationFor, stageBrief };
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, lineOfAgent, lineOriginFor, chainNext, chainShipsToOutbox, stationFor, stageBrief };
 }
 
 module.exports = { makeRouter };

@@ -19,7 +19,12 @@
    • NEVER RUN AN AGENT TWICE IN ONE CHAIN. CHAIN_CYCLE refuses looping floors at compile time, but the plan can
      be re-posted MID-CHAIN; the visited set is what makes an infinite paid loop impossible rather than unlikely.
    • EVERY HOP IS A CRATE. workitem.placed/delivered per hop, so the floor shows the handoff it is really doing
-     (additive use of the frozen contract — kind:'chain'). */
+     (additive use of the frozen contract — kind:'chain').
+   • WORK BELONGS TO A LINE (2026-08-07, Andrew's ruling). The seed carries the `lineId` the work ENTERED on
+     (its line's own trigger: the INBOX it arrived at, the routine that fired, the sample dispatched for it).
+     It rides into every nextAgent() call, where Pipeline.chainNext refuses to advance a dock whose line the
+     run does not belong to. A seed with no lineId — a direct order — advances nothing and spends nothing.
+     This module holds no policy of its own here: it TRANSPORTS the origin, the compiled plan decides. */
 'use strict';
 const Pipeline = require('../../frontend/app/pipeline.js');
 
@@ -64,6 +69,8 @@ function makeChainRunner(o) {
   async function advance(seed) {
     const s = seed || {};
     const startAgent = s.agentId, originalText = s.originalText != null ? s.originalText : s.text;
+    // the line this work ENTERED on (null for a direct order — the gate then keeps every dock terminal)
+    const lineId = (s.lineId != null && String(s.lineId)) || null;
     const runAgent = typeof s.runAgent === 'function' ? s.runAgent : defaultRunAgent;
     const out = { text: s.text, agentId: startAgent, hops: [], usd: 0, stopped: null };
     if (!nextAgent || !runAgent || !startAgent) return out;
@@ -75,7 +82,7 @@ function makeChainRunner(o) {
       // the tag is derived from the OUTPUT of the stage that just ran — this is what makes a FILTER downstream
       // of a dock a real branch on the result rather than a re-read of the original message.
       let target = null;
-      try { target = nextAgent(cur, { tag: getTag(out.text) }); } catch (_) { target = null; }
+      try { target = nextAgent(cur, { tag: getTag(out.text), lineId: lineId }); } catch (_) { target = null; }
       if (!target) return out;                                   // terminal stage: its reply IS the answer
       if (visited[target]) { out.stopped = 'the line loops back to ' + target; return out; }
       if (hop > maxHops) { out.stopped = 'the line is longer than ' + maxHops + ' stages'; return out; }
@@ -90,7 +97,10 @@ function makeChainRunner(o) {
       // (alphabetically-first dock whose chain reaches the target) and drew handoff crates leaving the wrong
       // bay on any floor where two lines feed one dock. obj() stanzas carry no additionalProperties:false,
       // so the extra field validates against the frozen workitem.placed contract; old consumers ignore it.
-      say('workitem.placed', { workitemId, queueId: target, agentId: target, kind: 'chain', from: cur, preview: preview(out.text), ts: t0 });
+      // `lineId` rides the crate too (additive, same obj() latitude as `from`): the floor reads it to tell a
+      // line-owned handoff from an ad-hoc run's own product, so the pipeline never animates a workflow that
+      // did not run — and never hides one that did.
+      say('workitem.placed', { workitemId, queueId: target, agentId: target, kind: 'chain', from: cur, lineId: lineId || undefined, preview: preview(out.text), ts: t0 });
 
       let r = null;
       // the RECEIVING dock's standing brief rides the handoff turn (null-safe: no seam / no brief = the
