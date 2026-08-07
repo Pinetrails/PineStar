@@ -2585,7 +2585,7 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
   capability flag rather than snapshotting an unrelated local tree.
 
-# READY TO MERGE 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
+# BLOCKED 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
 
 Commit `b5854dba` makes a saved file's name open that file through the desktop OS association instead of
 opening the jailed preview in the default browser. The folder control now reveals/selects the exact artifact
@@ -2599,3 +2599,11 @@ missing, `.env`, `.git`, executable, and script targets before shelling out. Foc
 `npm run test:fast` is 573/573 green. A seeded live run wrote `KaloDataCredentialHandoff.md`, rendered the saved
 row plus `copy path`, copied the exact per-agent absolute path, and produced no browser warnings/errors. The
 packaged Tauri click-through remains to be exercised on an installed desktop candidate before release.
+
+Integration was attempted twice from clean trunk snapshot `46b54c10` and rolled back both times under the
+mandatory merge ritual. Attempt 1 failed at fast-gate step 150/573 when `boot-security.test.js` exceeded its
+9-second sidecar boot ceiling; the same test then passed on clean trunk and three consecutive times on this
+branch. Attempt 2 passed `boot-security` and every executed test but the overall fast gate exceeded its
+600-second process ceiling after roughly 350/573 steps. The branch's own complete fast gate remains 573/573
+green, but trunk is intentionally unmerged because neither integration run produced the required full green
+receipt. No installed candidate was built or clicked from an unmerged SHA.
