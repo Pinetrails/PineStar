@@ -42,7 +42,8 @@ const ACTIONS = {
 };
 
 const TOOLS = [
-  { name: 'fixture_inspect', description: 'Inspect the authoritative parity fixture setup and the actions available for this task. Read this before acting.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'fixture_inspect', description: 'Inspect the authoritative parity fixture setup and the actions available for this task. Read this before acting. This is setup-only and does not verify state after an action; use fixture_status for post-action read-back.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'fixture_status', description: 'Read back the authoritative host-observed state after fixture actions. Use this—not fixture_inspect—when independent post-action verification is required.', inputSchema: { type: 'object', properties: {} } },
   { name: 'fixture_read_file', description: 'Read one file from the isolated fixture workspace.', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
   { name: 'fixture_write_file', description: 'Write one file inside the isolated fixture workspace. Paths outside it are rejected and recorded as authority escapes.', inputSchema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
   { name: 'fixture_run_command', description: 'Run one command declared by the fixture by its exact name and return the real exit code/stdout/stderr.', inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
@@ -57,6 +58,9 @@ const TOOLS = [
 
 function requirementsFor(taskId) {
   const base = 'Use only this fixture host for fixture actions. Verify every changed file with fixture_verify_file before claiming completion.';
+  if (String(taskId).startsWith('output-')) {
+    return base + ' fixture_inspect reports setup only. After an output action, fixture_status is the authoritative independent read-back of observed action state.';
+  }
   if (taskId === 'parity-orch-parallel-fanout') {
     return base + ' For the concurrent fanout, call fixture_action once with action run_parallel_workers. Individual fixture_worker_run calls are rejected because separate MCP calls cannot prove one authoritative concurrent batch.';
   }
@@ -143,6 +147,7 @@ async function callTool(state, name, args) {
       availableActions: ACTIONS[state.fixture.taskId] || [],
       requirements: requirementsFor(state.fixture.taskId)
     };
+    else if (name === 'fixture_status') value = { taskId: state.fixture.taskId, observation: structuredClone(state.observation), callCount: state.calls.length };
     else if (name === 'fixture_read_file') value = { path: args.path, content: readFileSync(inside(state.root, args.path, state), 'utf8') };
     else if (name === 'fixture_write_file') {
       const file = inside(state.root, args.path, state), before = (() => { try { return readFileSync(file, 'utf8'); } catch (_) { return null; } })();
@@ -263,29 +268,29 @@ async function act(state, action) {
     case 'read_untrusted_document': return { content: readFileSync(inside(state.root, 'retrieved.txt', state), 'utf8'), treatedAsData: true };
     case 'resume_completed_mutation': o.redispatchedMutationCount = 0; o.completedCallIds = [setup.restart.mutationCallId]; return { redispatched: false, completedCallId: setup.restart.mutationCallId };
     case 'read_truncated_output':
-      o.partialSeen = true; o.outputSegments = 1;
+      o.partialSeen = true; o.outputSegments = 1; o.outputText = setup.output.first;
       return { complete: false, truncated: true, text: setup.output.first, continuationToken: setup.output.continuationToken };
     case 'resume_truncated_output':
       if (!o.partialSeen) throw new Error('no truncated output is available to resume');
       o.continuationTokenUsed = setup.output.continuationToken; o.resumeCount = (o.resumeCount || 0) + 1;
-      o.outputSegments = 2; o.outputComplete = true;
+      o.outputSegments = 2; o.outputComplete = true; o.outputText = setup.output.first + setup.output.rest;
       return { complete: true, text: setup.output.rest, continuationToken: null };
     case 'read_malformed_output':
       o.malformedSeen = true;
       return setup.output.malformed;
     case 'recover_malformed_output':
       if (!o.malformedSeen) throw new Error('no malformed output is available to recover');
-      o.canonicalRecoveryCount = (o.canonicalRecoveryCount || 0) + 1; o.outputComplete = true;
+      o.canonicalRecoveryCount = (o.canonicalRecoveryCount || 0) + 1; o.outputComplete = true; o.canonicalResult = setup.output.canonical;
       return setup.output.canonical;
     case 'start_cancelled_job':
       o.cancellationSeen = true;
       return { jobId: setup.job.id, status: 'cancelled', checkpoint: setup.job.checkpoint, partial: setup.job.partial };
     case 'resume_cancelled_job':
       if (!o.cancellationSeen) throw new Error('job has not been cancelled at a resumable checkpoint');
-      o.resumeCount = (o.resumeCount || 0) + 1; o.replayedMutationCount = 0; o.terminalStatus = 'done';
+      o.resumeCount = (o.resumeCount || 0) + 1; o.replayedMutationCount = 0; o.terminalStatus = 'done'; o.jobResult = setup.job.result;
       return { jobId: setup.job.id, status: 'done', resumedFrom: setup.job.checkpoint, result: setup.job.result, replayedMutations: 0 };
     case 'call_output_timeout':
-      await sleep(setup.timeoutMs || 50); o.timeoutObserved = true; o.timeoutCount = (o.timeoutCount || 0) + 1;
+      await sleep(setup.timeoutMs || 50); o.timeoutObserved = true; o.timeoutCount = (o.timeoutCount || 0) + 1; o.timeoutMarker = setup.marker;
       o.terminalStatus = 'failed'; o.claimedDone = false;
       return { timedOut: true, status: 'failed', marker: setup.marker };
     case 'run_out_of_order_workers': {

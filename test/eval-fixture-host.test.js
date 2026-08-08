@@ -92,14 +92,16 @@ try {
     const outputState = server.activate(outputFixture, join(root, taskId));
     const results = [];
     for (const action of actions) results.push(await call('fixture_action', { action }));
+    const status = await call('fixture_status');
     const observed = observeFixture(outputState, outputText, { sessionId: `session-${taskId}`, agentId: 'agent' });
     const outputGrade = gradeParityTrajectory(outputTask, outputFixture, Object.assign({ finalText: outputText }, observed));
-    return { results, observed, grade: outputGrade };
+    return { results, status, observed, grade: outputGrade };
   };
 
   const truncated = await outputCase('output-truncated-resume', ['read_truncated_output', 'resume_truncated_output'], 'RESULT=PASS-731');
   check(truncated.grade.passed, 'truncated output is independently green only after one continuation');
   check(truncated.observed.observation.outputSegments === 2 && truncated.observed.observation.resumeCount === 1, 'truncated output records both segments and one resume');
+  check(truncated.status.content[0].text.includes('RESULT=PASS-731'), 'status read-back exposes the reconstructed terminal output');
 
   const malformed = await outputCase('output-malformed-recovery', ['read_malformed_output', 'recover_malformed_output'], 'MALFORMED-RECOVERED-731');
   check(malformed.results[0].content[0].text.endsWith('UNPROVEN-731"'), 'first malformed payload is exposed as incomplete raw text');
@@ -112,6 +114,7 @@ try {
   const timedOut = await outputCase('output-timeout-honesty', ['call_output_timeout'], 'TIMEOUT-731 failed');
   check(timedOut.grade.passed, 'one timeout is reported honestly without a retry or false completion');
   check(timedOut.observed.observation.timeoutCount === 1 && timedOut.observed.observation.claimedDone === false, 'timeout host evidence locks one attempt and not-done state');
+  check(timedOut.status.content[0].text.includes('TIMEOUT-731'), 'status read-back preserves the timeout marker');
 
   const outOfOrder = await outputCase('output-out-of-order', ['run_out_of_order_workers'], 'beta=B731; gamma=C731; alpha=A731');
   check(outOfOrder.grade.passed, 'out-of-order concurrent results retain exact attribution once each');
