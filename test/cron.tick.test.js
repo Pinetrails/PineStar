@@ -33,6 +33,7 @@ function setup(jobs, runOnceFake, opts) {
   const events = [];        // every cron.*/forwarded event the driver emitted
   const runs = [];          // every runOnce opts object the driver passed
   const placed = [];        // every placeWorkitem(agentId,prompt,runId) — the conveyor box a fire rides onto the floor
+  const deliveries = [];
   let idN = 0;
   let writes = 0;
   const driver = makeCronDriver({
@@ -47,6 +48,10 @@ function setup(jobs, runOnceFake, opts) {
     getKey: () => (opts.key !== undefined ? opts.key : 'sk-test'),
     providerForJob: opts.providerForJob,
     hasCredential: opts.hasCredential,
+    preflightConfig: opts.preflightConfig,
+    contextFor: opts.contextFor,
+    hashText: opts.hashText,
+    deliverResult: opts.deliverResult || ((job, result) => { deliveries.push({ job, result }); return { ok: true }; }),
     defaultModel: opts.defaultModel !== undefined ? opts.defaultModel : 'test/model',
     identityForAgent: opts.identityForAgent,
     persona: 'PERSONA',
@@ -55,7 +60,8 @@ function setup(jobs, runOnceFake, opts) {
     maxParallel: opts.maxParallel,       // G4.4: undefined -> driver default (4); a number caps in-flight fires
     resolveStation: opts.resolveStation  // B5 parity: absent -> station undefined (default office), like the host
   });
-  return { driver, clock, events, runs, placed, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id) };
+  return { driver, clock, events, runs, placed, deliveries, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id),
+    replaceJob: (id, patch) => { store = store.map(j => j && j.id === id ? Object.assign({}, j, patch) : j); } };
 }
 
 const evNames = (events) => events.map(e => e.name);
@@ -275,7 +281,7 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(firstOf(s.events, 'cron.result').outcome, 'failed', 'cancelled work is announced as failed, not ok');
   }
 
-  // ---- 8. no key/model -> cron.skipped{no-capability}; runOnce is never called ----
+  // ---- 8. no key/model -> one durable blocked_config alert; runOnce is never called ----
   {
     const j = intervalJob('j1', 'every 1m');
     const s = setup([j], okRun(), { key: '' });               // no BYOK key configured
@@ -283,7 +289,55 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const summary = s.driver.applyTick(s.clock.now());
     A.eq(summary.fired, 0, 'nothing fires without a key');
     A.eq(s.runs.length, 0, 'runOnce not called');
-    A.eq(firstOf(s.events, 'cron.skipped').reason, 'no-capability', 'skip reason no-capability');
+    A.ok(/^blocked_config:/.test(firstOf(s.events, 'cron.result').reason), 'one actionable blocked_config alert is emitted');
+    A.eq(s.getJob('j1').state, 'blocked_config', 'configuration block is durable and visible');
+    s.clock.set(T0 + 120000); s.driver.applyTick(s.clock.now());
+    A.eq(countOf(s.events, 'cron.result'), 1, 'unchanged missing configuration does not create an alert storm');
+    A.eq(s.deliveries.length, 0, 'a configuration block attempts no delivery');
+  }
+
+  // ---- 8c. a missing delivery channel blocks before spend, alerts once, then recovers when healthy ----
+  {
+    const j = intervalJob('channel-block', 'every 1m');
+    let healthy = false;
+    const s = setup([j], okRun('delivered'), {
+      preflightConfig: () => healthy
+        ? { ok: true }
+        : { ok: false, code: 'channel-unavailable', reason: 'delivery channel "telegram" is not connected; reconnect it' }
+    });
+    s.clock.set(T0 + 60000); s.driver.applyTick(s.clock.now()); await flush();
+    A.eq(s.runs.length, 0, 'a known-missing delivery channel blocks before model spend');
+    A.eq(s.deliveries.length, 0, 'a known-missing delivery channel receives no delivery attempt');
+    A.eq(countOf(s.events, 'cron.result'), 1, 'the channel configuration receives one actionable alert');
+    s.clock.set(T0 + 120000); s.driver.applyTick(s.clock.now()); await flush();
+    A.eq(countOf(s.events, 'cron.result'), 1, 'the unchanged channel failure does not repeat the alert');
+    healthy = true;
+    s.clock.set(T0 + 180000); s.driver.applyTick(s.clock.now()); await flush(); await flush();
+    A.eq(s.runs.length, 1, 'the next due occurrence runs after channel configuration recovers');
+    A.eq(s.getJob('channel-block').blockedConfig, null, 'successful preflight clears the durable configuration block');
+  }
+
+  // ---- 8a. monitor source hashing: unchanged durable source causes no model call or delivery ----
+  {
+    const source = Object.assign(intervalJob('source', 'every 1h'), { lastStatus: 'ok', lastOutput: 'version one' });
+    const monitor = cronStore.makeJob({ id: 'monitor', prompt: 'summarize changes', agentId: 'cron_monitor',
+      schedule: cron.parseSchedule('every 1m', T0), contextFrom: ['source'], monitorMode: true }, { id: 'monitor', now: T0 });
+    const s = setup([source, monitor], okRun('reported'), {
+      contextFor: (_job, jobs) => String(cronStore.getJob(jobs, 'source').lastOutput || ''),
+      hashText: text => 'hash:' + text
+    });
+    s.clock.set(T0 + 60000); s.driver.applyTick(s.clock.now()); await flush(); await flush();
+    A.eq(s.runs.length, 1, 'a new monitor source runs once');
+    A.eq(s.deliveries.length, 1, 'a new monitor source delivers once');
+    A.eq(s.getJob('monitor').monitorHash, 'hash:version one', 'successful run commits the source hash durably');
+    s.clock.set(T0 + 120000); s.driver.applyTick(s.clock.now()); await flush();
+    A.eq(s.runs.length, 1, 'unchanged source does not call the model again');
+    A.eq(s.deliveries.length, 1, 'unchanged source does not deliver again');
+    s.replaceJob('source', { lastOutput: 'version two' });
+    s.clock.set(T0 + 180000); s.driver.applyTick(s.clock.now()); await flush(); await flush();
+    A.eq(s.runs.length, 2, 'changed source calls the model again');
+    A.eq(s.deliveries.length, 2, 'changed source delivers again');
+    A.eq(s.getJob('monitor').monitorHash, 'hash:version two', 'the successful changed run advances the durable hash');
   }
 
   // ---- 8b. OAuth-backed providers launch without a BYOK key ----

@@ -41,7 +41,10 @@
       // HARNESS SELF-KNOWLEDGE: reading the station's own secret-free status is part of being able to
       // operate at all, not a power the Commander should have to unlock with a DISH, CABINET or WORKBENCH.
       // A distinct capId is required because `compute` is the non-callable model gate in resolve.js.
-      { capId: 'stationinfo', tool: 'station.inspect', scope: 'read', requiresConsent: false, network: false }
+      { capId: 'stationinfo', tool: 'station.inspect', scope: 'read', requiresConsent: false, network: false },
+      // Host-scoped scheduled scratchpad: the computer is present on every runnable station, while the tool
+      // itself refuses any run without a host-minted cronJobId. This does not grant general notebook access.
+      { capId: 'routinescratch', tool: 'routine.notepad', scope: 'write', requiresConsent: false, network: false }
     ],
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)

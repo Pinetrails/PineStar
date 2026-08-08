@@ -138,6 +138,9 @@
     const advanceChain = typeof d.advanceChain === 'function' ? d.advanceChain : null;
     const contextFor = typeof d.contextFor === 'function' ? d.contextFor : function () { return ''; };
     const deliverResult = typeof d.deliverResult === 'function' ? d.deliverResult : null;
+    const preflightConfig = typeof d.preflightConfig === 'function' ? d.preflightConfig : null;
+    const hashText = typeof d.hashText === 'function' ? d.hashText : function (s) { return String(s == null ? '' : s); };
+    const blockedRetryMs = (function () { const n = parseInt(d.blockedRetryMs, 10); return Number.isFinite(n) && n > 0 ? n : 60000; })();
     // Fault-injection seam: false models a process stop after the final receipt is durable, before delivery.
     const afterFinalizationCommitted = typeof d.afterFinalizationCommitted === 'function' ? d.afterFinalizationCommitted : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
@@ -229,7 +232,8 @@
           const next = cronStore.markRun(getJobs(), jobId, {
             runId: runId, status: ok ? 'ok' : 'error',
             reason: state.reason || (ok ? 'done' : 'error'),
-            error: errMsg || undefined, transient: transient, output: ok ? reply : undefined, usd: state.usd || 0
+            error: errMsg || undefined, transient: transient, output: ok ? reply : undefined, usd: state.usd || 0,
+            monitorHash: ok ? state.monitorHash : undefined
           }, { now: at });
           committed = setJobs(next) !== false;
         } catch (_) { committed = false; }
@@ -279,9 +283,10 @@
          lands in job.lastError, which the ROUTINES row already renders. cron.result's `reason` is a free string
          in the owned event contract, so this needs no schema change. */
       let assembledPrompt = String(job.prompt || '');
+      let upstreamContext = '';
       try {
-        const upstream = contextFor(job, getJobs()) || '';
-        if (upstream) assembledPrompt = String(upstream) + '\n\n## ROUTINE DIRECTIVE\n' + assembledPrompt;
+        upstreamContext = String(contextFor(job, getJobs()) || '');
+        if (upstreamContext) assembledPrompt = upstreamContext + '\n\n## ROUTINE DIRECTIVE\n' + assembledPrompt;
       } catch (e) {
         const blockedRunId = newId();
         const msg = 'context pipeline unavailable: ' + ((e && e.message) || e);
@@ -309,7 +314,56 @@
       const model = (job.model && String(job.model).trim()) || (ident.model && String(ident.model).trim()) || defaultModel;
       const provider = providerForJob(job, ident) || 'openrouter';
       const key = getKey(provider, job);
-      if (!job.noAgent && (!model || !hasCredential(provider, key, job))) { try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {} return false; }
+      let configIssue = null;
+      if (!job.noAgent && !model) configIssue = { code: 'missing-model', reason: 'no model is configured; choose a model for this routine or its assigned agent' };
+      else if (!job.noAgent && !hasCredential(provider, key, job)) configIssue = { code: 'missing-credential', reason: 'provider "' + provider + '" has no usable credential; connect it or choose a configured provider' };
+      if (!configIssue && preflightConfig) {
+        try {
+          const checked = preflightConfig(job, { provider: provider, model: model, key: key, identity: ident });
+          if (checked && checked.ok === false) configIssue = { code: String(checked.code || 'invalid-delivery'), reason: String(checked.reason || checked.error || 'routine delivery is not configured') };
+        } catch (e) { configIssue = { code: 'config-check-error', reason: 'configuration could not be verified: ' + ((e && e.message) || e) }; }
+      }
+      if (configIssue) {
+        const live = cronStore.getJob(getJobs(), job.id) || job;
+        const fingerprint = String(hashText([configIssue.code, provider, model || '', String(job.deliver || 'local'), configIssue.reason].join('\n'))).slice(0, 200);
+        const alreadyAlerted = !!(live.blockedConfig && live.blockedConfig.fingerprint === fingerprint && live.blockedConfig.alertedAt);
+        let persisted = false;
+        try {
+          persisted = setJobs(cronStore.markBlockedConfig(getJobs(), job.id, {
+            fingerprint: fingerprint, reason: configIssue.reason, alerted: !alreadyAlerted, retryAt: nowMs + blockedRetryMs
+          }, { now: nowMs })) !== false;
+        } catch (_) { persisted = false; }
+        // One durable alert per unchanged fingerprint. No provider call and no delivery attempt occur on this path.
+        if (persisted && !alreadyAlerted) try {
+          emit('cron.result', { jobId: job.id, runId: newId(), outcome: 'failed', reason: 'blocked_config: ' + configIssue.reason });
+        } catch (_) {}
+        return false;
+      }
+
+      // Configuration recovered: clear the durable block before any spend. A failed receipt keeps the run closed.
+      {
+        const live = cronStore.getJob(getJobs(), job.id);
+        if (live && (live.blockedConfig || live.state === 'blocked_config')) {
+          let cleared = false;
+          try { cleared = setJobs(cronStore.clearBlockedConfig(getJobs(), job.id)) !== false; } catch (_) { cleared = false; }
+          if (!cleared) return false;
+        }
+      }
+
+      let sourceHash = null;
+      // A monitor can suppress only source bytes the host can observe before a model call. contextFrom is that
+      // durable source; a prompt that tells the model to fetch a URL cannot be hashed without spending, so it is
+      // deliberately not guessed/suppressed here.
+      if (job.monitorMode === true && upstreamContext.trim()) {
+        sourceHash = String(hashText(upstreamContext)).slice(0, 200);
+        const live = cronStore.getJob(getJobs(), job.id) || job;
+        if (live.monitorHash && live.monitorHash === sourceHash) {
+          try { setJobs(cronStore.markMonitorCheck(getJobs(), job.id, {
+            hash: sourceHash, commit: false, unchanged: true, retryAt: nowMs + blockedRetryMs
+          }, { now: nowMs })); } catch (_) {}
+          return false;
+        }
+      }
 
       const runId = newId();
       const ac = newAbort();
@@ -330,7 +384,7 @@
       // redaction so an unattended run is observable live in the SAME redacted shape a routed channel run ships
       // (tool_call name-only, tool_result outcome-only, metadata events whole; token deltas dropped to stay quiet,
       // and any event runTeeView maps to null — e.g. the noisy inner streams — is dropped rather than leaked raw).
-      const state = { buf: '', errMsg: null, reason: null, transient: false, usd: 0 };
+      const state = { buf: '', errMsg: null, reason: null, transient: false, usd: 0, monitorHash: sourceHash };
       const sink = function (name, payload) {
         const p = payload || {};
         // NS-0 HEARTBEAT: every run-progress event proves this run is still alive → renew the in-RAM lease
