@@ -1974,7 +1974,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); color: var(--ink); border-color: var(--ph);
   text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 9px var(--ph-glow2);
 }
-/* the UNHINGED chip's armed state (two-press confirm — it swears for real): warn tint until the second press */
+/* the UNHINGED chip's armed state (two-press confirm — it swears for real): warn tint until the second press.
+   `.armed` is the same state under the shared ArmConfirm helper's class name — a chip wired through that
+   helper (the PERMISSIONS reach/approval chips) must wear the same warn face, not sit visually at rest. */
+.ov-vchip.armed,
 .ov-vchip.arm {
   color: var(--warn); border-color: var(--warn);
   box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.1), 0 0 9px color-mix(in srgb, var(--warn) 40%, transparent), 0 1px 0 rgba(0,0,0,.35);
@@ -4496,6 +4499,66 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .perm-grants .set-about { margin-top: 4px; }
 .perm-grants .set-row:not(:has(> .bb)) { margin: 4px 0 0; opacity: 0.75; }
 
+/* ── PERMISSIONS · the plain-language pass (2026-08-07) ─────────────────────────────────────────────
+   The pane opened onto four numbered blocks of vocabulary and two separate crew tables. Three shapes
+   fix that: an AT A GLANCE card that says the posture in one sentence, ONE crew row carrying both
+   per-agent axes, and a labelled question in front of each control. Scoped to the permissions ids/
+   classes only — the shared .set-row / .ov-vchip vocabulary is untouched. */
+.perm-glance {
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph);
+  background: rgba(0, 0, 0, 0.3); border-radius: var(--r-sm); box-shadow: var(--raise);
+  padding: 10px 13px 11px; margin: 2px 0 14px;
+}
+/* the override being ON is the loudest fact on the pane — the glance wears the alarm accent too, so
+   the summary and the switch in block 2 can never disagree at a glance. */
+.perm-glance.loud { border-left-color: var(--bad); box-shadow: var(--raise), 0 0 14px rgba(var(--bad-rgb), 0.16); }
+.perm-glance .pg-line { margin: 0; font-size: 15px; line-height: 1.4; color: var(--ph-bright); letter-spacing: 0.5px; max-width: var(--perm-measure); }
+.perm-glance.loud .pg-line { color: var(--bad); }
+.perm-glance .pg-reach { margin: 7px 0 0; font-size: 12px; line-height: 1.45; color: var(--ph-dim); max-width: var(--perm-measure); }
+.perm-glance .pg-reach b { color: var(--ph); }
+.perm-glance .pg-floor {
+  margin: 9px 0 0; padding-top: 8px; border-top: 1px solid var(--ph-faint);
+  font-size: 11px; line-height: 1.45; color: var(--ph-dim); opacity: 0.85; max-width: var(--perm-measure);
+}
+.perm-glance .pg-floor code { color: var(--ph); }
+/* the merged crew row: a header line, then one labelled block per axis. Stacked, not columnar — each
+   axis owns a chip strip AND a plain sentence, which cannot share a row honestly at this width. */
+.perm-crew-row { display: block; padding: 9px 12px 10px; }
+.perm-crew-row .pc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.perm-crew-row .pc-head .pa-name { min-width: 0; }
+.perm-crew-row .pc-head .pa-state { flex: 1 1 180px; }
+.perm-crew-row .pc-axis { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ph-faint); }
+/* the question in front of the control — the pane's whole teaching move is that every control is
+   preceded by the question it answers, in the label voice the rest of settings uses. */
+.perm-crew-row .pc-q {
+  display: block; font-size: 10px; letter-spacing: 2px; color: var(--ph); opacity: 0.75; margin-bottom: 5px;
+}
+/* the block-2 override outranks this axis: the question says so, and the chips read as the setting
+   that is currently NOT in force — dimmed, but still legible and still clickable (they select what
+   the agent goes back to). The row's own accent is already the effective-posture colour. */
+.perm-crew-row .pc-ovr { color: var(--bad); letter-spacing: 1px; }
+.perm-crew-row.overridden .pc-ask-axis .pc-chips { opacity: 0.55; }
+.perm-crew-row.overridden .pc-ask-axis .pc-chips:hover { opacity: 1; }
+.perm-crew-row .pc-chips { margin: 0; gap: 5px; flex-wrap: wrap; }
+.perm-crew-row .pc-chips .ov-vchip { display: inline-flex; align-items: center; gap: 6px; }
+/* the reach meter: filled rungs in phosphor, hollow ones faded, so the ladder reads left-to-right
+   without parsing the labels. Fixed advance (VT323 is monospace) keeps the chips' text aligned. */
+.pc-dots { font-size: 11px; letter-spacing: 1px; opacity: 0.5; }
+.ov-vchip.sel .pc-dots { opacity: 0.9; }
+.perm-crew-row .pc-plain { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--ph-dim); max-width: var(--perm-measure); }
+/* the routing truth line stays visible (truthful telemetry) but demoted below the plain sentence —
+   it answers "is this actually happening", which is the second question, never the first. */
+.perm-crew-row .pc-truth { margin-top: 5px; opacity: 0.6; }
+.perm-crew-row .pc-truth b { color: var(--ph); }
+.perm-crew-row .pc-more { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ph-faint); }
+.perm-crew-row .pc-more .mc-acts { margin: 0 0 6px; }
+.perm-crew-row .pc-more .mc-acts:last-child { margin-bottom: 0; }
+.perm-crew-row .exec-ssh { margin: 0; }
+/* the fold closes the pane, so it gets a rule above it — otherwise it floats loose under the ledger */
+.perm-adv { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--ph-faint); }
+.perm-adv .perm-policy-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.perm-adv .perm-policy-row .key-input { width: 90px; flex: 0 0 auto; }
+
 /* while searching: every section is shown, non-matching rows fade, empty sections collapse their body */
 .con-searching .con-miss { opacity: .18; }
 .con-searching .con-sec-nomatch { display: none; }
@@ -4696,10 +4759,16 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 .lp-checkline code { background: rgba(0,0,0,.35); border: 1px solid var(--ph-faint); padding: 1px 6px; color: var(--gold); }
 .lp-link { font-family: inherit; font-size: 11px; color: var(--ph-dim); background: none; border: 0; border-bottom: 1px dotted var(--ph-faint); cursor: pointer; padding: 0; margin-left: 4px; }
 .lp-link:hover { color: var(--ph-bright); border-bottom-color: var(--ph); }
-.exec-policy{border-color:color-mix(in srgb,var(--ph) 38%,transparent)}
-.perm-agent[data-profile-agent]{display:grid;grid-template-columns:minmax(88px,auto) minmax(92px,auto) minmax(0,1fr);align-items:center}
-.perm-agent[data-profile-agent]>.ov-vchips,.perm-agent[data-profile-agent]>.mc-acts,.perm-agent[data-profile-agent]>.exec-ssh{grid-column:1/-1;min-width:0}
-.perm-agent[data-profile-agent]>.mc-acts .bb,.perm-agent[data-profile-agent]>.exec-ssh .bb{margin-left:0}
+/* (`.exec-policy` retired — the idle-cell policy is no longer a row in the crew list; it is the body
+   of the ADVANCED fold at the foot of the pane, styled by .perm-adv above.) */
+/* The crew row STACKS (header → axis → axis → advanced): each axis owns a chip strip AND a plain
+   sentence, which no 3-column grid can carry honestly. The old grid packed name/mode/state across
+   three columns and dropped every control onto a full-bleed row; the flat `display:flex` inherited
+   from .perm-agent would otherwise put the axes side by side, so the block wins explicitly here at
+   matching specificity. Its own children keep the full-width lane the SSH disclosure relies on. */
+.perm-agent[data-profile-agent]{display:block}
+.perm-agent[data-profile-agent]>.pc-axis,.perm-agent[data-profile-agent]>.pc-more,.perm-agent[data-profile-agent] .ov-vchips,.perm-agent[data-profile-agent] .mc-acts,.perm-agent[data-profile-agent] .exec-ssh{min-width:0}
+.perm-agent[data-profile-agent] .mc-acts .bb,.perm-agent[data-profile-agent] .exec-ssh .bb{margin-left:0}
 .exec-ssh{width:100%;box-sizing:border-box;margin-top:8px;padding-top:5px;border-top:1px dashed color-mix(in srgb,var(--ph) 28%,transparent)}
 .exec-ssh .set-row{display:grid;grid-template-columns:minmax(100px,130px) minmax(0,1fr);gap:8px;align-items:center}
 .exec-ssh .key-input{width:100%;min-width:0}

@@ -1927,25 +1927,40 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // changeable any time — until now the ONLY post-create path was the /yolo slash command in COMMS, which most
   // Commanders never find (a creation-time picker with no live-app twin — the codex-sign-in escape class).
   // Applies via access.config.setApproval → pushRoster, so the sidecar's per-run consent gate flips with it.
+  // Ordered SAFEST → BROADEST, and each rung carries the two things a first-time reader actually needs:
+  // `reach` (1–4, drawn as a meter so the ladder is visible without reading five labels) and `plain` —
+  // one ordinary sentence naming what of YOUR computer this profile can touch. The technical columns
+  // (backend/files/tools/desktop) stay exactly as they were; they are the truth line, not the teaching line.
+  // The array order IS the display order everywhere, so the dossier chips and the Settings chips agree.
+  const EXECUTION_PROFILE_DEFAULT = 'station-gear';
   const EXECUTION_PROFILES = [
-    { id: 'station-gear', label: 'STATION GEAR', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
-    { id: 'safe-cell', label: 'SAFE CELL', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
-    { id: 'remote-ssh', label: 'REMOTE SSH', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
-    { id: 'trusted-project', label: 'TRUSTED PROJECT', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
-    { id: 'this-computer', label: 'THIS COMPUTER', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
+    { id: 'safe-cell', label: 'SAFE CELL', reach: 1, plain: 'None of your files. It works inside a sealed container that only holds its own workspace.', short: 'works in a sealed box', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
+    { id: 'remote-ssh', label: 'REMOTE SSH', reach: 1, plain: 'None of your files. Commands run on a different machine you point it at below.', short: 'works on another machine', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
+    { id: 'station-gear', label: 'STATION GEAR', reach: 2, plain: 'Only what you placed on the station floor, plus project folders you approved. The default.', short: 'uses only the gear you placed', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
+    { id: 'trusted-project', label: 'TRUSTED PROJECT', reach: 3, plain: 'Its own workspace plus the project folders you approved — nothing else on this computer.', short: 'reaches your approved project folders', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
+    { id: 'this-computer', label: 'THIS COMPUTER', reach: 4, plain: 'Almost any file on this computer. Protected files (.env, .git) stay blocked no matter what.', short: 'reaches almost everything on this computer', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
   ];
+  const EXECUTION_PROFILE_MAX_REACH = 4;
+  // the fallback is the DEFAULT profile by id, never EXECUTION_PROFILES[0] — the array is ordered by reach,
+  // so an index-based fallback would silently relabel an unknown profile as the narrowest one.
+  const executionProfileOf = (id) => EXECUTION_PROFILES.find(x => x.id === id) ||
+    EXECUTION_PROFILES.find(x => x.id === EXECUTION_PROFILE_DEFAULT);
+  // the reach meter: filled rungs up to `reach`, hollow after. Pure decoration for screen readers.
+  const reachMeter = (n) => '<span class="pc-dots" aria-hidden="true">' +
+    Array.from({ length: EXECUTION_PROFILE_MAX_REACH }, (_, i) => (i < n ? '●' : '○')).join('') + '</span>';
   function executionProfileId(a) {
     const id = String((a && a.executionProfile) || '');
-    return EXECUTION_PROFILES.some(p => p.id === id) ? id : 'station-gear';
+    return EXECUTION_PROFILES.some(p => p.id === id) ? id : EXECUTION_PROFILE_DEFAULT;
   }
   function executionProfileCard(a) {
     const current = executionProfileId(a);
-    const p = EXECUTION_PROFILES.find(x => x.id === current) || EXECUTION_PROFILES[0];
-    const chips = EXECUTION_PROFILES.map(x => '<button type="button" class="ov-vchip' + (x.id === current ? ' sel' : '') + '" data-execution-profile="' + x.id + '" data-name="' + esc(x.label) + '" title="' + esc(x.desc) + '" aria-pressed="' + (x.id === current ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('');
+    const p = executionProfileOf(current);
+    const chips = EXECUTION_PROFILES.map(x => '<button type="button" class="ov-vchip' + (x.id === current ? ' sel' : '') + '" data-execution-profile="' + x.id + '" data-name="' + esc(x.label) + '" data-reach="' + x.reach + '" title="' + esc(x.plain) + '" aria-pressed="' + (x.id === current ? 'true' : 'false') + '">' + reachMeter(x.reach) + esc(x.label) + '</button>').join('');
     return '<div class="cf-card" id="ag-execution-card">' +
       '<div class="cf-head"><span class="cf-file">▣ execution profile</span><span class="cf-badge">PER-AGENT</span></div>' +
       '<div class="cf-desc">Where this agent runs and what scope it receives. This is separate from approval prompts and never grants real mouse, keyboard, or screen control.</div>' +
       '<div class="ov-vchips" id="ag-execution-chips">' + chips + '</div>' +
+      '<div class="cf-desc pc-plain" id="ag-execution-plain">' + esc(p.plain) + '</div>' +
       '<div class="mc-hint" id="ag-execution-truth">ROUTES NEXT COMMAND TO <b>' + esc(p.backend.toUpperCase()) + '</b> · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop) + ' · checking availability…</div>' +
       '<div id="ag-execution-msg" class="msg"></div>' +
     '</div>';
@@ -2110,7 +2125,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const epTruth = body.querySelector('#ag-execution-truth');
       const currentId = executionProfileId(a);
       const paintBackendTruth = (row) => {
-        const p = EXECUTION_PROFILES.find(x => x.id === executionProfileId(a)) || EXECUTION_PROFILES[0];
+        const p = executionProfileOf(executionProfileId(a));
         const routed = String((row && row.profile && row.profile.effectiveBackend) || 'unknown').toUpperCase();
         const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
         if (epTruth) epTruth.innerHTML = 'ROUTES NEXT COMMAND TO <b>' + esc(routed) + '</b> · AVAILABILITY <b>' + esc(availability) + '</b>' +
@@ -2118,12 +2133,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       };
       Harness.api.get('/api/execution-profiles').then(j => paintBackendTruth((j && j.agents || []).find(x => x.agentId === (a && a.id)))).catch(() => paintBackendTruth(null));
       let epArmed = null;
-      const epDisarm = () => { if (epArmed) { epArmed.textContent = epArmed.dataset.name; epArmed.classList.remove('arm'); epArmed = null; } };
+      // a chip's rest face is METER + LABEL — restoring `dataset.name` alone would silently strip the
+      // reach meter off whichever chip was last armed (an arm/disarm must be a no-op on the face).
+      const epFace = (chip) => reachMeter(Number(chip.dataset.reach) || 0) + esc(chip.dataset.name || '');
+      const epDisarm = () => { if (epArmed) { epArmed.innerHTML = epFace(epArmed); epArmed.classList.remove('arm'); epArmed = null; } };
       epWrap.querySelectorAll('[data-execution-profile]').forEach(chip => chip.addEventListener('click', () => {
         const id = chip.dataset.executionProfile;
         if (!id || id === currentId) { epDisarm(); return; }
         if (id === 'this-computer' && epArmed !== chip) {
-          epDisarm(); epArmed = chip; chip.classList.add('arm'); chip.textContent = 'THIS COMPUTER — SURE? broad host paths'; sfx('click'); return;
+          epDisarm(); epArmed = chip; chip.classList.add('arm'); chip.textContent = 'SURE? IT COULD READ ANY FILE HERE'; sfx('click'); return;
         }
         epDisarm();
         if (!(access.config && access.config.setExecutionProfile)) { notify('execution profile change unavailable', 'bad'); sfx('bad'); return; }
@@ -4724,34 +4742,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
       '<div id="ns-report"></div>';
     const secPermissions =
-      // PERMISSIONS — reorganized (2026-08-05): ONE pane answers the three questions users kept hunting across
-      // surfaces. 1 · WHO asks first — the per-agent ASK/FULL ACCESS switch (previously reachable only via each
-      // dossier CONFIG card or /yolo) plus a whole-station switch. 2 · HOW FAR it may go unattended — the
-      // WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here). 3 · WHAT is pre-blessed — the standing-grant
-      // ledger. No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
-      // ── 0 · FULL BYPASS — the master switch, above everything it outranks. Its own CARD (not a
-      // key-list row): it outranks every control below it, so it carries the visual weight of one.
-      '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
-      // ── 1 · EXECUTION PROFILE ──
-      '<h4 class="ms-h">1 · EXECUTION PROFILE <span class="dim">— where it runs and what scope it receives</span></h4>' +
-      '<p class="set-about perm-lede">Safe Cell, Remote SSH, Trusted Project, and This Computer set runtime, filesystem reach, and the baseline terminal/files/connector tools. None grants real mouse, keyboard, or screen control.</p>' +
-      '<div class="perm-list" id="perm-execution"></div>' +
-      // ── 2 · APPROVAL ──
-      '<h4 class="ms-h">2 · APPROVAL PROMPTS <span class="dim">— whether risky calls pause for you</span></h4>' +
-      '<p class="set-about perm-lede">Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>. This posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. <code>/yolo</code> remains the shortcut.</p>' +
-      '<div class="perm-list" id="perm-approval"></div>' +
+      // PERMISSIONS — the plain-language pass (2026-08-07). The pane was correct and unreadable: four numbered
+      // blocks of in-house vocabulary, two separate crew tables, no summary, and the most advanced control in
+      // the pane (Docker housekeeping) sitting where the primary content belongs. It now reads as one ordinary
+      // sentence and four questions, in the order a person actually asks them:
+      //   AT A GLANCE  — what is my station allowed to do right now, counted from the live roster.
+      //   1 · YOUR CREW      — ONE row per agent: what it CAN REACH, and whether it ASKS FIRST.
+      //   2 · SKIP EVERY PROMPT — the master override of the ASKS FIRST column, sitting under what it overrides.
+      //   3 · WHILE YOU'RE AWAY — the WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here).
+      //   4 · STANDING APPROVALS — the pre-blessed ledger.
+      //   ADVANCED     — idle Safe Cell cleanup, closed by default.
+      // No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
+      // ── AT A GLANCE — the pane's answer to "what is my station allowed to do RIGHT NOW", in one
+      // ordinary sentence, computed from the live roster + the server's bypass truth. Beginners opened
+      // this pane and met four numbered blocks of vocabulary with no summary; this is the summary. It
+      // asserts nothing the harness can't prove — every clause counts real agent records.
+      '<div id="perm-glance" class="perm-glance"><p class="pg-line">reading your crew…</p></div>' +
+      // ── 1 · YOUR CREW — ONE row per agent carrying BOTH per-agent axes.
+      // These used to be two separate lists, ~40 rows apart, each re-listing the whole crew: to set up one
+      // agent you scrolled between two tables and matched names by eye. They are independent settings but
+      // they belong to the SAME subject, so they belong in the same row.
+      '<h4 class="ms-h">1 · YOUR CREW <span class="dim">— what each one can reach, and whether it asks you first</span></h4>' +
+      '<p class="set-about perm-lede">Two separate questions per crew member. <b>CAN REACH</b> is how much of this computer it may touch — the dots run from sealed-off to almost-everything. <b>ASKS FIRST</b> is whether risky calls stop and wait for your yes. Neither one adds tools, and neither grants real mouse, keyboard, or screen control. <code>/yolo</code> is the shortcut for the no-prompts posture.</p>' +
+      '<div class="perm-list" id="perm-crew"></div>' +
       '<div class="mc-acts perm-allacts">' +
-        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
         '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
+        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
       '</div>' +
-      '<div class="mc-hint">The zero-prompt posture applies watched or unattended, within each agent’s execution profile. Protected host actions remain blocked automatically.</div>' +
-      // ── 2 · UNATTENDED LEVEL ──
+      '<div class="mc-hint">These two buttons change the ASKS FIRST column only — nobody’s reach changes.</div>' +
+      '<div class="mc-hint">Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. Protected host actions remain blocked automatically.</div>' +
+      // ── 2 · SKIP EVERY PROMPT — the master switch. It sits directly UNDER the column it overrides
+      // (the ASKS FIRST column above), because that is the only thing it does; floating unlabelled at
+      // the very top of the pane it read like a fifth unrelated concept.
+      '<h4 class="ms-h">2 · SKIP EVERY PROMPT <span class="dim">— one switch that overrides the ASKS FIRST column above</span></h4>' +
+      '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
+      // ── 3 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
       // (test-pinned, and it says the stakes plainly).
-      '<h4 class="ms-h">3 · UNATTENDED LEVEL <span class="dim">— how far it may go while you’re away</span></h4>' +
-      '<p class="set-about perm-lede">The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
+      '<h4 class="ms-h">3 · WHILE YOU’RE AWAY <span class="dim">— how much the station starts on its own, unattended</span></h4>' +
+      '<p class="set-about perm-lede">Blocks 1 and 2 answer <i>what</i> it may do when it acts. This answers <i>whether it starts anything at all</i> when you are not here. The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
       '<p class="set-about perm-lede" id="perm-desc"></p>' +
       '<p class="set-about perm-lede" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       '<div class="set-themes" id="perm-level">' +
@@ -4760,10 +4791,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
-      // ── 3 · STANDING APPROVALS ──
-      '<h4 class="ms-h">4 · STANDING APPROVALS <span class="dim">— what it may already do unattended</span></h4>' +
+      // ── 4 · STANDING APPROVALS ──
+      '<h4 class="ms-h">4 · STANDING APPROVALS <span class="dim">— the things you already said yes to, for good</span></h4>' +
+      // (the "answer ALWAYS and it lands here" teaching is the ledger's own empty state — repeating it in
+      // the lede printed the same sentence twice, one line apart, on a fresh station)
       '<p class="set-about perm-lede">Every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time).</p>' +
-      '<div class="key-list perm-grants" id="perm-grants"></div>';
+      '<div class="key-list perm-grants" id="perm-grants"></div>' +
+      // ── ADVANCED — the station-wide Docker housekeeping policy. It used to be the FIRST thing under
+      // the execution-profile header, above every agent: the most advanced control in the pane sitting
+      // where the primary content belongs. It is a maintenance knob, so it lives at the bottom, closed.
+      '<details class="mc-adv perm-adv" id="perm-advanced">' +
+        '<summary>ADVANCED — idle Safe Cell cleanup</summary>' +
+        '<div id="perm-exec-policy"></div>' +
+      '</details>';
     const secBudget =
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
       // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
@@ -4977,7 +5017,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
       { id: 'nightshift', label: 'NIGHT SHIFT', glyph: '☾', desc: 'What the station is doing unattended right now, and its recent decision trail.', build: frag(secNightShift) },
-      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'Who asks first, how far it may go unattended, and every standing approval.', build: frag(secPermissions) },
+      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'What each crew member can reach, whether it asks you first, how far it goes while you’re away, and everything you’ve already approved.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
       // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
@@ -5588,21 +5628,93 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         return rows.join('');
       };
-      /* ── 1 · EXECUTION PROFILE rows — a real capability/runtime/filesystem envelope, independent of approval.
-         Each choice writes the same roster field consumed by runOnce's capability projection. */
-      const epList = host.querySelector('#perm-execution');
-      const paintExecutionProfiles = (truth) => {
-        if (!epList) return;
-        if (!present.length) { epList.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
-        const can = !!(access.config && access.config.setExecutionProfile);
+      /* ── 1 · YOUR CREW — ONE row per agent carrying BOTH per-agent axes: CAN REACH (the execution profile
+         — a real runtime/filesystem/tool envelope) and ASKS FIRST (the approval posture). They stay two
+         independent settings on two independent write paths (access.config.setExecutionProfile /
+         setApproval — the same paths the dossier cards and /yolo use); what changed is only that they are
+         rendered together, because they describe the SAME crew member. Split across two lists forty rows
+         apart, setting up one agent meant scrolling between two tables and matching names by eye.
+         `lastTruth` caches the sidecar's /api/execution-profiles answer so an APPROVAL flip can repaint the
+         row without knocking its routing line back to "checking…" (the row would otherwise lie downward). */
+      const crewList = host.querySelector('#perm-crew');
+      const policyHost = host.querySelector('#perm-exec-policy');
+      const glanceWrap = host.querySelector('#perm-glance');
+      let lastTruth = null;
+      /* IDLE SAFE CELLS — station-wide Docker housekeeping. It used to be the first row under the
+         execution-profile header, ABOVE every agent; it is maintenance, so it now lives in the closed
+         ADVANCED disclosure at the foot of the pane. */
+      const paintPolicy = (truth) => {
+        if (!policyHost) return;
         const idleMinutes = Number(truth && truth.policy && truth.policy.idleCleanupMinutes);
-        const policy = '<div class="perm-agent exec-policy"><span class="pa-name">IDLE SAFE CELLS</span><span class="pa-mode">STOP, NEVER DELETE</span>' +
-          '<span class="pa-state">Stops owned inactive Docker cells after the selected idle time. Active or background work is refused; the writable container layer remains.</span>' +
-          '<div class="set-row"><label for="exec-idle-min">MINUTES</label><input id="exec-idle-min" class="key-input" type="number" min="0" max="1440" step="1" value="' + esc(String(Number.isFinite(idleMinutes) ? idleMinutes : 60)) + '"><button class="bb sm" data-exec-policy-save>SAVE POLICY</button></div>' +
-          '<div class="mc-hint">0 disables automatic cleanup. STOP IDLE CELL uses the same active-work refusal.</div></div>';
-        epList.innerHTML = policy + present.map(a => {
+        policyHost.innerHTML =
+          '<p class="set-about perm-lede">A crew member on SAFE CELL runs inside a Docker container. This stops the containers that have been sitting idle — it <b>never deletes</b> them and it refuses to touch one that is still working, so nothing in them is lost.</p>' +
+          '<div class="set-row perm-policy-row"><label for="exec-idle-min">STOP AFTER (MINUTES)</label>' +
+            '<input id="exec-idle-min" class="key-input" type="number" min="0" max="1440" step="1" value="' + esc(String(Number.isFinite(idleMinutes) ? idleMinutes : 60)) + '">' +
+            '<button class="bb sm" data-exec-policy-save>SAVE POLICY</button></div>' +
+          '<div class="mc-hint">0 disables automatic cleanup. The STOP IDLE CELL button on a Safe Cell crew row uses the same active-work refusal.</div>';
+        const policySave = policyHost.querySelector('[data-exec-policy-save]');
+        if (policySave) policySave.addEventListener('click', () => {
+          const input = policyHost.querySelector('#exec-idle-min');
+          policySave.disabled = true;
+          Harness.api.post('/api/execution/policy', { idleCleanupMinutes: Number(input && input.value) }).then(j => {
+            notify(j && j.ok ? 'idle-cell cleanup policy saved' : ((j && j.error) || 'could not save cleanup policy'), j && j.ok ? 'good' : 'bad');
+            refreshExecutionProfiles();
+          }).catch(() => { notify('could not save cleanup policy', 'bad'); refreshExecutionProfiles(); });
+        });
+      };
+      /* AT A GLANCE — the plain-sentence summary, counted from the SAME live records the rows render, so it
+         can never claim a posture the roster does not hold. The standing floor is stated here once, in
+         ordinary words, because "what can it never do to me" is the first thing a beginner wants answered. */
+      const paintGlance = () => {
+        if (!glanceWrap) return;
+        const snap = PermissionsStore.snapshot() || {};
+        const bypassOn = !!(snap.loaded && (snap.masterBypass || snap.envFullAccess));
+        const n = present.length;
+        const noPrompt = present.filter(a => a && a.approvalMode === 'full').length;
+        const asks = n - noPrompt;
+        const broadest = present.reduce((best, a) => {
+          const p = executionProfileOf(executionProfileId(a));
+          return (!best || p.reach > best.p.reach) ? { p: p, a: a } : best;
+        }, null);
+        // Whole sentences per branch rather than glued fragments — a concatenated subject and verb
+        // disagree the moment the crew count is 1 ("Your one crew member stops and ask you").
+        const everyone = (verbSingular, verbPlural) => n === 1
+          ? 'Your one crew member ' + verbSingular
+          : 'All ' + n + ' of your crew ' + verbPlural;
+        let head;
+        if (!n) head = 'No crew on the station yet. Nothing can run until you summon someone.';
+        else if (bypassOn) head = everyone('runs', 'run') + ' without stopping to ask you — the override in block 2 is ON.';
+        else if (!noPrompt) head = everyone('stops and asks', 'stop and ask') + ' you before anything risky.';
+        else if (!asks) head = everyone('runs', 'run') + ' without stopping to ask you.';
+        else head = asks + ' of your ' + n + ' crew ask before anything risky; ' + noPrompt + ' run' + (noPrompt === 1 ? 's' : '') + ' without asking.';
+        const reachLine = broadest
+          ? 'Furthest reach on the station: <b>' + esc(broadest.p.label) + '</b> (' + esc(broadest.a.name || broadest.a.id) + ') — ' + esc(broadest.p.plain)
+          : '';
+        glanceWrap.classList.toggle('loud', bypassOn);
+        glanceWrap.innerHTML =
+          '<p class="pg-line">' + esc(head) + '</p>' +
+          (reachLine ? '<p class="pg-reach">' + reachLine + '</p>' : '') +
+          '<p class="pg-floor">No setting on this page can change these: protected files (<code>.env</code>, <code>.git</code>) are never writable, and nothing moves your real mouse or sees your real screen unless you pair a desktop lease by hand.</p>';
+      };
+      const paintCrew = () => {
+        if (!crewList) return;
+        paintGlance();
+        if (!present.length) { crewList.innerHTML = '<p class="set-about">No crew yet — summon an agent and it will appear here with its own two settings.</p>'; return; }
+        const can = !!(access.config && access.config.setExecutionProfile);
+        const canAsk = !!(access.config && access.config.setApproval);
+        const truth = lastTruth;
+        /* The block-2 override outranks every per-agent ASKS FIRST setting. A row that keeps printing
+           "ASKS" while the switch is ON is the app asserting a state the harness will not honour — the
+           exact truthful-telemetry violation this pane exists to avoid. So the ROW reports the EFFECTIVE
+           posture, and the stored setting stays visible (and editable) underneath, named as what it will
+           do once the override is off. Never one without the other: hiding the stored value would make
+           the chips lie in the other direction. */
+        const snap = PermissionsStore.snapshot() || {};
+        const overridden = !!(snap.loaded && (snap.masterBypass || snap.envFullAccess));
+        crewList.innerHTML = present.map(a => {
           const id = executionProfileId(a);
-          const p = EXECUTION_PROFILES.find(x => x.id === id) || EXECUTION_PROFILES[0];
+          const p = executionProfileOf(id);
+          const full = !!(a && a.approvalMode === 'full');
           const row = ((truth && truth.agents) || []).find(x => x.agentId === a.id);
           const routed = String((row && row.profile && row.profile.effectiveBackend) || 'checking…').toUpperCase();
           const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
@@ -5621,24 +5733,51 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               (sshConfigured ? '<button class="bb sm" data-ssh-sync="push">PUSH NOW</button><button class="bb sm" data-ssh-sync="pull">PULL NOW</button><button class="bb xs danger" data-ssh-clear>CLEAR TARGET</button>' : '') +
             '</div></details>';
           const cell = id === 'safe-cell' ? '<div class="mc-acts"><button class="bb sm" data-cell-stop="' + esc(String(a.id)) + '">STOP IDLE CELL</button></div>' : '';
-          return '<div class="perm-agent" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
-            '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-            '<span class="pa-mode">' + esc(p.label) + '</span>' +
-            '<span class="pa-state">routes next command to ' + esc(routed) + ' · availability ' + esc(availability) + ' · ' + esc(p.files) + ' · ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</span>' +
-            (can ? '<div class="ov-vchips">' + EXECUTION_PROFILES.map(x => '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('') + '</div>' : '') +
-            cell + ssh +
+          // CAN REACH — the ladder, safest first, each chip wearing its own reach meter so the ordering is
+          // legible without reading five labels. THIS COMPUTER arms before it applies (see wireCrew).
+          const reachChips = EXECUTION_PROFILES.map(x =>
+            '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" data-reach="' + x.reach + '" title="' + esc(x.plain) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + reachMeter(x.reach) + esc(x.label) + '</button>').join('');
+          // ASKS FIRST — a two-chip segmented control in the same grammar as the reach ladder above it. It
+          // replaced a single button whose label named the TARGET state ("RUN WITHOUT PROMPTS") while the tag
+          // beside it named the CURRENT one ("ASKS") — two opposite words on one row, read as a contradiction.
+          const askChips =
+            '<button class="ov-vchip' + (full ? '' : ' sel') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="ask" data-name="YES — ASK ME" aria-pressed="' + (full ? 'false' : 'true') + '">YES — ASK ME</button>' +
+            '<button class="ov-vchip' + (full ? ' sel' : '') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="full" data-name="NO — JUST DO IT" aria-pressed="' + (full ? 'true' : 'false') + '">NO — JUST DO IT</button>';
+          // the EFFECTIVE posture — what this agent will actually do on its next risky call
+          const effFull = full || overridden;
+          return '<div class="perm-agent perm-crew-row' + (effFull ? ' full' : '') + (overridden ? ' overridden' : '') + '" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
+            '<div class="pc-head">' +
+              '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
+              '<span class="pa-mode">' + (effFull ? 'NO PROMPTS' : 'ASKS') + '</span>' +
+              '<span class="pa-state">' + esc(p.short) + ' · ' + (effFull ? 'never stops to ask you' : 'stops before it writes, runs, or reaches out') + '</span>' +
+            '</div>' +
+            '<div class="pc-axis">' +
+              '<span class="pc-q">CAN REACH</span>' +
+              (can ? '<div class="ov-vchips pc-chips">' + reachChips + '</div>' : '<span class="pc-plain">' + esc(p.label) + '</span>') +
+              '<p class="pc-plain">' + esc(p.plain) + '</p>' +
+              '<p class="mc-hint pc-truth">routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
+            '</div>' +
+            '<div class="pc-axis pc-ask-axis">' +
+              '<span class="pc-q">ASKS FIRST' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY BLOCK 2</span>' : '') + '</span>' +
+              (canAsk ? '<div class="ov-vchips pc-chips">' + askChips + '</div>' : '') +
+              '<p class="pc-plain">' + (overridden
+                ? 'The switch in block 2 is ON, so this agent is not asking about anything right now. ' + (full
+                  ? 'It is also set to run without prompts on its own.'
+                  : 'Turn that switch off and it goes back to stopping for your yes, as selected here.')
+                : full
+                  ? 'It writes files, runs commands and reaches out on its own, without pausing — inside the reach above, and nowhere wider.'
+                  : 'Before it writes a file, runs a command, or reaches outside, it stops and waits for your yes.') + '</p>' +
+            '</div>' +
+            (cell || ssh ? '<div class="pc-more">' + cell + ssh + '</div>' : '') +
             '</div>';
         }).join('');
-        const policySave = epList.querySelector('[data-exec-policy-save]');
-        if (policySave) policySave.addEventListener('click', () => {
-          const input = epList.querySelector('#exec-idle-min');
-          policySave.disabled = true;
-          Harness.api.post('/api/execution/policy', { idleCleanupMinutes: Number(input && input.value) }).then(j => {
-            notify(j && j.ok ? 'idle-cell cleanup policy saved' : ((j && j.error) || 'could not save cleanup policy'), j && j.ok ? 'good' : 'bad');
-            refreshExecutionProfiles();
-          }).catch(() => { notify('could not save cleanup policy', 'bad'); refreshExecutionProfiles(); });
-        });
-        epList.querySelectorAll('[data-ssh-save]').forEach(button => button.addEventListener('click', () => {
+        wireCrew();
+      };
+      // Wiring is its own pass so paintCrew stays a pure template; every handler is re-bound against THIS
+      // paint's DOM (the rows are replaced wholesale on every repaint, so nothing survives to leak).
+      const wireCrew = () => {
+        if (!crewList) return;
+        crewList.querySelectorAll('[data-ssh-save]').forEach(button => button.addEventListener('click', () => {
           const box = button.closest('[data-exec-agent]'); if (!box) return;
           button.disabled = true;
           const payload = { agentId: box.getAttribute('data-exec-agent'), host: (box.querySelector('[data-ssh-host]') || {}).value || '', user: (box.querySelector('[data-ssh-user]') || {}).value || '', port: Number((box.querySelector('[data-ssh-port]') || {}).value || 22), remoteRoot: (box.querySelector('[data-ssh-root]') || {}).value || '/workspace' };
@@ -5647,7 +5786,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             refreshExecutionProfiles();
           }).catch(() => { notify('could not save SSH target', 'bad'); refreshExecutionProfiles(); });
         }));
-        epList.querySelectorAll('[data-ssh-sync]').forEach(button => button.addEventListener('click', () => {
+        crewList.querySelectorAll('[data-ssh-sync]').forEach(button => button.addEventListener('click', () => {
           const box = button.closest('[data-exec-agent]'); if (!box) return;
           button.disabled = true;
           Harness.api.post('/api/execution/sync', { agentId: box.getAttribute('data-exec-agent'), direction: button.getAttribute('data-ssh-sync') }).then(j => {
@@ -5655,22 +5794,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             refreshExecutionProfiles();
           }).catch(() => { notify('workspace sync failed', 'bad'); refreshExecutionProfiles(); });
         }));
-        epList.querySelectorAll('[data-ssh-clear]').forEach(button => ArmConfirm.wire(button, { armedLabel: 'SURE? CLEAR TARGET', restLabel: 'CLEAR TARGET', timeoutMs: 4000, onConfirm: () => {
+        crewList.querySelectorAll('[data-ssh-clear]').forEach(button => ArmConfirm.wire(button, { armedLabel: 'SURE? CLEAR TARGET', restLabel: 'CLEAR TARGET', timeoutMs: 4000, onConfirm: () => {
           const box = button.closest('[data-exec-agent]'); if (!box) return;
           Harness.api.post('/api/execution/ssh', { agentId: box.getAttribute('data-exec-agent'), clear: true }).then(() => { notify('SSH target cleared', 'good'); refreshExecutionProfiles(); }).catch(() => { notify('could not clear SSH target', 'bad'); refreshExecutionProfiles(); });
         } }));
-        epList.querySelectorAll('[data-cell-stop]').forEach(button => button.addEventListener('click', () => {
+        crewList.querySelectorAll('[data-cell-stop]').forEach(button => button.addEventListener('click', () => {
           button.disabled = true;
           Harness.api.post('/api/execution/cleanup', { agentId: button.getAttribute('data-cell-stop') }).then(j => {
             notify(j && j.ok ? 'idle Safe Cell stopped — container preserved' : ((j && (j.reason || j.error)) || 'cell is active or unavailable'), j && j.ok ? 'good' : 'bad');
             refreshExecutionProfiles();
           }).catch(() => { notify('could not stop Safe Cell', 'bad'); refreshExecutionProfiles(); });
         }));
-        epList.querySelectorAll('[data-perm-profile]').forEach(b => {
+        /* CAN REACH chips. A chip's rest face is METER + LABEL, so the escalation to THIS COMPUTER arms
+           with a bespoke innerHTML swap rather than ArmConfirm (whose textContent swap would flatten the
+           meter span — the same reason the context-menu rows keep bespoke logic). One press must ARM
+           WITHOUT GRANTING; a second within the window applies. */
+        let epArmed = null;
+        const epFace = (chip) => reachMeter(Number(chip.dataset.reach) || 0) + esc(chip.dataset.name || '');
+        const epDisarm = () => { if (epArmed) { epArmed.innerHTML = epFace(epArmed); epArmed.classList.remove('armed'); delete epArmed.dataset.armed; epArmed = null; } };
+        crewList.querySelectorAll('[data-perm-profile]').forEach(b => {
           const apply = () => {
             const parent = b.closest('[data-profile-agent]');
             if (b.getAttribute('data-perm-profile') === 'remote-ssh' && (!parent || parent.getAttribute('data-ssh-configured') !== '1')) {
-              notify('save an SSH target before selecting Remote SSH', 'bad'); return;
+              notify('open ADVANCED on this crew member and save an SSH target before choosing REMOTE SSH', 'bad'); return;
             }
             b.disabled = true;
             Promise.resolve(access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'))).then(ok => {
@@ -5679,52 +5825,40 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               refreshExecutionProfiles();
             }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); refreshExecutionProfiles(); });
           };
-          if (b.getAttribute('data-perm-profile') === 'this-computer' && !b.classList.contains('sel')) ArmConfirm.wire(b, { armedLabel: 'SURE? BROAD HOST PATHS', restLabel: 'THIS COMPUTER', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
-          else b.addEventListener('click', () => { sfx('click'); apply(); });
+          const arms = b.getAttribute('data-perm-profile') === 'this-computer' && !b.classList.contains('sel');
+          b.addEventListener('click', () => {
+            if (!arms) { epDisarm(); sfx('click'); apply(); return; }
+            if (epArmed === b) { epDisarm(); sfx('bad'); apply(); return; }
+            epDisarm(); epArmed = b; b.classList.add('armed'); b.dataset.armed = '1';
+            b.textContent = 'SURE? IT COULD READ ANY FILE HERE'; sfx('bad');
+            setTimeout(() => { if (epArmed === b) epDisarm(); }, 4000);
+          });
         });
-      };
-      const refreshExecutionProfiles = () => Harness.api.get('/api/execution-profiles').then(paintExecutionProfiles).catch(() => paintExecutionProfiles(null));
-      paintExecutionProfiles(null);
-      refreshExecutionProfiles();
-
-      /* ── 2 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
-         (not copies), so approvalMode read here is the same truth pushRoster ships to the sidecar; a flip goes
-         through access.config.setApproval — the identical path the dossier CONFIG card and /yolo use — so the
-         per-run consent gate follows it. Escalation (→ FULL ACCESS) keeps the house two-press confirm; taking
-         power BACK (→ ask) applies on first click, never armed. */
-      const apWrap = host.querySelector('#perm-approval');
-      const paintApproval = () => {
-        if (!apWrap) return;
-        const can = !!(access.config && access.config.setApproval);
-        if (!present.length) { apWrap.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
-        // One row per crew member: name + MODE tag + sentence on the left, the flip button in a
-        // RIGHT-ALIGNED column, so the list reads as one aligned table instead of five ragged inline
-        // sentences with the control jammed against the last word. No glyph column — the state is
-        // already carried by the accent edge, the MODE tag and the sentence; a pictograph in front of
-        // each name was a third telling of the same fact, in an emoji face this app does not speak.
-        apWrap.innerHTML = present.map(a => {
-          const full = !!(a && a.approvalMode === 'full');
-          return '<div class="perm-agent' + (full ? ' full' : '') + '">' +
-            '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-            '<span class="pa-mode">' + (full ? 'NO PROMPTS' : 'ASKS') + '</span>' +
-            '<span class="pa-state">' + (full ? 'uses its current execution profile without pausing' : 'stops before it writes, runs, or reaches out') + '</span>' +
-            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? 'MAKE IT ASK' : 'RUN WITHOUT PROMPTS') + '</button>' : '') +
-            '</div>';
-        }).join('');
-        apWrap.querySelectorAll('[data-ap-flip]').forEach(b => {
+        /* ASKS FIRST chips — the same two write paths as before (access.config.setApproval, the identical
+           call the dossier CONFIG card and /yolo use), now expressed as a segmented pair rather than one
+           button whose label named the opposite of the tag beside it. Escalation (→ no prompts) keeps the
+           house two-press confirm; taking power BACK (→ ask) applies on the first click, never armed. */
+        crewList.querySelectorAll('[data-ap-flip]').forEach(b => {
           const id = b.getAttribute('data-ap-flip'), to = b.getAttribute('data-ap-to');
+          if (b.classList.contains('sel')) return;   // already the live state — nothing to apply
           // setApproval returns false when the roster no longer holds that id (deleted from another
           // surface while this panel sat open). Repaint either way — the list is what is WRONG in that
-          // case — and say so, rather than leaving a dead button that silently does nothing.
+          // case — and say so, rather than leaving a dead chip that silently does nothing.
           const apply = () => {
             const ok = access.config.setApproval(id, to);
-            paintApproval();
+            paintCrew();
             if (!ok) notify('that agent is no longer on the roster — the list has been refreshed', 'warn');
           };
-          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? NO PROMPTS', restLabel: 'RUN WITHOUT PROMPTS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? IT WILL NEVER ASK', restLabel: 'NO — JUST DO IT', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
           else b.addEventListener('click', () => { sfx('click'); apply(); });
         });
       };
+      const refreshExecutionProfiles = () => Harness.api.get('/api/execution-profiles')
+        .then(truth => { lastTruth = truth; paintCrew(); paintPolicy(truth); })
+        .catch(() => { paintCrew(); paintPolicy(lastTruth); });
+      paintCrew();
+      paintPolicy(null);
+      refreshExecutionProfiles();
       // WHOLE-STATION switches. Both COUNT what actually changed and report that number: a blanket
       // "whole station on FULL ACCESS" toast over an empty roster, or over a partly-failed sweep, is
       // the app asserting a state the harness never reached (the truthful-telemetry law).
@@ -5732,7 +5866,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!(access.config && access.config.setApproval)) return null;
         let done = 0;
         present.forEach(a => { if (access.config.setApproval(a.id, mode)) done++; });
-        paintApproval();
+        paintCrew();
         return { done: done, of: present.length };
       };
       const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
@@ -5756,8 +5890,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' will ask before risky moves again'
           : 'no crew to change — summon an agent first', r.done ? 'good' : 'bad');
       });
-      paintApproval();
-      repaintPermAgents = paintApproval;   // let a SUMMON / DELETE refresh this list while the panel is open
+      // A SUMMON / DELETE while the panel sits open must refresh this list (a panel painted from the roster
+      // owes a repaint hook — otherwise the pane offers a reach flip for an agent that no longer exists).
+      repaintPermAgents = paintCrew;
       const wireGrants = () => {
         if (!grantsWrap) return;
         grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
@@ -5833,6 +5968,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();
         paintBypass(snap);
+        // The glance sentence AND every crew row name the override state, so both must move WITH the
+        // switch — a flip that repainted only the card left the rows claiming "ASKS" under an ON override.
+        paintCrew();
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
         if (permStatus) {
