@@ -4777,10 +4777,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
          touch a thing, never by how advanced it is:
            AT A GLANCE      — what the station is allowed to do right now, COUNTED from the live roster.
            TIER 1 · POSTURE — three station-wide buttons. One click and a newcomer is done.
-           TIER 2 · CREW    — visible: one row per agent, the "except this one" override of tier 1.
-           TIER 3 · ADVANCED (closed) — master override · unattended ladder · standing approvals ·
-                              idle Safe Cell cleanup. Real controls, rarely touched. ONE fold, never
-                              a fold inside a fold — a nested disclosure hides the thing twice.
+           TIER 2 · CREW    — one row per agent, the "except this one" override of tier 1.
+           then the rest of the PERMISSIONS, all visible: SKIP EVERY PROMPT (it outranks every row
+           above it, so it is the last thing that should hide) · WHILE YOU'RE AWAY · STANDING
+           APPROVALS (a revocation you cannot find is not revocable).
+           ADVANCED (closed) — idle Safe Cell cleanup, and ONLY that. Maintenance is the one thing
+           here that earns a fold; ONE fold, never a fold inside a fold.
          No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule). */
       // ── AT A GLANCE — the pane's answer to "what is my station allowed to do RIGHT NOW", in one
       // ordinary sentence, computed from the live roster + the server's bypass truth. Beginners opened
@@ -4807,35 +4809,36 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // NOTE: "zero-prompt posture applies watched or unattended" and the "does not add tools…" clause are
       // LOCKED honesty claims from the full-access lane — condense around them, never through them.
       '<div class="mc-hint">These two change whether it asks — nobody’s reach changes. Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. <code>/yolo</code> is the shortcut. Protected host actions remain blocked automatically.</div>' +
-      // ── TIER 3 · ADVANCED — the controls that are real but rarely touched: the master override, the
-      // unattended ladder, the standing-grant ledger and Docker housekeeping. Closed, but ONE fold, not
-      // a fold inside a fold — a nested disclosure hides the thing twice.
+      // The master switch — it overrides the ASKS FIRST setting on every row above, so it sits directly
+      // under them. Visible: it is a permission, and a switch that silently outranks the rows above it
+      // is the last thing that should be hidden behind a disclosure.
+      '<h4 class="ms-h">SKIP EVERY PROMPT <span class="dim">— one switch that overrides all of the above</span></h4>' +
+      '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
+      // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
+      // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the
+      // dial uses. Stored data-level values are unchanged. FULLY AUTONOMOUS stays in the label (it says
+      // the stakes plainly). Plain-language line first, house vocabulary second.
+      '<h4 class="ms-h">WHILE YOU’RE AWAY <span class="dim">— how much it starts on its own</span></h4>' +
+      '<p class="set-about perm-lede">Whether it begins anything at all when you are not here. The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
+      '<p class="set-about perm-lede" id="perm-desc"></p>' +
+      '<p class="set-about perm-lede" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
+      '<div class="set-themes" id="perm-level">' +
+        '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">WAIT</button>' +
+        '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
+        '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
+        '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
+      '</div>' +
+      // STANDING APPROVALS — a review surface, not a setup one, but still a PERMISSION: it is the list of
+      // things already blessed, and a revocation you cannot find is not really revocable. Visible.
+      // (The "answer ALWAYS and it lands here" teaching is the ledger's own empty state; repeating it in
+      // a lede printed the same sentence twice on a fresh station.)
+      '<h4 class="ms-h">STANDING APPROVALS <span class="dim">— what you already said yes to, for good</span></h4>' +
+      '<div class="key-list perm-grants" id="perm-grants"></div>' +
+      // ── ADVANCED — station-wide Docker housekeeping, and ONLY that. Everything else on this pane is a
+      // permission somebody might genuinely need to find; this is maintenance, so it is the one thing
+      // that earns a fold. ONE fold, never a fold inside a fold.
       '<details class="perm-fold" id="perm-advanced">' +
-        '<summary>Advanced permissions</summary>' +
-        // The master switch — it overrides the ASKS FIRST setting on every row above.
-        '<h4 class="ms-h">SKIP EVERY PROMPT <span class="dim">— one switch that overrides all of the above</span></h4>' +
-        '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
-        // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
-        // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the
-        // dial uses. Stored data-level values are unchanged. FULLY AUTONOMOUS stays in the label (it says
-        // the stakes plainly). Plain-language line first, house vocabulary second.
-        '<h4 class="ms-h">WHILE YOU’RE AWAY <span class="dim">— how much it starts on its own</span></h4>' +
-        '<p class="set-about perm-lede">Whether it begins anything at all when you are not here. The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
-        '<p class="set-about perm-lede" id="perm-desc"></p>' +
-        '<p class="set-about perm-lede" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
-        '<div class="set-themes" id="perm-level">' +
-          '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">WAIT</button>' +
-          '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
-          '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
-          '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
-        '</div>' +
-        // STANDING APPROVALS — a review surface, not a setup one. (The "answer ALWAYS and it lands here"
-        // teaching is the ledger's own empty state; repeating it in a lede printed it twice on a fresh station.)
-        '<h4 class="ms-h">STANDING APPROVALS <span class="dim">— what you already said yes to, for good</span></h4>' +
-        '<div class="key-list perm-grants" id="perm-grants"></div>' +
-        // Station-wide Docker housekeeping. It is already inside ADVANCED — giving it a second
-        // disclosure of its own would hide it twice, so it is a plain section here.
-        '<h4 class="ms-h">IDLE SAFE CELLS <span class="dim">— stop containers that have gone quiet</span></h4>' +
+        '<summary>Advanced — idle Safe Cell cleanup</summary>' +
         '<div id="perm-exec-policy"></div>' +
       '</details>';
     const secBudget =

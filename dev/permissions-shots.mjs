@@ -141,6 +141,10 @@ async function main() {
           .map(h => h.textContent.trim().split(' — ')[0]).filter(t => /^[0-9] · /.test(t)),
         // the four sections must still EXIST inside the fold — dropping the numbers must not drop a section
         foldSections: [...document.querySelectorAll('#perm-advanced .ms-h')].map(h => h.textContent.trim().split(' — ')[0].trim()),
+        // every real PERMISSION must be reachable WITHOUT opening a disclosure
+        visibleSections: [...document.querySelectorAll('.con-pane .ms-h')]
+          .filter(h => !h.closest('details')).map(h => h.textContent.trim().split(' — ')[0].trim()),
+        policyInAdvancedFold: !!q('#perm-advanced #exec-idle-min'),
         glance: (q('#perm-glance .pg-line') || {}).textContent,
         glanceReach: (q('#perm-glance .pg-reach') || {}).textContent,
         glanceFloor: !!q('#perm-glance .pg-floor'),
@@ -166,12 +170,14 @@ async function main() {
     // the numbered blocks are GONE — a newcomer no longer walks four of them in order, and nothing
     // cross-references 'block 2' any more. What must survive is the four SECTIONS inside the fold.
     check('no numbered blocks survive', shape.heads.length === 0, shape.heads);
-    // the four RARE sections live in ADVANCED (EACH CREW MEMBER is tier 2 and stays outside it) —
-    // restructuring the pane must never silently drop one of them
-    check('all four rare sections exist inside ADVANCED',
-      ['SKIP EVERY PROMPT', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS', 'IDLE SAFE CELLS']
-        .every(h => shape.foldSections.includes(h)), shape.foldSections);
-    check('EACH CREW MEMBER is NOT inside ADVANCED', !shape.foldSections.includes('EACH CREW MEMBER'), shape.foldSections);
+    // ADVANCED now holds exactly one thing: the idle-cell maintenance knob.
+    check('the idle-cell policy is inside ADVANCED', shape.policyInAdvancedFold, shape.policyInAdvancedFold);
+    // ONLY maintenance is folded. A permission behind a disclosure is a permission nobody finds — the
+    // override outranks every crew row, and a standing grant you cannot see is not really revocable.
+    check('every real permission is visible without opening anything',
+      ['EACH CREW MEMBER', 'SKIP EVERY PROMPT', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS']
+        .every(h => shape.visibleSections.includes(h)), shape.visibleSections);
+    check('ADVANCED holds no permission sections', shape.foldSections.length === 0, shape.foldSections);
     check('one crew row per agent', shape.rows === shape.agents && shape.rows > 0, [shape.rows, shape.agents]);
     check('the two old crew lists are gone', shape.deadLists.every(x => x === false), shape.deadLists);
     // the ASKS FIRST question carries an '— OVERRIDDEN BY …' suffix whenever the master switch is on
