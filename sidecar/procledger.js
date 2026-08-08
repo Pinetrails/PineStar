@@ -44,21 +44,34 @@
   // platform can't report it). created is the SECOND half of the PID-reuse guard: even if a recycled PID's
   // command line coincidentally matches, a process created AFTER we recorded the entry is provably not ours.
   function makeWin32Probe(execFile) {
-    return (pids) => new Promise((resolve) => {
+    return (pids) => new Promise((resolve, reject) => {
       if (!pids.length) return resolve(new Map());
       const filter = pids.map(p => 'ProcessId=' + Number(p)).join(' OR ');
       // CreationDate → epoch ms so the sweep can compare it to the recorded startedAt (also epoch ms).
       const script = 'Get-CimInstance Win32_Process -Filter "' + filter + '" | ForEach-Object { [pscustomobject]@{ ProcessId = $_.ProcessId; CommandLine = $_.CommandLine; CreatedMs = [int64]([datetimeoffset]$_.CreationDate).ToUnixTimeMilliseconds() } } | ConvertTo-Json -Compress';
       const exe = process.env.SystemRoot ? process.env.SystemRoot + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' : 'powershell.exe';
       execFile(exe, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 15000, windowsHide: true }, (err, stdout) => {
-        const out = new Map();
-        if (err) return resolve(out);   // probe failure -> nothing matches -> nothing killed (safe default)
-        try {
-          let rows = JSON.parse(String(stdout || '').trim() || '[]');
+        const parse = (text, identityOnly) => {
+          const out = new Map();
+          let rows = JSON.parse(String(text || '').trim() || '[]');
           if (!Array.isArray(rows)) rows = [rows];
-          for (const r of rows) if (r && r.ProcessId != null) out.set(Number(r.ProcessId), { cmd: String(r.CommandLine || ''), created: Number(r.CreatedMs) || null });
-        } catch (_) {}
-        resolve(out);
+          for (const r of rows) if (r && r.ProcessId != null) out.set(Number(r.ProcessId), { cmd: String(r.CommandLine || ''), created: Number(r.CreatedMs) || null, identityOnly: !!identityOnly });
+          return out;
+        };
+        if (err) {
+          // CIM is denied on some managed Windows hosts. Get-Process still exposes an exact start time,
+          // which is sufficient for PINNED receipts. Mark it identityOnly so an older unpinned receipt is
+          // retained for a later richer probe rather than laundered into "reused" and forgotten.
+          const ids = pids.map(Number).join(',');
+          const fallback = '$ids=@(' + ids + '); Get-Process -Id $ids -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ ProcessId=$_.Id; CommandLine=""; CreatedMs=[int64]([datetimeoffset]$_.StartTime).ToUnixTimeMilliseconds() } } | ConvertTo-Json -Compress';
+          return execFile(exe, ['-NoProfile', '-NonInteractive', '-Command', fallback], { encoding: 'utf8', timeout: 15000, windowsHide: true }, (fallbackErr, fallbackOut) => {
+            if (fallbackErr) return reject(fallbackErr);
+            try { resolve(parse(fallbackOut, true)); } catch (e) { reject(e); }
+          });
+        }
+        try {
+          resolve(parse(stdout, false));
+        } catch (e) { reject(e); }
       });
     });
   }
@@ -168,7 +181,7 @@
     // force-killed. Only kills a PID whose live command line still matches the recorded command.
     async function sweep() {
       const entries = stale.slice();
-      const summary = { examined: entries.length, killed: 0, reused: 0, gone: 0, probeFailed: false };
+      const summary = { examined: entries.length, killed: 0, reused: 0, gone: 0, uncertain: 0, probeFailed: false };
       if (!entries.length) { save(); return summary; }
       let alive;
       try { alive = await probe(entries.map(r => r.pid)); }
@@ -192,6 +205,7 @@
           // time is a recycled/uncertain PID and is NEVER killed.
           if (!(Number(created) > 0) || Number(created) !== pinnedCreated) { summary.reused++; continue; }
         } else {
+          if (info && typeof info === 'object' && info.identityOnly) { summary.uncertain++; stale.push(r); continue; }
           if (!cmdMatches(r.cmd, liveCmd)) { summary.reused++; continue; }   // legacy/unpinned entry
           // record() happens after spawn, so even 1ms newer than startedAt is not our original child.
           if (created != null && Number(r.startedAt) > 0 && Number(created) > Number(r.startedAt)) { summary.reused++; continue; }

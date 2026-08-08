@@ -1917,7 +1917,7 @@ const Build = (() => {
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const rowsEl = g.querySelector('#c-rows');
     // semantic state → dot class (theme vars, no inline hex): up=ok · warming/offline=warn · error=bad
-    const STATE_CLASS = { connected: 'ok', ready: 'ok', up: 'ok', warming: 'warn', offline: 'warn', down: 'warn', error: 'bad' };
+    const STATE_CLASS = { connected: 'ok', ready: 'ok', up: 'ok', cached: 'warn', warming: 'warn', offline: 'warn', down: 'warn', error: 'bad' };
     const bind = (id, label) => { const res = station.bindConnector(propId, id); if (res && res.ok) { sfx('click'); flashTip(ev, 'bound → ' + (label || id), true); closeP(); } else sfx('bad'); };
     g.querySelector('#c-unbind').onclick = () => { station.bindConnector(propId, ''); sfx('click'); flashTip(ev, 'portal unbound', true); closeP(); };
     g.querySelector('#c-cancel').onclick = closeP;
