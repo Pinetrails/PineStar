@@ -4533,6 +4533,42 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
       });
     });
+
+    // LIVE DOCTOR: explicit second consent, then one bounded host request. Results stay visible and copyable;
+    // textContent is used throughout so a provider/transport error can never become markup.
+    const liveBtn = body.querySelector('#diag-live-run');
+    const liveConsent = body.querySelector('#diag-live-consent');
+    const liveMsg = body.querySelector('#diag-live-msg');
+    const liveOut = body.querySelector('#diag-live-out');
+    const liveCopy = body.querySelector('#diag-live-copy');
+    if (liveBtn) liveBtn.addEventListener('click', () => {
+      if (!liveConsent || !liveConsent.checked) {
+        if (liveMsg) { liveMsg.textContent = 'check the live-probe consent first'; liveMsg.className = 'msg'; }
+        return;
+      }
+      if (typeof Diag === 'undefined' || typeof Diag.runLive !== 'function') {
+        if (liveMsg) liveMsg.textContent = 'live doctor unavailable';
+        return;
+      }
+      liveBtn.disabled = true; liveConsent.disabled = true;
+      if (liveMsg) { liveMsg.textContent = 'running bounded live probes…'; liveMsg.className = 'msg'; }
+      if (liveOut) { liveOut.hidden = true; liveOut.textContent = ''; }
+      if (liveCopy) liveCopy.hidden = true;
+      Diag.runLive({ confirmed: true }).then(result => {
+        if (liveMsg) { liveMsg.textContent = 'live doctor finished — receipt is ready'; liveMsg.className = 'msg ok'; }
+        if (liveOut) { liveOut.textContent = result.text; liveOut.hidden = false; }
+        if (liveCopy) { liveCopy.hidden = false; liveCopy.dataset.receipt = result.text; }
+      }).catch(e => {
+        if (liveMsg) { liveMsg.textContent = String((e && e.message) || 'live doctor failed'); liveMsg.className = 'msg'; }
+      }).finally(() => {
+        liveBtn.disabled = false; liveConsent.disabled = false; liveConsent.checked = false;
+      });
+    });
+    if (liveCopy) liveCopy.addEventListener('click', () => {
+      const text = String(liveCopy.dataset.receipt || '');
+      if (!text || typeof Diag === 'undefined' || typeof Diag.copyText !== 'function') return;
+      Diag.copyText(text).then(ok => { liveCopy.textContent = ok ? '✓ RECEIPT COPIED' : 'SELECT THE RECEIPT TO COPY'; });
+    });
   }
 
   function wireBackup(body) {
@@ -4930,6 +4966,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       })()) +
       '<div class="set-save"><button class="bb sm" id="diag-copy">⧉ COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
+      '<h4 class="ms-h">LIVE DOCTOR <span class="dim">— opt-in runtime proof</span></h4>' +
+      '<p class="set-about">Runs one tiny response through the selected model, a harmless sentinel through the effective execution profile, an initialize/list round-trip for each enabled MCP server, and safe authentication/status checks for messaging channels. It sends no channel messages and exports no secrets.</p>' +
+      '<label class="set-check"><input type="checkbox" id="diag-live-consent"> I understand this performs real network and execution probes and may spend one tiny model response.</label>' +
+      '<div class="set-save"><button class="bb sm" id="diag-live-run">RUN LIVE DOCTOR</button><button class="bb sm" id="diag-live-copy" hidden>⧉ COPY RECEIPT</button></div>' +
+      '<div id="diag-live-msg" class="msg"></div>' +
+      '<pre id="diag-live-out" class="diag-pre" tabindex="0" hidden style="white-space:pre-wrap;overflow:auto;max-height:40vh"></pre>' +
       // P1.5 build provenance — the git commit this desktop binary was compiled from. Hidden until resolved (and
       // stays hidden in a plain browser, where there is no binary to prove). Populated in wireDiagnostics().
       '<div id="diag-build" class="dim" style="margin-top:6px;font-size:11px" hidden></div>' +

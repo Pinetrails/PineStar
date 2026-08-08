@@ -11,6 +11,8 @@ test/diagnostics.test.js
 test/diagnostics-support-email.test.js
 test/diagnostics-build.test.js
 test/diagnostics-dead-engine.test.js
+test/live-doctor.test.js
+test/live-doctor-ui.test.js
 test/outbound-failure-diagnosability.test.js
 test/reflect.test.js
 test/memcore.test.js
@@ -207,6 +209,8 @@ test/agent-config-target.test.js
 test/notebookrestore.test.js
 test/runstore.test.js
 test/run-journal.test.js
+test/runrecoveries-ui.test.js
+test/run-recovery-continuation.test.js
 test/run-journal.loop.test.js
 test/longhaul-retention.test.js
 test/autonomy-ledger.test.js
@@ -382,7 +386,9 @@ test/harness-internal.test.js
 test/chat-runmeta.test.js
 test/chat-stopped-retry.test.js
 test/comms-history-pin.test.js
+test/composer-paste-limit.test.js
 test/chat-linkify.test.js
+test/chat-code-copy.test.js
 test/mint.test.js
 test/ctxgauge.test.js
 test/ctx-model-catalog.test.js
@@ -550,6 +556,7 @@ test/opensource-readiness.test.js
 test/source-release-mirror.test.js
 test/release-train-provenance.test.js
 test/desktop-build-macos-notarization.test.js
+test/desktop-artifact-open.test.js
 test/release-train-macos-trust.test.js
 test/release-train-windows-trust.test.js
 test/release-contract-docs.test.js

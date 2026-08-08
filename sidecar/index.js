@@ -74,6 +74,7 @@ const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
 const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
 const { makeRunJournal } = require('./run-journal.js');
+const RunRecovery = require('./run-recovery.js');
 const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
@@ -129,6 +130,7 @@ const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } =
 let Study = null; try { Study = require('../frontend/app/study.js'); } catch (_) { Study = null; }
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
 const { makeDiagnostics, proxyHostOnly } = require('./diagnostics.js');   // T3.9: pure paste-ready bug-report assembler (redacted, truthful)
+const LiveDoctor = require('./live-doctor.js');                           // opt-in bounded live proof + secret-free receipt
 const { makeStationInspectTool } = require('./tools/builtin/station-inspect.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -949,7 +951,8 @@ const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: ()
 // Active runs journal their provider-valid message and tool side-effect boundaries outside the agent fs jail.
 // Finished journals remain until the segmented transcript store acknowledges their final durable checkpoint;
 // this avoids deleting the only recovery copy after the legacy transcript writer's fail-open append.
-const runJournal = makeRunJournal({ dir: path.join(WORKSPACES, '.run-journal'), fs, path, clock: { now: () => Date.now() }, redact });
+const RUN_JOURNAL_DIR = path.join(WORKSPACES, '.run-journal');
+const runJournal = makeRunJournal({ dir: RUN_JOURNAL_DIR, fs, path, clock: { now: () => Date.now() }, redact });
 // Recovery is intentionally lazy. Thousands of unresolved/failed journals are audit evidence and
 // must not be discarded, but parsing all of them synchronously before server.listen made startup
 // proportional to lifetime failures. GET /api/run-recoveries pages through the durable files.
@@ -3757,7 +3760,11 @@ function placeCronWorkitem(agentId, prompt, runId) {
     const workitemId = crypto.randomUUID();
     if (runId) cronItems.set(runId, { agentId, workitemId });
     const depth = bumpQueue(agentId, +1);
-    chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'cron', preview, queueDepth: depth, ts: Date.now() });
+    // A ROUTINE IS ONE OF ITS LINE'S OWN TRIGGERS (work belongs to a line, 2026-08-07): a routine firing at a
+    // docked agent is that line running on schedule, so its crate carries the dock's lineId. Derived here from
+    // the armed plan (server-side, never from a request body — a caller must not be able to NAME a line and so
+    // unlock downstream spend). No dock / no armed plan -> absent -> terminal, exactly like a direct order.
+    chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'cron', lineId: router.lineOfAgent(agentId) || undefined, preview, queueDepth: depth, ts: Date.now() });
     chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
   } catch (_) {}
 }
@@ -3918,6 +3925,9 @@ const cronDriver = makeCronDriver({
      no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
   advanceChain: (o) => chainRunner.advance({
     agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+    // the routine fired AT this dock, so the work belongs to that dock's line and may run its stages.
+    // A routine whose agent crews no dock resolves null here and stays terminal (nothing downstream spends).
+    lineId: router.lineOfAgent(o.agentId),
     runAgent: async (h) => {
       if (o.onHop) { try { o.onHop(); } catch (_) {} }
       const hs = { buf: '', errMsg: null, usd: 0 };
@@ -6544,6 +6554,7 @@ function startTelegram(token, key, model, agentCfg) {
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
     stageBriefFor: (agentId) => router.stageBrief(agentId),                     // the dock's standing brief rides the run's context (prompt text only)
@@ -6607,7 +6618,10 @@ function startTelegram(token, key, model, agentCfg) {
             activeItem.set(chatKey, { agentId, workitemId });
             const depth = bumpQueue(agentId, +1);
             const preview = String(info.text || '').replace(/\s+/g, ' ').slice(0, 40);
-            chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
+            // `lineId` (additive — obj() stanzas set no additionalProperties:false) stamps the crate with the
+            // LINE this work entered on, or is absent for a direct order. The floor reads it to decide whether
+            // the pipeline may animate the handoff (work belongs to a line, 2026-08-07).
+            chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', lineId: info.lineId || undefined, preview, queueDepth: depth, ts: Date.now() });
             chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
           } else {
             const prior = activeItem.get(chatKey);
@@ -6780,6 +6794,7 @@ function startTelegramBot(botId) {
     // that agent's bay run here too; without this seam the same floor did less work depending on which bot
     // carried the message. getTag rides along so a FILTER downstream branches on the reply, station-bot style.
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     resolveRunConfig: channelRunConfigFor,                                    // every downstream dock owns its roster provider/model/credential
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),
@@ -6892,7 +6907,8 @@ function startDiscord(token, key, model, agentCfg) {
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
-      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+      chain: chainRunner,
+      lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
@@ -7000,6 +7016,7 @@ function getDevHub() {
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
@@ -7071,7 +7088,7 @@ async function handleDevInbound(req, res) {
         if (prior) chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() });
         activeItem.set(chatId, { agentId, workitemId });
         const depth = bumpQueue(agentId, +1);
-        chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'dev', preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
+        chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'dev', lineId: devResolved.lineId || undefined, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
         chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
       }
     }
@@ -7162,7 +7179,8 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       persona: channelPersona(desc.label), classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: desc.maxMessageLength,
       resolveAgent: (ctx) => router.resolveTarget(ctx),
-      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
+      chain: chainRunner,
+      lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       stageBriefFor: (agentId) => router.stageBrief(agentId),   // the dock's standing brief rides the run's context (prompt text only)
@@ -7399,6 +7417,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/local-voice/warm', h: media.handleLocalVoiceWarm },
   { m: 'POST', exact: '/api/local-voice/transcribe', h: media.handleLocalVoiceTranscribe },
   { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
+  { m: 'POST', exact: '/api/run-recoveries/resolve', h: handleRunRecoveryResolve },
+  { m: 'POST', exact: '/api/run-recoveries/continue', h: handleRunRecoveryContinue },
   { m: 'POST', exact: '/api/tts', h: media.handleTts, errorPolicy: media.ttsFailOpenPolicy },
   // stt: qsplit == the old (url === '/api/stt' || url.indexOf('/api/stt?') === 0) disjunction, verbatim.
   { m: 'POST', qsplit: '/api/stt', h: media.handleStt, errorPolicy: media.sttFailOpenPolicy },
@@ -7406,6 +7426,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/run/steer', h: handleRunSteer },
   { m: 'GET', exact: '/api/version', h: handleVersion },
   { m: 'GET', exact: '/api/diagnostics', h: handleDiagnostics },   // T3.9 paste-ready bug report
+  { m: 'POST', exact: '/api/diagnostics/live', h: handleLiveDoctor }, // opt-in live model/execution/MCP/channel proof
   { m: 'POST', exact: '/api/halt', h: handleHalt },
   { m: 'POST', exact: '/api/consent', h: handleConsent },
   { m: 'POST', exact: '/api/consent/ack', h: handleConsentAck },   // EL-11: the browser attests the prompt is human-visible
@@ -7963,13 +7984,20 @@ function handleRouting(req, res) {
    browser asks the SAME router the same question and drives the same hops. `pick` advances the round-robin
    exactly like every other caller, so a SPLIT downstream of a dock spreads across surfaces instead of each
    one always taking lane 0. Read-only apart from that counter; { next: null } for a terminal stage, an
-   unknown agent, or no routing floor at all. ---- */
+   unknown agent, or no routing floor at all.
+
+   WORK BELONGS TO A LINE (2026-08-07). `lineId` names the line the browser's work ENTERED on. It is not a
+   grant the caller invents: the answer is still decided by the compiled plan (Pipeline.chainNext refuses
+   any lineId that isn't this dock's own line), so the worst a wrong id can do is get { next: null }. No
+   lineId — the ordinary case for a COMMS directive, which is a direct order — is terminal by construction,
+   which is exactly why the browser stops advancing lines it was never triggered to run. ---- */
 function handleRoutingChain(req, res) {
   const u = new URL(req.url, 'http://x');
   const agentId = String(u.searchParams.get('agentId') || '').trim();
   const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
+  const lineId = String(u.searchParams.get('lineId') || '').trim() || undefined;
   let next = null;
-  try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  try { next = agentId ? router.chainNext(agentId, { tag: tag, lineId: lineId }) : null; } catch (_) { next = null; }
   // `brief` (additive, step editor 2026-08-05): the NEXT dock's standing job brief, so the browser's COMMS
   // work line composes the SAME handoff turn the sidecar executor does (chat.js runWorkLine — must not drift).
   let brief = null;
@@ -8017,6 +8045,7 @@ function getSampleHub() {
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
+    lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
     stageBriefFor: (agentId) => router.stageBrief(agentId),   // sample runs inherit the dock's standing brief exactly like real dispatch
@@ -8080,7 +8109,7 @@ async function handleRoutingSample(req, res) {
           workitemId = crypto.randomUUID();
           sampleInFlight.workitemId = workitemId;
           const depth = bumpQueue(agentId, +1);
-          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'sample', sample: true, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
+          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'sample', sample: true, lineId: sampleResolved.lineId || undefined, preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
           chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
         }
       }
@@ -9641,6 +9670,10 @@ async function handleCronRun(req, res) {
       try {
         const line = await chainRunner.advance({
           agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
+          // SAME ORIGIN AS THE SCHEDULED FIRE (work belongs to a line, 2026-08-07): Run Now is this routine's
+          // own trigger pressed by hand, so it carries the dock's lineId and the line runs. The two paths must
+          // not drift — a routine that runs four stages on schedule must run four from the button.
+          lineId: router.lineOfAgent(job.agentId),
           runAgent: async (h) => {
             const hs = { buf: '', errMsg: null, usd: 0 };
             const hopSink = (name, payload) => {
@@ -11492,6 +11525,17 @@ async function handleRun(req, res) {
   const key = providerRuntimeKey(runProvider, body && body.key);
   if (!model || !providerHasCredential(runProvider, key, baseUrl)) { res.writeHead(400); return res.end('missing key/model'); }
 
+  // Consume a continuation before opening the response stream or doing provider/tool work. The durable start
+  // record is intentionally one-way: losing this response may require another review, but retrying cannot run
+  // the same continuation twice and duplicate an external effect.
+  const runId = crypto.randomUUID();
+  let recovery = null;
+  if (body && body.recovery) {
+    const accepted = consumeRunRecoveryContinuation(body.recovery, agentId, runId);
+    if (!accepted.ok) { res.writeHead(accepted.code || 409); return res.end(accepted.error || 'continuation blocked'); }
+    recovery = accepted.plan;
+  }
+
   res.writeHead(200, {
     'Content-Type': 'application/x-ndjson; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -11502,7 +11546,6 @@ async function handleRun(req, res) {
   const kaOff = attachStreamKeepAlive(res);
 
   const ac = new AbortController();
-  const runId = crypto.randomUUID();
   runs.set(runId, ac);
   runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive', streamId: streamId || '' });
   // NS-1 AWAY DETECTION: a browser /api/run is genuinely user-triggered work — stamp the away clock so the
@@ -11617,7 +11660,7 @@ async function handleRun(req, res) {
     try { runMessages = await attachments.expandUserAttachments(messages, agentId); } catch (_) { runMessages = messages; }
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
-    await runOnce({
+    const continuedResult = await runOnce({
       key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal, evidence,
       initialTaint: hasUserAttachments ? 'user attachment' : null,
@@ -11646,11 +11689,14 @@ async function handleRun(req, res) {
          bounded exactly as before: AuxGovernor's per-run-end budget, the per-agent cooldown, and the salience gate
          all sit downstream of this flag. */
       reflect: true,
+      recovery,
       recurring,      // salience signal: did the mint detector see this task shape before? (decision 3)
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
                       // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
     });
+    if (recovery) settleRunRecoveryContinuation(recovery, runId, (continuedResult && continuedResult.reason) || 'error');
   } catch (e) {
+    if (recovery) settleRunRecoveryContinuation(recovery, runId, 'error');
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
@@ -12836,6 +12882,7 @@ async function runOnce(o) {
   // calls a GRANTED tool by its real dotted name also misses fromWire, and must keep falling through to the
   // ordinary capability/consent path exactly as before.
   const grantedSet = new Set(resolved.tools || []);
+  const recoveryReplayBarrier = RunRecovery.makeReplayBarrier(o.recovery && o.recovery.blockedFingerprints);
 
   /* PARALLEL-SAFE PREDICATE — the host half of loop.js's batch planner. The loop sees a name and args; only
      here does the registry exist to say what a tool actually IS. A batch runs concurrently only when EVERY
@@ -12892,6 +12939,17 @@ async function runOnce(o) {
       };
     }
     const liveTool = registry.get(c.name);
+    // This no-replay authority runs before taint, budgets, consent, workspace leases, checkpoints, journaling,
+    // and registry dispatch. A model cannot repeat an operator-reviewed mutation by ignoring the prompt or by
+    // merely changing JSON property order.
+    const replayCheck = recoveryReplayBarrier.check(c.name, c.argsRaw || '{}', !!(liveTool && liveTool.scope !== 'read'));
+    if (!replayCheck.ok) {
+      return {
+        ok: false, isError: true, summary: 'recovery-replay-blocked',
+        content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
+          + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
+      };
+    }
     if (directDomainTask && directDomainWithheld(c.name)) {
       return { ok: false, isError: true, summary: 'direct-domain-local', content: 'This is a bounded check of the exact host ' + directDomainTask.host + '. Do not delegate, search, browse, or call archives; fetch that host directly with web_fetch.' };
     }
@@ -12999,6 +13057,7 @@ async function runOnce(o) {
       try {
         runJournal.toolIntent(runId, {
           callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
+          replayFingerprint: RunRecovery.replayFingerprint(c.name, c.argsRaw || '{}'),
           mutating: !!(liveTool && liveTool.scope !== 'read')
         });
       } catch (e) {
@@ -13398,12 +13457,16 @@ async function runOnce(o) {
   // history the caller already supplied; gated to an explicit streamId (the global catch-all is not auto-seeded).
   let convo = messages;
   try {
-    if (!internal && streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
+    if (!o.recovery && !internal && streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
       const seed = transcriptStore.reconstruct(streamId, { limit: 100 });
       if (seed.length) convo = seed.concat(messages);   // prior dialogue first, the new directive stays last
     }
   } catch (_) { /* resume is best-effort; a bad transcript never blocks a run */ }
-  let msgs = sys ? [{ role: 'system', content: sys }, ...convo] : convo.slice();
+  // Recovery history is already a provider-valid, fully-paired durable checkpoint. Do not prepend a new
+  // prompt, transcript seed, or memory turn between an assistant tool call and its verified result.
+  let msgs = o.recovery
+    ? JSON.parse(JSON.stringify(o.recovery.messages || []))
+    : (sys ? [{ role: 'system', content: sys }, ...convo] : convo.slice());
   // Cortex (M-mem.3): surface the agent's OWN memory in-prompt — RANK it by relevance to this message
   // (BM25 + recency/trust/pin), inject the top few as a recalled-memory fence before the triggering user
   // message, and emit memory.used per surfaced record (-> useCount/trust + the XP reuse path). The recency
@@ -13413,7 +13476,7 @@ async function runOnce(o) {
   // (a title call crediting memory.used would fake the Memory Core stats).
   if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
-    const recs = Array.isArray(stored) ? stored : [];
+    const recs = o.recovery ? [] : (Array.isArray(stored) ? stored : []);
     const q = latestUserText(messages);   // an attachment turn must rank recall against ITS text, not the previous turn's
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
@@ -13455,6 +13518,7 @@ async function runOnce(o) {
     try {
       runJournal.begin({
         runId, agentId, streamId: o.streamId || 'global', trigger, model,
+        recoveryOf: o.recovery ? String(o.recovery.sourceRunId || '') : '',
         userTitle: latestUserText(msgs), startedAt: Date.now(),
         cronJobId: trigger === 'schedule' ? String(o.cronJobId || '') : '',
         cronJobName: trigger === 'schedule' ? String(o.cronJobName || '').slice(0, 200) : ''
@@ -13682,7 +13746,10 @@ async function runOnce(o) {
   const _fr = result && result.finishReason;
   const _truncated = _fr === 'length' || _fr === 'content_filter';
   const _qualifies = !_truncated;   // true when finishReason is absent or a clean value
-  const _auxDone = !!(result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
+  // A recovery continuation is a narrowly authorized completion of the interrupted run. Do not fan it out into
+  // reflection/study/scout/skill auxiliary model calls; those are separate work, complicate auditability, and
+  // could outlive the one-shot continuation response.
+  const _auxDone = !!(!o.recovery && result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
   const _auxNow = Date.now();       // one clock read for the scout cadence fold + curator-due check below
   const _auxModel = _auxDone ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
 
@@ -14629,6 +14696,131 @@ function handleDiagnostics(req, res) {
     return json(500, { error: 'diagnostics failed' });
   }
   json(200, out);   // { report, text } — the app copies `text`
+}
+
+/* POST /api/diagnostics/live { confirmedLiveProbes:true, agentId? }
+
+   GET diagnostics stays inert. This route deliberately performs bounded real I/O and may spend one tiny model
+   response, so it is POST-only and refuses without a second explicit consent bit. It sends no channel messages.
+   A channel earns round-trip-proven only from an existing successful delivery receipt. */
+async function handleLiveDoctor(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 13)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  if (body.confirmedLiveProbes !== true) return json(409, { error: 'explicit live-probe consent is required', code: 'LIVE_DOCTOR_CONSENT_REQUIRED' });
+  const requested = String(body.agentId || '').trim();
+  const agentId = requested || (agentRoster.size ? String(agentRoster.keys().next().value) : '');
+  const rec = agentId ? agentRoster.get(agentId) : null;
+  if (requested && !rec) return json(404, { error: 'unknown agent' });
+  const targets = [];
+
+  // SELECTED MODEL: one tiny inference through the exact provider adapter + credential source a normal run uses.
+  const providerId = normalizeProvider((rec && rec.provider) || (runtimeKey ? 'openrouter' : (codexTokens && codexTokens.access_token ? 'codex' : 'openrouter')));
+  const model = String((rec && rec.model) || '').trim();
+  targets.push({ kind: 'provider', id: providerId, label: providerId + (model ? ' / ' + model : ''), probe: async () => {
+    const profile = getProviderProfile(providerId);
+    const baseUrl = providerRuntimeBaseUrl(providerId, '');
+    const key = providerRuntimeKey(providerId, '');
+    if (!model || !profile || !providerHasCredential(providerId, key, baseUrl)) {
+      return { state: LiveDoctor.STATES.NOT_CONFIGURED, detail: !model ? 'no model selected' : providerCredentialError(providerId) };
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000); if (timer && timer.unref) timer.unref();
+    try {
+      let provider;
+      if (providerUsesCodex(providerId)) {
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureCodexAccessToken(), baseUrl, reasoningEffort: 'none' });
+      } else if (providerUsesDeviceOAuth(providerId)) {
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureOAuthAccessToken(providerId), headers: oauthInferenceHeaders(providerId), baseUrl, reasoningEffort: 'none' });
+      } else {
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key, baseUrl, reasoningEffort: 'none' });
+      }
+      let answered = false;
+      for await (const ev of provider.stream({ model, messages: [{ role: 'user', content: 'Reply exactly OK.' }], reasoningEffort: 'none', signal: ctrl.signal })) {
+        if (ev && ((ev.type === 'text' && ev.delta) || ev.type === 'done')) answered = true;
+      }
+      return answered
+        ? { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'selected model returned a response' }
+        : { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'request accepted; no response content was observed' };
+    } catch (e) {
+      return { state: LiveDoctor.failureState(e), detail: ctrl.signal.aborted ? 'selected-model probe timed out' : ((e && e.message) || 'provider probe failed') };
+    } finally { clearTimeout(timer); }
+  } });
+
+  // EXECUTION PROFILE: the sentinel travels through the router, so Safe Cell/SSH cannot pass on local fallback.
+  const executionProfile = String((rec && rec.executionProfile) || 'station-gear');
+  targets.push({ kind: 'execution', id: executionProfile, label: executionProfile, probe: async () => {
+    if (!agentId || !rec) return { state: LiveDoctor.STATES.NOT_CONFIGURED, detail: 'no agent is configured' };
+    const backend = executionEnvironment.backendIdFor(agentId);
+    const command = (backend === 'local' && process.platform === 'win32') ? 'echo starnet-live-doctor' : 'printf starnet-live-doctor';
+    try {
+      const result = await executionEnvironment.execute({ agentId, cmd: command, timeoutMs: 12000, maxTimeoutMs: 12000, maxBytes: 4096, surface: 'interactive' });
+      const output = String((result && (result.out || result.output || result.stdout)) || '');
+      if (result && result.exitCode === 0 && output.indexOf('starnet-live-doctor') >= 0) {
+        return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'effective ' + backend + ' backend executed the sentinel' };
+      }
+      return { state: LiveDoctor.STATES.REFUSED, detail: 'effective ' + backend + ' backend did not complete the sentinel' };
+    } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'execution probe failed' }; }
+  } });
+
+  // MCP refresh performs a real initialize + capability-list round-trip with the manager's bounded timeout.
+  const connectorRows = connectors.list();
+  if (!connectorRows.length) {
+    targets.push({ kind: 'mcp', id: 'enabled-connectors', label: 'enabled connectors', probe: async () => ({ state: LiveDoctor.STATES.NOT_CONFIGURED, detail: 'no MCP servers configured' }) });
+  } else for (const c of connectorRows) {
+    targets.push({ kind: 'mcp', id: c.id, label: c.label || c.id, probe: async () => {
+      if (!c.enabled) return { state: LiveDoctor.STATES.REFUSED, detail: 'configured but disabled by operator' };
+      try {
+        const result = await connectors.refresh(c.id);
+        return result && result.ok && result.state === 'up'
+          ? { state: LiveDoctor.STATES.ROUND_TRIP, detail: c.transport + ' initialize/list completed' }
+          : { state: LiveDoctor.failureState(result && result.error), detail: (result && result.error) || 'connector did not come up' };
+      } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'connector probe failed' }; }
+    } });
+  }
+
+  // CHANNELS: Telegram has a harmless fresh getMe auth round-trip. Other adapters expose live gateway/poll
+  // status but no side-effect-free request seam, so an up adapter earns AUTHENTICATED only. Nothing is sent.
+  for (const descriptor of channelRegistry.list()) {
+    const id = descriptor.id;
+    const saved = (channelSecrets && channelSecrets[id]) || {};
+    const status = channelStatusPayload(id);
+    targets.push({ kind: 'channel', id, label: descriptor.label || id, probe: async () => {
+      if (!status.configured) return { state: LiveDoctor.STATES.NOT_CONFIGURED, detail: 'channel is not configured' };
+      if (saved.enabled === false) return { state: LiveDoctor.STATES.REFUSED, detail: 'configured but disabled by operator' };
+      if (id === 'telegram') {
+        try {
+          const token = channelToken('telegram', '', saved);
+          const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token, apiBase: TELEGRAM_API_BASE }).getMe();
+          if (!me || !me.ok) return { state: LiveDoctor.STATES.REFUSED, detail: 'Telegram rejected the configured bot credential' };
+          if (status.delivery && status.delivery.state === 'up') return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'authentication answered; prior delivery receipt is successful' };
+          return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'authentication answered; message delivery was not exercised' };
+        } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'Telegram probe failed' }; }
+      }
+      if (status.connected && status.state === 'up') return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'live adapter is up; message delivery was not exercised' };
+      return { state: LiveDoctor.failureState(status.detail || status.state), detail: status.detail || ('adapter state is ' + status.state) };
+    } });
+  }
+  for (const bot of telegramBotsStatusList()) {
+    if (!bot.configured) continue;
+    targets.push({ kind: 'channel', id: 'telegram:' + bot.botId, label: bot.username ? ('Telegram @' + bot.username) : ('Telegram bot ' + bot.botId), probe: async () => {
+      const saved = telegramBotRecords()[bot.botId] || {};
+      if (saved.enabled === false) return { state: LiveDoctor.STATES.REFUSED, detail: 'configured but disabled by operator' };
+      try {
+        const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token: String(saved.token || ''), apiBase: TELEGRAM_API_BASE }).getMe();
+        if (!me || !me.ok) return { state: LiveDoctor.STATES.REFUSED, detail: 'Telegram rejected the configured bot credential' };
+        if (bot.delivery && bot.delivery.state === 'up') return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'authentication answered; prior delivery receipt is successful' };
+        return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'authentication answered; message delivery was not exercised' };
+      } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'Telegram probe failed' }; }
+    } });
+  }
+
+  try {
+    const out = await LiveDoctor.runLiveDoctor({
+      confirmed: true, agentId, targets, clock: { now: () => Date.now() }
+    });
+    out.report.build = computeVersionSurface();
+    return json(200, out);
+  } catch (e) { return json(500, { error: 'live doctor failed', detail: redact((e && e.message) || e) }); }
 }
 
 // POST /api/halt — the E-STOP. Abort EVERY in-flight run so one click stops all spend immediately: the browser
@@ -15759,20 +15951,45 @@ function serveRuns(req, res) {
 // GET /api/run-recoveries — authenticated by the shared /api gate, read-only, and intentionally conservative.
 // It exposes safe checkpoint dialogue plus tool names/call ids, never raw tool arguments or results. An uncertain
 // side effect is review-required; the harness does not replay it or claim that it did/didn't happen.
-function serveRunRecoveries(req, res) {
-  const u = new URL(req.url, 'http://127.0.0.1');
-  const offset = Math.max(0, Number(u.searchParams.get('offset')) || 0);
-  const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
-  let page;
-  try { page = runJournal.recoverPage({ offset, limit }); }
-  catch (e) { return respondJson(res, 500, { error: 'could not read run recoveries' }); }
-  const recoveredRunJournals = page.rows.filter(r => {
-    if (!r) return false;
-    // A durable transcript acknowledgement is the commit record. If the process died between that record and
-    // unlink, finish the idempotent retirement when its page is inspected; all other states remain visible.
-    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
-    return true;
-  });
+function runRecoveryToken(r) {
+  const uncertainty = (r.uncertain || []).map(x => [String(x.callId || ''), String(x.name || '')]);
+  return crypto.createHash('sha256').update(JSON.stringify([
+    String(r.runId || ''), String((r.meta && r.meta.agentId) || ''), String(r.status || ''),
+    Number(r.records || 0), uncertainty
+  ])).digest('hex');
+}
+function constantTimeTextEqual(a, b) {
+  const left = crypto.createHash('sha256').update(String(a || ''), 'utf8').digest();
+  const right = crypto.createHash('sha256').update(String(b || ''), 'utf8').digest();
+  return crypto.timingSafeEqual(left, right);
+}
+function runContinuationToken(r) {
+  const c = (r && r.continuation) || {};
+  return crypto.createHmac('sha256', API_TOKEN).update(JSON.stringify([
+    String((r && r.runId) || ''), String((r && r.meta && r.meta.agentId) || ''),
+    String(c.continuationId || ''), String(c.state || ''), Number((r && r.records) || 0)
+  ])).digest('hex');
+}
+function markRunRecoveryForensic(r) {
+  if (!r) return r;
+  r.forensicOnly = !!r.corrupt;
+  try {
+    const file = r.file || path.join(RUN_JOURNAL_DIR, runJournal._internals.runFileName(r.runId));
+    const base = path.basename(file);
+    if (!r.forensicOnly) {
+      r.forensicOnly = fs.readdirSync(path.dirname(file)).some(name => name.indexOf(base + '.corrupt') === 0);
+    }
+  } catch (_) { r.forensicOnly = true; }
+  return r;
+}
+function inspectRunRecovery(runId) {
+  return markRunRecoveryForensic(runJournal.inspect(String(runId || '')));
+}
+function canContinueRunRecovery(r) {
+  if (!r || r.status !== 'resolved' || (r.continuation && r.continuation.state !== 'ready')) return false;
+  try { RunRecovery.continuationPlan(r); return true; } catch (_) { return false; }
+}
+function runRecoveryDto(r) {
   const safeMessage = m => {
     const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
     if (m && m.tool_call_id) out.tool_call_id = String(m.tool_call_id);
@@ -15781,7 +15998,7 @@ function serveRunRecoveries(req, res) {
     }));
     return out;
   };
-  const rows = recoveredRunJournals.map(r => ({
+  return {
     runId: String(r.runId || ''),
     agentId: String((r.meta && r.meta.agentId) || ''),
     streamId: String((r.meta && r.meta.streamId) || 'global'),
@@ -15795,13 +16012,190 @@ function serveRunRecoveries(req, res) {
     repaired: !!r.repairedFrom,
     repairError: r.repairError ? String(r.repairError).slice(0, 500) : '',
     uncertain: (r.uncertain || []).map(x => ({ callId: String(x.callId || ''), name: String(x.name || '') })),
+    recoveryToken: runRecoveryToken(r),
+    forensicOnly: !!r.forensicOnly,
+    canResolve: r.status === 'needs_review' && !r.corrupt && !r.repairError && !r.forensicOnly,
+    canContinue: canContinueRunRecovery(r),
+    resolution: r.resolution ? {
+      resolutionId: String(r.resolution.resolutionId || ''),
+      operator: String(r.resolution.operator || ''),
+      resolvedAt: Number(r.resolution.resolvedAt || 0),
+      outcomes: (r.resolution.outcomes || []).map(x => ({ callId: String(x.callId || ''), outcome: String(x.outcome || '') })),
+      note: String(r.resolution.note || '').slice(0, 500)
+    } : null,
+    continuation: r.continuation ? {
+      continuationId: String(r.continuation.continuationId || ''),
+      state: String(r.continuation.state || ''),
+      preparedAt: Number(r.continuation.preparedAt || 0),
+      startedAt: Number(r.continuation.startedAt || 0),
+      finishedAt: Number(r.continuation.finishedAt || 0),
+      continuedRunId: String(r.continuation.continuedRunId || ''),
+      reason: String(r.continuation.reason || '')
+    } : null,
     checkpoint: {
       phase: String((r.checkpoint && r.checkpoint.phase) || ''),
       turn: Number((r.checkpoint && r.checkpoint.turn) || 0),
       messages: Array.isArray(r.checkpoint && r.checkpoint.messages) ? r.checkpoint.messages.slice(-200).map(safeMessage) : []
     }
-  }));
+  };
+}
+function serveRunRecoveries(req, res) {
+  const u = new URL(req.url, 'http://127.0.0.1');
+  const offset = Math.max(0, Number(u.searchParams.get('offset')) || 0);
+  const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+  let page;
+  try { page = runJournal.recoverPage({ offset, limit }); }
+  catch (e) { return respondJson(res, 500, { error: 'could not read run recoveries' }); }
+  const rows = page.rows.filter(r => {
+    if (!r) return false;
+    // A durable transcript acknowledgement is the commit record. If the process died between that record and
+    // unlink, finish the idempotent retirement when its page is inspected; all other states remain visible.
+    if (r.status === 'finished') { try { runJournal.remove(r.runId); } catch (_) {} return false; }
+    return true;
+  }).map(markRunRecoveryForensic).map(runRecoveryDto);
   respondJson(res, 200, { recoveries: rows, total: page.total, offset: page.offset, limit: page.limit, nextOffset: page.offset + page.limit < page.total ? page.offset + page.limit : null });
+}
+
+// The local operator records what they verified; this never dispatches or replays a tool. Ownership, a current
+// snapshot token, complete call coverage, and explicit no-replay consent are required before the fsync'd record.
+async function handleRunRecoveryResolve(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; }
+  catch (_) { return json(400, { error: 'bad json' }); }
+  const runId = String(body.runId || '');
+  const agentId = String(body.agentId || '');
+  const resolutionId = String(body.resolutionId || '');
+  if (!runId || runId.length > 500 || !isAgentId(agentId)
+    || !/^[A-Za-z0-9._:-]{8,100}$/.test(resolutionId)) {
+    return json(400, { error: 'runId, owned agentId, and resolutionId are required' });
+  }
+  let current;
+  try { current = inspectRunRecovery(runId); }
+  catch (_) { return json(404, { error: 'recovery not found' }); }
+  if (String((current.meta && current.meta.agentId) || '') !== agentId) return json(403, { error: 'forbidden' });
+  const outcomes = Array.isArray(body.outcomes) ? body.outcomes.map(x => ({
+    callId: String((x && x.callId) || ''), outcome: String((x && x.outcome) || '')
+  })) : [];
+  const note = String(body.note || '').slice(0, 500);
+
+  // A network retry of the exact accepted decision is answered from durable state before the old snapshot
+  // token is considered. Reusing the key for a changed decision is a conflict, never an overwrite.
+  if (current.resolution) {
+    try {
+      const same = markRunRecoveryForensic(runJournal.resolve(runId, { resolutionId, operator: 'local', outcomes, note }));
+      return json(200, { ok: true, idempotent: true, replayed: false, recovery: runRecoveryDto(same) });
+    } catch (e) { return json(409, { error: String((e && e.message) || e) }); }
+  }
+  if (body.confirmedNoReplay !== true) return json(400, { error: 'explicit no-replay confirmation is required' });
+  if (current.status !== 'needs_review' || current.corrupt || current.repairError || current.forensicOnly) {
+    return json(409, { error: 'this recovery is not safely resolvable' });
+  }
+  if (!constantTimeTextEqual(body.recoveryToken, runRecoveryToken(current))) {
+    return json(409, { error: 'recovery changed; reload before deciding' });
+  }
+  const expected = (current.uncertain || []).map(x => String(x.callId || '')).sort();
+  const actual = outcomes.map(x => x.callId).sort();
+  if (!expected.length || JSON.stringify(expected) !== JSON.stringify(actual)
+    || new Set(actual).size !== actual.length
+    || outcomes.some(x => !/^(?:happened|did_not_happen|unknown)$/.test(x.outcome))) {
+    return json(409, { error: 'record one outcome for every uncertain call' });
+  }
+  try {
+    const next = markRunRecoveryForensic(runJournal.resolve(runId, {
+      resolutionId, operator: 'local', resolvedAt: Date.now(), outcomes, note
+    }));
+    return json(200, { ok: true, idempotent: false, replayed: false, recovery: runRecoveryDto(next) });
+  } catch (e) {
+    const code = e && e.code === 'RUN_RESOLUTION_CONFLICT' ? 409 : 500;
+    return json(code, { error: code === 500 ? 'could not durably record resolution' : String(e.message || e) });
+  }
+}
+
+// Preparation freezes the exact replay barrier and operator context in the append-only journal. The subsequent
+// /api/run consumes that one prepared identity before opening its stream; this route never dispatches the old call.
+async function handleRunRecoveryContinue(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; }
+  catch (_) { return json(400, { error: 'bad json' }); }
+  const runId = String(body.runId || '');
+  const agentId = String(body.agentId || '');
+  const continuationId = String(body.continuationId || '');
+  if (!runId || runId.length > 500 || !isAgentId(agentId)
+    || !/^[A-Za-z0-9._:-]{8,100}$/.test(continuationId)) {
+    return json(400, { error: 'runId, owned agentId, and continuationId are required' });
+  }
+  if (body.confirmedSafeContinuation !== true) {
+    return json(400, { error: 'explicit safe-continuation confirmation is required' });
+  }
+  let current;
+  try { current = inspectRunRecovery(runId); }
+  catch (_) { return json(404, { error: 'recovery not found' }); }
+  if (String((current.meta && current.meta.agentId) || '') !== agentId) return json(403, { error: 'forbidden' });
+  if (current.continuation) {
+    if (current.continuation.continuationId !== continuationId) return json(409, { error: 'a different continuation already exists' });
+    return json(200, {
+      ok: true, idempotent: true, canStart: current.continuation.state === 'ready',
+      continuationToken: current.continuation.state === 'ready' ? runContinuationToken(current) : '',
+      recovery: runRecoveryDto(current)
+    });
+  }
+  if (!constantTimeTextEqual(body.recoveryToken, runRecoveryToken(current))) {
+    return json(409, { error: 'recovery changed; reload before continuing' });
+  }
+  let plan;
+  try { plan = RunRecovery.continuationPlan(current); }
+  catch (e) { return json(409, { error: String((e && e.message) || e) }); }
+  try {
+    const next = markRunRecoveryForensic(runJournal.prepareContinuation(runId, {
+      continuationId, operator: 'local', preparedAt: Date.now(),
+      blockedFingerprints: plan.blockedFingerprints, context: plan.context
+    }));
+    return json(200, {
+      ok: true, idempotent: false, canStart: true,
+      continuationToken: runContinuationToken(next),
+      recovery: runRecoveryDto(next)
+    });
+  } catch (e) {
+    const code = e && e.code === 'RUN_RESOLUTION_CONFLICT' ? 409 : 500;
+    return json(code, { error: code === 500 ? 'could not durably prepare continuation' : String(e.message || e) });
+  }
+}
+
+function consumeRunRecoveryContinuation(request, agentId, continuedRunId) {
+  const body = request || {};
+  const sourceRunId = String(body.sourceRunId || '');
+  const continuationId = String(body.continuationId || '');
+  if (!sourceRunId || !continuationId || !isAgentId(String(agentId || ''))) return { ok: false, code: 400, error: 'invalid continuation identity' };
+  let current;
+  try { current = inspectRunRecovery(sourceRunId); }
+  catch (_) { return { ok: false, code: 404, error: 'recovery not found' }; }
+  if (String((current.meta && current.meta.agentId) || '') !== String(agentId)) return { ok: false, code: 403, error: 'forbidden' };
+  const c = current.continuation;
+  if (!c || c.state !== 'ready' || c.continuationId !== continuationId) return { ok: false, code: 409, error: 'continuation is not ready or was already consumed' };
+  if (!constantTimeTextEqual(body.continuationToken, runContinuationToken(current))) return { ok: false, code: 409, error: 'continuation token is stale' };
+  let plan;
+  try { plan = RunRecovery.continuationPlan(current); }
+  catch (e) { return { ok: false, code: 409, error: String((e && e.message) || e) }; }
+  if (JSON.stringify(plan.blockedFingerprints) !== JSON.stringify(c.blockedFingerprints || [])
+    || String(plan.context || '') !== String(c.context || '')) {
+    return { ok: false, code: 409, error: 'durable continuation plan no longer matches the recovery' };
+  }
+  try {
+    runJournal.startContinuation(sourceRunId, { continuationId, continuedRunId, startedAt: Date.now() });
+  } catch (e) { return { ok: false, code: 409, error: String((e && e.message) || e) }; }
+  return { ok: true, plan: Object.assign({}, plan, { sourceRunId, continuationId }) };
+}
+
+function settleRunRecoveryContinuation(recovery, continuedRunId, reason) {
+  const sourceRunId = String((recovery && recovery.sourceRunId) || '');
+  const continuationId = String((recovery && recovery.continuationId) || '');
+  try {
+    runJournal.finishContinuation(sourceRunId, { continuationId, continuedRunId, reason });
+  } catch (e) {
+    console.warn('[run-journal] could not settle continuation:', String((e && e.message) || e));
+  }
 }
 
 // GET /api/autonomy/ledger?limit=N&source=&kind= — NS-0: the recent AUTONOMY DECISION LEDGER (cron fire/skip/

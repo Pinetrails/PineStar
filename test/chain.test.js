@@ -138,11 +138,131 @@ let T = 0; const clock = () => (T += 10);
       nextAgent: (a, ctx) => router.chainNext(a, ctx),
       runAgent: harness({ writer: { text: 'FINAL COPY', usd: 0.01 } }, log), now: clock
     });
-    const res = await c.advance({ agentId: 'researcher', text: 'findings', originalText: 'brief me' });
+    // work belongs to a line (2026-08-07): the seed carries the line the work ENTERED on — here, the line
+    // whose INBOX the router just walked. router.lineOriginFor answers that in production; asked of the same
+    // compiled plan here so the test and the sidecar agree on one derivation.
+    const lineId = router.lineOfAgent('researcher');
+    A.ok(!!lineId, 'the compiled plan names the line this dock belongs to');
+    const res = await c.advance({ agentId: 'researcher', text: 'findings', originalText: 'brief me', lineId: lineId });
     A.eq(res.agentId, 'writer', 'the BELTS decided that the writer runs second — nothing else was configured');
     A.eq(res.text, 'FINAL COPY', "and the writer's output is what leaves the station");
     A.eq(res.stopped, null, 'the line ran to the OUTBOX');
     A.eq(log.length, 1, 'exactly one downstream run was bought');
+
+    /* ---- THE SAME DOCK, AN AD-HOC ORDER: terminal, and it SPENDS NOTHING downstream ----
+       Andrew's ruling (2026-08-07): "each conveyor system built has a purpose and a different workflow —
+       the conveyor system should visually run ONLY when the specific workflow is running." A direct order
+       handed to the researcher did not come in through this line's trigger, so the writer must never run. */
+    log.length = 0;
+    const adhoc = await c.advance({ agentId: 'researcher', text: 'findings', originalText: 'brief me' });
+    A.eq(adhoc.agentId, 'researcher', 'a direct order is TERMINAL at the dock that answered it');
+    A.eq(adhoc.text, 'findings', "and its own reply is the answer — the line's stages never touched it");
+    A.eq(adhoc.hops.length, 0, 'no downstream hop ran');
+    A.eq(adhoc.stopped, null, 'and it is not reported as a line that "stopped early" — it was never a line run');
+    A.eq(log.length, 0, 'PROVIDER CALLS DOWNSTREAM: zero — nothing was spent past the dock');
+    A.eq(adhoc.usd, 0, 'and the chain accounts for $0');
+
+    /* ---- a WRONG line id is not a key: the plan decides, so it cannot unlock another line's spend ---- */
+    log.length = 0;
+    const forged = await c.advance({ agentId: 'researcher', text: 'findings', originalText: 'brief me', lineId: 'not-a-line' });
+    A.eq(forged.hops.length, 0, 'a lineId the compiled plan does not recognise advances nothing');
+    A.eq(log.length, 0, 'and buys no runs — the gate reads the plan, never the caller');
+  }
+
+  /* ---- TWO INDEPENDENT LINES ON ONE FLOOR NEVER ADVANCE EACH OTHER ----
+     Two separate belt networks in one station: A(entry)->A2 and B(entry)->B2. Work that came in through
+     line A's INBOX must run A's stages and NOTHING on line B, and vice versa — the exact "spending money on
+     later docks the user never intended" failure this lane exists to close. */
+  {
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const plan = P.compileRoutingPlan({
+      props: [{ id: 'a_i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'a_1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'a1' },
+              { id: 'a_2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'a2' },
+              { id: 'b_i', t: 'intake', x: 0, y: 6, w: 1, h: 1 },
+              { id: 'b_1', t: 'bay', x: 4, y: 6, w: 1, h: 1, agentId: 'b1' },
+              { id: 'b_2', t: 'bay', x: 7, y: 6, w: 1, h: 1, agentId: 'b2' }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'),
+              belt(1, 6, 'E'), belt(2, 6, 'E'), belt(3, 6, 'E'), belt(5, 6, 'E'), belt(6, 6, 'E')]
+    });
+    const router = makeRouter();
+    A.ok(router.setPlan(plan).ok, 'a two-line floor deploys');
+    const lineA = router.lineOfAgent('a1'), lineB = router.lineOfAgent('b1');
+    A.ok(lineA && lineB && lineA !== lineB, 'the two networks compile to two DIFFERENT line ids');
+    A.eq(router.lineOfAgent('a2'), lineA, 'both of line A\'s docks belong to line A');
+    A.eq(router.lineOfAgent('b2'), lineB, "and both of line B's belong to line B");
+
+    const log = [];
+    const c = makeChainRunner({
+      nextAgent: (a, ctx) => router.chainNext(a, ctx),
+      runAgent: harness({ a2: { text: 'A stage two' }, b2: { text: 'B stage two' } }, log), now: clock
+    });
+    const ra = await c.advance({ agentId: 'a1', text: 'A stage one', lineId: lineA });
+    A.eq(ra.agentId, 'a2', "work fed to line A's INBOX runs line A's second stage");
+    A.eq(log.map(h => h.agentId).join(','), 'a2', 'and ONLY that one — line B bought nothing');
+
+    log.length = 0;
+    const cross = await c.advance({ agentId: 'a1', text: 'A stage one', lineId: lineB });
+    A.eq(cross.hops.length, 0, "line B's trigger cannot advance a dock on line A");
+    A.eq(log.length, 0, 'PROVIDER CALLS: zero — one line can never spend on another');
+  }
+
+  /* ---- AN OLD PLAN (compiled before line identity) DEGRADES TO TERMINAL, NOT TO TODAY'S BEHAVIOUR ----
+     The sidecar restores the last accepted plan from disk at boot, so a plan without lineOfAgent is real.
+     TERMINAL is the safer of the two defaults: "a line did not run" is visible and re-triggerable; "money
+     was spent on stages the Commander never asked for" is silent and unrefundable. Self-healing — the app
+     re-posts a freshly compiled plan on its first floor change. */
+  {
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const plan = P.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'bA', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' },
+              { id: 'bB', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer' }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E')]
+    });
+    const lineId = P.lineOf(plan, 'researcher');
+    // strip line identity exactly as an older compiler would have left it, then re-post
+    const old = JSON.parse(JSON.stringify(plan));
+    delete old.lines; delete old.lineOfProp; delete old.lineOfAgent;
+    for (const d of (old.dockBays || [])) delete d.lineId;
+    const router = makeRouter();
+    A.ok(router.setPlan(old).ok, 'an older-shaped plan is still accepted (no contract break)');
+    A.eq(router.lineOfAgent('researcher'), null, 'it can name no line for its docks');
+    const log = [];
+    const c = makeChainRunner({ nextAgent: (a, ctx) => router.chainNext(a, ctx), runAgent: harness({ writer: { text: 'x' } }, log), now: clock });
+    const res = await c.advance({ agentId: 'researcher', text: 'findings', lineId: lineId });
+    A.eq(res.hops.length, 0, 'every dock on a pre-line-identity plan is TERMINAL');
+    A.eq(log.length, 0, 'PROVIDER CALLS: zero — the safe default never spends on an unprovable origin');
+    // and it heals the moment the app posts the real compiled plan
+    A.ok(router.setPlan(plan).ok, 'the freshly compiled plan re-arms routing');
+    const healed = await c.advance({ agentId: 'researcher', text: 'findings', lineId: lineId });
+    A.eq(healed.agentId, 'writer', 'and the line runs again — the degrade is temporary, not a one-way door');
+  }
+
+  /* ---- THE LINE ID SURVIVES A PLAN RE-POST (the same floor recompiles to the same id) ---- */
+  {
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const props = [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+                   { id: 'bA', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' },
+                   { id: 'bB', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer' }];
+    const belts = [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E')];
+    const p1 = P.compileRoutingPlan({ props, belts });
+    const p2 = P.compileRoutingPlan({ props: props.slice().reverse(), belts: belts.slice().reverse() });
+    A.eq(P.lineOf(p2, 'researcher'), P.lineOf(p1, 'researcher'), 'the same floor compiles to the same line id, whatever order it is read in');
+    // line identity rides OUTSIDE the dispatch-topology hash, so no station needlessly re-arms on upgrade
+    A.eq(p1.hash, P._internals.hashStr(JSON.stringify({ sources: p1.sources, bays: p1.bays, junctions: p1.junctions, belts: p1.belts })),
+      'the plan hash still covers exactly the dispatch topology — line identity did not enter it');
+    A.ok(p1.bays.every(b => b.lineId === undefined), 'and the hashed bay records are untouched (the id rides dockBays + the lookup maps)');
+    A.ok(p1.dockBays.every(d => !!d.lineId), 'every working dock is stamped with its line');
+    const router = makeRouter();
+    router.setPlan(p1);
+    const before = router.lineOfAgent('writer');
+    router.setPlan(JSON.parse(JSON.stringify(p2)));   // a real re-post: serialized over the wire
+    A.eq(router.lineOfAgent('writer'), before, 'a re-post keeps the line the run in flight is riding');
+    const log = [];
+    const c = makeChainRunner({ nextAgent: (a, ctx) => router.chainNext(a, ctx), runAgent: harness({ writer: { text: 'ok' } }, log), now: clock });
+    const res = await c.advance({ agentId: 'researcher', text: 'findings', lineId: before });
+    A.eq(res.agentId, 'writer', 'so a line mid-run is not orphaned by a re-post');
   }
 
   /* ---- a floor whose docks feed each other in a loop is REFUSED before it can spend anything ---- */

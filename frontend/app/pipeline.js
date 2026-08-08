@@ -260,8 +260,72 @@
       errors.push(onLoop ? { code: 'CHAIN_CYCLE', agents: cc, propId: onLoop.propId } : { code: 'CHAIN_CYCLE', agents: cc });
     }
 
+    /* ---------- LINE IDENTITY — WORK BELONGS TO A LINE (2026-08-07, Andrew's ruling) ----------
+       "each conveyor system built has a purpose and a different workflow — the conveyor system should
+       visually run ONLY when the specific workflow is running."
+
+       Every belt machine on a floor belongs to exactly ONE physical line (lineComponents: the connected
+       component over belt tiles, plus every machine touching it through its footprint + 1-tile ring).
+       `lineId` names that line. It is computed HERE, on the compiled plan, so the browser and the sidecar
+       answer "which line does this dock belong to?" from the SAME artifact — the one-compiler law. There
+       is no second derivation anywhere.
+
+       DERIVATION: lineId === the component's key === the lexicographically smallest member PROP id. Prop
+       ids are stable in the save doc, so a line keeps its identity across reloads and across every edit
+       that keeps that prop. Pure: no clock, no RNG, no iteration luck (components are sorted by key, bays
+       within a component by propId, and an agent takes the FIRST line that claims it).
+
+       Attached AFTER the hash inputs are fixed, and only onto the LEGIBILITY list (`dockBays`) plus these
+       lookup maps — the dispatch topology is unchanged, so the same floor keeps the same plan.hash it had
+       before line identity existed and no station needlessly re-arms on upgrade. */
+    const lines = [], lineOfProp = {}, lineOfAgent = {};
+    for (const c of lineComponents(geo)) {
+      const lineId = c.key, rec = { lineId, propIds: c.props.slice(), intakes: c.intakes.slice(), outboxes: c.outboxes.slice(), agents: [] };
+      for (const pid of c.props) lineOfProp[pid] = lineId;
+      for (const b of c.bays) if (b.agentId && !lineOfAgent[b.agentId]) { lineOfAgent[b.agentId] = lineId; rec.agents.push(b.agentId); }
+      rec.agents.sort();
+      lines.push(rec);
+    }
+    plan.lines = lines;
+    plan.lineOfProp = lineOfProp;     // propId  -> lineId
+    plan.lineOfAgent = lineOfAgent;   // agentId -> the lineId of the dock it crews
+    for (const d of dockBays) { const l = lineOfProp[d.propId]; if (l) d.lineId = l; }
+
     plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes the legibility extras: same dispatch topology, same hash
     return plan;
+  }
+
+  /* lineOf(plan, agentId) -> the lineId of the dock this agent crews, or null. The ONE reader every
+     surface uses (router.lineOfAgent, the gate below, the floor's crate honesty) so "which line is this"
+     can never be answered two different ways. A plan compiled before line identity existed answers null,
+     which the gate reads as TERMINAL — see chainNext. */
+  function lineOf(plan, agentId) {
+    if (!plan || !agentId || !plan.lineOfAgent) return null;
+    return plan.lineOfAgent[agentId] || null;
+  }
+
+  /* lineOriginOf(plan, agentId) -> the lineId that work ARRIVING FROM OUTSIDE at this dock belongs to, or
+     null. Asked of the agent that actually RUNS, never of how the message was addressed — the per-agent
+     channel bots deliberately hard-lock stage one to their bound agent and consult no floor routing at all,
+     so a resolution-flavoured answer would have said "no line" for exactly the case the belts were drawn for.
+
+     WHAT COUNTS AS "THE LINE'S OWN TRIGGER" is the station's existing law, not a new idea: **work handed
+     over in person skips the ride in.** The REFIT flow strip has said so since belt-teach — "COMMS orders
+     skip the ride in — you gave them in person" — and world.js already refuses to spawn an INTAKE crate for
+     a kind:'directive' work-item. So the test is "did it ride in through this line's front door?": the dock
+     must be one the plan's INBOX sources actually REACH. A dock no door feeds — a lone dock, or a MID-LINE
+     stage a message merely named — was not triggered by anything, so its work is terminal and buys nothing
+     downstream.
+
+     Deliberately NOT keyed on a chat's agent binding. That binding cannot distinguish the Commander's
+     explicit /talk from the hub's own bookkeeping — hub.js auto-saves the floor's pick onto any previously
+     unbound chat (as a notifier index), so every channel chat looks "bound" from its second message on.
+     Denying the line on that silently stopped channels from driving their lines after one message, which
+     test/routing.sample.e2e.test.js reproduces exactly. An in-app COMMS directive stays terminal by a much
+     stronger route than any heuristic: chat.js sends no lineId at all. */
+  function lineOriginOf(plan, agentId) {
+    if (!plan || !agentId || !plan.reach || !plan.reach[agentId]) return null;
+    return lineOf(plan, agentId);
   }
 
   /* ---------- the chain layer: a dock's OUTPUT is another dock's INPUT ----------
@@ -343,9 +407,27 @@
      a fan-out to every lane): follows the belt from the ship tile, a FILTER branches on the OUTPUT's tag (this is
      how you draw "route the result by what it turned out to be"), a SPLIT round-robins through `pick`, own-dock
      hookups are ridden through, the first foreign dock consumes. null = the handoff ships out / dead-ends, i.e.
-     this dock is a terminal stage and its reply is the pipeline's answer. */
+     this dock is a terminal stage and its reply is the pipeline's answer.
+
+     THE GATE (work belongs to a line, 2026-08-07 — Andrew's ruling). A dock's output advances the work
+     line ONLY when the run carries the lineId of THIS dock's line, i.e. only when the work entered
+     through that line's own trigger (its INBOX / a channel routed down its belts / one of its routines /
+     its sample job). A run with no lineId — a direct COMMS order, a /talk task, any ad-hoc job — is
+     TERMINAL: the agent answers, and nothing downstream fires or spends. Living HERE, in the one module
+     every surface already loads, is what makes the rule un-drift-able: the browser's COMMS line, the
+     channel hub, cron and run-now all ask this same function, so no surface can disagree.
+
+     OLD PLANS DEGRADE TO TERMINAL, ON PURPOSE. A plan compiled before line identity existed (one restored
+     from disk at boot, say) has no lineOfAgent, so `own` is null and every dock is terminal until the app
+     posts a fresh plan. That is the SAFER of the two defaults: the failure mode is "a line did not run",
+     which the Commander can see and re-trigger, versus "money was spent on stages the user never asked
+     for", which is silent and unrefundable. It is also self-healing — world.js re-posts the compiled plan
+     on the first floor change after the app opens. */
   function chainNext(plan, agentId, ctx, pick) {
     if (!plan || !plan.chains || !plan.belts) return null;
+    const carried = (ctx && ctx.lineId != null && String(ctx.lineId)) || null;
+    const own = lineOf(plan, agentId);
+    if (!carried || !own || carried !== own) return null;
     const rec = plan.chains[agentId];
     if (!rec || !rec.tile || !rec.next.length) return null;
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
@@ -530,6 +612,7 @@
 
   // round-robin picker so autonomous dispatch genuinely SPREADS splitter work across agents, matching the
   // engine's load-balance intent instead of always running the first lane.
+
   function resolveTarget(plan, ctx, pick) {
     if (!plan) return null;
     // ADDRESSED WORK GOES TO ITS ADDRESSEE (2026-07-05, Andrew's consistency ruling): when the message is
@@ -667,5 +750,5 @@
     return out;
   }
 
-  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
+  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
 });

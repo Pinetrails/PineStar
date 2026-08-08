@@ -93,8 +93,14 @@ function cyclicPlan() {
     let token = await bootToken(B, B);
     A.ok(token.length >= 32, 'got a session API token');
     let headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+    /* The probe carries the LINE the work entered on (work belongs to a line, 2026-08-07) — a dock only
+       advances its line for the line's own work, so an origin-less probe is terminal by design and would
+       answer null whether routing was armed or not. Carrying it makes this a stronger liveness probe: the
+       restored-from-disk plan must still NAME the line, so line identity is proven to survive a restart. */
+    const LINE_ID = Pipeline.lineOf(goodPlan(), 'stage-one');
+    A.ok(!!LINE_ID, 'fixture: the two-stage floor names the line its docks belong to');
     const chainNext = async () => {
-      const r = await fetch(B + '/api/routing/chain?agentId=stage-one', { headers });
+      const r = await fetch(B + '/api/routing/chain?agentId=stage-one&lineId=' + encodeURIComponent(LINE_ID), { headers });
       A.eq(r.status, 200, 'chain probe answers');
       return ((await r.json()) || {}).next || null;
     };
