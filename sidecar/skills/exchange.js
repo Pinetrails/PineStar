@@ -125,7 +125,7 @@ function makeSkillExchange(deps) {
       author: d.sourceAuthor, license: d.sourceLicense, body: d.body, scan: cleanScan(stage.scan),
       guardAction: stage.guardAction, packageDigest: stage.pkg.digest, packageBytes: stage.pkg.bytes,
       files: decodedPackageFiles(stage.pkg).map(f => ({
-        path: f.path, bytes: f.bytes, sha256: f.sha256,
+        path: f.path, bytes: f.bytes.length, sha256: f.sha256,
         encoding: f.text == null ? 'binary' : 'utf8', content: f.text == null ? '' : f.text
       }))
     };

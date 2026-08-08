@@ -175,6 +175,7 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   });
   const p1 = await pkgExchange.inspect({ url: 'https://packages.example/demo/SKILL.md' });
   A.eq(p1.files.length, 3, 'inspection freezes every package file');
+  A.ok(p1.files.every(f => Number.isInteger(f.bytes) && f.bytes >= 0), 'preview reports numeric exact-byte counts for every file');
   const i1 = pkgExchange.install({ agentId: 'p', inspectionId: p1.inspectionId });
   const exported = pkgExchange.exportPackage({ agentId: 'p', id: i1.skill.id });
   const handoff = pkgExchange.publishHandoff({ agentId: 'p', id: i1.skill.id });
