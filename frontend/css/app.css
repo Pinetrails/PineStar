@@ -4521,6 +4521,49 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
   font-size: 11px; line-height: 1.45; color: var(--ph-dim); opacity: 0.85; max-width: var(--perm-measure);
 }
 .perm-glance .pg-floor code { color: var(--ph); }
+/* ── THE POSTURE FRONT DOOR ───────────────────────────────────────────────────────────────────────
+   Three cards answering ONE question, so a newcomer never has to compose four dials. This is the only
+   thing the pane asks of them; everything else lives in the closed fold below. */
+.perm-postures { margin: 0 0 12px; }
+.pp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.pp-q { font-size: 13px; letter-spacing: 1px; color: var(--ph-bright); }
+/* CUSTOM is the honest resting state of a hand-tuned station — dim, not an error. A matched posture
+   is the only thing that lights, because a card may never claim a state it does not hold. */
+.pp-state { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.8; }
+.pp-state.matched { color: var(--ph); opacity: 1; }
+.pp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.pp-card {
+  display: flex; flex-direction: column; gap: 5px; text-align: left; cursor: pointer;
+  font-family: inherit; padding: 10px 12px 11px;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.28); border-radius: var(--r-sm); box-shadow: var(--raise);
+  transition: border-color .12s ease, background .12s ease;
+}
+.pp-card:hover { border-color: var(--ph-dim); border-left-color: var(--ph); background: rgba(0, 0, 0, 0.4); }
+.pp-card.sel { border-left-color: var(--ph); background: rgba(0, 0, 0, 0.45); }
+.pp-card.danger.sel, .pp-card.danger:hover { border-left-color: var(--bad); }
+.pp-card.armed { border-color: var(--bad); border-left-color: var(--bad); box-shadow: var(--raise), 0 0 12px rgba(var(--bad-rgb), 0.22); }
+.pp-card[disabled] { opacity: 0.45; pointer-events: none; }
+.pp-name { font-size: 14px; letter-spacing: 1.5px; color: var(--ph-bright); }
+.pp-card.sel .pp-name { color: var(--ph); }
+.pp-card.danger .pp-name { color: var(--bad); }
+.pp-blurb { font-size: 12px; line-height: 1.4; color: var(--ph-dim); }
+.pp-who { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.7; }
+.pp-foot { margin: 8px 0 0; font-size: 11px; color: var(--ph-dim); opacity: 0.8; }
+/* the fold: everything that is NOT needed to have a working, safe station */
+.perm-fold { margin: 0; border-top: 1px solid var(--ph-faint); padding-top: 10px; }
+.perm-fold > summary {
+  cursor: pointer; font-size: 12px; letter-spacing: 1px; color: var(--ph-dim);
+  list-style: none; padding: 4px 0;
+}
+.perm-fold > summary::-webkit-details-marker { display: none; }
+.perm-fold > summary::before { content: '▸ '; color: var(--ph); }
+.perm-fold[open] > summary::before { content: '▾ '; }
+.perm-fold > summary:hover { color: var(--ph-bright); }
+/* the reach chip carries the plain meaning big and the house name small underneath */
+.pc-reach-chip { align-items: flex-start !important; }
+.pc-rl { display: flex; flex-direction: column; gap: 1px; line-height: 1.15; text-align: left; }
+.pc-rh { font-size: 9px; letter-spacing: 1px; opacity: 0.55; font-style: normal; }
 /* the merged crew row: a header line, then one labelled block per axis. Stacked, not columnar — each
    axis owns a chip strip AND a plain sentence, which cannot share a row honestly at this width. */
 .perm-crew-row { display: block; padding: 9px 12px 10px; }

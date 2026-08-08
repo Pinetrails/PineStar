@@ -54,6 +54,35 @@ async function main() {
     await evalJS(cdp, `StationUI.openTerm('settings','permissions')`);
     await sleep(2200);   // the pane fetches /api/execution-profiles + refreshes PermissionsStore
 
+    /* ── THE FRONT DOOR ─────────────────────────────────────────────────────────────────────────
+       What a newcomer meets BEFORE opening anything: three postures and nothing else. Capture it
+       closed (that is the real first impression), measure the reading cost, then open the fold so
+       every per-crew probe below still has its rows. */
+    console.log('\n— FRONT DOOR —');
+    const front = await evalJS(cdp, `(() => {
+      const glance = document.querySelector('#perm-glance'), fold = document.querySelector('#perm-finetune');
+      let n = glance, nodes = [];
+      while (n && n !== fold) { nodes.push(n); n = n.nextElementSibling; }
+      nodes.push(fold);
+      const txt = nodes.map(e => e.innerText).join(' ').replace(/\\s+/g,' ').trim();
+      const jargon = ['STATION GEAR','SAFE CELL','REMOTE SSH','TRUSTED PROJECT','execution profile',
+        'STANDING APPROVALS','desktop lease','Docker','capability','/yolo','block 2'];
+      return {
+        foldClosed: !fold.open,
+        cards: [...document.querySelectorAll('.pp-card .pp-name')].map(e => e.innerText),
+        words: txt.split(' ').length,
+        jargon: jargon.filter(j => new RegExp(j.replace(/[()\\/]/g,'\\\\$&'),'i').test(txt))
+      };
+    })()`);
+    check('the fold is CLOSED on arrival (nothing but the front door)', front.foldClosed, JSON.stringify(front.foldClosed));
+    check('three postures are offered', front.cards.length === 3, front.cards.join(' · '));
+    check('the front door costs under 200 words to read', front.words < 200, front.words + ' words');
+    check('no undecodable house vocabulary above the fold', front.jargon.length === 0, front.jargon.join(', ') || 'none');
+    console.log('shot', await capture(cdp, OUT, 'permissions-00-front-door'));
+
+    await evalJS(cdp, `(() => { document.querySelector('#perm-finetune').open = true; return true; })()`);
+    await sleep(600);
+
     console.log('\n— STRUCTURE —');
     const shape = await evalJS(cdp, `(() => {
       const q = s => document.querySelector(s);
