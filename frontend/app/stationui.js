@@ -89,7 +89,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // every save that predates this key merges to the exact look it already had.
   // panelBright (0–100, default 0) is the tube's BRIGHTNESS knob: it lifts the panel glass's black
   // level toward the phosphor colour (never toward white). 0 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, crtGlass: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, crtGlass: 'full', sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
   // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
   // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
@@ -104,6 +104,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return long <= 1470 ? 115 : long <= 1740 ? 110 : 100;
   }
   function resolveTextScale(v) { const n = Number(v) || 0; return n === 0 ? autoTextScale() : clampN(n, 90, 150, 100); }
+  // CRT GLASS steps (value → chip label → the one-line explanation under the row). Ordered strongest
+  // treatment first so the row reads as a dial being turned DOWN, left to right.
+  const GLASS_STEPS = [
+    ['full', 'FULL', 'the shipped tube — scanlines and curve over everything'],
+    ['easy', 'EASY READ', 'the tube stays on the station; panels and COMMS go clean'],
+    ['off', 'OFF', 'no scanlines, no curve, no glass — raw pixel art'],
+  ];
+  // Accepts the BOOLEAN this setting shipped as before it became a dial: an existing save holding
+  // `true`/`false` must keep meaning what the user chose, not silently reset to the default.
+  function resolveGlass(v) {
+    if (v === true || v == null) return 'full';
+    if (v === false) return 'off';
+    return GLASS_STEPS.some(([id]) => id === v) ? v : 'full';
+  }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -234,14 +248,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // Applied here rather than only in the picker so it survives a reload.
     if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
-    // CRT GLASS — the whole tube treatment on one switch: the in-canvas scanline/fade/grain pass
-    // and the barrel warp (world.js drawCRT/drawCurve), the screen-space scanline layer and page
-    // vignette (style.css body::after/::before), the tube glass over the feed (app.css
-    // #stage-wrap::before) and the bay scrim's lines. OFF leaves the pixel art unfiltered.
-    // Drives its OWN class: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
+    // CRT GLASS — a three-step dial over the tube treatment, because the CRT that hurts to read is
+    // not the CRT people came for. FULL is the shipped look. EASY READ lifts only the two
+    // SCREEN-SPACE overlays (style.css body::after scanlines + body::before vignette) that lie over
+    // the panels and the transcript, and drops the inherited phosphor halo in the prose containers;
+    // the station feed keeps its whole tube, because its scanlines/curve/aberration are painted
+    // in-canvas (world.js drawCRT/drawCurve) and nothing here touches that pass. OFF additionally
+    // stops those in-canvas passes and clears the tube glass (app.css #stage-wrap::before).
+    // Drives its OWN classes: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
     // flatten the feed for star-pixel checks) and is still never written from settings — a
     // toggle() here would remove it out from under a verification run.
-    document.body.classList.toggle('crt-off', s.crtGlass === false);
+    const glass = resolveGlass(s.crtGlass);
+    document.body.classList.toggle('crt-easy', glass === 'easy');
+    document.body.classList.toggle('crt-off', glass === 'off');
     // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
     // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
     const tz = resolveTextScale(s.textScale);
@@ -4869,7 +4888,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + title + '">' + name + '</button>';
       }).join('') +
       '</div>' +
-      '<label class="set-row"><input type="checkbox" id="set-crtglass" ' + (s.crtGlass === false ? '' : 'checked') + '> CRT GLASS <span class="dim">— scanlines, tube curve and screen vignette; off shows the pixel art unfiltered</span></label>' +
+      // CRT GLASS — a dial, not a switch, because "the CRT hurts my eyes" is a complaint about the
+      // glass over the TEXT, not about the station looking like a tube. EASY READ is the middle
+      // step that answers it without anyone giving up the look.
+      '<div class="set-row"><span class="dim">CRT GLASS — the tube treatment. EASY READ keeps it on the station but lifts it off the panels &amp; COMMS text</span></div>' +
+      '<div class="set-themes" id="set-crtglass">' +
+      GLASS_STEPS.map(([v, name, why]) => {
+        const cur = resolveGlass(s.crtGlass);
+        return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-glass="' + v + '" title="' + why + '">' + name + '</button>';
+      }).join('') +
+      '</div>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
       '<h4 class="ms-h">SOUND</h4>' +
@@ -5048,7 +5076,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireSlider(glowIn, v => { s.themeGlow = clampN(v, 0, 150, 100); sliderVal('#set-glow-val', s.themeGlow + '%'); });
     wireSlider(brightIn, v => { s.panelBright = clampN(v, 0, 100, 0); sliderVal('#set-bright-val', s.panelBright + '%'); });
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
-    bind('#set-crtglass', 'crtGlass'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    // CRT GLASS chips — same instant-apply + persist idiom as TEXT SIZE below.
+    const glChips = host.querySelectorAll('#set-crtglass [data-glass]');
+    const syncGlass = () => glChips.forEach(x => {
+      const on = x.dataset.glass === resolveGlass(s.crtGlass);
+      x.classList.toggle('sel', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    glChips.forEach(b => b.addEventListener('click', () => {
+      s.crtGlass = resolveGlass(b.dataset.glass);
+      applySettings(); save(); sfx('click');
+      syncGlass(); flashSaved(appMsg());
+    }));
     // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
     const tsChips = host.querySelectorAll('#set-textsize [data-ts]');
     const syncTextSize = () => tsChips.forEach(x => {
