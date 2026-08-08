@@ -56,7 +56,7 @@ the projection, and ordinary transport crashes retain the existing bounded recon
 durable process ledger; a real Windows force-death test proved the next boot reaped exactly the owned child, including
 on the managed-host CIM-denied path via exact creation-time fallback. The live seeded ABILITIES panel rendered
 `idle · starts on use · 1 tool` plus `cached_probe` without launching a child. Focused G3 evidence is 22 schema-
-lifecycle, 38 stdio, 6 real orphan, and 38 ledger assertions; the exact lane tree is 585/585 fast and 70/70 HTTP green.
+lifecycle, 38 stdio, 6 real orphan, and 38 ledger assertions; the exact lane tree is 586/586 fast and 70/70 HTTP green.
 This remains a lane candidate, not trunk capability, until merged.
 
 G1 now has a cryptographically verified **0.9.0 baseline**, not a completed lifecycle matrix. Receipt
