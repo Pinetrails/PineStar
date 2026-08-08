@@ -11,7 +11,7 @@
   if (!/[?&]crtlab\b/.test(location.search)) return;
 
   const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, vig: 0.30, over: 1.20, dust: 0.5, aberr: 0.35, grain: 0.24 };
-  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45, pitch: 7 };
+  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45, pitch: 8 };
   // MUST MIRROR StationBake.SHAPE — same RESET-writes-these contract as WALL_DEFAULTS below.
   const SHAPE_DEFAULTS = { cornerN: 1 };
   /* MUST MIRROR StationBake.WALL EXACTLY — these are not just the readout's key list, RESET writes
@@ -214,7 +214,7 @@
     sliders.push(buildSlider(body, light, 'floor', 0, 0.5, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'room', 0.2, 0.8, 0.02, scheduleRebake));
     sliders.push(buildSlider(body, light, 'crown', 0, 0.8, 0.01, scheduleRebake));   // how far ambient gives way over a wall's lit top surface — 0 puts the crown back under the hull skirt
-    sliders.push(buildSlider(body, light, 'pitch', 3, 14, 1, scheduleRebake));       // tiles between ceiling lamps, BOTH axes — past ~8 the pools stop overlapping and the deck between them falls to raw ambient
+    sliders.push(buildSlider(body, light, 'pitch', 3, 14, 1, scheduleRebake));       // tiles between ceiling lamps, BOTH axes. Row/column counts are ROUNDED tile divisions, so this steps: several adjacent values render identically on a given room and then the grid drops a whole rank. Low = an evenly lit warehouse, high = isolated pools over raw ambient
 
     section(body, 'CORNER PROFILE (re-bakes)');
     sliders.push(buildSlider(body, shape, 'cornerN', 0.6, 4, 0.1, scheduleRebake));  // superellipse exponent: 1 = 45° chamfer · 2 = circular fillet · higher = squarer

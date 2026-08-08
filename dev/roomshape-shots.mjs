@@ -122,12 +122,29 @@ const PROBE = `(() => {
     const lit = render({ shape: { cornerN: n } });
     crops['corner_n' + String(n).replace('.', 'p')] = crop(lit, CX, CY, CW, CH, 8);
   }
+
+  /* PITCH LADDER. "Is the deck too evenly lit" is not a matter of opinion about the average — it is
+     whether there is a TROUGH between pools at all. A room lit to a flat wash has nothing but its
+     pattern to show (the lesson the corridor deck taught three times over). So the ladder reports
+     the peak, the trough, and the ratio between them alongside the picture: a real pools read needs
+     the gap to fall well below the pool, and a pitch so wide the trough hits raw ambient is the
+     unlit-tray failure coming back. */
+  const contrast = {};
+  const pitchPanels = [7, 8, 9, 10].map(p => {
+    const lit = render({ light: { pitch: p } });
+    const prof = deckProfile(lit);
+    const peak = Math.max(...prof), trough = Math.min(...prof);
+    contrast['pitch' + p] = { peak, trough, ratio: +(trough / peak).toFixed(2) };
+    return { name: 'pitch ' + p + '  peak ' + peak + ' / trough ' + trough, lit, sx: RX, sy: RY, sw: RW, sh: RH };
+  });
+  crops.SHEET_pitch_ladder = sheet(pitchPanels, RW, RH);
   Object.assign(SB.WALL, SHIPPED.wall); Object.assign(SB.LIGHT, SHIPPED.light); Object.assign(SB.SHAPE, SHIPPED.shape);
 
   return JSON.stringify({
     tile: T, roomTiles: [ra.x2 - ra.x1 + 1, ra.y2 - ra.y1 + 1],
     shipped: SHIPPED,
     deck_luma_every_6px_top_to_bottom: lumas,
+    pitch_pool_vs_trough: contrast,
     crops
   });
 })()`;

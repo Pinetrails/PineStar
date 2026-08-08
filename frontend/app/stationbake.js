@@ -131,8 +131,19 @@ const StationBake = (() => {
                   "the lamps emit nothing" read. Rooms are not 7 tiles deep any more, so the lamp
                   grid has to run DOWN the room as well as across it. Row 0 stays exactly where it
                   was (it is the row the wall-mounted flood hardware is drawn for); the rest are
-                  spread from there to the south end at this pitch. */
-  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45, pitch: 7 };   // crown = how far the ambient gives way over a wall's lit top surface (0 = off, the old inversion)
+                  spread from there to the south end at this pitch.
+
+                  WHY 8 AND NOT 7. Both light the whole deck; the difference is whether there is a
+                  TROUGH between pools at all, which is the thing that makes a floor read as MODELLED
+                  BY LIGHT rather than washed. Measured on an 18x14 hab: pitch 7 lays a 3x3 grid and
+                  gives peak 73 / trough 47, which is an evenly lit warehouse; pitch 8 lays 2x2 and
+                  gives peak 56 / trough 31 — distinct pools with real dark between them, which is
+                  the station's own idiom (cf. the 'Dark + pools' preset). It is the shallow end of
+                  the distinct-pools family: 9 and 10 render IDENTICALLY on a room this size, because
+                  both the row and column counts are rounded tile divisions and only step at integer
+                  boundaries. What 8 is NOT is the old failure — that trough sat at 17.5 and kept
+                  falling to black with no recovery; 31 is a dip between two lamps. */
+  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45, pitch: 8 };   // crown = how far the ambient gives way over a wall's lit top surface (0 = off, the old inversion)
 
   /* live-tunable DEPTH FX — the CRT LAB writes these and re-bakes (same contract as LIGHT/WALL).
      Pure top-down 2D cosmetics that make the deck read a touch more 3D — never imply agent/run

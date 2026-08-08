@@ -49,11 +49,17 @@ const setAndRebake = (js) => evalJS(cdp, `(() => {
   return 'ok';
 })()`);
 
+/* THE 'AFTER' IS RESTORED FROM WHAT THE PAGE SHIPPED WITH, NEVER RE-TYPED. Writing the new numbers
+   out a second time here makes this harness assert its own copy of them: change LIGHT.pitch in the
+   bake and the shot still comes back showing the old value, reported as if it were the default.
+   Stash the live objects on boot, and put those exact bytes back. */
+await evalJS(cdp, `(() => { window.__RS_SHIPPED = JSON.stringify({ WALL: StationBake.WALL, LIGHT: StationBake.LIGHT, SHAPE: StationBake.SHAPE }); return 'ok'; })()`);
+
 await setAndRebake('Object.assign(SB.WALL, { up: 14, corUp: 8, capH: 3 }); SB.LIGHT.pitch = 40; SB.SHAPE.cornerN = 2;');
 await sleep(1500);
 await capture(cdp, dir, 'LIVE_before');
 
-await setAndRebake('Object.assign(SB.WALL, { up: 22, corUp: 12, capH: 4 }); SB.LIGHT.pitch = 7; SB.SHAPE.cornerN = 1;');
+await setAndRebake('const s = JSON.parse(window.__RS_SHIPPED); Object.assign(SB.WALL, s.WALL); Object.assign(SB.LIGHT, s.LIGHT); Object.assign(SB.SHAPE, s.SHAPE);');
 await sleep(1500);
 
 // what the RUNNING page actually holds, plus a luma read off the live canvas' own deck
