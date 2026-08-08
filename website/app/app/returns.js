@@ -11,9 +11,10 @@
        and already has its own post-mortem path.
      • "Away" is defined by the persisted lastSeenAt heartbeat. A FRESH state (lastSeenAt 0 —
        first ever session) digests NOTHING: no prior attendance means nothing was missed.
-     • Once a run is folded into a digest it is marked (digested ring) and NEVER re-listed —
-       dismissed = gone, the anti-nag law. The pending ledger is the separate "uncollected crate"
-       trail; rating a run resolves it. Both are capped so state can't grow unbounded. */
+     • Once a run is folded, its pending crate prevents re-listing; after rating, its compact digested id
+       preserves that guarantee. Dismissed = gone from the digest, not from the OUTBOX. The ledger cap
+       matches the sidecar's complete in-memory history
+       horizon, so the display cap can never silently discard a rateable run. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -22,9 +23,9 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const DIGEST_CAP = 8;      // max rows one digest beat lists (newest first; the rest stays in run history)
-  const PENDING_CAP = 24;    // max uncollected crates tracked (oldest dropped — the OUTBOX shows 5 + counter)
-  const DIGESTED_CAP = 200;  // runId ring: once listed, never re-listed
+  const DIGEST_CAP = 8;       // visual morning-summary cap only; every eligible row is still crated below
+  const PENDING_CAP = 10000;  // equals runstore RAM/history replay horizon: no hidden 24-run loss boundary
+  const DIGESTED_CAP = 10000;
   const TITLE_MAX = 90;
 
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
@@ -33,11 +34,14 @@
   // hydrate a persisted blob (or null/corrupt) into a sane state object.
   function hydrate(raw) {
     const s = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const pending = Array.isArray(s.pending) ? s.pending.filter(r => r && typeof r === 'object' && r.runId).slice(0, PENDING_CAP) : [];
+    const pendingIds = new Set(pending.map(r => String(r.runId)));
     return {
       v: 1,
       lastSeenAt: Math.max(0, num(s.lastSeenAt)),
-      pending: Array.isArray(s.pending) ? s.pending.filter(r => r && typeof r === 'object' && r.runId).slice(0, PENDING_CAP) : [],
-      digested: Array.isArray(s.digested) ? s.digested.filter(id => typeof id === 'string' && id).slice(-DIGESTED_CAP) : []
+      pending,
+      // A pending row itself is the anti-relist proof; retaining its id here as well only doubles storage.
+      digested: Array.isArray(s.digested) ? s.digested.filter(id => typeof id === 'string' && id && !pendingIds.has(id)).slice(-DIGESTED_CAP) : []
     };
   }
 
@@ -65,7 +69,6 @@
     const pending = {}; for (const r of s.pending) pending[r.runId] = true;
     const out = [];
     for (const r of runs) {
-      if (out.length >= DIGEST_CAP) break;
       if (!r || typeof r !== 'object') continue;
       const runId = str(r.runId); if (!runId) continue;
       if (r.reason !== 'done') continue;                   // slag has its own post-mortem path
@@ -97,13 +100,13 @@
     return rows;
   }
 
-  // fold freshly-digested rows into state: mark them digested (never re-listed) and stack them on
-  // the pending (uncollected-crate) ledger. FIFO caps on both.
+  // Fold freshly-digested rows onto the pending ledger. Pending is itself the anti-relist proof; the compact
+  // digested id ring is populated only when a crate resolves, avoiding two copies of every unattended run.
   function fold(state, rows) {
     const s = hydrate(state);
     for (const r of (rows || [])) {
       if (!r || !r.runId) continue;
-      if (s.digested.indexOf(r.runId) === -1) s.digested.push(r.runId);
+      if (s.digested.indexOf(r.runId) !== -1) continue;
       if (!s.pending.some(p => p.runId === r.runId)) s.pending.push(r);
     }
     if (s.digested.length > DIGESTED_CAP) s.digested = s.digested.slice(-DIGESTED_CAP);
@@ -115,6 +118,8 @@
   function resolve(state, runId) {
     const s = hydrate(state);
     s.pending = s.pending.filter(p => p.runId !== runId);
+    if (runId && s.digested.indexOf(runId) === -1) s.digested.push(runId);
+    if (s.digested.length > DIGESTED_CAP) s.digested = s.digested.slice(-DIGESTED_CAP);
     return s;
   }
 

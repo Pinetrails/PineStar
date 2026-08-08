@@ -41,13 +41,41 @@ function makeRunExecutionState(options) {
     const cap = Math.max(0, Number(maxBytes) || 0);
     let next = result;
     const copy = messages || {};
+    const originalChars = Number.isFinite(Number(result.outputChars))
+      ? Math.max(0, Math.floor(Number(result.outputChars))) : result.content.length;
+    const summary = String(result.summary || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    const parkedPath = String(result.parkedPath || '').trim();
+    const receipt = (summary || parkedPath) ? ('[Tool result receipt' + (summary ? ': ' + summary : '') + '. '
+      + (parkedPath
+        ? 'The full ' + originalChars + '-character output was saved to ' + parkedPath
+          + ' because this run reached its context allowance. The tool already completed; do not rerun it merely to recover output. Read the saved file in focused ranges.'
+        : originalChars + ' characters were returned, but the full output could not fit or be preserved. Narrow the command before rerunning it.')
+      + ']') : '';
     if (toolBytes >= cap) {
-      next = Object.assign({}, result, { content: copy.omitted || '[tool output omitted — per-run tool-output budget reached]' });
+      next = Object.assign({}, result, { content: receipt || copy.omitted || '[tool output omitted — per-run tool-output budget reached]', outputBounded: true });
     } else if (toolBytes + result.content.length > cap) {
-      next = Object.assign({}, result, { content: result.content.slice(0, cap - toolBytes) + (copy.truncatedSuffix || '\n…[truncated — per-run tool-output budget reached]') });
+      const available = cap - toolBytes;
+      if (receipt) {
+        const separator = '\n\n';
+        const room = Math.max(0, available - receipt.length - separator.length * 2);
+        const head = Math.floor(room * 0.6);
+        const tail = room - head;
+        const preview = room > 0
+          ? result.content.slice(0, head) + separator + receipt + separator + result.content.slice(result.content.length - tail)
+          : receipt;
+        next = Object.assign({}, result, { content: preview, outputBounded: true });
+      } else {
+        next = Object.assign({}, result, { content: result.content.slice(0, available) + (copy.truncatedSuffix || '\n…[truncated — per-run tool-output budget reached]'), outputBounded: true });
+      }
     }
     toolBytes += next.content.length;
     return next;
+  }
+
+  function willBoundToolResult(result, maxBytes) {
+    if (!result || typeof result.content !== 'string') return false;
+    const cap = Math.max(0, Number(maxBytes) || 0);
+    return toolBytes >= cap || toolBytes + result.content.length > cap;
   }
 
   function observeArtifact(event) {
@@ -107,6 +135,7 @@ function makeRunExecutionState(options) {
     repeated,
     recordResult,
     boundToolResult,
+    willBoundToolResult,
     resetToolBytes: () => { toolBytes = 0; },
     toolBytes: () => toolBytes,
     toolsOk: () => toolsOk,

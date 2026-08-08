@@ -21,11 +21,17 @@ assert.match(source, /addEventListener\('pointermove'/, 'floating controller sup
 assert.match(source, /POSITION_KEY/, 'floating position is remembered');
 assert.match(source, /seq\s*!==\s*sessionSeq/, 'late microphone permission cannot resurrect a closed session');
 assert.match(source, /requestPartial\(utterance,\s*utteranceSeq\)/, 'long turns surface local partial transcription');
-assert.match(source, /function endpointSilenceMs\(durationMs,\s*text\)/, 'turn endpointing has a dedicated hesitation-aware policy');
-assert.match(source, /durationMs\s*<\s*1200\s*\?\s*1350\s*:\s*durationMs\s*<\s*3200\s*\?\s*1150\s*:\s*950/, 'thinking pauses receive at least 950–1350ms before submission');
-assert.match(source, /Math\.min\(1750,\s*wait\s*\+\s*450\)/, 'incomplete partial transcripts receive an additional hesitation grace period');
+assert.match(source, /id="lv-endpoint"[^>]*aria-label="Pause before sending your turn"/, 'Local Live exposes an explicit turn-end pause control');
+assert.match(source, /TURN_END_KEY\s*=\s*'starnet\.liveVoice\.turnEndMs\.v1'/, 'the turn-end choice persists across calls');
+assert.match(source, /DEFAULT_TURN_END_MS\s*=\s*1800/, 'the default allows a natural pause instead of the former sub-second cutoff');
+assert.match(source, /function endpointSilenceMs\(text,\s*baseMs\)/, 'turn endpointing has a dedicated user-adjustable policy');
+assert.match(source, /Math\.min\(3600,\s*wait\s*\+\s*600\)/, 'incomplete partial transcripts receive an additional hesitation grace period');
 assert.match(source, /partialText\s*=\s*text/, 'semantic pause handling is grounded in the real partial transcript');
-assert.doesNotMatch(source, /durationMs\s*<\s*900\s*\?\s*850/, 'the former aggressive sub-second endpoint policy is removed');
+assert.match(source, /PRE_ROLL_MS\s*=\s*900/, 'the utterance keeps enough pre-roll to preserve words spoken during calibration');
+assert.match(source, /MAX_UTTERANCE_MS\s*=\s*60000/, 'a normal long sentence is not chopped at the former 20-second ceiling');
+assert.match(source, /CALIBRATION_FLOOR_CEILING\s*=\s*0\.016/, 'speaking during startup cannot become an unreachably high noise floor');
+assert.match(source, /noiseFloor\s*\+\s*\(agentTalking\s*\?\s*0\.025\s*:\s*0\.006\)/, 'distant speech uses an additive sensitivity margin instead of multiplying room noise');
+assert.doesNotMatch(source, /durationMs\s*>=\s*20000/, 'the former 20-second hard cutoff is removed');
 assert.match(source, /scheduleReconnect\(/, 'lost microphones enter the reconnect state machine');
 assert.match(source, /approvalCommand\(lower\)/, 'run-scoped approvals can be answered by an explicit voice command');
 assert.match(source, /agentCommand\(value,\s*lower\)/, 'voice can select the active Starnet agent without provider coupling');
@@ -46,7 +52,20 @@ assert.match(css, /\.live-voice-panel\s*\{[^}]*position:\s*fixed/s, 'controller 
 assert.match(css, /\.lv-head\s*\{[^}]*cursor:\s*grab/s, 'header advertises the drag affordance');
 assert.match(css, /\.lv-wave i\[data-src="self"\]/, 'the user side of the shared waveform has an explicit visual contract');
 assert.match(css, /\.lv-wave i\[data-src="agent"\]/, 'the agent side of the shared waveform has an explicit visual contract');
+assert.match(css, /\[data-state="hearing"\][\s\S]*?\.lv-heard[\s\S]*?display:\s*-webkit-box/, 'recognized words stay visible while the Commander is speaking');
 assert.match(css, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.lv-x\s*\{[^}]*pointer-events:\s*auto/, 'touch users always have a reachable close control');
+
+// Exercise the endpoint policy, not only its spelling. The chosen pause is the base truth; a partial that
+// visibly trails off gets a bounded extra beat so saying a company name and then spelling it remains one turn.
+{
+  const m = /(  function endpointSilenceMs\(text, baseMs\) \{[\s\S]*?\n  \})/.exec(source);
+  assert.ok(m, 'voice-live.js still defines the endpoint policy as an extractable pure function');
+  // eslint-disable-next-line no-new-func
+  const endpointSilenceMs = new Function(m[1] + '\nreturn endpointSilenceMs;')();
+  assert.equal(endpointSilenceMs('finished thought.', 1800), 1800, 'a complete thought honors the selected pause exactly');
+  assert.equal(endpointSilenceMs('Acme and', 1800), 2400, 'a trailing continuation word gets another 600ms');
+  assert.equal(endpointSilenceMs('still thinking and', 3200), 3600, 'hesitation grace remains bounded at 3.6 seconds');
+}
 
 /* ⛔ LIVE VOICE OPENS AUDIBLE ON *BOTH* PATHS. Local Live has two entry points: start() when the bundled
    offline speech engine is available and startDictation() for explicit opt-out or a degraded/custom bundle.

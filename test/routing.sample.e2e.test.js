@@ -284,7 +284,11 @@ function twoStagePlan() {
     const early = await post({ text: 'SAMPLE JOB: force clean early stop.' });
     A.eq(early.status, 502, 'a clean durable run that stops before OUTBOX is still a failed proof');
     A.eq(early.j.ok, false, 'clean early stop says ok:false');
-    A.ok((early.j.runs || []).length >= 2 && early.j.runs.every(r => r.reason === 'done'), 'early-stop repro has only clean durable runs');
+    A.ok((early.j.runs || []).length >= 2
+      && early.j.runs.some(r => r.reason === 'done')
+      && early.j.runs.some(r => r.reason === 'empty')
+      && early.j.runs.every(r => r.reason === 'done' || r.reason === 'empty'),
+    'early-stop repro preserves the clean entry run and the empty downstream terminal without relabeling either');
     A.eq(early.j.delivered, null, 'clean early stop cannot claim an OUTBOX delivery');
     await sse.settle(500);
     A.ok(!sse.events.some(e => e.name === 'workitem.delivered' && e.payload && e.payload.workitemId === early.j.workitemId), 'clean early-stop crate never emits OUTBOX delivery');

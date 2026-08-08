@@ -67,6 +67,7 @@ const spotifyPkce = require('./spotify/pkce.js');                          // pu
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
+const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growthratings.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
@@ -211,6 +212,7 @@ const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
+const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
 const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
 const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B: fold an agent's OPEN quests into its system prompt (pure, dossierinject idiom)
 const QuestSweeps = require('./questsweeps.js');
@@ -862,6 +864,23 @@ const runsIo = {
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
+// Explicit Commander work verdicts are durable facts, separate from the mutable browser save projection.
+// Append+fsync must fail closed: the UI may only say "rated" after this ledger acknowledges the row.
+const GROWTH_RATINGS_FILE = path.join(WORKSPACES, 'growth-ratings.jsonl');
+const growthRatingsIo = {
+  readAll() { try { return readBoundedJsonl(GROWTH_RATINGS_FILE); } catch (_) { return []; } },
+  append(entry) {
+    let fd = null;
+    try {
+      fd = fs.openSync(GROWTH_RATINGS_FILE, 'a');
+      fs.writeSync(fd, JSON.stringify(entry) + '\n');
+      fs.fsyncSync(fd);
+    } finally { if (fd != null) fs.closeSync(fd); }
+    rotateJsonl(GROWTH_RATINGS_FILE);
+  }
+};
+const growthRatings = makeGrowthRatings({ io: growthRatingsIo, clock: { now: () => Date.now() } });
+
 // NS-0 AUTONOMY DECISION LEDGER: a durable, append-only, fsync'd JSONL sibling of runs.jsonl recording every
 // autonomous DECISION (cron fire/skip/defer today; night-shift beats next). runs.jsonl answers "what runs
 // happened"; this answers "what did the station DECIDE to do (or not do) unattended, and why" — the trace that
@@ -1431,6 +1450,11 @@ const questStore = makeQuestStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'quests'),
   warn: (...args) => console.warn.apply(console, args)
 });
+const journeyStore = makeJourneyStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[journey] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'journey')
+});
 // NS-6: the durable THREAD LEDGER (station-global, like the dossier/goal arc — the Commander's un-acted-on ideas,
 // consumed by the single night-shift persona). Same durable+recovery discipline as workshopStore/notebookStore.
 const threadsStore = makeThreadsStore({
@@ -1534,9 +1558,11 @@ const commanderGoals = {
   get() { return this._goal; },
   set(goal) {
     this._goal = (goal && typeof goal === 'object') ? {
+      id: goal.id == null ? null : String(goal.id).slice(0, 64),
       text: String(goal.text || '').slice(0, 280),
       done: Number(goal.done) | 0, total: Number(goal.total) | 0, pct: Number(goal.pct) | 0,
-      next: goal.next == null ? null : String(goal.next).slice(0, 200)
+      next: goal.next == null ? null : String(goal.next).slice(0, 200),
+      milestoneId: goal.milestoneId == null ? null : String(goal.milestoneId).slice(0, 80)
     } : null;
     try {
       fs.mkdirSync(WORKSPACES, { recursive: true });
@@ -6306,6 +6332,7 @@ function questRefreshNote(entry) { questRefreshState = QuestRefresh.note(questRe
 function questRefreshOpenCount() { try { return questStore.list().filter(q => q.status === 'open').length; } catch (_) { return 0; } }
 async function mintQuestRecommendations(quests, why) {
   const declinedIdx = buildDeclinedIndex(null); let minted = 0;
+  const activeGoal = commanderGoals.get();
   const ranked = Recommendation.rankCandidates((quests || []).map(q => ({
     candidate: q, kind: 'quest', traits: ['quest', 'contract:' + ((q.contract && q.contract.type) || 'unknown')],
     features: { relevance: 1, impact: 0.8, success: q.contract && q.contract.type === 'attest' ? 0.55 : 0.8,
@@ -6317,7 +6344,8 @@ async function mintQuestRecommendations(quests, why) {
     if (declinedIdx.has(q.title)) { questRefreshNote({ outcome: 'rejected', reason: 'declined elsewhere', title: q.title }); continue; }
     const r = await questStore.mint({
       title: q.title, desc: q.desc, reward: q.reward, kind: 'generated', createdBy: 'system:quest-refresh',
-      agentId: null, contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
+      agentId: null, domain: q.domain, goalId: activeGoal && activeGoal.id, milestoneId: activeGoal && activeGoal.milestoneId,
+      contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
     }, Date.now());
     if (r && r.ok) {
       minted++;
@@ -6332,10 +6360,13 @@ async function mintQuestRecommendations(quests, why) {
   return minted;
 }
 
-function completeQuestRecommendationIds(ids) {
+async function completeQuestRecommendationIds(ids) {
   for (const id of (Array.isArray(ids) ? ids : [])) {
     recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => {});
     recommendationLedger.outcome('quest:' + id, { adopted: true, quality: 1, completedAt: Date.now() }, Date.now()).catch(() => {});
+    // The quest store is the completion authority. Only AFTER it says done do we fold the exact persisted record
+    // into the journey ledger; duplicate sweeps are idempotent by quest id.
+    try { const q = questStore.get(id); if (q && q.status === 'done') await journeyStore.recordQuest(q, commanderGoals.get(), q.completedAt || Date.now()); } catch (e) { console.warn('[journey] quest fold failed:', (e && e.message) || e); }
   }
   return ids;
 }
@@ -7595,6 +7626,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/agent/delete', h: handleAgentDelete },
   { m: 'POST', exact: '/api/dossier', h: handleDossier },
   { m: 'POST', exact: '/api/goals', h: handleGoals },   // GROWTH Tier 2: the active goal-arc summary for cron personas
+  { m: ['GET', 'POST'], exact: '/api/journey', h: handleJourney }, // verified Commander journey, mastery, adaptation, expressive station evolution
   { m: 'POST', exact: '/api/channels/telegram/disconnect', h: handleChannelDisconnect },
   { m: 'POST', exact: '/api/channels/telegram/bots/connect', h: handleTelegramBotAdd },
   { m: 'POST', rx: TG_BOT_RX.owner, h: (req, res, gm) => handleTelegramBotOwner(req, res, gm[1], gm[2]) },
@@ -7796,6 +7828,7 @@ const ROUTES = [
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
   { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
+  { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
@@ -10188,7 +10221,9 @@ async function handleQuestsConfirm(req, res) {
   if (!id) return json(400, { ok: false, error: 'which quest?' });
   const ok = body.ok === true || body.ok === 'true';
   let did; try { did = await questStore.confirmAttest(id, ok, body.note, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not record that verdict' }); }
-  if (did && ok) await recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => null);
+  if (did && ok) {
+    await completeQuestRecommendationIds([id]);
+  }
   // caught-up nudge (QUEST V3): confirming the last open quest should earn fresh direction within the
   // cooldown, not wait for the next timer tick. The gate itself decides; this is just an early look.
   if (did) { try { questRefreshTick(); } catch (_) {} }
@@ -11229,6 +11264,27 @@ async function handleGoals(req, res) {
   commanderGoals.set(body && body.goal);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, goal: commanderGoals.get() }));
+}
+
+// GET /api/journey is the one truthful read-model for journey UI + prompt adaptation.
+// POST operations are explicit and narrow: the Commander records metrics/milestones or corrects an adaptation.
+async function handleJourney(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (req.method === 'GET') return json(200, { ok: true, journey: journeyStore.snapshot(commanderGoals.get()) });
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16)); }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  const op = String(body && body.op || '');
+  let result;
+  if (op === 'metric.create') result = await journeyStore.createMetric(body, Date.now());
+  else if (op === 'metric.update') result = await journeyStore.updateMetric(body, Date.now());
+  else if (op === 'metric.retire') result = await journeyStore.retireMetric(body.id, Date.now());
+  else if (op === 'milestone.complete') result = await journeyStore.recordMilestone(body, Date.now());
+  else if (op === 'adaptation.suppress') result = await journeyStore.setSuppressed(body.agentId, body.domain, true, Date.now());
+  else if (op === 'adaptation.resume') result = await journeyStore.setSuppressed(body.agentId, body.domain, false, Date.now());
+  else if (op === 'journey.reset') result = await journeyStore.reset();
+  else return json(400, { ok: false, error: 'unknown journey operation' });
+  return json(result && result.ok ? 200 : 400, Object.assign({}, result, { journey: journeyStore.snapshot(commanderGoals.get()) }));
 }
 
 function placedTypesFrom(v) {
@@ -12356,7 +12412,7 @@ async function runOnce(o) {
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
   makeCodeTools({}).register(registry);   // code.run — child Node/vm owns no authority; every nested read returns through this run's parent dispatcher
-  makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
+  makeQuestTools({ store: questStore, clock: { now: () => Date.now() }, activeGoal: () => commanderGoals.get() }).register(registry);   // QUEST V2 §B + journey binding: personalized mints inherit the current goal id/domain evidence
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
@@ -12844,7 +12900,13 @@ async function runOnce(o) {
         await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
         const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
         const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
-        await fsp.writeFile(path.join(ws, rel), String(content), 'utf8');
+        const full = String(content);
+        const abs = path.join(ws, rel);
+        await fsp.writeFile(abs, full, 'utf8');
+        // A path is evidence only after byte-for-byte read-back. If storage returned short/corrupt bytes, the
+        // caller falls back to an honest unpreserved-output receipt instead of pointing at an unproved file.
+        const readBack = await fsp.readFile(abs, 'utf8');
+        if (readBack !== full) return null;
         return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
       } catch (_) { return null; }
     },
@@ -13298,7 +13360,16 @@ async function runOnce(o) {
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
     if (!internalBriefControl) try { execution.observeArtifact({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
-    // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
+    // The registry parks a result only when that ONE result crosses its cap. The run-wide cap can still clip a
+    // perfectly ordinary later command after earlier calls used the allowance, so preserve that result here too.
+    // This happens before clipping and the parker returns a path only after byte-identical read-back.
+    if (execution.willBoundToolResult(r, CAPS.maxToolBytes) && r && typeof r.content === 'string' && !r.parkedPath) {
+      const parked = await capCtx.parkOutput(r.content, { tool: c.name, reason: 'run-output-budget' });
+      if (parked && parked.path) r = Object.assign({}, r, { parkedPath: parked.path, outputChars: r.content.length });
+    }
+    // Bound the TOTAL model-visible tool output across a run so a few big fetches/reads cannot blow context.
+    // A clipped result still carries its durable path and authoritative tool summary (for example `exit 0` or
+    // `verify passed`), so the model can report the outcome instead of exposing a mysterious internal cap.
     r = execution.boundToolResult(r, CAPS.maxToolBytes, {
       omitted: '[tool output omitted — this run hit its ' + Math.round(CAPS.maxToolBytes / 1000) + 'KB tool-output budget; finish with what you already have]'
     });
@@ -13595,7 +13666,7 @@ async function runOnce(o) {
   // questsweeps.js) so the existing settle hook completes them on 'done' and stalls them on any other reason.
   // A fresh bind also clears a prior stall (the build is live again — bindRun's own contract). Fail-open.
   try {
-    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId).catch(() => {});
+    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId, agentId).catch(() => {});
   } catch (_) {}
   let taskIntentNote = '';
   if (taskBrief) taskIntentNote = '\n\n' + TaskIntent.directive(taskContextBlock);
@@ -13637,9 +13708,14 @@ async function runOnce(o) {
   if (internal && o.evidence) {
     try { const t = commanderEvidenceContext(system || ''); if (t) evidenceBlock = '\n\n' + t; } catch (_) { evidenceBlock = ''; }
   }
+  // VERIFIED JOURNEY ADAPTATION: this is the behavioral half of the receipt the Commander sees. It is derived
+  // exclusively from completed journey outcomes, is agent-specific, and disappears immediately when the
+  // Commander suppresses that domain. It grants no tools or authority; it is a bounded planning prior.
+  let journeyBlock = '';
+  if (!internal) { try { const jb = journeyStore.adaptationBlock(agentId); if (jb) journeyBlock = '\n\n' + jb; } catch (_) { journeyBlock = ''; } }
   const sys = internal
     ? (String(system || '') + evidenceBlock)
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -13870,7 +13946,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback });   // H3.2/H3.3/G6 + hierarchical timing/work visibility + P1.2 identity-honesty
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
@@ -13912,7 +13988,7 @@ async function runOnce(o) {
       for (const _aq of QuestSweeps.artifactQuestKeys(questStore.openForAgent(agentId), agentId)) {
         try {
           const { abs: _aAbs } = await fsJail.resolveInside(agentId, _aq.key);
-          if (fs.existsSync(_aAbs)) completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
+          if (fs.existsSync(_aAbs)) await completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
         } catch (_) { /* a non-path or escaping key simply never completes — truthful telemetry */ }
       }
     })().catch(() => {});
@@ -16092,10 +16168,59 @@ async function handleSaveWrite(req, res) {
   // P2.1: DEGRADED — refuse a save write when this workspace was stamped by a NEWER StarNet (writing a newer save
   // envelope shape through older code risks silent field loss). Reads (GET /api/save) still serve; runs continue.
   if (workspaceDegraded) return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true });
+  // Once a rating is acknowledged, a stale tab without that ledger watermark may not replace the durable
+  // projection and temporarily erase XP. It can reload/replay the ledger, then save normally.
+  const ratingSyncAt = Math.max(0, Number(body.stationStats && body.stationStats.ratingSyncAt) || 0);
+  const growthEpoch = Math.max(1, Math.floor(Number(body.agent && body.agent.createdAt) || 1));
+  const latestRatingAt = growthRatings.latestTs(growthEpoch);
+  if (latestRatingAt > ratingSyncAt) return json(200, { ok: false, stale: true, growthStale: true, latestRatingAt });
   try {
     const result = saveStore.save(agentId, body);
     json(200, result);
   } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
+}
+
+// GET/POST /api/growth/ratings - the authoritative, idempotent ledger for explicit work verdicts.
+// The server derives eligible identities from the immutable run tree; a caller cannot mint XP for an
+// invented run/agent. First verdict wins, including across tabs and restarts.
+async function handleGrowthRatings(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  if (req.method === 'GET') {
+    try {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+      const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
+      const requestedThrough = Math.max(0, Number(u.searchParams.get('through')) || 0);
+      const epoch = Math.max(1, Math.floor(Number(u.searchParams.get('epoch')) || 1));
+      // Include every rating already acknowledged, including a monotonic timestamp that advanced one tick
+      // past the wall clock because two tabs rated within the same millisecond.
+      const snapshotAt = requestedThrough || Math.max(1, Date.now() - 1, growthRatings.latestTs(epoch));
+      const beforeRunId = u.searchParams.get('beforeRunId') || '';
+      const page = growthRatings.list({ limit: limit + 1, since, through: snapshotAt, beforeRunId, epoch });
+      const ratings = page.slice(0, limit);
+      return json(200, { ratings, nextCursor: page.length > limit && ratings.length ? ratings[ratings.length - 1].runId : '', snapshotAt });
+    } catch (e) { return json(500, { error: 'could not read rating history' }); }
+  }
+  let body;
+  try { body = JSON.parse(await readBody(req, 64 << 10)) || {}; }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  const runId = String(body.runId || '').trim();
+  const saved = (() => { try { return saveStore.load('agent') || null; } catch (_) { return null; } })();
+  const epoch = Math.max(1, Math.floor(Number(saved && saved.agent && saved.agent.createdAt) || 1));
+  if (Math.max(1, Math.floor(Number(body.epoch) || 1)) !== epoch) return json(409, { ok: false, error: 'station generation changed; reload before rating' });
+  const allRows = runStore.all();
+  const lead = allRows.find(r => r && r.runId === runId);
+  if (!lead || lead.internal || contextpack.isInternalStream(lead.streamId)) return json(404, { ok: false, error: 'rateable run not found' });
+  if (lead.clarifying || !new Set(['done', 'max_iters', 'budget', 'refusal']).has(String(lead.reason || ''))) {
+    return json(409, { ok: false, error: 'run did not produce rateable agent work' });
+  }
+  const children = allRows.filter(row => row && row.parentRunId === runId && !row.internal && !contextpack.isInternalStream(row.streamId));
+  const canonical = deriveGrowthRating(lead, children, body.verdict);
+  if (!canonical) return json(400, { ok: false, error: 'invalid rating verdict' });
+  canonical.epoch = epoch;
+  const result = growthRatings.record(canonical);
+  if (!result || result.error) return json(400, { ok: false, error: (result && result.error) || 'rating failed' });
+  return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating });
 }
 // GET /api/runs?agent=<id>&limit=<n>&since=<ms>[&runId=<id>] — the agent's run history (M-save P4), newest-first.
 // Rows carry the run's `artifacts` ledger (work-visibility); an explicit runId narrows to that single run's
@@ -16104,10 +16229,16 @@ async function handleSaveWrite(req, res) {
 // while-away digest covers crew routines too), and a since=<ms> filter keeps the answer to runs that finished
 // after the caller's last-attended stamp.
 function withRunChildren(row, allRows) {
-  const out = Object.assign({}, row);
+  const out = withRunTruth(row);
   out.children = (Array.isArray(allRows) ? allRows : [])
     .filter(r => r && r.parentRunId && r.parentRunId === row.runId)
-    .map(r => Object.assign({}, r));
+    .map(withRunTruth);
+  return out;
+}
+function withRunTruth(row) {
+  const out = Object.assign({}, row);
+  // Rows written before the explicit marker existed still carry canonical internal stream prefixes.
+  out.internal = !!out.internal || contextpack.isInternalStream(out.streamId);
   return out;
 }
 function serveRuns(req, res) {
@@ -16124,9 +16255,15 @@ function serveRuns(req, res) {
     }
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
-    let rows = runStore.list(agent === '*' ? null : agent, { limit });
-    if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
-    json(200, { runs: rows });
+    const requestedThrough = Math.max(0, Number(u.searchParams.get('through')) || 0);
+    // Leave a one-millisecond overlap at the live edge: a run appended later in this same clock tick must
+    // land strictly AFTER the returned watermark, never share it and get excluded by the next `since` query.
+    const snapshotAt = requestedThrough || Math.max(1, Date.now() - 1);
+    const beforeRunId = u.searchParams.get('beforeRunId') || '';
+    const page = runStore.list(agent === '*' ? null : agent, { limit: limit + 1, since, through: snapshotAt, beforeRunId });
+    const rows = page.slice(0, limit).map(withRunTruth);
+    const nextCursor = page.length > limit && rows.length ? rows[rows.length - 1].runId : '';
+    json(200, { runs: rows, nextCursor, snapshotAt });
   } catch (e) {
     // HONESTY (GROUND_UP_AUDIT P2): a store read that THROWS is a real failure, not "no history" — a
     // 200-empty here makes an auth/crash indistinguishable from a genuinely-empty log, so support can't

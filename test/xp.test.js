@@ -13,12 +13,18 @@ function run(events, start) {
   for (const e of events) { const r = Xp.applyEvent(s, e); s = r.stats; awards.push(r.awards); }
   return { stats: s, awards };
 }
-// run.end carries a runId in production (schema-required) — the helpers default to 'r' so a [memUsed(), done()]
-// sequence shares one run and the buffered memory-reuse credit commits (or, for errd(), is discarded) correctly.
-const done = (usd, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason: 'done', turns: 1, usd: usd == null ? 1 : usd } });
-const errd = runId => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason: 'error', turns: 1, usd: 0 } });
-const ended = (reason, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason, turns: 1, usd: 0 } });
-const memUsed = (id, runId) => ({ name: 'memory.used', payload: { agentId: 'a', runId: runId || 'r', id: id || 'm1' } });
+// Production run ids are unique. The helpers generate one per default run while keeping [memUsed(), done()]
+// on the same id so buffered memory-reuse credit still commits (or is discarded) correctly.
+let helperRunSeq = 0, pendingHelperRun = null;
+function nextHelperRun() { return 'helper-' + (++helperRunSeq); }
+function endHelperRun(runId) { const id = runId || pendingHelperRun || nextHelperRun(); pendingHelperRun = null; return id; }
+const done = (usd, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: endHelperRun(runId), reason: 'done', turns: 1, usd: usd == null ? 1 : usd } });
+const errd = runId => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: endHelperRun(runId), reason: 'error', turns: 1, usd: 0 } });
+const ended = (reason, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: endHelperRun(runId), reason, turns: 1, usd: 0 } });
+const memUsed = (id, runId) => {
+  const rid = runId || pendingHelperRun || (pendingHelperRun = nextHelperRun());
+  return { name: 'memory.used', payload: { agentId: 'a', runId: rid, id: id || 'm1' } };
+};
 const feedback = (delta, reason) => ({ name: 'memory.feedback', payload: { agentId: 'a', id: 'm1', delta, reason: reason || 'kept' } });
 const keep = () => feedback(2, 'kept');
 const edit = () => feedback(1, 'edited');
@@ -66,7 +72,7 @@ A.eq(Xp.applyEvent(Xp.fresh(), discard()).awards.xp, 0, 'negative feedback award
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'kept')).awards.xp, 50, 'a huge finite kept-feedback delta is capped at +50 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 0, 'unknown memory.feedback reasons do not award xp');
 
-// ---- G2.4 task-size weighting: an optional payload.size hint scales the mint; the CAP stays the ceiling ----
+// ---- task-size is legacy receipt telemetry only; equal Commander verdicts earn equal XP ----
 const sized = (delta, reason, size) => ({ name: 'memory.feedback', payload: { agentId: 'a', id: 'w1', delta, reason, size } });
 A.eq(Xp.workSize({ tools: 0, usd: 0 }), 'small', 'no tools, no spend -> small');
 A.eq(Xp.workSize({ tools: 2, usd: 0.01 }), 'small', 'a couple of tool calls is still small');
@@ -75,19 +81,22 @@ A.eq(Xp.workSize({ tools: 0, usd: 0.08 }), 'medium', 'real spend alone can make 
 A.eq(Xp.workSize({ tools: 6, usd: 0 }), 'large', '6 successful tools -> large');
 A.eq(Xp.workSize({ tools: 0, usd: 0.5 }), 'large', 'heavy spend alone -> large');
 A.eq(Xp.workSize(null), 'small', 'missing stash -> small (conservative, never inflating)');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'large')).awards.xp, 45, 'large task: 3*10*1.5 = 45 xp');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'medium')).awards.xp, 38, 'medium task: round(3*10*1.25) = 38 xp');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'small')).awards.xp, 30, 'small task: base mint unchanged');
-A.eq(Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great')).awards.xp, 30, 'NO size hint -> exactly the old mint (fully additive)');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'gigantic')).awards.xp, 30, 'an unknown size string is ignored (mult 1)');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(4, 'work_great', 'large')).awards.xp, 50, 'weighting never pierces FEEDBACK_XP_CAP (4*10*1.5=60 -> 50)');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(8, 'work_great', 'large')).awards.xp, 50, 'a big weighted delta stays capped at +50');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(5, 'work_ok', 'large')).awards.xp, 0, 'weighting SCALES a mint, never invents one — work_ok still mints nothing');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'large')).awards.xp, 30, 'large execution shape cannot inflate a verdict');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'medium')).awards.xp, 30, 'medium execution shape cannot inflate a verdict');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'small')).awards.xp, 30, 'small execution shape earns the same verdict credit');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great')).awards.xp, 30, 'no size hint earns the same credit');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'gigantic')).awards.xp, 30, 'an unknown size string is ignored');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(4, 'work_great', 'large')).awards.xp, 40, 'a four-point verdict stays four-point regardless of size');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(8, 'work_great', 'large')).awards.xp, 50, 'the final per-verdict cap still applies');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(5, 'work_ok', 'large')).awards.xp, 0, 'work_ok still mints nothing');
 A.eq(Xp.applyEvent(Xp.fresh(), sized(5, 'work_miss', 'large')).awards.xp, 0, 'work_miss with a size hint still mints nothing (no penalty either)');
-A.eq(Xp.applyEvent(Xp.fresh(), sized(2, 'kept', 'large')).awards.xp, 30, 'the multiplier rides the shared mint path (kept delta 2 * large = 30)');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(2, 'kept', 'large')).awards.xp, 20, 'legacy size cannot inflate the shared mint path');
+
+const equalCrew = Xp.crewSplit({ leadDelta: 3, leadCost: 100, workers: [{ agentId: 'scribe', usd: 0 }, { agentId: 'builder', usd: 50 }, { agentId: 'scribe', usd: 9 }] });
+A.eq(equalCrew.workers.map(w => [w.agentId, w.delta]), [['scribe', 3], ['builder', 3]], 'named contributors receive equal verdict credit regardless spend and duplicates collapse');
 
 // ---- "rate the work" verdicts ride memory.feedback (synthetic id, direct XpStore call): only 👍 mints, none penalize ----
-A.eq(Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great')).awards.xp, 30, 'work_great delta 3 awards 30 xp (size-weighted)');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great')).awards.xp, 30, 'work_great delta 3 awards 30 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(8, 'work_great')).awards.xp, 50, 'work_great big task is capped at +50 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(5, 'work_ok')).awards.xp, 0, 'work_ok (close) never mints xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(5, 'work_miss')).awards.xp, 0, 'work_miss never mints xp');
@@ -209,6 +218,8 @@ A.eq(Xp.compute(Xp.fresh()).bonus, 0, 'no feedback bonus while calibrating');
 // ---- confidence-scaled feedback XP: satisfied agents grow faster, never a penalty ----
 const cal = { xp: 0, level: 1, lifetimeXp: 0, confidence: 90, samples: 5, counters: {}, milestones: [], run: { id: null, toolXp: 0 } };
 A.eq(Xp.applyEvent(cal, edit()).awards.xp, 15, 'trusted (90%): feedback 10 base x1.5 = 15');
+A.eq(Xp.applyEvent(cal, sized(4, 'work_great', 'large')).awards.xp, 50,
+  'trusted feedback remains under the FINAL +50 per-verdict cap; size is irrelevant');
 A.eq(Xp.applyEvent(Object.assign({}, cal, { confidence: 70 }), edit()).awards.xp, 13, 'reliable (70%): feedback 10 x1.3 = 13');
 A.eq(Xp.applyEvent(Object.assign({}, cal, { confidence: 30 }), edit()).awards.xp, 10, 'low confidence: feedback earns base only, never a penalty');
 A.eq(Xp.applyEvent(Object.assign({}, cal, { samples: 1 }), edit()).awards.xp, 10, 'uncalibrated: no bonus regardless of confidence');
@@ -530,5 +541,28 @@ A.ok(Xp.credential(flipped).key !== keyBefore, 'a band flip moves the key even w
 
 // the credential is a READOUT — it never mints anything
 A.eq(Xp.credential(crossed).text === '' ? 0 : crossed.xp, crossed.xp, 'credential() is pure readout — it mints no XP');
+
+/* ---- LONGEVITY: an earned level is a floor, and replayed facts are idempotent ---- */
+const splitBrain = { xp: 10, level: 5, lifetimeXp: 10, confidence: 50, samples: 0, counters: {}, milestones: [] };
+const repaired = Xp.reconcile(splitBrain).stats;
+A.eq(repaired.level, 5, 'reconcile never demotes an already-earned level');
+A.eq(repaired.xp, Xp.xpForLevel(5), 'reconcile restores the minimum XP implied by the saved level');
+A.ok(repaired.lifetimeXp >= repaired.xp, 'lifetime XP is repaired to at least the spendable XP total');
+const afterRepairRating = Xp.applyEvent(repaired, { name: 'memory.feedback', payload: { agentId: 'a', id: 'work:repair-run', runId: 'repair-run', delta: 2, reason: 'work_great' } }).stats;
+A.ok(afterRepairRating.level >= 5, 'the next positive rating cannot demote a repaired veteran');
+
+const onceRun = Xp.applyEvent(Xp.fresh(), done(0, 'receipt-run'));
+const twiceRun = Xp.applyEvent(onceRun.stats, done(0, 'receipt-run'));
+A.eq(twiceRun.stats.counters.tasksDone, 1, 'a replayed run.end receipt cannot count the same shipped task twice');
+A.eq(twiceRun.awards.duplicate, true, 'the duplicate run receipt is explicit to callers');
+let partialCrash = Xp.applyEvent(Xp.fresh(), { name: 'agent.tool_result', payload: { agentId: 'a', runId: 'partial-run', callId: 'c1', ok: true, isError: false } }).stats;
+partialCrash = Xp.applyEvent(partialCrash, { name: 'agent.run.end', payload: { agentId: 'a', runId: 'partial-run', reason: 'done', _historyToolsOk: 3 } }).stats;
+A.eq(partialCrash.counters.toolsOk, 3, 'history catch-up adds only tool successes not already persisted before a mid-run crash');
+const ratingEvent = { name: 'memory.feedback', payload: { agentId: 'a', id: 'work:receipt-run', runId: 'receipt-run', delta: 5, reason: 'work_great', size: 'large' } };
+const onceRating = Xp.applyEvent(twiceRun.stats, ratingEvent);
+const twiceRating = Xp.applyEvent(onceRating.stats, ratingEvent);
+A.eq(twiceRating.stats.xp, onceRating.stats.xp, 'a replayed work rating cannot mint XP twice');
+A.eq(twiceRating.stats.samples, onceRating.stats.samples, 'a replayed work rating cannot skew confidence twice');
+A.eq(twiceRating.awards.duplicate, true, 'the duplicate rating receipt is explicit to callers');
 
 A.report('xp.test');
