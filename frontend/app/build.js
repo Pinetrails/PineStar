@@ -1852,14 +1852,20 @@ const Build = (() => {
         if (!prompt || !schedule) { sfx('bad'); say('a task and a schedule are required', true); return; }
         if (!trgDock) { sfx('bad'); say('crew a dock first — a routine fires at an agent', true); return; }
         const btn = g.querySelector('#trg-create'); btn.disabled = true; say('saving…');
-        // the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
-        // provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
-        // the defaults the AUTOMATION window's untouched form would give).
+        /* the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
+           provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
+           the defaults the AUTOMATION window's untouched form would give)…
+           …plus ONE field only this door may set. `runsLine` is what makes a routine THIS LINE'S OWN
+           trigger: the work it fires carries the line's id, so the chain gate lets it run the whole line.
+           It is created here, on the INBOX card, under a button that literally says FOR THIS LINE — that
+           is the Commander asking for the line to run. A routine minted anywhere else omits it and stays
+           terminal (absent/false = the dock answers and nothing downstream spends), which is the safe
+           default: no run the Commander did not ask for. */
         const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (e) { return undefined; } })();
         const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
         const lname2 = lineNameOf(comp);
         const name = (lname2 ? lname2 + ' — ' : '') + (prompt.length > 48 ? prompt.slice(0, 45) + '…' : prompt);
-        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz }) })
+        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz, runsLine: true }) })
           .then(r => r.json()).then(r => {
             btn.disabled = false;
             if (r && r.error) { sfx('bad'); say('✕ ' + r.error, true); return; }
