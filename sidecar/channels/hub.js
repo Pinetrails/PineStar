@@ -262,6 +262,15 @@
     // TASK BRIEF v2 (additive dep): read the durable brief so the channel fallback can carry the host-validated
     // recommendation. Optional — a hub built without it renders the plain numbered choices exactly as before.
     const briefFor = typeof o.briefFor === 'function' ? o.briefFor : null;
+    /* UNADDRESSED BY CONSTRUCTION (bindChats:false — the sample proof, 2026-08-07). A real channel chat REMEMBERS
+       which agent it talks to: the hub saves the resolution onto any unbound chat so the autonomous notifier knows
+       where to ping. For a hub whose "chat" is not a conversation at all — the POST /api/routing/sample proof crate,
+       which exists to prove the floor sorts UNADDRESSED work — that bookkeeping is fatal: sample #1 saved a binding,
+       so sample #2 took resolveTarget's ADDRESSED branch and rode straight to the remembered dock, bypassing the
+       FILTER/SPLITTER the route claims it exercises. The proof quietly stopped proving anything from its second run
+       on. With bindChats:false the hub neither READS nor WRITES a binding for this chat, so every dispatch is
+       genuinely unaddressed — including on a station whose store already holds a stale 'sample' record. */
+    const bindChats = o.bindChats !== false;
     const groundedFor = typeof o.groundedFor === 'function' ? o.groundedFor : null;
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
     // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
@@ -1229,7 +1238,7 @@
       // The chat's own persisted binding (set by /talk) — the user's explicit choice of which roster agent this
       // chat talks to. Read it once here so both command handling (below) and run resolution can honor it.
       let boundRec = null;
-      try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
+      try { if (bindChats && typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
       let ownerTrusted = false;
       try { ownerTrusted = ownerTrustedFor(msg) === true; } catch (_) { ownerTrusted = false; }
@@ -1306,7 +1315,8 @@
       // belt-routed message used to silently rebind the whole chat to whatever bay the belts picked, so /whoami,
       // /model and the notifier all started asserting an agent the user never chose. Persist only when the chat is
       // unbound or the resolution agrees with the binding.
-      try { if (typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
+      // (bindChats:false — an ephemeral proof chat never becomes addressed; see the option note above.)
+      try { if (bindChats && typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
 
       // announce the SINGLE resolution to the host (workitem crate + queue HUD attribution — one truth).
       // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only

@@ -3996,9 +3996,13 @@ const cronDriver = makeCronDriver({
      no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
   advanceChain: (o) => chainRunner.advance({
     agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
-    // the routine fired AT this dock, so the work belongs to that dock's line and may run its stages.
-    // A routine whose agent crews no dock resolves null here and stays terminal (nothing downstream spends).
-    lineId: router.lineOfAgent(o.agentId),
+    /* ONLY A ROUTINE THAT BELONGS TO THE LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). `o.runsLine` is
+       the durable opt-in the driver reads off the job record (cron-store `runsLine`): true only for a routine
+       created from a line's own INBOX trigger zone. Without it this is a routine that predates the workflow
+       or was made somewhere else, and it stays TERMINAL — one run, its own answer, no downstream spend. The
+       LINE ITSELF is still looked up live from the compiled plan, never stored: a routine whose agent crews
+       no dock resolves null here and is terminal too, and a floor edit can only ever narrow this. */
+    lineId: o.runsLine === true ? router.lineOfAgent(o.agentId) : null,
     runAgent: async (h) => {
       if (o.onHop) { try { o.onHop(); } catch (_) {} }
       const hs = { buf: '', errMsg: null, usd: 0 };
@@ -8110,6 +8114,13 @@ function getSampleHub() {
   sampleHub = makeChannelHub({
     channel: 'sample', maxMessageLength: 4000, agentPrefix: 'smp_', textBatchWaitMs: 0,
     runOnce: runOnce, store: channelStore,
+    /* THE SAMPLE IS UNADDRESSED, EVERY TIME. This route's whole claim is "a REAL run on the REAL UNADDRESSED
+       dispatch path" — the FILTER/SPLITTER must sort it. The hub's ordinary chat→agent bookkeeping saved a
+       binding for chatId 'sample' on the first run, so from the SECOND sample on resolveTarget took its
+       ADDRESSED branch and delivered the crate to the remembered dock without the junctions ever deciding.
+       bindChats:false makes this hub read and write no binding at all, so the proof proves the same thing on
+       run #2 as on run #1 (and on a station that already carries a stale record from before this fix). */
+    bindChats: false,
     send: (chatId, text) => { sampleReplies.push(String(text == null ? '' : text)); if (sampleReplies.length > 20) sampleReplies.shift(); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,   // the ONE headless resolution rule (see handleRuntimeAgent) — a second rule would drift
     persona: SAMPLE_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
@@ -8147,13 +8158,21 @@ async function handleRoutingSample(req, res) {
     if (!plan) {
       return json(409, { ok: false, error: 'no work line is armed — draw a complete line (INBOX → belts → a crewed dock) and it arms itself.' });
     }
-    /* side-effect-free dispatch peek: would the armed plan route THIS text to a dock at all? Asked of the
-       SAME compiled plan through the same Pipeline resolver, but with a static lane picker — the router's
-       round-robin counters belong to real dispatch, and the hub's own resolveAgent call below must stay the
-       one and only counter-advancing resolution (one-resolver law). */
-    let peek = null;
-    try { peek = Pipeline.resolveTarget(plan, { tag: (Classify.getTag ? Classify.getTag(text) : undefined), chatId: SAMPLE_CHAT, text: text }, () => 0); } catch (_) { peek = null; }
-    if (!peek) {
+    /* side-effect-free precondition: does the armed line reach ANY crewed dock through its own doors?
+
+       This must NEVER name a dock. It used to run Pipeline.resolveTarget with a static lane picker while the
+       real dispatch below runs the router's round-robin one — two resolutions of the same floor that legitimately
+       disagree on a SPLITTER (the check would clear lane 0 while the run took lane 1, or refuse on a lane-0
+       dead end while a crewed dock sat on lane 1). A pre-flight that can name a different dock than the run is
+       a pre-flight that is lying about the run.
+
+       `plan.reach` is the compiled answer to exactly the question a refusal needs — "which bound bays do this
+       plan's INBOX sources actually feed?", a BFS that fans every junction lane, so it is lane-choice-blind by
+       construction and cannot disagree with any single dispatch. It is also the same fact lineOriginOf keys the
+       line gate on, so the refusal and the line semantics quote ONE artifact. The hub's own resolveAgent call
+       below stays the one and only counter-advancing resolution (one-resolver law). */
+    const reachedDocks = Object.keys((plan && plan.reach) || {}).filter(a => plan.reach[a]);
+    if (!reachedDocks.length) {
       return json(409, { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
     }
     const sec = devHubSecrets();
@@ -9511,6 +9530,13 @@ async function createCronJobFromSpec(body) {
       skills: body.skills, script: body.script, scriptTimeoutMs: body.scriptTimeoutMs, workdir: body.workdir, contextFrom: body.contextFrom,
       noAgent: body.noAgent, enabledToolsets: body.enabledToolsets, attachToSession: body.attachToSession,
       origin: body.origin,
+      /* WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07) — the API contract for the INBOX trigger zone.
+         `runsLine:true` says "this routine is one of THIS line's own triggers", so when it fires, the stages
+         drawn past its dock run too. Only the REFIT flow card's ⊕ NEW ROUTINE FOR THIS LINE sends it; every
+         other create path (this window's own form, routine.create, MAKE ROUTINE, /routine) omits it and the
+         routine stays terminal. cron-store normalizes with === true, so no truthy-ish body value can buy a
+         line. Absent -> false -> byte-identical to the pre-arc single-run routine. */
+      runsLine: body.runsLine,
       // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
       // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
       meta: body.meta
@@ -9771,9 +9797,11 @@ async function handleCronRun(req, res) {
         const line = await chainRunner.advance({
           agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
           // SAME ORIGIN AS THE SCHEDULED FIRE (work belongs to a line, 2026-08-07): Run Now is this routine's
-          // own trigger pressed by hand, so it carries the dock's lineId and the line runs. The two paths must
-          // not drift — a routine that runs four stages on schedule must run four from the button.
-          lineId: router.lineOfAgent(job.agentId),
+          // own trigger pressed by hand, so it carries the dock's lineId and the line runs — but ONLY for a
+          // routine that belongs to the line (the durable `runsLine` opt-in, read off the same job record the
+          // driver reads). The two paths must not drift — a routine that runs four stages on schedule must run
+          // four from the button, and a terminal routine must buy exactly one run from either.
+          lineId: job.runsLine === true ? router.lineOfAgent(job.agentId) : null,
           runAgent: async (h) => {
             const hs = { buf: '', errMsg: null, usd: 0 };
             const hopSink = (name, payload) => {

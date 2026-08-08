@@ -207,11 +207,13 @@ let T = 0; const clock = () => (T += 10);
     A.eq(log.length, 0, 'PROVIDER CALLS: zero — one line can never spend on another');
   }
 
-  /* ---- AN OLD PLAN (compiled before line identity) DEGRADES TO TERMINAL, NOT TO TODAY'S BEHAVIOUR ----
-     The sidecar restores the last accepted plan from disk at boot, so a plan without lineOfAgent is real.
-     TERMINAL is the safer of the two defaults: "a line did not run" is visible and re-triggerable; "money
-     was spent on stages the Commander never asked for" is silent and unrefundable. Self-healing — the app
-     re-posts a freshly compiled plan on its first floor change. */
+  /* ---- AN OLD PLAN (compiled before line identity) SELF-HEALS AT LOAD, IT DOES NOT STAY DEAF ----
+     The sidecar restores the last accepted plan from disk at boot, so a plan without lineOfAgent is real —
+     and on a HEADLESS/service sidecar taking Telegram + routine traffic, no browser ever comes along to
+     re-post a fresh one. Leaving those docks terminal meant every multi-stage line silently ran stage one
+     only, forever. router.setPlan now derives the missing line map from the plan's OWN geometry
+     (sidecar/routing/planlines.js), so a restored plan runs its lines with no browser. The safer-default
+     (terminal) is kept for what is genuinely underivable: a dock the derivation puts on no line at all. */
   {
     const belt = (x, y, dir) => ({ x, y, dir });
     const plan = P.compileRoutingPlan({
@@ -227,16 +229,41 @@ let T = 0; const clock = () => (T += 10);
     for (const d of (old.dockBays || [])) delete d.lineId;
     const router = makeRouter();
     A.ok(router.setPlan(old).ok, 'an older-shaped plan is still accepted (no contract break)');
-    A.eq(router.lineOfAgent('researcher'), null, 'it can name no line for its docks');
+    A.eq(router.lineOfAgent('researcher'), lineId, 'and the missing line map is DERIVED from its own geometry');
+    A.eq(router.lineOfAgent('writer'), lineId, 'both docks of the one physical line heal onto that line');
     const log = [];
     const c = makeChainRunner({ nextAgent: (a, ctx) => router.chainNext(a, ctx), runAgent: harness({ writer: { text: 'x' } }, log), now: clock });
     const res = await c.advance({ agentId: 'researcher', text: 'findings', lineId: lineId });
-    A.eq(res.hops.length, 0, 'every dock on a pre-line-identity plan is TERMINAL');
-    A.eq(log.length, 0, 'PROVIDER CALLS: zero — the safe default never spends on an unprovable origin');
-    // and it heals the moment the app posts the real compiled plan
+    A.eq(res.agentId, 'writer', 'a restored pre-arc plan advances its multi-stage line with no browser open');
+    A.eq(log.length, 1, 'exactly ONE downstream provider call — the drawn stage, nothing more');
+    // healing widens NOTHING: the gate still refuses work that did not enter through this line
+    log.length = 0;
+    const adhoc = await c.advance({ agentId: 'researcher', text: 'findings' });
+    A.eq(adhoc.hops.length, 0, 'a direct order at the same dock is still terminal on a healed plan');
+    const foreign = await c.advance({ agentId: 'researcher', text: 'findings', lineId: 'some-other-line' });
+    A.eq(foreign.hops.length, 0, 'and a foreign line id still buys nothing');
+    A.eq(log.length, 0, 'PROVIDER CALLS: zero — the heal fills a hole, it does not open a door');
+    // the freshly compiled plan still wins outright (the compiler is the authority whenever it has spoken)
     A.ok(router.setPlan(plan).ok, 'the freshly compiled plan re-arms routing');
     const healed = await c.advance({ agentId: 'researcher', text: 'findings', lineId: lineId });
-    A.eq(healed.agentId, 'writer', 'and the line runs again — the degrade is temporary, not a one-way door');
+    A.eq(healed.agentId, 'writer', 'and the compiled plan agrees with the derived one on this floor');
+  }
+
+  /* ---- A DERIVED LINE MAP NEVER OVERWRITES A COMPILED ONE ----
+     A plan that already answers lineOfAgent is returned untouched by the heal, including the deliberate
+     empty answer of a floor whose only dock is beltless (on no line, therefore terminal). */
+  {
+    const { healPlan } = require('../sidecar/routing/planlines.js');
+    const compiled = P.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'bA', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' }],
+      belts: [{ x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }]
+    });
+    A.eq(healPlan(compiled), compiled, 'a compiled plan is returned by identity — nothing is re-derived');
+    const lone = P.compileRoutingPlan({ props: [{ id: 'bZ', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'solo' }], belts: [] });
+    const stripped = JSON.parse(JSON.stringify(lone));
+    delete stripped.lines; delete stripped.lineOfProp; delete stripped.lineOfAgent;
+    A.eq(healPlan(stripped).lineOfAgent, {}, 'a beltless dock is on NO line even after healing — genuinely underivable stays terminal');
   }
 
   /* ---- THE LINE ID SURVIVES A PLAN RE-POST (the same floor recompiles to the same id) ---- */
