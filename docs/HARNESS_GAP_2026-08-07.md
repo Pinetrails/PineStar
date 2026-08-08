@@ -100,7 +100,7 @@ that owned child with none remaining. The seeded live app showed `G3 Cached Proo
 
 Focused evidence: schema lifecycle 22 assertions, real stdio/ledger 38 assertions, orphan recovery 6 assertions,
 process ledger 38 assertions, and existing MCP connector E2E 91 assertions. The exact lane tree passed the complete
-fast gate at 582/582 and the complete HTTP gate at 70/70. This closes the isolated lane acceptance test, not the
+fast gate at 585/585 and the complete HTTP gate at 70/70. This closes the isolated lane acceptance test, not the
 shipped-app claim before merge.
 
 ## Remaining parity lanes
