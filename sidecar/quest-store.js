@@ -16,7 +16,8 @@
      { id:'q:<seq>', title, desc, reward, kind:'generated'|'work'|'user', createdBy, agentId (nullable=station),
        contract:{type:'prop'|'run'|'fact'|'artifact'|'attest', key}, steps:[{key,label,done,note?}],
        status:'open'|'done'|'dismissed', attest: null|{agentId,runId,evidence,at,confirmed:null},
-       declineNote: null|{at,note}, groundedIn: null|string, runId (bound run), stalledAt, stalledReason,
+       declineNote: null|{at,note}, groundedIn: null|string, domain, goalId, milestoneId, completedBy,
+       runId (bound run), stalledAt, stalledReason,
        createdAt, completedAt, dismissedAt }
 
    Completion is CONTRACT-OWNED, never a claim:
@@ -33,6 +34,7 @@ const STORE_KEY = 'station';               // single-file store: one logical key
 const STORE_FILE = '_station.quests.json'; // under WORKSPACES
 const CONTRACT_TYPES = ['prop', 'run', 'fact', 'artifact', 'attest'];
 const KINDS = ['generated', 'work', 'user'];
+const DOMAINS = ['building', 'research', 'writing', 'growth', 'operations', 'creative', 'planning', 'support'];
 const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const DENIED_CAP = 500;   // FIFO cap on the permanent dismissed-title denylist (anti-nag: dismiss = forever)
 const QUEST_CAP = 300;    // FIFO cap on total quests — drop the OLDEST terminal (done/dismissed), never an open one
@@ -44,6 +46,7 @@ function num(v) { if (v == null) return null; const n = Number(v); return Number
 function numOr(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
 function clipKind(k) { return KINDS.indexOf(k) >= 0 ? k : 'user'; }
 function agentIdOrNull(a) { if (a == null) return null; const s = String(a); return ID_RE.test(s) ? s : null; }
+function domainOrNull(d) { const s = String(d || '').toLowerCase(); return DOMAINS.indexOf(s) >= 0 ? s : null; }
 
 // normalized title key for duplicate detection (workshop-store idiom): lowercase, trim, collapse whitespace.
 // An empty normalized key means "no title" — never used for dedup.
@@ -115,6 +118,10 @@ function normQuest(r) {
     attest: attest,
     declineNote: declineNote,
     groundedIn: r.groundedIn == null ? null : clip(r.groundedIn, 200),
+    domain: domainOrNull(r.domain),
+    goalId: r.goalId == null ? null : clip(r.goalId, 64),
+    milestoneId: r.milestoneId == null ? null : clip(r.milestoneId, 80),
+    completedBy: agentIdOrNull(r.completedBy),
     runId: r.runId == null ? null : clip(r.runId, 80),
     stalledAt: num(r.stalledAt),
     stalledReason: r.stalledReason == null ? null : clip(r.stalledReason, 24),
@@ -219,6 +226,10 @@ function makeQuestStore(deps) {
         attest: null,
         declineNote: null,
         groundedIn: d.groundedIn == null ? null : clip(d.groundedIn, 200),
+        domain: domainOrNull(d.domain),
+        goalId: d.goalId == null ? null : clip(d.goalId, 64),
+        milestoneId: d.milestoneId == null ? null : clip(d.milestoneId, 80),
+        completedBy: null,
         runId: null,
         stalledAt: null,
         stalledReason: null,
@@ -252,13 +263,14 @@ function makeQuestStore(deps) {
 
   // bind the concrete run building a run-contract quest, so completeByContract('run', runId) can find it. A fresh
   // binding clears any prior stall (the build is live again). Returns true only if a runId was actually bound.
-  function bindRun(id, runId) {
+  function bindRun(id, runId, agentId) {
     let out = false;
     return durable.update(STORE_KEY, (cur) => {
       const rec = normalize(cur);
       const q = rec.quests.find(x => x.id === String(id));
       if (!q || q.status !== 'open') return undefined;
       q.runId = String(runId == null ? '' : runId) || null;
+      if (q.runId && agentIdOrNull(agentId)) q.completedBy = agentIdOrNull(agentId);
       if (q.runId && q.stalledAt != null) { q.stalledAt = null; q.stalledReason = null; }
       out = !!q.runId;
       return rec;
@@ -283,6 +295,7 @@ function makeQuestStore(deps) {
         if (!match) continue;
         q.status = 'done';
         q.completedAt = numOr(now, 0);
+        if (!q.completedBy && q.agentId) q.completedBy = q.agentId;
         q.stalledAt = null;
         q.stalledReason = null;
         ids.push(q.id);
@@ -356,6 +369,7 @@ function makeQuestStore(deps) {
         q.attest.confirmed = true;
         q.status = 'done';
         q.completedAt = numOr(now, 0);
+        q.completedBy = agentIdOrNull(q.attest.agentId) || q.agentId;
       } else {
         q.attest = null;
         q.declineNote = { at: numOr(now, 0), note: clip(note, 240) };
@@ -392,4 +406,4 @@ function makeQuestStore(deps) {
   };
 }
 
-module.exports = { makeQuestStore, normalize, _internals: { validContract, normTitle, validSteps, normQuest } };
+module.exports = { makeQuestStore, normalize, DOMAINS, _internals: { validContract, normTitle, validSteps, normQuest, domainOrNull } };

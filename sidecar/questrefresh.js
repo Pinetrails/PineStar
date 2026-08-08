@@ -56,6 +56,7 @@
   // contract vocabulary this engine may mint. 'run' is deliberately absent (nothing to bind), and 'attest'
   // is the fallback for outcomes only the Commander can verify.
   const CONTRACT_TYPES = ['prop', 'artifact', 'fact', 'attest'];
+  const DOMAINS = ['building', 'research', 'writing', 'growth', 'operations', 'creative', 'planning', 'support'];
 
   const str = (v) => (v == null ? '' : String(v));
   // normalized title key (the quest-store normTitle idiom) — dedup vs open slate + denylist.
@@ -92,7 +93,8 @@
         title: str(q && q.title).slice(0, TITLE_MAX), desc: str(q && q.desc).slice(0, DESC_MAX), reward: str(q && q.reward).slice(0, REWARD_MAX),
         contract: q && q.contract && CONTRACT_TYPES.indexOf(q.contract.type) >= 0 ? { type: q.contract.type, key: str(q.contract.key).slice(0, KEY_MAX) } : null,
         steps: Array.isArray(q && q.steps) ? q.steps.slice(0, MAX_STEPS).map((st, i) => ({ key: str(st && st.key) || ('s' + (i + 1)), label: str(st && st.label).slice(0, 80) })) : [],
-        groundedIn: str(q && q.groundedIn).slice(0, WHY_MAX)
+        groundedIn: str(q && q.groundedIn).slice(0, WHY_MAX),
+        domain: DOMAINS.indexOf(str(q && q.domain).toLowerCase()) >= 0 ? str(q.domain).toLowerCase() : null
       })).filter(q => q.title && q.contract);
       if (Array.isArray(raw.declinedNorthStars)) {
         s.declinedNorthStars = raw.declinedNorthStars.map(t => norm(t)).filter(Boolean).slice(-DECLINED_NS_CAP);
@@ -181,6 +183,7 @@
     lines.push('    artifact <path>   — a named deliverable file exists in the workspace (workspace-relative path).');
     lines.push('    fact <phrase>     — the harness learns this concrete fact about the Commander (a short phrase that would appear verbatim in a saved memory).');
     lines.push('    attest            — for real-world outcomes only the Commander can verify; an agent proposes, the Commander confirms.');
+    lines.push('- DOMAIN names the closest mastery track. It never changes completion authority and only counts after verified completion.');
     lines.push('- WHY must cite the REAL evidence above (the dossier line, activity, or goal that motivates the quest) — never a generic pitch.');
     lines.push('- If the open slate above already covers every sensible next step, reply with exactly: NONE');
     lines.push('');
@@ -189,6 +192,7 @@
     lines.push('QUEST: <imperative title, 2-8 words>');
     lines.push('DESC: <one sentence — what doing it looks like>');
     lines.push('REWARD: <the real outcome it unlocks — never points>');
+    lines.push('DOMAIN: <building | research | writing | growth | operations | creative | planning | support>');
     lines.push('CONTRACT: <prop <key> | artifact <path> | fact <phrase> | attest>');
     lines.push('STEPS: <2-' + MAX_STEPS + ' short steps, separated by ; >');
     lines.push('WHY: <one sentence citing the evidence above>');
@@ -248,6 +252,8 @@
       const title = grabFrom(block, 'QUEST').slice(0, TITLE_MAX);
       const desc = grabFrom(block, 'DESC').slice(0, DESC_MAX);
       const reward = grabFrom(block, 'REWARD').slice(0, REWARD_MAX);
+      const domainRaw = grabFrom(block, 'DOMAIN').toLowerCase();
+      const domain = DOMAINS.indexOf(domainRaw) >= 0 ? domainRaw : null;
       const why = grabFrom(block, 'WHY').slice(0, WHY_MAX);
       const contract = parseContract(grabFrom(block, 'CONTRACT'), opts.propKeys);
       if (!title || !why || !contract) continue;              // load-bearing fields — a partial block is malformed
@@ -260,7 +266,7 @@
       const steps = grabFrom(block, 'STEPS').split(';').map(s => s.trim()).filter(Boolean).slice(0, MAX_STEPS)
         .map((label, i) => ({ key: 's' + (i + 1), label: label.slice(0, 80) }));
       seenTitles.push(nt);                                    // an earlier block in THIS reply counts as open too
-      quests.push({ title: title, desc: desc, reward: reward, contract: contract, steps: steps, groundedIn: why });
+      quests.push({ title: title, desc: desc, reward: reward, domain: domain, contract: contract, steps: steps, groundedIn: why });
     }
     return { none: false, northStar: northStar, quests: quests };
   }

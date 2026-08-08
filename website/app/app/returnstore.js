@@ -28,8 +28,13 @@ const ReturnStore = (() => {
   async function composeRows(sinceMs) {
     let runs = [];
     try {
-      const r = await fetch('/api/runs?agent=*&limit=200&since=' + encodeURIComponent(sinceMs), { cache: 'no-store' });
-      if (r.ok) runs = (await r.json()).runs || [];
+      if (typeof XpStore !== 'undefined' && XpStore.loadRunHistory) {
+        runs = (await XpStore.loadRunHistory(sinceMs)).runs || [];
+      } else {
+        const r = await fetch('/api/runs?agent=*&limit=500&since=' + encodeURIComponent(sinceMs), { cache: 'no-store' });
+        if (!r.ok) return [];
+        runs = (await r.json()).runs || [];
+      }
     } catch (_) { return []; }
     // the away boundary is the PREVIOUS session's stamp — the live state has already heartbeat-ed
     // to "now", so it MUST be passed explicitly (returns.test locks this regression).
@@ -58,10 +63,12 @@ const ReturnStore = (() => {
     const rows = await composeRows(sinceMs);
     if (!rows.length) return;                       // NEVER an empty digest
     fired = true;                                   // one per session, even if the beat is later dismissed
-    state = Returns.fold(state, rows); save();      // listed once, never re-listed; crates now pending
+    // The API is newest-first, but the OUTBOX is FIFO. Crate every row oldest-first; only the visible
+    // digest below is capped, so the other completed runs remain rateable instead of disappearing.
+    state = Returns.fold(state, rows.slice().sort((a, b) => (+a.ts || 0) - (+b.ts || 0))); save();
     // an already-open OUTBOX window re-renders with the fresh crates (no-op when closed)
     try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('outbox'); } catch (_) {}
-    if (typeof Chat !== 'undefined' && Chat.awayDigest) Chat.awayDigest(rows, { onRated: resolve, openWork: openWork });
+    if (typeof Chat !== 'undefined' && Chat.awayDigest) Chat.awayDigest(rows.slice(0, Returns.DIGEST_CAP), { onRated: resolve, openWork: openWork });
   }
 
   /* init({ enabled }) — called from enterGame. Captures the PREVIOUS session's lastSeenAt (the
@@ -115,7 +122,7 @@ const ReturnStore = (() => {
     let sid = String(rw.streamId || '');
     if (!sid) {   // legacy crate — resolve the streamId from the sidecar's run record
       try {
-        const r = await fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' });
+        const r = await fetch('/api/runs?agent=*&runId=' + encodeURIComponent(rw.runId), { cache: 'no-store' });
         if (r.ok) { const hit = (((await r.json()) || {}).runs || []).find(x => x && x.runId === rw.runId); sid = String((hit && hit.streamId) || ''); }
       } catch (_) {}
     }
@@ -153,7 +160,7 @@ const ReturnStore = (() => {
      ledger NOW, so the sample job the Commander just fired lands on the OUTBOX like any delivered run. The
      row is the sidecar's real recorded outcome (runId/usd/ts/streamId straight from runs.jsonl via
      POST /api/routing/sample) — never synthesized here. Same Returns.fold/dedupe/caps as the away digest
-     (fold also marks the runId digested, so a later away digest can never re-list it); rating resolves the
+     (the pending row itself prevents a later away digest from re-listing it); rating resolves the
      crate through the identical path. Returns false when the store isn't live or the row carries no runId. */
   function foldRow(row) {
     if (!ready() || !row || !row.runId) return false;

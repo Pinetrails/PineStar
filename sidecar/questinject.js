@@ -44,7 +44,9 @@
   const MINT_DOCTRINE = 'MINTING — you MAY create ONE new quest this run with quest.update op:"mint", but ONLY when a '
     + 'concrete fact in your dossier or memory reveals a recurring need or a stated goal that has NO matching open '
     + 'quest above. Ground it: pass groundedIn naming that exact fact. A minted quest must be a real outcome the '
-    + 'Commander wants — a goal, an aspiration, or work to automate — with a valid completion contract; never '
+    + 'Commander wants — a goal, an aspiration, or work to automate — with a valid completion contract. Pass the '
+    + 'closest honest domain (building, research, writing, growth, operations, creative, planning, or support) so '
+    + 'verified completion can teach the right agent mastery track; never '
     + 'busywork, never a generic chore. If nothing concrete motivates one, mint nothing. At most ONE mint per run.';
 
   // the fixed prefix carried by a NON-EMPTY block: the how-to header + the minting doctrine (both always ride).
@@ -86,6 +88,8 @@
     lines.push('    ✓ ' + completesWhen(q && q.contract));
     const grounded = q && q.groundedIn != null ? String(q.groundedIn).trim() : '';
     if (grounded) lines.push('    why: ' + grounded);
+    const masteryDomain = q && q.domain != null ? String(q.domain).trim() : '';
+    if (masteryDomain) lines.push('    mastery track: ' + masteryDomain + ' (counts only after verified completion)');
     const dn = q && q.declineNote;
     if (dn) {
       const note = String((dn && dn.note) || '').trim();

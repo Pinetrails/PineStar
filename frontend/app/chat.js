@@ -103,6 +103,7 @@ const Chat = (() => {
   const crewSeen = [];          // [{ agentId, usd, runId, at }] — recent forwarded worker run-ends (FIFO, time-windowed)
   const runCrew = new Map();    // leadRunId -> [{ agentId, usd }] claimed at lead run.end. FIFO-capped alongside runWork.
   const workRatedRuns = new Set();   // runIds already given a 👍/👌/👎 work verdict → one rating per run, never double-mint
+  const workRatingsPending = new Set(); // concurrent controls wait on the server's first-verdict-wins boundary
   const RUN_META = new Map();   // runId -> { isTask, title } recorded at run START. The bus agent.run.end payload
                                 // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
                                 // read this to tell a real TASK from casual chat AND to name the run that actually just
@@ -2411,8 +2412,8 @@ const Chat = (() => {
 
   // ── "RATE THE WORK" — the PRIMARY leveling beat. After a run that actually DID work, the Commander gives a
   //    one-tap verdict on the OUTPUT (👍 nailed it / 👌 close / 👎 missed). 👍 mints size-weighted XP; 👌/👎 only
-  //    nudge the satisfaction meter (never a penalty, never XP). It rides memory.feedback with a SYNTHETIC id,
-  //    called DIRECTLY into XpStore — never the bus, never the sidecar memory store — so memory trust is untouched.
+  //    nudge the satisfaction meter (never a penalty, never XP). The server durably records one verdict per run,
+  //    then XpStore folds its canonical synthetic feedback entries — never the bus/memory store, so memory trust is untouched.
   function workSizeDelta(w) {
     if (!w) return 1;
     const tools = Math.min(Math.max(0, w.toolsOk || 0), 8);
@@ -2422,37 +2423,46 @@ const Chat = (() => {
     const raw = Math.log2(1 + tools) * 2.2 + deliv * 1.2 + Math.min(usd * 6, 3);
     return Math.max(1, Math.min(10, Math.round(raw) || 1));
   }
-  function rateWork(agentId, runId, verdict) {
-    if (!runId || workRatedRuns.has(runId)) return;
-    workRatedRuns.add(runId);
-    if (workRatedRuns.size > 120) workRatedRuns.delete(workRatedRuns.values().next().value);
+  async function rateWork(agentId, runId, verdict) {
+    if (!runId || workRatedRuns.has(runId)) return { ok: true, duplicate: true, applied: false };
+    if (workRatingsPending.has(runId)) return { ok: false, pending: true, error: 'rating already saving' };
+    workRatingsPending.add(runId);
     const reason = verdict === 'great' ? 'work_great' : verdict === 'ok' ? 'work_ok' : 'work_miss';
     const w = runWork.get(runId);
-    const delta = workSizeDelta(w);
-    // G2.4 task-size weighting: the same real stash also derives a small/medium/large hint (Xp.workSize —
-    // successful tools + reconciled spend); xp.js scales the mint by it, FEEDBACK_XP_CAP still the ceiling.
+    const delta = 3;   // one explicit verdict has one value; the server independently fixes this canonical delta
+    // The size bucket survives as legacy receipt telemetry only. It does not scale XP.
     const size = (typeof Xp !== 'undefined' && Xp.workSize) ? Xp.workSize({ tools: (w && w.toolsOk) || 0, usd: (w && w.cost) || 0 }) : undefined;
-    // DIRECT call — never U.bus.emit / never /api/memory/turnin. The 'work:'+runId id resolves to NO memory
-    // record, so the sidecar memcore trust path is never touched (delta here is an XP size only).
-    if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size });
-    // P3.2 CREW-RUN RATEABILITY — if this LEAD run dispatched crew whose spend is provable, split the SAME verdict
-    // across them HONESTLY: each worker earns a cost-proportional share of the size-weighted mint (crewSplit), riding
-    // the identical direct memory.feedback path into ITS OWN XpStore identity. Truthful attribution: a worker earns
-    // only when the harness proved its contribution (usd > 0); if no split is provable, no worker is credited and
-    // nothing false is said. The LEAD keeps its full delta above (it owns + synthesized the run). Only hero-lead runs
+    // One durable rating-ledger write — never U.bus.emit / never /api/memory/turnin. The server returns
+    // canonical feedback entries; XpStore folds those only after fsync acknowledgement.
+    const entries = [{ agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size }];
+    // P3.2 CREW-RUN RATEABILITY — named worker run-end receipts prove participation. Every proven persistent
+    // contributor receives the same Commander verdict value; cost/tool volume never weights it. The sidecar
+    // rebuilds the canonical list from durable child runs, so these entries remain hints only. Only hero-lead runs
     // carry crew (runCrew is populated only for agentId 'agent'). Fail-open — a missing split never blocks the rating.
     try {
       const crew = (agentId || 'agent') === 'agent' ? runCrew.get(runId) : null;
-      if (crew && crew.length && typeof Xp !== 'undefined' && Xp.crewSplit && typeof XpStore !== 'undefined' && XpStore.onEvent) {
+      if (crew && crew.length && typeof Xp !== 'undefined' && Xp.crewSplit) {
         const split = Xp.crewSplit({ leadDelta: delta, leadCost: (w && w.cost) || 0, workers: crew });
         for (const wk of split.workers) {
           if (!wk || !wk.agentId) continue;
           // a worker's share rides the SAME synthetic-id mint path — its own agentId resolves to its roster stats.
-          XpStore.onEvent('memory.feedback', { agentId: wk.agentId, id: 'work:' + runId + ':' + wk.agentId, runId: runId, delta: wk.delta, reason: reason, size: wk.size });
+          entries.push({ agentId: wk.agentId, id: 'work:' + runId + ':' + wk.agentId, runId: runId, delta: wk.delta, reason: reason, size: wk.size });
         }
       }
     } catch (_) {}
-    // G3a confidence narrative: the same DIRECT hand-off (this verdict never rides the bus, so the fire-once
+    let saved;
+    try {
+      saved = (typeof XpStore !== 'undefined' && XpStore.recordWorkRating)
+        ? await XpStore.recordWorkRating({ runId: runId, verdict: verdict, entries: entries })
+        : { ok: false, error: 'rating service unavailable' };
+    } catch (_) { saved = { ok: false, error: 'rating was not saved' }; }
+    finally { workRatingsPending.delete(runId); }
+    if (!saved || !saved.ok) return saved || { ok: false, error: 'rating was not saved' };
+    workRatedRuns.add(runId);
+    if (workRatedRuns.size > 120) workRatedRuns.delete(workRatedRuns.values().next().value);
+    if (saved.duplicate) return saved;
+    if (!saved.applied) return { ok: false, error: 'rating could not be applied' };
+    // G3a confidence narrative: the same durable hand-off (this verdict never rides the bus, so the fire-once
     // calibration/TRUSTED beats must be told here, AFTER the meter folded). Speaks at most twice, ever; mints nothing.
     if (typeof ConfBeats !== 'undefined' && ConfBeats.onFeedback) { try { ConfBeats.onFeedback({ agentId: agentId || 'agent', id: 'work:' + runId, delta: delta, reason: reason }); } catch (_) {} }
     // GROWTH Tier 1 §4 — RATINGS → TASTE: fold this verdict into the per-archetype streak; a fresh 3-streak mints
@@ -2493,6 +2503,7 @@ const Chat = (() => {
     // written onto RUN_META at run start), the Commander's verdict on the work is the strongest honest evidence
     // there is about whether that channel's offers are worth making. Unattributed runs say nothing. Fail-open.
     try { if (typeof RecQualityStore !== 'undefined' && RecQualityStore.noteVerdict) RecQualityStore.noteVerdict(runId, verdict); } catch (_) {}
+    return saved;
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   const WORKRATE_COACH_KEY = 'starnet.workrate.seen';
@@ -2520,11 +2531,19 @@ const Chat = (() => {
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     host.appendChild(lbl); host.appendChild(btns);
     let done = false;
-    function settle(verdict, flash, isDeny) {
+    async function settle(verdict, flash, isDeny) {
       if (done) return; done = true;
-      rateWork(agentId, runId, verdict);
+      const buttons = Array.from(btns.querySelectorAll('button'));
+      buttons.forEach(b => { b.disabled = true; });
+      const accepted = await rateWork(agentId, runId, verdict);
+      if (!accepted || !accepted.ok) {
+        done = false;
+        buttons.forEach(b => { b.disabled = false; });
+        try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Rating was not saved — try again.', 'bad'); } catch (_) {}
+        return;
+      }
       btns.remove();
-      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = flash;
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = accepted.duplicate ? 'already rated' : flash;
       host.appendChild(tag);
       if (onSettle) setTimeout(onSettle, 700);   // flash the verdict, then let the caller fade the beat
     }
