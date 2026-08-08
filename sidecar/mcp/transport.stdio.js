@@ -111,6 +111,22 @@
     for (const k of Object.keys(e).sort()) out[k] = SECRET_ENV_RE.test(k) ? '<redacted>' : '<set>';
     return out;
   }
+  function safeLedgerCommand(command, args) {
+    const out = [String(command || '')];
+    let redactNext = false;
+    for (const raw of (Array.isArray(args) ? args : [])) {
+      const value = String(raw == null ? '' : raw);
+      if (redactNext) { out.push('<redacted>'); redactNext = false; continue; }
+      const eq = value.match(/^(--?[^=]+)=(.*)$/);
+      if (eq && SECRET_ENV_RE.test(eq[1])) { out.push(eq[1] + '=<redacted>'); continue; }
+      if (/^--?/.test(value) && SECRET_ENV_RE.test(value)) { out.push(value); redactNext = true; continue; }
+      if (/^https?:\/\//i.test(value)) {
+        try { const u = new URL(value); u.username = ''; u.password = ''; u.search = ''; u.hash = ''; out.push(u.href); }
+        catch (_) { out.push('<url>'); }
+      } else out.push(value);
+    }
+    return out.join(' ').slice(0, 400);
+  }
 
   function makeStdioTransport(deps) {
     deps = deps || {};
@@ -128,6 +144,8 @@
     const timeoutMs = deps.timeoutMs || 30000;
     const onError = typeof deps.onError === 'function' ? deps.onError : function () {};
 
+    const ledger = deps.ledger;
+    const ledgerCommand = String(deps.ledgerCommand || safeLedgerCommand(command, args)).slice(0, 400);
     let child = null, onMsg = null, closed = false, stdoutBuf = '', stderrBuf = '';
     const pendingIds = new Set();
 
@@ -171,6 +189,10 @@
         detached: platform !== 'win32'
       });
       if (!child || !child.stdin || !child.stdout) throw new Error('mcp stdio spawn did not return stdio pipes');
+      const ownedChild = child;
+      if (ledger && child.pid) {
+        try { ledger.record({ pid: child.pid, cmd: ledgerCommand, kind: 'mcp.stdio' }); } catch (_) {}
+      }
       if (child.stdout.setEncoding) child.stdout.setEncoding('utf8');
       if (child.stderr && child.stderr.setEncoding) child.stderr.setEncoding('utf8');
       if (child.stdout.on) child.stdout.on('data', parseStdoutChunk);
@@ -183,6 +205,7 @@
           onError(new Error(msg));
         });
         child.on('exit', (code, signal) => {
+          if (ledger && ownedChild.pid) { try { ledger.release(ownedChild.pid); } catch (_) {} }
           const detail = 'mcp stdio process exited' + (code == null ? '' : ' code=' + code) + (signal ? ' signal=' + signal : '') + (stderrBuf.trim() ? ': ' + stderrBuf.trim().slice(0, 200) : '');
           const hadPending = pendingIds.size > 0;
           closed = true;
@@ -236,5 +259,5 @@
     return { send, onMessage, close, isClosed: function () { return closed; }, get childPid() { return child && child.pid; } };
   }
 
-  return { makeStdioTransport, _internals: { commandBase, assertAllowedCommand, normalizeArgs, normalizeEnv, buildChildEnv, hostStdioAllowed, redactEnv } };
+  return { makeStdioTransport, _internals: { commandBase, assertAllowedCommand, normalizeArgs, normalizeEnv, buildChildEnv, hostStdioAllowed, redactEnv, safeLedgerCommand } };
 });

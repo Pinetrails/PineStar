@@ -5,6 +5,9 @@
 const JourneyStore = (() => {
   const POLL_MS = 4000;
   let cache = null, inflight = false, lastFetch = 0, seeded = false, lastStage = 0;
+  let epochFn = () => 1;
+
+  function epoch() { try { return Math.max(1, Math.floor(Number(epochFn()) || 1)); } catch (_) { return 1; } }
 
   function apply(journey) {
     if (!journey || typeof journey !== 'object') return false;
@@ -36,14 +39,16 @@ const JourneyStore = (() => {
 
   async function post(body) {
     try {
-      const res = await fetch('/api/journey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      const payload = Object.assign({}, body || {});
+      if (payload.epoch == null || (typeof payload.epoch === 'string' && !payload.epoch.trim()) || !Number.isFinite(Number(payload.epoch))) payload.epoch = epoch();
+      const res = await fetch('/api/journey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => null);
       if (j && j.journey) apply(j.journey);
       return j || { ok: false, error: 'journey response unavailable' };
     } catch (_) { return { ok: false, error: 'journey service unavailable' }; }
   }
 
-  function init() { cache = null; inflight = false; lastFetch = 0; seeded = false; lastStage = 0; refetch(true); }
+  function init(opts) { opts = opts || {}; epochFn = typeof opts.epoch === 'function' ? opts.epoch : () => Number(opts.epoch) || 1; cache = null; inflight = false; lastFetch = 0; seeded = false; lastStage = 0; refetch(true); }
   function sync() { return refetch(false); }
   function status() { return cache; }
   function createMetric(d) { return post(Object.assign({ op: 'metric.create' }, d || {})); }
@@ -51,7 +56,7 @@ const JourneyStore = (() => {
   function retireMetric(id) { return post({ op: 'metric.retire', id: String(id || '') }); }
   function suppress(agentId, domain) { return post({ op: 'adaptation.suppress', agentId, domain }); }
   function resume(agentId, domain) { return post({ op: 'adaptation.resume', agentId, domain }); }
-  function reset() { cache = null; seeded = false; lastStage = 0; return post({ op: 'journey.reset' }); }
+  function reset(nextEpoch) { cache = null; seeded = false; lastStage = 0; return post({ op: 'journey.reset', epoch: Math.max(1, Math.floor(Number(nextEpoch) || epoch())) }); }
   function noteMilestone(d) {
     d = Object.assign({}, d || {});
     if (!d.domain && typeof Journey !== 'undefined' && Journey.domainOf) d.domain = Journey.domainOf((d.milestoneText || '') + ' ' + (d.goalText || ''));

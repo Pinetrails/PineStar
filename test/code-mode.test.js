@@ -79,7 +79,12 @@ async function expectReject(p, pattern, label) {
     await expectReject(timed.run({ code: 'while (true) {}' }, { composeDispatch: async () => '' }), /timed out/, 'CPU loop is killed by the parent deadline');
 
     let deadlineAbortedNested = false;
-    const nestedTimed = Code.makeCodeTools({ limits: { timeoutMs: 100 } }).codeTool;
+    // This case needs the isolated child to START a nested dispatch before the deadline can abort it.
+    // 100ms is enough for the busy-loop case above (the parent timer needs no child handshake), but on
+    // Windows a clean child-process launch can itself exceed 100ms. Then there is no in-flight dispatch
+    // to observe and the test reports a false product failure. Keep the deadline short, but leave bounded
+    // startup headroom so this assertion measures cancellation rather than process-launch scheduling.
+    const nestedTimed = Code.makeCodeTools({ limits: { timeoutMs: 1000 } }).codeTool;
     await expectReject(nestedTimed.run({ code: `return await tool('slow.read', {});` }, {
       composeDispatch: async (_request, meta) => await new Promise((resolve, reject) => {
         meta.signal.addEventListener('abort', () => {

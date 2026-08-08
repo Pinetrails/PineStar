@@ -161,6 +161,7 @@ const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
+const mcpSchemaCache = require('./mcp/schema-cache.js');
 const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
 const serviceKeysMod = require('./servicekeys.js');         // KEYS tab: custom service API keys (pure core — env injection + masked list)
 const serviceKeysCatalog = require('./servicekeys-catalog.js');   // KEYS tab: the curated PLATFORM directory (pure data)
@@ -3300,6 +3301,31 @@ const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
 const CONNECTORS_OAUTH_FILE = path.join(CONNECTORS_DIR, 'oauth.json');       // legacy read-only migration source
 const CONNECTORS_STATE_FILE = path.join(CONNECTORS_DIR, 'state.json');       // authoritative v2 envelope
+const CONNECTORS_SCHEMA_DIR = path.join(CONNECTORS_DIR, 'schemas');
+function connectorSchemaFile(id) { return path.join(CONNECTORS_SCHEMA_DIR, String(id) + '.json'); }
+const connectorSchemaCacheStore = {
+  load: (id) => {
+    try { return mcpSchemaCache.normalize(loadResilient(connectorSchemaFile(id), 'connector schema cache')); }
+    catch (_) { return null; }
+  },
+  save: (id, raw) => {
+    const record = mcpSchemaCache.normalize(raw);
+    if (!record) return false;
+    const file = connectorSchemaFile(id);
+    const proof = saveJsonVerified({
+      mkdir: () => fs.mkdirSync(CONNECTORS_SCHEMA_DIR, { recursive: true }),
+      save: () => saveResilient(file, record),
+      load: () => loadResilient(file, 'connector schema cache'),
+      proof: got => !!got && got.fingerprint === record.fingerprint && JSON.stringify(got.tools || []) === JSON.stringify(record.tools)
+    });
+    return proof.ok;
+  },
+  remove: (id) => {
+    const file = connectorSchemaFile(id);
+    for (const target of [file, file + '.bak']) { try { fs.unlinkSync(target); } catch (e) { if (!e || e.code !== 'ENOENT') throw e; } }
+    return true;
+  }
+};
 function migrateConnectorCatalogKeyHeaders(rawState) {
   const state = connectorStateMod.normalize(rawState);
   let changed = false;
@@ -3436,27 +3462,38 @@ function saveServiceKeyRemoval(nextKeys) {
     'servicekeys'
   );
 }
+function mcpStdioIsolationError(cfg) {
+  const aid = String((cfg && cfg.agentId) || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) return 'mcp stdio requires a Safe Cell agent binding';
+  const owner = agentRoster.get(aid) || {};
+  const isolated = executionEnvironment.forAgent(aid);
+  if (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(aid) !== 'docker' || !isolated.supports || isolated.supports.hostileCodeSandbox !== true || isolated.supports.stdioMcp !== true) {
+    return 'mcp stdio requires agent "' + aid + '" to use the Safe Cell execution profile';
+  }
+  return '';
+}
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => {
     if (!cfg || cfg.transport !== 'stdio') return makeHttpTransport(cfg);
     const aid = String(cfg.agentId || '');
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('mcp stdio requires a Safe Cell agent binding');
-    const owner = agentRoster.get(aid) || {};
-    const isolated = executionEnvironment.forAgent(aid);
-    if (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(aid) !== 'docker' || !isolated.supports || isolated.supports.hostileCodeSandbox !== true || isolated.supports.stdioMcp !== true) {
-      throw new Error('mcp stdio requires agent "' + aid + '" to use the Safe Cell execution profile');
-    }
+    const issue = mcpStdioIsolationError(cfg); if (issue) throw new Error(issue);
     return makeStdioTransport(Object.assign({}, cfg, {
       // The installed sidecar correctly pins host stdio OFF. This broker proof opts in only for the
       // exact child below, whose process is docker exec into the selected agent's owned Safe Cell.
       userControlIsolated: true,
       processEnv: {},
+      ledger: procLedger,
       spawnImpl: (command, args, spawnOptions) => executionEnvironment.spawnStdio({
         agentId: aid, command, args, cwd: cfg.cwd || '', env: cfg.env || {}, spawnOptions
       })
     }));
   },
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  schemaCache: connectorSchemaCacheStore,
+  validateConfig: cfg => cfg && cfg.transportKind === 'stdio' ? mcpStdioIsolationError(cfg) : '',
+  fingerprintConfig: cfg => mcpSchemaCache.fingerprint(cfg, value => crypto.createHash('sha256').update(value).digest('hex')),
+  stdioIdleMs: Math.max(1000, Number(process.env.STARNET_MCP_STDIO_IDLE_MS) || 15 * 60 * 1000),
+  stdioMaxLifetimeMs: Math.max(1000, Number(process.env.STARNET_MCP_STDIO_MAX_LIFETIME_MS) || 6 * 60 * 60 * 1000),
   // AUTO-RECONNECT: on transport death (stdio child exit / repeated HTTP failure) the manager flips to 'error'
   // (honest status — the panel no longer shows a dead connector as 'up') and retries with bounded backoff. Real
   // timer + rng injected here (composition root); the pure manager stays deterministic for tests.
@@ -3465,6 +3502,11 @@ const connectors = makeConnectorManager({
   random: () => Math.random(),
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
+let connectorLifecycleTimer = null;
+if (require.main === module) {
+  connectorLifecycleTimer = setInterval(() => { try { connectors.sweepLifecycle(); } catch (_) {} }, 60000);
+  try { connectorLifecycleTimer.unref(); } catch (_) {}
+}
 
 /* ---- MCP connector OAuth (turns the catalog's gated `oauth` tier live): the generic RFC 9728 / 8414 / 7591 +
    PKCE flow lives in mcp/oauth.js; index.js (the only ambient-I/O module) orchestrates it. Access + refresh
@@ -3501,8 +3543,8 @@ async function ensureConnectorOauthToken(id) {
   return t.accessToken;
 }
 // configure a connector, injecting a fresh OAuth bearer for oauth connectors (kept out of the persisted config).
-async function configureConnectorCfg(cfg) {
-  if (cfg && cfg.transport === 'stdio' && cfg.enabled !== false) {
+async function configureConnectorCfg(cfg, options) {
+  if (cfg && cfg.transport === 'stdio' && cfg.enabled !== false && !(options && options.deferConnect)) {
     const aid = String(cfg.agentId || '');
     // Preparing a persistent cell is asynchronous; the stdio transport itself remains synchronous/lazy.
     // Swallow readiness here only so the manager can record an honest connector error ("not ready") in
@@ -3516,9 +3558,9 @@ async function configureConnectorCfg(cfg) {
     // reconnect / Reload — an oauth connector no longer dies ~1h in when the access token expires. We ALWAYS
     // register + connect (even when signed-out): a missing token yields an HONEST 401/error the panel shows and can
     // re-sign-in from, rather than the connector vanishing from /api/connectors.
-    return connectors.configure(cfg.id, Object.assign({}, cfg, { token: '', tokenProvider: () => ensureConnectorOauthToken(cfg.id) }));
+    return connectors.configure(cfg.id, Object.assign({}, cfg, { token: '', tokenProvider: () => ensureConnectorOauthToken(cfg.id) }), options);
   }
-  return connectors.configure(cfg.id, cfg);
+  return connectors.configure(cfg.id, cfg, options);
 }
 
 /* ---- TOOLSETS kill-switch store (the reference harness's "toolsets" surface): a per-capId-FAMILY on/off flag
@@ -6329,6 +6371,24 @@ async function completeQuestRecommendationIds(ids) {
   return ids;
 }
 
+// A quest completion is durable before its journey fold. Recover a crash/write failure by replaying every done
+// quest; journey-store's lifetime source-key ledger makes this idempotent, and its reset epoch skips prior-Commander
+// completions. GET /api/journey awaits the same pass so the UI never outruns recoverable evidence.
+let journeyQuestReconcile = null;
+function reconcileCompletedJourneyQuests() {
+  if (journeyQuestReconcile) return journeyQuestReconcile;
+  const task = (async () => {
+    for (const q of questStore.list()) {
+      if (!q || q.status !== 'done') continue;
+      await journeyStore.recordQuest(q, commanderGoals.get(), q.completedAt || Date.now());
+    }
+  })();
+  journeyQuestReconcile = task;
+  task.finally(() => { if (journeyQuestReconcile === task) journeyQuestReconcile = null; }).catch(() => {});
+  return task;
+}
+setImmediate(() => reconcileCompletedJourneyQuests().catch(e => console.warn('[journey] boot reconciliation failed:', (e && e.message) || e)));
+
 let questRefreshingNow = false;   // one cycle in flight, ever (the scout's in-flight-guard discipline)
 async function runQuestRefreshCycle(why) {
   // standalone provider (no live run to ride): the cron seam's provider/credential resolution, verbatim.
@@ -7945,7 +8005,7 @@ server.listen(PORT, '127.0.0.1', () => {
     for (const c of connectorConfigs) {
       if (!c || !(c.url || c.command || c.oauth)) continue;
       if (c.enabled === false) disabled++; else warming++;
-      configureConnectorCfg(c).catch(() => {});
+      configureConnectorCfg(c, { deferConnect: c.transport === 'stdio' }).catch(() => {});
     }
     if (warming) console.log('  · ' + warming + ' MCP connector(s) warming');
     if (disabled) console.log('  · ' + disabled + ' disabled MCP connector(s) loaded');
@@ -8011,6 +8071,7 @@ function gracefulShutdown(signal) {
   if (deadline.unref) deadline.unref();
   try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
   try { if (typeof nightshiftTimer !== 'undefined' && nightshiftTimer) { clearInterval(nightshiftTimer); } } catch (_) {}   // NS-1: stop the night-shift ticker on shutdown
+  try { if (typeof connectorLifecycleTimer !== 'undefined' && connectorLifecycleTimer) { clearInterval(connectorLifecycleTimer); } } catch (_) {}
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
   try { if (typeof terminalSessions !== 'undefined' && terminalSessions && terminalSessions.stopAll) terminalSessions.stopAll(); } catch (_) {}   // reap owned PTY/ConPTY trees
   // release any cursor confinement a reaped child leaves stuck (the PS one-shot outlives our exit; best-effort —
@@ -11227,21 +11288,36 @@ async function handleGoals(req, res) {
 // POST operations are explicit and narrow: the Commander records metrics/milestones or corrects an adaptation.
 async function handleJourney(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  if (req.method === 'GET') return json(200, { ok: true, journey: journeyStore.snapshot(commanderGoals.get()) });
+  if (req.method === 'GET') {
+    try { await reconcileCompletedJourneyQuests(); return json(200, { ok: true, journey: journeyStore.snapshot(commanderGoals.get()) }); }
+    catch (_) { return json(500, { ok: false, error: 'journey state is temporarily unavailable' }); }
+  }
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16)); }
   catch (_) { return json(400, { ok: false, error: 'bad json' }); }
   const op = String(body && body.op || '');
   let result;
-  if (op === 'metric.create') result = await journeyStore.createMetric(body, Date.now());
-  else if (op === 'metric.update') result = await journeyStore.updateMetric(body, Date.now());
-  else if (op === 'metric.retire') result = await journeyStore.retireMetric(body.id, Date.now());
-  else if (op === 'milestone.complete') result = await journeyStore.recordMilestone(body, Date.now());
-  else if (op === 'adaptation.suppress') result = await journeyStore.setSuppressed(body.agentId, body.domain, true, Date.now());
-  else if (op === 'adaptation.resume') result = await journeyStore.setSuppressed(body.agentId, body.domain, false, Date.now());
-  else if (op === 'journey.reset') result = await journeyStore.reset();
-  else return json(400, { ok: false, error: 'unknown journey operation' });
-  return json(result && result.ok ? 200 : 400, Object.assign({}, result, { journey: journeyStore.snapshot(commanderGoals.get()) }));
+  try {
+    const saved = (() => { try { return saveStore.load('agent') || null; } catch (_) { return null; } })();
+    const savedEpoch = Math.max(1, Math.floor(Number(saved && saved.agent && saved.agent.createdAt) || 1));
+    const currentEpoch = journeyStore.currentEpoch(savedEpoch);
+    const requestedEpoch = Math.max(1, Math.floor(Number(body && body.epoch) || 1));
+    // The journey belongs to one Commander generation. A backgrounded tab from an earlier Commander may still
+    // have timers/outbox work alive, but it must never mutate the newly commissioned agent's evidence. Reset is
+    // the generation handoff: it may advance the epoch, while every ordinary mutation must match exactly.
+    if ((op === 'journey.reset' && requestedEpoch < currentEpoch) || (op !== 'journey.reset' && requestedEpoch !== currentEpoch)) {
+      return json(409, { ok: false, error: 'station generation changed; reload before updating journey' });
+    }
+    if (op === 'metric.create') result = await journeyStore.createMetric(body, Date.now());
+    else if (op === 'metric.update') result = await journeyStore.updateMetric(body, Date.now());
+    else if (op === 'metric.retire') result = await journeyStore.retireMetric(body.id, Date.now());
+    else if (op === 'milestone.complete') result = await journeyStore.recordMilestone(body, Date.now());
+    else if (op === 'adaptation.suppress') result = await journeyStore.setSuppressed(body.agentId, body.domain, true, Date.now());
+    else if (op === 'adaptation.resume') result = await journeyStore.setSuppressed(body.agentId, body.domain, false, Date.now());
+    else if (op === 'journey.reset') result = await journeyStore.reset(Date.now(), requestedEpoch);
+    else return json(400, { ok: false, error: 'unknown journey operation' });
+    return json(result && result.ok ? 200 : 400, Object.assign({}, result, { journey: journeyStore.snapshot(commanderGoals.get()) }));
+  } catch (_) { return json(500, { ok: false, error: 'journey state is temporarily unavailable' }); }
 }
 
 function placedTypesFrom(v) {

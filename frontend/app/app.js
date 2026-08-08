@@ -2481,6 +2481,16 @@ const App = (() => {
     // leaves the prior station intact, and keeps its confirmed grant visible instead of commissioning a fresh
     // Commander who silently inherited cabinet:write. Saved-station resume returns above and keeps its grants.
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();
+    const newCommanderEpoch = Date.now();
+    if (typeof JourneyStore !== 'undefined' && JourneyStore.reset) {
+      const journeyResetResult = await JourneyStore.reset(newCommanderEpoch);
+      if (!journeyResetResult || !journeyResetResult.ok) {
+        wakeBtnBusy(false);
+        msg.className = 'msg bad';
+        msg.textContent = 'the prior Commander journey could not be cleared safely. retry WAKE before commissioning this agent.';
+        return false;
+      }
+    }
 
     // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
     // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
@@ -2489,7 +2499,7 @@ const App = (() => {
               provider: (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter',   // #4: stamp the chosen provider+effort onto the hero so a later agent-switch can restore them
               reasoningEffort: (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : 'medium',
               personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
-              approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), executionProfile: (pickedApproval === 'full' ? 'this-computer' : 'trusted-project'), purpose: null, onboarded: false, createdAt: Date.now() };   // legacy approval choice seeds an honest host profile; the two axes are independently changeable in the dossier
+              approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), executionProfile: (pickedApproval === 'full' ? 'this-computer' : 'trusted-project'), purpose: null, onboarded: false, createdAt: newCommanderEpoch };   // legacy approval choice seeds an honest host profile; the two axes are independently changeable in the dossier
     agentDocs(agent);                              // seed identity.md (overseer-aware) / purpose.md / operating-manual.md
     registerHero(agent);   // found the multi-agent registry with the hero BEFORE composing — rosterClause reads the registry, and a same-session re-wake must not see the prior crew
     agent.systemPrompt = composeSystemPrompt(agent);
@@ -2509,7 +2519,6 @@ const App = (() => {
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
     if (typeof GoalStore !== 'undefined') GoalStore.reset();   // …and a fresh goal tree — a new Commander never inherits the prior hero's goals/milestones/progress (own key)
-    if (typeof JourneyStore !== 'undefined' && JourneyStore.reset) JourneyStore.reset();   // …and no inherited metrics, mastery, or station evolution
     if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.reset) UnderstandingStore.reset();   // …and no inherited rating corroboration — a new Commander never inherits the prior hero's 👍/👎 confidence signal (own key)
     if (typeof MaintQuestStore !== 'undefined') MaintQuestStore.reset();   // …and no inherited maintenance quests — a new Commander never sees the prior hero's slag/jam backlog (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
@@ -2758,7 +2767,7 @@ const App = (() => {
     // COMMANDER JOURNEY: the durable sidecar-owned loop connecting goal metrics + verified outcomes to
     // agent-domain mastery, visible adaptation receipts, and expressive station evolution. Separate from XP;
     // never grants capabilities. Init before GoalStore so a just-folded milestone can post immediately.
-    if (typeof JourneyStore !== 'undefined') JourneyStore.init();
+    if (typeof JourneyStore !== 'undefined') JourneyStore.init({ epoch: () => agent && agent.createdAt });
     // G1b STATION-QUEST GENERATOR: subscribe to agent.tool_call and mint a fix-it quest when an agent reaches
     // for a tool its room can't grant (capdenied → playable direction). Init AFTER World.loadStation (its gap
     // check + resolution read World.heroCaps / the live floor) and after QuestStateStore so a resumed save's

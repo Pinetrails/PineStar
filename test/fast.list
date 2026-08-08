@@ -532,6 +532,8 @@ test/mcp.client.test.js
 test/mcp.resources-prompts.test.js
 test/mcp.transport.test.js
 test/mcp.stdio.test.js
+test/mcp.schema-lifecycle.test.js
+test/mcp.orphan-recovery.test.js
 test/mcp.catalog.test.js
 test/mcp.oauth.test.js
 test/connectorstate.test.js

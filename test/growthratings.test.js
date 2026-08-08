@@ -49,4 +49,11 @@ const broken = makeGrowthRatings({ io: { readAll: () => [], append: () => { thro
 A.ok(broken.record({ runId: 'lost', verdict: 'great', entries: [{ agentId: 'agent', id: 'work:lost', delta: 1 }] }).error,
   'an fsync/append failure is never acknowledged');
 A.eq(broken.count(), 0, 'a failed durable append cannot enter the in-memory source of truth');
+
+const boundedDisk = [], bounded = makeGrowthRatings({ ramMax: 2, io: { readAll: () => boundedDisk.slice(), append: r => boundedDisk.push(r) }, clock: { now: () => ++now } });
+for (const id of ['old', 'middle', 'new']) bounded.record({ runId: id, verdict: 'great', entries: [{ agentId: 'agent', id: 'work:' + id, delta: 3 }] });
+A.eq(bounded.count(), 2, 'the served rating history window stays bounded in memory');
+A.ok(bounded.record({ runId: 'old', verdict: 'miss', entries: [{ agentId: 'agent', id: 'work:old', delta: 3 }] }).duplicate,
+  'an acknowledged verdict remains first-wins after its row leaves the served RAM window');
+A.eq(boundedDisk.length, 3, 're-rating an evicted row cannot append duplicate XP authority');
 A.report('growthratings.test');

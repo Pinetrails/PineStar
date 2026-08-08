@@ -81,6 +81,28 @@ boot-level host suite is 471 assertions; generated website parity is green (3,88
 fast gate passed both new fast entries and stopped at the pre-existing candidate-bound claims seal (step 228/576,
 10 problems / 54 ok), which this isolated lane intentionally did not rewrite.
 
+### G3 candidate receipt (`agent/mcp-process-lifecycle`)
+
+G3's lane acceptance test is closed; integration into trunk remains pending. Enabled stdio connectors now persist a
+size-bounded schema record under a canonical SHA-256 fingerprint of command, arguments/package spec, cwd, environment,
+and Safe Cell owner. A matching record projects tools/resources/prompts at boot in an honest `cached` state without
+preparing a cell or spawning a child. The first projected call performs a fresh initialize/list handshake before
+dispatch; a tool, resource, or prompt removed by that live handshake is refused before the stale operation can run.
+Command, environment, package argument, or owner changes invalidate or withdraw the projection.
+
+The manager recycles stdio children after idle and maximum-lifetime limits, retains the verified projection while the
+process is stopped, and preserves bounded crash reconnect. Every spawned child is recorded in StarNet's durable PID
+ledger and released on clean exit. The Windows probe now falls back from denied CIM access to exact `Get-Process`
+creation identity for pinned receipts; an identity-only result can never kill or discard an unpinned receipt. A real
+Windows fault test force-terminated the owner of a detached MCP child and proved the next ledger boot killed exactly
+that owned child with none remaining. The seeded live app showed `G3 Cached Proof` as
+`idle · starts on use · 1 tool` with `cached_probe`, unchanged after a later status poll and without a child launch.
+
+Focused evidence: schema lifecycle 22 assertions, real stdio/ledger 38 assertions, orphan recovery 6 assertions,
+process ledger 38 assertions, and existing MCP connector E2E 91 assertions. The exact lane tree passed the complete
+fast gate at 586/586 and the complete HTTP gate at 70/70. This closes the isolated lane acceptance test, not the
+shipped-app claim before merge.
+
 ## Remaining parity lanes
 
 | ID | Priority | Confirmed delta at the audit baseline | Observable exit test |

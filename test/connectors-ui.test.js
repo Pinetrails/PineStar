@@ -102,6 +102,8 @@ function fakeStack(tools) {
 
   // ---------- 2. SOURCE GUARD: the frontend panel ----------
   const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'connectors.js'), 'utf8');   // CONNECTORS window extracted from stationui.js (BUILDERS split)
+  A.ok(/cached:\s*\['var\(--gold\)', '◐ idle · starts on use'\]/.test(station),
+    'cached stdio schemas render as idle/starts-on-use, never falsely connected or disabled');
   const css = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'css', 'app.css'), 'utf8');
   const idx = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
 

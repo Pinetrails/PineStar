@@ -45,6 +45,7 @@ const GoalStore = (() => {
   const MIN_PATH = 3;           // the floor the confirm panel itself enforces — a shorter path is a failure here too
   let decompFails = {};         // beliefFingerprint -> consecutive unusable decomposition attempts
   let cachedProposal = null;    // { fp, texts } — the last USABLE decomposition the model produced, keyed by the belief fingerprint. If the beat moment was lost after the (paid) aux call, the next offer for the SAME belief state reuses it instead of re-spending. In-memory only; cleared on confirm/decline/init/reset.
+  const journeySyncing = new Set(); // completed milestone outbox keys awaiting sidecar acknowledgement
 
   const now = () => { try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {} return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0; };
   const ready = () => typeof Goals !== 'undefined' && state;
@@ -68,7 +69,8 @@ const GoalStore = (() => {
             status: (m && m.status === 'done') ? 'done' : 'open',
             questRef: (m && m.questRef != null) ? String(m.questRef) : null,
             evidence: String((m && m.evidence) || '').slice(0, 160),
-            doneAt: (m && Number.isFinite(Number(m.doneAt))) ? Number(m.doneAt) : null
+            doneAt: (m && Number.isFinite(Number(m.doneAt))) ? Number(m.doneAt) : null,
+            journeySyncedAt: (m && m.journeySyncedAt != null && Number.isFinite(Number(m.journeySyncedAt))) ? Number(m.journeySyncedAt) : null
           })).filter(m => m.id) : [];
           if (!ms.length) continue;
           const status = (g.status === 'done' || g.status === 'retired') ? g.status : 'active';
@@ -279,6 +281,35 @@ const GoalStore = (() => {
   }
 
   /* ---------- CHAINING + EVIDENCE (the honesty core) ---------- */
+  // Save completed milestones locally first, then acknowledge their journey fold. A failed/lost POST remains
+  // pending and retries on init or quest sync; the backend's goal+milestone key makes every replay idempotent.
+  async function syncJourneyMilestones() {
+    if (!ready() || typeof JourneyStore === 'undefined' || !JourneyStore.noteMilestone) return { acknowledged: 0, pending: 0 };
+    let acknowledged = 0, pending = 0;
+    for (const g of state.goals) {
+      if (!g || !Array.isArray(g.milestones)) continue;
+      for (let i = 0; i < g.milestones.length; i++) {
+        const m = g.milestones[i];
+        if (!m || m.status !== 'done' || m.journeySyncedAt != null) continue;
+        pending++;
+        const key = String(g.id) + ':' + String(m.id);
+        if (journeySyncing.has(key)) continue;
+        journeySyncing.add(key);
+        try {
+          const r = await JourneyStore.noteMilestone({
+            goalId: g.id, goalText: g.text, milestoneId: m.id, milestoneText: m.text,
+            evidence: m.evidence || ('completed: ' + String(m.text || '')).slice(0, 160), agentId: 'agent',
+            goalDone: g.status === 'done' && i === g.milestones.length - 1
+          });
+          if (r && r.ok) { m.journeySyncedAt = now(); acknowledged++; save(); }
+        } catch (_) { /* stays pending */ }
+        finally { journeySyncing.delete(key); }
+      }
+    }
+    return { acknowledged, pending };
+  }
+  function queueJourneySync() { syncJourneyMilestones().catch(() => {}); }
+
   // after a clean run, re-read WorkQuestStore's projection: any bound milestone whose work quest went DONE folds
   // the milestone done, writes the run-summary evidence, advances the bar, and — on the last one — completes the
   // goal. Only REAL completed work moves the bar (never a manual tick). Fail-open + idempotent.
@@ -303,19 +334,11 @@ const GoalStore = (() => {
         const r = Goals.foldMilestoneDone(g, m.id, ev, now());
         if (r.changed) {
           changed = true; if (r.goalDone) anyGoalDone = true; bumpStudySalience(g, m);
-          // Journey progression is distinct from XP: this posts the exact milestone/evidence edge the goal engine
-          // just accepted. The backend de-dupes by goal+milestone, derives domain conservatively, and only evolves
-          // the station when this is the final milestone of the whole goal.
-          try {
-            if (typeof JourneyStore !== 'undefined' && JourneyStore.noteMilestone) JourneyStore.noteMilestone({
-              goalId: g.id, goalText: g.text, milestoneId: m.id, milestoneText: m.text,
-              evidence: ev, agentId: 'agent', goalDone: !!r.goalDone
-            });
-          } catch (_) {}
+          // Journey progression folds through the durable outbox after this local goal state is saved.
         }
       }
     }
-    if (changed) { save(); pushToSidecar(); poke(); }
+    if (changed) { save(); pushToSidecar(); poke(); queueJourneySync(); }
     if (anyGoalDone) celebrateGoalDone();
   }
   // a goal completing (all milestones done): the whole-arc celebration — sound + a gold toast (a MOMENT, never a
@@ -384,16 +407,17 @@ const GoalStore = (() => {
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    firing = false; cachedProposal = null; decompFails = {};
+    firing = false; cachedProposal = null; decompFails = {}; journeySyncing.clear();
     bind();
     pushToSidecar();
+    queueJourneySync();
   }
   // a brand-new hero starts with no goals (own key; Save.clear only wipes the main envelope — mirrors the siblings).
-  function reset() { state = hydrate(null); firing = false; cachedProposal = null; decompFails = {}; try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
+  function reset() { state = hydrate(null); firing = false; cachedProposal = null; decompFails = {}; journeySyncing.clear(); try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
 
   // re-read on the quest-log heartbeat: retire drift + reconcile completed work before the fold (like the sibling
   // sync()s buildQuests calls). Cheap + idempotent.
-  function sync() { if (!ready()) return; syncDrift(); reconcile(''); }
+  function sync() { if (!ready()) return; syncDrift(); reconcile(''); queueJourneySync(); }
 
   /* ---------- the projection consumed by QuestStore.view ---------- */
   // questLive rides in so an in-flight bound milestone renders IN PROGRESS (no Accept) while a stalled/dismissed/
@@ -409,7 +433,7 @@ const GoalStore = (() => {
     init, reset, sync, quests, activeGoal, pushToSidecar,
     willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition, markOffered,
     acceptMilestone, reconcile, syncDrift, setFiring, isFiring, beliefFingerprint, questLive,
-    _state: () => state, _onRunEnd: onRunEnd
+    _state: () => state, _onRunEnd: onRunEnd, _syncJourneyMilestones: syncJourneyMilestones
   };
 })();
 

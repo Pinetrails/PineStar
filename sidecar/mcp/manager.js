@@ -51,6 +51,11 @@
     // jitter source: injected random() in [0,1); default is a fixed 0.5 (no Math.random literal here — the host
     // injects the real rng, keeping this module deterministic under lint).
     const random = typeof deps.random === 'function' ? deps.random : function () { return 0.5; };
+    const schemaCache = deps.schemaCache || null;
+    const fingerprintConfig = typeof deps.fingerprintConfig === 'function' ? deps.fingerprintConfig : function () { return ''; };
+    const validateConfig = typeof deps.validateConfig === 'function' ? deps.validateConfig : function () { return ''; };
+    const STDIO_IDLE_MS = Math.max(0, Number(deps.stdioIdleMs) || 15 * 60 * 1000);
+    const STDIO_MAX_LIFETIME_MS = Math.max(0, Number(deps.stdioMaxLifetimeMs) || 6 * 60 * 60 * 1000);
     const RECONNECT_BASE_MS = Math.max(250, Number(deps.reconnectBaseMs) || 1000);
     const RECONNECT_MAX_MS = Math.max(RECONNECT_BASE_MS, Number(deps.reconnectMaxMs) || 60000);
     const RECONNECT_MAX_ATTEMPTS = Math.max(0, deps.reconnectMaxAttempts == null ? 8 : Number(deps.reconnectMaxAttempts));
@@ -127,6 +132,10 @@
       c.state = state; c.detail = detail || ''; c.ts = clock.now();
       try { onEvent({ type: 'connector.state', connectorId: c.id, state: state, detail: c.detail, toolCount: (c.tools || []).length }); } catch (e) {}
     }
+    function configIssue(c) {
+      if (!c || !c.enabled) return '';
+      try { return String(validateConfig(c) || ''); } catch (_) { return 'connector runtime ownership could not be verified'; }
+    }
     function closeResources(client, transport, reason) {
       if (client) { try { client.close(reason || 'reconfigured'); } catch (_) {} }
       else if (transport && typeof transport.close === 'function') { try { transport.close(); } catch (_) {} }
@@ -136,6 +145,37 @@
       if (c && c.connecting) { closeResources(c.connecting.client, c.connecting.transport, 'superseded'); c.connecting = null; }
       if (c && c.client) closeResources(c.client, c.transport, 'reconfigured');
       if (c) { c.client = null; c.transport = null; }
+    }
+
+    function cacheRecord(c) {
+      if (!schemaCache || !c.cacheFingerprint || typeof schemaCache.save !== 'function') return;
+      try {
+        const saved = schemaCache.save(c.id, {
+          version: 1, fingerprint: c.cacheFingerprint, cachedAt: clock.now(),
+          tools: c.tools || [], resources: c.resources || [], prompts: c.prompts || []
+        });
+        c.cacheState = saved === false ? 'write-error' : 'current';
+      } catch (e) {
+        c.cacheState = 'write-error';
+        try { onEvent({ type: 'connector.partial', connectorId: c.id, what: 'schema-cache', detail: 'schema cache write failed' }); } catch (_) {}
+      }
+    }
+
+    function loadCached(c) {
+      if (!schemaCache || !c.cacheFingerprint || typeof schemaCache.load !== 'function') return false;
+      let cached = null;
+      try { cached = schemaCache.load(c.id); } catch (_) {}
+      if (!cached || cached.fingerprint !== c.cacheFingerprint) {
+        c.cacheState = cached ? 'invalidated' : 'absent';
+        if (cached && typeof schemaCache.remove === 'function') { try { schemaCache.remove(c.id); } catch (_) {} }
+        return false;
+      }
+      c.tools = Array.isArray(cached.tools) ? cached.tools : [];
+      c.resources = Array.isArray(cached.resources) ? cached.resources : [];
+      c.prompts = Array.isArray(cached.prompts) ? cached.prompts : [];
+      c.cacheState = 'current';
+      c.cachedAt = Number(cached.cachedAt) || 0;
+      return true;
     }
 
     // the connector's ID for THIS live connection — bumped on every (re)connect so a death callback from an OLD
@@ -258,6 +298,9 @@
         c.tools = tools;
         c.resources = resources;
         c.prompts = prompts;
+        c.startedAt = clock.now();
+        c.lastUsedAt = c.startedAt;
+        cacheRecord(c);
         c.reconnectAttempt = 0;                                 // a clean connect resets the backoff ladder
         setState(c, 'up');
         return { ok: true, state: 'up', toolCount: tools.length, resourceCount: resources.length, promptCount: prompts.length };
@@ -272,10 +315,11 @@
       }
     }
 
-    async function configure(id, cfg) {
+    async function configure(id, cfg, options) {
       id = String(id || '').trim();
       if (!id) throw new Error('configure: connector id is required');
       cfg = cfg || {};
+      options = options || {};
       const prev = conns.get(id);
       if (prev) teardown(prev);
       const transportKind = normalizeTransport(cfg, prev);
@@ -299,12 +343,26 @@
         // so a benign toggle/re-warm keeps refreshing the bearer.
         tokenProvider: (typeof cfg.tokenProvider === 'function') ? cfg.tokenProvider : (prev ? prev.tokenProvider : null),
         state: 'down', detail: '', tools: [], client: null, transport: null, connecting: null, ts: clock.now(),
-        reconnectAttempt: 0, reconnectTimer: null, _epoch: 0
+        reconnectAttempt: 0, reconnectTimer: null, _epoch: 0,
+        cacheFingerprint: transportKind === 'stdio' ? String(fingerprintConfig({
+          transport: transportKind, command: String(cfg.command || (prev && prev.command) || ''),
+          args: normalizeArgs(cfg, prev), cwd: String(cfg.cwd || (prev && prev.cwd) || ''),
+          env: normalizeEnv(cfg, prev), agentId: String(cfg.agentId || (prev && prev.agentId) || ''),
+          package: String(cfg.package || '')
+        }) || '') : '',
+        cacheState: 'disabled', cachedAt: 0, startedAt: null, lastUsedAt: null, lazyConnectPromise: null
       };
       conns.set(id, c);
       if (transportKind === 'http' && !c.url) { setState(c, 'error', 'no server URL configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
       if (transportKind === 'stdio' && !c.command) { setState(c, 'error', 'no stdio command configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
       if (!c.enabled) { setState(c, 'down'); return { ok: true, state: 'down', toolCount: 0 }; }
+      const issue = configIssue(c);
+      if (issue) { setState(c, 'error', issue); return { ok: false, state: 'error', toolCount: 0, error: issue }; }
+      if (transportKind === 'stdio' && options.deferConnect === true) {
+        const projected = loadCached(c);
+        setState(c, projected ? 'cached' : 'down', projected ? 'schemas projected from verified disk cache; process stopped' : 'no current schema cache; reload to discover tools');
+        return { ok: true, state: c.state, toolCount: c.tools.length, cached: projected };
+      }
       return connect(c);
     }
 
@@ -317,29 +375,34 @@
 
     function remove(id) {
       const c = conns.get(String(id));
-      if (c) { teardown(c); conns.delete(c.id); try { onEvent({ type: 'connector.removed', connectorId: c.id }); } catch (e) {} }
+      if (c) {
+        teardown(c); conns.delete(c.id);
+        if (schemaCache && typeof schemaCache.remove === 'function') { try { schemaCache.remove(c.id); } catch (_) {} }
+        try { onEvent({ type: 'connector.removed', connectorId: c.id }); } catch (e) {}
+      }
       return Promise.resolve({ ok: true });
     }
 
     // a summary safe to log / return over HTTP: the token is NEVER included (only whether one is set).
     function summary(c) {
+      const issue = configIssue(c);
       const out = {
         id: c.id,
         label: c.label,
         transport: c.transportKind,
         enabled: c.enabled,
-        state: c.state,
-        detail: c.detail,
+        state: issue ? 'error' : c.state,
+        detail: issue || c.detail,
         hasToken: !!(c.token || c.tokenProvider),
         oauth: !!c.tokenProvider,                        // the panel renders oauth connectors distinctly (re-auth via sign-in, not an http edit)
         timeoutMs: c.timeoutMs || timeoutMs,
-        toolCount: (c.tools || []).length,
+        toolCount: issue ? 0 : (c.tools || []).length,
         // Surfaced so the connector panel can say what a server ACTUALLY offers. A server with 0 tools and 40
         // resources used to render as an empty connector, which reads as broken rather than as "this one
         // serves documents, not actions".
-        resourceCount: (c.resources || []).length,
-        promptCount: (c.prompts || []).length,
-        tools: (c.tools || []).map(t => t.name)
+        resourceCount: issue ? 0 : (c.resources || []).length,
+        promptCount: issue ? 0 : (c.prompts || []).length,
+        tools: issue ? [] : (c.tools || []).map(t => t.name)
       };
       if (c.transportKind === 'stdio') {
         out.command = c.command;
@@ -350,6 +413,10 @@
         out.hasCwd = !!c.cwd;
         out.env = redactEnv(c.env);
         out.hasEnv = Object.keys(c.env || {}).length > 0;
+        out.schemaCache = c.cacheState;
+        out.processState = c.client && c.state === 'up' ? 'running' : 'stopped';
+        out.startedAt = c.startedAt;
+        out.lastUsedAt = c.lastUsedAt;
       } else {
         out.url = safeUrl(c.url);
         out.headers = redactEnv(c.headers);            // header VALUES are never echoed — key + set/redacted only
@@ -366,9 +433,43 @@
     // JSON-RPC errors, not transport death, so a vanished HTTP endpoint would otherwise stay 'up' forever). stdio
     // gets death detection from the child-exit hook, so this net is only meaningful for http; 0 disables it.
     const CALL_FAIL_LIMIT = Math.max(0, deps.callFailLimit == null ? 3 : Number(deps.callFailLimit));
-    function call(id, toolName, args) {
+    function lifecycleExpired(c) {
+      if (!c || c.transportKind !== 'stdio' || !c.client) return false;
+      const now = clock.now();
+      return (STDIO_IDLE_MS > 0 && c.lastUsedAt != null && now - c.lastUsedAt >= STDIO_IDLE_MS)
+        || (STDIO_MAX_LIFETIME_MS > 0 && c.startedAt != null && now - c.startedAt >= STDIO_MAX_LIFETIME_MS);
+    }
+
+    function recycle(c, reason) {
+      if (!c || c.transportKind !== 'stdio' || !c.client) return false;
+      bumpEpoch(c);
+      closeResources(c.client, c.transport, reason || 'stdio lifecycle recycle');
+      c.client = null; c.transport = null; c.startedAt = null; c.lastUsedAt = null;
+      setState(c, (c.tools || []).length || (c.resources || []).length || (c.prompts || []).length ? 'cached' : 'down', reason || 'stdio process recycled');
+      return true;
+    }
+
+    async function ensureLive(c) {
+      if (c.client && c.state === 'up' && !lifecycleExpired(c)) return c;
+      if (c.client) recycle(c, 'stdio lifecycle recycle');
+      if (c.lazyConnectPromise) { await c.lazyConnectPromise; return c; }
+      const work = connect(c);
+      c.lazyConnectPromise = work;
+      try {
+        const result = await work;
+        if (!result || !result.ok) throw new Error((result && result.error) || 'connector failed to start');
+        return c;
+      } finally { if (c.lazyConnectPromise === work) c.lazyConnectPromise = null; }
+    }
+
+    async function call(id, toolName, args) {
       const c = conns.get(String(id));
-      if (!c || !c.client || c.state !== 'up') return Promise.reject(new Error('connector "' + id + '" is not connected'));
+      if (!c) throw new Error('connector "' + id + '" is not connected');
+      const issue = configIssue(c); if (issue) throw new Error(issue);
+      if (c.transportKind === 'stdio') await ensureLive(c);
+      if (!c.client || c.state !== 'up') throw new Error('connector "' + id + '" is not connected');
+      if (!(c.tools || []).some(t => t && t.name === toolName)) throw new Error('connector tool "' + toolName + '" is no longer published by the current server');
+      c.lastUsedAt = clock.now();
       const p = c.client.callTool(toolName, args || {});
       if (c.transportKind !== 'http' || CALL_FAIL_LIMIT <= 0) return p;
       return p.then(
@@ -383,7 +484,7 @@
 
     function toolDefsFor(id) {
       const c = conns.get(String(id));
-      if (!c || c.state !== 'up' || !c.client) return [];
+      if (!c || configIssue(c) || (c.state !== 'up' && c.state !== 'cached')) return [];
       const bound = (toolName, args) => call(c.id, toolName, args);
       const defs = (c.tools || []).map(t => makeToolDef({ connectorId: c.id, label: c.label, mcpTool: t, call: bound, localProcess: c.transportKind === 'stdio' }));
       /* The resources/prompts tools are projected ONLY for a server that actually publishes them, so a
@@ -395,9 +496,9 @@
         for (const d of makeAuxDefs({
           connectorId: c.id, label: c.label,
           listResources: (c.resources || []).length ? (() => Promise.resolve(c.resources)) : null,
-          readResource: (c.resources || []).length ? ((uri) => c.client.readResource(uri)) : null,
+          readResource: (c.resources || []).length ? ((uri) => readResource(c.id, uri)) : null,
           listPrompts: (c.prompts || []).length ? (() => Promise.resolve(c.prompts)) : null,
-          getPrompt: (c.prompts || []).length ? ((n, a) => c.client.getPrompt(n, a)) : null
+          getPrompt: (c.prompts || []).length ? ((n, a) => getPrompt(c.id, n, a)) : null
         })) defs.push(d);
       }
       return defs;
@@ -420,6 +521,18 @@
       conns.clear();
     }
 
+    function sweepLifecycle() {
+      let recycled = 0;
+      for (const c of conns.values()) {
+        const issue = configIssue(c);
+        if (issue && c.transportKind === 'stdio') {
+          if (c.client && recycle(c, 'stdio process stopped because its Safe Cell ownership is no longer valid')) recycled++;
+          setState(c, 'error', issue);
+        } else if (lifecycleExpired(c) && recycle(c, 'stdio process recycled by lifecycle limit')) recycled++;
+      }
+      return { recycled: recycled };
+    }
+
     /* The RESOURCES + PROMPTS read path. Served from the connect-time cache for lists (so a listing costs no
        round trip and cannot hang a turn) and live for the two fetches, because a resource's CONTENT is the
        thing that changes between reads — caching that would hand the agent a stale document and call it
@@ -432,10 +545,21 @@
     };
     const resourcesFor = (id) => (conns.get(String(id)) || {}).resources || [];
     const promptsFor = (id) => (conns.get(String(id)) || {}).prompts || [];
-    const readResource = (id, uri) => upConn(id).client.readResource(uri);
-    const getPrompt = (id, name, args) => upConn(id).client.getPrompt(name, args);
+    const readResource = async (id, uri) => {
+      const c = conns.get(String(id)); if (!c) return upConn(id);
+      if (c.transportKind === 'stdio') await ensureLive(c);
+      const current = (c.resources || []).some(r => r && (r.uri === uri || (r.uriTemplate && String(uri).indexOf(String(r.uriTemplate).split('{')[0]) === 0)));
+      if (!current) throw new Error('connector resource is no longer published by the current server');
+      return upConn(id).client.readResource(uri);
+    };
+    const getPrompt = async (id, name, args) => {
+      const c = conns.get(String(id)); if (!c) return upConn(id);
+      if (c.transportKind === 'stdio') await ensureLive(c);
+      if (!(c.prompts || []).some(p => p && p.name === name)) throw new Error('connector prompt is no longer published by the current server');
+      return upConn(id).client.getPrompt(name, args);
+    };
 
-    return { configure, remove, refresh, close, status, list, has, ids, toolDefsFor, toolDefsForObjects, call, resourcesFor, promptsFor, readResource, getPrompt, _internals: { connectorIdOf } };
+    return { configure, remove, refresh, close, status, list, has, ids, toolDefsFor, toolDefsForObjects, call, resourcesFor, promptsFor, readResource, getPrompt, sweepLifecycle, _internals: { connectorIdOf } };
   }
 
   return { makeConnectorManager, _internals: { connectorIdOf } };
