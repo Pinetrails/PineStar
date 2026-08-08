@@ -4514,6 +4514,12 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .perm-crew-row .pc-q {
   display: block; font-size: 10px; letter-spacing: 2px; color: var(--ph); opacity: 0.75; margin-bottom: 5px;
 }
+/* the block-2 override outranks this axis: the question says so, and the chips read as the setting
+   that is currently NOT in force — dimmed, but still legible and still clickable (they select what
+   the agent goes back to). The row's own accent is already the effective-posture colour. */
+.perm-crew-row .pc-ovr { color: var(--bad); letter-spacing: 1px; }
+.perm-crew-row.overridden .pc-ask-axis .pc-chips { opacity: 0.55; }
+.perm-crew-row.overridden .pc-ask-axis .pc-chips:hover { opacity: 1; }
 .perm-crew-row .pc-chips { margin: 0; gap: 5px; flex-wrap: wrap; }
 .perm-crew-row .pc-chips .ov-vchip { display: inline-flex; align-items: center; gap: 6px; }
 /* the reach meter: filled rungs in phosphor, hollow ones faded, so the ladder reads left-to-right

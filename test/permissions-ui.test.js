@@ -26,8 +26,10 @@ ok(/class="perm-agent/.test(src) && /class="pa-state"/.test(src), 'agent rows ar
 ok(/id="perm-glance"/.test(src), 'the pane opens with an AT A GLANCE summary card');
 ok(/const paintGlance = \(\) =>/.test(src) && /present\.filter\(a => a && a\.approvalMode === 'full'\)\.length/.test(src),
   'the glance sentence COUNTS the live roster rather than asserting a posture');
-ok(/paintGlance\(\);\s+\/\/ the glance sentence names the override state/.test(src),
-  'the glance repaints with the master switch (summary and switch can never disagree)');
+// paintCrew() opens by repainting the glance, and repaintPerm() calls paintCrew() right after the
+// bypass card — so ONE flip moves the card, every row, and the summary together.
+ok(/const paintCrew = \(\) => \{\s*if \(!crewList\) return;\s*paintGlance\(\);/.test(src),
+  'the glance repaints with the crew (summary and rows can never disagree)');
 ok(/protected files \(<code>\.env<\/code>, <code>\.git<\/code>\) are never writable/.test(src),
   'the glance states the standing floor in plain words');
 // ONE crew row per agent carrying BOTH axes — the two-tables-forty-rows-apart layout is the defect this
@@ -37,7 +39,7 @@ ok(!/id="perm-execution"/.test(src) && !/id="perm-approval"/.test(src),
   'reach and approval are NOT two separate crew lists any more');
 ok(/data-perm-profile=/.test(src) && /data-ap-flip=/.test(src) && /class="perm-agent perm-crew-row/.test(src),
   'one row carries both the reach chips and the asks-first chips');
-ok(/<span class="pc-q">CAN REACH<\/span>/.test(src) && /<span class="pc-q">ASKS FIRST<\/span>/.test(src),
+ok(/<span class="pc-q">CAN REACH<\/span>/.test(src) && /<span class="pc-q">ASKS FIRST'/.test(src),
   'each control is preceded by the plain question it answers');
 // the reach ladder must stay ORDERED and self-describing: a meter plus one ordinary sentence per rung.
 ok(/const reachMeter = \(n\) =>/.test(src) && /class="pc-dots"/.test(src), 'each reach chip wears a reach meter');
@@ -49,6 +51,18 @@ ok(/EXECUTION_PROFILE_DEFAULT = 'station-gear'/.test(src) && !/\|\| EXECUTION_PR
   'the profile fallback is the DEFAULT by id, never an index into the reach-ordered array');
 ok(/plain: 'None of your files\./.test(src) && /plain: 'Almost any file on this computer/.test(src),
   'every rung carries a plain-English sentence about what it can touch');
+// The block-2 override outranks the per-agent ASKS FIRST axis. A row that still printed "ASKS" under an
+// ON override was the app asserting a posture the harness will not honour — the row must report the
+// EFFECTIVE state, keep the stored setting visible, and repaint WITH the switch.
+ok(/const effFull = full \|\| overridden;/.test(src), 'the row reports the EFFECTIVE approval posture, not the stored one alone');
+ok(/const overridden = !!\(snap\.loaded && \(snap\.masterBypass \|\| snap\.envFullAccess\)\);/.test(src),
+  'the override state is read from SERVER truth, never guessed locally');
+ok(/OVERRIDDEN BY BLOCK 2/.test(src) && /The switch in block 2 is ON, so this agent is not asking/.test(src),
+  'an overridden row says so in plain words instead of contradicting the glance');
+ok(/Turn that switch off and it goes back to stopping for your yes/.test(src),
+  'the stored setting stays visible as what it returns to (never hidden)');
+ok(/paintBypass\(snap\);[\s\S]{0,220}paintCrew\(\);/.test(src),
+  'flipping the master switch repaints every crew row, not just the card');
 // the advanced Docker housekeeping is no longer the first thing under the crew header
 ok(/id="perm-advanced"/.test(src) && /ADVANCED — idle Safe Cell cleanup/.test(src),
   'the idle-cell policy lives in a closed ADVANCED disclosure, not above the crew');

@@ -5661,6 +5661,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const can = !!(access.config && access.config.setExecutionProfile);
         const canAsk = !!(access.config && access.config.setApproval);
         const truth = lastTruth;
+        /* The block-2 override outranks every per-agent ASKS FIRST setting. A row that keeps printing
+           "ASKS" while the switch is ON is the app asserting a state the harness will not honour — the
+           exact truthful-telemetry violation this pane exists to avoid. So the ROW reports the EFFECTIVE
+           posture, and the stored setting stays visible (and editable) underneath, named as what it will
+           do once the override is off. Never one without the other: hiding the stored value would make
+           the chips lie in the other direction. */
+        const snap = PermissionsStore.snapshot() || {};
+        const overridden = !!(snap.loaded && (snap.masterBypass || snap.envFullAccess));
         crewList.innerHTML = present.map(a => {
           const id = executionProfileId(a);
           const p = executionProfileOf(id);
@@ -5693,11 +5701,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const askChips =
             '<button class="ov-vchip' + (full ? '' : ' sel') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="ask" data-name="YES — ASK ME" aria-pressed="' + (full ? 'false' : 'true') + '">YES — ASK ME</button>' +
             '<button class="ov-vchip' + (full ? ' sel' : '') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="full" data-name="NO — JUST DO IT" aria-pressed="' + (full ? 'true' : 'false') + '">NO — JUST DO IT</button>';
-          return '<div class="perm-agent perm-crew-row' + (full ? ' full' : '') + '" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
+          // the EFFECTIVE posture — what this agent will actually do on its next risky call
+          const effFull = full || overridden;
+          return '<div class="perm-agent perm-crew-row' + (effFull ? ' full' : '') + (overridden ? ' overridden' : '') + '" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
             '<div class="pc-head">' +
               '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-              '<span class="pa-mode">' + (full ? 'NO PROMPTS' : 'ASKS') + '</span>' +
-              '<span class="pa-state">' + esc(p.short) + ' · ' + (full ? 'never stops to ask you' : 'stops before it writes, runs, or reaches out') + '</span>' +
+              '<span class="pa-mode">' + (effFull ? 'NO PROMPTS' : 'ASKS') + '</span>' +
+              '<span class="pa-state">' + esc(p.short) + ' · ' + (effFull ? 'never stops to ask you' : 'stops before it writes, runs, or reaches out') + '</span>' +
             '</div>' +
             '<div class="pc-axis">' +
               '<span class="pc-q">CAN REACH</span>' +
@@ -5705,12 +5715,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               '<p class="pc-plain">' + esc(p.plain) + '</p>' +
               '<p class="mc-hint pc-truth">routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
             '</div>' +
-            '<div class="pc-axis">' +
-              '<span class="pc-q">ASKS FIRST</span>' +
+            '<div class="pc-axis pc-ask-axis">' +
+              '<span class="pc-q">ASKS FIRST' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY BLOCK 2</span>' : '') + '</span>' +
               (canAsk ? '<div class="ov-vchips pc-chips">' + askChips + '</div>' : '') +
-              '<p class="pc-plain">' + (full
-                ? 'It writes files, runs commands and reaches out on its own, without pausing — inside the reach above, and nowhere wider.'
-                : 'Before it writes a file, runs a command, or reaches outside, it stops and waits for your yes.') + '</p>' +
+              '<p class="pc-plain">' + (overridden
+                ? 'The switch in block 2 is ON, so this agent is not asking about anything right now. ' + (full
+                  ? 'It is also set to run without prompts on its own.'
+                  : 'Turn that switch off and it goes back to stopping for your yes, as selected here.')
+                : full
+                  ? 'It writes files, runs commands and reaches out on its own, without pausing — inside the reach above, and nowhere wider.'
+                  : 'Before it writes a file, runs a command, or reaches outside, it stops and waits for your yes.') + '</p>' +
             '</div>' +
             (cell || ssh ? '<div class="pc-more">' + cell + ssh + '</div>' : '') +
             '</div>';
@@ -5912,7 +5926,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();
         paintBypass(snap);
-        paintGlance();   // the glance sentence names the override state — it must move WITH the switch
+        // The glance sentence AND every crew row name the override state, so both must move WITH the
+        // switch — a flip that repainted only the card left the rows claiming "ASKS" under an ON override.
+        paintCrew();
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
         if (permStatus) {
