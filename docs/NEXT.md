@@ -2700,3 +2700,52 @@ window title `native-open-proof-223f8c06.md - Notepad`. The folder control opene
 both focused and selected, and copy-path placed the exact 95-character absolute path on the clipboard. The
 temporary session, artifact, proof-specific Notepad process, and Explorer window were then removed; the prior
 clipboard text was restored.
+
+# IN PROGRESS 2026-08-07 — CONNECTORS & ABILITIES AUDIT (`agent/connector-abilities-audit-0807`)
+
+The ABILITIES console now gives a truthful, announced zero-result state instead of turning into a
+blank window and clearing the selected tab; its search is named for abilities rather than only
+connectors. Catalog setup filters expose their pressed state, connector/key/extension/Spotify and
+Skill Exchange feedback use polite live regions, and the procedure count says skills rather than
+colliding with the separate RECIPES product. MCP removal now uses the shared two-click armed
+confirmation before deleting the endpoint and its stored credential. The website mirror is synced.
+
+The connector audit also closed three provider-specific authentication defects. RFC 8414 discovery now
+handles pathful issuers such as monday.com's `/mcp` issuer. Dynamic registration preserves the protected
+client secret and advertised token-endpoint method for confidential clients (currently Supabase and
+monday.com), and uses them for both code exchange and refresh after restart. Composio keys now travel in
+the provider-required `x-consumer-api-key` header, including verified migration of an already-saved Bearer
+token; the catalog and KEYS UI describe that header truthfully instead of calling it a Bearer token.
+
+Live provider proof: all 15 directly sign-in-able OAuth catalog entries completed resource/authorization
+server discovery, S256 validation, and dynamic registration; 13 registered public clients and Supabase +
+monday.com registered confidential `client_secret_post` clients. Seeded `/oauth/start` flows for both
+confidential providers saved their client id, secret, and method in the protected envelope and retained
+them after sidecar restart. All 9 no-auth catalog endpoints initialized through the MCP manager (including
+their real tool/resource/prompt inventories). All advertised API-key endpoints were reachable and refused
+the deliberately invalid probes with authentication responses rather than transport/discovery failures.
+No third-party user consent or valid paid-service API key was supplied during this audit, so those
+account-specific consent screens and post-auth tool calls remain release-candidate acceptance work.
+
+Live seeded UI proof at `localhost:8897`: all eight sections and six intent routes opened; empty form
+validation, catalog filtering, search/Escape, tool inventories, placement deep-link, and native-control
+paint were exercised without browser warnings/errors. AWS Knowledge installed as a connected MCP with
+5 tools, reloaded, survived restart, required arm + confirm to remove, and stayed removed after a second
+restart. A Composio probe saved only the custom header, appeared under KEYS as `HEADER SAVED`, survived a
+restart with its value redacted from API output, reported the expected 401 instead of claiming connection,
+and was removed afterward. WEB & BROWSER and 1-3-1 Decision Framework switches each survived changed and
+restored-state restarts.
+
+Focused connector gates are 764 assertions green; the affected-domain slice is 26/26; `qa:journeys` is
+129/129 and the UI-only Beginner Run passed. The post-sync `npm run test:fast` is 573/573 green. Every
+one of the 68 HTTP integration files passed during this audit, including
+`sidecar.http` (468 assertions) and the live MCP connector E2E (87), but the canonical seven-minute
+`npm run test:http` wrapper timed out twice under sustained shared-host CPU pressure before it could run
+the whole list in one process. The omitted 12-file tail passed separately (374 assertions).
+
+NOT READY TO MERGE OR RELEASE: the canonical HTTP gate does not have one uninterrupted green receipt;
+Guardian did not complete before its ten-minute invocation
+ceiling; and installed-exe smoke is truthfully BLOCKED because no exact candidate SHA/artifact was supplied
+and no installed candidate was listening on CDP. `qa:ready` must remain NOT READY until those receipts are
+green. No production account, valid third-party credential, merge to trunk, push, PR, deployment, or
+publication was performed.

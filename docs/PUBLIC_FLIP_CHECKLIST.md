@@ -71,7 +71,7 @@ git fetch origin
 gitleaks git . --no-banner --redact --log-opts="--all"
 ```
 
-Review anything new (the reviewed baseline lives in `.gitleaksignore`, currently 21 pinned
+Review anything new (the reviewed baseline lives in `.gitleaksignore`, currently 25 pinned
 fingerprints). A clean captured run of this is the "clean full-history Gitleaks result" the
 open-source-readiness lane left open.
 

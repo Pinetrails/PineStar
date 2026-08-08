@@ -150,6 +150,33 @@ function cyclicPlan() {
     A.ok(((await p4.json()) || {}).cleared, 'the clear body says cleared');
     A.eq(await chainNext(), null, 'the clear unarms live routing');
     A.eq(readFile(), null, 'the clear is persisted (boot will match)');
+
+    /* ---- A PLAN THAT PREDATES LINE IDENTITY SELF-HEALS AT BOOT (2026-08-07) ----
+       The floor's line map (which physical line a dock belongs to) is compiled by the browser and rides the
+       posted plan; the chain gate reads a MISSING map as "every dock is terminal". On a desktop that heals
+       the moment the app opens and re-posts — but a HEADLESS sidecar taking Telegram + routine traffic has
+       no browser, so every multi-stage line ran stage one and nothing else, silently and forever. The router
+       now derives the map from the restored plan's OWN geometry (sidecar/routing/planlines.js). Written
+       straight to disk in its pre-arc shape and booted cold: no browser is involved anywhere in this block. */
+    await stop(b);
+    const preArc = JSON.parse(JSON.stringify(goodPlan()));
+    delete preArc.lines; delete preArc.lineOfProp; delete preArc.lineOfAgent;
+    for (const d of (preArc.dockBays || [])) delete d.lineId;
+    A.eq(preArc.lineOfAgent, undefined, 'fixture: the persisted plan carries no line map at all');
+    fs.writeFileSync(FILE, JSON.stringify(preArc));
+    b = await boot(b.port, env, 20);
+    B = 'http://' + HOST + ':' + b.port;
+    A.ok(b.out().indexOf('routing plan restored from disk') >= 0, 'the pre-arc plan is still accepted at boot');
+    token = await bootToken(B, B);
+    headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+    A.eq(await chainNext(), 'stage-two', 'a RESTORED pre-arc plan advances its multi-stage line with no browser ever opening');
+    // healing fills a hole; it does not open a door — the gate still refuses foreign and origin-less work
+    const askWith = async (q) => {
+      const r = await fetch(B + '/api/routing/chain?agentId=stage-one' + q, { headers });
+      return ((await r.json()) || {}).next || null;
+    };
+    A.eq(await askWith(''), null, 'a direct order at the same dock is STILL terminal on a healed plan');
+    A.eq(await askWith('&lineId=some-other-line'), null, 'and a foreign line id still buys nothing');
   } finally {
     await stop(b);
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}

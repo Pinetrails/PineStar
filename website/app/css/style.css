@@ -975,6 +975,23 @@ body.crt-dull #chat-log, body.crt-dull .term-body, body.crt-dull #left, body.crt
 .cf-card .ov-vchips { margin: 2px 0 4px; }
 .cf-card .msg:empty { display: none; }
 .cf-card .set-row { margin: 6px 0; }
+/* GROUP RULES (dossier UX pass): CONFIG's nine cards now sit under three named rules instead of running as one
+   1565px column. First rule sheds its top margin — it lands directly under the station:// path line. */
+.cf-grp { margin: 20px 0 0; scroll-margin-top: 8px; }
+.cf-nav + .cf-grp { margin-top: 8px; }
+/* the group jump row — three flat chips, matte, no lift. It is a table of contents, not a control panel. */
+.cf-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
+.cf-nav-b {
+  font: inherit; font-size: 10px; letter-spacing: 1.6px; color: var(--ph-dim);
+  background: rgba(0,0,0,.28); border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  padding: 4px 9px; cursor: pointer;
+}
+.cf-nav-b:hover, .cf-nav-b:focus-visible { color: var(--ph-bright); border-color: var(--ph-dim); background: var(--ph-faint); }
+.cf-nav-b:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+.cf-grp-note { font-size: 11px; color: var(--ph-dim); line-height: 1.45; margin: 5px 0 9px; max-width: 78ch; }
+/* the landing flash for a card reached from BRIEF's setup strip — without it the pane simply teleports and the
+   Commander has to re-find the row they clicked. Fades out on its own (class dropped after 1.4s). */
+.cf-card.cf-jumped { border-left-color: var(--ph-bright); box-shadow: 0 0 14px var(--ph-glow2); }
 .cf-file { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; }
 .cf-name { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; }
 .cf-badge { font-size: 10px; letter-spacing: 1px; border: 1px solid var(--ph-dim); padding: 0 5px; }

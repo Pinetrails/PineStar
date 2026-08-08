@@ -475,6 +475,12 @@
     <button id="crew-show" class="crew-show" type="button" title="Show the crew rail" aria-label="Show the crew rail" hidden>▸ CREW</button>
   </div>
 
+  <!-- CREW / stage divider (leftrail.js): the mirror of the COMMS seam. It is a GRID CHILD, not a
+       child of #stage-wrap — the tube clips (overflow:hidden), so anything hung in the gap from
+       inside it is cut away. Placed in the centre area and pulled left, it sits ON the seam the
+       eye sees, exactly like #comms-resizer does. See .crew-resizer in app.css. -->
+  <div id="crew-resizer" class="crew-resizer" title="drag to resize the CREW rail (double-click to reset)" role="separator" aria-orientation="vertical" aria-label="Resize crew rail"><span class="col-resizer-grip"></span></div>
+
   <aside id="chat-panel">
     <div id="comms-resizer" class="col-resizer" title="drag to resize COMMS" role="separator" aria-orientation="vertical" aria-label="Resize COMMS panel"><span class="col-resizer-grip"></span></div>
     <h3>▮ COMMS<span class="h3-right"><span class="dim" id="chat-status" role="status" aria-live="polite" aria-atomic="true">offline</span><span class="chat-elapsed" id="chat-elapsed" aria-hidden="true"></span></span></h3>

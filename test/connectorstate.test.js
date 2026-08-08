@@ -2,9 +2,10 @@
 const A = require('./_assert.js');
 const S = require('../sidecar/connectorstate.js');
 
-const oauth = { byId: { notion: { accessToken: 'secret', refreshToken: 'refresh', authorizationServer: 'https://as.example' } }, clients: { 'https://as.example': { clientId: 'client' }, 'https://other.example': { clientId: 'other' } } };
+const oauth = { byId: { notion: { accessToken: 'secret', refreshToken: 'refresh', clientSecret: 'confidential', tokenEndpointAuthMethod: 'client_secret_post', authorizationServer: 'https://as.example' } }, clients: { 'https://as.example': { clientId: 'client', clientSecret: 'confidential', tokenEndpointAuthMethod: 'client_secret_post' }, 'https://other.example': { clientId: 'other' } } };
 const start = S.envelope([{ id: 'notion', oauth: true }, { id: 'plain', token: 'key' }], oauth);
 A.eq(start.version, 2, 'state envelope is versioned');
+A.eq(start.oauth.clients['https://as.example'].clientSecret, 'confidential', 'DCR client secret survives the protected envelope round trip');
 const removed = S.removeConnector(start, 'notion');
 A.eq(removed.configs.length, 1, 'removal deletes exactly one connector config');
 A.eq(removed.configs[0].id, 'plain', 'unrelated connector config survives');

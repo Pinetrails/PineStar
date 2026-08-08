@@ -430,8 +430,12 @@ async function waitUntil(fn, ms, label) {
 
     const llmCallsBeforeApproved = llm.requests.length;
     tg.pushText(approvalsChat, 99, 'find me something on the web');
-    await waitUntil(() => llm.requests.length > llmCallsBeforeApproved, 8000, 'approvals-ON run reached the provider');
-    const approvedReq = llm.requests[llmCallsBeforeApproved];
+    // Reflection from an earlier run may reach the same mock provider concurrently. Bind this proof to the
+    // request carrying THIS chat's exact user text instead of assuming the next array slot belongs to it.
+    const approvedRequest = () => llm.requests.slice(llmCallsBeforeApproved).find(r =>
+      ((r && r.messages) || []).some(m => m && m.role === 'user' && /find me something on the web/i.test(JSON.stringify(m.content || ''))));
+    await waitUntil(() => !!approvedRequest(), 8000, 'approvals-ON run reached the provider');
+    const approvedReq = approvedRequest();
     const advertised = ((approvedReq && approvedReq.tools) || [])
       .map(t => String((t && t.function && t.function.name) || (t && t.name) || ''));
     // NOTE: the wire spells a dotted tool with an underscore (fs.read -> fs_read), so these are the PROVIDER's
@@ -445,9 +449,16 @@ async function waitUntil(fn, ms, label) {
     A.ok(advertised.indexOf('shell_exec') >= 0, 'approvals ON retains the owner DM terminal');
     A.ok(advertised.indexOf('team_dispatch') >= 0, 'approvals ON retains the owner DM delegation tools');
 
+    // Let that exact run settle before asking /tools. Under a loaded full-suite run, sending the slash command
+    // while the model reply was still in flight let the generic "three sends" count wake on the late model
+    // reply and inspect it as if it were the /tools card.
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === String(approvalsChat)
+      && String(s.text || '').indexOf('Telegram answer') >= 0), 8000, 'approvals-ON model reply');
+
     // and the readout AGREES with that wire, which is the whole point of the pair of fixes.
+    const sendsBeforeApprovedTools = tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).length;
     tg.pushText(approvalsChat, 99, '/tools');
-    await waitUntil(() => tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).length >= 3, 8000, '/tools reply in the approvals-ON chat');
+    await waitUntil(() => tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).length > sendsBeforeApprovedTools, 8000, '/tools reply in the approvals-ON chat');
     const approvedTools = rendered((tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).pop() || {}).text);
     A.ok(/WEB & BROWSER/.test(approvedTools), '/tools in an approvals-ON chat lists the same WEB & BROWSER the run was handed');
     A.ok(!/no tools yet/.test(approvedTools), '/tools in an approvals-ON chat does not claim the agent has no tools');

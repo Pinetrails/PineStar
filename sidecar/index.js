@@ -660,6 +660,27 @@ function loadResilient(file, tag) {
 }
 // durable single-file write: fsync-before-rename + snapshot the prior good value to <file>.bak.
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
+// Explicit credential deletion has a stricter contract than an ordinary resilient update. The normal writer
+// intentionally snapshots the old main into .bak; during remove/reset that old value is exactly the credential
+// the user asked us to forget. Write the sanitized envelope to BOTH copies directly and read both back before
+// callers adopt the deletion in memory. A crash between the two durable replaces can only recover the sanitized
+// copy (deletion is conservative); it can never resurrect the removed secret from the recovery file.
+function saveCredentialRemovalVerified(file, value, proof, tag) {
+  const check = (typeof proof === 'function') ? proof : raw => JSON.stringify(raw) === JSON.stringify(value);
+  const loadOne = target => JSON.parse(fs.readFileSync(target, 'utf8'));
+  const r = saveJsonVerified({
+    mkdir: () => fs.mkdirSync(path.dirname(file), { recursive: true }),
+    save: () => {
+      const data = JSON.stringify(value);
+      writeFileDurable({ fs: fs, path: path }, file + '.bak', data);
+      writeFileDurable({ fs: fs, path: path }, file, data);
+    },
+    load: () => ({ main: loadOne(file), bak: loadOne(file + '.bak') }),
+    proof: copies => !!copies && check(copies.main) && check(copies.bak)
+  });
+  if (!r.ok) console.warn('[' + (tag || 'credentials') + '] removal persist UNVERIFIED after retry (' + (r.error || '?') + ')');
+  return r.ok;
+}
 function reportDomainStoreIssue(tag) {
   return function onDomainStoreIssue(status, detail) {
     const file = detail && detail.file;
@@ -3249,13 +3270,43 @@ const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
 const CONNECTORS_OAUTH_FILE = path.join(CONNECTORS_DIR, 'oauth.json');       // legacy read-only migration source
 const CONNECTORS_STATE_FILE = path.join(CONNECTORS_DIR, 'state.json');       // authoritative v2 envelope
+function migrateConnectorCatalogKeyHeaders(rawState) {
+  const state = connectorStateMod.normalize(rawState);
+  let changed = false;
+  state.configs = state.configs.map(raw => {
+    const cfg = Object.assign({}, raw || {});
+    const entry = connectorCatalog.get(cfg.id);
+    const sameEndpoint = entry && String(entry.url || '').replace(/\/+$/, '').toLowerCase()
+      === String(cfg.url || '').replace(/\/+$/, '').toLowerCase();
+    if (!sameEndpoint || !entry.keyHeader || !cfg.token) return cfg;
+    cfg.headers = Object.assign({}, cfg.headers || {});
+    if (!cfg.headers[entry.keyHeader]) cfg.headers[entry.keyHeader] = String(cfg.token);
+    cfg.token = '';
+    changed = true;
+    return cfg;
+  });
+  return { state, changed };
+}
 function loadConnectorState() {
   let current = null, legacyConfigs = [], legacyOauth = {};
   try { current = loadResilient(CONNECTORS_STATE_FILE, 'connector-state'); } catch (_) {}
-  if (current && Array.isArray(current.configs) && current.oauth) return connectorStateMod.normalize(current);
+  if (current && Array.isArray(current.configs) && current.oauth) {
+    const original = connectorStateMod.normalize(current);
+    const moved = migrateConnectorCatalogKeyHeaders(original);
+    if (!moved.changed) return original;
+    const r = saveJsonVerified({
+      mkdir: () => fs.mkdirSync(CONNECTORS_DIR, { recursive: true }),
+      save: () => saveResilient(CONNECTORS_STATE_FILE, moved.state),
+      load: () => loadResilient(CONNECTORS_STATE_FILE, 'connector-state'),
+      proof: raw => connectorStateMod.same(raw, moved.state)
+    });
+    if (r.ok) return moved.state;
+    console.warn('[connectors] catalog key-header migration could not be verified; keeping the prior credential state');
+    return original;
+  }
   try { const raw = loadResilient(CONNECTORS_FILE, 'connectors'); legacyConfigs = (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; } catch (_) {}
   try { const raw = loadResilient(CONNECTORS_OAUTH_FILE, 'connector-oauth'); legacyOauth = (raw && typeof raw === 'object') ? { byId: raw.byId || {}, clients: raw.clients || {} } : {}; } catch (_) {}
-  const migrated = connectorStateMod.normalize(null, { configs: legacyConfigs, oauth: legacyOauth });
+  const migrated = migrateConnectorCatalogKeyHeaders(connectorStateMod.normalize(null, { configs: legacyConfigs, oauth: legacyOauth })).state;
   // Migration is best-effort at boot. Until the verified v2 write succeeds, the legacy files remain untouched
   // and will be read again next boot, so a read-only disk never loses the last credential copy.
   if (legacyConfigs.length || Object.keys(legacyOauth.byId || {}).length || Object.keys(legacyOauth.clients || {}).length) {
@@ -3282,6 +3333,15 @@ function persistConnectorState(nextConfigs, nextOauth) {
   });
   if (!r.ok) console.warn('[connectors] transactional persist UNVERIFIED after retry (' + (r.error || '?') + ')');
   return r.ok;
+}
+function persistConnectorRemoval(nextConfigs, nextOauth) {
+  const intended = connectorStateMod.envelope(nextConfigs, nextOauth);
+  return saveCredentialRemovalVerified(
+    CONNECTORS_STATE_FILE,
+    intended,
+    raw => connectorStateMod.same(raw, intended),
+    'connectors'
+  );
 }
 function adoptConnectorState(next) {
   connectorState = connectorStateMod.normalize(next);
@@ -3337,6 +3397,15 @@ function saveServiceKeys() {
   if (!r.ok) console.warn('[servicekeys] persist UNVERIFIED after retry (' + (r.error || '?') + ')');
   return r.ok;
 }
+function saveServiceKeyRemoval(nextKeys) {
+  const intended = { version: 1, keys: nextKeys };
+  return saveCredentialRemovalVerified(
+    SERVICEKEYS_FILE,
+    intended,
+    raw => JSON.stringify(raw) === JSON.stringify(intended),
+    'servicekeys'
+  );
+}
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => {
     if (!cfg || cfg.transport !== 'stdio') return makeHttpTransport(cfg);
@@ -3369,7 +3438,7 @@ const connectors = makeConnectorManager({
 
 /* ---- MCP connector OAuth (turns the catalog's gated `oauth` tier live): the generic RFC 9728 / 8414 / 7591 +
    PKCE flow lives in mcp/oauth.js; index.js (the only ambient-I/O module) orchestrates it. Access + refresh
-   tokens and the dynamically-registered client id live in a PROTECTED sibling file, never on the bus, never
+   tokens and dynamically-registered client credentials live in a PROTECTED sibling file, never on the bus, never
    returned by /api/connectors. The access token lives ONLY here — an oauth connector's persisted config carries
    `oauth:true` but no token, so a stale/expired token is never persisted or reused. ---- */
 const CONNECTOR_OAUTH_REDIRECT = 'http://127.0.0.1:' + PORT + '/api/connectors/oauth/callback';
@@ -3380,7 +3449,7 @@ function forgetOauthClient(authServer) {
   const next = connectorStateMod.withOauthClient(connectorStateMod.envelope(connectorConfigs, connectorOauth), authServer, null);
   if (persistConnectorState(next.configs, next.oauth)) adoptConnectorState(next);
 }
-const connectorOauthPending = new Map();   // csrf state -> { id, attemptId, label, verifier, clientId, tokenEndpoint, authorizationServer, resource, serverUrl, redirectUri, at }
+const connectorOauthPending = new Map();   // csrf state -> { id, attemptId, label, verifier, client credentials, tokenEndpoint, authorizationServer, resource, serverUrl, redirectUri, at }
 const connectorOauthAttempts = new Map();  // attemptId -> { id, controller }; cancellable discovery/registration work
 const CONNECTOR_OAUTH_LEG_MS = 15000;
 const CONNECTOR_OAUTH_FLOW_MS = 60000;
@@ -3390,7 +3459,9 @@ async function ensureConnectorOauthToken(id) {
   if (!t || !t.accessToken) return '';
   if (mcpOauth.needsRefresh(t.expiresAt, Date.now()) && t.refreshToken && t.tokenEndpoint) {
     try {
-      const nt = await mcpOauth.refreshTokens({ fetchImpl: globalThis.fetch, tokenEndpoint: t.tokenEndpoint, refreshToken: t.refreshToken, clientId: t.clientId, resource: t.resource, now: Date.now(), timeoutMs: CONNECTOR_OAUTH_LEG_MS });
+      const nt = await mcpOauth.refreshTokens({ fetchImpl: globalThis.fetch, tokenEndpoint: t.tokenEndpoint, refreshToken: t.refreshToken,
+        clientId: t.clientId, clientSecret: t.clientSecret, tokenEndpointAuthMethod: t.tokenEndpointAuthMethod,
+        resource: t.resource, now: Date.now(), timeoutMs: CONNECTOR_OAUTH_LEG_MS });
       const next = connectorStateMod.withOauthEntry(connectorStateMod.envelope(connectorConfigs, connectorOauth), id, Object.assign({}, t, nt));
       if (!persistConnectorState(next.configs, next.oauth)) throw new Error('refreshed token could not be saved');
       adoptConnectorState(next);
@@ -3925,9 +3996,13 @@ const cronDriver = makeCronDriver({
      no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
   advanceChain: (o) => chainRunner.advance({
     agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
-    // the routine fired AT this dock, so the work belongs to that dock's line and may run its stages.
-    // A routine whose agent crews no dock resolves null here and stays terminal (nothing downstream spends).
-    lineId: router.lineOfAgent(o.agentId),
+    /* ONLY A ROUTINE THAT BELONGS TO THE LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). `o.runsLine` is
+       the durable opt-in the driver reads off the job record (cron-store `runsLine`): true only for a routine
+       created from a line's own INBOX trigger zone. Without it this is a routine that predates the workflow
+       or was made somewhere else, and it stays TERMINAL — one run, its own answer, no downstream spend. The
+       LINE ITSELF is still looked up live from the compiled plan, never stored: a routine whose agent crews
+       no dock resolves null here and is terminal too, and a floor edit can only ever narrow this. */
+    lineId: o.runsLine === true ? router.lineOfAgent(o.agentId) : null,
     runAgent: async (h) => {
       if (o.onHop) { try { o.onHop(); } catch (_) {} }
       const hs = { buf: '', errMsg: null, usd: 0 };
@@ -8039,6 +8114,13 @@ function getSampleHub() {
   sampleHub = makeChannelHub({
     channel: 'sample', maxMessageLength: 4000, agentPrefix: 'smp_', textBatchWaitMs: 0,
     runOnce: runOnce, store: channelStore,
+    /* THE SAMPLE IS UNADDRESSED, EVERY TIME. This route's whole claim is "a REAL run on the REAL UNADDRESSED
+       dispatch path" — the FILTER/SPLITTER must sort it. The hub's ordinary chat→agent bookkeeping saved a
+       binding for chatId 'sample' on the first run, so from the SECOND sample on resolveTarget took its
+       ADDRESSED branch and delivered the crate to the remembered dock without the junctions ever deciding.
+       bindChats:false makes this hub read and write no binding at all, so the proof proves the same thing on
+       run #2 as on run #1 (and on a station that already carries a stale record from before this fix). */
+    bindChats: false,
     send: (chatId, text) => { sampleReplies.push(String(text == null ? '' : text)); if (sampleReplies.length > 20) sampleReplies.shift(); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,   // the ONE headless resolution rule (see handleRuntimeAgent) — a second rule would drift
     persona: SAMPLE_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
@@ -8076,13 +8158,21 @@ async function handleRoutingSample(req, res) {
     if (!plan) {
       return json(409, { ok: false, error: 'no work line is armed — draw a complete line (INBOX → belts → a crewed dock) and it arms itself.' });
     }
-    /* side-effect-free dispatch peek: would the armed plan route THIS text to a dock at all? Asked of the
-       SAME compiled plan through the same Pipeline resolver, but with a static lane picker — the router's
-       round-robin counters belong to real dispatch, and the hub's own resolveAgent call below must stay the
-       one and only counter-advancing resolution (one-resolver law). */
-    let peek = null;
-    try { peek = Pipeline.resolveTarget(plan, { tag: (Classify.getTag ? Classify.getTag(text) : undefined), chatId: SAMPLE_CHAT, text: text }, () => 0); } catch (_) { peek = null; }
-    if (!peek) {
+    /* side-effect-free precondition: does the armed line reach ANY crewed dock through its own doors?
+
+       This must NEVER name a dock. It used to run Pipeline.resolveTarget with a static lane picker while the
+       real dispatch below runs the router's round-robin one — two resolutions of the same floor that legitimately
+       disagree on a SPLITTER (the check would clear lane 0 while the run took lane 1, or refuse on a lane-0
+       dead end while a crewed dock sat on lane 1). A pre-flight that can name a different dock than the run is
+       a pre-flight that is lying about the run.
+
+       `plan.reach` is the compiled answer to exactly the question a refusal needs — "which bound bays do this
+       plan's INBOX sources actually feed?", a BFS that fans every junction lane, so it is lane-choice-blind by
+       construction and cannot disagree with any single dispatch. It is also the same fact lineOriginOf keys the
+       line gate on, so the refusal and the line semantics quote ONE artifact. The hub's own resolveAgent call
+       below stays the one and only counter-advancing resolution (one-resolver law). */
+    const reachedDocks = Object.keys((plan && plan.reach) || {}).filter(a => plan.reach[a]);
+    if (!reachedDocks.length) {
       return json(409, { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
     }
     const sec = devHubSecrets();
@@ -8464,13 +8554,18 @@ async function handleConfigReset(req, res) {
     }
     case 'connectors': {
       const next = connectorStateMod.envelope([], { byId: {}, clients: {} });
-      if (!persistConnectorState(next.configs, next.oauth)) return json(500, { ok: false, section, error: 'connector reset could not be verified on disk; existing connectors were left unchanged' });
+      if (!persistConnectorRemoval(next.configs, next.oauth)) return json(500, { ok: false, section, error: 'connector reset could not be verified in both protected recovery copies; active connectors were left unchanged' });
       const oldIds = connectorConfigs.map(c => c && c.id).filter(Boolean);
       adoptConnectorState(next);
       for (const id of oldIds) { try { await connectors.remove(id); } catch (_) {} }
       break;
     }
-    case 'servicekeys': serviceKeys = []; applyServiceKeysEnv(); saveServiceKeys(); break;   // scrubs the injected env vars too
+    case 'servicekeys': {
+      if (!saveServiceKeyRemoval([])) return json(500, { ok: false, section, error: 'service-key reset could not be verified in both protected recovery copies; active keys were left unchanged' });
+      serviceKeys = [];
+      applyServiceKeysEnv();   // scrubs the injected env vars only after both disk copies prove the reset
+      break;
+    }
     default: return json(400, { error: 'unknown or non-resettable section: ' + (section || '(empty)') });
   }
   return json(200, { ok: true, section });
@@ -8748,10 +8843,11 @@ async function handleServiceKeyRemove(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const r = serviceKeysMod.remove(serviceKeys, body.id);
   if (r.error) return json(404, { error: r.error });
+  const saved = saveServiceKeyRemoval(r.list);
+  if (!saved) return json(500, { ok: false, saved: false, removed: false, error: 'key removal could not be verified in both protected recovery copies; the active key was left unchanged' });
   serviceKeys = r.list;
   applyServiceKeysEnv();   // scrubs the owned env var so the very next run no longer sees it
-  const saved = saveServiceKeys();
-  return json(saved ? 200 : 500, { ok: saved, saved, removed: String(body.id || '') });
+  return json(200, { ok: true, saved: true, removed: String(body.id || '') });
 }
 /* GET /api/connectors/catalog — the curated one-click catalog (pure data). Annotated with `installed`
    by cross-referencing the live connector configs (by id), so the browse panel can show what's already
@@ -8816,6 +8912,14 @@ async function handleConnectorUpsert(req, res) {
     headers = {};
     for (const k of Object.keys(body.headers)) headers[String(k)] = String(body.headers[k] == null ? '' : body.headers[k]);
   }
+  let token = transport === 'http' ? (('token' in body && body.token !== '') ? String(body.token) : (prev.token || '')) : '';
+  const catalogEntry = connectorCatalog.get(id);
+  const canonicalCatalogEndpoint = catalogEntry && String(catalogEntry.url || '').replace(/\/+$/, '').toLowerCase()
+    === String(url || '').replace(/\/+$/, '').toLowerCase();
+  if (transport === 'http' && canonicalCatalogEndpoint && catalogEntry.keyHeader && token) {
+    headers[catalogEntry.keyHeader] = token;
+    token = '';
+  }
   let timeoutMs = (typeof prev.timeoutMs === 'number' && prev.timeoutMs > 0) ? prev.timeoutMs : undefined;
   if ('timeout' in body || 'timeoutMs' in body) {
     const raw = ('timeoutMs' in body) ? body.timeoutMs : body.timeout;
@@ -8830,7 +8934,7 @@ async function handleConnectorUpsert(req, res) {
     id: id,
     transport: transport,
     url: transport === 'http' ? url : '',
-    token: transport === 'http' ? (('token' in body && body.token !== '') ? String(body.token) : (prev.token || '')) : '',   // a blank token keeps the saved one for HTTP only
+    token: token,   // a blank token keeps the saved one for HTTP only; catalog-specific header keys move above
     command: transport === 'stdio' ? command : '',
     args: transport === 'stdio' ? args : [],
     cwd: transport === 'stdio' ? String(body.cwd || prev.cwd || '') : '',
@@ -8868,8 +8972,8 @@ async function handleConnectorRemove(req, res) {
   const id = String(body.id || '').trim();
   if (!id) return json(400, { error: 'connector id is required' });
   const next = connectorStateMod.removeConnector(connectorStateMod.envelope(connectorConfigs, connectorOauth), id);
-  if (!persistConnectorState(next.configs, next.oauth)) {
-    return json(500, { ok: false, saved: false, removed: false, error: 'connector removal could not be verified on disk; the existing connector was left unchanged' });
+  if (!persistConnectorRemoval(next.configs, next.oauth)) {
+    return json(500, { ok: false, saved: false, removed: false, error: 'connector removal could not be verified in both protected recovery copies; the active connector was left unchanged' });
   }
   adoptConnectorState(next);
   for (const [attemptId, a] of connectorOauthAttempts) {
@@ -8922,22 +9026,34 @@ async function handleConnectorOauthStart(req, res) {
       www = (pr.headers && pr.headers.get && pr.headers.get('www-authenticate')) || '';
     } catch (_) {}
     const disc = await mcpOauth.discover({ fetchImpl: globalThis.fetch, serverUrl: entry.url, wwwAuthenticate: www, signal: controller.signal, timeoutMs: CONNECTOR_OAUTH_LEG_MS, deadlineAt, now: net.now });
-    // reuse a cached client for this authorization server, else dynamically register one (RFC 7591).
-    let clientId = (connectorOauth.clients[disc.authorizationServer] || {}).clientId;
-    if (!clientId) {
+    // Reuse a compatible cached client for this authorization server, else dynamically register one (RFC 7591).
+    // Most MCP servers accept a public PKCE client. Supabase and monday.com currently advertise only a
+    // confidential token-endpoint method, so their DCR-issued secret must survive callback + refresh + restart.
+    const requiredAuthMethod = mcpOauth.chooseTokenEndpointAuthMethod(disc.tokenEndpointAuthMethods);
+    const cachedClient = connectorOauth.clients[disc.authorizationServer] || {};
+    let clientId = cachedClient.clientId || '';
+    let clientSecret = cachedClient.clientSecret || '';
+    let tokenEndpointAuthMethod = cachedClient.tokenEndpointAuthMethod || requiredAuthMethod;
+    if (!clientId || tokenEndpointAuthMethod !== requiredAuthMethod || (requiredAuthMethod !== 'none' && !clientSecret)) {
       if (!disc.registrationEndpoint) return json(502, { error: 'this server needs a pre-registered OAuth client (no dynamic registration)' });
-      const reg = await mcpOauth.registerClient({ fetchImpl: globalThis.fetch, registrationEndpoint: disc.registrationEndpoint, redirectUri: CONNECTOR_OAUTH_REDIRECT, clientName: 'StarNet', signal: controller.signal, timeoutMs: CONNECTOR_OAUTH_LEG_MS, deadlineAt, now: net.now });
+      const reg = await mcpOauth.registerClient({ fetchImpl: globalThis.fetch, registrationEndpoint: disc.registrationEndpoint,
+        redirectUri: CONNECTOR_OAUTH_REDIRECT, clientName: 'StarNet', tokenEndpointAuthMethod: requiredAuthMethod,
+        signal: controller.signal, timeoutMs: CONNECTOR_OAUTH_LEG_MS, deadlineAt, now: net.now });
       clientId = reg.clientId;
+      clientSecret = reg.clientSecret;
+      tokenEndpointAuthMethod = reg.tokenEndpointAuthMethod;
       // Cache the freshly DCR-registered clientId. If it can't be proven on disk, warn but DON'T abort the sign-in:
       // the clientId is still valid in-memory for this flow, and a failed cache only costs a re-registration next
       // time (harmless — a fresh DCR client), unlike a lost token which forces a full re-sign-in.
-      const nextClientState = connectorStateMod.withOauthClient(connectorStateMod.envelope(connectorConfigs, connectorOauth), disc.authorizationServer, { clientId: clientId, at: Date.now() });
+      const nextClientState = connectorStateMod.withOauthClient(connectorStateMod.envelope(connectorConfigs, connectorOauth), disc.authorizationServer,
+        { clientId: clientId, clientSecret: clientSecret, tokenEndpointAuthMethod: tokenEndpointAuthMethod, at: Date.now() });
       if (persistConnectorState(nextClientState.configs, nextClientState.oauth)) adoptConnectorState(nextClientState);
       else console.warn('[connectors] DCR clientId cache not persisted for ' + disc.authorizationServer + ' — a later sign-in will re-register a fresh client.');
     }
     const verifier = mcpOauth.makeVerifier(crypto.randomBytes(48));
     const state = crypto.randomBytes(16).toString('hex');
     connectorOauthPending.set(state, { id: entry.id, attemptId, label: entry.name, verifier: verifier, clientId: clientId,
+      clientSecret: clientSecret, tokenEndpointAuthMethod: tokenEndpointAuthMethod,
       tokenEndpoint: disc.tokenEndpoint, authorizationServer: disc.authorizationServer, resource: disc.resource,
       serverUrl: entry.url, redirectUri: CONNECTOR_OAUTH_REDIRECT, at: Date.now() });
     // bound the pending set (a stale/abandoned sign-in never accumulates); 10-minute TTL.
@@ -9004,10 +9120,13 @@ async function handleConnectorOauthCallback(req, res) {
   if (!code) return page('Sign-in failed', 'No authorization code was returned by the provider.', false);
   try {
     const tok = await mcpOauth.exchangeCode({ fetchImpl: globalThis.fetch, tokenEndpoint: pending.tokenEndpoint, code: code,
-      redirectUri: pending.redirectUri, clientId: pending.clientId, verifier: pending.verifier, resource: pending.resource, now: Date.now(), timeoutMs: 30000 });
+      redirectUri: pending.redirectUri, clientId: pending.clientId, clientSecret: pending.clientSecret,
+      tokenEndpointAuthMethod: pending.tokenEndpointAuthMethod, verifier: pending.verifier, resource: pending.resource,
+      now: Date.now(), timeoutMs: 30000 });
     if (!tok.accessToken) return page('Sign-in failed', 'The provider did not return an access token.', false);
     const oauthEntry = { accessToken: tok.accessToken, refreshToken: tok.refreshToken, expiresAt: tok.expiresAt,
-      scope: tok.scope, tokenType: tok.tokenType, clientId: pending.clientId, tokenEndpoint: pending.tokenEndpoint,
+      scope: tok.scope, tokenType: tok.tokenType, clientId: pending.clientId, clientSecret: pending.clientSecret,
+      tokenEndpointAuthMethod: pending.tokenEndpointAuthMethod, tokenEndpoint: pending.tokenEndpoint,
       authorizationServer: pending.authorizationServer, resource: pending.resource, at: Date.now() };
     // FAIL THE SIGN-IN LOUDLY if the exchanged tokens can't be proven on disk (read-back + retry). A silent persist
     // failure would leave the connector unsigned + the DCR clientId orphaned on the NEXT boot while the popup lied
@@ -9411,6 +9530,13 @@ async function createCronJobFromSpec(body) {
       skills: body.skills, script: body.script, scriptTimeoutMs: body.scriptTimeoutMs, workdir: body.workdir, contextFrom: body.contextFrom,
       noAgent: body.noAgent, enabledToolsets: body.enabledToolsets, attachToSession: body.attachToSession,
       origin: body.origin,
+      /* WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07) — the API contract for the INBOX trigger zone.
+         `runsLine:true` says "this routine is one of THIS line's own triggers", so when it fires, the stages
+         drawn past its dock run too. Only the REFIT flow card's ⊕ NEW ROUTINE FOR THIS LINE sends it; every
+         other create path (this window's own form, routine.create, MAKE ROUTINE, /routine) omits it and the
+         routine stays terminal. cron-store normalizes with === true, so no truthy-ish body value can buy a
+         line. Absent -> false -> byte-identical to the pre-arc single-run routine. */
+      runsLine: body.runsLine,
       // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
       // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
       meta: body.meta
@@ -9671,9 +9797,11 @@ async function handleCronRun(req, res) {
         const line = await chainRunner.advance({
           agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
           // SAME ORIGIN AS THE SCHEDULED FIRE (work belongs to a line, 2026-08-07): Run Now is this routine's
-          // own trigger pressed by hand, so it carries the dock's lineId and the line runs. The two paths must
-          // not drift — a routine that runs four stages on schedule must run four from the button.
-          lineId: router.lineOfAgent(job.agentId),
+          // own trigger pressed by hand, so it carries the dock's lineId and the line runs — but ONLY for a
+          // routine that belongs to the line (the durable `runsLine` opt-in, read off the same job record the
+          // driver reads). The two paths must not drift — a routine that runs four stages on schedule must run
+          // four from the button, and a terminal routine must buy exactly one run from either.
+          lineId: job.runsLine === true ? router.lineOfAgent(job.agentId) : null,
           runAgent: async (h) => {
             const hs = { buf: '', errMsg: null, usd: 0 };
             const hopSink = (name, payload) => {
