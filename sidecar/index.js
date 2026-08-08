@@ -1026,7 +1026,7 @@ const skillsIo = {
   rewrite(entries) { rewriteJsonlDurable(SKILLS_FILE, entries); }   // compaction full-replace
 };
 const SKILL_PACKAGES_DIR = path.join(WORKSPACES, 'skill-packages');
-const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR });
+const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR, now: () => Date.now() });
 const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard, digest: skillDigestOf });
 /* SKILL GUARD APPROVALS — the Commander's per-skill "I read this and it's fine", keyed to a digest
    of the exact content that was reviewed, exactly as plugins-allowed.json keys a plugin to its code
@@ -1068,7 +1068,7 @@ const fetchSkillDocument = makeSkillDocumentFetcher({
   lookup: (host) => dns.promises.lookup(host, { all: true })
 });
 const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument });
-const skillRegistry = makeSkillRegistry({ fetchDocument: fetchSkillDocument });
+const skillRegistry = makeSkillRegistry({ fetchDocument: fetchSkillDocument, now: () => Date.now() });
 const SKILL_REGISTRIES_FILE = path.join(WORKSPACES, 'skill-registries.json');
 let skillRegistrySources = [];
 try {

@@ -3,7 +3,7 @@
 const ALLOWED_EVENTS = new Set(['inspect', 'install', 'update', 'check', 'export', 'import', 'rollback', 'registry', 'discover']);
 function str(v) { return v == null ? '' : String(v); }
 function makeSkillMetrics(deps) {
-  deps = deps || {}; const load = deps.load, save = deps.save, now = typeof deps.now === 'function' ? deps.now : () => Date.now();
+  deps = deps || {}; const load = deps.load, save = deps.save, now = typeof deps.now === 'function' ? deps.now : () => 0;
   let state = { version: 1, counters: {}, recent: [] };
   try { const prior = load && load(); if (prior && prior.version === 1) state = prior; } catch (_) {}
   function reasonClass(message) {

@@ -132,6 +132,7 @@ const packageFormat = require('./package-format.js');
     const fs = opts.fs;
     const path = opts.pathMod;
     const root = opts.root;
+    const now = typeof opts.now === 'function' ? opts.now : () => 0;
     if (!fs || !path || !root) {
       return { writePackage() {}, hydrate(skill) { return skill; }, packageDir() { return ''; }, renderSkillMd, parseFrontmatter, splitRendered };
     }
@@ -283,7 +284,7 @@ const packageFormat = require('./package-format.js');
       const dir = generationDir(skill); ensureDir(dir);
       const target = path.join(dir, pkg.digest + '.json');
       if (!fs.existsSync(target)) writeText(target, packageFormat.toEnvelope(pkg, {
-        name: skill.name || '', sourceUrl: skill.sourceUrl || '', sourceVersion: skill.sourceVersion || '', savedAt: Date.now()
+        name: skill.name || '', sourceUrl: skill.sourceUrl || '', sourceVersion: skill.sourceVersion || '', savedAt: now()
       }));
       return { digest: pkg.digest, bytes: pkg.bytes, fileCount: pkg.files.length };
     }

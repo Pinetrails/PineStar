@@ -4,7 +4,7 @@ const FORMAT = 'starnet-skill-registry/v1';
 function str(v) { return v == null ? '' : String(v); }
 function makeSkillRegistry(deps) {
   const fetchDocument = deps && deps.fetchDocument;
-  const now = deps && typeof deps.now === 'function' ? deps.now : () => Date.now();
+  const now = deps && typeof deps.now === 'function' ? deps.now : () => 0;
   const cacheMs = deps && deps.cacheMs > 0 ? deps.cacheMs : 5 * 60 * 1000;
   const cache = new Map();
   async function search(input) {
