@@ -167,7 +167,10 @@ async function readNdjson(res) {
     const create = await fetch(B + '/api/cron', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ name: 'AI news', prompt: 'gather relevant AI news', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter' })
+      // runsLine:true — created from a line's INBOX trigger zone, so this routine IS one of that line's own
+      // triggers and firing it runs the drawn stages (work belongs to a line, 2026-08-07). The opposite case
+      // (a routine that predates the workflow) gets its own block below.
+      body: JSON.stringify({ name: 'AI news', prompt: 'gather relevant AI news', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter', runsLine: true })
     });
     A.eq(create.status, 200, 'created routine');
     const job = (await create.json()).job;
@@ -233,6 +236,29 @@ async function readNdjson(res) {
     A.ok(stage1, "found stage one's recorded provider request");
     A.ok(sysOf(stage1).indexOf('YOUR STANDING BRIEF FOR THIS STATION:\nDig three primary sources and cite them.') >= 0,
       "stage one's system carries the dock's standing brief under the hub's exact section header");
+
+    /* ---- A ROUTINE THAT DOES NOT BELONG TO THE LINE BUYS EXACTLY ONE RUN (2026-08-07, Andrew's ruling) ----
+       THE MONEY CASE, on the real Run Now path and the same armed two-stage floor. Deciding "does this fire a
+       line?" from the DOCK alone meant a routine created months before the workflow started spending a run per
+       drawn stage the moment its agent was crewed onto the line — and delivering the LAST stage's text instead
+       of its own answer. Without the durable marker it must stay terminal, and pressing the button must cost
+       exactly one provider call. */
+    {
+      const mk = await fetch(B + '/api/cron', {
+        method: 'POST', headers,
+        body: JSON.stringify({ name: 'legacy digest', prompt: 'gather relevant AI news for the legacy digest', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter' })
+      });
+      A.eq(mk.status, 200, 'a routine created WITHOUT the marker is accepted');
+      const legacy = (await mk.json()).job;
+      A.eq(legacy.runsLine, false, 'and it is terminal by default — the durable record says so');
+      const before = mock.requests.length;
+      const r = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: legacy.id }) });
+      A.eq(r.status, 200, 'Run Now streams');
+      const ev = await readNdjson(r);
+      const ran = ev.filter(e => e.name === 'agent.run.start').map(e => e.payload.agentId);
+      A.eq(ran, ['research-agent'], 'ONLY the routine\'s own dock ran — the drawn stages downstream did not fire');
+      A.eq(mock.requests.length - before, 1, 'PROVIDER CALLS: exactly ONE — a pre-existing routine never buys a whole line');
+    }
 
     /* A SESSION IS NAMED AFTER THE RUN IT IS NAMED AFTER. Hops share the routine's 'cron-<runId>' stream so the
        session shows the whole line — which means that stream now holds SEVERAL run rows, and the frontend used

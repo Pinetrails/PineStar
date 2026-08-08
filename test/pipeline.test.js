@@ -623,4 +623,38 @@ const onLine = (plan, aid, extra) => Object.assign({ lineId: P.lineOf(plan, aid)
   A.ok(!clean.errors.some(e => e.code === 'BELT_BURIED'), 'junctions on the line and block-less legacy props never read as buried');
 }
 
+/* ---- PROMPT TEXT MAY NOT MOVE THE DISPATCH HASH (2026-08-07) ----
+   `bays` is a hash input and the hash is what the sidecar dedupes re-posts on; router.setPlan resets the
+   splitter round-robin whenever the topology changes. Carrying a dock's standing BRIEF on the hashed record
+   meant typing one word into a step editor moved plan.hash, forced a re-post, and wiped dispatch balance —
+   an edit to what an agent is TOLD perturbing which agent work is SENT to. The brief must still reach the
+   sidecar (router.stageBrief injects it into entry runs and handoffs), so it rides `dockBays` instead. */
+{
+  const props = brief => [
+    { id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+    { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'coder', brief: brief },
+    { id: 'o1', t: 'outbox', x: 7, y: 0, w: 1, h: 1 }
+  ];
+  const belts = [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E')];
+  const bare = P.compileRoutingPlan(geo(props(undefined), belts));
+  const withBrief = P.compileRoutingPlan(geo(props('Answer in press style, three sentences.'), belts));
+  const edited = P.compileRoutingPlan(geo(props('Answer in press style, five sentences, cite sources.'), belts));
+  A.eq(withBrief.hash, bare.hash, 'ADDING a job brief does not move plan.hash — prompt text is not dispatch topology');
+  A.eq(edited.hash, bare.hash, 'and EDITING it does not either');
+  A.ok(bare.bays.every(b => b.brief === undefined), 'no brief on the HASHED dispatch records');
+  A.ok(withBrief.bays.every(b => b.brief === undefined), '…not even when the dock has one');
+  A.eq(withBrief.dockBays.find(d => d.propId === 'b1').brief, 'Answer in press style, three sentences.',
+    'the brief still reaches the sidecar on dockBays (outside the hash) — legibility, never routing');
+  A.eq(edited.dockBays.find(d => d.propId === 'b1').brief, 'Answer in press style, five sentences, cite sources.',
+    '…and an edit is really carried, it is not being dropped to keep the hash still');
+  // and the sidecar's reader finds it there
+  const { makeRouter } = require('../sidecar/routing/router.js');
+  const r = makeRouter();
+  A.ok(r.setPlan(withBrief).ok, 'the briefed floor deploys');
+  A.eq(r.stageBrief('coder'), 'Answer in press style, three sentences.', 'router.stageBrief reads the brief off dockBays');
+  // a real topology edit STILL moves the hash — the point is precision, not deafness
+  const moved = P.compileRoutingPlan(geo(props('Answer in press style, three sentences.'), belts.concat([belt(7, 1, 'E')])));
+  A.ok(moved.hash !== bare.hash, 'laying a belt DOES move the hash — only prompt text is excluded');
+}
+
 A.report('pipeline');

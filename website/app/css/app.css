@@ -25,13 +25,13 @@
    dimension here resolves back to the size it was designed at while the type inside still grows.
    `1fr` then hands the reclaimed space to the stage automatically. Unset (the 100% default)
    resolves to 1, i.e. these are the shipped numbers untouched.
-   --chat-w (chatresize.js, the draggable COMMS seam) is written in VISUAL px for the same reason,
-   so a dragged width means the same thing at every text size. */
+   --chat-w (chatresize.js, the draggable COMMS seam) and --crew-w (leftrail.js, the CREW seam) are
+   written in VISUAL px for the same reason, so a dragged width means the same thing at every text size. */
 #screen-game.active {
   display: grid;
   grid-template-rows: calc(64px * var(--cz)) 1fr calc(44px * var(--cz));
-  /* COMMS width is a live var so the user can drag the stage/COMMS divider (chatresize.js) */
-  grid-template-columns: calc(232px * var(--cz)) 1fr calc(var(--chat-w, 360px) * var(--cz));
+  /* both side columns are live vars so the user can drag either divider (leftrail.js / chatresize.js) */
+  grid-template-columns: calc(var(--crew-w, 232px) * var(--cz)) 1fr calc(var(--chat-w, 360px) * var(--cz));
   grid-template-areas: "top top top" "left center chat" "bot bot bot";
   padding: calc(11px * var(--cz)); gap: calc(9px * var(--cz));
 }
@@ -535,6 +535,9 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
   box-shadow: inset 0 0 30px rgba(0,0,0,0.6), inset 0 2px 1px rgba(255,243,220,0.11), inset 0 0 0 1px rgba(255,238,210,0.04);   /* tube rim + top edge glass highlight */
 }
 body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
+/* NOTE: the Appearance CRT dial deliberately does NOT reach this rule. The tube glass over the feed
+   is part of the station being a tube, not a reading surface — DULLED thins the glass over the HTML
+   only (style.css body.crt-dull). `no-curve` above stays an internal/debug hatch. */
 
 /* NOTE: scanlines are painted IN-CANVAS now (world.js drawCRT — device-px integer lines, drawn OVER
    the warped feed). They are NOT a CSS overlay anymore: the old #stage-wrap::after gradient rasterised
@@ -2159,6 +2162,31 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
 body.col-resizing .col-resizer-grip {
   opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
 }
+/* ---------- CREW / stage divider: drag right to widen the crew rail (leftrail.js) ----------
+   THE HIT ZONE MUST SIT ON THE SEAM THE EYE SEES. #comms-resizer is a child of its panel at
+   left:-10px, so it straddles the 9px grid gap. The same trick on the left is impossible from
+   inside #stage-wrap — the tube casing is overflow:hidden and cuts away anything outside it —
+   and the first pass put the handle INSIDE the tube at left:0 instead. It worked, but the
+   cursor only turned to ↔ once you were already past the seam; Andrew: "it's a bit misaligned
+   when u put your mouse in between."
+   So it is a GRID CHILD sharing the centre area with the tube: justify-self pins it to the
+   stage's left edge, the negative margin walks it back over the gap. No arithmetic against
+   padding/gap/row heights — the grid places it, so it follows every breakpoint for free.
+   Same invisible-until-hovered grip vocabulary as .col-resizer. */
+.crew-resizer {
+  grid-area: center; justify-self: start; align-self: stretch;
+  position: relative; margin-left: -10px; width: 12px; z-index: 25;
+  cursor: col-resize; display: flex; align-items: center; justify-content: center;
+  touch-action: none; background: transparent; border: 0; padding: 0;
+}
+/* the rail is GONE, not narrow — there is no seam to drag, and the ▸ CREW tab owns this edge */
+body.crew-rail-off .crew-resizer { display: none; }
+/* cinema mode collapses both side columns to 0 and hides #left (warroom.css) — a seam over the
+   fullscreen feed would look like a control and move nothing */
+#screen-game.cinema .crew-resizer { display: none; }
+/* ≤1000px the columns are hard-coded to keep the stage alive (see the breakpoints below); the var
+   the seam writes has no effect there, so the handle must not pretend otherwise */
+@media (max-width: 1000px) { .crew-resizer { display: none; } }
 /* while dragging: column-resize cursor everywhere + no text selection + canvas ignores the pointer */
 body.col-resizing { cursor: col-resize; user-select: none; }
 body.col-resizing #stage { pointer-events: none; }
@@ -2614,14 +2642,27 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* ---------- WORKSTREAMS rail (left) ---------- */
 /* takes the left rail's slack (see the RAIL SPACE SPLIT note on #crew in style.css) */
 #ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+/* THE STRIP MAY NARROW, IT MAY NOT FOLD. SESSIONS/PROJECTS + NEW is three fixed labels in a
+   column the grid can make 200px wide (the ≤1120px breakpoint) and that the CREW seam can now
+   land anywhere in — and a squeezed flex item wraps its OWN text before the row ever admits it
+   is out of room: "+ NEW" broke across two lines, doubling the strip's height and blowing it
+   out of the molded head. Andrew: "it condenses horrendously." nowrap on the labels makes the
+   overflow HONEST (a strip that stays one line and tightens) instead of a folded button, and
+   the tabs give up their padding first because a view switcher survives being snug — the
+   action button does not survive being two lines. */
 .ws-head {
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: nowrap; gap: 6px; min-width: 0;
   color: var(--ink); background: var(--ph); padding: 3px 10px; letter-spacing: 1px;
   font-size: 14px; border-radius: 6px 6px 0 0;
 }
+.ws-head .ws-view { flex: 0 1 auto; min-width: 0; }
+.ws-head .ws-head-acts { flex: 0 0 auto; }
+.ws-head .ws-tab, .ws-head .ws-head-acts > button { white-space: nowrap; }
 #ws-new {
   font-family: inherit; font-size: 12px; letter-spacing: 1px; color: var(--ink);
   background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
+  white-space: nowrap; flex: 0 0 auto;
 }
 #ws-new:hover { background: rgba(0,0,0,.2); }
 /* RAIL SEARCH — search lives ON the rail (the SESSION TOOLS window is retired; its .ws-tools-* CSS is
@@ -2929,11 +2970,13 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   padding-bottom: 10px; margin-bottom: 2px;
   border-bottom: 1px solid var(--ph-faint);
 }
-.ag-portrait-wrap { flex: 0 0 88px; }
+/* 100px, matching PORTRAIT_W in stationui.js — the well is sized so the largest shipped character clears
+   an integer ×2 nearest-neighbour upscale (see the PORTRAIT_W comment; dev/skin-bounds.mjs measures it). */
+.ag-portrait-wrap { flex: 0 0 100px; }
 /* recessed portrait WELL (Phase-2 dossier hero): a dark inset floor the body glows out
    of, corner ticks, and a slow scan-sweep. Cosmetic overlays are pointer-events:none. */
 .ag-portrait-well {
-  position: relative; width: 88px; height: 112px; border-radius: var(--r-sm); overflow: hidden;
+  position: relative; width: 100px; height: 108px; border-radius: var(--r-sm); overflow: hidden;
   background: linear-gradient(180deg, #0a0602, #050301);
   box-shadow: var(--well), 0 0 11px var(--ph-glow2);
 }
@@ -2973,6 +3016,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   display: grid; grid-template-columns: 1fr 1fr 1fr;
   gap: 6px; margin: 10px 0 8px;
 }
+/* inside the dossier hero the wells share the info column with the name/status/model tags, so they sit tighter
+   and shed the bottom margin the hero's own padding already provides. */
+.ag-info > .stat-grid { margin: 9px 0 0; }
+.ag-info > .stat-grid .stat-cell { padding: var(--s-2) var(--s-2); }
 .stat-cell {
   background: linear-gradient(180deg, #0a0602, #050301); box-shadow: var(--well);
   padding: var(--s-3) var(--s-2); text-align: center; border-radius: var(--r-sm);
@@ -2989,6 +3036,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-mission-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 4px; }
 .ag-mission-text { font-size: 13px; color: var(--text); line-height: 1.5; user-select: text; }
 .ag-mission-cta { font-size: 12px; color: var(--ph-dim); font-style: italic; line-height: 1.45; }
+
+/* BRIEF section rules — the landing tab now carries three blocks (stats+purpose, SET UP AS, CAN DO), so it
+   needs the same .sec divider vocabulary the other panes use. Extra top margin only; .sec owns the rest. */
+.ag-brief-sec { margin-top: 16px; }
+
+/* SET UP AS — the five runtime decisions, shown as VALUES you can read, each a door into the CONFIG card that
+   owns it. A matte well per row (no gloss, no hover lift): this is a readout first and a link second. */
+.ag-setup { display: grid; gap: 3px; margin: 2px 0 4px; }
+.ag-setup-row {
+  display: grid; grid-template-columns: 84px 1fr 12px; align-items: baseline; gap: 10px;
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  background: rgba(0,0,0,.22); border: 1px solid transparent; border-left: 2px solid var(--ph-dim);
+  padding: 5px 8px; border-radius: var(--r-sm);
+}
+.ag-setup-row:hover, .ag-setup-row:focus-visible {
+  background: var(--ph-faint); border-left-color: var(--ph-bright); color: var(--ph-bright);
+}
+.ag-setup-row:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+.ag-setup-lbl { font-size: 10px; letter-spacing: 2px; color: var(--ph-dim); }
+.ag-setup-val { font-size: 13px; color: var(--ph-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-setup-val.dim { color: var(--ph-dim); }
+.ag-setup-go { font-size: 13px; color: var(--ph-dim); text-align: right; }
+.ag-setup-row:hover .ag-setup-go { color: var(--ph-bright); }
 
 /* footer row */
 .ag-foot-row { font-size: 11px; color: var(--ph-dim); letter-spacing: .4px; margin-top: 4px; }
@@ -3037,7 +3107,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx { margin: 4px 0 2px; }
 .gx-mono { font-family: inherit; }
 
-.gx-head { display:flex; align-items:flex-start; justify-content:space-between;
+/* justify-content:flex-end — the dossier UX pass stripped the left half of this header (a kicker + the agent
+   name, both already carried by the window title and the roster rail), leaving only the LEVEL / TRACED chip. */
+.gx-head { display:flex; align-items:flex-start; justify-content:flex-end;
   border-bottom:1px solid var(--ph-glow2); padding-bottom:11px; margin-bottom:15px; }
 .gx-kicker { font-family:inherit; font-size:10px; letter-spacing:.16em; color:var(--ph-dim); opacity:.85; margin-bottom:5px; }
 .gx-name { font-size:26px; line-height:.9; color:var(--ph-bright); letter-spacing:1px; text-shadow:0 0 12px var(--ph-glow2); }
@@ -3197,7 +3269,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* 1120px: keep all three columns, just tighten the side columns */
 @media (max-width: 1120px) {
-  #screen-game.active { grid-template-columns: 200px 1fr var(--chat-w, 300px); }
+  #screen-game.active { grid-template-columns: var(--crew-w, 200px) 1fr var(--chat-w, 300px); }
 }
 
 /* 1000px: squeeze gaps/padding + side columns further so the stage keeps room */
@@ -4270,6 +4342,12 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
   min-height: min(320px, var(--con-h));
   max-width: var(--con-w); max-height: var(--con-h);
 }
+/* STEADY SHELL (dossier). A content-fit console is fine for a single-shape panel, but the AGENT DOSSIER
+   is a TAB SET: its seven sections differ by 300px of height, and because a never-moved window is
+   CSS-centred (translate(-50%,-50%)), every switch re-centres the whole box — measured live, the tab strip
+   moved from y=236 to y=387 between sections. The tab you are aiming at must not move when you hit it,
+   so this window holds one height and lets the pane scroll. */
+.term.console.dossier { height: var(--con-h); }
 .term.console .term-body.term-console-body {
   display: flex; flex-direction: row; gap: 0;
   padding: 0; overflow: hidden;              /* the content pane owns the scroll, not the body */
@@ -4369,15 +4447,19 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    .con-rail-item for base type/colour, then .con-toptab reshapes it horizontal: the active state is a
    hairline phosphor underline + inverted chip (echoes the vertical rail's inset-left edge, turned to the
    bottom). The strip is sticky so the tabs stay put while a long section pane scrolls under them. */
+/* tabsTop column: a fixed strip above a scrolling pane. The strip is OUTSIDE the scrollport (see mountConsole),
+   so it can no longer be scrolled under, past, or through — it is chrome, and chrome does not move. */
+.con-col { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.con-col > .con-pane { flex: 1 1 auto; min-height: 0; }
 .con-toptabs {
-  position: sticky; top: 0; z-index: 3;
+  flex: 0 0 auto;
   display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch;
-  margin: 0 0 var(--s-3); padding-bottom: 8px;
+  padding: var(--s-3) var(--s-4) 8px;
   border-bottom: 1px solid var(--ph-dim);
-  /* the pane's own top padding is var(--s-3); the sticky strip masks scrolled content behind it */
-  background: linear-gradient(180deg, rgba(0,0,0,0.92) 70%, transparent),
-              linear-gradient(180deg, var(--ph-glow2), transparent 60%);
+  background: linear-gradient(180deg, var(--ph-glow2), transparent 60%);
 }
+/* the pane no longer owns the gap under the strip (the strip's border is the divider) */
+.con-col > .con-pane { padding-top: var(--s-3); }
 .con-rail-item.con-toptab {
   width: auto; flex: 0 1 auto; position: relative;
   padding: 8px 14px; border-radius: var(--r-sm) var(--r-sm) 0 0;
@@ -4563,6 +4645,7 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .con-searching .con-miss { opacity: .18; }
 .con-searching .con-sec-nomatch { display: none; }
 .con-searching .con-sec + .con-sec { margin-top: 18px; }
+.con-search-empty { margin: 28px 20px; padding: 18px; border: 1px dashed var(--ph-dim); color: var(--ph-bright); text-align: center; letter-spacing: .6px; }
 
 /* responsive: on a narrow viewport the rail sits on top as a horizontal strip */
 @media (max-width: 720px) {

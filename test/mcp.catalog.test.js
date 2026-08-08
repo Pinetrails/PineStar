@@ -96,6 +96,9 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   A.eq(cfg.label, 'DeepWiki', 'config carries a friendly label');
   A.eq(cfg.enabled, true, 'config enables the connector');
   A.ok(!('token' in cfg), 'installConfig NEVER embeds a token (the user supplies it)');
+  const composio = C.installConfig('composio');
+  A.eq(composio.keyHeader, 'x-consumer-api-key', 'Composio declares its official non-Bearer key header');
+  A.ok(!('token' in composio), 'custom-header install config still never embeds the user secret');
   A.eq(C.installConfig('notion'), null, 'installConfig is null for an oauth (not-installable) entry');
   A.eq(C.installConfig('nope'), null, 'installConfig is null for an unknown id');
 }
@@ -117,6 +120,7 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
     const cfg = C.installConfig(id);
     A.ok(cfg && !('token' in cfg), id + ' installConfig carries no token (the user pastes the key)');
   }
+  A.eq(C.get('composio').keyHeader, 'x-consumer-api-key', 'Composio public metadata carries the required header name, never its value');
   A.ok(C.categories().indexOf('Social') >= 0, 'Social category is present (home for X)');
   A.eq(C.get('x-twitter').category, 'Social', 'X is filed under Social');
 }

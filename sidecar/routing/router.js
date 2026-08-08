@@ -8,6 +8,7 @@
 'use strict';
 const Pipeline = require('../../frontend/app/pipeline.js');
 const { makeStationStore } = require('../station-store.js');
+const { healPlan } = require('./planlines.js');
 
 function makeRouter(o) {
   o = o || {};
@@ -21,6 +22,13 @@ function makeRouter(o) {
   function setPlan(p) {
     if (!p || typeof p !== 'object') { plan = null; capsPlan = null; return { ok: true, cleared: true }; }
     if (!Array.isArray(p.errors)) { plan = null; capsPlan = null; return { ok: false, error: 'malformed plan' }; }
+    /* SELF-HEAL A PRE-LINE-IDENTITY PLAN (2026-08-07). chainNext reads a missing line map as "every dock is
+       terminal", which is the right default for an unknown floor but the WRONG one for a plan whose geometry
+       we are holding: a headless sidecar restoring a pre-arc plan from disk ran stage one of every drawn line
+       and nothing else, with no browser ever coming along to re-post. planlines derives the map from THIS
+       plan's own belts + machine hookups; a plan that already carries one is returned untouched, so the
+       compiler stays the authority whenever it has spoken. */
+    p = healPlan(p);
     // CAPABILITY IS NOT ROUTING (2026-07-26). Which objects a bay's room holds is a fact about the PLACED
     // FLOOR — true whether or not the belts compile. Refusing a plan outright used to drop that fact too, so
     // one blocking error (a loop, a dup binding, and until today a stray unbelted INTAKE) silently handed
@@ -29,7 +37,15 @@ function makeRouter(o) {
     // the bay projection here means the claim and the grant stay one fact; ROUTING still refuses below.
     capsPlan = p;
     if (!Pipeline.ok(p)) { plan = null; return { ok: false, error: 'plan has blocking errors', codes: p.errors.filter(e => !e.warn).map(e => e.code) }; }
-    plan = p; rr = {}; return { ok: true, hash: p.hash || null, bays: (p.bays || []).length };   // new floor -> reset round-robin
+    /* KEEP SPLITTER BALANCE ACROSS A NO-OP RE-POST (2026-08-07). `rr` is the per-splitter round-robin counter
+       that makes dispatch SPREAD across a splitter's lanes; resetting it on every accepted plan meant any
+       re-post restarted every splitter at lane 0. plan.hash is exactly the dispatch topology (sources, bays,
+       junctions, belts — see the hash note in pipeline.js), so an identical hash guarantees the same splitter
+       tiles with the same lane counts and the counters stay meaningful. A CHANGED (or absent, i.e. older and
+       unprovable) hash still resets: a floor edit really is a new floor. */
+    const same = !!(plan && p.hash && plan.hash && p.hash === plan.hash);
+    plan = p; if (!same) rr = {};
+    return { ok: true, hash: p.hash || null, bays: (p.bays || []).length };
   }
   function clearPlan() { plan = null; capsPlan = null; rr = {}; }
   function activePlan() { return stationPlan || plan; }
@@ -123,7 +139,11 @@ function makeRouter(o) {
   function stageBrief(agentId) {
     const p = stationPlan || plan || capsPlan;
     if (!p || !agentId) return null;
-    const bay = (p.bays || []).find(b => b.agentId === agentId) || (p.dockBays || []).find(b => b.agentId === agentId);
+    // dockBays FIRST (2026-08-07): the brief now rides ONLY the legibility list, because `bays` is a hash input
+    // and prompt text may not move the dispatch hash (a brief edit was re-posting the plan and wiping splitter
+    // balance — see the pipeline.js note). `bays` stays as a fallback so a plan persisted by an older compile,
+    // which carried the brief on both lists, still answers. dockBays ⊇ bays, so nothing is lost.
+    const bay = (p.dockBays || []).find(b => b.agentId === agentId) || (p.bays || []).find(b => b.agentId === agentId);
     const b = bay && typeof bay.brief === 'string' ? bay.brief.trim() : '';
     return b ? b.slice(0, 2000) : null;
   }

@@ -14,6 +14,8 @@
 
    NOT in test:fast (child-process boot); run via `npm run test:http`. Mirrors lifecycle-armed.http.test.js. */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const A = require('./_assert.js');
 const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
 
@@ -86,6 +88,15 @@ const SECRET = 'rk-live-verySECRET-9876';
     const rm = await j('POST', '/api/servicekeys/remove', { id: 'resend' });
     A.eq(rm.status, 200, 'remove -> 200');
     A.eq((await j('GET', '/api/servicekeys')).body.keys, [], 'list empty after remove');
+    const serviceKeysFile = path.join(fixture.workspace, 'connectors', 'servicekeys.json');
+    const removalCopies = fs.readFileSync(serviceKeysFile, 'utf8') + fs.readFileSync(serviceKeysFile + '.bak', 'utf8');
+    A.ok(removalCopies.indexOf(SECRET) < 0, 'remove scrubs the key from both main and resilient backup');
+
+    // Section reset is the other explicit deletion surface and must obey the same two-copy contract.
+    A.eq((await j('POST', '/api/servicekeys', { name: 'Resend', key: SECRET })).status, 200, 're-add before section reset');
+    A.eq((await j('POST', '/api/config/reset', { section: 'servicekeys' })).status, 200, 'servicekeys reset -> 200');
+    const resetCopies = fs.readFileSync(serviceKeysFile, 'utf8') + fs.readFileSync(serviceKeysFile + '.bak', 'utf8');
+    A.ok(resetCopies.indexOf(SECRET) < 0, 'servicekeys reset scrubs the key from both main and resilient backup');
   } finally {
     await fixture.dispose();
   }

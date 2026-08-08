@@ -7,6 +7,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const pkg = JSON.parse(read('package.json'));
+const lock = JSON.parse(read('package-lock.json'));
 const tauri = JSON.parse(read('src-tauri/tauri.conf.json'));
 const infoPlist = read('src-tauri/Info.plist');
 const stage = read('scripts/stage-voice-deps.mjs');
@@ -21,6 +22,13 @@ assert.equal(
   '^1.7.3',
   'the packaged sidecar carries an in-process Telegram Ogg/Opus decoder'
 );
+assert.equal(pkg.overrides && pkg.overrides.sharp, '0.35.3',
+  'both Transformers copies are forced onto the patched Sharp runtime');
+const lockedSharp = Object.entries(lock.packages || {})
+  .filter(([name]) => /(?:^|\/)node_modules\/sharp$/.test(name))
+  .map(([, meta]) => meta && meta.version);
+assert.ok(lockedSharp.length > 0 && lockedSharp.every(version => version === '0.35.3'),
+  'the lockfile cannot restore a vulnerable Sharp below 0.35');
 
 assert.match(
   pkg.scripts['desktop:build'],
