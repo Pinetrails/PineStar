@@ -76,7 +76,7 @@ const StationBake = (() => {
                 each footprint plus exactly `pad`, so a crown wider than that hangs OUTSIDE the
                 mask and renders at its raw baked tone against the starfield — a blazing line
                 down the sides while the north crown sits under 0.77 ambient. */
-  const WALL = { up: 14, corUp: 8, skirt: 32, side: 7, capH: 3, sideCap: 5 };   // up 9→14 (2026-07-24): the wall materials need surface to live on · corUp 0→8 (2026-07-28): a hallway stands too, just lower than a hall
+  const WALL = { up: 22, corUp: 12, skirt: 32, side: 7, capH: 4, sideCap: 5 };   // up 9→14 (2026-07-24): the wall materials need surface to live on · corUp 0→8 (2026-07-28): a hallway stands too, just lower than a hall · up 14→22, corUp 8→12, capH 3→4 (2026-08-08): at 14 the standing face was ~1/8 of a room's frame against 130+px of deck, so the room read as a TRAY seen from above rather than a box you are inside. Height is the only cue a top-down view has for "interior"; the ratio of visible WALL to visible FLOOR is what sells it, and that ratio scales with `up`. 22 is inside the range 'Towering' (32) already exercised, and corUp rises with it so the hallway↔hall difference is preserved
   /* VIEWPORT holes punched by the wall pass this bake. buildLightMap cuts the ambient mask over
      them — without that the sky behind a window renders at the interior's 23% and reads as a
      black pane. Reset per bake alongside the wall palette cache. */
@@ -122,8 +122,28 @@ const StationBake = (() => {
        ambient  = how dark the unlit station is (0=fully lit · 1=black)
        pool     = how brightly the ceiling lamps carve their light pools back out
        room/corridor/door = baseline lift inside each space type
-       floor    = warmth of the additive light pool painted on the floor */
-  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45 };   // crown = how far the ambient gives way over a wall's lit top surface (0 = off, the old inversion)
+       floor    = warmth of the additive light pool painted on the floor
+       pitch    = TILES BETWEEN CEILING LAMPS, on BOTH axes. This was a bare `/ 7` on the room's
+                  WIDTH only, which meant a room got exactly one ROW of lamps, pinned a tile and a
+                  half below its north wall. A lamp's carve reaches `rad * 1.4` ≈ 84px ≈ 7 tiles,
+                  so every room deeper than ~7 tiles had its whole southern half sitting at raw
+                  0.77 ambient — an unlit tray with a lit strip along the top edge, which is the
+                  "the lamps emit nothing" read. Rooms are not 7 tiles deep any more, so the lamp
+                  grid has to run DOWN the room as well as across it. Row 0 stays exactly where it
+                  was (it is the row the wall-mounted flood hardware is drawn for); the rest are
+                  spread from there to the south end at this pitch.
+
+                  WHY 8 AND NOT 7. Both light the whole deck; the difference is whether there is a
+                  TROUGH between pools at all, which is the thing that makes a floor read as MODELLED
+                  BY LIGHT rather than washed. Measured on an 18x14 hab: pitch 7 lays a 3x3 grid and
+                  gives peak 73 / trough 47, which is an evenly lit warehouse; pitch 8 lays 2x2 and
+                  gives peak 56 / trough 31 — distinct pools with real dark between them, which is
+                  the station's own idiom (cf. the 'Dark + pools' preset). It is the shallow end of
+                  the distinct-pools family: 9 and 10 render IDENTICALLY on a room this size, because
+                  both the row and column counts are rounded tile divisions and only step at integer
+                  boundaries. What 8 is NOT is the old failure — that trough sat at 17.5 and kept
+                  falling to black with no recovery; 31 is a dip between two lamps. */
+  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45, pitch: 8 };   // crown = how far the ambient gives way over a wall's lit top surface (0 = off, the old inversion)
 
   /* live-tunable DEPTH FX — the CRT LAB writes these and re-bakes (same contract as LIGHT/WALL).
      Pure top-down 2D cosmetics that make the deck read a touch more 3D — never imply agent/run
@@ -426,6 +446,27 @@ const StationBake = (() => {
     }
   };
 
+  /* live-tunable CORNER PROFILE — the exponent of the superellipse every rounded corner in the
+     station is cut from (see eachCornerRow, which is the ONE raster all of them share):
+
+         n = 2    a quarter CIRCLE — a fillet. What shipped through 2026-08-07.
+         n = 1    a straight 45° CHAMFER — a cut corner.
+         n > 2    squarer, tending to a right angle as n → ∞.
+
+     Why it became a knob. Every void-exposed room corner got the same 1-tile fillet, on all four
+     corners, at one radius — and a rectangle whose four corners are identical arcs is the silhouette
+     of a bathtub or a phone screen, not of something fabricated and bolted together. A chamfer is
+     the shape a real panelled hull takes at a corner, and it costs nothing extra to raster: the
+     crossing walk is already row-by-row, so only the CROSSING FUNCTION changes and every concentric
+     layer keyed off it — hull silhouette erase, hull rim, ambient-mask cut, interior wall curve —
+     follows automatically and stays concentric per-pixel.
+
+     n === 2 keeps the ORIGINAL expression verbatim rather than the general form, so the shipped
+     look is bit-identical and not merely algebraically equal (the general form differs in the last
+     float bits, and these values go straight into Math.round — a 1px corner shift is exactly the
+     kind of silent regression this file's whole raster discipline exists to prevent). */
+  const SHAPE = { cornerN: 1 };   // 1 = 45° chamfer (2026-08-08) · 2 = the legacy circular fillet
+
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
     tr: { cx: 0, cy: 1, a0: 1.5 * Math.PI, a1: 2 * Math.PI },
@@ -457,10 +498,15 @@ const StationBake = (() => {
     const A = CORNER[kind];
     const ox = Math.round(A.cx ? ax - rad : ax), oy = Math.round(A.cy ? ay - rad : ay);
     const r = Math.round(rad);
+    const n = Math.max(0.35, +SHAPE.cornerN || 2);
+    // how far the profile reaches out from the corner's centre line at vertical distance `ady`.
+    // n === 2 is the original sqrt, written out, so the fillet rasters to the same pixels it always did.
+    const reach = (ady) => (n === 2 ? Math.sqrt(r * r - ady * ady)
+                                    : r * Math.pow(1 - Math.pow(ady / r, n), 1 / n));
     for (let py = oy; py < oy + r; py++) {
       const ady = Math.abs(py + 0.5 - ay);
-      const ex = ady >= r ? null : (A.cx ? Math.round(ax - Math.sqrt(r * r - ady * ady))
-                                        : Math.round(ax + Math.sqrt(r * r - ady * ady)));
+      const ex = ady >= r ? null : (A.cx ? Math.round(ax - reach(ady))
+                                         : Math.round(ax + reach(ady)));
       fn(py, ex, ox, ox + r, A);
     }
   }
@@ -2643,6 +2689,25 @@ const StationBake = (() => {
           neighbour narrower than this room can no longer catch spill on its missing corners);
        2. this room's footprint, GROWN by the pool radius across whichever sides carry an open join.
      At a walled edge nothing grows and the bake is unchanged. */
+
+  /* ---- THE LAMP GRID (2026-08-08) ----
+     Two functions so the POOL pass and the FIXTURE-HARDWARE pass can never disagree about where a
+     lamp is — they used to share a copy-pasted `Math.round(width / 7)` and a copy-pasted `ly`,
+     which is the shape of bug that puts a mount bar where no light lands.
+
+     `lampRows` is the new axis. Row 0 is pinned at `T * 1.6` below the room's north edge — the
+     legacy single row, and the row the wall-mounted flood is drawn for, so its hardware keeps its
+     light. Remaining rows spread evenly from there to `T * 1.2` short of the south edge, at the
+     LIGHT.pitch spacing, so a lamp's ~7-tile carve overlaps its neighbour's instead of leaving the
+     deck between them at raw ambient. A room shallower than one pitch keeps exactly one row and
+     bakes identically to before. */
+  const lampCols = (r) => Math.max(1, Math.round((r.x2 - r.x1 + 1) / Math.max(2, LIGHT.pitch)));
+  function lampRows(Y, RH) {
+    const y0 = Y + T * 1.6, yLast = Y + RH - T * 1.2;
+    const rows = Math.max(1, 1 + Math.round(Math.max(0, yLast - y0) / (Math.max(2, LIGHT.pitch) * T)));
+    return { rows, y0, step: rows > 1 ? (yLast - y0) / (rows - 1) : 0 };
+  }
+
   function bakeRoomLighting(b) {
     b.globalCompositeOperation = 'lighter';
     const openSide = (r, side) => {
@@ -2653,7 +2718,7 @@ const StationBake = (() => {
     for (const r of G.allRects) {
       if (G.isCorridor(r.z)) continue;
       const X = r.x1 * T, Y = r.y1 * T, RW = (r.x2 - r.x1 + 1) * T, RH = (r.y2 - r.y1 + 1) * T;
-      const count = Math.max(1, Math.round((r.x2 - r.x1 + 1) / 7));
+      const count = lampCols(r);
       const rad = Math.min(60, Math.max(30, RH * 0.85));
       const gN = openSide(r, 'n') ? rad : 0, gS = openSide(r, 's') ? rad : 0;
       const gW = openSide(r, 'w') ? rad : 0, gE = openSide(r, 'e') ? rad : 0;
@@ -2662,8 +2727,9 @@ const StationBake = (() => {
       for (const q of G.allRects) b.rect(q.x1 * T, q.y1 * T, (q.x2 - q.x1 + 1) * T, (q.y2 - q.y1 + 1) * T);
       b.clip();
       b.beginPath(); b.rect(X - gW, Y - gN, RW + gW + gE, RH + gN + gS); b.clip();
-      for (let i = 0; i < count; i++) {
-        const lx = X + RW * (i + 0.5) / count, ly = Y + T * 1.6;
+      const { rows, y0, step } = lampRows(Y, RH);
+      for (let j = 0; j < rows; j++) for (let i = 0; i < count; i++) {
+        const lx = X + RW * (i + 0.5) / count, ly = y0 + step * j;
         const gw = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
         gw.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')'); gw.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')'); gw.addColorStop(1, 'rgba(250,236,206,0)');
         b.fillStyle = gw; b.fillRect(lx - rad * 0.7, ly - rad * 0.7, rad * 1.4, rad * 1.4);
@@ -2684,7 +2750,7 @@ const StationBake = (() => {
     for (const r of G.allRects) {
       if (G.isCorridor(r.z)) continue;
       const X = r.x1 * T, RW = (r.x2 - r.x1 + 1) * T;
-      const count = Math.max(1, Math.round((r.x2 - r.x1 + 1) / 7));
+      const count = lampCols(r);   // the pool pass's own column count — never a second copy of it
       for (let i = 0; i < count; i++) {
         const lx = X + RW * (i + 0.5) / count;
         /* A WALL-MOUNTED FLOOD NEEDS A WALL (2026-08-05). The fixture hangs one pixel below the
@@ -3188,10 +3254,31 @@ const StationBake = (() => {
     for (const [ccx, ccy, kind] of G.chamfers) {
       const A = CORNER[kind], ax = (ccx + A.cx) * T, ay = (ccy + A.cy) * T;
       eraseSpandrel(b, kind, ax, ay, HR);
-      // the arc belongs to the room the corner was cut from — same rule the interior chamfer pass
-      // already follows for its wall palette, or a clad room reverts to shell-grey at its corners
-      b.strokeStyle = hullPal(G.zoneGrid[G.idx(ccx, ccy)]).arc;
-      b.lineWidth = 2; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
+      /* THE RIM HAS TO FOLLOW THE SAME PROFILE THE ERASE CUT (2026-08-08). This was the file's
+         last surviving stroked `arc()`, and it survived precisely because a circle looks the same
+         from both sides — the erase and the stroke agreed by coincidence, not by construction. The
+         moment SHAPE.cornerN could bend the profile they stopped agreeing, and the first render of
+         the chamfer came back looking IDENTICAL to the fillet: the cut had changed, but the bright
+         2px rim drawn over it — which IS the silhouette to the eye — was still a quarter circle.
+         Rastered now as a CONNECTED CONTOUR off the one shared walk: a 2px mark at each row's
+         crossing, plus the horizontal run back to the previous row's crossing so the shallow part
+         of the curve cannot break into dashes. Same rule the hull's courseLine walk states — there
+         is no width below which a course should vanish, it just has to be CONNECTED — and it drops
+         the last anti-aliased edge on a silhouette every other layer rasters to hard pixels.
+         The tone belongs to the room the corner was cut from, same as the interior chamfer pass, or
+         a clad room reverts to shell-grey at its corners. */
+      b.fillStyle = hullPal(G.zoneGrid[G.idx(ccx, ccy)]).arc;
+      let prevX = null;
+      eachCornerRow(kind, ax, ay, HR - 2, (py, ex) => {
+        if (ex == null) { prevX = null; return; }
+        const x = A.cx ? ex : ex - 1;                       // 2px band lying just inside the cut
+        b.fillRect(x, py, 2, 2);
+        if (prevX != null && Math.abs(x - prevX) > 1) {
+          const lo = Math.min(x, prevX), hi = Math.max(x, prevX);
+          b.fillRect(lo, py, hi - lo + 2, 2);
+        }
+        prevX = x;
+      });
     }
 
     // hull plate behind CORRIDORS (connectors stay intact through the corner erase)
@@ -3295,9 +3382,15 @@ const StationBake = (() => {
            on the tile boundary and painted the seam tone there every such row — a dark 1px stripe
            down the handoff column, drawn OVER the straight wall's face. Everything is clamped to the
            chamfer's own tile now, so no layer can reach into its neighbour. */
+        /* the inner boundary takes SHAPE.cornerN too, or the face band would be the difference
+           between a chamfered outer edge and a still-elliptical inner one — a wall that fattens
+           through the middle of the cut. Same n === 2 verbatim-sqrt rule as eachCornerRow. */
         const ty = ady / bIn;
         const hasInner = ty < 1;
-        const dxIn = hasInner ? aIn * Math.sqrt(1 - ty * ty) : 0;
+        const cn = Math.max(0.35, +SHAPE.cornerN || 2);
+        const dxIn = !hasInner ? 0
+                   : cn === 2 ? aIn * Math.sqrt(1 - ty * ty)
+                              : aIn * Math.pow(1 - Math.pow(ty, cn), 1 / cn);
         const inner = hasInner ? (sgnX < 0 ? Math.round(ax - dxIn) : Math.round(ax + dxIn))
                                : (sgnX < 0 ? X + T : X);
         const clamp = (x0, x1, c) => fill(Math.max(X, x0), py, Math.min(X + T, x1) - Math.max(X, x0), 1, c);
@@ -3679,7 +3772,7 @@ const StationBake = (() => {
      doorway and keeps its sill, track, guide ticks and light spill. */
   const seamOpenJoins = geo => [...classifyJoins(geo)].sort();
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, sampleWall, sampleHull, seamOpenJoins, CHUNK_PX, LIGHT, WALL, DEPTH };
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, sampleWall, sampleHull, seamOpenJoins, CHUNK_PX, LIGHT, WALL, DEPTH, SHAPE };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;
