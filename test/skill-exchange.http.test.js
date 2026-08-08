@@ -118,6 +118,7 @@ function boot(port, workspaces, fixture, attemptsLeft) {
     A.eq(listed.body.skills[0].sourceDigest, checked.body.preview.sourceDigest, 'updated source digest survives restart');
     taps = await api('/api/skill-exchange/registries');
     A.eq(taps.body.sources[0].url, 'https://example.com/registry.json', 'user registry tap survives a real sidecar restart');
+    fs.unlinkSync(fixture);
     const rolled = await api('/api/skill-exchange/rollback', {
       agentId: 'agent', id: listed.body.skills[0].id, digest: inspected.body.preview.packageDigest
     });

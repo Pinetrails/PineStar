@@ -109,6 +109,33 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   const linked = await genericPackage('https://skills.example/demo/SKILL.md');
   A.eq(linked.files.map(f => f.path).sort(), ['SKILL.md', 'assets/pixel.bin', 'references/guide.md', 'scripts/check.js'], 'ordinary HTTPS packages fetch every declared support path recursively');
   A.ok(fetchedUrls.some(u => /pixel\.bin$/.test(u)), 'binary support references are fetched as bytes');
+  let partialError = '';
+  try {
+    await makeSkillPackageFetcher({ fetchDocument: async url => {
+      if (/SKILL\.md$/.test(url)) return { url, text: doc('Partial', 'Read references/missing.md.') };
+      throw new Error('source returned HTTP 404');
+    } })('https://skills.example/partial/SKILL.md');
+  } catch (e) { partialError = e.message; }
+  A.ok(/404/.test(partialError), 'a missing referenced file refuses the whole package');
+
+  const githubFetch = makeSkillPackageFetcher({ fetchDocument: async url => {
+    if (/api\.github\.com.*contents\/skills\/demo\?ref=main/.test(url)) return { url, text: JSON.stringify([
+      { type: 'file', path: 'skills/demo/SKILL.md', download_url: 'https://raw.githubusercontent.com/acme/repo/main/skills/demo/SKILL.md' },
+      { type: 'dir', path: 'skills/demo/references' }, { type: 'dir', path: 'skills/demo/assets' }
+    ]) };
+    if (/contents\/skills\/demo\/references\?ref=main/.test(url)) return { url, text: JSON.stringify([
+      { type: 'file', path: 'skills/demo/references/unlinked.md', download_url: 'https://raw.githubusercontent.com/acme/repo/main/skills/demo/references/unlinked.md' }
+    ]) };
+    if (/contents\/skills\/demo\/assets\?ref=main/.test(url)) return { url, text: JSON.stringify([
+      { type: 'file', path: 'skills/demo/assets/icon.bin', download_url: 'https://raw.githubusercontent.com/acme/repo/main/skills/demo/assets/icon.bin' }
+    ]) };
+    if (/SKILL\.md$/.test(url)) return { url, text: doc('GitHub Package', 'Do the work.') };
+    if (/unlinked\.md$/.test(url)) return { url, text: 'Complete folder member.' };
+    if (/icon\.bin$/.test(url)) return { url, bytes: Buffer.from([1, 2, 3]) };
+    throw new Error('unexpected GitHub URL ' + url);
+  } });
+  const githubPackage = await githubFetch('https://raw.githubusercontent.com/acme/repo/main/skills/demo/SKILL.md');
+  A.eq(githubPackage.files.map(f => f.path).sort(), ['SKILL.md', 'assets/icon.bin', 'references/unlinked.md'], 'GitHub import enumerates the complete bounded skill directory, including unreferenced files');
 
   // Consume the otherwise-unused safe preview to pin that a second inspection is independent.
   A.ok(caution.inspectionId, 'each inspection receives its own frozen stage');

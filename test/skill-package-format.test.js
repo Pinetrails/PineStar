@@ -15,4 +15,5 @@ A.throws(() => P.canonicalize([{ path: 'SKILL.md', content: 'x' }, { path: '../s
 A.throws(() => P.canonicalize([{ path: 'references/x', content: 'x' }]), /missing SKILL/, 'partial package is refused');
 const tampered = JSON.parse(P.toEnvelope(first)); tampered.files[0].content += 'AA';
 A.throws(() => P.fromEnvelope(tampered), /base64|digest/, 'tampered envelope is refused');
+A.throws(() => P.canonicalize([{ path: 'SKILL.md', content: 'x'.repeat(20) }], { maxFileBytes: 10 }), /larger/, 'oversized package files are refused');
 A.report('skill-package-format.test.js');
