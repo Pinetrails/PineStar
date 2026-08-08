@@ -165,6 +165,10 @@ test/workshop-visibility.test.js
 test/workshop-resolution.test.js
 test/workshop-toggle-ui.test.js
 test/quest-store.test.js
+test/journey-store.test.js
+test/journey.test.js
+test/journeystore.test.js
+test/journey-wiring.test.js
 test/questinject.test.js
 test/quests-tool.test.js
 test/questsweeps.test.js
@@ -400,6 +404,7 @@ test/slaglog.test.js
 test/xp.test.js
 test/xp-crewsplit.test.js
 test/xpstore.test.js
+test/growthratings.test.js
 test/xp-upgrade.test.js
 test/dossier-reliability.test.js
 test/roster-track.test.js

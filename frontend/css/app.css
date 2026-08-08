@@ -3254,6 +3254,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-oc-skipped, .q-oc-rejected { color:var(--ph-dim); }
 .q-oc-error  { color:#e88; border-color:#e88; }
 
+/* COMMANDER JOURNEY — three truthful, non-gating progression tracks. The card only renders the sidecar's
+   durable proof snapshot; controls are explicit Commander writes, never inferred engagement telemetry. */
+.q-journey-card { border:1px solid var(--ph-glow2); border-radius:2px; background:rgba(0,0,0,.18); padding:10px 11px; margin-bottom:12px; }
+.q-evolution { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:9px; margin-bottom:9px; border-bottom:1px solid var(--ph-glow2); }
+.q-evolution-name { margin-top:2px; color:var(--gold); font-family:inherit; font-size:17px; letter-spacing:.16em; text-shadow:0 0 8px rgba(var(--gold-rgb),.35); }
+.q-journey-goal { border-left:2px solid var(--gold); padding-left:9px; margin-bottom:11px; }
+.q-journey-title { margin:3px 0; color:var(--ph); font-size:12px; }
+.q-journey-subhead { margin:12px 0 6px; color:var(--ph-dim); font-size:9px; letter-spacing:.14em; }
+.q-metric { padding:7px 0; border-top:1px solid rgba(var(--ph-rgb),.12); }
+.q-metric:first-of-type { border-top:0; }
+.q-metric .gx-tag { margin-left:auto; }
+.q-metric-actions, .q-metric-create { display:grid; grid-template-columns:minmax(70px,.7fr) minmax(120px,1.6fr) auto auto; gap:5px; margin-top:6px; }
+.q-metric-create { grid-template-columns:minmax(150px,2fr) minmax(65px,.7fr) minmax(65px,.7fr) minmax(55px,.6fr) auto; padding-top:8px; }
+.q-metric-actions input, .q-metric-create input { min-width:0; border:1px solid var(--ph-glow2); border-radius:2px; background:rgba(0,0,0,.35); color:var(--ph); font:inherit; font-size:10px; padding:4px 6px; outline:none; }
+.q-metric-actions input:focus, .q-metric-create input:focus { border-color:var(--gold); }
+.q-mastery-grid { display:grid; gap:4px; }
+.q-mastery-row { display:grid; grid-template-columns:minmax(80px,1fr) minmax(90px,1fr) auto; align-items:center; gap:8px; padding:5px 7px; border:1px solid rgba(var(--ph-rgb),.14); border-radius:2px; font-size:10px; }
+.q-receipt { display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-top:1px solid rgba(var(--ph-rgb),.12); }
+.q-receipt .sub { flex:1; }
+.q-receipt .consent-btn { flex:0 0 auto; }
+.q-proof-list { display:grid; gap:4px; margin-top:10px; }
+.q-journey-law { margin-top:11px; padding-top:8px; border-top:1px solid var(--ph-glow2); }
+
 /* TROPHY CASE card header — the kind tag (DOSSIER / MILESTONE / n× LIFETIME) pins to the top-right
    corner and never shrinks, so a long title wraps cleanly under it instead of jamming the tag
    mid-text in the narrow grid columns. */
@@ -3281,6 +3304,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 @media (max-width: 560px) {
   .gx-2 { grid-template-columns: 1fr; }
   .gx-tros { grid-template-columns: repeat(2, 1fr); }
+  .q-metric-actions, .q-metric-create { grid-template-columns:1fr 1fr; }
+  .q-mastery-row { grid-template-columns:1fr auto; }
+  .q-mastery-row .gx-tag { grid-column:1 / -1; justify-self:start; }
+  .q-receipt, .q-evolution { align-items:flex-start; flex-direction:column; }
 }
 
 /* responsive: degrade the game layout gracefully as the desktop window narrows.

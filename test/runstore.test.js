@@ -22,9 +22,10 @@ const clock = { now: () => clk };
   const e = s.record({ runId: 'r1', agentId: 'agent', reason: 'done', turns: 3, tokens: 500, usd: 0.02, title: 'fix the bug' });
   A.eq(e.runId, 'r1', 'runId recorded');
   A.eq(e.reason, 'done', 'reason recorded');
+  A.eq(s.record({ runId: 'r2', reason: 'done', clarifying: true }).clarifying, true, 'clarification outcome is stored separately from the execution terminal');
   A.eq(e.ts, 1111, 'ts stamped from injected clock');
-  A.eq(s.count(), 1, 'one row');
-  A.eq(io.lines.length, 1, 'appended to io');
+  A.eq(s.count(), 2, 'both rows recorded');
+  A.eq(io.lines.length, 2, 'both rows appended to io');
 }
 
 // ---- B. reason clamped to the known enum; unknown -> 'done' ----
@@ -32,6 +33,8 @@ const clock = { now: () => clk };
   const s = makeRunStore({ io: memIo(), clock });
   A.eq(s.record({ runId: 'r', reason: 'refusal' }).reason, 'refusal', 'valid reason kept');
   A.eq(s.record({ runId: 'r', reason: 'budget' }).reason, 'budget', 'budget reason kept');
+  A.eq(s.record({ runId: 'r', reason: 'empty' }).reason, 'empty', 'provider-empty remains empty (never rewritten as success)');
+  A.eq(s.record({ runId: 'r', reason: 'clarifying' }).reason, 'clarifying', 'a Task Brief question remains neutral (never rewritten as success)');
   A.eq(s.record({ runId: 'r', reason: 'kaboom' }).reason, 'done', 'unknown reason clamped to done');
   A.eq(s.record({ runId: 'r' }).reason, 'done', 'missing reason defaults to done');
 }
@@ -55,6 +58,8 @@ const clock = { now: () => clk };
   A.eq(s.list(null).length, 3, 'no agentId -> all runs');
   A.eq(s.list('A', { limit: 1 }).map(r => r.runId), ['a2'], 'limit respected (newest)');
   A.eq(s.list('NONE'), [], 'unknown agent -> empty');
+  A.eq(s.list(null, { limit: 1, beforeRunId: 'a2' }).map(r => r.runId), ['b1'], 'cursor continues strictly before the prior page tail');
+  A.eq(s.list(null, { since: 1, through: 2 }).map(r => r.runId), ['b1'], 'time window is applied before the page limit');
 }
 
 // ---- E. durable: a fresh store replays the on-disk log ----
@@ -158,6 +163,8 @@ const clock = { now: () => clk };
   A.eq(s.record({ runId: 'w9', agentId: 'a', reason: 'done', identityFallback: true }).identityFallback, true, 'identityFallback:true recorded on a fallback run (was not the named specialist)');
   A.eq(s.record({ runId: 'w10', agentId: 'a', reason: 'done' }).identityFallback, false, 'missing identityFallback defaults to false (old rows / normal runs are not falsely flagged)');
   A.eq(s.record({ runId: 'w11', agentId: 'a', identityFallback: 1 }).identityFallback, true, 'truthy identityFallback coerces to a strict boolean');
+  A.eq(s.record({ runId: 'w12', agentId: 'a', internal: true }).internal, true, 'reason-only internal runs are marked so progression catch-up can exclude them');
+  A.eq(s.record({ runId: 'w13', agentId: 'a' }).internal, false, 'ordinary runs default to non-internal');
 }
 
 // ---- J. (work-visibility) OLD JSONL rows WITHOUT artifacts still parse + list (fail-open) ----
