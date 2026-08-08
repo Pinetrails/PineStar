@@ -192,6 +192,11 @@ const packageFormat = require('./package-format.js');
       ensureDir(dir);
       if (Array.isArray(skill.packageFiles) && skill.packageFiles.length && skill.packageDigest && !skill.packageDiverged) {
         const pkg = packageFormat.fromEnvelope({ format: packageFormat.FORMAT, digest: skill.packageDigest, files: skill.packageFiles });
+        // The manifest is complete, so the directory must be complete too. Remove the prior contained
+        // generation before writing; otherwise an upstream-deleted script remains executable on disk.
+        if (!insideRoot(dir)) throw new Error('skill package path escapes the package root: ' + dir);
+        if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+        ensureDir(dir);
         for (const f of pkg.files) writeBytes(path.join(dir, f.path), Buffer.from(f.content, 'base64'));
         return dir;
       }
