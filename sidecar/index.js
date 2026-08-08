@@ -9390,6 +9390,20 @@ function handleStateSnapshot(req, res) {
       out.runs.push({ runId: runId, agentId: (meta && meta.agentId) || null, startedAt: (meta && meta.startedAt) || null, source: (meta && meta.source) || null });
     }
   } catch (_) {}
+  // WATCHABLE BACKGROUND workers outlive the interactive response that launched them and therefore do not
+  // live in runsMeta. Their durable manager owns the real controller + run.start confirmation. Omitting that
+  // source made the CREW rail correct until the next reload/SSE reconnect, when reconciliation erased the
+  // still-running specialist and falsely painted it IDLE. Merge the manager's confirmed active view here so
+  // every reconnect restores the same run the live agent.run.start event originally lit.
+  try {
+    const backgroundRuns = subagents && typeof subagents.activeRuns === 'function' ? subagents.activeRuns() : [];
+    for (const meta of backgroundRuns) {
+      const runId = meta && meta.runId;
+      if (!runId || seenRunIds.has(runId)) continue;
+      seenRunIds.add(runId);
+      out.runs.push({ runId: runId, agentId: meta.agentId || null, startedAt: meta.startedAt || null, source: meta.source || 'subagent' });
+    }
+  } catch (_) {}
   // CHANNEL runs (Telegram/Discord) live in the messaging hub's OWN inflight map, not runsMeta — include them so a
   // reconnect keeps their agent's live floor/HUD state (reconcileFromSnapshot clears any agent absent here). Read
   // the EXACT maps E-STOP kills (hub._internals.inflight) — one source of truth, no parallel bookkeeping. Each
