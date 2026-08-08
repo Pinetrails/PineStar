@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { spawn, spawnSync } from 'node:child_process';
 import { spawnAcpClient } from './acp-client.mjs';
@@ -105,6 +105,7 @@ async function readStarNetRun(response, base, token) {
         if (firstOutputMs == null) firstOutputMs = performance.now() - started;
         finalText += String(event.payload?.delta || '');
       }
+      if (event.name === 'agent.tool_call') finalText = '';
       if (event.name === 'permission.prompt') {
         await api(base, token, '/api/consent', { runId, promptId: event.payload?.promptId, decision: 'once' });
       }
@@ -116,22 +117,24 @@ async function readStarNetRun(response, base, token) {
 
 export async function startStarNetDriver(opts) {
   const root = resolve(opts.root), workspaces = resolve(opts.workspaces), fixtureUrl = String(opts.fixtureUrl);
+  const sourceRoot = resolve(opts.sourceRoot || root);
   const runTimeoutMs = Number(opts.timeoutMs || 300000);
   let port = Number(opts.port || (19200 + (process.pid % 600)));
   const stdout = createWriteStream(resolve(opts.outputDir, 'campaign-starnet.out.log'), { flags: 'a' });
   const stderr = createWriteStream(resolve(opts.outputDir, 'campaign-starnet.err.log'), { flags: 'a' });
   const desktopExecutable = opts.desktopExecutable ? resolve(opts.desktopExecutable) : null;
-  const command = desktopExecutable || join(root, 'node.exe');
-  const args = desktopExecutable ? [] : [join(root, 'sidecar', 'index.js')];
+  const command = desktopExecutable || (opts.nodeExecutable ? resolve(opts.nodeExecutable) : join(root, 'node.exe'));
+  const args = desktopExecutable ? [] : [join(sourceRoot, 'sidecar', 'index.js')];
   const startupLog = desktopExecutable ? installedDesktopStartupLog(workspaces) : null;
   const startupMark = startupLog ? desktopStartupLogMark(startupLog) : 0;
   const env = Object.assign({}, process.env, {
     STARNET_WORKSPACES: workspaces, STARNET_DEFAULT_MODEL: MODEL,
     STARNET_FULL_ACCESS: '1', SKYNET_FULL_ACCESS: '1', STARNET_CRON_ARMED: '0', SKYNET_CRON_ARMED: '0'
   });
+  if (!desktopExecutable && sourceRoot !== root) env.NODE_PATH = [join(root, 'node_modules'), process.env.NODE_PATH || ''].filter(Boolean).join(delimiter);
   if (!desktopExecutable) env.STARNET_PORT = String(port);
   const child = spawn(command, args, {
-    cwd: desktopExecutable ? dirname(desktopExecutable) : root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: desktopExecutable ? dirname(desktopExecutable) : sourceRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     env
   });
   child.stdout.pipe(stdout); child.stderr.pipe(stderr);
@@ -144,7 +147,7 @@ export async function startStarNetDriver(opts) {
 
   return {
     process: child, base,
-    identity: { harness: 'starnet', mode: desktopExecutable ? 'installed-desktop' : 'installed-runtime', model: MODEL, provider: PROVIDER, health },
+    identity: { harness: 'starnet', mode: desktopExecutable ? 'installed-desktop' : (sourceRoot === root ? 'installed-runtime' : 'source-runtime'), model: MODEL, provider: PROVIDER, health },
     async run({ fixture, state, root: fixtureRoot, attempt }) {
       const startedAt = new Date().toISOString(), prompt = submittedPrompt(fixture.prompt);
       const response = await fetch(base + '/api/run', {

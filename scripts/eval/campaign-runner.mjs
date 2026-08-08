@@ -41,7 +41,10 @@ let driver = null, exitCode = 0;
 async function openDriver() {
   if (opts.harness === 'starnet') {
     for (const name of ['runtime-root', 'workspaces']) if (!opts[name]) throw new Error(`StarNet requires --${name}`);
-    return startStarNetDriver({ root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, port: opts.port, timeoutMs });
+    return startStarNetDriver({
+      root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, port: opts.port, timeoutMs,
+      sourceRoot: opts['source-root'], nodeExecutable: opts['node-executable']
+    });
   }
   for (const name of ['source', 'python', 'home']) if (!opts[name]) throw new Error(`Hermes requires --${name}`);
   return startHermesDriver({ source: opts.source, python: opts.python, home: opts.home, fixtureUrl: fixtureServer.url, timeoutMs });
