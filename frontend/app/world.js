@@ -3828,8 +3828,15 @@ const World = (() => {
     _scanCv = pc; _scanKey = key;
     return _scanCv;
   }
+  // Both in-canvas CRT passes are suppressed by EITHER flag: `no-scan` is the internal
+  // verification flag (scripts/verify-stars2.mjs), `crt-off` is the user's Appearance setting.
+  // Kept separate so a settings write can never clobber a verification run's flattening.
+  function crtSuppressed() {
+    const c = document.body.classList;
+    return c.contains('no-scan') || c.contains('crt-off');
+  }
   function drawCRT(now) {
-    if (!cv || document.body.classList.contains('no-scan')) return;
+    if (!cv || crtSuppressed()) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const dpr = window.devicePixelRatio || 1;
     const W = cv.width, H = cv.height;
@@ -3913,7 +3920,7 @@ const World = (() => {
     _lut = lut; _lutKey = key;
   }
   function drawCurve(now) {
-    if (!cv || CRT.curve <= 0 || document.body.classList.contains('no-scan')) return;
+    if (!cv || CRT.curve <= 0 || crtSuppressed()) return;
     const k = CRT.curve, W = cv.width, H = cv.height;
     if (!_glFailed && drawCurveGL(k, W, H)) return;   // GPU path (near-free); on any failure it flips _glFailed
     drawCurveCPU(k, W, H);                             // CPU fallback (per-pixel LUT) — identical look, heavier

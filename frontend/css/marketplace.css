@@ -52,6 +52,7 @@
   }
 }
 body.no-scan .mkt-scrim::after { display: none; }
+body.crt-off .mkt-scrim::after { display: none; }
 @keyframes mkt-fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---- the console frame ---- */
