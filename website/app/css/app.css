@@ -4550,8 +4550,11 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .pp-blurb { font-size: 12px; line-height: 1.4; color: var(--ph-dim); }
 .pp-who { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.7; }
 .pp-foot { margin: 8px 0 0; font-size: 11px; color: var(--ph-dim); opacity: 0.8; }
-/* the fold: everything that is NOT needed to have a working, safe station */
-.perm-fold { margin: 0; border-top: 1px solid var(--ph-faint); padding-top: 10px; }
+/* the hairline between tier 1 (station-wide) and tier 2 (per-agent): the two are the same question
+   at two scopes, so they need a seam, not a heading, to say "and now the exceptions". */
+.perm-tier-rule { border-top: 1px solid var(--ph-faint); margin: 14px 0 2px; }
+/* tier 3: real controls, rarely touched. ONE fold — never a fold inside a fold. */
+.perm-fold { margin: 14px 0 0; border-top: 1px solid var(--ph-faint); padding-top: 10px; }
 .perm-fold > summary {
   cursor: pointer; font-size: 12px; letter-spacing: 1px; color: var(--ph-dim);
   list-style: none; padding: 4px 0;

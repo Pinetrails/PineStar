@@ -41,8 +41,17 @@ ok(/STATION_POSTURES[\s\S]{0,900}profile: 'station-gear'[\s\S]{0,900}profile: 't
 ok(/btn\.querySelector\('\.pp-name'\)\.textContent = 'SURE\? NO PROMPTS, ANY FILE'/.test(src),
   'FULL POWER keeps a two-press confirm, arming the NAME span so the card is not flattened');
 // everything that is not needed for a working, safe station is closed by default
-ok(/<details class="perm-fold" id="perm-finetune">/.test(src) && /<summary>Set up crew members individually<\/summary>/.test(src),
-  'the per-crew controls, override, ladder and ledger all sit behind one closed fold');
+ok(/<details class="perm-fold" id="perm-advanced">/.test(src) && /<summary>Advanced permissions<\/summary>/.test(src),
+  'the rare controls sit behind ONE advanced fold');
+// TIER 2 MUST STAY VISIBLE. Folding the per-agent rows away over-corrected: a posture can only set
+// every agent the SAME way, so the "except this one" control may never hide behind a disclosure.
+ok(!/id="perm-finetune"/.test(src), 'the per-agent crew rows are NOT behind a fold');
+ok(/EACH CREW MEMBER[\s\S]{0,220}<div class="perm-list" id="perm-crew"><\/div>/.test(src),
+  'the crew list sits directly under its own header, outside any details');
+// ONE fold, never a fold inside a fold — a nested disclosure hides the thing twice. The idle-cell
+// policy is a plain section inside ADVANCED, not its own second disclosure.
+ok(!/id="perm-advanced"[\s\S]{0,3000}<details/.test(src), 'no nested disclosure inside the advanced fold');
+ok(/IDLE SAFE CELLS[\s\S]{0,160}id="perm-exec-policy"/.test(src), 'the idle-cell policy is a plain section inside ADVANCED');
 // the flip button may never go back to sitting inline after the row's sentence (the collision bug)
 ok(/class="perm-agent/.test(src) && /class="pa-state"/.test(src), 'agent rows are structured (name/state/button), not one inline sentence');
 
@@ -90,8 +99,8 @@ ok(/Turn that switch off and it goes back to stopping for your yes/.test(src),
 ok(/paintBypass\(snap\);[\s\S]{0,220}paintCrew\(\);/.test(src),
   'flipping the master switch repaints every crew row, not just the card');
 // the advanced Docker housekeeping is no longer the first thing under the crew header
-ok(/id="perm-advanced"/.test(src) && /ADVANCED — idle Safe Cell cleanup/.test(src),
-  'the idle-cell policy lives in a closed ADVANCED disclosure, not above the crew');
+ok(/id="perm-advanced"/.test(src) && /IDLE SAFE CELLS/.test(src),
+  'the idle-cell policy lives inside ADVANCED, not above the crew');
 ok(/id="perm-bypass" class="perm-master"/.test(src), 'the master switch is a CARD, not a key-list row');
 ok(/class="perm-m-act"/.test(src), 'the bypass control sits on its own line, never inside the prose');
 ok(/id="perm-desc"/.test(src), '#perm-desc combined-level blurb element present');

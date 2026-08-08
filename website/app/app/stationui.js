@@ -4769,17 +4769,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
       '<div id="ns-report"></div>';
     const secPermissions =
-      // PERMISSIONS — the plain-language pass (2026-08-07). The pane was correct and unreadable: four numbered
-      // blocks of in-house vocabulary, two separate crew tables, no summary, and the most advanced control in
-      // the pane (Docker housekeeping) sitting where the primary content belongs. It now reads as one ordinary
-      // sentence and four questions, in the order a person actually asks them:
-      //   AT A GLANCE  — what is my station allowed to do right now, counted from the live roster.
-      //   1 · YOUR CREW      — ONE row per agent: what it CAN REACH, and whether it ASKS FIRST.
-      //   2 · SKIP EVERY PROMPT — the master override of the ASKS FIRST column, sitting under what it overrides.
-      //   3 · WHILE YOU'RE AWAY — the WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here).
-      //   4 · STANDING APPROVALS — the pre-blessed ledger.
-      //   ADVANCED     — idle Safe Cell cleanup, closed by default.
-      // No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
+      /* PERMISSIONS — THREE TIERS, general → specific → rare (2026-08-07, round 3).
+         The pane was four numbered blocks of in-house vocabulary with two separate crew tables and no
+         summary (547 words to set up ONE agent). Round 2 put three postures out front and folded
+         everything else away, which over-corrected: per-agent reach is the pane's most useful control
+         and a posture can only set every agent the SAME way. So it now steps down by how often you
+         touch a thing, never by how advanced it is:
+           AT A GLANCE      — what the station is allowed to do right now, COUNTED from the live roster.
+           TIER 1 · POSTURE — three station-wide buttons. One click and a newcomer is done.
+           TIER 2 · CREW    — visible: one row per agent, the "except this one" override of tier 1.
+           TIER 3 · ADVANCED (closed) — master override · unattended ladder · standing approvals ·
+                              idle Safe Cell cleanup. Real controls, rarely touched. ONE fold, never
+                              a fold inside a fold — a nested disclosure hides the thing twice.
+         No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule). */
       // ── AT A GLANCE — the pane's answer to "what is my station allowed to do RIGHT NOW", in one
       // ordinary sentence, computed from the live roster + the server's bypass truth. Beginners opened
       // this pane and met four numbered blocks of vocabulary with no summary; this is the summary. It
@@ -4789,23 +4791,28 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // the whole station, so a newcomer answers ONE question instead of composing four dials. Painted by
       // paintPostures(): a card highlights only when every component matches the live state.
       '<div class="perm-postures" id="perm-postures"><p class="set-about">reading your station…</p></div>' +
-      // ── EVERYTHING ELSE — closed. Nothing below is needed to have a working, safe station; it is here
-      // for the person who wants a specific crew member set differently from the rest.
-      '<details class="perm-fold" id="perm-finetune">' +
-        '<summary>Set up crew members individually</summary>' +
-        // ONE row per agent carrying BOTH per-agent axes. These used to be two separate lists, ~40 rows
-        // apart, each re-listing the whole crew: to set up one agent you scrolled between two tables and
-        // matched names by eye. Independent settings, same subject — so, one row.
-        '<h4 class="ms-h">EACH CREW MEMBER <span class="dim">— what it can reach, and whether it asks you first</span></h4>' +
-        '<div class="perm-list" id="perm-crew"></div>' +
-        '<div class="mc-acts perm-allacts">' +
-          '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
-          '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
-        '</div>' +
-        // NOTE: "zero-prompt posture applies watched or unattended" and the "does not add tools…" clause are
-        // LOCKED honesty claims from the full-access lane — condense around them, never through them.
-        '<div class="mc-hint">These two change whether it asks — nobody’s reach changes. Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. <code>/yolo</code> is the shortcut. Protected host actions remain blocked automatically.</div>' +
-        // The master switch sits directly under the column it overrides — that is the only thing it does.
+      '<div class="perm-tier-rule"></div>' +
+      // ── TIER 2 · EACH CREW MEMBER — VISIBLE, directly under the buttons that sweep it. Folding this
+      // away was over-correcting: per-agent reach is the pane's most useful control, and a posture only
+      // sets every agent the SAME way. The postures answer "most of the time"; this answers "except…".
+      // ONE row per agent carrying BOTH per-agent axes. These used to be two separate lists, ~40 rows
+      // apart, each re-listing the whole crew: to set up one agent you scrolled between two tables and
+      // matched names by eye. Independent settings, same subject — so, one row.
+      '<h4 class="ms-h">EACH CREW MEMBER <span class="dim">— override the setting above for one agent</span></h4>' +
+      '<div class="perm-list" id="perm-crew"></div>' +
+      '<div class="mc-acts perm-allacts">' +
+        '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
+        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
+      '</div>' +
+      // NOTE: "zero-prompt posture applies watched or unattended" and the "does not add tools…" clause are
+      // LOCKED honesty claims from the full-access lane — condense around them, never through them.
+      '<div class="mc-hint">These two change whether it asks — nobody’s reach changes. Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. <code>/yolo</code> is the shortcut. Protected host actions remain blocked automatically.</div>' +
+      // ── TIER 3 · ADVANCED — the controls that are real but rarely touched: the master override, the
+      // unattended ladder, the standing-grant ledger and Docker housekeeping. Closed, but ONE fold, not
+      // a fold inside a fold — a nested disclosure hides the thing twice.
+      '<details class="perm-fold" id="perm-advanced">' +
+        '<summary>Advanced permissions</summary>' +
+        // The master switch — it overrides the ASKS FIRST setting on every row above.
         '<h4 class="ms-h">SKIP EVERY PROMPT <span class="dim">— one switch that overrides all of the above</span></h4>' +
         '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
         // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
@@ -4826,11 +4833,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // teaching is the ledger's own empty state; repeating it in a lede printed it twice on a fresh station.)
         '<h4 class="ms-h">STANDING APPROVALS <span class="dim">— what you already said yes to, for good</span></h4>' +
         '<div class="key-list perm-grants" id="perm-grants"></div>' +
-        // Station-wide Docker housekeeping — a maintenance knob, closed inside the closed fold.
-        '<details class="mc-adv perm-adv" id="perm-advanced">' +
-          '<summary>ADVANCED — idle Safe Cell cleanup</summary>' +
-          '<div id="perm-exec-policy"></div>' +
-        '</details>' +
+        // Station-wide Docker housekeeping. It is already inside ADVANCED — giving it a second
+        // disclosure of its own would hide it twice, so it is a plain section here.
+        '<h4 class="ms-h">IDLE SAFE CELLS <span class="dim">— stop containers that have gone quiet</span></h4>' +
+        '<div id="perm-exec-policy"></div>' +
       '</details>';
     const secBudget =
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft

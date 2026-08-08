@@ -18,6 +18,7 @@
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
 import { launchChrome, connectCDP, evalJS, capture, sleep, collectDiagnostics } from '../scripts/lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, waitUp, waitDevReady } from '../scripts/lib/seed.mjs';
 
@@ -32,13 +33,41 @@ const check = (name, cond, detail) => {
   else { fail++; console.log('  FAIL ' + name + (detail === undefined ? '' : ' — ' + JSON.stringify(detail))); }
 };
 
+/* ⛔ PREFLIGHT — this repo is built by 7–10 agents at once, each running its own sidecar on its own
+   port. If something is ALREADY listening here, bootSeededSidecar's bind fails, `waitUp` cheerfully
+   answers true against the SQUATTER, and every assertion below silently measures another lane's app.
+   That is exactly what happened on 2026-08-07 (port 9654 was the dossier-ux worktree): 11 "failures"
+   that were really someone else's pane. A live-proof harness that can measure the wrong process is
+   worse than no harness — so refuse to start rather than produce confident nonsense. */
+function portFree(port) {
+  return new Promise(resolve => {
+    const s = createServer();
+    s.once('error', () => resolve(false));
+    s.once('listening', () => s.close(() => resolve(true)));
+    s.listen(Number(port), '127.0.0.1');
+  });
+}
+
 async function main() {
+  for (const [label, port] of [['sidecar', PORT], ['CDP', CDP_PORT]]) {
+    if (!(await portFree(port))) {
+      throw new Error(`port ${port} (${label}) is already in use — another agent's station is probably there.\n` +
+        `  This harness would have measured THAT app, not this worktree's build.\n` +
+        `  Re-run with a free pair, e.g. SKYNET_SHOT_PORT=<free> SKYNET_CDP_PORT=<free+1> node dev/permissions-shots.mjs`);
+    }
+  }
   const scratch = mkdtempSync(join(tmpdir(), 'permshots-'));
   materializeSeedWorkspace(join(scratch, 'ws'));
   const side = bootSeededSidecar({ port: PORT, scratchDir: join(scratch, 'ws') });
   let chrome = null, cdp = null;
   try {
     if (!(await waitUp(URL))) throw new Error('sidecar never came up on ' + URL);
+    // Second belt: prove the served bundle is THIS worktree's build before believing any measurement.
+    const marker = await (await fetch(URL + 'app/stationui.js')).text();
+    if (!marker.includes('id="perm-postures"')) {
+      throw new Error('the app served on ' + URL + ' is not this worktree\'s build (no posture front door) — ' +
+        'refusing to measure a station this harness did not boot');
+    }
     chrome = launchChrome({ cdpPort: CDP_PORT, profileDir: join(scratch, 'chrome') });
     await sleep(1200);
     cdp = await connectCDP(CDP_PORT);
@@ -54,33 +83,52 @@ async function main() {
     await evalJS(cdp, `StationUI.openTerm('settings','permissions')`);
     await sleep(2200);   // the pane fetches /api/execution-profiles + refreshes PermissionsStore
 
-    /* ── THE FRONT DOOR ─────────────────────────────────────────────────────────────────────────
-       What a newcomer meets BEFORE opening anything: three postures and nothing else. Capture it
-       closed (that is the real first impression), measure the reading cost, then open the fold so
-       every per-crew probe below still has its rows. */
-    console.log('\n— FRONT DOOR —');
+    /* ── THE THREE TIERS ────────────────────────────────────────────────────────────────────────
+       What a newcomer meets on arrival: the glance, three station-wide postures, and the per-agent
+       rows — with only the rare controls folded. Tier 2 being VISIBLE is the point of round 3, so
+       the harness asserts it rather than assuming it. `frontWords` is the tier-1 reading cost (the
+       decision a newcomer actually has to make); `arrivalWords` is everything on screen. */
+    console.log('\n— THE THREE TIERS —');
     const front = await evalJS(cdp, `(() => {
-      const glance = document.querySelector('#perm-glance'), fold = document.querySelector('#perm-finetune');
-      let n = glance, nodes = [];
-      while (n && n !== fold) { nodes.push(n); n = n.nextElementSibling; }
-      nodes.push(fold);
-      const txt = nodes.map(e => e.innerText).join(' ').replace(/\\s+/g,' ').trim();
+      const glance = document.querySelector('#perm-glance');
+      const crewHead = [...document.querySelectorAll('.ms-h')].find(h => /EACH CREW MEMBER/.test(h.textContent));
+      const fold = document.querySelector('#perm-advanced');
+      const span = (from, to) => { let n = from, out = []; while (n && n !== to) { out.push(n); n = n.nextElementSibling; } return out; };
+      const words = els => els.map(e => e.innerText).join(' ').replace(/\\s+/g,' ').trim().split(' ').filter(Boolean).length;
+      const tier1 = span(glance, crewHead);
+      const all = span(glance, fold).concat([fold]);
+      const tier1Txt = tier1.map(e => e.innerText).join(' ').replace(/\\s+/g,' ').trim();
       const jargon = ['STATION GEAR','SAFE CELL','REMOTE SSH','TRUSTED PROJECT','execution profile',
         'STANDING APPROVALS','desktop lease','Docker','capability','/yolo','block 2'];
+      // Tier 2 deliberately prints the HOUSE name — but only ever as a subtitle under a plain label,
+      // so the vocabulary is taught rather than assumed. Prove that pairing instead of banning the word.
+      const unpairedHouse = [...document.querySelectorAll('.pc-reach-chip')]
+        .filter(c => !c.querySelector('.pc-rl') || !c.querySelector('.pc-rh'))
+        .map(c => c.textContent.trim());
       return {
         foldClosed: !fold.open,
         cards: [...document.querySelectorAll('.pp-card .pp-name')].map(e => e.innerText),
-        words: txt.split(' ').length,
-        jargon: jargon.filter(j => new RegExp(j.replace(/[()\\/]/g,'\\\\$&'),'i').test(txt))
+        crewVisible: !!crewHead && !crewHead.closest('details') && !!document.querySelector('#perm-crew .perm-crew-row'),
+        frontWords: words(tier1),
+        arrivalWords: all.map(e => e.innerText).join(' ').replace(/\\s+/g,' ').trim().split(' ').length,
+        tier1Jargon: jargon.filter(j => new RegExp(j.replace(/[()\\/]/g,'\\\\$&'),'i').test(tier1Txt)),
+        unpairedHouse: unpairedHouse
       };
     })()`);
-    check('the fold is CLOSED on arrival (nothing but the front door)', front.foldClosed, JSON.stringify(front.foldClosed));
-    check('three postures are offered', front.cards.length === 3, front.cards.join(' · '));
-    check('the front door costs under 200 words to read', front.words < 200, front.words + ' words');
-    check('no undecodable house vocabulary above the fold', front.jargon.length === 0, front.jargon.join(', ') || 'none');
+    check('only the ADVANCED tier is folded on arrival', front.foldClosed, JSON.stringify(front.foldClosed));
+    check('three station-wide postures are offered', front.cards.length === 3, front.cards.join(' · '));
+    // TIER 2 IS NOT BEHIND A DISCLOSURE. A posture can only set every agent the SAME way, so the
+    // "except this one" control has to be on screen — hiding it was the round-2 over-correction.
+    check('the per-agent crew rows are VISIBLE, not folded', front.crewVisible, front.crewVisible);
+    check('the tier-1 decision costs under 200 words to read', front.frontWords < 200, front.frontWords + ' words');
+    // The DECISION a newcomer must make has to be jargon-free. Tier 2 may print house names, but only
+    // paired with a plain label — the pairing is what teaches the vocabulary instead of assuming it.
+    check('the tier-1 decision carries no undecodable house vocabulary', front.tier1Jargon.length === 0, front.tier1Jargon.join(', ') || 'none');
+    check('every house name in tier 2 is paired with a plain label', front.unpairedHouse.length === 0, front.unpairedHouse);
+    console.log('   arrival cost: ' + front.frontWords + ' words to decide · ' + front.arrivalWords + ' words on screen');
     console.log('shot', await capture(cdp, OUT, 'permissions-00-front-door'));
 
-    await evalJS(cdp, `(() => { document.querySelector('#perm-finetune').open = true; return true; })()`);
+    await evalJS(cdp, `(() => { document.querySelector('#perm-advanced').open = true; return true; })()`);
     await sleep(600);
 
     console.log('\n— STRUCTURE —');
@@ -92,7 +140,7 @@ async function main() {
         heads: [...document.querySelectorAll('#con-pane-permissions .ms-h, .con-pane .ms-h')]
           .map(h => h.textContent.trim().split(' — ')[0]).filter(t => /^[0-9] · /.test(t)),
         // the four sections must still EXIST inside the fold — dropping the numbers must not drop a section
-        foldSections: [...document.querySelectorAll('#perm-finetune .ms-h')].map(h => h.textContent.trim().split(' — ')[0].trim()),
+        foldSections: [...document.querySelectorAll('#perm-advanced .ms-h')].map(h => h.textContent.trim().split(' — ')[0].trim()),
         glance: (q('#perm-glance .pg-line') || {}).textContent,
         glanceReach: (q('#perm-glance .pg-reach') || {}).textContent,
         glanceFloor: !!q('#perm-glance .pg-floor'),
@@ -118,9 +166,12 @@ async function main() {
     // the numbered blocks are GONE — a newcomer no longer walks four of them in order, and nothing
     // cross-references 'block 2' any more. What must survive is the four SECTIONS inside the fold.
     check('no numbered blocks survive', shape.heads.length === 0, shape.heads);
-    check('all four sections still exist inside the fold',
-      ['EACH CREW MEMBER', 'SKIP EVERY PROMPT', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS']
+    // the four RARE sections live in ADVANCED (EACH CREW MEMBER is tier 2 and stays outside it) —
+    // restructuring the pane must never silently drop one of them
+    check('all four rare sections exist inside ADVANCED',
+      ['SKIP EVERY PROMPT', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS', 'IDLE SAFE CELLS']
         .every(h => shape.foldSections.includes(h)), shape.foldSections);
+    check('EACH CREW MEMBER is NOT inside ADVANCED', !shape.foldSections.includes('EACH CREW MEMBER'), shape.foldSections);
     check('one crew row per agent', shape.rows === shape.agents && shape.rows > 0, [shape.rows, shape.agents]);
     check('the two old crew lists are gone', shape.deadLists.every(x => x === false), shape.deadLists);
     // the ASKS FIRST question carries an '— OVERRIDDEN BY …' suffix whenever the master switch is on
@@ -130,7 +181,9 @@ async function main() {
     check('every row offers 5 reach chips + 2 ask chips', shape.perRow.every(r => r.reachChips.length === 5 && r.askChips.length === 2));
     check('exactly one reach chip and one ask chip is selected', shape.perRow.every(r => r.reachSel && r.askSel));
     check('the routing truth line survives', shape.perRow.every(r => /routes next command to/.test(r.truth || '')));
-    check('the idle-cell policy is inside a CLOSED advanced fold', shape.advancedClosed === true && shape.policyInAdvanced);
+    // The "was it closed?" half of this is asserted UP TOP, before the harness opens the fold itself
+    // (front.foldClosed) — re-asserting it here after opening was checking the harness, not the pane.
+    check('the idle-cell policy lives inside the advanced fold', shape.policyInAdvanced, shape.policyInAdvanced);
     check('the glance card carries the standing floor', shape.glanceFloor);
 
     /* The glance sentence must be COUNTED from the roster, not asserted. The dev seed boots with
