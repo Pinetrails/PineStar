@@ -274,10 +274,13 @@
        answer "which line does this dock belong to?" from the SAME artifact — the one-compiler law. There
        is no second derivation anywhere.
 
-       DERIVATION: lineId === the component's key === the lexicographically smallest member PROP id. Prop
-       ids are stable in the save doc, so a line keeps its identity across reloads and across every edit
-       that keeps that prop. Pure: no clock, no RNG, no iteration luck (components are sorted by key, bays
-       within a component by propId, and an agent takes the FIRST line that claims it).
+       DERIVATION: lineId === the component's key === the OLDEST member PROP id, ordered by the numeric
+       suffix of the minted id and NOT by string order (propIdCmp — 'p9' is older than 'p10'). Prop ids are
+       stable in the save doc, so a line keeps its identity across reloads and across every edit that keeps
+       THE KEYING PROP; deleting that prop re-keys the line to its next-oldest machine (work already in
+       flight then carries a lineId that no longer names it, and the gate stops it — that is the honest
+       cost of identity-by-member). Pure: no clock, no RNG, no iteration luck (components are sorted by
+       key, bays within a component by propId, and an agent takes the FIRST line that claims it).
 
        Attached AFTER the hash inputs are fixed, and only onto the LEGIBILITY list (`dockBays`) plus these
        lookup maps — the dispatch topology is unchanged, so the same floor keeps the same plan.hash it had
@@ -701,8 +704,26 @@
      ring — the exact hookup semantics compileRoutingPlan's passes use. Pure + deterministic
      (no RNG, no clock, inputs unmutated); the finish-the-line card derives its checklist from
      these against the compiled plan, and the delivery-retirement hook hit-tests `tiles`.
-     `key` = the lexicographically smallest member PROP id: prop ids are stable in the save doc,
-     so a line keeps its identity across reloads and across edits that keep that prop. */
+     `key` = the OLDEST member PROP id — oldest by the monotonic counter the save doc mints ids from
+     (`p1`, `p2`, … `p10`), NOT by string order. See propIdCmp: a default string sort puts 'p10'
+     BEFORE 'p9', so the tenth prop on a line would silently steal the key from the ninth and rename
+     the whole line. Prop ids are stable in the save doc, so a line keeps its identity across reloads
+     and across every edit that keeps THE KEYING PROP. It does NOT survive deleting that prop: the
+     line then re-keys to its next-oldest member, and anything latched on the old key (a lineId a
+     run is carrying, a localStorage entry) no longer names it. That is the real behaviour — a line's
+     identity is its oldest surviving machine, not the line itself. */
+  /* PROP-ID ORDER (2026-08-07 conveyor audit). Ids come from worldmodel's monotonic `_nid` as
+     'p' + N, so numeric order IS creation order. Compare the suffix numerically; anything that is
+     not 'p<N>' (a legacy/hand-authored id) falls back to a plain string compare and sorts AFTER the
+     minted ids, so the answer stays total and deterministic on any doc. */
+  const PROP_ID_N = /^p(\d+)$/;
+  function propIdCmp(a, b) {
+    const ma = PROP_ID_N.exec(a), mb = PROP_ID_N.exec(b);
+    if (ma && mb) { const d = (+ma[1]) - (+mb[1]); return d || (a < b ? -1 : a > b ? 1 : 0); }
+    if (ma) return -1;
+    if (mb) return 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
   function lineComponents(geo) {
     const props = (geo && geo.props) || [];
     const map = buildBeltMap(geo && geo.belts);
@@ -750,13 +771,13 @@
     for (const r in byRoot) {
       const c = byRoot[r];
       if (!c.props.length) continue;              // bare belt scribbles are not a line
-      c.props.sort(); c.key = c.props[0];
-      c.bays.sort((a, b) => (a.propId < b.propId ? -1 : a.propId > b.propId ? 1 : 0));
+      c.props.sort(propIdCmp); c.key = c.props[0];
+      c.bays.sort((a, b) => propIdCmp(a.propId, b.propId));
       out.push(c);
     }
-    out.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    out.sort((a, b) => propIdCmp(a.key, b.key));
     return out;
   }
 
-  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
+  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom, propIdCmp } };
 });
