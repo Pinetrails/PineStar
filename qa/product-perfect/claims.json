@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "aa37a83673468a5ca95ad89e285001bf020af812",
+    "sourceCommit": "461c821be838254c71db0b771cd2230823c8594a",
     "pathSetSha256": "1149d0e2e420dfdf56d9fdae886481ec4d54779bbf9ac01a84a761848732b4e7",
     "files": [
       {
@@ -423,8 +423,8 @@
       },
       {
         "path": "frontend/app/pipeline.js",
-        "bytes": 48634,
-        "sha256": "35e185c793d2906f0271f06fedd8193d7d95935f25e3256f76a82b46ba7b6461"
+        "bytes": 49480,
+        "sha256": "0012402e13bb910c21a47a318d88c27bbdea1fdb5cb8163084e4a634fead4181"
       },
       {
         "path": "frontend/app/pitch.js",
