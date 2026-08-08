@@ -298,6 +298,7 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
       const r = await reg.dispatch({ id: 'c6', name: 'flood', args: {} }, parkCtx);
       A.ok(parked && parked.content.length === HUGE.length, 'the FULL output reaches the parker, before any clamp');
       A.eq(parked.meta.tool, 'flood', 'the parker is told which tool produced it');
+      A.eq(r.outputChars, HUGE.length, 'dispatch retains the exact pre-clamp character count for later receipts');
       A.ok(r.content.length <= 81000, 'the in-context result is still capped');
       A.ok(/\.output\/flood-r1-0\.txt/.test(r.content), 'the note points at the file holding the full output');
       A.ok(/Do NOT repeat this call/.test(r.content), 'and tells the model to read that file instead of re-running');

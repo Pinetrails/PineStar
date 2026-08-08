@@ -157,3 +157,6 @@ dev/.shots-ux-walk/
 # CONVEYOR CORRECTNESS lane visual-proof screenshots + claim log (headless capture output; never committed)
 dev/.shots-conveyor-correctness/
 dev/.shots-conveyor-correctness.log
+
+# CREW rail roster-window proof shots (same pattern)
+dev/.shots-crew-fit/

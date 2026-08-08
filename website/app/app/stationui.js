@@ -2079,13 +2079,40 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // The array order IS the display order everywhere, so the dossier chips and the Settings chips agree.
   const EXECUTION_PROFILE_DEFAULT = 'station-gear';
   const EXECUTION_PROFILES = [
-    { id: 'safe-cell', label: 'SAFE CELL', reach: 1, plain: 'None of your files. It works inside a sealed container that only holds its own workspace.', short: 'works in a sealed box', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
-    { id: 'remote-ssh', label: 'REMOTE SSH', reach: 1, plain: 'None of your files. Commands run on a different machine you point it at below.', short: 'works on another machine', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
-    { id: 'station-gear', label: 'STATION GEAR', reach: 2, plain: 'Only what you placed on the station floor, plus project folders you approved. The default.', short: 'uses only the gear you placed', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
-    { id: 'trusted-project', label: 'TRUSTED PROJECT', reach: 3, plain: 'Its own workspace plus the project folders you approved — nothing else on this computer.', short: 'reaches your approved project folders', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
-    { id: 'this-computer', label: 'THIS COMPUTER', reach: 4, plain: 'Almost any file on this computer. Protected files (.env, .git) stay blocked no matter what.', short: 'reaches almost everything on this computer', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
+    // `plainLabel` is what the chip SAYS (what the choice means to the person choosing); `label` stays the
+    // house name and rides every notification, the dossier card, and the roster — renaming a chip must never
+    // rename the thing. A newcomer reads "NOTHING OF MINE"; the house name sits under it for everyone else.
+    { id: 'safe-cell', label: 'SAFE CELL', plainLabel: 'NOTHING OF MINE', reach: 1, plain: 'None of your files. It works inside a sealed container that only holds its own workspace.', short: 'works in a sealed box', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
+    { id: 'remote-ssh', label: 'REMOTE SSH', plainLabel: 'ANOTHER MACHINE', reach: 1, plain: 'None of your files. Commands run on a different machine you point it at below.', short: 'works on another machine', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
+    { id: 'station-gear', label: 'STATION GEAR', plainLabel: 'WHAT I PLACED', reach: 2, plain: 'Only what you placed on the station floor, plus project folders you approved. The default.', short: 'uses only the gear you placed', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
+    { id: 'trusted-project', label: 'TRUSTED PROJECT', plainLabel: 'MY PROJECT FOLDERS', reach: 3, plain: 'Its own workspace plus the project folders you approved — nothing else on this computer.', short: 'reaches your approved project folders', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
+    { id: 'this-computer', label: 'THIS COMPUTER', plainLabel: 'MY WHOLE COMPUTER', reach: 4, plain: 'Almost any file on this computer. Protected files (.env, .git) stay blocked no matter what.', short: 'reaches almost everything on this computer', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
   ];
   const EXECUTION_PROFILE_MAX_REACH = 4;
+  /* ── STATION POSTURES — the beginner's front door (2026-08-07 round 2) ────────────────────────────
+     Measured on the live pane, the previous pass still cost 547 words and 16 controls to set up ONE
+     agent: it had been made CLEARER but not SIMPLER, because it still handed a newcomer four
+     independent dials and asked them to compose the combination themselves. A posture composes them.
+     One click answers all four questions at once; everything else moved behind FINE-TUNE.
+
+     TRUTH RULES this table must obey:
+     · A posture is `sel` only when EVERY component matches the live state — otherwise the row reads
+       CUSTOM. It is a shortcut for setting values, never a badge claiming a state.
+     · `profile` only ever names LOCAL-runtime profiles. Docker/SSH need a probe and a saved target, so
+       a posture may not put a crew member somewhere the harness has not confirmed it can run.
+     · Applying counts what actually changed and reports THAT number (an agent deleted from another
+       surface mid-click must not be counted as converted). */
+  const STATION_POSTURES = [
+    { id: 'careful', label: 'CHECK WITH ME', approval: 'ask', profile: 'station-gear', level: 'suggest',
+      blurb: 'It asks you before every risky step, and only touches what you placed on the station.',
+      who: 'Best if you are just starting out.' },
+    { id: 'balanced', label: 'LET IT WORK', approval: 'ask', profile: 'trusted-project', level: 'draft',
+      blurb: 'It still asks before risky steps, but it can work in your project folders and leave drafts while you are away.',
+      who: 'The everyday setting.' },
+    { id: 'open', label: 'FULL POWER', approval: 'full', profile: 'this-computer', level: 'full',
+      blurb: 'It never asks, reaches almost any file on this computer, and starts work on its own.',
+      who: 'Only when you trust it completely.' }
+  ];
   // the fallback is the DEFAULT profile by id, never EXECUTION_PROFILES[0] — the array is ordered by reach,
   // so an index-based fallback would silently relabel an unknown profile as the narrowest one.
   const executionProfileOf = (id) => EXECUTION_PROFILES.find(x => x.id === id) ||
@@ -2875,10 +2902,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">loading agent skills…</div></div>';
     const secExchange =
-      '<p class="sk-note sk-lib-intro">Install an open <b>SKILL.md</b> from a public HTTPS or GitHub file URL. StarNet fetches and scans it first; nothing is installed until you review the exact body and digest below. This first release imports only that single document; referenced package files remain at the source.</p>' +
+      '<p class="sk-note sk-lib-intro">Install a complete open skill package from a public HTTPS or GitHub <b>SKILL.md</b>. StarNet freezes the instructions and support files under one SHA-256 before review. Missing, oversized, unsafe, or partial packages are refused.</p>' +
       '<div class="sk-exchange-form"><label for="sk-exchange-url">SKILL.MD SOURCE</label>' +
         '<div class="sk-exchange-row"><input id="sk-exchange-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/blob/main/SKILL.md">' +
-        '<button id="sk-exchange-inspect" class="consent-btn" type="button">INSPECT</button></div></div>' +
+        '<button id="sk-exchange-inspect" class="consent-btn" type="button">INSPECT</button></div>' +
+        '<label class="consent-btn" for="sk-exchange-import">IMPORT EXPORTED PACKAGE</label><input id="sk-exchange-import" type="file" accept=".json,.starnet-skill.json,application/json" hidden></div>' +
+      '<div class="sk-exchange-form"><label for="sk-registry-url">REGISTRY / TEAM TAP</label>' +
+        '<div class="sk-exchange-row"><input id="sk-registry-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/skills/index.json">' +
+        '<input id="sk-registry-query" type="search" autocomplete="off" placeholder="search or browse all">' +
+        '<button id="sk-registry-search" class="consent-btn" type="button">BROWSE</button>' +
+        '<button id="sk-registry-discover" class="consent-btn" type="button">DISCOVER SITE</button>' +
+        '<button id="sk-registry-save" class="consent-btn" type="button">SAVE TAP</button></div><div id="sk-registry-sources"></div><div id="sk-registry-results"></div></div>' +
       '<div id="sk-exchange-preview" class="sk-exchange-preview" role="status" aria-live="polite"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
     /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
        Truthful by construction: if the provider has no native voice endpoint we say so rather than
@@ -3082,8 +3116,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!host || !preview) return;
     const blocked = preview.guardAction === 'block';
     const asks = preview.guardAction === 'ask';
+    const unchanged = !!opts.update && preview.updateAvailable === false;
+    const updateLocked = !!opts.update && !!preview.updateLocked;
+    const canInstall = !blocked && !unchanged && !updateLocked;
     const source = preview.sourceUrl || '';
     const verdict = blocked ? 'BLOCKED' : (asks ? 'REVIEW + APPROVAL' : 'CLEAR');
+    const packageFiles = Array.isArray(preview.files) ? preview.files : [];
+    const filesHtml = packageFiles.map(f => '<details class="sk-package-file"><summary><code>' + esc(f.path) + '</code> · ' +
+      esc(String(f.bytes || 0)) + ' bytes · <code>' + esc(f.sha256 || '') + '</code></summary>' +
+      (f.encoding === 'utf8' ? '<pre>' + esc(f.content || '') + '</pre>' : '<div class="sk-attr">Binary asset; exact bytes are covered by the package digest.</div>') + '</details>').join('');
     host.innerHTML =
       '<div class="sk-card open ' + (blocked || asks ? 'want' : 'on') + '">' +
         '<div class="sk-card-head"><div class="sk-card-main">' +
@@ -3095,16 +3136,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div></div>' +
         '<div class="sk-body">' +
           '<div class="sk-prov"><span>SOURCE</span><a href="' + esc(source) + '" target="_blank" rel="noopener noreferrer">' + esc(source) + '</a></div>' +
-          '<div class="sk-prov"><span>SHA-256</span><code>' + esc(preview.sourceDigest || '') + '</code></div>' +
+          '<div class="sk-prov"><span>PACKAGE SHA-256</span><code>' + esc(preview.packageDigest || preview.sourceDigest || '') + '</code></div>' +
+          '<div class="sk-prov"><span>PACKAGE</span><code>' + packageFiles.length + ' files · ' + esc(String(preview.packageBytes || 0)) + ' bytes</code></div>' +
           ((preview.author || preview.license) ? '<div class="sk-prov"><span>AUTHOR</span><code>' + esc([preview.author, preview.license].filter(Boolean).join(' · ')) + '</code></div>' : '') +
           '<pre>' + esc(preview.body || '') + '</pre>' +
+          '<div class="sk-package-files">' + filesHtml + '</div>' +
           '<div class="sk-exchange-note ' + (blocked ? 'bad' : (asks ? 'warn' : 'ok')) + '">' +
-            (blocked ? 'Install is disabled. The source contains dangerous instructions.' :
+            (blocked ? 'Install is disabled. The source contains dangerous instructions.' : updateLocked ?
+              'This skill is pinned. Unpin it before applying an upstream update.' : unchanged ?
+              'The installed package already matches these exact upstream bytes.' :
               (asks ? 'This can be installed, but it stays withheld from the agent until you approve these exact bytes in Agent Skills.' :
                 'This document passed the static guard. Install will preserve this source and digest.')) +
-            ' Only this SKILL.md is staged; referenced package files are not imported.' + '</div>' +
+            (preview.packageDiverged ? ' Local changes are present; applying the reviewed update will replace that fork after preserving its sealed predecessor.' : '') +
+            ' Install consumes this frozen complete package; it does not fetch again.' + '</div>' +
           '<div class="consent-btns mc-acts">' +
-            (blocked ? '' : '<button class="consent-btn" data-exchange-install type="button">' + (opts.update ? 'INSTALL UPDATE' : 'INSTALL SKILL') + '</button>') +
+            (canInstall ? '<button class="consent-btn" data-exchange-install type="button">' + (opts.update ? 'INSTALL UPDATE' : 'INSTALL SKILL') + '</button>' : '') +
           '</div>' +
         '</div>' +
       '</div>';
@@ -3126,7 +3172,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   function wireSkillExchange(agentId) {
-    const input = $('#sk-exchange-url'), button = $('#sk-exchange-inspect'), host = $('#sk-exchange-preview');
+    const input = $('#sk-exchange-url'), button = $('#sk-exchange-inspect'), importer = $('#sk-exchange-import'), host = $('#sk-exchange-preview');
     if (!input || !button || !host || !Harness.skillExchangeInspect) return;
     const inspect = async () => {
       const url = String(input.value || '').trim();
@@ -3140,6 +3186,50 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     };
     button.addEventListener('click', inspect);
     input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inspect(); } });
+    if (importer && Harness.skillExchangeImport) importer.addEventListener('change', async () => {
+      const file = importer.files && importer.files[0]; if (!file) return;
+      host.innerHTML = '<div class="sk-loading"><span class="loading pulse">verifying exported package bytes…</span></div>';
+      let envelope = ''; try { envelope = await file.text(); } catch (_) {}
+      const r = envelope ? await Harness.skillExchangeImport(envelope) : { ok: false, error: 'That file could not be read.' };
+      importer.value = '';
+      if (r && r.ok && r.preview) renderSkillExchangePreview(host, r.preview, agentId);
+      else host.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'That package could not be inspected.') + '</div>';
+    });
+    const registryUrl = $('#sk-registry-url'), registryQuery = $('#sk-registry-query'), registryButton = $('#sk-registry-search'), registryResults = $('#sk-registry-results');
+    const registrySave = $('#sk-registry-save'), registryDiscover = $('#sk-registry-discover'), registrySources = $('#sk-registry-sources');
+    const renderSources = sources => {
+      if (!registrySources) return;
+      registrySources.innerHTML = (sources || []).map((source, i) => '<button class="consent-btn" data-tap-use="' + i + '">' + esc(source.label || source.url) + ' · COMMUNITY</button><button class="consent-btn" data-tap-remove="' + i + '">×</button>').join('');
+      registrySources.querySelectorAll('[data-tap-use]').forEach(b => b.addEventListener('click', () => { registryUrl.value = sources[Number(b.dataset.tapUse)].url; }));
+      registrySources.querySelectorAll('[data-tap-remove]').forEach(b => b.addEventListener('click', async () => {
+        const source = sources[Number(b.dataset.tapRemove)]; const r = await Harness.skillExchangeRegistries({ action: 'remove', url: source.url }); if (r && r.ok) renderSources(r.sources);
+      }));
+    };
+    if (Harness.skillExchangeRegistries) Harness.skillExchangeRegistries().then(r => { if (r && r.ok) renderSources(r.sources); });
+    if (registrySave && Harness.skillExchangeRegistries) registrySave.addEventListener('click', async () => {
+      const r = await Harness.skillExchangeRegistries({ action: 'add', url: registryUrl.value });
+      if (r && r.ok) { renderSources(r.sources); notify('Saved community registry tap.', 'good'); }
+      else notify((r && r.error) || 'Registry tap could not be saved.', 'warn');
+    });
+    if (registryUrl && registryButton && registryResults && Harness.skillExchangeRegistry) registryButton.addEventListener('click', async () => {
+      registryButton.classList.add('busy'); registryResults.innerHTML = '<div class="sk-loading">searching registry…</div>';
+      const r = await Harness.skillExchangeRegistry({ url: registryUrl.value, query: registryQuery && registryQuery.value });
+      registryButton.classList.remove('busy');
+      if (!(r && r.ok)) { registryResults.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'Registry search failed.') + '</div>'; return; }
+      registryResults.innerHTML = '<div class="sk-attr">' + esc(r.name || 'Registry') + ' · ' + (r.entries || []).length + ' result(s)</div>' +
+        (r.entries || []).map((entry, i) => '<button class="consent-btn" data-registry-entry="' + i + '">' + esc(entry.name) + (entry.version ? ' · v' + esc(entry.version) : '') + '</button><span class="sk-attr">' + esc(entry.description || '') + '</span>').join('');
+      registryResults.querySelectorAll('[data-registry-entry]').forEach(entryButton => entryButton.addEventListener('click', () => {
+        const entry = r.entries[Number(entryButton.dataset.registryEntry)]; if (!entry) return;
+        input.value = entry.sourceUrl; inspect();
+      }));
+    });
+    if (registryDiscover && registryResults && Harness.skillExchangeDiscover) registryDiscover.addEventListener('click', async () => {
+      registryDiscover.classList.add('busy');
+      const r = await Harness.skillExchangeDiscover({ site: registryUrl.value, query: registryQuery && registryQuery.value });
+      registryDiscover.classList.remove('busy');
+      if (r && r.ok) { registryUrl.value = r.registryUrl; registryButton.click(); }
+      else registryResults.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'Well-known discovery failed.') + '</div>';
+    });
   }
 
   function loadAgentSkills(agentId) {
@@ -3185,6 +3275,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           ? '<button class="consent-btn" data-ag-act="revoke" title="Withhold this skill from the agent again">Revoke</button>'
           : '');
       const absorbed = s.absorbedInto ? '<div class="sk-attr">Merged into: ' + esc(s.absorbedInto) + '</div>' : '';
+      const packageState = s.packageDigest
+        ? '<div class="sk-attr" data-package-status>Package <code>' + esc(s.packageDigest) + '</code> · ' + (s.packageFileCount || 0) + ' files' +
+            (s.packageDiverged ? ' · LOCAL CHANGES (update/export sealed generation disabled)' : ' · SEALED') + '</div>' : '';
+      const packageButtons = s.packageDigest
+        ? '<button class="consent-btn" data-ag-act="check">Check update</button>' +
+          '<button class="consent-btn" data-ag-act="export"' + (s.packageDiverged ? ' disabled' : '') + '>Export</button>' +
+          '<button class="consent-btn" data-ag-act="publish"' + (s.packageDiverged ? ' disabled' : '') + '>Share handoff</button>' +
+          '<button class="consent-btn" data-ag-act="generations">Generations</button>' : '';
       html +=
         '<div class="sk-card ' + state + (held ? ' held' : '') + '" data-agent-skill="' + esc(s.id) + '">' +
           '<div class="sk-card-head">' +
@@ -3199,9 +3297,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             '</div>' +
             '<button class="sk-expand" data-ag-act="expand" title="Read the skill">&gt;</button>' +
           '</div>' +
-          '<div class="sk-body">' + heldBlock + '<pre>' + esc(s.body || '') + '</pre>' + files + absorbed +
+          '<div class="sk-body">' + heldBlock + '<pre>' + esc(s.body || '') + '</pre>' + files + absorbed + packageState +
             '<div class="consent-btns mc-acts">' +
               heldBtn +
+              packageButtons +
               '<button class="consent-btn" data-ag-act="edit">Edit</button>' +
               '<button class="consent-btn" data-ag-act="archive">' + (s.state === 'archived' ? 'Restore' : 'Archive') + '</button>' +
             '</div>' +
@@ -3217,6 +3316,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const opened = card.classList.toggle('open'); btn.textContent = opened ? 'v' : '>'; sfx('click'); return;
       }
       if (act === 'edit') { editAgentSkill(card, skill, agentId); return; }
+      if (act === 'check') {
+        btn.classList.add('busy');
+        const r = await Harness.skillExchangeCheck({ agentId, id: skill.id }); btn.classList.remove('busy');
+        const previewHost = $('#sk-exchange-preview');
+        if (r && r.ok && r.preview && previewHost) {
+          renderSkillExchangePreview(previewHost, r.preview, agentId, { update: true });
+          previewHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else notify((r && r.error) || 'Update check was refused.', 'warn');
+        return;
+      }
+      if (act === 'export') {
+        btn.classList.add('busy'); const r = await Harness.skillExchangeExport({ agentId, id: skill.id }); btn.classList.remove('busy');
+        if (r && r.ok && r.envelope) {
+          const url = URL.createObjectURL(new Blob([r.envelope], { type: 'application/json' }));
+          const a = document.createElement('a'); a.href = url; a.download = r.filename || (skill.id + '.starnet-skill.json'); a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000); notify('Exported sealed package ' + String(r.digest || '').slice(0, 12), 'good');
+        } else notify((r && r.error) || 'Export was refused.', 'warn');
+        return;
+      }
+      if (act === 'publish') {
+        btn.classList.add('busy'); const r = await Harness.skillExchangePublishHandoff({ agentId, id: skill.id }); btn.classList.remove('busy');
+        if (r && r.ok && r.handoff) {
+          const text = JSON.stringify(r.handoff, null, 2) + '\n'; const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+          const a = document.createElement('a'); a.href = url; a.download = skill.id + '.publish-handoff.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+          notify('Prepared local publish handoff; nothing was uploaded.', 'good');
+        } else notify((r && r.error) || 'Publish handoff was refused.', 'warn');
+        return;
+      }
+      if (act === 'generations') {
+        btn.classList.add('busy'); const r = await Harness.skillExchangeGenerations({ agentId, id: skill.id }); btn.classList.remove('busy');
+        const status = card.querySelector('[data-package-status]');
+        if (!status) return;
+        const rows = r && r.ok && Array.isArray(r.generations) ? r.generations : [];
+        status.innerHTML = rows.length ? 'Offline generations: ' + rows.map(g => '<button class="consent-btn" data-rollback="' + esc(g.digest) + '">' + esc(String(g.digest).slice(0, 12)) + ' · ' + (g.fileCount || 0) + ' files</button>').join(' ') : esc((r && r.error) || 'No prior offline generations yet.');
+        status.querySelectorAll('[data-rollback]').forEach(rb => rb.addEventListener('click', async () => {
+          rb.disabled = true; rb.textContent = 'ROLLING BACK…';
+          const rr = await Harness.skillExchangeRollback({ agentId, id: skill.id, digest: rb.dataset.rollback });
+          if (rr && rr.ok) { sfx('click'); loadAgentSkills(agentId); } else { rb.disabled = false; notify((rr && rr.error) || 'Rollback was refused.', 'warn'); }
+        }));
+        return;
+      }
       if (act === 'allow' || act === 'revoke') {
         btn.classList.add('busy');
         const r = await Harness.agentSkillAllow({ agentId, id: skill.id, allow: act === 'allow' });
@@ -5008,47 +5148,57 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
       '<div id="ns-report"></div>';
     const secPermissions =
-      // PERMISSIONS — the plain-language pass (2026-08-07). The pane was correct and unreadable: four numbered
-      // blocks of in-house vocabulary, two separate crew tables, no summary, and the most advanced control in
-      // the pane (Docker housekeeping) sitting where the primary content belongs. It now reads as one ordinary
-      // sentence and four questions, in the order a person actually asks them:
-      //   AT A GLANCE  — what is my station allowed to do right now, counted from the live roster.
-      //   1 · YOUR CREW      — ONE row per agent: what it CAN REACH, and whether it ASKS FIRST.
-      //   2 · SKIP EVERY PROMPT — the master override of the ASKS FIRST column, sitting under what it overrides.
-      //   3 · WHILE YOU'RE AWAY — the WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here).
-      //   4 · STANDING APPROVALS — the pre-blessed ledger.
-      //   ADVANCED     — idle Safe Cell cleanup, closed by default.
-      // No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
+      /* PERMISSIONS — THREE TIERS, general → specific → rare (2026-08-07, round 3).
+         The pane was four numbered blocks of in-house vocabulary with two separate crew tables and no
+         summary (547 words to set up ONE agent). Round 2 put three postures out front and folded
+         everything else away, which over-corrected: per-agent reach is the pane's most useful control
+         and a posture can only set every agent the SAME way. So it now steps down by how often you
+         touch a thing, never by how advanced it is:
+           AT A GLANCE      — what the station is allowed to do right now, COUNTED from the live roster.
+           TIER 1 · POSTURE — three station-wide buttons. One click and a newcomer is done.
+           TIER 2 · CREW    — one row per agent, the "except this one" override of tier 1.
+           then the rest of the PERMISSIONS, all visible: SKIP EVERY PROMPT (it outranks every row
+           above it, so it is the last thing that should hide) · WHILE YOU'RE AWAY · STANDING
+           APPROVALS (a revocation you cannot find is not revocable).
+           ADVANCED (closed) — idle Safe Cell cleanup, and ONLY that. Maintenance is the one thing
+           here that earns a fold; ONE fold, never a fold inside a fold.
+         No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule). */
       // ── AT A GLANCE — the pane's answer to "what is my station allowed to do RIGHT NOW", in one
       // ordinary sentence, computed from the live roster + the server's bypass truth. Beginners opened
       // this pane and met four numbered blocks of vocabulary with no summary; this is the summary. It
       // asserts nothing the harness can't prove — every clause counts real agent records.
       '<div id="perm-glance" class="perm-glance"><p class="pg-line">reading your crew…</p></div>' +
-      // ── 1 · YOUR CREW — ONE row per agent carrying BOTH per-agent axes.
-      // These used to be two separate lists, ~40 rows apart, each re-listing the whole crew: to set up one
-      // agent you scrolled between two tables and matched names by eye. They are independent settings but
-      // they belong to the SAME subject, so they belong in the same row.
-      '<h4 class="ms-h">1 · YOUR CREW <span class="dim">— what each one can reach, and whether it asks you first</span></h4>' +
-      '<p class="set-about perm-lede">Two separate questions per crew member. <b>CAN REACH</b> is how much of this computer it may touch — the dots run from sealed-off to almost-everything. <b>ASKS FIRST</b> is whether risky calls stop and wait for your yes. Neither one adds tools, and neither grants real mouse, keyboard, or screen control. <code>/yolo</code> is the shortcut for the no-prompts posture.</p>' +
+      // ── THE FRONT DOOR — three postures. One click sets reach, asks-first and unattended together for
+      // the whole station, so a newcomer answers ONE question instead of composing four dials. Painted by
+      // paintPostures(): a card highlights only when every component matches the live state.
+      '<div class="perm-postures" id="perm-postures"><p class="set-about">reading your station…</p></div>' +
+      '<div class="perm-tier-rule"></div>' +
+      // ── TIER 2 · EACH CREW MEMBER — VISIBLE, directly under the buttons that sweep it. Folding this
+      // away was over-correcting: per-agent reach is the pane's most useful control, and a posture only
+      // sets every agent the SAME way. The postures answer "most of the time"; this answers "except…".
+      // ONE row per agent carrying BOTH per-agent axes. These used to be two separate lists, ~40 rows
+      // apart, each re-listing the whole crew: to set up one agent you scrolled between two tables and
+      // matched names by eye. Independent settings, same subject — so, one row.
+      '<h4 class="ms-h">EACH CREW MEMBER <span class="dim">— override the setting above for one agent</span></h4>' +
       '<div class="perm-list" id="perm-crew"></div>' +
       '<div class="mc-acts perm-allacts">' +
         '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
         '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
       '</div>' +
-      '<div class="mc-hint">These two buttons change the ASKS FIRST column only — nobody’s reach changes.</div>' +
-      '<div class="mc-hint">Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. Protected host actions remain blocked automatically.</div>' +
-      // ── 2 · SKIP EVERY PROMPT — the master switch. It sits directly UNDER the column it overrides
-      // (the ASKS FIRST column above), because that is the only thing it does; floating unlabelled at
-      // the very top of the pane it read like a fifth unrelated concept.
-      '<h4 class="ms-h">2 · SKIP EVERY PROMPT <span class="dim">— one switch that overrides the ASKS FIRST column above</span></h4>' +
+      // NOTE: "zero-prompt posture applies watched or unattended" and the "does not add tools…" clause are
+      // LOCKED honesty claims from the full-access lane — condense around them, never through them.
+      '<div class="mc-hint">These two change whether it asks — nobody’s reach changes. Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. <code>/yolo</code> is the shortcut. Protected host actions remain blocked automatically.</div>' +
+      // The master switch — it overrides the ASKS FIRST setting on every row above, so it sits directly
+      // under them. Visible: it is a permission, and a switch that silently outranks the rows above it
+      // is the last thing that should be hidden behind a disclosure.
+      '<h4 class="ms-h">SKIP EVERY PROMPT <span class="dim">— one switch that overrides all of the above</span></h4>' +
       '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
-      // ── 3 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
-      // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
-      // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
-      // (test-pinned, and it says the stakes plainly).
-      '<h4 class="ms-h">3 · WHILE YOU’RE AWAY <span class="dim">— how much the station starts on its own, unattended</span></h4>' +
-      '<p class="set-about perm-lede">Blocks 1 and 2 answer <i>what</i> it may do when it acts. This answers <i>whether it starts anything at all</i> when you are not here. The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
+      // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the
+      // dial uses. Stored data-level values are unchanged. FULLY AUTONOMOUS stays in the label (it says
+      // the stakes plainly). Plain-language line first, house vocabulary second.
+      '<h4 class="ms-h">WHILE YOU’RE AWAY <span class="dim">— how much it starts on its own</span></h4>' +
+      '<p class="set-about perm-lede">Whether it begins anything at all when you are not here. The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
       '<p class="set-about perm-lede" id="perm-desc"></p>' +
       '<p class="set-about perm-lede" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       '<div class="set-themes" id="perm-level">' +
@@ -5057,17 +5207,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
-      // ── 4 · STANDING APPROVALS ──
-      '<h4 class="ms-h">4 · STANDING APPROVALS <span class="dim">— the things you already said yes to, for good</span></h4>' +
-      // (the "answer ALWAYS and it lands here" teaching is the ledger's own empty state — repeating it in
-      // the lede printed the same sentence twice, one line apart, on a fresh station)
-      '<p class="set-about perm-lede">Every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time).</p>' +
+      // STANDING APPROVALS — a review surface, not a setup one, but still a PERMISSION: it is the list of
+      // things already blessed, and a revocation you cannot find is not really revocable. Visible.
+      // (The "answer ALWAYS and it lands here" teaching is the ledger's own empty state; repeating it in
+      // a lede printed the same sentence twice on a fresh station.)
+      '<h4 class="ms-h">STANDING APPROVALS <span class="dim">— what you already said yes to, for good</span></h4>' +
       '<div class="key-list perm-grants" id="perm-grants"></div>' +
-      // ── ADVANCED — the station-wide Docker housekeeping policy. It used to be the FIRST thing under
-      // the execution-profile header, above every agent: the most advanced control in the pane sitting
-      // where the primary content belongs. It is a maintenance knob, so it lives at the bottom, closed.
-      '<details class="mc-adv perm-adv" id="perm-advanced">' +
-        '<summary>ADVANCED — idle Safe Cell cleanup</summary>' +
+      // ── ADVANCED — station-wide Docker housekeeping, and ONLY that. Everything else on this pane is a
+      // permission somebody might genuinely need to find; this is maintenance, so it is the one thing
+      // that earns a fold. ONE fold, never a fold inside a fold.
+      '<details class="perm-fold" id="perm-advanced">' +
+        '<summary>Advanced — idle Safe Cell cleanup</summary>' +
         '<div id="perm-exec-policy"></div>' +
       '</details>';
     const secBudget =
@@ -5127,7 +5277,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        hardcoded here, so it can never drift from what the provider actually offers. */
     const secLiveVoice =
       '<h4 class="ms-h">SPOKEN VOICE</h4>' +
-      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Built in and keyless &mdash; the same on every provider. A change applies to the next thing spoken.</p>' +
+      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Built in and keyless &mdash; the same on every provider. A change applies to the next Live Voice session, keeping one speaker for the whole conversation.</p>' +
       '<div class="set-themes" id="set-lv-voices"><span class="dim">reading the provider’s voice list…</span></div>';
 
     const secAppearance =
@@ -6004,22 +6154,95 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           : 'All ' + n + ' of your crew ' + verbPlural;
         let head;
         if (!n) head = 'No crew on the station yet. Nothing can run until you summon someone.';
-        else if (bypassOn) head = everyone('runs', 'run') + ' without stopping to ask you — the override in block 2 is ON.';
+        else if (bypassOn) head = everyone('runs', 'run') + ' without stopping to ask you — the SKIP EVERY PROMPT switch is ON.';
         else if (!noPrompt) head = everyone('stops and asks', 'stop and ask') + ' you before anything risky.';
         else if (!asks) head = everyone('runs', 'run') + ' without stopping to ask you.';
         else head = asks + ' of your ' + n + ' crew ask before anything risky; ' + noPrompt + ' run' + (noPrompt === 1 ? 's' : '') + ' without asking.';
+        // the PLAIN name leads here too — the glance is the first thing a newcomer reads, and the house
+        // name ("STATION GEAR") teaches them nothing at the moment they most need to understand it.
         const reachLine = broadest
-          ? 'Furthest reach on the station: <b>' + esc(broadest.p.label) + '</b> (' + esc(broadest.a.name || broadest.a.id) + ') — ' + esc(broadest.p.plain)
+          ? 'Furthest reach on the station: <b>' + esc(broadest.p.plainLabel) + '</b> (' + esc(broadest.a.name || broadest.a.id) + ') — ' + esc(broadest.p.plain)
           : '';
         glanceWrap.classList.toggle('loud', bypassOn);
         glanceWrap.innerHTML =
           '<p class="pg-line">' + esc(head) + '</p>' +
           (reachLine ? '<p class="pg-reach">' + reachLine + '</p>' : '') +
-          '<p class="pg-floor">No setting on this page can change these: protected files (<code>.env</code>, <code>.git</code>) are never writable, and nothing moves your real mouse or sees your real screen unless you pair a desktop lease by hand.</p>';
+          '<p class="pg-floor">No setting on this page can change these: protected files (<code>.env</code>, <code>.git</code>) are never writable, and nothing can move your mouse or see your screen unless you switch that on yourself, separately.</p>';
+      };
+      /* ── THE POSTURE FRONT DOOR ────────────────────────────────────────────────────────────────────
+         A posture is a SHORTCUT FOR SETTING VALUES, never a badge. It highlights only when every one of
+         its components already matches the live state, so a station the user hand-tuned reads CUSTOM
+         rather than being falsely claimed by the nearest card. */
+      const postureWrap = host.querySelector('#perm-postures');
+      const activePosture = () => {
+        if (!present.length) return null;
+        const snap = PermissionsStore.snapshot() || {};
+        if (!snap.loaded || snap.masterBypass || snap.envFullAccess) return null;   // the override outranks every posture
+        return STATION_POSTURES.find(P =>
+          present.every(a => (a.approvalMode === 'full' ? 'full' : 'ask') === P.approval && executionProfileId(a) === P.profile) &&
+          snap.level === P.level) || null;
+      };
+      const paintPostures = () => {
+        if (!postureWrap) return;
+        const on = activePosture();
+        const can = !!(access.config && access.config.setApproval && access.config.setExecutionProfile);
+        postureWrap.innerHTML =
+          '<div class="pp-head"><span class="pp-q">HOW MUCH SHOULD YOUR CREW DO ON ITS OWN?</span>' +
+            '<span class="pp-state' + (on ? ' matched' : '') + '">' + (on ? 'SET TO ' + esc(on.label) : 'CUSTOM — your own mix of the settings below') + '</span></div>' +
+          '<div class="pp-cards">' + STATION_POSTURES.map(P =>
+            '<button class="pp-card' + (on && on.id === P.id ? ' sel' : '') + (P.id === 'open' ? ' danger' : '') + '" data-posture="' + P.id + '"' +
+              ' data-name="' + esc(P.label) + '" aria-pressed="' + (on && on.id === P.id ? 'true' : 'false') + '"' + (can ? '' : ' disabled') + '>' +
+              '<span class="pp-name">' + esc(P.label) + '</span>' +
+              '<span class="pp-blurb">' + esc(P.blurb) + '</span>' +
+              '<span class="pp-who">' + esc(P.who) + '</span>' +
+            '</button>').join('') + '</div>' +
+          '<p class="pp-foot">Pick one and you are done — everything below is optional.</p>';
+        // Applying: count what ACTUALLY changed and report that number. setApproval returns false for an
+        // agent deleted from another surface mid-click, and setExecutionProfile can be refused by the
+        // station — a blanket "posture applied" over a partly-failed sweep is the app asserting a state
+        // the harness never reached.
+        const apply = (P) => Promise.all(present.map(a =>
+          Promise.resolve(access.config.setExecutionProfile(a.id, P.profile))
+            .then(okP => ({ ok: !!okP && !!access.config.setApproval(a.id, P.approval) }))
+            .catch(() => ({ ok: false }))
+        )).then(res => {
+          const done = res.filter(r => r.ok).length;
+          return Promise.resolve(PermissionsStore.setLevel(P.level))
+            .then(() => ({ done: done, of: present.length }))
+            .catch(() => ({ done: done, of: present.length, levelFailed: true }));
+        });
+        const run = (btn, P) => {
+          btn.disabled = true;
+          apply(P).then(r => {
+            refreshExecutionProfiles(); repaintPerm(); repaintDial();
+            notify(!r.done
+              ? (present.length ? 'nothing changed — the station kept its previous settings' : 'no crew to change — summon an agent first')
+              : r.done + ' of ' + r.of + ' crew set to ' + P.label + (r.levelFailed ? ' — the unattended level could not be saved' : ''),
+              (!r.done || r.levelFailed) ? 'bad' : (P.id === 'open' ? 'warn' : 'good'));
+          });
+        };
+        // FULL POWER is the broadest action in the product, so it keeps the house two-press confirm — but
+        // a posture card is three stacked spans, and ArmConfirm's textContent swap would flatten it to one
+        // line. Arm the NAME span only, exactly as the reach chips arm their meter.
+        let armed = null;
+        const disarm = () => { if (armed) { armed.el.querySelector('.pp-name').textContent = armed.P.label; armed.el.classList.remove('armed'); delete armed.el.dataset.armed; armed = null; } };
+        postureWrap.querySelectorAll('[data-posture]').forEach(btn => {
+          const P = STATION_POSTURES.find(x => x.id === btn.getAttribute('data-posture'));
+          if (!P || btn.disabled) return;
+          btn.addEventListener('click', () => {
+            if (P.id !== 'open') { disarm(); sfx('click'); run(btn, P); return; }
+            if (armed && armed.el === btn) { disarm(); sfx('bad'); run(btn, P); return; }
+            disarm(); armed = { el: btn, P: P }; btn.classList.add('armed'); btn.dataset.armed = '1';
+            btn.querySelector('.pp-name').textContent = 'SURE? NO PROMPTS, ANY FILE';
+            sfx('bad');
+            setTimeout(() => { if (armed && armed.el === btn) disarm(); }, 4000);
+          });
+        });
       };
       const paintCrew = () => {
         if (!crewList) return;
         paintGlance();
+        paintPostures();
         if (!present.length) { crewList.innerHTML = '<p class="set-about">No crew yet — summon an agent and it will appear here with its own two settings.</p>'; return; }
         const can = !!(access.config && access.config.setExecutionProfile);
         const canAsk = !!(access.config && access.config.setApproval);
@@ -6057,7 +6280,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           // CAN REACH — the ladder, safest first, each chip wearing its own reach meter so the ordering is
           // legible without reading five labels. THIS COMPUTER arms before it applies (see wireCrew).
           const reachChips = EXECUTION_PROFILES.map(x =>
-            '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" data-reach="' + x.reach + '" title="' + esc(x.plain) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + reachMeter(x.reach) + esc(x.label) + '</button>').join('');
+            '<button class="ov-vchip pc-reach-chip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.plainLabel) + '" data-house="' + esc(x.label) + '" data-reach="' + x.reach + '" title="' + esc(x.plain) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' +
+              reachMeter(x.reach) + '<span class="pc-rl">' + esc(x.plainLabel) + '<em class="pc-rh">' + esc(x.label) + '</em></span></button>').join('');
           // ASKS FIRST — a two-chip segmented control in the same grammar as the reach ladder above it. It
           // replaced a single button whose label named the TARGET state ("RUN WITHOUT PROMPTS") while the tag
           // beside it named the CURRENT one ("ASKS") — two opposite words on one row, read as a contradiction.
@@ -6079,10 +6303,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               '<p class="mc-hint pc-truth">routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
             '</div>' +
             '<div class="pc-axis pc-ask-axis">' +
-              '<span class="pc-q">ASKS FIRST' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY BLOCK 2</span>' : '') + '</span>' +
+              '<span class="pc-q">ASKS FIRST' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY SKIP EVERY PROMPT</span>' : '') + '</span>' +
               (canAsk ? '<div class="ov-vchips pc-chips">' + askChips + '</div>' : '') +
               '<p class="pc-plain">' + (overridden
-                ? 'The switch in block 2 is ON, so this agent is not asking about anything right now. ' + (full
+                ? 'The SKIP EVERY PROMPT switch is ON, so this agent is not asking about anything right now. ' + (full
                   ? 'It is also set to run without prompts on its own.'
                   : 'Turn that switch off and it goes back to stopping for your yes, as selected here.')
                 : full
@@ -6131,7 +6355,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
            meter span — the same reason the context-menu rows keep bespoke logic). One press must ARM
            WITHOUT GRANTING; a second within the window applies. */
         let epArmed = null;
-        const epFace = (chip) => reachMeter(Number(chip.dataset.reach) || 0) + esc(chip.dataset.name || '');
+        const epFace = (chip) => reachMeter(Number(chip.dataset.reach) || 0) +
+          '<span class="pc-rl">' + esc(chip.dataset.name || '') + '<em class="pc-rh">' + esc(chip.dataset.house || '') + '</em></span>';
         const epDisarm = () => { if (epArmed) { epArmed.innerHTML = epFace(epArmed); epArmed.classList.remove('armed'); delete epArmed.dataset.armed; epArmed = null; } };
         crewList.querySelectorAll('[data-perm-profile]').forEach(b => {
           const apply = () => {
@@ -6142,7 +6367,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             b.disabled = true;
             Promise.resolve(access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'))).then(ok => {
               if (!ok) notify('could not change execution profile — the station kept the prior profile', 'bad');
-              else notify('execution profile → ' + b.getAttribute('data-name'), b.getAttribute('data-perm-profile') === 'this-computer' ? 'warn' : 'good');
+              // the HOUSE name rides the notification (it is what the roster, dossier and logs call it)
+              else notify('execution profile → ' + b.getAttribute('data-house'), b.getAttribute('data-perm-profile') === 'this-computer' ? 'warn' : 'good');
               refreshExecutionProfiles();
             }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); refreshExecutionProfiles(); });
           };
@@ -7080,6 +7306,72 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       + lastHtml + disabledNote + '</div>';
   }
 
+  // The three progression tracks stay deliberately separate:
+  //   AGENT GROWTH = explicit feedback XP (the existing meter below)
+  //   COMMANDER JOURNEY = real-world goal metrics + verified outcomes
+  //   STATION EVOLUTION = expressive history of distinct goals reached, never a capability gate
+  function journeyHtml() {
+    const JS = (typeof JourneyStore !== 'undefined') ? JourneyStore : null;
+    if (JS && JS.sync) { try { JS.sync(); } catch (_) {} }
+    const j = JS && JS.status ? JS.status() : null;
+    if (!j) return '<div class="gx-sec"><span class="gx-title">COMMANDER JOURNEY</span></div>'
+      + '<div class="q-journey-card"><div class="sub dim">journey proof is not available yet. No progress is being inferred.</div></div>';
+
+    const evo = j.evolution || { stage: 0, name: 'DRIFT', goalsReached: 0 };
+    const goal = j.activeGoal || null;
+    const done = goal ? Math.max(0, Number(goal.done) | 0) : 0;
+    const total = goal ? Math.max(0, Number(goal.total) | 0) : 0;
+    const goalPct = total ? Math.max(0, Math.min(100, Math.round(done * 100 / total))) : 0;
+    const goalHtml = goal && goal.text
+      ? '<div class="q-journey-goal"><span class="q-ns-eyebrow">ACTIVE LIFE GOAL</span><div class="q-journey-title">' + esc(goal.text) + '</div>'
+        + '<div class="arc-bar q-bar"><div class="q-bar-fill" style="width:' + goalPct + '%"></div></div>'
+        + '<div class="sub">' + done + ' of ' + total + ' verified milestones' + (goal.next ? ' &middot; next: ' + esc(goal.next) : '') + '</div></div>'
+      : '<div class="sub dim">set a goal arc to connect quests and evidence to your longer journey.</div>';
+
+    const metricRows = (Array.isArray(j.metrics) ? j.metrics : []).map(m => {
+      const p = (typeof Journey !== 'undefined' && Journey.metricProgress) ? Journey.metricProgress(m) : null;
+      const unit = m.unit ? ' ' + esc(m.unit) : '';
+      return '<div class="q-metric" data-mid="' + esc(m.id) + '"><div class="q-hd"><span class="nm">' + esc(m.label) + '</span>'
+        + '<span class="gx-tag">' + esc(String(m.current)) + unit + ' / ' + esc(String(m.target)) + unit + '</span></div>'
+        + (p ? '<div class="arc-bar q-bar"><div class="q-bar-fill" style="width:' + p.pct + '%"></div></div>' : '')
+        + '<div class="q-metric-actions"><input class="q-metric-current" type="number" step="any" value="' + esc(String(m.current)) + '" aria-label="Current value for ' + esc(m.label) + '">'
+        + '<input class="q-metric-note" type="text" maxlength="240" placeholder="evidence note (optional)" aria-label="Evidence note">'
+        + '<button class="consent-btn q-metric-update" data-mid="' + esc(m.id) + '">UPDATE</button>'
+        + '<button class="consent-btn deny q-metric-retire" data-mid="' + esc(m.id) + '">RETIRE</button></div></div>';
+    }).join('');
+    const metricsHtml = '<div class="q-journey-subhead">OUTCOME METRICS <span class="gx-tag">Commander recorded</span></div>'
+      + (metricRows || '<div class="sub dim">no durable metric yet. Add one when the goal has a number you can verify over time.</div>')
+      + '<div class="q-metric-create"><input class="q-metric-label" maxlength="100" placeholder="metric (for example: monthly revenue)">'
+      + '<input class="q-metric-baseline" type="number" step="any" placeholder="baseline"><input class="q-metric-target" type="number" step="any" placeholder="target">'
+      + '<input class="q-metric-unit" maxlength="24" placeholder="unit"><button class="consent-btn q-metric-add">ADD METRIC</button></div>';
+
+    const domainLabel = d => (typeof Journey !== 'undefined' && Journey.DOMAIN_LABEL && Journey.DOMAIN_LABEL[d]) || String(d || '').toUpperCase();
+    const mastery = (Array.isArray(j.mastery) ? j.mastery : []).slice().sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
+    const masteryHtml = '<div class="q-journey-subhead">AGENT MASTERY <span class="gx-tag">verified outcomes only</span></div>'
+      + (mastery.length ? '<div class="q-mastery-grid">' + mastery.map(m => '<div class="q-mastery-row"><span class="nm">' + esc(m.agentId) + '</span>'
+          + '<span>' + esc(domainLabel(m.domain)) + '</span><span class="gx-tag">' + esc(String(m.tier)) + ' &middot; ' + (Number(m.count) || 0) + '</span></div>').join('') + '</div>'
+        : '<div class="sub dim">mastery appears only after an agent completes a quest or milestone with verified evidence.</div>');
+
+    const suppressed = j.suppressed || {};
+    const receipts = (Array.isArray(j.receipts) ? j.receipts : []).slice(-4).reverse();
+    const receiptHtml = '<div class="q-journey-subhead">ADAPTATION RECEIPTS <span class="gx-tag">correctable</span></div>'
+      + (receipts.length ? receipts.map(r => {
+          const muted = !!(suppressed[r.agentId] && suppressed[r.agentId][r.domain]);
+          return '<div class="q-receipt"><div class="sub">' + esc(r.text) + '</div><button class="consent-btn ' + (muted ? 'q-adapt-resume' : 'deny q-adapt-suppress')
+            + '" data-aid="' + esc(r.agentId) + '" data-domain="' + esc(r.domain) + '">' + (muted ? 'RESUME ADAPTATION' : 'STOP USING THIS') + '</button></div>';
+        }).join('') : '<div class="sub dim">when verified mastery changes how an agent plans, the reason will appear here.</div>');
+
+    const recent = (Array.isArray(j.outcomes) ? j.outcomes : []).slice(-3).reverse();
+    const outcomeHtml = recent.length ? '<div class="q-proof-list">' + recent.map(o => '<div class="sub"><span class="q-outcome">' + esc(o.kind) + '</span> '
+      + esc(o.title || o.sourceId) + ' <span class="dim">&middot; ' + esc(o.verifiedBy) + '</span></div>').join('') + '</div>' : '';
+
+    return '<div class="gx-sec"><span class="gx-title">COMMANDER JOURNEY</span> <span class="gx-tag">real goals, durable proof</span></div>'
+      + '<div class="q-journey-card"><div class="q-evolution"><div><span class="q-ns-eyebrow">STATION EVOLUTION</span><div class="q-evolution-name">' + esc(evo.name) + '</div></div>'
+      + '<span class="gx-tag">' + (Number(evo.goalsReached) || 0) + ' distinct goals reached</span></div>'
+      + goalHtml + metricsHtml + masteryHtml + receiptHtml + outcomeHtml
+      + '<div class="sub dim q-journey-law">Evolution changes the station\'s expression, never your tools, permissions, or capabilities.</div></div>';
+  }
+
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
     const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
@@ -7176,7 +7468,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         + cwHtml + attestHtml + declineHtml + '</div>';
     };
     const meterHtml = m
-      ? '<div class="gx-sec"><span class="gx-title">STATION</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
+      ? '<div class="gx-sec"><span class="gx-title">AGENT GROWTH</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
       : '';
     // G4 feature 2 — PROPOSALS: pending autojob proposals the agent pinned to the MISSION BOARD. A distinct
     // amber card with APPROVE (→ the real POST /api/cron) / DECLINE (→ dropped forever). Rendered above OPEN so
@@ -7197,6 +7489,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     body.innerHTML = '<div class="gx gx-quests">'
       + meterHtml
       + questRefreshHtml()
+      + journeyHtml()
       + '<div class="dim" style="margin:4px 0 10px;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
       + proposalsHtml
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
@@ -7204,6 +7497,55 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
       + '<div class="gx-tros q-grid q-done">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
       + '</div>';
+    // COMMANDER JOURNEY writes are explicit. Empty/invalid numeric fields are rejected in the panel before the
+    // request, and every successful response re-renders from the backend's returned proof snapshot.
+    const journeyFail = r => notify((r && r.error) || 'journey update was not recorded', 'bad');
+    const addMetric = body.querySelector('.q-metric-add');
+    if (addMetric) addMetric.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof JourneyStore === 'undefined' || !JourneyStore.createMetric) return;
+      const label = String((body.querySelector('.q-metric-label') || {}).value || '').trim();
+      const bRaw = String((body.querySelector('.q-metric-baseline') || {}).value || '').trim();
+      const tRaw = String((body.querySelector('.q-metric-target') || {}).value || '').trim();
+      if (!label || !bRaw || !tRaw || !Number.isFinite(Number(bRaw)) || !Number.isFinite(Number(tRaw)) || Number(bRaw) === Number(tRaw)) {
+        notify('add a label and two different numeric baseline/target values', 'warn'); return;
+      }
+      addMetric.disabled = true;
+      const r = await JourneyStore.createMetric({ label, baseline: Number(bRaw), target: Number(tRaw),
+        unit: String((body.querySelector('.q-metric-unit') || {}).value || '').trim(), goalId: jGoalId() });
+      if (r && r.ok) { sfx('click'); rerender('quests'); } else { addMetric.disabled = false; journeyFail(r); }
+    });
+    function jGoalId() {
+      try { const j = JourneyStore.status(); return j && j.activeGoal && j.activeGoal.id || null; } catch (_) { return null; }
+    }
+    body.querySelectorAll('.q-metric-update').forEach(b => b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof JourneyStore === 'undefined' || !JourneyStore.updateMetric) return;
+      const row = b.closest('.q-metric'), input = row && row.querySelector('.q-metric-current');
+      const raw = String(input && input.value || '').trim();
+      if (!raw || !Number.isFinite(Number(raw))) { notify('enter a numeric current value', 'warn'); return; }
+      b.disabled = true;
+      const note = String((row && row.querySelector('.q-metric-note') || {}).value || '').trim();
+      const r = await JourneyStore.updateMetric(b.dataset.mid, Number(raw), note);
+      if (r && r.ok) { sfx('click'); rerender('quests'); } else { b.disabled = false; journeyFail(r); }
+    }));
+    body.querySelectorAll('.q-metric-retire').forEach(b => {
+      const retire = async () => {
+        if (typeof JourneyStore === 'undefined' || !JourneyStore.retireMetric) return;
+        b.disabled = true; const r = await JourneyStore.retireMetric(b.dataset.mid);
+        if (r && r.ok) { sfx('click'); rerender('quests'); } else { b.disabled = false; journeyFail(r); }
+      };
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) ArmConfirm.wire(b, { armedLabel: 'SURE? RETIRE', restLabel: 'RETIRE', timeoutMs: 4000, onConfirm: retire });
+      else b.addEventListener('click', retire);
+    });
+    const wireAdapt = (selector, method, goodText) => body.querySelectorAll(selector).forEach(b => b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof JourneyStore === 'undefined' || !JourneyStore[method]) return;
+      b.disabled = true; const r = await JourneyStore[method](b.dataset.aid, b.dataset.domain);
+      if (r && r.ok) { sfx('click'); notify(goodText, 'gold'); rerender('quests'); } else { b.disabled = false; journeyFail(r); }
+    }));
+    wireAdapt('.q-adapt-suppress', 'suppress', 'adaptation stopped for that agent and mastery track');
+    wireAdapt('.q-adapt-resume', 'resume', 'adaptation resumed for that agent and mastery track');
     // G4 feature 2: approve → the real cron POST (AutoJobStore routes it), then re-render (the card clears);
     // decline → drop the card forever. Both route through AutoJobStore's own paths — no new scheduling logic here.
     body.querySelectorAll('.q-prop-yes').forEach(b => b.addEventListener('click', async ev => {

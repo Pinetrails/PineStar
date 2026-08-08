@@ -1,5 +1,29 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-08 — VOICE TURN BOUNDARIES + LIVE DICTATION — MERGED
+
+Merged to `feat/harness-backend` as `9e8c9c5c` from snapshot `17196bd9`. Conversation mode now keeps a 900 ms pre-roll, uses a quieter-room-safe
+speech threshold, permits utterances up to 60 seconds, and exposes a persistent TURN END
+control with 1.2, 1.8, and 2.6 second pause choices. Transcription mode now renders genuine
+local speech-recognition previews in the composer while the user is still speaking; the
+synthetic bullet/dot progress text is gone, and typed drafts remain protected.
+
+Conversation mode also fixes one speaker identity for the full Live Voice session. It snapshots
+the selected voice when the room opens, lets the first audible chunk choose the bundled Kokoro
+engine or its mapped Edge floor, and pins that engine for later chunks and turns. A transient
+failure can no longer substitute a different-sounding voice mid-conversation; changing the voice
+picker now truthfully applies to the next Live Voice session.
+
+Verification: focused voice-button (**86/86**), media-service (**34/34**), and claims
+(**64/64**) suites are green; mirrored website assets are exact; JavaScript syntax and strict
+package JSON checks are green. Both the final branch and merged trunk passed
+`npm run test:fast` **584/584 GREEN** and `npm run test:http` **70/70 GREEN**. Claims authority
+passes with 206 locked surface files. In the real seeded app, the TURN END control rendered with the persisted
+NORMAL 1.8S value after closing and reopening Local Live, using the station-native dark skin.
+The in-app browser denied microphone capture, so real acoustic boundary/transcript proof
+remains for an installed-desktop pass; production callback behavior is covered deterministically.
+No route, shared-contract, external-service, push, PR, or deploy change occurred.
+
 ## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
 Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have
@@ -16,7 +40,7 @@ again on the exact merged trunk. Frontend-only: `test:http` was not required.
 
 ## 2026-08-07 — STARNET 0.10 FINAL HERMES PARITY MAP (`agent/hermes-final-gap-audit`)
 
-G0 AND G2 LANE COMPLETE; G1 PACKAGED BASELINE PARTIAL; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
+G0, G2, AND G3 LANE ACCEPTANCE COMPLETE; G1 PACKAGED BASELINE PARTIAL; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
 `origin/main` at `10a2b3d7` (2026-08-07), rather than the stale July Hermes checkout. The full evidence map and
 observable exit tests live in `docs/HARNESS_GAP_2026-08-07.md`.
 
@@ -47,6 +71,17 @@ adapter: MCP re-initialized/listed, Telegram re-authenticated but remained only 
 sent. Focused coverage is 8/8; `sidecar.http.test` is 471 assertions; website mirror is 3,883 + 2 embed-only green. The
 canonical fast gate passed all new doctor tests, then stopped at the existing candidate-bound claims seal at step
 228/576 (10 problems / 54 ok); this isolated lane did not rewrite shared release claims.
+
+G3 is implemented on `agent/mcp-process-lifecycle`. Canonical SHA-256 cache identity binds stdio schemas to command,
+arguments/package spec, cwd, environment, and Safe Cell owner. Warm boot projects only a matching size-bounded disk
+record and reports `cached` / process stopped; first use re-initializes and re-lists before dispatch, so a stale tool,
+resource, or prompt cannot run as current. Idle and maximum lifetime recycle the child, owner/profile changes withdraw
+the projection, and ordinary transport crashes retain the existing bounded reconnect path. Stdio children now use the
+durable process ledger; a real Windows force-death test proved the next boot reaped exactly the owned child, including
+on the managed-host CIM-denied path via exact creation-time fallback. The live seeded ABILITIES panel rendered
+`idle · starts on use · 1 tool` plus `cached_probe` without launching a child. Focused G3 evidence is 22 schema-
+lifecycle, 38 stdio, 6 real orphan, and 38 ledger assertions; the exact lane tree is 586/586 fast and 70/70 HTTP green.
+This remains a lane candidate, not trunk capability, until merged.
 
 G1 now has a cryptographically verified **0.9.0 baseline**, not a completed lifecycle matrix. Receipt
 `C:\Users\andro\gen-trees\release-090-final\.dogfood\g1-packaged-lifecycle\20260807T175943\g1-packaged-lifecycle-receipt.json`

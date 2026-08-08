@@ -165,6 +165,10 @@ test/workshop-visibility.test.js
 test/workshop-resolution.test.js
 test/workshop-toggle-ui.test.js
 test/quest-store.test.js
+test/journey-store.test.js
+test/journey.test.js
+test/journeystore.test.js
+test/journey-wiring.test.js
 test/questinject.test.js
 test/quests-tool.test.js
 test/questsweeps.test.js
@@ -400,6 +404,7 @@ test/slaglog.test.js
 test/xp.test.js
 test/xp-crewsplit.test.js
 test/xpstore.test.js
+test/growthratings.test.js
 test/xp-upgrade.test.js
 test/dossier-reliability.test.js
 test/roster-track.test.js
@@ -528,6 +533,8 @@ test/mcp.client.test.js
 test/mcp.resources-prompts.test.js
 test/mcp.transport.test.js
 test/mcp.stdio.test.js
+test/mcp.schema-lifecycle.test.js
+test/mcp.orphan-recovery.test.js
 test/mcp.catalog.test.js
 test/mcp.oauth.test.js
 test/connectorstate.test.js
@@ -538,6 +545,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/crew-rail-fit.test.js
 test/brand-wordmark-mask.test.js
 test/personalization-authority-wiring.test.js
 test/sprite-loading.test.js

@@ -82,12 +82,14 @@ const GOOD = [
   'QUEST: Publish episode 3',
   'DESC: Finish the edit and get episode 3 live.',
   'REWARD: a published episode driving the channel forward',
+  'DOMAIN: creative',
   'CONTRACT: attest',
   'STEPS: final cut; thumbnail; upload',
   'WHY: you edited episode 3 of the interview series this week',
   'QUEST: Automate the research brief',
   'DESC: Stand up the web dish so an agent can compile guest research.',
   'REWARD: research on tap for every episode',
+  'DOMAIN: research',
   'CONTRACT: prop dish',
   'WHY: the channel goals need recurring guest research',
   'QUEST: Write the outline',
@@ -101,9 +103,13 @@ A.eq(p1.none, false, 'a QUEST-bearing reply is not NONE');
 A.eq(p1.northStar && p1.northStar.text, 'Grow the channel into a sustainable income', 'north star line parses');
 A.eq(p1.quests.length, 2, 'the open-slate duplicate is dropped, the two real quests survive');
 A.eq(p1.quests[0].contract, { type: 'attest', key: '' }, 'attest contract rides through');
+A.eq(p1.quests.map(q => q.domain), ['creative', 'research'], 'valid mastery domains round-trip with refreshed quests');
 A.eq(p1.quests[0].steps, [{ key: 's1', label: 'final cut' }, { key: 's2', label: 'thumbnail' }, { key: 's3', label: 'upload' }], 'STEPS split into keyed steps');
 A.eq(p1.quests[1].contract, { type: 'prop', key: 'dish' }, 'prop contract clamps to the vocabulary');
 A.ok(p1.quests[1].groundedIn.indexOf('guest research') >= 0, 'WHY becomes groundedIn');
+A.eq(R.normalize({ pendingQuests: p1.quests }).pendingQuests.map(q => q.domain), ['creative', 'research'], 'pending refresh slate preserves mastery domains across restart');
+const badDomain = R.parse('QUEST: Valid without a domain\nDOMAIN: money\nCONTRACT: attest\nWHY: grow the channel', { propKeys: PROPS, grounding: 'grow the channel' });
+A.eq(badDomain.quests[0].domain, null, 'an invented domain never enters the mastery taxonomy');
 
 // denylist + intra-reply dedup + the per-cycle cap
 const DUPED = [

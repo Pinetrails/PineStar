@@ -13,10 +13,54 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 // (no duplicated inner h4 for the SECTION — the PROVIDERS rule), topped by the master FULL BYPASS switch.
 // Each block header is a real .ms-h (the shared divider-rule idiom), not body-weight .set-row prose —
 // that flatness is exactly what made the pane unreadable before the 08-05 spacing pass.
-ok(/<h4 class="ms-h">1 · YOUR CREW/.test(src), 'block 1: the crew list is a real section header');
-ok(/<h4 class="ms-h">2 · SKIP EVERY PROMPT/.test(src), 'block 2: the master override is a real section header');
-ok(/<h4 class="ms-h">3 · WHILE YOU’RE AWAY/.test(src), 'block 3: unattended-level header is a real section header');
-ok(/<h4 class="ms-h">4 · STANDING APPROVALS/.test(src), 'block 4: standing-approvals header is a real section header');
+ok(/<h4 class="ms-h">EACH CREW MEMBER/.test(src), 'the crew list is a real section header');
+ok(/<h4 class="ms-h">SKIP EVERY PROMPT/.test(src), 'the master override is a real section header');
+ok(/<h4 class="ms-h">WHILE YOU’RE AWAY/.test(src), 'unattended-level header is a real section header');
+ok(/<h4 class="ms-h">STANDING APPROVALS/.test(src), 'standing-approvals header is a real section header');
+// Block NUMBERS are gone. They forced the reader to hold a cross-reference ("overridden by block 2")
+// and they only existed because the pane made a newcomer walk all four blocks in order.
+ok(!/ms-h">\d · /.test(src) && !/block 2/i.test(src), 'no numbered blocks and no cross-references to them');
+
+// ── THE POSTURE FRONT DOOR ──
+// Measured: the previous pass still cost 547 words + 16 controls to set up ONE agent. Three postures
+// compose reach + approval + unattended so a newcomer answers ONE question; the rest is behind a fold.
+ok(/const STATION_POSTURES = \[/.test(src), 'the station postures table exists');
+ok(/id="perm-postures"/.test(src) && /const paintPostures = \(\) =>/.test(src), 'the posture front door is rendered');
+for (const p of ['CHECK WITH ME', 'LET IT WORK', 'FULL POWER']) ok(new RegExp("label: '" + p + "'").test(src), 'posture offered: ' + p);
+// TRUTH: a posture is a shortcut for SETTING values, never a badge claiming one. It lights only when
+// every component matches, the override outranks it, and applying counts what actually changed.
+ok(/const activePosture = \(\) => \{[\s\S]{0,700}present\.every\(a =>[\s\S]{0,300}snap\.level === P\.level\)/.test(src),
+  'a posture matches only when EVERY component matches the live state');
+ok(/if \(!snap\.loaded \|\| snap\.masterBypass \|\| snap\.envFullAccess\) return null;/.test(src),
+  'the master override outranks every posture (no card may claim a bypassed station)');
+ok(/CUSTOM — your own mix/.test(src), 'a hand-tuned station reads CUSTOM instead of being claimed by the nearest card');
+ok(/const done = res\.filter\(r => r\.ok\)\.length;/.test(src) && /r\.done \+ ' of ' \+ r\.of \+ ' crew set to '/.test(src),
+  'applying a posture reports the number that ACTUALLY changed');
+ok(/STATION_POSTURES[\s\S]{0,900}profile: 'station-gear'[\s\S]{0,900}profile: 'trusted-project'[\s\S]{0,900}profile: 'this-computer'/.test(src),
+  'postures only ever name LOCAL-runtime profiles (Docker/SSH need a probe and a saved target)');
+ok(/btn\.querySelector\('\.pp-name'\)\.textContent = 'SURE\? NO PROMPTS, ANY FILE'/.test(src),
+  'FULL POWER keeps a two-press confirm, arming the NAME span so the card is not flattened');
+// everything that is not needed for a working, safe station is closed by default
+ok(/<details class="perm-fold" id="perm-advanced">/.test(src) && /<summary>Advanced — idle Safe Cell cleanup<\/summary>/.test(src),
+  'ADVANCED holds the idle-cell maintenance knob');
+// ONLY maintenance is folded. Every actual PERMISSION stays on screen: the master override outranks
+// every crew row (so it is the last thing that may hide), and a standing grant you cannot find is not
+// really revocable. Locking this stops a future "tidy-up" from burying them again.
+{
+  const fold = src.slice(src.indexOf('id="perm-advanced"'), src.indexOf('const secBudget'));
+  for (const h of ['SKIP EVERY PROMPT', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS'])
+    ok(!fold.includes(h), 'NOT hidden in ADVANCED: ' + h);
+  ok(fold.includes('perm-exec-policy'), 'the idle-cell policy IS in ADVANCED');
+  ok(!/<details/.test(fold.slice(fold.indexOf('perm-advanced') + 5)), 'no nested disclosure inside ADVANCED');
+}
+ok(/id="perm-crew"[\s\S]{0,1600}<h4 class="ms-h">SKIP EVERY PROMPT[\s\S]{0,900}<h4 class="ms-h">WHILE YOU’RE AWAY[\s\S]{0,1600}<h4 class="ms-h">STANDING APPROVALS/.test(src),
+  'the pane runs crew → override → while-away → standing approvals, in that order');
+// TIER 2 MUST STAY VISIBLE. Folding the per-agent rows away over-corrected: a posture can only set
+// every agent the SAME way, so the "except this one" control may never hide behind a disclosure.
+ok(!/id="perm-finetune"/.test(src), 'the per-agent crew rows are NOT behind a fold');
+ok(/EACH CREW MEMBER[\s\S]{0,220}<div class="perm-list" id="perm-crew"><\/div>/.test(src),
+  'the crew list sits directly under its own header, outside any details');
+// (the fold's contents are asserted in the scoped block above — one place, not two)
 // the flip button may never go back to sitting inline after the row's sentence (the collision bug)
 ok(/class="perm-agent/.test(src) && /class="pa-state"/.test(src), 'agent rows are structured (name/state/button), not one inline sentence');
 
@@ -57,15 +101,15 @@ ok(/plain: 'None of your files\./.test(src) && /plain: 'Almost any file on this 
 ok(/const effFull = full \|\| overridden;/.test(src), 'the row reports the EFFECTIVE approval posture, not the stored one alone');
 ok(/const overridden = !!\(snap\.loaded && \(snap\.masterBypass \|\| snap\.envFullAccess\)\);/.test(src),
   'the override state is read from SERVER truth, never guessed locally');
-ok(/OVERRIDDEN BY BLOCK 2/.test(src) && /The switch in block 2 is ON, so this agent is not asking/.test(src),
+ok(/OVERRIDDEN BY SKIP EVERY PROMPT/.test(src) && /The SKIP EVERY PROMPT switch is ON, so this agent is not asking/.test(src),
   'an overridden row says so in plain words instead of contradicting the glance');
 ok(/Turn that switch off and it goes back to stopping for your yes/.test(src),
   'the stored setting stays visible as what it returns to (never hidden)');
 ok(/paintBypass\(snap\);[\s\S]{0,220}paintCrew\(\);/.test(src),
   'flipping the master switch repaints every crew row, not just the card');
 // the advanced Docker housekeeping is no longer the first thing under the crew header
-ok(/id="perm-advanced"/.test(src) && /ADVANCED — idle Safe Cell cleanup/.test(src),
-  'the idle-cell policy lives in a closed ADVANCED disclosure, not above the crew');
+ok(/id="perm-advanced"/.test(src) && /idle Safe Cell cleanup/.test(src),
+  'the idle-cell policy lives inside ADVANCED, not above the crew');
 ok(/id="perm-bypass" class="perm-master"/.test(src), 'the master switch is a CARD, not a key-list row');
 ok(/class="perm-m-act"/.test(src), 'the bypass control sits on its own line, never inside the prose');
 ok(/id="perm-desc"/.test(src), '#perm-desc combined-level blurb element present');

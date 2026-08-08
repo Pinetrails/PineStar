@@ -67,6 +67,7 @@ const spotifyPkce = require('./spotify/pkce.js');                          // pu
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
+const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growthratings.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
@@ -160,6 +161,7 @@ const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
+const mcpSchemaCache = require('./mcp/schema-cache.js');
 const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
 const serviceKeysMod = require('./servicekeys.js');         // KEYS tab: custom service API keys (pure core — env injection + masked list)
 const serviceKeysCatalog = require('./servicekeys-catalog.js');   // KEYS tab: the curated PLATFORM directory (pure data)
@@ -210,6 +212,7 @@ const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
+const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
 const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
 const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B: fold an agent's OPEN quests into its system prompt (pure, dossierinject idiom)
 const QuestSweeps = require('./questsweeps.js');
@@ -237,7 +240,9 @@ const skillPackages = require('./skills/package.js');       // package-backed SK
 const skillGuard = require('./skills/guard.js');            // guard scanner for runtime/external skill packages
 const { makeSkillGate, digestOf: skillDigestOf } = require('./skills/gate.js');   // the CONSUMER of that verdict: may the model read this skill?
 const { makeSkillExchange } = require('./skills/exchange.js');
-const { makeSkillDocumentFetcher } = require('./skills/exchange-fetch.js');
+const { makeSkillDocumentFetcher, makeSkillPackageFetcher } = require('./skills/exchange-fetch.js');
+const { makeSkillRegistry } = require('./skills/registry.js');
+const { makeSkillMetrics } = require('./skills/metrics.js');
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
@@ -861,6 +866,23 @@ const runsIo = {
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
+// Explicit Commander work verdicts are durable facts, separate from the mutable browser save projection.
+// Append+fsync must fail closed: the UI may only say "rated" after this ledger acknowledges the row.
+const GROWTH_RATINGS_FILE = path.join(WORKSPACES, 'growth-ratings.jsonl');
+const growthRatingsIo = {
+  readAll() { try { return readBoundedJsonl(GROWTH_RATINGS_FILE); } catch (_) { return []; } },
+  append(entry) {
+    let fd = null;
+    try {
+      fd = fs.openSync(GROWTH_RATINGS_FILE, 'a');
+      fs.writeSync(fd, JSON.stringify(entry) + '\n');
+      fs.fsyncSync(fd);
+    } finally { if (fd != null) fs.closeSync(fd); }
+    rotateJsonl(GROWTH_RATINGS_FILE);
+  }
+};
+const growthRatings = makeGrowthRatings({ io: growthRatingsIo, clock: { now: () => Date.now() } });
+
 // NS-0 AUTONOMY DECISION LEDGER: a durable, append-only, fsync'd JSONL sibling of runs.jsonl recording every
 // autonomous DECISION (cron fire/skip/defer today; night-shift beats next). runs.jsonl answers "what runs
 // happened"; this answers "what did the station DECIDE to do (or not do) unattended, and why" — the trace that
@@ -1004,7 +1026,7 @@ const skillsIo = {
   rewrite(entries) { rewriteJsonlDurable(SKILLS_FILE, entries); }   // compaction full-replace
 };
 const SKILL_PACKAGES_DIR = path.join(WORKSPACES, 'skill-packages');
-const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR });
+const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR, now: () => Date.now() });
 const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard, digest: skillDigestOf });
 /* SKILL GUARD APPROVALS — the Commander's per-skill "I read this and it's fine", keyed to a digest
    of the exact content that was reviewed, exactly as plugins-allowed.json keys a plugin to its code
@@ -1045,8 +1067,28 @@ const fetchSkillDocument = makeSkillDocumentFetcher({
   assertResolvedSafe: skillWebInternals.assertResolvedSafe,
   lookup: (host) => dns.promises.lookup(host, { all: true })
 });
+const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument });
+const skillRegistry = makeSkillRegistry({ fetchDocument: fetchSkillDocument, now: () => Date.now() });
+const SKILL_REGISTRIES_FILE = path.join(WORKSPACES, 'skill-registries.json');
+let skillRegistrySources = [];
+try {
+  const saved = loadResilient(SKILL_REGISTRIES_FILE, 'skill registries');
+  skillRegistrySources = Array.isArray(saved && saved.sources) ? saved.sources.filter(s => s && /^https:\/\//.test(String(s.url || ''))).slice(0, 20) : [];
+} catch (_) { skillRegistrySources = []; }
+function saveSkillRegistrySources(next) {
+  const value = { version: 1, sources: next.slice(0, 20), updatedAt: Date.now() };
+  saveResilient(SKILL_REGISTRIES_FILE, value);
+  const proven = loadResilient(SKILL_REGISTRIES_FILE, 'skill registries');
+  if (JSON.stringify(proven && proven.sources) !== JSON.stringify(value.sources)) throw new Error('registry source read-back did not match');
+  skillRegistrySources = value.sources; return value.sources;
+}
+const SKILL_METRICS_FILE = path.join(WORKSPACES, 'skill-exchange-metrics.json');
+const skillMetrics = makeSkillMetrics({
+  load: () => loadResilient(SKILL_METRICS_FILE, 'skill exchange metrics'),
+  save: value => saveResilient(SKILL_METRICS_FILE, value), now: () => Date.now()
+});
 const skillExchange = makeSkillExchange({
-  fetchDocument: fetchSkillDocument, skillStore, guard: skillGuard,
+  fetchDocument: fetchSkillDocument, fetchPackage: fetchSkillPackage, skillStore, packageStore: skillPackageStore, guard: skillGuard,
   hash: (text) => crypto.createHash('sha256').update(String(text), 'utf8').digest('hex'),
   now: () => Date.now(), makeId: () => crypto.randomBytes(16).toString('hex')
 });
@@ -1430,6 +1472,11 @@ const questStore = makeQuestStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'quests'),
   warn: (...args) => console.warn.apply(console, args)
 });
+const journeyStore = makeJourneyStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[journey] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'journey')
+});
 // NS-6: the durable THREAD LEDGER (station-global, like the dossier/goal arc — the Commander's un-acted-on ideas,
 // consumed by the single night-shift persona). Same durable+recovery discipline as workshopStore/notebookStore.
 const threadsStore = makeThreadsStore({
@@ -1533,9 +1580,11 @@ const commanderGoals = {
   get() { return this._goal; },
   set(goal) {
     this._goal = (goal && typeof goal === 'object') ? {
+      id: goal.id == null ? null : String(goal.id).slice(0, 64),
       text: String(goal.text || '').slice(0, 280),
       done: Number(goal.done) | 0, total: Number(goal.total) | 0, pct: Number(goal.pct) | 0,
-      next: goal.next == null ? null : String(goal.next).slice(0, 200)
+      next: goal.next == null ? null : String(goal.next).slice(0, 200),
+      milestoneId: goal.milestoneId == null ? null : String(goal.milestoneId).slice(0, 80)
     } : null;
     try {
       fs.mkdirSync(WORKSPACES, { recursive: true });
@@ -3274,6 +3323,31 @@ const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
 const CONNECTORS_OAUTH_FILE = path.join(CONNECTORS_DIR, 'oauth.json');       // legacy read-only migration source
 const CONNECTORS_STATE_FILE = path.join(CONNECTORS_DIR, 'state.json');       // authoritative v2 envelope
+const CONNECTORS_SCHEMA_DIR = path.join(CONNECTORS_DIR, 'schemas');
+function connectorSchemaFile(id) { return path.join(CONNECTORS_SCHEMA_DIR, String(id) + '.json'); }
+const connectorSchemaCacheStore = {
+  load: (id) => {
+    try { return mcpSchemaCache.normalize(loadResilient(connectorSchemaFile(id), 'connector schema cache')); }
+    catch (_) { return null; }
+  },
+  save: (id, raw) => {
+    const record = mcpSchemaCache.normalize(raw);
+    if (!record) return false;
+    const file = connectorSchemaFile(id);
+    const proof = saveJsonVerified({
+      mkdir: () => fs.mkdirSync(CONNECTORS_SCHEMA_DIR, { recursive: true }),
+      save: () => saveResilient(file, record),
+      load: () => loadResilient(file, 'connector schema cache'),
+      proof: got => !!got && got.fingerprint === record.fingerprint && JSON.stringify(got.tools || []) === JSON.stringify(record.tools)
+    });
+    return proof.ok;
+  },
+  remove: (id) => {
+    const file = connectorSchemaFile(id);
+    for (const target of [file, file + '.bak']) { try { fs.unlinkSync(target); } catch (e) { if (!e || e.code !== 'ENOENT') throw e; } }
+    return true;
+  }
+};
 function migrateConnectorCatalogKeyHeaders(rawState) {
   const state = connectorStateMod.normalize(rawState);
   let changed = false;
@@ -3410,27 +3484,38 @@ function saveServiceKeyRemoval(nextKeys) {
     'servicekeys'
   );
 }
+function mcpStdioIsolationError(cfg) {
+  const aid = String((cfg && cfg.agentId) || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) return 'mcp stdio requires a Safe Cell agent binding';
+  const owner = agentRoster.get(aid) || {};
+  const isolated = executionEnvironment.forAgent(aid);
+  if (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(aid) !== 'docker' || !isolated.supports || isolated.supports.hostileCodeSandbox !== true || isolated.supports.stdioMcp !== true) {
+    return 'mcp stdio requires agent "' + aid + '" to use the Safe Cell execution profile';
+  }
+  return '';
+}
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => {
     if (!cfg || cfg.transport !== 'stdio') return makeHttpTransport(cfg);
     const aid = String(cfg.agentId || '');
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('mcp stdio requires a Safe Cell agent binding');
-    const owner = agentRoster.get(aid) || {};
-    const isolated = executionEnvironment.forAgent(aid);
-    if (owner.executionProfile !== 'safe-cell' || executionEnvironment.backendIdFor(aid) !== 'docker' || !isolated.supports || isolated.supports.hostileCodeSandbox !== true || isolated.supports.stdioMcp !== true) {
-      throw new Error('mcp stdio requires agent "' + aid + '" to use the Safe Cell execution profile');
-    }
+    const issue = mcpStdioIsolationError(cfg); if (issue) throw new Error(issue);
     return makeStdioTransport(Object.assign({}, cfg, {
       // The installed sidecar correctly pins host stdio OFF. This broker proof opts in only for the
       // exact child below, whose process is docker exec into the selected agent's owned Safe Cell.
       userControlIsolated: true,
       processEnv: {},
+      ledger: procLedger,
       spawnImpl: (command, args, spawnOptions) => executionEnvironment.spawnStdio({
         agentId: aid, command, args, cwd: cfg.cwd || '', env: cfg.env || {}, spawnOptions
       })
     }));
   },
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  schemaCache: connectorSchemaCacheStore,
+  validateConfig: cfg => cfg && cfg.transportKind === 'stdio' ? mcpStdioIsolationError(cfg) : '',
+  fingerprintConfig: cfg => mcpSchemaCache.fingerprint(cfg, value => crypto.createHash('sha256').update(value).digest('hex')),
+  stdioIdleMs: Math.max(1000, Number(process.env.STARNET_MCP_STDIO_IDLE_MS) || 15 * 60 * 1000),
+  stdioMaxLifetimeMs: Math.max(1000, Number(process.env.STARNET_MCP_STDIO_MAX_LIFETIME_MS) || 6 * 60 * 60 * 1000),
   // AUTO-RECONNECT: on transport death (stdio child exit / repeated HTTP failure) the manager flips to 'error'
   // (honest status — the panel no longer shows a dead connector as 'up') and retries with bounded backoff. Real
   // timer + rng injected here (composition root); the pure manager stays deterministic for tests.
@@ -3439,6 +3524,11 @@ const connectors = makeConnectorManager({
   random: () => Math.random(),
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
+let connectorLifecycleTimer = null;
+if (require.main === module) {
+  connectorLifecycleTimer = setInterval(() => { try { connectors.sweepLifecycle(); } catch (_) {} }, 60000);
+  try { connectorLifecycleTimer.unref(); } catch (_) {}
+}
 
 /* ---- MCP connector OAuth (turns the catalog's gated `oauth` tier live): the generic RFC 9728 / 8414 / 7591 +
    PKCE flow lives in mcp/oauth.js; index.js (the only ambient-I/O module) orchestrates it. Access + refresh
@@ -3475,8 +3565,8 @@ async function ensureConnectorOauthToken(id) {
   return t.accessToken;
 }
 // configure a connector, injecting a fresh OAuth bearer for oauth connectors (kept out of the persisted config).
-async function configureConnectorCfg(cfg) {
-  if (cfg && cfg.transport === 'stdio' && cfg.enabled !== false) {
+async function configureConnectorCfg(cfg, options) {
+  if (cfg && cfg.transport === 'stdio' && cfg.enabled !== false && !(options && options.deferConnect)) {
     const aid = String(cfg.agentId || '');
     // Preparing a persistent cell is asynchronous; the stdio transport itself remains synchronous/lazy.
     // Swallow readiness here only so the manager can record an honest connector error ("not ready") in
@@ -3490,9 +3580,9 @@ async function configureConnectorCfg(cfg) {
     // reconnect / Reload — an oauth connector no longer dies ~1h in when the access token expires. We ALWAYS
     // register + connect (even when signed-out): a missing token yields an HONEST 401/error the panel shows and can
     // re-sign-in from, rather than the connector vanishing from /api/connectors.
-    return connectors.configure(cfg.id, Object.assign({}, cfg, { token: '', tokenProvider: () => ensureConnectorOauthToken(cfg.id) }));
+    return connectors.configure(cfg.id, Object.assign({}, cfg, { token: '', tokenProvider: () => ensureConnectorOauthToken(cfg.id) }), options);
   }
-  return connectors.configure(cfg.id, cfg);
+  return connectors.configure(cfg.id, cfg, options);
 }
 
 /* ---- TOOLSETS kill-switch store (the reference harness's "toolsets" surface): a per-capId-FAMILY on/off flag
@@ -6264,6 +6354,7 @@ function questRefreshNote(entry) { questRefreshState = QuestRefresh.note(questRe
 function questRefreshOpenCount() { try { return questStore.list().filter(q => q.status === 'open').length; } catch (_) { return 0; } }
 async function mintQuestRecommendations(quests, why) {
   const declinedIdx = buildDeclinedIndex(null); let minted = 0;
+  const activeGoal = commanderGoals.get();
   const ranked = Recommendation.rankCandidates((quests || []).map(q => ({
     candidate: q, kind: 'quest', traits: ['quest', 'contract:' + ((q.contract && q.contract.type) || 'unknown')],
     features: { relevance: 1, impact: 0.8, success: q.contract && q.contract.type === 'attest' ? 0.55 : 0.8,
@@ -6275,7 +6366,8 @@ async function mintQuestRecommendations(quests, why) {
     if (declinedIdx.has(q.title)) { questRefreshNote({ outcome: 'rejected', reason: 'declined elsewhere', title: q.title }); continue; }
     const r = await questStore.mint({
       title: q.title, desc: q.desc, reward: q.reward, kind: 'generated', createdBy: 'system:quest-refresh',
-      agentId: null, contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
+      agentId: null, domain: q.domain, goalId: activeGoal && activeGoal.id, milestoneId: activeGoal && activeGoal.milestoneId,
+      contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
     }, Date.now());
     if (r && r.ok) {
       minted++;
@@ -6290,13 +6382,34 @@ async function mintQuestRecommendations(quests, why) {
   return minted;
 }
 
-function completeQuestRecommendationIds(ids) {
+async function completeQuestRecommendationIds(ids) {
   for (const id of (Array.isArray(ids) ? ids : [])) {
     recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => {});
     recommendationLedger.outcome('quest:' + id, { adopted: true, quality: 1, completedAt: Date.now() }, Date.now()).catch(() => {});
+    // The quest store is the completion authority. Only AFTER it says done do we fold the exact persisted record
+    // into the journey ledger; duplicate sweeps are idempotent by quest id.
+    try { const q = questStore.get(id); if (q && q.status === 'done') await journeyStore.recordQuest(q, commanderGoals.get(), q.completedAt || Date.now()); } catch (e) { console.warn('[journey] quest fold failed:', (e && e.message) || e); }
   }
   return ids;
 }
+
+// A quest completion is durable before its journey fold. Recover a crash/write failure by replaying every done
+// quest; journey-store's lifetime source-key ledger makes this idempotent, and its reset epoch skips prior-Commander
+// completions. GET /api/journey awaits the same pass so the UI never outruns recoverable evidence.
+let journeyQuestReconcile = null;
+function reconcileCompletedJourneyQuests() {
+  if (journeyQuestReconcile) return journeyQuestReconcile;
+  const task = (async () => {
+    for (const q of questStore.list()) {
+      if (!q || q.status !== 'done') continue;
+      await journeyStore.recordQuest(q, commanderGoals.get(), q.completedAt || Date.now());
+    }
+  })();
+  journeyQuestReconcile = task;
+  task.finally(() => { if (journeyQuestReconcile === task) journeyQuestReconcile = null; }).catch(() => {});
+  return task;
+}
+setImmediate(() => reconcileCompletedJourneyQuests().catch(e => console.warn('[journey] boot reconciliation failed:', (e && e.message) || e)));
 
 let questRefreshingNow = false;   // one cycle in flight, ever (the scout's in-flight-guard discipline)
 async function runQuestRefreshCycle(why) {
@@ -7553,6 +7666,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/agent/delete', h: handleAgentDelete },
   { m: 'POST', exact: '/api/dossier', h: handleDossier },
   { m: 'POST', exact: '/api/goals', h: handleGoals },   // GROWTH Tier 2: the active goal-arc summary for cron personas
+  { m: ['GET', 'POST'], exact: '/api/journey', h: handleJourney }, // verified Commander journey, mastery, adaptation, expressive station evolution
   { m: 'POST', exact: '/api/channels/telegram/disconnect', h: handleChannelDisconnect },
   { m: 'POST', exact: '/api/channels/telegram/bots/connect', h: handleTelegramBotAdd },
   { m: 'POST', rx: TG_BOT_RX.owner, h: (req, res, gm) => handleTelegramBotOwner(req, res, gm[1], gm[2]) },
@@ -7635,8 +7749,18 @@ const ROUTES = [
   { m: 'POST', exact: '/api/slash/dispatch', h: handleSlashDispatch },
   { m: 'POST', exact: '/api/skills/toggle', h: handleSkillToggle },
   { m: 'POST', exact: '/api/skill-exchange/inspect', h: handleSkillExchangeInspect },
+  { m: 'POST', exact: '/api/skill-exchange/registry', h: handleSkillExchangeRegistry },
+  { m: 'POST', exact: '/api/skill-exchange/discover', h: handleSkillExchangeDiscover },
+  { m: 'GET', exact: '/api/skill-exchange/registries', h: serveSkillExchangeRegistries },
+  { m: 'GET', exact: '/api/skill-exchange/metrics', h: serveSkillExchangeMetrics },
+  { m: 'POST', exact: '/api/skill-exchange/registries', h: handleSkillExchangeRegistries },
+  { m: 'POST', exact: '/api/skill-exchange/import', h: handleSkillExchangeImport },
   { m: 'POST', exact: '/api/skill-exchange/install', h: handleSkillExchangeInstall },
   { m: 'POST', exact: '/api/skill-exchange/check', h: handleSkillExchangeCheck },
+  { m: 'POST', exact: '/api/skill-exchange/export', h: handleSkillExchangeExport },
+  { m: 'POST', exact: '/api/skill-exchange/publish-handoff', h: handleSkillExchangePublishHandoff },
+  { m: 'POST', exact: '/api/skill-exchange/generations', h: handleSkillExchangeGenerations },
+  { m: 'POST', exact: '/api/skill-exchange/rollback', h: handleSkillExchangeRollback },
   { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
   { m: 'POST', exact: '/api/agent-skills/allow', h: handleAgentSkillAllow },   // the Commander's review decision on a guard-withheld skill
   { m: 'GET', prefix: '/api/agent-skills', h: serveAgentSkills },
@@ -7754,6 +7878,7 @@ const ROUTES = [
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
   { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
+  { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
@@ -7912,7 +8037,7 @@ server.listen(PORT, '127.0.0.1', () => {
     for (const c of connectorConfigs) {
       if (!c || !(c.url || c.command || c.oauth)) continue;
       if (c.enabled === false) disabled++; else warming++;
-      configureConnectorCfg(c).catch(() => {});
+      configureConnectorCfg(c, { deferConnect: c.transport === 'stdio' }).catch(() => {});
     }
     if (warming) console.log('  · ' + warming + ' MCP connector(s) warming');
     if (disabled) console.log('  · ' + disabled + ' disabled MCP connector(s) loaded');
@@ -7978,6 +8103,7 @@ function gracefulShutdown(signal) {
   if (deadline.unref) deadline.unref();
   try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
   try { if (typeof nightshiftTimer !== 'undefined' && nightshiftTimer) { clearInterval(nightshiftTimer); } } catch (_) {}   // NS-1: stop the night-shift ticker on shutdown
+  try { if (typeof connectorLifecycleTimer !== 'undefined' && connectorLifecycleTimer) { clearInterval(connectorLifecycleTimer); } } catch (_) {}
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
   try { if (typeof terminalSessions !== 'undefined' && terminalSessions && terminalSessions.stopAll) terminalSessions.stopAll(); } catch (_) {}   // reap owned PTY/ConPTY trees
   // release any cursor confinement a reaped child leaves stuck (the PS one-shot outlives our exit; best-effort —
@@ -10145,7 +10271,9 @@ async function handleQuestsConfirm(req, res) {
   if (!id) return json(400, { ok: false, error: 'which quest?' });
   const ok = body.ok === true || body.ok === 'true';
   let did; try { did = await questStore.confirmAttest(id, ok, body.note, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not record that verdict' }); }
-  if (did && ok) await recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => null);
+  if (did && ok) {
+    await completeQuestRecommendationIds([id]);
+  }
   // caught-up nudge (QUEST V3): confirming the last open quest should earn fresh direction within the
   // cooldown, not wait for the next timer tick. The gate itself decides; this is just an early look.
   if (did) { try { questRefreshTick(); } catch (_) {} }
@@ -11188,6 +11316,42 @@ async function handleGoals(req, res) {
   res.end(JSON.stringify({ ok: true, goal: commanderGoals.get() }));
 }
 
+// GET /api/journey is the one truthful read-model for journey UI + prompt adaptation.
+// POST operations are explicit and narrow: the Commander records metrics/milestones or corrects an adaptation.
+async function handleJourney(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (req.method === 'GET') {
+    try { await reconcileCompletedJourneyQuests(); return json(200, { ok: true, journey: journeyStore.snapshot(commanderGoals.get()) }); }
+    catch (_) { return json(500, { ok: false, error: 'journey state is temporarily unavailable' }); }
+  }
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16)); }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  const op = String(body && body.op || '');
+  let result;
+  try {
+    const saved = (() => { try { return saveStore.load('agent') || null; } catch (_) { return null; } })();
+    const savedEpoch = Math.max(1, Math.floor(Number(saved && saved.agent && saved.agent.createdAt) || 1));
+    const currentEpoch = journeyStore.currentEpoch(savedEpoch);
+    const requestedEpoch = Math.max(1, Math.floor(Number(body && body.epoch) || 1));
+    // The journey belongs to one Commander generation. A backgrounded tab from an earlier Commander may still
+    // have timers/outbox work alive, but it must never mutate the newly commissioned agent's evidence. Reset is
+    // the generation handoff: it may advance the epoch, while every ordinary mutation must match exactly.
+    if ((op === 'journey.reset' && requestedEpoch < currentEpoch) || (op !== 'journey.reset' && requestedEpoch !== currentEpoch)) {
+      return json(409, { ok: false, error: 'station generation changed; reload before updating journey' });
+    }
+    if (op === 'metric.create') result = await journeyStore.createMetric(body, Date.now());
+    else if (op === 'metric.update') result = await journeyStore.updateMetric(body, Date.now());
+    else if (op === 'metric.retire') result = await journeyStore.retireMetric(body.id, Date.now());
+    else if (op === 'milestone.complete') result = await journeyStore.recordMilestone(body, Date.now());
+    else if (op === 'adaptation.suppress') result = await journeyStore.setSuppressed(body.agentId, body.domain, true, Date.now());
+    else if (op === 'adaptation.resume') result = await journeyStore.setSuppressed(body.agentId, body.domain, false, Date.now());
+    else if (op === 'journey.reset') result = await journeyStore.reset(Date.now(), requestedEpoch);
+    else return json(400, { ok: false, error: 'unknown journey operation' });
+    return json(result && result.ok ? 200 : 400, Object.assign({}, result, { journey: journeyStore.snapshot(commanderGoals.get()) }));
+  } catch (_) { return json(500, { ok: false, error: 'journey state is temporarily unavailable' }); }
+}
+
 function placedTypesFrom(v) {
   if (Array.isArray(v)) return v.map(e => (e && typeof e === 'object') ? e.objectType : e).map(s => String(s || '').trim()).filter(Boolean);
   return String(v || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -11504,8 +11668,49 @@ async function handleSkillExchangeInspect(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   const body = await readJsonBody(req, readBody, 1 << 16, res);
   if (!body) return;
-  try { return json(200, { ok: true, preview: await skillExchange.inspect({ url: body.url }) }); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not inspect that skill' }); }
+  try { const preview = await skillExchange.inspect({ url: body.url }); skillMetrics.record('inspect', 'success', { guardAction: preview.guardAction, fileCount: preview.files.length, bytes: preview.packageBytes }); return json(200, { ok: true, preview }); }
+  catch (e) { skillMetrics.record('inspect', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not inspect that skill' }); }
+}
+async function handleSkillExchangeRegistry(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  try { const result = await skillRegistry.search({ url: body.url, query: body.query }); skillMetrics.record('registry', 'success', {}); return json(200, Object.assign({ ok: true }, result)); }
+  catch (e) { skillMetrics.record('registry', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not search that registry' }); }
+}
+async function handleSkillExchangeDiscover(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  try { const result = await skillRegistry.discover({ site: body.site, query: body.query }); skillMetrics.record('discover', 'success', {}); return json(200, Object.assign({ ok: true }, result)); }
+  catch (e) { skillMetrics.record('discover', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not discover that site registry' }); }
+}
+function serveSkillExchangeMetrics(req, res) {
+  return respondJson(res, 200, { ok: true, metrics: skillMetrics.summary(skillStore.all()) });
+}
+function serveSkillExchangeRegistries(req, res) {
+  return respondJson(res, 200, { ok: true, sources: skillRegistrySources.slice() });
+}
+async function handleSkillExchangeRegistries(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const action = String(body.action || 'add').toLowerCase();
+  let url; try { url = new URL(String(body.url || '')); } catch (_) { return json(400, { ok: false, error: 'enter a public HTTPS registry URL' }); }
+  if (url.protocol !== 'https:' || url.username || url.password) return json(400, { ok: false, error: 'skill registries must use public HTTPS' });
+  url.hash = ''; const href = url.href;
+  let next = skillRegistrySources.slice();
+  if (action === 'remove') next = next.filter(s => s.url !== href);
+  else if (!next.some(s => s.url === href)) {
+    if (next.length >= 20) return json(400, { ok: false, error: 'registry source limit reached' });
+    next.push({ url: href, label: String(body.label || url.hostname).trim().slice(0, 80), trust: 'community', addedAt: Date.now() });
+  }
+  try { return json(200, { ok: true, sources: saveSkillRegistrySources(next) }); }
+  catch (e) { return json(500, { ok: false, error: (e && e.message) || 'could not save registry sources' }); }
+}
+async function handleSkillExchangeImport(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 2 << 20, res);
+  if (!body) return;
+  try { const preview = await skillExchange.inspectEnvelope({ envelope: body.envelope }); skillMetrics.record('import', 'success', { guardAction: preview.guardAction, fileCount: preview.files.length, bytes: preview.packageBytes }); return json(200, { ok: true, preview }); }
+  catch (e) { skillMetrics.record('import', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not inspect that package' }); }
 }
 async function handleSkillExchangeInstall(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
@@ -11519,9 +11724,10 @@ async function handleSkillExchangeInstall(req, res) {
     });
     const live = skillStore.view(agentId, result.skill.id, { includeArchived: true, bump: false }) || result.skill;
     result.skill = skillGate.annotate([live], { verify: true })[0];
+    skillMetrics.record(result.action === 'update' ? 'update' : 'install', 'success', { guardAction: result.guardAction, fileCount: result.skill.packageFileCount, bytes: result.skill.packageBytes });
     chanEmit('deliverable', { id: result.skill.id, agentId, kind: 'skill', title: result.skill.name });
     return json(200, result);
-  } catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not install that skill' }); }
+  } catch (e) { skillMetrics.record('install', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not install that skill' }); }
 }
 async function handleSkillExchangeCheck(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
@@ -11529,8 +11735,36 @@ async function handleSkillExchangeCheck(req, res) {
   if (!body) return;
   const agentId = String(body.agentId || 'agent');
   if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
-  try { return json(200, { ok: true, preview: await skillExchange.check({ agentId, id: body.id }) }); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not check for updates' }); }
+  try { const preview = await skillExchange.check({ agentId, id: body.id }); skillMetrics.record('check', 'success', {}); return json(200, { ok: true, preview }); }
+  catch (e) { skillMetrics.record('check', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not check for updates' }); }
+}
+async function handleSkillExchangeExport(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { const result = skillExchange.exportPackage({ agentId, id: body.id }); skillMetrics.record('export', 'success', {}); return json(200, Object.assign({ ok: true }, result)); }
+  catch (e) { skillMetrics.record('export', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not export that skill' }); }
+}
+async function handleSkillExchangePublishHandoff(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { return json(200, { ok: true, handoff: skillExchange.publishHandoff({ agentId, id: body.id }) }); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not prepare a publish handoff' }); }
+}
+async function handleSkillExchangeGenerations(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { return json(200, Object.assign({ ok: true }, skillExchange.generations({ agentId, id: body.id }))); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not list skill generations' }); }
+}
+async function handleSkillExchangeRollback(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { const result = skillExchange.rollback({ agentId, id: body.id, digest: body.digest }); skillMetrics.record('rollback', 'success', {}); return json(200, result); }
+  catch (e) { skillMetrics.record('rollback', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not roll back that skill' }); }
 }
 
 // GET /api/agent-skills?agent=<id>&archived=1&body=1 - runtime-created skills for the selected agent.
@@ -12313,7 +12547,7 @@ async function runOnce(o) {
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
   makeCodeTools({}).register(registry);   // code.run — child Node/vm owns no authority; every nested read returns through this run's parent dispatcher
-  makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
+  makeQuestTools({ store: questStore, clock: { now: () => Date.now() }, activeGoal: () => commanderGoals.get() }).register(registry);   // QUEST V2 §B + journey binding: personalized mints inherit the current goal id/domain evidence
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
@@ -12801,7 +13035,13 @@ async function runOnce(o) {
         await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
         const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
         const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
-        await fsp.writeFile(path.join(ws, rel), String(content), 'utf8');
+        const full = String(content);
+        const abs = path.join(ws, rel);
+        await fsp.writeFile(abs, full, 'utf8');
+        // A path is evidence only after byte-for-byte read-back. If storage returned short/corrupt bytes, the
+        // caller falls back to an honest unpreserved-output receipt instead of pointing at an unproved file.
+        const readBack = await fsp.readFile(abs, 'utf8');
+        if (readBack !== full) return null;
         return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
       } catch (_) { return null; }
     },
@@ -13255,7 +13495,16 @@ async function runOnce(o) {
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
     if (!internalBriefControl) try { execution.observeArtifact({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
-    // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
+    // The registry parks a result only when that ONE result crosses its cap. The run-wide cap can still clip a
+    // perfectly ordinary later command after earlier calls used the allowance, so preserve that result here too.
+    // This happens before clipping and the parker returns a path only after byte-identical read-back.
+    if (execution.willBoundToolResult(r, CAPS.maxToolBytes) && r && typeof r.content === 'string' && !r.parkedPath) {
+      const parked = await capCtx.parkOutput(r.content, { tool: c.name, reason: 'run-output-budget' });
+      if (parked && parked.path) r = Object.assign({}, r, { parkedPath: parked.path, outputChars: r.content.length });
+    }
+    // Bound the TOTAL model-visible tool output across a run so a few big fetches/reads cannot blow context.
+    // A clipped result still carries its durable path and authoritative tool summary (for example `exit 0` or
+    // `verify passed`), so the model can report the outcome instead of exposing a mysterious internal cap.
     r = execution.boundToolResult(r, CAPS.maxToolBytes, {
       omitted: '[tool output omitted — this run hit its ' + Math.round(CAPS.maxToolBytes / 1000) + 'KB tool-output budget; finish with what you already have]'
     });
@@ -13552,7 +13801,7 @@ async function runOnce(o) {
   // questsweeps.js) so the existing settle hook completes them on 'done' and stalls them on any other reason.
   // A fresh bind also clears a prior stall (the build is live again — bindRun's own contract). Fail-open.
   try {
-    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId).catch(() => {});
+    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId, agentId).catch(() => {});
   } catch (_) {}
   let taskIntentNote = '';
   if (taskBrief) taskIntentNote = '\n\n' + TaskIntent.directive(taskContextBlock);
@@ -13594,9 +13843,14 @@ async function runOnce(o) {
   if (internal && o.evidence) {
     try { const t = commanderEvidenceContext(system || ''); if (t) evidenceBlock = '\n\n' + t; } catch (_) { evidenceBlock = ''; }
   }
+  // VERIFIED JOURNEY ADAPTATION: this is the behavioral half of the receipt the Commander sees. It is derived
+  // exclusively from completed journey outcomes, is agent-specific, and disappears immediately when the
+  // Commander suppresses that domain. It grants no tools or authority; it is a bounded planning prior.
+  let journeyBlock = '';
+  if (!internal) { try { const jb = journeyStore.adaptationBlock(agentId); if (jb) journeyBlock = '\n\n' + jb; } catch (_) { journeyBlock = ''; } }
   const sys = internal
     ? (String(system || '') + evidenceBlock)
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -13827,7 +14081,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback });   // H3.2/H3.3/G6 + hierarchical timing/work visibility + P1.2 identity-honesty
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
@@ -13869,7 +14123,7 @@ async function runOnce(o) {
       for (const _aq of QuestSweeps.artifactQuestKeys(questStore.openForAgent(agentId), agentId)) {
         try {
           const { abs: _aAbs } = await fsJail.resolveInside(agentId, _aq.key);
-          if (fs.existsSync(_aAbs)) completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
+          if (fs.existsSync(_aAbs)) await completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
         } catch (_) { /* a non-path or escaping key simply never completes — truthful telemetry */ }
       }
     })().catch(() => {});
@@ -16049,10 +16303,59 @@ async function handleSaveWrite(req, res) {
   // P2.1: DEGRADED — refuse a save write when this workspace was stamped by a NEWER StarNet (writing a newer save
   // envelope shape through older code risks silent field loss). Reads (GET /api/save) still serve; runs continue.
   if (workspaceDegraded) return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true });
+  // Once a rating is acknowledged, a stale tab without that ledger watermark may not replace the durable
+  // projection and temporarily erase XP. It can reload/replay the ledger, then save normally.
+  const ratingSyncAt = Math.max(0, Number(body.stationStats && body.stationStats.ratingSyncAt) || 0);
+  const growthEpoch = Math.max(1, Math.floor(Number(body.agent && body.agent.createdAt) || 1));
+  const latestRatingAt = growthRatings.latestTs(growthEpoch);
+  if (latestRatingAt > ratingSyncAt) return json(200, { ok: false, stale: true, growthStale: true, latestRatingAt });
   try {
     const result = saveStore.save(agentId, body);
     json(200, result);
   } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
+}
+
+// GET/POST /api/growth/ratings - the authoritative, idempotent ledger for explicit work verdicts.
+// The server derives eligible identities from the immutable run tree; a caller cannot mint XP for an
+// invented run/agent. First verdict wins, including across tabs and restarts.
+async function handleGrowthRatings(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  if (req.method === 'GET') {
+    try {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+      const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
+      const requestedThrough = Math.max(0, Number(u.searchParams.get('through')) || 0);
+      const epoch = Math.max(1, Math.floor(Number(u.searchParams.get('epoch')) || 1));
+      // Include every rating already acknowledged, including a monotonic timestamp that advanced one tick
+      // past the wall clock because two tabs rated within the same millisecond.
+      const snapshotAt = requestedThrough || Math.max(1, Date.now() - 1, growthRatings.latestTs(epoch));
+      const beforeRunId = u.searchParams.get('beforeRunId') || '';
+      const page = growthRatings.list({ limit: limit + 1, since, through: snapshotAt, beforeRunId, epoch });
+      const ratings = page.slice(0, limit);
+      return json(200, { ratings, nextCursor: page.length > limit && ratings.length ? ratings[ratings.length - 1].runId : '', snapshotAt });
+    } catch (e) { return json(500, { error: 'could not read rating history' }); }
+  }
+  let body;
+  try { body = JSON.parse(await readBody(req, 64 << 10)) || {}; }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  const runId = String(body.runId || '').trim();
+  const saved = (() => { try { return saveStore.load('agent') || null; } catch (_) { return null; } })();
+  const epoch = Math.max(1, Math.floor(Number(saved && saved.agent && saved.agent.createdAt) || 1));
+  if (Math.max(1, Math.floor(Number(body.epoch) || 1)) !== epoch) return json(409, { ok: false, error: 'station generation changed; reload before rating' });
+  const allRows = runStore.all();
+  const lead = allRows.find(r => r && r.runId === runId);
+  if (!lead || lead.internal || contextpack.isInternalStream(lead.streamId)) return json(404, { ok: false, error: 'rateable run not found' });
+  if (lead.clarifying || !new Set(['done', 'max_iters', 'budget', 'refusal']).has(String(lead.reason || ''))) {
+    return json(409, { ok: false, error: 'run did not produce rateable agent work' });
+  }
+  const children = allRows.filter(row => row && row.parentRunId === runId && !row.internal && !contextpack.isInternalStream(row.streamId));
+  const canonical = deriveGrowthRating(lead, children, body.verdict);
+  if (!canonical) return json(400, { ok: false, error: 'invalid rating verdict' });
+  canonical.epoch = epoch;
+  const result = growthRatings.record(canonical);
+  if (!result || result.error) return json(400, { ok: false, error: (result && result.error) || 'rating failed' });
+  return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating });
 }
 // GET /api/runs?agent=<id>&limit=<n>&since=<ms>[&runId=<id>] — the agent's run history (M-save P4), newest-first.
 // Rows carry the run's `artifacts` ledger (work-visibility); an explicit runId narrows to that single run's
@@ -16061,10 +16364,16 @@ async function handleSaveWrite(req, res) {
 // while-away digest covers crew routines too), and a since=<ms> filter keeps the answer to runs that finished
 // after the caller's last-attended stamp.
 function withRunChildren(row, allRows) {
-  const out = Object.assign({}, row);
+  const out = withRunTruth(row);
   out.children = (Array.isArray(allRows) ? allRows : [])
     .filter(r => r && r.parentRunId && r.parentRunId === row.runId)
-    .map(r => Object.assign({}, r));
+    .map(withRunTruth);
+  return out;
+}
+function withRunTruth(row) {
+  const out = Object.assign({}, row);
+  // Rows written before the explicit marker existed still carry canonical internal stream prefixes.
+  out.internal = !!out.internal || contextpack.isInternalStream(out.streamId);
   return out;
 }
 function serveRuns(req, res) {
@@ -16081,9 +16390,15 @@ function serveRuns(req, res) {
     }
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
-    let rows = runStore.list(agent === '*' ? null : agent, { limit });
-    if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
-    json(200, { runs: rows });
+    const requestedThrough = Math.max(0, Number(u.searchParams.get('through')) || 0);
+    // Leave a one-millisecond overlap at the live edge: a run appended later in this same clock tick must
+    // land strictly AFTER the returned watermark, never share it and get excluded by the next `since` query.
+    const snapshotAt = requestedThrough || Math.max(1, Date.now() - 1);
+    const beforeRunId = u.searchParams.get('beforeRunId') || '';
+    const page = runStore.list(agent === '*' ? null : agent, { limit: limit + 1, since, through: snapshotAt, beforeRunId });
+    const rows = page.slice(0, limit).map(withRunTruth);
+    const nextCursor = page.length > limit && rows.length ? rows[rows.length - 1].runId : '';
+    json(200, { runs: rows, nextCursor, snapshotAt });
   } catch (e) {
     // HONESTY (GROUND_UP_AUDIT P2): a store read that THROWS is a real failure, not "no history" — a
     // 200-empty here makes an auth/crash indistinguishable from a genuinely-empty log, so support can't

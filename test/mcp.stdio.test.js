@@ -11,6 +11,11 @@ const { makeConnectorManager } = require('../sidecar/mcp/manager.js');
 const { makeStdioTransport, _internals: T } = require('../sidecar/mcp/transport.stdio.js');
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+async function waitFor(predicate, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) await sleep(10);
+  return predicate();
+}
 function writeServer(dir) {
   const file = path.join(dir, 'stdio-server.js');
   fs.writeFileSync(file, [
@@ -52,10 +57,12 @@ function writeServer(dir) {
     const redacted = T.redactEnv({ SECRET_TOKEN: 'explicit-secret', MODE: 'test' });
     A.eq(redacted.SECRET_TOKEN, '<redacted>', 'secret-like env keys redact their value');
     A.eq(redacted.MODE, '<set>', 'non-secret env keys still avoid exposing values');
+    A.eq(T.safeLedgerCommand('npx', ['--token', 'secret-value', '@scope/server@1']).indexOf('secret-value'), -1, 'orphan receipt command redacts secret argv');
 
     // real child process, newline-framed JSON-RPC
     {
       const errors = [];
+      const ledgered = [], released = [];
       const tp = makeStdioTransport({
         userControlIsolated: true,
         command: process.execPath,
@@ -64,10 +71,13 @@ function writeServer(dir) {
         processEnv: { PATH: process.env.PATH || '', OPENROUTER_KEY: 'ambient-secret' },
         allowedCommands: [nodeBase],
         timeoutMs: 1000,
-        onError: e => errors.push((e && e.message) || String(e))
+        onError: e => errors.push((e && e.message) || String(e)),
+        ledger: { record: row => ledgered.push(row), release: pid => released.push(pid) }
       });
       const client = makeMcpClient({ transport: tp, timeoutMs: 1000 });
       const init = await client.initialize();
+      A.eq(ledgered.length, 1, 'stdio child is recorded in the durable process ownership ledger at spawn');
+      A.eq(ledgered[0].kind, 'mcp.stdio', 'ledger receipt identifies the MCP child kind');
       A.eq(init.serverInfo.explicit, 'explicit-secret', 'stdio child sees explicit connector env');
       A.eq(init.serverInfo.ambient, '', 'stdio child does not inherit ambient secrets');
       const tools = await client.listTools();
@@ -75,9 +85,10 @@ function writeServer(dir) {
       const called = await client.callTool('create_issue', { title: 'hi' });
       A.ok(called.content[0].text.indexOf('called create_issue') >= 0, 'tools/call round-trips through the child process');
       client.close('test cleanup');
-      await sleep(50);
+      await waitFor(() => released.length === 1);
       A.eq(tp.isClosed(), true, 'transport close marks the stdio child closed');
       A.eq(errors.length, 0, 'happy-path stdio child produced no transport errors');
+      A.eq(released.length, 1, 'clean stdio child exit releases its ownership receipt');
     }
 
     // manager wiring + sanitized summaries + MCP consent posture

@@ -1772,6 +1772,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   text-shadow: 0 0 8px var(--ph-glow2);
 }
 .live-voice-panel:focus-within .lv-heard { display: -webkit-box; }
+.live-voice-panel[data-state="hearing"] .lv-heard,
+.live-voice-panel[data-state="transcribing"] .lv-heard { display: -webkit-box; }
 .lv-say { display: none; }
 .lv-say.on { display: none; }
 .live-voice-panel:focus-within .lv-say.on {
@@ -1780,6 +1782,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--ph-dim); font-size: 10px; line-height: 1.3; letter-spacing: var(--ls-1);
 }
 .lv-say.on::before { content: '▸ '; color: var(--ph); }
+
+.lv-end-control {
+  position: relative; z-index: 7; flex: 1 0 100%; min-width: 0;
+  display: flex; align-items: center; gap: 5px; margin: 1px 1px 0;
+  color: var(--ph-dim); font-size: 9px; letter-spacing: var(--ls-2);
+}
+.lv-end-control span { flex: 0 0 auto; opacity: .65; }
 
 /* ---- ROUTE / SPEECH / TASK are diagnostics, not glanceable state, and carrying them at rest is
    what forced a 300px panel. Hidden at rest, wrapped onto one line on hover — HIDDEN, never faked:
@@ -1801,6 +1810,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--ph); font-size: 9px; letter-spacing: var(--ls-1);
 }
+.lv-endpoint {
+  flex: 1 1 auto; min-width: 0; max-width: 98px; padding: 0 13px 0 2px; border: 0; border-bottom: 1px solid var(--ph-faint);
+  color: var(--ph-bright); background: transparent; box-shadow: none; border-radius: 0;
+  font: inherit; letter-spacing: inherit; line-height: 1.2; appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ph-dim) 50%),
+    linear-gradient(135deg, var(--ph-dim) 50%, transparent 50%);
+  background-position: calc(100% - 6px) 45%, calc(100% - 3px) 45%;
+  background-size: 3px 3px, 3px 3px; background-repeat: no-repeat;
+}
+.lv-endpoint:focus { outline: 1px solid var(--ph); outline-offset: 1px; }
 /* model download: a real fill sweeps the SPEECH row, driven by the sidecar's reported percent */
 .lv-row-dl::before {
   content: ''; position: absolute; left: -3px; top: -1px; bottom: -1px; width: var(--lv-dl);
@@ -3234,6 +3254,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-oc-skipped, .q-oc-rejected { color:var(--ph-dim); }
 .q-oc-error  { color:#e88; border-color:#e88; }
 
+/* COMMANDER JOURNEY — three truthful, non-gating progression tracks. The card only renders the sidecar's
+   durable proof snapshot; controls are explicit Commander writes, never inferred engagement telemetry. */
+.q-journey-card { border:1px solid var(--ph-glow2); border-radius:2px; background:rgba(0,0,0,.18); padding:10px 11px; margin-bottom:12px; }
+.q-evolution { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:9px; margin-bottom:9px; border-bottom:1px solid var(--ph-glow2); }
+.q-evolution-name { margin-top:2px; color:var(--gold); font-family:inherit; font-size:17px; letter-spacing:.16em; text-shadow:0 0 8px rgba(var(--gold-rgb),.35); }
+.q-journey-goal { border-left:2px solid var(--gold); padding-left:9px; margin-bottom:11px; }
+.q-journey-title { margin:3px 0; color:var(--ph); font-size:12px; }
+.q-journey-subhead { margin:12px 0 6px; color:var(--ph-dim); font-size:9px; letter-spacing:.14em; }
+.q-metric { padding:7px 0; border-top:1px solid rgba(var(--ph-rgb),.12); }
+.q-metric:first-of-type { border-top:0; }
+.q-metric .gx-tag { margin-left:auto; }
+.q-metric-actions, .q-metric-create { display:grid; grid-template-columns:minmax(70px,.7fr) minmax(120px,1.6fr) auto auto; gap:5px; margin-top:6px; }
+.q-metric-create { grid-template-columns:minmax(150px,2fr) minmax(65px,.7fr) minmax(65px,.7fr) minmax(55px,.6fr) auto; padding-top:8px; }
+.q-metric-actions input, .q-metric-create input { min-width:0; border:1px solid var(--ph-glow2); border-radius:2px; background:rgba(0,0,0,.35); color:var(--ph); font:inherit; font-size:10px; padding:4px 6px; outline:none; }
+.q-metric-actions input:focus, .q-metric-create input:focus { border-color:var(--gold); }
+.q-mastery-grid { display:grid; gap:4px; }
+.q-mastery-row { display:grid; grid-template-columns:minmax(80px,1fr) minmax(90px,1fr) auto; align-items:center; gap:8px; padding:5px 7px; border:1px solid rgba(var(--ph-rgb),.14); border-radius:2px; font-size:10px; }
+.q-receipt { display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-top:1px solid rgba(var(--ph-rgb),.12); }
+.q-receipt .sub { flex:1; }
+.q-receipt .consent-btn { flex:0 0 auto; }
+.q-proof-list { display:grid; gap:4px; margin-top:10px; }
+.q-journey-law { margin-top:11px; padding-top:8px; border-top:1px solid var(--ph-glow2); }
+
 /* TROPHY CASE card header — the kind tag (DOSSIER / MILESTONE / n× LIFETIME) pins to the top-right
    corner and never shrinks, so a long title wraps cleanly under it instead of jamming the tag
    mid-text in the narrow grid columns. */
@@ -3261,6 +3304,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 @media (max-width: 560px) {
   .gx-2 { grid-template-columns: 1fr; }
   .gx-tros { grid-template-columns: repeat(2, 1fr); }
+  .q-metric-actions, .q-metric-create { grid-template-columns:1fr 1fr; }
+  .q-mastery-row { grid-template-columns:1fr auto; }
+  .q-mastery-row .gx-tag { grid-column:1 / -1; justify-self:start; }
+  .q-receipt, .q-evolution { align-items:flex-start; flex-direction:column; }
 }
 
 /* responsive: degrade the game layout gracefully as the desktop window narrows.
@@ -4603,6 +4650,52 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
   font-size: 11px; line-height: 1.45; color: var(--ph-dim); opacity: 0.85; max-width: var(--perm-measure);
 }
 .perm-glance .pg-floor code { color: var(--ph); }
+/* ── THE POSTURE FRONT DOOR ───────────────────────────────────────────────────────────────────────
+   Three cards answering ONE question, so a newcomer never has to compose four dials. This is the only
+   thing the pane asks of them; everything else lives in the closed fold below. */
+.perm-postures { margin: 0 0 12px; }
+.pp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.pp-q { font-size: 13px; letter-spacing: 1px; color: var(--ph-bright); }
+/* CUSTOM is the honest resting state of a hand-tuned station — dim, not an error. A matched posture
+   is the only thing that lights, because a card may never claim a state it does not hold. */
+.pp-state { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.8; }
+.pp-state.matched { color: var(--ph); opacity: 1; }
+.pp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.pp-card {
+  display: flex; flex-direction: column; gap: 5px; text-align: left; cursor: pointer;
+  font-family: inherit; padding: 10px 12px 11px;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.28); border-radius: var(--r-sm); box-shadow: var(--raise);
+  transition: border-color .12s ease, background .12s ease;
+}
+.pp-card:hover { border-color: var(--ph-dim); border-left-color: var(--ph); background: rgba(0, 0, 0, 0.4); }
+.pp-card.sel { border-left-color: var(--ph); background: rgba(0, 0, 0, 0.45); }
+.pp-card.danger.sel, .pp-card.danger:hover { border-left-color: var(--bad); }
+.pp-card.armed { border-color: var(--bad); border-left-color: var(--bad); box-shadow: var(--raise), 0 0 12px rgba(var(--bad-rgb), 0.22); }
+.pp-card[disabled] { opacity: 0.45; pointer-events: none; }
+.pp-name { font-size: 14px; letter-spacing: 1.5px; color: var(--ph-bright); }
+.pp-card.sel .pp-name { color: var(--ph); }
+.pp-card.danger .pp-name { color: var(--bad); }
+.pp-blurb { font-size: 12px; line-height: 1.4; color: var(--ph-dim); }
+.pp-who { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.7; }
+.pp-foot { margin: 8px 0 0; font-size: 11px; color: var(--ph-dim); opacity: 0.8; }
+/* the hairline between tier 1 (station-wide) and tier 2 (per-agent): the two are the same question
+   at two scopes, so they need a seam, not a heading, to say "and now the exceptions". */
+.perm-tier-rule { border-top: 1px solid var(--ph-faint); margin: 14px 0 2px; }
+/* tier 3: real controls, rarely touched. ONE fold — never a fold inside a fold. */
+.perm-fold { margin: 14px 0 0; border-top: 1px solid var(--ph-faint); padding-top: 10px; }
+.perm-fold > summary {
+  cursor: pointer; font-size: 12px; letter-spacing: 1px; color: var(--ph-dim);
+  list-style: none; padding: 4px 0;
+}
+.perm-fold > summary::-webkit-details-marker { display: none; }
+.perm-fold > summary::before { content: '▸ '; color: var(--ph); }
+.perm-fold[open] > summary::before { content: '▾ '; }
+.perm-fold > summary:hover { color: var(--ph-bright); }
+/* the reach chip carries the plain meaning big and the house name small underneath */
+.pc-reach-chip { align-items: flex-start !important; }
+.pc-rl { display: flex; flex-direction: column; gap: 1px; line-height: 1.15; text-align: left; }
+.pc-rh { font-size: 9px; letter-spacing: 1px; opacity: 0.55; font-style: normal; }
 /* the merged crew row: a header line, then one labelled block per axis. Stacked, not columnar — each
    axis owns a chip strip AND a plain sentence, which cannot share a row honestly at this width. */
 .perm-crew-row { display: block; padding: 9px 12px 10px; }
