@@ -211,6 +211,7 @@ const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
+const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
 const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
 const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B: fold an agent's OPEN quests into its system prompt (pure, dossierinject idiom)
 const QuestSweeps = require('./questsweeps.js');
@@ -1448,6 +1449,11 @@ const questStore = makeQuestStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'quests'),
   warn: (...args) => console.warn.apply(console, args)
 });
+const journeyStore = makeJourneyStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[journey] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'journey')
+});
 // NS-6: the durable THREAD LEDGER (station-global, like the dossier/goal arc — the Commander's un-acted-on ideas,
 // consumed by the single night-shift persona). Same durable+recovery discipline as workshopStore/notebookStore.
 const threadsStore = makeThreadsStore({
@@ -1551,9 +1557,11 @@ const commanderGoals = {
   get() { return this._goal; },
   set(goal) {
     this._goal = (goal && typeof goal === 'object') ? {
+      id: goal.id == null ? null : String(goal.id).slice(0, 64),
       text: String(goal.text || '').slice(0, 280),
       done: Number(goal.done) | 0, total: Number(goal.total) | 0, pct: Number(goal.pct) | 0,
-      next: goal.next == null ? null : String(goal.next).slice(0, 200)
+      next: goal.next == null ? null : String(goal.next).slice(0, 200),
+      milestoneId: goal.milestoneId == null ? null : String(goal.milestoneId).slice(0, 80)
     } : null;
     try {
       fs.mkdirSync(WORKSPACES, { recursive: true });
@@ -6282,6 +6290,7 @@ function questRefreshNote(entry) { questRefreshState = QuestRefresh.note(questRe
 function questRefreshOpenCount() { try { return questStore.list().filter(q => q.status === 'open').length; } catch (_) { return 0; } }
 async function mintQuestRecommendations(quests, why) {
   const declinedIdx = buildDeclinedIndex(null); let minted = 0;
+  const activeGoal = commanderGoals.get();
   const ranked = Recommendation.rankCandidates((quests || []).map(q => ({
     candidate: q, kind: 'quest', traits: ['quest', 'contract:' + ((q.contract && q.contract.type) || 'unknown')],
     features: { relevance: 1, impact: 0.8, success: q.contract && q.contract.type === 'attest' ? 0.55 : 0.8,
@@ -6293,7 +6302,8 @@ async function mintQuestRecommendations(quests, why) {
     if (declinedIdx.has(q.title)) { questRefreshNote({ outcome: 'rejected', reason: 'declined elsewhere', title: q.title }); continue; }
     const r = await questStore.mint({
       title: q.title, desc: q.desc, reward: q.reward, kind: 'generated', createdBy: 'system:quest-refresh',
-      agentId: null, contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
+      agentId: null, domain: q.domain, goalId: activeGoal && activeGoal.id, milestoneId: activeGoal && activeGoal.milestoneId,
+      contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
     }, Date.now());
     if (r && r.ok) {
       minted++;
@@ -6308,10 +6318,13 @@ async function mintQuestRecommendations(quests, why) {
   return minted;
 }
 
-function completeQuestRecommendationIds(ids) {
+async function completeQuestRecommendationIds(ids) {
   for (const id of (Array.isArray(ids) ? ids : [])) {
     recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => {});
     recommendationLedger.outcome('quest:' + id, { adopted: true, quality: 1, completedAt: Date.now() }, Date.now()).catch(() => {});
+    // The quest store is the completion authority. Only AFTER it says done do we fold the exact persisted record
+    // into the journey ledger; duplicate sweeps are idempotent by quest id.
+    try { const q = questStore.get(id); if (q && q.status === 'done') await journeyStore.recordQuest(q, commanderGoals.get(), q.completedAt || Date.now()); } catch (e) { console.warn('[journey] quest fold failed:', (e && e.message) || e); }
   }
   return ids;
 }
@@ -7571,6 +7584,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/agent/delete', h: handleAgentDelete },
   { m: 'POST', exact: '/api/dossier', h: handleDossier },
   { m: 'POST', exact: '/api/goals', h: handleGoals },   // GROWTH Tier 2: the active goal-arc summary for cron personas
+  { m: ['GET', 'POST'], exact: '/api/journey', h: handleJourney }, // verified Commander journey, mastery, adaptation, expressive station evolution
   { m: 'POST', exact: '/api/channels/telegram/disconnect', h: handleChannelDisconnect },
   { m: 'POST', exact: '/api/channels/telegram/bots/connect', h: handleTelegramBotAdd },
   { m: 'POST', rx: TG_BOT_RX.owner, h: (req, res, gm) => handleTelegramBotOwner(req, res, gm[1], gm[2]) },
@@ -10164,7 +10178,9 @@ async function handleQuestsConfirm(req, res) {
   if (!id) return json(400, { ok: false, error: 'which quest?' });
   const ok = body.ok === true || body.ok === 'true';
   let did; try { did = await questStore.confirmAttest(id, ok, body.note, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not record that verdict' }); }
-  if (did && ok) await recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => null);
+  if (did && ok) {
+    await completeQuestRecommendationIds([id]);
+  }
   // caught-up nudge (QUEST V3): confirming the last open quest should earn fresh direction within the
   // cooldown, not wait for the next timer tick. The gate itself decides; this is just an early look.
   if (did) { try { questRefreshTick(); } catch (_) {} }
@@ -11205,6 +11221,27 @@ async function handleGoals(req, res) {
   commanderGoals.set(body && body.goal);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, goal: commanderGoals.get() }));
+}
+
+// GET /api/journey is the one truthful read-model for journey UI + prompt adaptation.
+// POST operations are explicit and narrow: the Commander records metrics/milestones or corrects an adaptation.
+async function handleJourney(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (req.method === 'GET') return json(200, { ok: true, journey: journeyStore.snapshot(commanderGoals.get()) });
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16)); }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  const op = String(body && body.op || '');
+  let result;
+  if (op === 'metric.create') result = await journeyStore.createMetric(body, Date.now());
+  else if (op === 'metric.update') result = await journeyStore.updateMetric(body, Date.now());
+  else if (op === 'metric.retire') result = await journeyStore.retireMetric(body.id, Date.now());
+  else if (op === 'milestone.complete') result = await journeyStore.recordMilestone(body, Date.now());
+  else if (op === 'adaptation.suppress') result = await journeyStore.setSuppressed(body.agentId, body.domain, true, Date.now());
+  else if (op === 'adaptation.resume') result = await journeyStore.setSuppressed(body.agentId, body.domain, false, Date.now());
+  else if (op === 'journey.reset') result = await journeyStore.reset();
+  else return json(400, { ok: false, error: 'unknown journey operation' });
+  return json(result && result.ok ? 200 : 400, Object.assign({}, result, { journey: journeyStore.snapshot(commanderGoals.get()) }));
 }
 
 function placedTypesFrom(v) {
@@ -12332,7 +12369,7 @@ async function runOnce(o) {
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
   makeCodeTools({}).register(registry);   // code.run — child Node/vm owns no authority; every nested read returns through this run's parent dispatcher
-  makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
+  makeQuestTools({ store: questStore, clock: { now: () => Date.now() }, activeGoal: () => commanderGoals.get() }).register(registry);   // QUEST V2 §B + journey binding: personalized mints inherit the current goal id/domain evidence
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
@@ -13571,7 +13608,7 @@ async function runOnce(o) {
   // questsweeps.js) so the existing settle hook completes them on 'done' and stalls them on any other reason.
   // A fresh bind also clears a prior stall (the build is live again — bindRun's own contract). Fail-open.
   try {
-    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId).catch(() => {});
+    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId, agentId).catch(() => {});
   } catch (_) {}
   let taskIntentNote = '';
   if (taskBrief) taskIntentNote = '\n\n' + TaskIntent.directive(taskContextBlock);
@@ -13613,9 +13650,14 @@ async function runOnce(o) {
   if (internal && o.evidence) {
     try { const t = commanderEvidenceContext(system || ''); if (t) evidenceBlock = '\n\n' + t; } catch (_) { evidenceBlock = ''; }
   }
+  // VERIFIED JOURNEY ADAPTATION: this is the behavioral half of the receipt the Commander sees. It is derived
+  // exclusively from completed journey outcomes, is agent-specific, and disappears immediately when the
+  // Commander suppresses that domain. It grants no tools or authority; it is a bounded planning prior.
+  let journeyBlock = '';
+  if (!internal) { try { const jb = journeyStore.adaptationBlock(agentId); if (jb) journeyBlock = '\n\n' + jb; } catch (_) { journeyBlock = ''; } }
   const sys = internal
     ? (String(system || '') + evidenceBlock)
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -13888,7 +13930,7 @@ async function runOnce(o) {
       for (const _aq of QuestSweeps.artifactQuestKeys(questStore.openForAgent(agentId), agentId)) {
         try {
           const { abs: _aAbs } = await fsJail.resolveInside(agentId, _aq.key);
-          if (fs.existsSync(_aAbs)) completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
+          if (fs.existsSync(_aAbs)) await completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
         } catch (_) { /* a non-path or escaping key simply never completes — truthful telemetry */ }
       }
     })().catch(() => {});

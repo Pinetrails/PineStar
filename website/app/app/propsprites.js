@@ -2648,6 +2648,16 @@ const PropSprites = (() => {
     chamf(x, top, w, plY - top, '#1c1712', 2);
     chamf(x + 1, top + 1, w - 2, 3, '#2b231a', 2);                           // crown cap
     px(x + 2, top + 1, w - 4, 1, '#463a29'); keyEdge(x + 2, top + 1, 7, 1, 0.30);
+    // COMMANDER JOURNEY CROWN — a permanent physical transformation, not an unlock. Each stage means one
+    // distinct goal id whose final goal-arc milestone was verified. Four cells fill first; later goals deepen
+    // the crown's halo in four-goal waves so long-lived stations keep changing instead of hitting a dead cap.
+    const js = Math.max(0, (f && f.journeyStage) | 0), journeyShown = Math.min(4, js);
+    const wave = js > 4 ? Math.floor((js - 1) / 4) : 0, waveFill = js > 4 ? ((js - 1) % 4) + 1 : 0;
+    for (let i = 0; i < 4; i++) {
+      const bx = x + 3 + i * 4, on = i < journeyShown, deep = wave > 0 && i < waveFill;
+      px(bx, top - 1, 2, 2, on ? '#e8c860' : '#20252a');
+      if (on) { px(bx, top - 1, 1, 1, deep ? '#ffffff' : '#fff0a6'); bloom(bx, top - 1, 2, 2, '#e8c860', 0.18 + Math.min(.24, wave * .06) + (deep ? .08 : 0)); }
+    }
     px(x + 2, top + 4, w - 4, 1, '#0f0b07');                                 // cap front lip
     px(x, top + 3, 1, plY - top - 4, '#2e2519'); px(x + w - 1, top + 3, 1, plY - top - 4, '#0f0b07');
     rimEdge(x + w - 1, top + 3, 1, plY - top - 4, 0.20);
@@ -7991,6 +8001,10 @@ const PropSprites = (() => {
   // The world layer feeds it from the trophy projection (throttled ~1s); the sprite stays a pure function.
   let trophyCount = 0;
   function setTrophyCount(n) { trophyCount = Math.max(0, n | 0); }
+  // Journey evolution is a second, non-gating truth on the case. The uncapped stage is the distinct-goal count;
+  // the crown renders later goals as deeper light waves once its four physical beacon cells are filled.
+  let journeyStage = 0;
+  function setJourneyStage(n) { journeyStage = Math.max(0, n | 0); }
   function propFired(id) { const s = id && propPulse[id]; return (s && s.at) ? Math.max(0, 1 - (now - s.at) / PULSE_MS) : 0; }
 
   /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens.
@@ -8017,7 +8031,7 @@ const PropSprites = (() => {
     if (f.t === 'jukebox') o.live = jukeConnected;   // dead until Spotify is connected in TOOLSETS (object=capability truth)
     if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
     if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; o.jam = missionJam; o.proposals = missionProposals; }   // G1b/G1c: open quests pinned + the station-gap beacon + the routine-JAM amber stub; G4: pending autojob PROPOSAL cards
-    if (f.t === 'trophycase') o.trophies = trophyCount;   // G3b: earned trophies stand behind glass (real completions only)
+    if (f.t === 'trophycase') { o.trophies = trophyCount; o.journeyStage = journeyStage; }   // earned trophies + distinct reached-goal crown beacons
     fn(X, Y, W, H, o);
     // G0.3 ACTIVITY-HEAT WASH: real token/tool flow burns the working screens brighter + shimmers faster
     // (the monitors live in the prop's upper band); a stalled run cools back to the base work-glow in ~2s.
@@ -8069,6 +8083,7 @@ const PropSprites = (() => {
     setMissionPins,
     // G3b TROPHY CASE earned-trophy count (the world layer feeds this from the live trophy projection)
     setTrophyCount,
+    setJourneyStage,
     // tab/tier display names — shared with build.js (palette tabs) and propsearch.js (matching)
     TIER_LABEL, CAT_LABEL,
     // exposed for tests / reuse

@@ -6,10 +6,12 @@ const { makeGrowthRatings, deriveRating } = require('../sidecar/growthratings.js
 const derived = deriveRating(
   { runId: 'truth', agentId: 'agent', toolsOk: 6, usd: 0.4, artifacts: [{ kind: 'file' }] },
   [{ agentId: 'scribe', usd: 0.2 }, { agentId: 'scribe', usd: 0.1 }, { agentId: 'sub-temp', usd: 9 }], 'great');
-A.eq(derived.entries[0].delta, 10, 'lead delta is derived from durable tools, artifacts, and spend');
+A.eq(derived.entries[0].delta, 3, 'a great verdict has one fixed canonical value regardless tools, artifacts, or spend');
 A.eq(derived.entries[0].size, 'large', 'server derives the durable task-size bucket');
 A.eq(derived.entries.length, 2, 'durable child runs aggregate named crew and reject ephemeral clones');
-A.eq(derived.entries[1].delta, 4, 'crew share is derived from its proven cost fraction');
+A.eq(derived.entries[1].delta, 3, 'a durably observed named crew contributor receives equal verdict credit');
+const cheap = deriveRating({ runId: 'cheap', agentId: 'agent', toolsOk: 0, usd: 0, artifacts: [] }, [{ agentId: 'scribe', usd: 0 }], 'great');
+A.eq(cheap.entries.map(e => e.delta), [3, 3], 'zero-cost work and zero-cost named contribution cannot be valued below expensive work');
 
 const disk = [];
 let now = 100;

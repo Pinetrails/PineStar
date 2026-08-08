@@ -46,7 +46,7 @@ const attestContract = () => ({ type: 'attest', key: '' });
   // ---- 2. mint success shape + defaults + steps ----
   {
     const s = freshStore();
-    const r = await s.mint({ title: 'Learn the CSV flow', desc: 'd', reward: 'a cleaner', contract: { type: 'prop', key: 'csv' }, steps: [{ key: 'a', label: 'step a' }, { nope: 1 }], agentId: 'hero', kind: 'generated', groundedIn: 'dossier: works with CSVs daily' }, 100);
+    const r = await s.mint({ title: 'Learn the CSV flow', desc: 'd', reward: 'a cleaner', contract: { type: 'prop', key: 'csv' }, steps: [{ key: 'a', label: 'step a' }, { nope: 1 }], agentId: 'hero', kind: 'generated', groundedIn: 'dossier: works with CSVs daily', domain: 'research', goalId: 'goal:csv', milestoneId: 'm:learn' }, 100);
     A.ok(r.ok, 'mint returns ok');
     const q = s.get(r.id);
     A.eq(q.status, 'open', 'new quest is open');
@@ -57,6 +57,7 @@ const attestContract = () => ({ type: 'attest', key: '' });
     A.eq(q.steps.length, 1, 'steps without a key are dropped');
     A.eq(q.steps[0], { key: 'a', label: 'step a', done: false }, 'a valid step is normalized');
     A.eq(q.groundedIn, 'dossier: works with CSVs daily', 'groundedIn stored');
+    A.eq([q.domain, q.goalId, q.milestoneId], ['research', 'goal:csv', 'm:learn'], 'mastery domain and goal bindings persist with the quest');
     A.eq(q.createdAt, 100, 'createdAt is the injected now');
   }
 
@@ -104,7 +105,7 @@ const attestContract = () => ({ type: 'attest', key: '' });
     const byKey = await s.mint({ title: 'run by key', contract: runContract('run-77') }, 1);
     // (b) match by a bound runId (contract keyed to a logical binding, run bound later)
     const byBind = await s.mint({ title: 'run by bind', contract: runContract('wq:9') }, 2);
-    await s.bindRun(byBind.id, 'run-77');
+    await s.bindRun(byBind.id, 'run-77', 'builder');
     // an attest quest with the same "key" must NOT be swept by a run completion
     const at = await s.mint({ title: 'attest not swept', contract: attestContract() }, 3);
     const done = await s.completeByContract('run', 'run-77', 500);
@@ -112,6 +113,7 @@ const attestContract = () => ({ type: 'attest', key: '' });
     A.eq(s.get(byKey.id).status, 'done', 'key-matched quest is done');
     A.eq(s.get(byKey.id).completedAt, 500, 'completedAt is the injected now');
     A.eq(s.get(byBind.id).status, 'done', 'bind-matched quest is done');
+    A.eq(s.get(byBind.id).completedBy, 'builder', 'the agent who actually bound the successful run owns the verified mastery outcome');
     A.eq(s.get(at.id).status, 'open', 'attest quests are never completed by a mechanical run sweep');
     A.eq((await s.completeByContract('run', 'run-77', 600)).length, 0, 'a second sweep completes nothing (all already done)');
     A.eq((await s.completeByContract('attest', '', 600)).length, 0, 'completeByContract never fires for attest contracts');
@@ -156,6 +158,7 @@ const attestContract = () => ({ type: 'attest', key: '' });
     A.eq(s.get(r.id).status, 'done', 'confirm(yes) completes the quest');
     A.eq(s.get(r.id).completedAt, 7, 'completedAt stamped on confirm');
     A.eq(s.get(r.id).attest.confirmed, true, 'the attest is kept, marked confirmed (audit)');
+    A.eq(s.get(r.id).completedBy, 'hero', 'a Commander-confirmed attest attributes mastery to the attesting agent');
   }
 
   // ---- 9. attest → confirm(NO) stamps declineNote and stays open ----

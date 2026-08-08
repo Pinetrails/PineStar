@@ -58,11 +58,10 @@
      falls through to neither bucket (counted only in `runs`), which is the safe, non-lying default. */
   const RELIABILITY_ATTRIBUTED = { done: 'done', max_iters: 'short', budget: 'short', refusal: 'short' };
   const RELIABILITY_EXCLUDED = { error: 'faulted', empty: 'faulted', cancelled: 'neutral', clarifying: 'neutral' };
-  // G2.4 task-size weighting (the locked leveling-redesign TODO): an optional payload.size hint
-  // ('small'|'medium'|'large', derived from REAL tool count + spend — see workSize) SCALES the minted
-  // XP, never invents it: no positive verdict, no XP, whatever the size; FEEDBACK_XP_CAP stays the
-  // hard ceiling. Absent/unknown size = 1 (fully additive — every existing payload is unchanged).
-  const SIZE_MULT = { small: 1, medium: 1.25, large: 1.5 };
+  // LEGACY SIZE TELEMETRY: workSize still classifies real run cost/tool facts for receipts and old saves, but it
+  // NEVER changes XP. Spend and tool count measure execution shape, not value to the Commander's life goal; using
+  // them as a multiplier rewarded expensive/thrashy work. Meaningful complexity now lives in the separate verified
+  // journey/mastery ledger. Equal explicit verdicts earn equal XP.
 
   // derive the honest size hint from a run's REAL work: successful tool calls + reconciled spend.
   // Pure + shared so the rate-the-work caller (chat.js) and tests agree on one derivation.
@@ -74,45 +73,26 @@
     return 'small';
   }
 
-  // P3.2 CREW-RUN ATTRIBUTION — split ONE 👍 verdict's size-weighted mint across a lead and its dispatched
-  // crew, HONESTLY. The only per-worker signal the harness can actually PROVE for an in-stream crew run is each
-  // worker's reconciled spend (their forwarded agent.run.end usd) — token/tool-call streams are deliberately not
-  // forwarded onto the lead's bus (see orchestration.js FORWARD). So the split weight is cost, and the rule is:
-  //   • the LEAD always gets the full-size rating event (it owns the run + synthesized the result);
-  //   • a worker earns a PROPORTIONAL share of the mint ONLY when its own cost is provable (usd > 0);
-  //   • if NO worker cost is provable, the lead is credited alone and nothing is fabricated (truthful telemetry
-  //     overrides symmetry — an unprovable split is simply not made).
+  // P3.2 CREW-RUN ATTRIBUTION — one explicit verdict has one value. A named worker run-end is proof of
+  // participation; tools/spend never scale its credit. The sidecar independently reconstructs this from durable
+  // parent/child run records, so this browser projection is only a request hint.
   // Returns { lead: { delta, size }, workers: [{ agentId, delta, size }] } — deltas feed the SAME memory.feedback
   // mint path (xp.js scoreEvent), so a worker's share rides the identical, node-tested XP curve. Pure + exported.
   //   args: { leadDelta (the whole-run size delta 1..10), leadCost (usd), workers: [{ agentId, usd }] }
   function crewSplit(args) {
     args = args || {};
     const leadDelta = Math.max(1, Math.min(10, Math.round(num(args.leadDelta, 1)) || 1));
-    const leadCost = Math.max(0, num(args.leadCost, 0));
     const raw = Array.isArray(args.workers) ? args.workers : [];
-    // keep only workers with a PROVABLE, real cost (usd > 0) and a real agentId — an unprovable contributor
-    // earns nothing (never a fabricated equal split). Ephemeral spawn clones (no persistent identity) are
-    // filtered by the caller before we get here; this is the honesty floor on top of that.
+    // Ephemeral spawn clones are filtered by the caller/server; duplicate named contributors collapse here.
     const proven = [];
+    const seen = new Set();
     for (const w of raw) {
       const aid = w && typeof w.agentId === 'string' ? w.agentId.trim() : '';
-      const usd = Math.max(0, num(w && w.usd, 0));
-      if (aid && usd > 0) proven.push({ agentId: aid, usd });
+      if (aid && !seen.has(aid)) { seen.add(aid); proven.push({ agentId: aid, usd: Math.max(0, num(w && w.usd, 0)) }); }
     }
     const out = { lead: { delta: leadDelta, size: null }, workers: [] };
-    if (!proven.length) return out;   // nothing provable → lead credited alone, no false split
-    // proportional by cost over the WHOLE run's cost (lead's own spend + every proven worker's spend), so a
-    // worker's share honestly reflects how much of the run it actually did. The lead keeps its full delta (it
-    // still owns + synthesized the run); workers earn ON TOP, scaled down by their cost fraction — never more
-    // than the lead's own delta each. A worker's minimum minted delta is 1 (a proven contributor always earns
-    // something), capped at the lead's delta.
-    const workerTotal = proven.reduce((s, w) => s + w.usd, 0);
-    const runTotal = Math.max(leadCost, 0) + workerTotal;   // denominator = the whole run's provable spend
-    const denom = runTotal > 0 ? runTotal : workerTotal;    // defensive: if the lead cost is unknown, split over worker spend
     for (const w of proven) {
-      const frac = denom > 0 ? (w.usd / denom) : 0;
-      const delta = Math.max(1, Math.min(leadDelta, Math.round(leadDelta * frac) || 1));
-      out.workers.push({ agentId: w.agentId, delta: delta, size: workSize({ usd: w.usd }) });
+      out.workers.push({ agentId: w.agentId, delta: leadDelta, size: workSize({ usd: w.usd }) });
     }
     return out;
   }
@@ -160,9 +140,7 @@
         const eff = Math.min(Math.max(d, 0), 10);
         // ONLY a full positive (quality 1 = kept/edited/work_great) mints; a 👌 work_ok (0.5) is a satisfaction
         // sample with no XP. Gate on >=1 so the neutral middle rung never levels an agent.
-        // An optional size hint scales the mint (task-size weighting); the CAP stays the ceiling.
-        const mult = SIZE_MULT[String(p.size || '')] || 1;
-        return { xp: quality >= 1 && d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA * mult)) : 0, quality };
+        return { xp: quality >= 1 && d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA)) : 0, quality };
       }
       case 'workitem.delivered': return { xp: 0, quality: null };
       case 'channel.delivery':   return { xp: 0, quality: null };
@@ -308,7 +286,9 @@
 
     // XP — monotonic, scaled by the agent's ESTABLISHED satisfaction (trust bonus uses pre-update confidence)
     if (base > 0) {
-      const gained = Math.round(base * trustMult(s));
+      // The event cap is final, not merely a pre-trust base cap: established trust may improve a normal
+      // award, but a single verdict must never jump past the documented +50 ceiling.
+      const gained = Math.min(FEEDBACK_XP_CAP, Math.round(base * trustMult(s)));
       s.xp += gained; s.lifetimeXp += gained; awards.xp = gained;
       const lvl = Math.max(s.level, levelForXp(s.xp));
       if (lvl > s.level) { awards.levelUp = true; awards.levelTo = lvl; }

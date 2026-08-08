@@ -2429,18 +2429,15 @@ const Chat = (() => {
     workRatingsPending.add(runId);
     const reason = verdict === 'great' ? 'work_great' : verdict === 'ok' ? 'work_ok' : 'work_miss';
     const w = runWork.get(runId);
-    const delta = workSizeDelta(w);
-    // G2.4 task-size weighting: the same real stash also derives a small/medium/large hint (Xp.workSize —
-    // successful tools + reconciled spend); xp.js scales the mint by it, FEEDBACK_XP_CAP still the ceiling.
+    const delta = 3;   // one explicit verdict has one value; the server independently fixes this canonical delta
+    // The size bucket survives as legacy receipt telemetry only. It does not scale XP.
     const size = (typeof Xp !== 'undefined' && Xp.workSize) ? Xp.workSize({ tools: (w && w.toolsOk) || 0, usd: (w && w.cost) || 0 }) : undefined;
     // One durable rating-ledger write — never U.bus.emit / never /api/memory/turnin. The server returns
     // canonical feedback entries; XpStore folds those only after fsync acknowledgement.
     const entries = [{ agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size }];
-    // P3.2 CREW-RUN RATEABILITY — if this LEAD run dispatched crew whose spend is provable, split the SAME verdict
-    // across them HONESTLY: each worker earns a cost-proportional share of the size-weighted mint (crewSplit), riding
-    // the identical direct memory.feedback path into ITS OWN XpStore identity. Truthful attribution: a worker earns
-    // only when the harness proved its contribution (usd > 0); if no split is provable, no worker is credited and
-    // nothing false is said. The LEAD keeps its full delta above (it owns + synthesized the run). Only hero-lead runs
+    // P3.2 CREW-RUN RATEABILITY — named worker run-end receipts prove participation. Every proven persistent
+    // contributor receives the same Commander verdict value; cost/tool volume never weights it. The sidecar
+    // rebuilds the canonical list from durable child runs, so these entries remain hints only. Only hero-lead runs
     // carry crew (runCrew is populated only for agentId 'agent'). Fail-open — a missing split never blocks the rating.
     try {
       const crew = (agentId || 'agent') === 'agent' ? runCrew.get(runId) : null;

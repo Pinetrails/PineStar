@@ -7080,6 +7080,72 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       + lastHtml + disabledNote + '</div>';
   }
 
+  // The three progression tracks stay deliberately separate:
+  //   AGENT GROWTH = explicit feedback XP (the existing meter below)
+  //   COMMANDER JOURNEY = real-world goal metrics + verified outcomes
+  //   STATION EVOLUTION = expressive history of distinct goals reached, never a capability gate
+  function journeyHtml() {
+    const JS = (typeof JourneyStore !== 'undefined') ? JourneyStore : null;
+    if (JS && JS.sync) { try { JS.sync(); } catch (_) {} }
+    const j = JS && JS.status ? JS.status() : null;
+    if (!j) return '<div class="gx-sec"><span class="gx-title">COMMANDER JOURNEY</span></div>'
+      + '<div class="q-journey-card"><div class="sub dim">journey proof is not available yet. No progress is being inferred.</div></div>';
+
+    const evo = j.evolution || { stage: 0, name: 'DRIFT', goalsReached: 0 };
+    const goal = j.activeGoal || null;
+    const done = goal ? Math.max(0, Number(goal.done) | 0) : 0;
+    const total = goal ? Math.max(0, Number(goal.total) | 0) : 0;
+    const goalPct = total ? Math.max(0, Math.min(100, Math.round(done * 100 / total))) : 0;
+    const goalHtml = goal && goal.text
+      ? '<div class="q-journey-goal"><span class="q-ns-eyebrow">ACTIVE LIFE GOAL</span><div class="q-journey-title">' + esc(goal.text) + '</div>'
+        + '<div class="arc-bar q-bar"><div class="q-bar-fill" style="width:' + goalPct + '%"></div></div>'
+        + '<div class="sub">' + done + ' of ' + total + ' verified milestones' + (goal.next ? ' &middot; next: ' + esc(goal.next) : '') + '</div></div>'
+      : '<div class="sub dim">set a goal arc to connect quests and evidence to your longer journey.</div>';
+
+    const metricRows = (Array.isArray(j.metrics) ? j.metrics : []).map(m => {
+      const p = (typeof Journey !== 'undefined' && Journey.metricProgress) ? Journey.metricProgress(m) : null;
+      const unit = m.unit ? ' ' + esc(m.unit) : '';
+      return '<div class="q-metric" data-mid="' + esc(m.id) + '"><div class="q-hd"><span class="nm">' + esc(m.label) + '</span>'
+        + '<span class="gx-tag">' + esc(String(m.current)) + unit + ' / ' + esc(String(m.target)) + unit + '</span></div>'
+        + (p ? '<div class="arc-bar q-bar"><div class="q-bar-fill" style="width:' + p.pct + '%"></div></div>' : '')
+        + '<div class="q-metric-actions"><input class="q-metric-current" type="number" step="any" value="' + esc(String(m.current)) + '" aria-label="Current value for ' + esc(m.label) + '">'
+        + '<input class="q-metric-note" type="text" maxlength="240" placeholder="evidence note (optional)" aria-label="Evidence note">'
+        + '<button class="consent-btn q-metric-update" data-mid="' + esc(m.id) + '">UPDATE</button>'
+        + '<button class="consent-btn deny q-metric-retire" data-mid="' + esc(m.id) + '">RETIRE</button></div></div>';
+    }).join('');
+    const metricsHtml = '<div class="q-journey-subhead">OUTCOME METRICS <span class="gx-tag">Commander recorded</span></div>'
+      + (metricRows || '<div class="sub dim">no durable metric yet. Add one when the goal has a number you can verify over time.</div>')
+      + '<div class="q-metric-create"><input class="q-metric-label" maxlength="100" placeholder="metric (for example: monthly revenue)">'
+      + '<input class="q-metric-baseline" type="number" step="any" placeholder="baseline"><input class="q-metric-target" type="number" step="any" placeholder="target">'
+      + '<input class="q-metric-unit" maxlength="24" placeholder="unit"><button class="consent-btn q-metric-add">ADD METRIC</button></div>';
+
+    const domainLabel = d => (typeof Journey !== 'undefined' && Journey.DOMAIN_LABEL && Journey.DOMAIN_LABEL[d]) || String(d || '').toUpperCase();
+    const mastery = (Array.isArray(j.mastery) ? j.mastery : []).slice().sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
+    const masteryHtml = '<div class="q-journey-subhead">AGENT MASTERY <span class="gx-tag">verified outcomes only</span></div>'
+      + (mastery.length ? '<div class="q-mastery-grid">' + mastery.map(m => '<div class="q-mastery-row"><span class="nm">' + esc(m.agentId) + '</span>'
+          + '<span>' + esc(domainLabel(m.domain)) + '</span><span class="gx-tag">' + esc(String(m.tier)) + ' &middot; ' + (Number(m.count) || 0) + '</span></div>').join('') + '</div>'
+        : '<div class="sub dim">mastery appears only after an agent completes a quest or milestone with verified evidence.</div>');
+
+    const suppressed = j.suppressed || {};
+    const receipts = (Array.isArray(j.receipts) ? j.receipts : []).slice(-4).reverse();
+    const receiptHtml = '<div class="q-journey-subhead">ADAPTATION RECEIPTS <span class="gx-tag">correctable</span></div>'
+      + (receipts.length ? receipts.map(r => {
+          const muted = !!(suppressed[r.agentId] && suppressed[r.agentId][r.domain]);
+          return '<div class="q-receipt"><div class="sub">' + esc(r.text) + '</div><button class="consent-btn ' + (muted ? 'q-adapt-resume' : 'deny q-adapt-suppress')
+            + '" data-aid="' + esc(r.agentId) + '" data-domain="' + esc(r.domain) + '">' + (muted ? 'RESUME ADAPTATION' : 'STOP USING THIS') + '</button></div>';
+        }).join('') : '<div class="sub dim">when verified mastery changes how an agent plans, the reason will appear here.</div>');
+
+    const recent = (Array.isArray(j.outcomes) ? j.outcomes : []).slice(-3).reverse();
+    const outcomeHtml = recent.length ? '<div class="q-proof-list">' + recent.map(o => '<div class="sub"><span class="q-outcome">' + esc(o.kind) + '</span> '
+      + esc(o.title || o.sourceId) + ' <span class="dim">&middot; ' + esc(o.verifiedBy) + '</span></div>').join('') + '</div>' : '';
+
+    return '<div class="gx-sec"><span class="gx-title">COMMANDER JOURNEY</span> <span class="gx-tag">real goals, durable proof</span></div>'
+      + '<div class="q-journey-card"><div class="q-evolution"><div><span class="q-ns-eyebrow">STATION EVOLUTION</span><div class="q-evolution-name">' + esc(evo.name) + '</div></div>'
+      + '<span class="gx-tag">' + (Number(evo.goalsReached) || 0) + ' distinct goals reached</span></div>'
+      + goalHtml + metricsHtml + masteryHtml + receiptHtml + outcomeHtml
+      + '<div class="sub dim q-journey-law">Evolution changes the station\'s expression, never your tools, permissions, or capabilities.</div></div>';
+  }
+
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
     const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
@@ -7176,7 +7242,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         + cwHtml + attestHtml + declineHtml + '</div>';
     };
     const meterHtml = m
-      ? '<div class="gx-sec"><span class="gx-title">STATION</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
+      ? '<div class="gx-sec"><span class="gx-title">AGENT GROWTH</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
       : '';
     // G4 feature 2 — PROPOSALS: pending autojob proposals the agent pinned to the MISSION BOARD. A distinct
     // amber card with APPROVE (→ the real POST /api/cron) / DECLINE (→ dropped forever). Rendered above OPEN so
@@ -7197,6 +7263,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     body.innerHTML = '<div class="gx gx-quests">'
       + meterHtml
       + questRefreshHtml()
+      + journeyHtml()
       + '<div class="dim" style="margin:4px 0 10px;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
       + proposalsHtml
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
@@ -7204,6 +7271,55 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
       + '<div class="gx-tros q-grid q-done">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
       + '</div>';
+    // COMMANDER JOURNEY writes are explicit. Empty/invalid numeric fields are rejected in the panel before the
+    // request, and every successful response re-renders from the backend's returned proof snapshot.
+    const journeyFail = r => notify((r && r.error) || 'journey update was not recorded', 'bad');
+    const addMetric = body.querySelector('.q-metric-add');
+    if (addMetric) addMetric.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof JourneyStore === 'undefined' || !JourneyStore.createMetric) return;
+      const label = String((body.querySelector('.q-metric-label') || {}).value || '').trim();
+      const bRaw = String((body.querySelector('.q-metric-baseline') || {}).value || '').trim();
+      const tRaw = String((body.querySelector('.q-metric-target') || {}).value || '').trim();
+      if (!label || !bRaw || !tRaw || !Number.isFinite(Number(bRaw)) || !Number.isFinite(Number(tRaw)) || Number(bRaw) === Number(tRaw)) {
+        notify('add a label and two different numeric baseline/target values', 'warn'); return;
+      }
+      addMetric.disabled = true;
+      const r = await JourneyStore.createMetric({ label, baseline: Number(bRaw), target: Number(tRaw),
+        unit: String((body.querySelector('.q-metric-unit') || {}).value || '').trim(), goalId: jGoalId() });
+      if (r && r.ok) { sfx('click'); rerender('quests'); } else { addMetric.disabled = false; journeyFail(r); }
+    });
+    function jGoalId() {
+      try { const j = JourneyStore.status(); return j && j.activeGoal && j.activeGoal.id || null; } catch (_) { return null; }
+    }
+    body.querySelectorAll('.q-metric-update').forEach(b => b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof JourneyStore === 'undefined' || !JourneyStore.updateMetric) return;
+      const row = b.closest('.q-metric'), input = row && row.querySelector('.q-metric-current');
+      const raw = String(input && input.value || '').trim();
+      if (!raw || !Number.isFinite(Number(raw))) { notify('enter a numeric current value', 'warn'); return; }
+      b.disabled = true;
+      const note = String((row && row.querySelector('.q-metric-note') || {}).value || '').trim();
+      const r = await JourneyStore.updateMetric(b.dataset.mid, Number(raw), note);
+      if (r && r.ok) { sfx('click'); rerender('quests'); } else { b.disabled = false; journeyFail(r); }
+    }));
+    body.querySelectorAll('.q-metric-retire').forEach(b => {
+      const retire = async () => {
+        if (typeof JourneyStore === 'undefined' || !JourneyStore.retireMetric) return;
+        b.disabled = true; const r = await JourneyStore.retireMetric(b.dataset.mid);
+        if (r && r.ok) { sfx('click'); rerender('quests'); } else { b.disabled = false; journeyFail(r); }
+      };
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) ArmConfirm.wire(b, { armedLabel: 'SURE? RETIRE', restLabel: 'RETIRE', timeoutMs: 4000, onConfirm: retire });
+      else b.addEventListener('click', retire);
+    });
+    const wireAdapt = (selector, method, goodText) => body.querySelectorAll(selector).forEach(b => b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof JourneyStore === 'undefined' || !JourneyStore[method]) return;
+      b.disabled = true; const r = await JourneyStore[method](b.dataset.aid, b.dataset.domain);
+      if (r && r.ok) { sfx('click'); notify(goodText, 'gold'); rerender('quests'); } else { b.disabled = false; journeyFail(r); }
+    }));
+    wireAdapt('.q-adapt-suppress', 'suppress', 'adaptation stopped for that agent and mastery track');
+    wireAdapt('.q-adapt-resume', 'resume', 'adaptation resumed for that agent and mastery track');
     // G4 feature 2: approve → the real cron POST (AutoJobStore routes it), then re-render (the card clears);
     // decline → drop the card forever. Both route through AutoJobStore's own paths — no new scheduling logic here.
     body.querySelectorAll('.q-prop-yes').forEach(b => b.addEventListener('click', async ev => {

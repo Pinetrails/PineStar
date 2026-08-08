@@ -52,28 +52,23 @@
     return 'small';
   }
 
-  // Derive XP attribution exclusively from durable run facts. Browser-supplied deltas/crew are hints at most;
-  // this canonical form prevents a local caller from inventing work size or a contributor.
+  // Derive attribution exclusively from durable run facts. Browser-supplied deltas/crew are hints at most.
+  // A Commander verdict has ONE fixed value: tool count, artifacts, tokens, and spend describe execution shape,
+  // not value. Named child run records prove participation; every proven contributor receives the same verdict
+  // delta. Size remains legacy receipt telemetry only and never changes XP.
   function deriveRating(run, children, verdict) {
     if (!run || !run.runId || !AGENT_RX.test(str(run.agentId)) || !VERDICTS.has(str(verdict))) return null;
     const runId = str(run.runId).slice(0, RUN_MAX), leadId = str(run.agentId);
-    const tools = Math.min(Math.max(0, Number(run.toolsOk) || 0), 8);
-    const delivered = Math.min(Array.isArray(run.artifacts) ? run.artifacts.length : 0, 3);
-    const leadCost = Math.max(0, Number(run.usd) || 0);
-    const raw = Math.log2(1 + tools) * 2.2 + delivered * 1.2 + Math.min(leadCost * 6, 3);
-    const leadDelta = Math.max(1, Math.min(10, Math.round(raw) || 1));
-    const entries = [{ agentId: leadId, id: 'work:' + runId, delta: leadDelta, size: workSize(run) }];
+    const verdictDelta = 3;
+    const entries = [{ agentId: leadId, id: 'work:' + runId, delta: verdictDelta, size: workSize(run) }];
     const byAgent = new Map();
     for (const child of (Array.isArray(children) ? children : [])) {
-      const agentId = str(child && child.agentId).trim(), usd = Math.max(0, Number(child && child.usd) || 0);
-      if (!AGENT_RX.test(agentId) || agentId === leadId || /^sub-/.test(agentId) || usd <= 0) continue;
-      byAgent.set(agentId, (byAgent.get(agentId) || 0) + usd);
+      const agentId = str(child && child.agentId).trim();
+      if (!AGENT_RX.test(agentId) || agentId === leadId || /^sub-/.test(agentId)) continue;
+      byAgent.set(agentId, child);
     }
-    const workerTotal = Array.from(byAgent.values()).reduce((sum, usd) => sum + usd, 0);
-    const denom = leadCost + workerTotal || workerTotal;
-    for (const [agentId, usd] of byAgent) {
-      const delta = Math.max(1, Math.min(leadDelta, Math.round(leadDelta * (usd / denom)) || 1));
-      entries.push({ agentId, id: 'work:' + runId + ':' + agentId, delta, size: workSize({ usd }) });
+    for (const [agentId, child] of byAgent) {
+      entries.push({ agentId, id: 'work:' + runId + ':' + agentId, delta: verdictDelta, size: workSize(child) });
     }
     return { runId, verdict: str(verdict), entries };
   }

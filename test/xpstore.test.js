@@ -228,7 +228,7 @@ Promise.resolve(catchup).then(async summary => {
     ok: true, json: async () => ({ ok: true, duplicate: false, rating: canonical })
   }));
   A.ok(recorded.ok && recorded.applied, 'live XP folds only after the durable rating endpoint acknowledges it');
-  A.eq(catchSpec.stats.xp - beforeRatedXp, 50, 'server-canonical large verdict obeys the final per-feedback cap');
+  A.eq(catchSpec.stats.xp - beforeRatedXp, 40, 'server-canonical verdict ignores the legacy size bucket');
   A.eq(XpStore.stationStats().ratingSyncAt, 1100, 'live rating advances the dedicated ledger watermark');
   const replayed = await XpStore.recordWorkRating({ runId: 'rated-1', verdict: 'miss', entries: canonical.entries }, async () => ({
     ok: true, json: async () => ({ ok: true, duplicate: true, rating: canonical })
@@ -245,7 +245,7 @@ Promise.resolve(catchup).then(async summary => {
     loadRatings: async since => ({ snapshotAt: 1200, ratings: [canonical] }),
     persist: () => { catchPersists++; }
   });
-  A.eq(rollbackSpec.stats.xp, 50, 'boot replay repairs XP lost from a stale or rolled-back browser save');
+  A.eq(rollbackSpec.stats.xp, 40, 'boot replay repairs XP lost from a stale or rolled-back browser save');
   A.eq(XpStore.stationStats().ratingSyncAt, 1200, 'successful rating replay checkpoints the server snapshot');
   A.report('xpstore.test');
 }).catch(err => { console.error(err); process.exitCode = 1; });

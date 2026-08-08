@@ -2509,6 +2509,7 @@ const App = (() => {
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
     if (typeof GoalStore !== 'undefined') GoalStore.reset();   // …and a fresh goal tree — a new Commander never inherits the prior hero's goals/milestones/progress (own key)
+    if (typeof JourneyStore !== 'undefined' && JourneyStore.reset) JourneyStore.reset();   // …and no inherited metrics, mastery, or station evolution
     if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.reset) UnderstandingStore.reset();   // …and no inherited rating corroboration — a new Commander never inherits the prior hero's 👍/👎 confidence signal (own key)
     if (typeof MaintQuestStore !== 'undefined') MaintQuestStore.reset();   // …and no inherited maintenance quests — a new Commander never sees the prior hero's slag/jam backlog (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
@@ -2754,6 +2755,10 @@ const App = (() => {
     // QUEST V3 — the standing quest-REFRESH engine's frontend citizen: polls /api/quests/refresh (throttled on
     // the tick) for the north star + attempt ledger + due state, and owns the manual REFRESH QUESTS write.
     if (typeof QuestRefreshStore !== 'undefined') QuestRefreshStore.init();
+    // COMMANDER JOURNEY: the durable sidecar-owned loop connecting goal metrics + verified outcomes to
+    // agent-domain mastery, visible adaptation receipts, and expressive station evolution. Separate from XP;
+    // never grants capabilities. Init before GoalStore so a just-folded milestone can post immediately.
+    if (typeof JourneyStore !== 'undefined') JourneyStore.init();
     // G1b STATION-QUEST GENERATOR: subscribe to agent.tool_call and mint a fix-it quest when an agent reaches
     // for a tool its room can't grant (capdenied → playable direction). Init AFTER World.loadStation (its gap
     // check + resolution read World.heroCaps / the live floor) and after QuestStateStore so a resumed save's
