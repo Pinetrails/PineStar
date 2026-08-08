@@ -25,13 +25,13 @@
    dimension here resolves back to the size it was designed at while the type inside still grows.
    `1fr` then hands the reclaimed space to the stage automatically. Unset (the 100% default)
    resolves to 1, i.e. these are the shipped numbers untouched.
-   --chat-w (chatresize.js, the draggable COMMS seam) is written in VISUAL px for the same reason,
-   so a dragged width means the same thing at every text size. */
+   --chat-w (chatresize.js, the draggable COMMS seam) and --crew-w (leftrail.js, the CREW seam) are
+   written in VISUAL px for the same reason, so a dragged width means the same thing at every text size. */
 #screen-game.active {
   display: grid;
   grid-template-rows: calc(64px * var(--cz)) 1fr calc(44px * var(--cz));
-  /* COMMS width is a live var so the user can drag the stage/COMMS divider (chatresize.js) */
-  grid-template-columns: calc(232px * var(--cz)) 1fr calc(var(--chat-w, 360px) * var(--cz));
+  /* both side columns are live vars so the user can drag either divider (leftrail.js / chatresize.js) */
+  grid-template-columns: calc(var(--crew-w, 232px) * var(--cz)) 1fr calc(var(--chat-w, 360px) * var(--cz));
   grid-template-areas: "top top top" "left center chat" "bot bot bot";
   padding: calc(11px * var(--cz)); gap: calc(9px * var(--cz));
 }
@@ -2159,6 +2159,24 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
 body.col-resizing .col-resizer-grip {
   opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
 }
+/* ---------- CREW / stage divider: drag right to widen the crew rail (leftrail.js) ----------
+   The mirror of the COMMS seam, with one difference forced by the geometry: #stage-wrap clips
+   (overflow:hidden — it is the tube casing), so a handle hung in the grid gap at left:-10px would
+   be cut away entirely. It rides the tube's own left edge instead, exactly like the ▸ CREW drawer
+   tab (.crew-show) already does. Same invisible-until-hovered grip vocabulary as .col-resizer. */
+.crew-resizer {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 11px; z-index: 25;
+  cursor: col-resize; display: flex; align-items: center; justify-content: center;
+  touch-action: none; background: transparent; border: 0; padding: 0;
+}
+/* the rail is GONE, not narrow — there is no seam to drag, and the ▸ CREW tab owns this edge */
+body.crew-rail-off .crew-resizer { display: none; }
+/* cinema mode collapses both side columns to 0 and hides #left (warroom.css) — a seam over the
+   fullscreen feed would look like a control and move nothing */
+#screen-game.cinema .crew-resizer { display: none; }
+/* ≤1000px the columns are hard-coded to keep the stage alive (see the breakpoints below); the var
+   the seam writes has no effect there, so the handle must not pretend otherwise */
+@media (max-width: 1000px) { .crew-resizer { display: none; } }
 /* while dragging: column-resize cursor everywhere + no text selection + canvas ignores the pointer */
 body.col-resizing { cursor: col-resize; user-select: none; }
 body.col-resizing #stage { pointer-events: none; }
@@ -3197,7 +3215,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* 1120px: keep all three columns, just tighten the side columns */
 @media (max-width: 1120px) {
-  #screen-game.active { grid-template-columns: 200px 1fr var(--chat-w, 300px); }
+  #screen-game.active { grid-template-columns: var(--crew-w, 200px) 1fr var(--chat-w, 300px); }
 }
 
 /* 1000px: squeeze gaps/padding + side columns further so the stage keeps room */

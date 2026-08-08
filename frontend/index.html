@@ -473,6 +473,9 @@
     <!-- CREW rail restore handle (leftrail.js): a slim phosphor drawer tab on the stage's left edge,
          visible only while the rail is hidden -->
     <button id="crew-show" class="crew-show" type="button" title="Show the crew rail" aria-label="Show the crew rail" hidden>▸ CREW</button>
+    <!-- CREW / stage divider (leftrail.js): the mirror of the COMMS seam. It lives on the stage's left
+         edge rather than in the grid gap because #stage-wrap clips (see .crew-resizer in app.css). -->
+    <div id="crew-resizer" class="crew-resizer" title="drag to resize the CREW rail (double-click to reset)" role="separator" aria-orientation="vertical" aria-label="Resize crew rail"><span class="col-resizer-grip"></span></div>
   </div>
 
   <aside id="chat-panel">
