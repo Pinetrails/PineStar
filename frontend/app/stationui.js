@@ -1341,6 +1341,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return ((a && a.name) || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
   }
 
+  /* The dossier portrait frame, in CSS px. NOT a taste number — it is derived from the shipped art.
+     Measured across all 36 skins (dev/skin-bounds.mjs): the drawn character inside each 92×92 master is
+     39–46px tall and 16–43px wide, the largest being pikachu at 43×46. The frame must leave room for the
+     largest character at ×2 (86 × 92) plus 6px of pad on every side, so that EVERY skin lands on the same
+     integer ×2 and the roster reads at one size. Shrink this and the big skins silently drop to ×1,
+     rendering half the height of everyone else. Re-run dev/skin-bounds.mjs before changing it. */
+  const PORTRAIT_W = 100, PORTRAIT_H = 108;
+
   function agHead(a, act) {
     const dn = linkDown();   // E2: link gone → the dossier can't honestly say ONLINE either
     const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
@@ -1352,7 +1360,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="ag-portrait-wrap"><div class="ag-portrait-well">' +
         '<span class="ag-ptick a"></span><span class="ag-ptick b"></span><span class="ag-ptick c"></span><span class="ag-ptick d"></span>' +
         '<span class="ag-psweep" aria-hidden="true"></span>' +
-        '<canvas id="ag-portrait" width="84" height="112"></canvas>' +
+        // size is owned by drawPortrait (DPR-aware backing store); these attrs are only the pre-paint box
+        '<canvas id="ag-portrait" width="' + PORTRAIT_W + '" height="' + PORTRAIT_H + '"></canvas>' +
       '</div></div>' +
       '<div class="ag-info">' +
       // NAME — read-only with a ✎ rename affordance, or an inline editor while agEdit['__name'] is set (wired in wireHead).
@@ -2680,6 +2689,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   function drawPortrait(cv, a) {
     if (!cv) return;
+    /* DPR-aware backing store. The canvas used to be a fixed 84×112 bitmap inside an 88×112 CSS box — a
+       1.048× browser stretch even at DPR 1, and on a HiDPI screen the whole thing was upscaled again. The
+       backing store now matches the CSS box times an INTEGER device factor, so the browser never resamples
+       and every scale in this function stays a whole number of device pixels. */
+    const dev = Math.max(1, Math.min(3, Math.round((typeof window !== 'undefined' && window.devicePixelRatio) || 1)));
+    if (cv.width !== PORTRAIT_W * dev || cv.height !== PORTRAIT_H * dev) {
+      cv.width = PORTRAIT_W * dev; cv.height = PORTRAIT_H * dev;
+    }
+    cv.style.width = PORTRAIT_W + 'px'; cv.style.height = PORTRAIT_H + 'px';
     const pctx = cv.getContext('2d');
     pctx.clearRect(0, 0, cv.width, cv.height);
     if (!(typeof SPRITES === 'object' && SPRITES.ready) || !SPRITES.isSkinReady(a.skin)) {
@@ -2692,19 +2710,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       }
       return;
     }
-    // drawBody sizes sprites for the FLOOR: each skin at its own small footprint scale (ULTRON ~0.6, most
-    // skins ~0.37) on a 92px master that's mostly transparent — reused as-is the body lands tiny and adrift
-    // in the frame, and DIFFERENTLY sized per skin. For the portrait we want every agent to FILL the frame
-    // the same, independent of how small it walks on the floor. So: render the body once to an offscreen
-    // buffer (real skin, noShadow), crop to its actual non-transparent bounds, then blit it in scaled to
-    // fill — preserving aspect and foot-anchoring to the bottom. (3× master in the buffer keeps detail.)
+    /* PORTRAIT RESOLUTION CHAIN (rebuilt 2026-08-07 — the old one produced a white blob).
+       Measured, not guessed: every one of the 36 shipped skins is a 92×92 sheet containing a character only
+       39–46px tall (median 43) — the sheet is mostly transparent padding. The old pipeline resampled that
+       character TWICE, both times fractionally and both times with smoothing on: drawBody drew it at the
+       FLOOR scale (~0.385) inside a 3× buffer, then the blit stretched the crop ~1.96× to fill the frame.
+       Net ≈2.3× bilinear upscale of a 43px pixel-art sprite: 26.6% of its opaque pixels came out as soft
+       anti-aliased edge, and the visor, eyes and suit detail dissolved.
+
+       Two rules, and they are opposites — which is why the old code got it wrong by applying one everywhere:
+         · DOWNSCALE → smooth. That is the floor draw's law (drawBody resampling the 92px master down to a
+           ~35px footprint); never NN-crush it, that is what mushed the crew before.
+         · UPSCALE → nearest-neighbour, at an INTEGER factor. Blowing pixel art up with interpolation is
+           precisely what destroys it. Chunky pixels are the intended look, not an artefact to smooth away.
+       So: cancel drawBody's floor scale (SPRITES.bodyScale — asked of the engine, never re-derived) to land
+       the master 1:1 in the buffer, then integer-NN it into the frame. The frame is sized so the largest
+       shipped character (43×46, pikachu) still clears ×2, which means EVERY skin lands on exactly ×2 — the
+       roster reads at one consistent size instead of each skin finding its own fractional fit. */
     const buf = drawPortrait._buf || (drawPortrait._buf = document.createElement('canvas'));
-    const BW = 200, BH = 200; buf.width = BW; buf.height = BH;
+    const BW = 220, BH = 220; buf.width = BW; buf.height = BH;
     const bctx = buf.getContext('2d');
     bctx.clearRect(0, 0, BW, BH);
+    bctx.imageSmoothingEnabled = false;   // the blit below is 1:1; keep it exact
     bctx.save();
-    bctx.translate(BW / 2, BH - 14);
-    bctx.scale(3, 3);
+    bctx.translate(BW / 2, BH - 40);
+    // 1/sc makes drawBody's own `dw = frame.width * sc` resolve to frame.width — an exact, unresampled
+    // 1:1 blit of the master. A missing/zero scale falls back to the old 3× rather than dividing by zero.
+    const sc = (typeof SPRITES.bodyScale === 'function') ? SPRITES.bodyScale({ id: a.id, skin: a.skin }) : 0;
+    bctx.scale(sc > 0 ? 1 / sc : 3, sc > 0 ? 1 / sc : 3);
     SPRITES.drawBody(bctx, { id: a.id, skin: a.skin, px: 0, py: 0, dir: 'south', color: a.color, state: 'idle', sitting: false, working: false, phase: 0, noShadow: true }, performance.now());
     bctx.restore();
     // measure the drawn body's real bounds (alpha > 16), so the fit ignores the master's transparent padding
@@ -2715,13 +2748,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     if (!any) return;
     const sw = maxX - minX + 1, sh = maxY - minY + 1;
-    // fit into the frame with a small margin, aspect preserved, feet to the bottom
-    const padX = 8, padTop = 8, padBot = 6;
-    const k = Math.min((cv.width - padX * 2) / sw, (cv.height - padTop - padBot) / sh);
+    // INTEGER fit, floored at 1× — a fractional k is the whole defect, and 1× (native) is always honest.
+    // Pads are device px so the fit math and the drawn result share one coordinate space.
+    const padX = 6 * dev, padTop = 6 * dev, padBot = 6 * dev;
+    const kFit = Math.min((cv.width - padX * 2) / sw, (cv.height - padTop - padBot) / sh);
+    const k = Math.max(1, Math.floor(kFit));
     const dw = sw * k, dh = sh * k;
-    pctx.imageSmoothingEnabled = true;
-    if ('imageSmoothingQuality' in pctx) pctx.imageSmoothingQuality = 'high';
-    pctx.drawImage(buf, minX, minY, sw, sh, (cv.width - dw) / 2, cv.height - padBot - dh, dw, dh);
+    pctx.imageSmoothingEnabled = false;   // NN: preserve the artist's pixels instead of interpolating them away
+    // integer destination origin too — a half-pixel offset reintroduces the blur the NN flag just removed
+    pctx.drawImage(buf, minX, minY, sw, sh,
+      Math.round((cv.width - dw) / 2), Math.round(cv.height - padBot - dh), dw, dh);
   }
   // BRIEF live telemetry, painted in place (no DOM rebuild → open CONFIG/MEMORY editors are never wiped).
   // Touches only: the hero status dot + role line (agHead), and the roster idle/working hints (railTop). Every
