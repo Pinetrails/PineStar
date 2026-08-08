@@ -22,12 +22,15 @@ const DOMAIN_SET = new Set(DOMAINS);
 const OUTCOME_KINDS = new Set(['quest', 'milestone', 'metric']);
 const TIER_STEPS = [[7, 'proven'], [3, 'practiced'], [1, 'tested']];
 const EVOLUTION_NAMES = ['DRIFT', 'VECTOR', 'ORBIT', 'CONSTELLATION', 'DEEP FIELD'];
-const METRIC_CAP = 40, OUTCOME_CAP = 300, RECEIPT_CAP = 100, GOAL_CAP = 40, HISTORY_CAP = 24;
+const METRIC_CAP = 40, OUTCOME_CAP = 300, RECEIPT_CAP = 100, HISTORY_CAP = 24;
 const AGENT_RE = /^[A-Za-z0-9_-]{1,40}$/;
 
 const clip = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
 const finite = v => typeof v === 'number' && Number.isFinite(v);
-const number = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+const number = v => {
+  if (v == null || (typeof v === 'string' && !v.trim())) return null;
+  const n = Number(v); return Number.isFinite(n) ? n : null;
+};
 const stamp = v => Math.max(0, Math.floor(number(v) || 0));
 const domain = v => DOMAIN_SET.has(String(v || '').toLowerCase()) ? String(v).toLowerCase() : null;
 const agent = v => AGENT_RE.test(String(v || '')) ? String(v) : null;
@@ -93,11 +96,22 @@ function normReceipt(r) {
 
 function normalize(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
-  const metrics = (Array.isArray(r.metrics) ? r.metrics : []).map(normMetric).filter(Boolean).slice(-METRIC_CAP);
+  const allMetrics = (Array.isArray(r.metrics) ? r.metrics : []).map(normMetric).filter(Boolean);
+  // Retired rows are expendable history; active Commander metrics are not. A malformed/legacy file with more
+  // than the nominal cap must preserve every active row rather than silently deleting user-entered truth.
+  const activeMetrics = allMetrics.filter(m => m.status === 'active');
+  const retiredKeep = new Set(allMetrics.filter(m => m.status === 'retired').slice(-Math.max(0, METRIC_CAP - activeMetrics.length)));
+  const metrics = allMetrics.filter(m => m.status === 'active' || retiredKeep.has(m));
   const outcomes = (Array.isArray(r.outcomes) ? r.outcomes : []).map(normOutcome).filter(Boolean).slice(-OUTCOME_CAP);
+  // Visible outcome rows are bounded, but their idempotency authority is lifetime state. Without this separate
+  // key ledger, replaying an old completed quest after 300 newer outcomes increments mastery a second time.
+  const outcomeKeys = [...new Set((Array.isArray(r.outcomeKeys) ? r.outcomeKeys : []).map(v => clip(v, 120)).filter(Boolean)
+    .concat(outcomes.map(o => o.sourceId)))];
   const mastery = (Array.isArray(r.mastery) ? r.mastery : []).map(normMastery).filter(Boolean);
   const receipts = (Array.isArray(r.receipts) ? r.receipts : []).map(normReceipt).filter(Boolean).slice(-RECEIPT_CAP);
-  const goalsReached = [...new Set((Array.isArray(r.goalsReached) ? r.goalsReached : []).map(v => clip(v, 64)).filter(Boolean))].slice(-GOAL_CAP);
+  // A completed life goal is rare, compact, and permanent. Keep exact ids so evolution stays uncapped and a very
+  // old goal can never become "new" again merely because it fell out of a display-oriented window.
+  const goalsReached = [...new Set((Array.isArray(r.goalsReached) ? r.goalsReached : []).map(v => clip(v, 64)).filter(Boolean))];
   const suppressed = {};
   if (r.suppressed && typeof r.suppressed === 'object') {
     for (const [aid, dims] of Object.entries(r.suppressed)) {
@@ -107,7 +121,7 @@ function normalize(raw) {
       if (Object.keys(clean).length) suppressed[aid] = clean;
     }
   }
-  return { v: 1, seq: Math.max(0, Number(r.seq) | 0), metrics, outcomes, mastery, receipts, goalsReached, suppressed };
+  return { v: 1, seq: Math.max(0, Number(r.seq) | 0), commanderEpoch: stamp(r.commanderEpoch), startedAt: stamp(r.startedAt), metrics, outcomes, outcomeKeys, mastery, receipts, goalsReached, suppressed };
 }
 
 function reached(metric) {
@@ -118,7 +132,6 @@ function addGoalReached(rec, goalId) {
   const id = clip(goalId, 64);
   if (id && rec.goalsReached.indexOf(id) < 0) {
     rec.goalsReached.push(id);
-    while (rec.goalsReached.length > GOAL_CAP) rec.goalsReached.shift();
   }
 }
 
@@ -134,8 +147,9 @@ function adaptationText(m, outcome) {
 // Mutates a normalized record inside the durable store update. sourceId is the idempotency authority.
 function foldOutcome(rec, input, now) {
   const d = normOutcome(Object.assign({}, input, { at: stamp(now) }));
-  if (!d || rec.outcomes.some(o => o.sourceId === d.sourceId)) return { changed: false, outcome: null, receipt: null };
+  if (!d || rec.outcomeKeys.indexOf(d.sourceId) >= 0) return { changed: false, outcome: null, receipt: null };
   d.id = 'jo:' + (++rec.seq);
+  rec.outcomeKeys.push(d.sourceId);
   rec.outcomes.push(d);
   while (rec.outcomes.length > OUTCOME_CAP) rec.outcomes.shift();
   if (d.goalDone) addGoalReached(rec, d.goalId || d.sourceId);
@@ -164,7 +178,14 @@ function makeJourneyStore(deps) {
     writeDurable: deps.writeDurable, onRecover: deps.onRecover, onCorrupt: deps.onCorrupt
   });
 
-  function read() { try { return normalize(durable.get(STORE_KEY)); } catch (_) { return normalize(null); } }
+  function read() {
+    const r = durable.readKey(STORE_KEY);
+    if (r.status === 'ok' || r.status === 'recovered') return normalize(r.value);
+    if (r.status === 'absent') return normalize(null);
+    const e = new Error('journey ledger is ' + r.status);
+    e.code = r.status === 'unreadable' ? 'ESTORE_UNREADABLE' : 'ESTORE_CORRUPT';
+    throw e;
+  }
 
   function snapshot(activeGoal) {
     const rec = read();
@@ -192,13 +213,16 @@ function makeJourneyStore(deps) {
     let result = null;
     await durable.update(STORE_KEY, cur => {
       const rec = normalize(cur);
+      if (rec.startedAt > 0 && stamp(q.completedAt) < rec.startedAt) {
+        result = { changed: false, skipped: true, outcome: null, receipt: null }; return undefined;
+      }
       result = foldOutcome(rec, {
         sourceId: 'quest:' + q.id, kind: 'quest', questId: q.id, goalId: q.goalId,
         milestoneId: q.milestoneId, agentId: aid, domain: q.domain, title: q.title, evidence, verifiedBy: proof, goalDone: false
       }, now);
       return result.changed ? rec : undefined;
     });
-    return { ok: true, duplicate: !result.changed, outcome: result.outcome, receipt: result.receipt };
+    return { ok: true, duplicate: !result.changed && !result.skipped, skipped: !!result.skipped, outcome: result.outcome, receipt: result.receipt };
   }
 
   async function recordMilestone(d, now) {
@@ -220,15 +244,25 @@ function makeJourneyStore(deps) {
     d = d || {}; const label = clip(d.label, 100), baseline = number(d.baseline), target = number(d.target);
     if (!label || baseline == null || target == null || baseline === target) return { ok: false, error: 'label and distinct numeric baseline/target are required' };
     let metric = null;
+    let error = '';
     await durable.update(STORE_KEY, cur => {
       const rec = normalize(cur);
+      if (rec.metrics.filter(m => m.status === 'active').length >= METRIC_CAP) {
+        error = 'retire an active metric before adding another'; return undefined;
+      }
+      // Reclaim retired display history first; never shift an active metric to make room.
+      while (rec.metrics.length >= METRIC_CAP) {
+        const retired = rec.metrics.findIndex(m => m.status === 'retired');
+        if (retired < 0) break;
+        rec.metrics.splice(retired, 1);
+      }
       const id = 'jm:' + (++rec.seq);
       metric = normMetric({ id, goalId: d.goalId, label, unit: d.unit, baseline, target, current: baseline,
         status: 'active', createdAt: now, updatedAt: now, reachedAt: null, history: [{ at: now, value: baseline, note: 'baseline', source: 'commander' }] });
       rec.metrics.push(metric); while (rec.metrics.length > METRIC_CAP) rec.metrics.shift();
       return rec;
     });
-    return { ok: true, metric };
+    return metric ? { ok: true, metric } : { ok: false, error: error || 'metric was not created' };
   }
 
   async function updateMetric(d, now) {
@@ -272,8 +306,14 @@ function makeJourneyStore(deps) {
     return { ok: true, suppressed: !!on };
   }
 
-  async function reset() {
-    await durable.update(STORE_KEY, () => normalize(null));
+  function currentEpoch(fallback) {
+    return Math.max(1, read().commanderEpoch || stamp(fallback) || 1);
+  }
+
+  async function reset(now, commanderEpoch) {
+    await durable.update(STORE_KEY, () => Object.assign(normalize(null), {
+      commanderEpoch: Math.max(1, stamp(commanderEpoch) || 1), startedAt: stamp(now)
+    }));
     return { ok: true };
   }
 
@@ -293,7 +333,7 @@ function makeJourneyStore(deps) {
     return lines.join('\n');
   }
 
-  return { read, snapshot, recordQuest, recordMilestone, createMetric, updateMetric, retireMetric, setSuppressed, reset, adaptationBlock, _durable: durable };
+  return { read, snapshot, currentEpoch, recordQuest, recordMilestone, createMetric, updateMetric, retireMetric, setSuppressed, reset, adaptationBlock, _durable: durable };
 }
 
 module.exports = { makeJourneyStore, normalize, tierFor, evolutionFor, DOMAINS, _internals: { normMetric, normOutcome, reached, foldOutcome } };

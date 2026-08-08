@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b029c5bffc580041425131a0c40bd4f4aae28bc7",
+    "sourceCommit": "d427349c92f84d46be0840fea8fc881ed0290178",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 325444,
-        "sha256": "ab08cbc53040b210a3cec5d2bee886a86ba0e7f7bd63ca987459198be2d50791"
+        "bytes": 325816,
+        "sha256": "99a93145796ed99ed50381638f338f449b8119fcbf4e6c556836851f6c57026c"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 299201,
-        "sha256": "205290f0165e1639ffa6a3df94c427ffab4faa13c702bef28d6faab1cf13a6d7"
+        "bytes": 299185,
+        "sha256": "735f1979a5849f6b843a407837b96ffb8f255fa5e6e369ce18d9023ee93a5411"
       },
       {
         "path": "frontend/app/channels.js",
@@ -273,13 +273,13 @@
       },
       {
         "path": "frontend/app/goals.js",
-        "bytes": 20269,
-        "sha256": "1effcf27e8526f57969a94916d4d4c5eeba231cc232194472e2140968a076b83"
+        "bytes": 20309,
+        "sha256": "e962532cf832cd0717ca8e908e4f5cb066289f1ab72154228a48971f188d7183"
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 26465,
-        "sha256": "eafdc6a8b84e71e215f0f6df53c0cdb3c9efaaed9021a22d5191307e5c93d266"
+        "bytes": 27842,
+        "sha256": "48e0ed3dd889bc63c08f6872dc567fca5f51ce48d0e755b4679bf26770e3aa36"
       },
       {
         "path": "frontend/app/harness.js",
@@ -313,8 +313,8 @@
       },
       {
         "path": "frontend/app/journeystore.js",
-        "bytes": 3546,
-        "sha256": "19fcf95558c14a064e27bc03b480637cb568ddcd7d2a07df6da457654ecabb01"
+        "bytes": 4081,
+        "sha256": "9c04fad5867a2a3d267418d4e0b3571db1d344c0202fb7a5d0babd93b304d7da"
       },
       {
         "path": "frontend/app/keepawake.js",
@@ -868,8 +868,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 100514,
-        "sha256": "e97ec318af5310992c8c4496c69f93694daae260801ca92363e50f97696b0132"
+        "bytes": 100372,
+        "sha256": "967235aa0006ed6c3db6bc37131153316f168eb16371148335326a905db7b896"
       },
       {
         "path": "frontend/app/windows/logbook.js",
