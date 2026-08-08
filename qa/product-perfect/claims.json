@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5d031aab5e0be5c39f352d459a9cd723de9714e8",
+    "sourceCommit": "a5d27185b6b2c4f871ac2d638298aca63665679b",
     "pathSetSha256": "1149d0e2e420dfdf56d9fdae886481ec4d54779bbf9ac01a84a761848732b4e7",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 299201,
-        "sha256": "205290f0165e1639ffa6a3df94c427ffab4faa13c702bef28d6faab1cf13a6d7"
+        "bytes": 299185,
+        "sha256": "735f1979a5849f6b843a407837b96ffb8f255fa5e6e369ce18d9023ee93a5411"
       },
       {
         "path": "frontend/app/channels.js",
@@ -403,8 +403,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 76569,
-        "sha256": "3eef3dd07494deea76a5f5882ee8b36e05eb522452c0e22667b18375a9d5ac10"
+        "bytes": 76494,
+        "sha256": "fe9d894c2e3b3ac044ba8e5baa717798839d385ec1daaae78021a6c8745cae68"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -858,8 +858,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 100514,
-        "sha256": "e97ec318af5310992c8c4496c69f93694daae260801ca92363e50f97696b0132"
+        "bytes": 100372,
+        "sha256": "967235aa0006ed6c3db6bc37131153316f168eb16371148335326a905db7b896"
       },
       {
         "path": "frontend/app/windows/logbook.js",
