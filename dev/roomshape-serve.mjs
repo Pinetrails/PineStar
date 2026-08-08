@@ -34,9 +34,15 @@ if (!(await waitUp(URL))) { console.error('server never came up on ' + URL); sto
 /* PREFLIGHT THE PORT, DO NOT TRUST IT. waitUp() only proves SOMETHING answers on this port — on a
    machine running several agent sessions that something is regularly a DIFFERENT worktree's build,
    and every screenshot taken against it is a picture of someone else's work. Assert a marker that
-   only this branch's bake carries. */
+   only this branch's bake carries.
+
+   MARK ON STRUCTURE, NEVER ON A TUNABLE VALUE. The first cut asserted `pitch: 7` and `up: 22` —
+   the very numbers this lane exists to dial. Tuning pitch to 8 made the banner declare the server
+   was NOT this branch while it was serving it correctly, which is worse than no check: a preflight
+   that cries wolf gets ignored, and the run it should have caught goes through. The symbols below
+   are the ones the change INTRODUCED, so they hold across any amount of taste tuning. */
 const js = await (await fetch(URL + 'app/stationbake.js')).text();
-const marks = { 'SHAPE.cornerN': /SHAPE = \{ cornerN/.test(js), 'WALL.up 22': /up: 22/.test(js), 'LIGHT.pitch': /pitch: 7/.test(js) };
+const marks = { 'SHAPE.cornerN': /SHAPE = \{ cornerN/.test(js), 'lampRows()': /function lampRows/.test(js), 'lampCols()': /const lampCols/.test(js) };
 const bad = Object.entries(marks).filter(([, ok]) => !ok).map(([k]) => k);
 
 console.log(`
