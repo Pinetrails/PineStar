@@ -1089,6 +1089,8 @@ GOLDEN PASS. (3) J1.1 working-covers-busy passes at 20260716-230003 and locally 
 Gate: test:fast 342/342 green at the exact merged tree. Bonus: PU-01..14 re-verified FIXED at HEAD
 (5-agent code sweep, file:line evidence in docs/NEXT.md) — the fix-plan checkboxes were stale.
 
+**2026-08-07 merge digest (USER-SELECTABLE TRAY START/CLOSE):** `agent/tray-background` -> `feat/harness-backend` as merge `6ae1f852`, with the 206-file release surface re-locked at `cdd9704e`; exact-candidate isolated proof passed `test:fast` **580/580 GREEN**, claims **64/64**, desktop lifecycle **14/14**, quitguard **27/27**, and native Rust lifecycle preferences **3/3**. The merge and feature head remain ancestors of current trunk after concurrent integrations; no sidecar/route/shared-contract/credential change, so `test:http` was not required.
+
 ## Crew last-run
 
 Last-run / result per crew member. `Last run` and `Result` are filled in by each crew's
