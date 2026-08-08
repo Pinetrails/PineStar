@@ -339,6 +339,7 @@
         // from persisting on every delta: only persist once the durable heartbeat is older than heartbeatMs.
         renewLease(job.id, runId);
         if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // token stream never leaves the driver
+        if (name === 'agent.tool_call') state.buf = '';   // prior prose was narration; only the terminal segment is deliverable
         if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
         else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
         else if (name === 'agent.run.end') {

@@ -103,7 +103,7 @@ function publicSetup(fixture) {
 function makeState(fixture, root, baseline) {
   return {
     fixture, root: resolve(root), baseline, calls: [], mutations: 0, authorityEscapes: 0, observation: {},
-    commands: {}, artifactRecords: {}, artifacts: [], routeUsed: false, activeWorkers: 0, maxWorkers: 0,
+    commands: {}, commandHistory: [], artifactRecords: {}, artifacts: [], routeUsed: false, activeWorkers: 0, maxWorkers: 0,
     workerIds: [], workerResultCounts: {}, providerSequence: [], primaryDropped: false, foregroundEnded: false
   };
 }
@@ -150,6 +150,7 @@ async function callTool(state, name, args) {
       try { stdout = execFileSync(spec[0], spec.slice(1), { cwd: state.root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); }
       catch (error) { exitCode = Number.isInteger(error.status) ? error.status : 1; stdout = String(error.stdout || ''); stderr = String(error.stderr || ''); }
       state.commands[args.name] = { exitCode, stdout, stderr };
+      state.commandHistory.push({ name: String(args.name), exitCode });
       value = state.commands[args.name];
     } else if (name === 'fixture_verify_file') {
       const file = inside(state.root, args.path, state), body = readFileSync(file), verifiedAt = now();
@@ -261,7 +262,7 @@ export function observeFixture(state, finalText, meta = {}) {
     .filter(name => state.baseline[name] !== files[name]).sort();
   const observation = Object.assign({}, state.observation, {
     files, changedPaths, mutationCount: state.mutations, authorityEscapes: state.authorityEscapes,
-    commands: state.commands
+    commands: state.commands, commandHistory: state.commandHistory.slice()
   });
   if (state.fixture.taskId === 'parity-code-inspect' && files['src/ids.js']) {
     const line = files['src/ids.js'].split(/\r?\n/).findIndex(value => /normalizeWidgetId/.test(value));

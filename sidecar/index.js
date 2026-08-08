@@ -4009,6 +4009,7 @@ const cronDriver = makeCronDriver({
       const sink = (name, payload) => {
         const p = payload || {};
         if (name === 'agent.token') { hs.buf += (p.delta || ''); return; }
+        if (name === 'agent.tool_call') hs.buf = '';
         if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
         else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
         else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
@@ -4272,6 +4273,7 @@ async function nightshiftChat(o) {
   const sink = (name, payload) => {
     const p = payload || {};
     if (name === 'agent.token') { state.buf += (p.delta || ''); return; }
+    if (name === 'agent.tool_call') state.buf = '';
     if (name === 'agent.run.error') state.err = p.message || 'run error';
   };
   // VISIBLE WHILE THINKING (2026-07-18): the beat's broadcast opt-in (driver + force route both pass it) used to
@@ -9752,6 +9754,7 @@ async function handleCronRun(req, res) {
     try { emit(name, payload); } catch (_) {}
     const p = payload || {};
     if (name === 'agent.token') state.buf += (p.delta || '');
+    else if (name === 'agent.tool_call') state.buf = '';
     else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
     else if (name === 'agent.run.end') state.reason = p.reason;
   };
@@ -9822,6 +9825,7 @@ async function handleCronRun(req, res) {
               try { emit(name, payload); } catch (_) {}
               const p = payload || {};
               if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.tool_call') hs.buf = '';
               else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
               else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
               else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
