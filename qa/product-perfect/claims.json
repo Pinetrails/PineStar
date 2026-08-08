@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1d4c6b9d668241be648d81392f123e256dc05b8a",
+    "sourceCommit": "d427349c92f84d46be0840fea8fc881ed0290178",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 325444,
-        "sha256": "ab08cbc53040b210a3cec5d2bee886a86ba0e7f7bd63ca987459198be2d50791"
+        "bytes": 325816,
+        "sha256": "99a93145796ed99ed50381638f338f449b8119fcbf4e6c556836851f6c57026c"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -273,13 +273,13 @@
       },
       {
         "path": "frontend/app/goals.js",
-        "bytes": 20269,
-        "sha256": "1effcf27e8526f57969a94916d4d4c5eeba231cc232194472e2140968a076b83"
+        "bytes": 20309,
+        "sha256": "e962532cf832cd0717ca8e908e4f5cb066289f1ab72154228a48971f188d7183"
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 26465,
-        "sha256": "eafdc6a8b84e71e215f0f6df53c0cdb3c9efaaed9021a22d5191307e5c93d266"
+        "bytes": 27842,
+        "sha256": "48e0ed3dd889bc63c08f6872dc567fca5f51ce48d0e755b4679bf26770e3aa36"
       },
       {
         "path": "frontend/app/harness.js",
@@ -313,8 +313,8 @@
       },
       {
         "path": "frontend/app/journeystore.js",
-        "bytes": 3546,
-        "sha256": "19fcf95558c14a064e27bc03b480637cb568ddcd7d2a07df6da457654ecabb01"
+        "bytes": 4081,
+        "sha256": "9c04fad5867a2a3d267418d4e0b3571db1d344c0202fb7a5d0babd93b304d7da"
       },
       {
         "path": "frontend/app/keepawake.js",
