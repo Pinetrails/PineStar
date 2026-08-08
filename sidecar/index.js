@@ -6329,6 +6329,24 @@ async function completeQuestRecommendationIds(ids) {
   return ids;
 }
 
+// A quest completion is durable before its journey fold. Recover a crash/write failure by replaying every done
+// quest; journey-store's lifetime source-key ledger makes this idempotent, and its reset epoch skips prior-Commander
+// completions. GET /api/journey awaits the same pass so the UI never outruns recoverable evidence.
+let journeyQuestReconcile = null;
+function reconcileCompletedJourneyQuests() {
+  if (journeyQuestReconcile) return journeyQuestReconcile;
+  const task = (async () => {
+    for (const q of questStore.list()) {
+      if (!q || q.status !== 'done') continue;
+      await journeyStore.recordQuest(q, commanderGoals.get(), q.completedAt || Date.now());
+    }
+  })();
+  journeyQuestReconcile = task;
+  task.finally(() => { if (journeyQuestReconcile === task) journeyQuestReconcile = null; }).catch(() => {});
+  return task;
+}
+setImmediate(() => reconcileCompletedJourneyQuests().catch(e => console.warn('[journey] boot reconciliation failed:', (e && e.message) || e)));
+
 let questRefreshingNow = false;   // one cycle in flight, ever (the scout's in-flight-guard discipline)
 async function runQuestRefreshCycle(why) {
   // standalone provider (no live run to ride): the cron seam's provider/credential resolution, verbatim.
@@ -11227,21 +11245,36 @@ async function handleGoals(req, res) {
 // POST operations are explicit and narrow: the Commander records metrics/milestones or corrects an adaptation.
 async function handleJourney(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  if (req.method === 'GET') return json(200, { ok: true, journey: journeyStore.snapshot(commanderGoals.get()) });
+  if (req.method === 'GET') {
+    try { await reconcileCompletedJourneyQuests(); return json(200, { ok: true, journey: journeyStore.snapshot(commanderGoals.get()) }); }
+    catch (_) { return json(500, { ok: false, error: 'journey state is temporarily unavailable' }); }
+  }
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16)); }
   catch (_) { return json(400, { ok: false, error: 'bad json' }); }
   const op = String(body && body.op || '');
   let result;
-  if (op === 'metric.create') result = await journeyStore.createMetric(body, Date.now());
-  else if (op === 'metric.update') result = await journeyStore.updateMetric(body, Date.now());
-  else if (op === 'metric.retire') result = await journeyStore.retireMetric(body.id, Date.now());
-  else if (op === 'milestone.complete') result = await journeyStore.recordMilestone(body, Date.now());
-  else if (op === 'adaptation.suppress') result = await journeyStore.setSuppressed(body.agentId, body.domain, true, Date.now());
-  else if (op === 'adaptation.resume') result = await journeyStore.setSuppressed(body.agentId, body.domain, false, Date.now());
-  else if (op === 'journey.reset') result = await journeyStore.reset();
-  else return json(400, { ok: false, error: 'unknown journey operation' });
-  return json(result && result.ok ? 200 : 400, Object.assign({}, result, { journey: journeyStore.snapshot(commanderGoals.get()) }));
+  try {
+    const saved = (() => { try { return saveStore.load('agent') || null; } catch (_) { return null; } })();
+    const savedEpoch = Math.max(1, Math.floor(Number(saved && saved.agent && saved.agent.createdAt) || 1));
+    const currentEpoch = journeyStore.currentEpoch(savedEpoch);
+    const requestedEpoch = Math.max(1, Math.floor(Number(body && body.epoch) || 1));
+    // The journey belongs to one Commander generation. A backgrounded tab from an earlier Commander may still
+    // have timers/outbox work alive, but it must never mutate the newly commissioned agent's evidence. Reset is
+    // the generation handoff: it may advance the epoch, while every ordinary mutation must match exactly.
+    if ((op === 'journey.reset' && requestedEpoch < currentEpoch) || (op !== 'journey.reset' && requestedEpoch !== currentEpoch)) {
+      return json(409, { ok: false, error: 'station generation changed; reload before updating journey' });
+    }
+    if (op === 'metric.create') result = await journeyStore.createMetric(body, Date.now());
+    else if (op === 'metric.update') result = await journeyStore.updateMetric(body, Date.now());
+    else if (op === 'metric.retire') result = await journeyStore.retireMetric(body.id, Date.now());
+    else if (op === 'milestone.complete') result = await journeyStore.recordMilestone(body, Date.now());
+    else if (op === 'adaptation.suppress') result = await journeyStore.setSuppressed(body.agentId, body.domain, true, Date.now());
+    else if (op === 'adaptation.resume') result = await journeyStore.setSuppressed(body.agentId, body.domain, false, Date.now());
+    else if (op === 'journey.reset') result = await journeyStore.reset(Date.now(), requestedEpoch);
+    else return json(400, { ok: false, error: 'unknown journey operation' });
+    return json(result && result.ok ? 200 : 400, Object.assign({}, result, { journey: journeyStore.snapshot(commanderGoals.get()) }));
+  } catch (_) { return json(500, { ok: false, error: 'journey state is temporarily unavailable' }); }
 }
 
 function placedTypesFrom(v) {

@@ -78,15 +78,17 @@
     const io = opts.io || { readAll() { return []; }, append() {} };
     const clock = opts.clock || { now() { return 0; } };
     const ramMax = num(opts.ramMax) > 0 ? num(opts.ramMax) : RAM_ROWS_MAX;
-    let rows = [];
+    let loaded = [];
     try {
       const raw = io.readAll();
-      if (Array.isArray(raw)) for (const row of raw) { const clean = normalize(row, row && row.ts); if (clean) rows.push(clean); }
-    } catch (_) { rows = []; }
-    if (rows.length > ramMax) rows = rows.slice(-ramMax);
+      if (Array.isArray(raw)) for (const row of raw) { const clean = normalize(row, row && row.ts); if (clean) loaded.push(clean); }
+    } catch (_) { loaded = []; }
     const byRun = new Map();
     const keyFor = (epoch, runId) => String(epoch) + ':' + String(runId);
-    for (const row of rows) if (!byRun.has(keyFor(row.epoch, row.runId))) byRun.set(keyFor(row.epoch, row.runId), row);
+    // The served history window is bounded; first-wins authority is not. Build the decision index from every
+    // durable row loaded at boot before trimming the query window, and retain it across in-process evictions.
+    for (const row of loaded) if (!byRun.has(keyFor(row.epoch, row.runId))) byRun.set(keyFor(row.epoch, row.runId), row);
+    let rows = loaded.length > ramMax ? loaded.slice(-ramMax) : loaded;
 
     function record(raw) {
       const runId = str(raw && raw.runId).trim().slice(0, RUN_MAX);
@@ -100,8 +102,7 @@
       try { io.append(rating); } catch (e) { return { error: (e && e.message) || 'rating persist failed' }; }
       rows.push(rating); byRun.set(keyFor(rating.epoch, rating.runId), rating);
       if (rows.length > ramMax) {
-        const removed = rows.splice(0, rows.length - ramMax);
-        for (const old of removed) if (byRun.get(keyFor(old.epoch, old.runId)) === old) byRun.delete(keyFor(old.epoch, old.runId));
+        rows.splice(0, rows.length - ramMax);
       }
       return { rating, duplicate: false };
     }

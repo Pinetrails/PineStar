@@ -37,6 +37,13 @@ A.ok(permissionsReset >= 0 && heroCommit >= 0 && permissionsReset < heroCommit,
 const savedResume = seg.indexOf('if (resumingSaved)');
 A.ok(savedResume >= 0 && savedResume < permissionsReset,
   'saved-station resume returns before new-hero lockdown and keeps its existing grants');
+const journeyReset = seg.indexOf('await JourneyStore.reset(newCommanderEpoch)');
+A.ok(journeyReset >= 0 && journeyReset < heroCommit,
+  'new-hero journey reset is acknowledged before the hero/state commit point');
+A.ok(/if \(!journeyResetResult \|\| !journeyResetResult\.ok\)/.test(seg),
+  'a failed durable journey reset blocks commissioning instead of inheriting the prior Commander');
+A.ok(seg.indexOf('createdAt: newCommanderEpoch') > journeyReset,
+  'the committed hero uses the exact generation accepted by the journey reset');
 
 // SERVER-SIDE bleed: the frontend stores above are localStorage; the notebook + the NEW declined denylist live on
 // the sidecar. onWake must ALSO wipe them, or a fresh hero inherits a stranger's kept/declined memories (app-lie).
