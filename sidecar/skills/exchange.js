@@ -80,6 +80,18 @@ function cleanScan(scan) {
     }))
   };
 }
+function isTextPackagePath(path) {
+  return path === 'SKILL.md' || !/^assets\//.test(path) || /\.(?:md|txt|json|ya?ml|js|mjs|cjs|ts|tsx|jsx|py|sh|ps1|html|css|xml|csv|svg)$/i.test(path);
+}
+function decodedPackageFiles(pkg) {
+  return pkg.files.map(f => {
+    const bytes = Buffer.from(f.content, 'base64');
+    if (!isTextPackagePath(f.path)) return { path: f.path, bytes, sha256: f.sha256, text: null };
+    const text = bytes.toString('utf8');
+    if (!Buffer.from(text, 'utf8').equals(bytes)) throw new Error(f.path + ' must be valid UTF-8 so it can be reviewed and scanned');
+    return { path: f.path, bytes, sha256: f.sha256, text };
+  });
+}
 
 function makeSkillExchange(deps) {
   deps = deps || {};
@@ -112,11 +124,9 @@ function makeSkillExchange(deps) {
       requires: d.requires.slice(), platforms: d.platforms.slice(), version: d.sourceVersion,
       author: d.sourceAuthor, license: d.sourceLicense, body: d.body, scan: cleanScan(stage.scan),
       guardAction: stage.guardAction, packageDigest: stage.pkg.digest, packageBytes: stage.pkg.bytes,
-      files: stage.pkg.files.map(f => ({
+      files: decodedPackageFiles(stage.pkg).map(f => ({
         path: f.path, bytes: f.bytes, sha256: f.sha256,
-        encoding: f.path === 'SKILL.md' || /\.(?:md|txt|json|ya?ml|js|mjs|cjs|ts|tsx|jsx|py|sh|ps1|html|css|xml|csv)$/i.test(f.path) ? 'utf8' : 'binary',
-        content: f.path === 'SKILL.md' || /\.(?:md|txt|json|ya?ml|js|mjs|cjs|ts|tsx|jsx|py|sh|ps1|html|css|xml|csv)$/i.test(f.path)
-          ? Buffer.from(f.content, 'base64').toString('utf8') : ''
+        encoding: f.text == null ? 'binary' : 'utf8', content: f.text == null ? '' : f.text
       }))
     };
   }
@@ -126,14 +136,15 @@ function makeSkillExchange(deps) {
     const fetched = typeof fetchPackage === 'function' ? await fetchPackage(sourceUrl) : await fetchDocument(sourceUrl);
     const finalUrl = normalizeSourceUrl((fetched && fetched.url) || sourceUrl);
     const pkg = packageFormat.canonicalize(Array.isArray(fetched && fetched.files) ? fetched.files : [{ path: 'SKILL.md', content: str(fetched && fetched.text) }]);
+    const decoded = decodedPackageFiles(pkg);
     const main = pkg.files.find(f => f.path === 'SKILL.md');
     const rawBytes = Buffer.from(main.content, 'base64');
     const raw = rawBytes.toString('utf8');
     if (!Buffer.from(raw, 'utf8').equals(rawBytes)) throw new Error('SKILL.md must be valid UTF-8');
     const document = parseDocument(raw, finalUrl);
     const projected = Object.assign({}, document, {
-      setup: '', createdBy: 'community', files: pkg.files.filter(f => f.path !== 'SKILL.md').map(f => ({
-        path: f.path, content: Buffer.from(f.content, 'base64').toString('utf8')
+      setup: '', createdBy: 'community', files: decoded.filter(f => f.path !== 'SKILL.md').map(f => ({
+        path: f.path, content: f.text == null ? '[binary asset: ' + f.bytes.length + ' bytes]' : f.text
       }))
     });
     const scan = guard && typeof guard.scanSkillRecord === 'function'
@@ -212,10 +223,14 @@ function makeSkillExchange(deps) {
   }
   async function inspectEnvelope(input) {
     const pkg = packageFormat.fromEnvelope(input && input.envelope);
+    const decoded = decodedPackageFiles(pkg);
     const main = packageFormat.fileBuffer(pkg, 'SKILL.md');
+    if (!Buffer.from(main.toString('utf8'), 'utf8').equals(main)) throw new Error('SKILL.md must be valid UTF-8');
     const sourceUrl = 'package://import/' + pkg.digest;
     const document = parseDocument(main.toString('utf8'), sourceUrl);
-    const projected = Object.assign({}, document, { setup: '', createdBy: 'community', files: [] });
+    const projected = Object.assign({}, document, { setup: '', createdBy: 'community', files: decoded.filter(f => f.path !== 'SKILL.md').map(f => ({
+      path: f.path, content: f.text == null ? '[binary asset: ' + f.bytes.length + ' bytes]' : f.text
+    })) });
     const scan = guard && typeof guard.scanSkillRecord === 'function'
       ? guard.scanSkillRecord(projected, { source: 'community' }) : { verdict: 'safe', findings: [], summary: 'safe' };
     const policy = guard && typeof guard.shouldAllow === 'function' ? guard.shouldAllow(scan, { allowAsk: true }) : { action: 'allow' };

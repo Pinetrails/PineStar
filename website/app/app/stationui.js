@@ -2902,10 +2902,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">loading agent skills…</div></div>';
     const secExchange =
-      '<p class="sk-note sk-lib-intro">Install an open <b>SKILL.md</b> from a public HTTPS or GitHub file URL. StarNet fetches and scans it first; nothing is installed until you review the exact body and digest below. This first release imports only that single document; referenced package files remain at the source.</p>' +
+      '<p class="sk-note sk-lib-intro">Install a complete open skill package from a public HTTPS or GitHub <b>SKILL.md</b>. StarNet freezes the instructions and support files under one SHA-256 before review. Missing, oversized, unsafe, or partial packages are refused.</p>' +
       '<div class="sk-exchange-form"><label for="sk-exchange-url">SKILL.MD SOURCE</label>' +
         '<div class="sk-exchange-row"><input id="sk-exchange-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/blob/main/SKILL.md">' +
-        '<button id="sk-exchange-inspect" class="consent-btn" type="button">INSPECT</button></div></div>' +
+        '<button id="sk-exchange-inspect" class="consent-btn" type="button">INSPECT</button></div>' +
+        '<label class="consent-btn" for="sk-exchange-import">IMPORT EXPORTED PACKAGE</label><input id="sk-exchange-import" type="file" accept=".json,.starnet-skill.json,application/json" hidden></div>' +
+      '<div class="sk-exchange-form"><label for="sk-registry-url">REGISTRY / TEAM TAP</label>' +
+        '<div class="sk-exchange-row"><input id="sk-registry-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/skills/index.json">' +
+        '<input id="sk-registry-query" type="search" autocomplete="off" placeholder="search or browse all">' +
+        '<button id="sk-registry-search" class="consent-btn" type="button">BROWSE</button></div><div id="sk-registry-results"></div></div>' +
       '<div id="sk-exchange-preview" class="sk-exchange-preview" role="status" aria-live="polite"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
     /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
        Truthful by construction: if the provider has no native voice endpoint we say so rather than
@@ -3111,6 +3116,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const asks = preview.guardAction === 'ask';
     const source = preview.sourceUrl || '';
     const verdict = blocked ? 'BLOCKED' : (asks ? 'REVIEW + APPROVAL' : 'CLEAR');
+    const packageFiles = Array.isArray(preview.files) ? preview.files : [];
+    const filesHtml = packageFiles.map(f => '<details class="sk-package-file"><summary><code>' + esc(f.path) + '</code> · ' +
+      esc(String(f.bytes || 0)) + ' bytes · <code>' + esc(f.sha256 || '') + '</code></summary>' +
+      (f.encoding === 'utf8' ? '<pre>' + esc(f.content || '') + '</pre>' : '<div class="sk-attr">Binary asset; exact bytes are covered by the package digest.</div>') + '</details>').join('');
     host.innerHTML =
       '<div class="sk-card open ' + (blocked || asks ? 'want' : 'on') + '">' +
         '<div class="sk-card-head"><div class="sk-card-main">' +
@@ -3122,14 +3131,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div></div>' +
         '<div class="sk-body">' +
           '<div class="sk-prov"><span>SOURCE</span><a href="' + esc(source) + '" target="_blank" rel="noopener noreferrer">' + esc(source) + '</a></div>' +
-          '<div class="sk-prov"><span>SHA-256</span><code>' + esc(preview.sourceDigest || '') + '</code></div>' +
+          '<div class="sk-prov"><span>PACKAGE SHA-256</span><code>' + esc(preview.packageDigest || preview.sourceDigest || '') + '</code></div>' +
+          '<div class="sk-prov"><span>PACKAGE</span><code>' + packageFiles.length + ' files · ' + esc(String(preview.packageBytes || 0)) + ' bytes</code></div>' +
           ((preview.author || preview.license) ? '<div class="sk-prov"><span>AUTHOR</span><code>' + esc([preview.author, preview.license].filter(Boolean).join(' · ')) + '</code></div>' : '') +
           '<pre>' + esc(preview.body || '') + '</pre>' +
+          '<div class="sk-package-files">' + filesHtml + '</div>' +
           '<div class="sk-exchange-note ' + (blocked ? 'bad' : (asks ? 'warn' : 'ok')) + '">' +
             (blocked ? 'Install is disabled. The source contains dangerous instructions.' :
               (asks ? 'This can be installed, but it stays withheld from the agent until you approve these exact bytes in Agent Skills.' :
                 'This document passed the static guard. Install will preserve this source and digest.')) +
-            ' Only this SKILL.md is staged; referenced package files are not imported.' + '</div>' +
+            ' Install consumes this frozen complete package; it does not fetch again.' + '</div>' +
           '<div class="consent-btns mc-acts">' +
             (blocked ? '' : '<button class="consent-btn" data-exchange-install type="button">' + (opts.update ? 'INSTALL UPDATE' : 'INSTALL SKILL') + '</button>') +
           '</div>' +
@@ -3153,7 +3164,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   function wireSkillExchange(agentId) {
-    const input = $('#sk-exchange-url'), button = $('#sk-exchange-inspect'), host = $('#sk-exchange-preview');
+    const input = $('#sk-exchange-url'), button = $('#sk-exchange-inspect'), importer = $('#sk-exchange-import'), host = $('#sk-exchange-preview');
     if (!input || !button || !host || !Harness.skillExchangeInspect) return;
     const inspect = async () => {
       const url = String(input.value || '').trim();
@@ -3167,6 +3178,28 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     };
     button.addEventListener('click', inspect);
     input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inspect(); } });
+    if (importer && Harness.skillExchangeImport) importer.addEventListener('change', async () => {
+      const file = importer.files && importer.files[0]; if (!file) return;
+      host.innerHTML = '<div class="sk-loading"><span class="loading pulse">verifying exported package bytes…</span></div>';
+      let envelope = ''; try { envelope = await file.text(); } catch (_) {}
+      const r = envelope ? await Harness.skillExchangeImport(envelope) : { ok: false, error: 'That file could not be read.' };
+      importer.value = '';
+      if (r && r.ok && r.preview) renderSkillExchangePreview(host, r.preview, agentId);
+      else host.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'That package could not be inspected.') + '</div>';
+    });
+    const registryUrl = $('#sk-registry-url'), registryQuery = $('#sk-registry-query'), registryButton = $('#sk-registry-search'), registryResults = $('#sk-registry-results');
+    if (registryUrl && registryButton && registryResults && Harness.skillExchangeRegistry) registryButton.addEventListener('click', async () => {
+      registryButton.classList.add('busy'); registryResults.innerHTML = '<div class="sk-loading">searching registry…</div>';
+      const r = await Harness.skillExchangeRegistry({ url: registryUrl.value, query: registryQuery && registryQuery.value });
+      registryButton.classList.remove('busy');
+      if (!(r && r.ok)) { registryResults.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'Registry search failed.') + '</div>'; return; }
+      registryResults.innerHTML = '<div class="sk-attr">' + esc(r.name || 'Registry') + ' · ' + (r.entries || []).length + ' result(s)</div>' +
+        (r.entries || []).map((entry, i) => '<button class="consent-btn" data-registry-entry="' + i + '">' + esc(entry.name) + (entry.version ? ' · v' + esc(entry.version) : '') + '</button><span class="sk-attr">' + esc(entry.description || '') + '</span>').join('');
+      registryResults.querySelectorAll('[data-registry-entry]').forEach(entryButton => entryButton.addEventListener('click', () => {
+        const entry = r.entries[Number(entryButton.dataset.registryEntry)]; if (!entry) return;
+        input.value = entry.sourceUrl; inspect();
+      }));
+    });
   }
 
   function loadAgentSkills(agentId) {
@@ -3212,6 +3245,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           ? '<button class="consent-btn" data-ag-act="revoke" title="Withhold this skill from the agent again">Revoke</button>'
           : '');
       const absorbed = s.absorbedInto ? '<div class="sk-attr">Merged into: ' + esc(s.absorbedInto) + '</div>' : '';
+      const packageState = s.packageDigest
+        ? '<div class="sk-attr" data-package-status>Package <code>' + esc(s.packageDigest) + '</code> · ' + (s.packageFileCount || 0) + ' files' +
+            (s.packageDiverged ? ' · LOCAL CHANGES (update/export sealed generation disabled)' : ' · SEALED') + '</div>' : '';
+      const packageButtons = s.packageDigest
+        ? '<button class="consent-btn" data-ag-act="check">Check update</button>' +
+          '<button class="consent-btn" data-ag-act="export"' + (s.packageDiverged ? ' disabled' : '') + '>Export</button>' +
+          '<button class="consent-btn" data-ag-act="generations">Generations</button>' : '';
       html +=
         '<div class="sk-card ' + state + (held ? ' held' : '') + '" data-agent-skill="' + esc(s.id) + '">' +
           '<div class="sk-card-head">' +
@@ -3226,9 +3266,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             '</div>' +
             '<button class="sk-expand" data-ag-act="expand" title="Read the skill">&gt;</button>' +
           '</div>' +
-          '<div class="sk-body">' + heldBlock + '<pre>' + esc(s.body || '') + '</pre>' + files + absorbed +
+          '<div class="sk-body">' + heldBlock + '<pre>' + esc(s.body || '') + '</pre>' + files + absorbed + packageState +
             '<div class="consent-btns mc-acts">' +
               heldBtn +
+              packageButtons +
               '<button class="consent-btn" data-ag-act="edit">Edit</button>' +
               '<button class="consent-btn" data-ag-act="archive">' + (s.state === 'archived' ? 'Restore' : 'Archive') + '</button>' +
             '</div>' +
@@ -3244,6 +3285,38 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const opened = card.classList.toggle('open'); btn.textContent = opened ? 'v' : '>'; sfx('click'); return;
       }
       if (act === 'edit') { editAgentSkill(card, skill, agentId); return; }
+      if (act === 'check') {
+        btn.classList.add('busy');
+        const r = await Harness.skillExchangeCheck({ agentId, id: skill.id }); btn.classList.remove('busy');
+        const previewHost = $('#sk-exchange-preview');
+        if (r && r.ok && r.preview && previewHost) {
+          renderSkillExchangePreview(previewHost, r.preview, agentId, { update: !!r.preview.updateAvailable });
+          previewHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else notify((r && r.error) || 'Update check was refused.', 'warn');
+        return;
+      }
+      if (act === 'export') {
+        btn.classList.add('busy'); const r = await Harness.skillExchangeExport({ agentId, id: skill.id }); btn.classList.remove('busy');
+        if (r && r.ok && r.envelope) {
+          const url = URL.createObjectURL(new Blob([r.envelope], { type: 'application/json' }));
+          const a = document.createElement('a'); a.href = url; a.download = r.filename || (skill.id + '.starnet-skill.json'); a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000); notify('Exported sealed package ' + String(r.digest || '').slice(0, 12), 'good');
+        } else notify((r && r.error) || 'Export was refused.', 'warn');
+        return;
+      }
+      if (act === 'generations') {
+        btn.classList.add('busy'); const r = await Harness.skillExchangeGenerations({ agentId, id: skill.id }); btn.classList.remove('busy');
+        const status = card.querySelector('[data-package-status]');
+        if (!status) return;
+        const rows = r && r.ok && Array.isArray(r.generations) ? r.generations : [];
+        status.innerHTML = rows.length ? 'Offline generations: ' + rows.map(g => '<button class="consent-btn" data-rollback="' + esc(g.digest) + '">' + esc(String(g.digest).slice(0, 12)) + ' · ' + (g.fileCount || 0) + ' files</button>').join(' ') : esc((r && r.error) || 'No prior offline generations yet.');
+        status.querySelectorAll('[data-rollback]').forEach(rb => rb.addEventListener('click', async () => {
+          rb.disabled = true; rb.textContent = 'ROLLING BACK…';
+          const rr = await Harness.skillExchangeRollback({ agentId, id: skill.id, digest: rb.dataset.rollback });
+          if (rr && rr.ok) { sfx('click'); loadAgentSkills(agentId); } else { rb.disabled = false; notify((rr && rr.error) || 'Rollback was refused.', 'warn'); }
+        }));
+        return;
+      }
       if (act === 'allow' || act === 'revoke') {
         btn.classList.add('busy');
         const r = await Harness.agentSkillAllow({ agentId, id: skill.id, allow: act === 'allow' });

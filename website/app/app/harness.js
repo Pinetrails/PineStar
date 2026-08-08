@@ -977,8 +977,13 @@ const Harness = (() => {
     } catch (e) { return { ok: false, error: 'the station did not answer' }; }
   }
   function skillExchangeInspect(url) { return skillExchangePost('inspect', { url }); }
+  function skillExchangeRegistry(o) { return skillExchangePost('registry', o); }
+  function skillExchangeImport(envelope) { return skillExchangePost('import', { envelope }); }
   function skillExchangeInstall(o) { return skillExchangePost('install', o); }
   function skillExchangeCheck(o) { return skillExchangePost('check', o); }
+  function skillExchangeExport(o) { return skillExchangePost('export', o); }
+  function skillExchangeGenerations(o) { return skillExchangePost('generations', o); }
+  function skillExchangeRollback(o) { return skillExchangePost('rollback', o); }
 
   async function memoryRecords(agentId) {
     try {
@@ -1094,7 +1099,8 @@ const Harness = (() => {
     studyProposals,
     threadProposals, threadTurnin,
     agentSkills, agentSkillsRead, agentSkillManage, agentSkillAllow,
-    skillExchangeInspect, skillExchangeInstall, skillExchangeCheck,
+    skillExchangeInspect, skillExchangeRegistry, skillExchangeImport, skillExchangeInstall, skillExchangeCheck,
+    skillExchangeExport, skillExchangeGenerations, skillExchangeRollback,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

@@ -240,7 +240,8 @@ const skillPackages = require('./skills/package.js');       // package-backed SK
 const skillGuard = require('./skills/guard.js');            // guard scanner for runtime/external skill packages
 const { makeSkillGate, digestOf: skillDigestOf } = require('./skills/gate.js');   // the CONSUMER of that verdict: may the model read this skill?
 const { makeSkillExchange } = require('./skills/exchange.js');
-const { makeSkillDocumentFetcher } = require('./skills/exchange-fetch.js');
+const { makeSkillDocumentFetcher, makeSkillPackageFetcher } = require('./skills/exchange-fetch.js');
+const { makeSkillRegistry } = require('./skills/registry.js');
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
@@ -1065,8 +1066,10 @@ const fetchSkillDocument = makeSkillDocumentFetcher({
   assertResolvedSafe: skillWebInternals.assertResolvedSafe,
   lookup: (host) => dns.promises.lookup(host, { all: true })
 });
+const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument });
+const skillRegistry = makeSkillRegistry({ fetchDocument: fetchSkillDocument });
 const skillExchange = makeSkillExchange({
-  fetchDocument: fetchSkillDocument, skillStore, guard: skillGuard,
+  fetchDocument: fetchSkillDocument, fetchPackage: fetchSkillPackage, skillStore, packageStore: skillPackageStore, guard: skillGuard,
   hash: (text) => crypto.createHash('sha256').update(String(text), 'utf8').digest('hex'),
   now: () => Date.now(), makeId: () => crypto.randomBytes(16).toString('hex')
 });
@@ -7727,8 +7730,13 @@ const ROUTES = [
   { m: 'POST', exact: '/api/slash/dispatch', h: handleSlashDispatch },
   { m: 'POST', exact: '/api/skills/toggle', h: handleSkillToggle },
   { m: 'POST', exact: '/api/skill-exchange/inspect', h: handleSkillExchangeInspect },
+  { m: 'POST', exact: '/api/skill-exchange/registry', h: handleSkillExchangeRegistry },
+  { m: 'POST', exact: '/api/skill-exchange/import', h: handleSkillExchangeImport },
   { m: 'POST', exact: '/api/skill-exchange/install', h: handleSkillExchangeInstall },
   { m: 'POST', exact: '/api/skill-exchange/check', h: handleSkillExchangeCheck },
+  { m: 'POST', exact: '/api/skill-exchange/export', h: handleSkillExchangeExport },
+  { m: 'POST', exact: '/api/skill-exchange/generations', h: handleSkillExchangeGenerations },
+  { m: 'POST', exact: '/api/skill-exchange/rollback', h: handleSkillExchangeRollback },
   { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
   { m: 'POST', exact: '/api/agent-skills/allow', h: handleAgentSkillAllow },   // the Commander's review decision on a guard-withheld skill
   { m: 'GET', prefix: '/api/agent-skills', h: serveAgentSkills },
@@ -11639,6 +11647,19 @@ async function handleSkillExchangeInspect(req, res) {
   try { return json(200, { ok: true, preview: await skillExchange.inspect({ url: body.url }) }); }
   catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not inspect that skill' }); }
 }
+async function handleSkillExchangeRegistry(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  try { return json(200, Object.assign({ ok: true }, await skillRegistry.search({ url: body.url, query: body.query }))); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not search that registry' }); }
+}
+async function handleSkillExchangeImport(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 2 << 20, res);
+  if (!body) return;
+  try { return json(200, { ok: true, preview: await skillExchange.inspectEnvelope({ envelope: body.envelope }) }); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not inspect that package' }); }
+}
 async function handleSkillExchangeInstall(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   const body = await readJsonBody(req, readBody, 1 << 16, res);
@@ -11663,6 +11684,27 @@ async function handleSkillExchangeCheck(req, res) {
   if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
   try { return json(200, { ok: true, preview: await skillExchange.check({ agentId, id: body.id }) }); }
   catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not check for updates' }); }
+}
+async function handleSkillExchangeExport(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { return json(200, Object.assign({ ok: true }, skillExchange.exportPackage({ agentId, id: body.id }))); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not export that skill' }); }
+}
+async function handleSkillExchangeGenerations(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { return json(200, Object.assign({ ok: true }, skillExchange.generations({ agentId, id: body.id }))); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not list skill generations' }); }
+}
+async function handleSkillExchangeRollback(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { return json(200, skillExchange.rollback({ agentId, id: body.id, digest: body.digest })); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not roll back that skill' }); }
 }
 
 // GET /api/agent-skills?agent=<id>&archived=1&body=1 - runtime-created skills for the selected agent.
