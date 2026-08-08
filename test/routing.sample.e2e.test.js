@@ -154,7 +154,8 @@ function twoStagePlan() {
   });
   A.ok(Pipeline.ok(plan), 'fixture: the two-stage floor is deployable');
   A.eq((plan.chains['research-agent'] || {}).next, ['writer-agent'], 'fixture: the floor chains the two docks');
-  A.eq(plan.bays.find(b => b.agentId === 'research-agent').brief, ENTRY_BRIEF, 'fixture: the compiled plan carries the entry brief');
+  // the brief rides dockBays, NOT the hashed dispatch record (2026-08-07: prompt text may not move plan.hash)
+  A.eq(plan.dockBays.find(b => b.agentId === 'research-agent').brief, ENTRY_BRIEF, 'fixture: the compiled plan carries the entry brief');
   for (const b of plan.bays.concat(plan.dockBays)) b.objects = ['computer', 'workbench'];
   return plan;
 }
@@ -308,6 +309,59 @@ function twoStagePlan() {
     }
     A.ok(toolMsgs.length >= 1, 'the model\'s shell.exec attempt produced a tool result the provider saw');
     A.ok(!toolMsgs.some(t => /pwned/.test(t)), 'the command NEVER executed — no unattended grant reached the sample run: ' + JSON.stringify(toolMsgs).slice(0, 300));
+
+    /* ---- 6. THE SAMPLE IS UNADDRESSED ON EVERY RUN, NOT JUST THE FIRST (2026-08-07) ----
+       This route's whole claim is "a REAL run on the REAL UNADDRESSED dispatch path" — the junctions must
+       sort it. But the hub's ordinary chat→agent bookkeeping saved a binding for chatId 'sample' during run
+       #1, so from run #2 on resolveTarget took its ADDRESSED branch and delivered straight to the remembered
+       dock: the FILTER never decided, and the proof quietly stopped proving the thing it names. Posted here
+       as a FILTER floor with two lanes so the failure is unmissable — a second sample carrying the OTHER
+       content tag must land at the OTHER dock. Two samples, two tags, two docks. ---- */
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const filterPlan = Pipeline.compileRoutingPlan({
+      props: [{ id: 'i2', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'f2', t: 'filter', x: 3, y: 0, w: 1, h: 1, routes: { code: 'S' }, def: 'E' },
+              { id: 'bg', t: 'bay', x: 6, y: 0, w: 1, h: 1, agentId: 'general-agent' },
+              { id: 'bc', t: 'bay', x: 3, y: 3, w: 1, h: 1, agentId: 'code-agent' },
+              // the dock the EARLIER samples ran at, still crewed on this floor but off the line. It exists
+              // so this block is DECISIVE: with the old binding behaviour both samples below resolve to it
+              // (resolveTarget's addressed branch honours any dock on the plan) and the filter never decides.
+              { id: 'br', t: 'bay', x: 12, y: 12, w: 1, h: 1, agentId: 'research-agent' },
+              { id: 'og', t: 'outbox', x: 8, y: 0, w: 1, h: 1 },
+              { id: 'oc', t: 'outbox', x: 5, y: 3, w: 1, h: 1 }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 0, 'E'), belt(7, 0, 'E'),
+              belt(3, 1, 'S'), belt(3, 2, 'S'), belt(4, 3, 'E')]
+    });
+    A.ok(Pipeline.ok(filterPlan), 'fixture: the FILTER floor is deployable');
+    A.eq(Pipeline.resolveTarget(filterPlan, { tag: 'code' }), 'code-agent', 'fixture: the filter sorts code work down the S lane');
+    A.eq(Pipeline.resolveTarget(filterPlan, { tag: 'general' }), 'general-agent', 'fixture: everything else takes the default lane');
+    for (const b of filterPlan.bays.concat(filterPlan.dockBays)) b.objects = ['computer'];
+    const postedF = await fetch(B + '/api/routing', { method: 'POST', headers, body: JSON.stringify(filterPlan) });
+    A.eq(postedF.status, 200, 'the FILTER floor deploys');
+
+    const s1 = await post({ text: 'SAMPLE JOB: refactor the typescript module that keeps crashing.' });
+    A.eq(s1.status, 200, 'sample #1 delivers');
+    A.eq(s1.j.agentId, 'code-agent', 'sample #1 is SORTED by the filter (code tag -> the S lane)');
+    const s2 = await post({ text: 'SAMPLE JOB: summarize what this work line does, in three sentences.' });
+    A.eq(s2.status, 200, 'sample #2 delivers');
+    A.eq(s2.j.agentId, 'general-agent',
+      'sample #2 is sorted by the FILTER TOO — it did not inherit sample #1\'s dock, so the run is genuinely unaddressed every time');
+    // and no binding was ever written: an ephemeral proof chat must not appear in the durable channel map
+    let chatMap = { chats: {} };
+    try { chatMap = JSON.parse(fs.readFileSync(path.join(ws, 'channels', 'chatmap.json'), 'utf8')); } catch (_) { /* never written at all is the strongest pass */ }
+    A.ok(!(chatMap.chats || {}).sample, 'the sample chat is NEVER persisted as a bound chat: ' + JSON.stringify(Object.keys(chatMap.chats || {})));
+
+    /* the pre-flight refusal and the real run cannot name different docks — the check no longer resolves a
+       dock at all (it reads the compiled `reach`, which fans every junction lane), so a splitter/filter can
+       never clear lane 0 in the check and take lane 1 in the run. An UNCREWED line still refuses honestly. */
+    const uncrewed = Pipeline.compileRoutingPlan({
+      props: [{ id: 'i3', t: 'intake', x: 0, y: 0, w: 1, h: 1 }, { id: 'b3', t: 'bay', x: 4, y: 0, w: 1, h: 1 }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E')]
+    });
+    A.eq((await fetch(B + '/api/routing', { method: 'POST', headers, body: JSON.stringify(uncrewed) })).status, 200, 'the uncrewed floor deploys');
+    const noDock = await post({});
+    A.eq(noDock.status, 409, 'a line with no crewed dock still refuses, and refuses honestly');
+    A.ok(/no dock/.test(String(noDock.j.error || '')), 'naming the real reason: ' + noDock.j.error);
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

@@ -172,9 +172,10 @@
       }
       // EVERY bound bay is a working dock (legibility list; NOT the dispatch `bays` — router semantics untouched).
       // A LONE assigned bay is a COMPLETE build: work addressed to its agent arrives at the dock, no belts needed.
-      // `brief` (step editor, 2026-08-05) rides both dock lists: the Commander's standing job brief for this
-      // station, PROMPT TEXT ONLY — it never touches routing (resolveTarget/chainNext ignore it) or capability
-      // (stationFor reads objects, never brief). Bounded here so no surface can post an unbounded blob.
+      // `brief` (step editor, 2026-08-05) rides THIS list only — the Commander's standing job brief for this
+      // station, PROMPT TEXT ONLY: it never touches routing (resolveTarget/chainNext ignore it) or capability
+      // (stationFor reads objects, never brief), and `dockBays` is outside the hash so it cannot move dispatch
+      // either. Bounded here so no surface can post an unbounded blob.
       const brief = (typeof p.brief === 'string' && p.brief.trim()) ? p.brief.trim().slice(0, 2000) : null;
       const dockRec = { propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 };
       if (brief) dockRec.brief = brief;
@@ -195,9 +196,12 @@
       for (let yy = p.y - 1; yy <= p.y + bh; yy++)
         for (let xx = p.x - 1; xx <= p.x + bw; xx++)
           if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
-      const bayRec = { agentId: p.agentId, propId: p.id, tile: t, tiles };
-      if (brief) bayRec.brief = brief;   // hash includes `bays`, so a brief edit re-arms the sidecar's copy
-      bays.push(bayRec);
+      // NO BRIEF ON THE DISPATCH RECORD. `bays` is a HASH INPUT, and prompt text is not dispatch topology:
+      // carrying the brief here made typing one word into a step editor move plan.hash, which re-posts the
+      // plan, which resets the router's splitter round-robin balance — an edit to what an agent is TOLD
+      // perturbing which agent work is SENT to. The brief still reaches the sidecar on `dockBays` (the
+      // legibility list, outside the hash) and router.stageBrief reads it from there (2026-08-07).
+      bays.push({ agentId: p.agentId, propId: p.id, tile: t, tiles });
       for (const ht of tiles) bayTileToAgent[key(ht.x, ht.y)] = p.agentId;
     }
 
@@ -291,7 +295,11 @@
     plan.lineOfAgent = lineOfAgent;   // agentId -> the lineId of the dock it crews
     for (const d of dockBays) { const l = lineOfProp[d.propId]; if (l) d.lineId = l; }
 
-    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes the legibility extras: same dispatch topology, same hash
+    // THE HASH IS DISPATCH TOPOLOGY, NOTHING ELSE — sources, dispatch bays, junctions, belts. Every legibility
+    // extra (dockBays + their briefs, unboundBays, outs, reach, chains, lines) is OUTSIDE it, so the same floor
+    // keeps the same hash and no station needlessly re-arms: typing a job brief, naming a line or upgrading to
+    // line identity moves nothing here. Verified by test/pipeline.test.js ("a brief edit does not move the hash").
+    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));
     return plan;
   }
 
