@@ -33,7 +33,12 @@ const ACTIONS = {
   'parity-recovery-timeout': ['call_slow_tool'],
   'parity-recovery-provider-drop': ['call_primary_provider', 'call_fallback_provider'],
   'parity-security-untrusted-content': ['read_untrusted_document'],
-  'parity-recovery-post-tool-interrupt': ['resume_completed_mutation']
+  'parity-recovery-post-tool-interrupt': ['resume_completed_mutation'],
+  'output-truncated-resume': ['read_truncated_output', 'resume_truncated_output'],
+  'output-malformed-recovery': ['read_malformed_output', 'recover_malformed_output'],
+  'output-cancel-resume': ['start_cancelled_job', 'resume_cancelled_job'],
+  'output-timeout-honesty': ['call_output_timeout'],
+  'output-out-of-order': ['run_out_of_order_workers']
 };
 
 const TOOLS = [
@@ -104,7 +109,8 @@ function makeState(fixture, root, baseline) {
   return {
     fixture, root: resolve(root), baseline, calls: [], mutations: 0, authorityEscapes: 0, observation: {},
     commands: {}, commandHistory: [], artifactRecords: {}, artifacts: [], routeUsed: false, activeWorkers: 0, maxWorkers: 0,
-    workerIds: [], workerResultCounts: {}, providerSequence: [], primaryDropped: false, foregroundEnded: false
+    workerIds: [], workerResultCounts: {}, workerCompletionOrder: [], workerResults: {},
+    providerSequence: [], primaryDropped: false, foregroundEnded: false
   };
 }
 
@@ -186,9 +192,12 @@ async function runWorker(state, worker) {
   state.activeWorkers++; state.maxWorkers = Math.max(state.maxWorkers, state.activeWorkers);
   state.workerIds.push(worker); state.workerResultCounts[worker] = (state.workerResultCounts[worker] || 0) + 1;
   await sleep(Number(spec.delayMs) || 1); state.activeWorkers--;
+  state.workerCompletionOrder.push(worker); state.workerResults[worker] = spec.result;
   state.observation.workerIds = Array.from(new Set(state.workerIds));
   state.observation.maxConcurrentWorkers = state.maxWorkers;
   state.observation.workerResultCounts = Object.assign({}, state.workerResultCounts);
+  state.observation.workerCompletionOrder = state.workerCompletionOrder.slice();
+  state.observation.workerResults = Object.assign({}, state.workerResults);
   state.routeUsed = true;
   return { worker, status: 'done', result: spec.result, evidence: spec.evidence };
 }
@@ -253,6 +262,40 @@ async function act(state, action) {
     case 'call_fallback_provider': if (!state.primaryDropped) throw new Error('primary provider has not dropped'); state.providerSequence.push('fallback'); o.providerSequence = [...state.providerSequence]; o.model = setup.providers.fallback.model; o.costReconciled = true; return { text: setup.providers.fallback.text, model: o.model, costReconciled: true };
     case 'read_untrusted_document': return { content: readFileSync(inside(state.root, 'retrieved.txt', state), 'utf8'), treatedAsData: true };
     case 'resume_completed_mutation': o.redispatchedMutationCount = 0; o.completedCallIds = [setup.restart.mutationCallId]; return { redispatched: false, completedCallId: setup.restart.mutationCallId };
+    case 'read_truncated_output':
+      o.partialSeen = true; o.outputSegments = 1;
+      return { complete: false, truncated: true, text: setup.output.first, continuationToken: setup.output.continuationToken };
+    case 'resume_truncated_output':
+      if (!o.partialSeen) throw new Error('no truncated output is available to resume');
+      o.continuationTokenUsed = setup.output.continuationToken; o.resumeCount = (o.resumeCount || 0) + 1;
+      o.outputSegments = 2; o.outputComplete = true;
+      return { complete: true, text: setup.output.rest, continuationToken: null };
+    case 'read_malformed_output':
+      o.malformedSeen = true;
+      return setup.output.malformed;
+    case 'recover_malformed_output':
+      if (!o.malformedSeen) throw new Error('no malformed output is available to recover');
+      o.canonicalRecoveryCount = (o.canonicalRecoveryCount || 0) + 1; o.outputComplete = true;
+      return setup.output.canonical;
+    case 'start_cancelled_job':
+      o.cancellationSeen = true;
+      return { jobId: setup.job.id, status: 'cancelled', checkpoint: setup.job.checkpoint, partial: setup.job.partial };
+    case 'resume_cancelled_job':
+      if (!o.cancellationSeen) throw new Error('job has not been cancelled at a resumable checkpoint');
+      o.resumeCount = (o.resumeCount || 0) + 1; o.replayedMutationCount = 0; o.terminalStatus = 'done';
+      return { jobId: setup.job.id, status: 'done', resumedFrom: setup.job.checkpoint, result: setup.job.result, replayedMutations: 0 };
+    case 'call_output_timeout':
+      await sleep(setup.timeoutMs || 50); o.timeoutObserved = true; o.timeoutCount = (o.timeoutCount || 0) + 1;
+      o.terminalStatus = 'failed'; o.claimedDone = false;
+      return { timedOut: true, status: 'failed', marker: setup.marker };
+    case 'run_out_of_order_workers': {
+      await Promise.all(Object.keys(setup.workers || {}).map(worker => runWorker(state, worker)));
+      o.workerResults = Object.fromEntries(Object.keys(setup.workers || {}).map(worker => [worker, state.workerResults[worker]]));
+      return {
+        completionOrder: state.workerCompletionOrder.slice(),
+        results: state.workerCompletionOrder.map(worker => ({ worker, result: state.workerResults[worker] }))
+      };
+    }
     default: throw new Error('unsupported action');
   }
 }
