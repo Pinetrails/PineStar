@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "ba1f7802e85140e2670089da32be4e74326e6899",
+    "sourceCommit": "6a66b8df51cdaf3671321405c6c685c297bba6ca",
     "pathSetSha256": "1149d0e2e420dfdf56d9fdae886481ec4d54779bbf9ac01a84a761848732b4e7",
     "files": [
       {
@@ -323,8 +323,8 @@
       },
       {
         "path": "frontend/app/leftrail.js",
-        "bytes": 1272,
-        "sha256": "9e4b516bf1345be748d79afeea7bc36ed697b858954e8a74262021dd36f4a86b"
+        "bytes": 5180,
+        "sha256": "c81200e7fcabdb3077ae9e9e90be53b390329f8e8f334f42d53a0f1a130d2e4f"
       },
       {
         "path": "frontend/app/legacymigrate.js",
@@ -953,8 +953,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 317935,
-        "sha256": "917ed7b5cfa0c1ba938394121fa59e4c2d98c1ce426efadb91ddbbf83f48293a"
+        "bytes": 319375,
+        "sha256": "70d86d7dc5f3b8a078c2f05f715defb3a7c8492d8bb01392c87c6365bd68689f"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -1023,8 +1023,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 72335,
-        "sha256": "79bfb7cb00036f618fad7066cba9064a48f08fcec84cee2dbbb9ca4826b7704f"
+        "bytes": 72772,
+        "sha256": "d4658fa37ea8904057051281e16aa98e3f6b7d74acec0ef2bf75d0bc7352d065"
       },
       {
         "path": "frontend/js/arcade.js",
