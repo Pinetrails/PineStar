@@ -1005,7 +1005,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const sw = mkEl('div', 'con-search');
       sw.innerHTML = '<span class="con-search-i" aria-hidden="true">⌕</span>' +
         '<input type="text" class="con-search-in" placeholder="' + esc(opts.searchPlaceholder || 'search settings…') +
-        '" autocomplete="off" spellcheck="false" aria-label="Search ' + esc(key) + '">';
+        '" autocomplete="off" spellcheck="false" aria-label="' + esc(opts.searchLabel || ('Search ' + key)) + '">';
       left.appendChild(sw);
       searchInput = sw.querySelector('.con-search-in');
     }
@@ -1059,6 +1059,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       host.appendChild(pane);
       panes[sec.id] = pane;
     });
+
+    // Search spans every pane, so a zero-hit query needs its own honest result surface. Without this,
+    // every pane is hidden and the console becomes a blank rectangle with no selected tab — visually
+    // indistinguishable from a render failure and silent to assistive technology.
+    const searchEmpty = searchInput ? mkEl('div', 'con-search-empty') : null;
+    if (searchEmpty) {
+      searchEmpty.hidden = true;
+      searchEmpty.setAttribute('role', 'status');
+      searchEmpty.setAttribute('aria-live', 'polite');
+      host.appendChild(searchEmpty);
+    }
 
     body.appendChild(left);
     body.appendChild(host);
@@ -1114,6 +1125,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const q = (searchInput.value || '').trim().toLowerCase();
         body.classList.toggle('con-searching', !!q);
         if (!q) {
+          if (searchEmpty) searchEmpty.hidden = true;
           // restore: show the active section only, clear all row dimming + section flags
           Object.keys(panes).forEach(k => {
             panes[k].classList.remove('con-sec-nomatch', 'con-sec-searchshow');
@@ -1154,7 +1166,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           railItems[sec.id].classList.toggle('con-rail-dim', !secMatch);
           railItems[sec.id].classList.toggle('con-rail-hit', secMatch);
         });
-        setSearchContext(matches[0] || null);
+        if (searchEmpty) {
+          searchEmpty.hidden = matches.length > 0;
+          searchEmpty.textContent = matches.length
+            ? ''
+            : (opts.searchEmptyText || 'No matching results. Try another name, tool, or skill.');
+        }
+        // A tablist must retain one selected tab even when the temporary search context has no hits.
+        // Keep the user's real section selected; clearing search restores its visible panel unchanged.
+        setSearchContext(matches[0] || activeId);
       };
       searchInput.addEventListener('input', doFilter);
       // Esc: first clears a non-empty search (and refocuses), only then lets the window's Esc close it.
@@ -2595,7 +2615,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="sk-exchange-form"><label for="sk-exchange-url">SKILL.MD SOURCE</label>' +
         '<div class="sk-exchange-row"><input id="sk-exchange-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/blob/main/SKILL.md">' +
         '<button id="sk-exchange-inspect" class="consent-btn" type="button">INSPECT</button></div></div>' +
-      '<div id="sk-exchange-preview" class="sk-exchange-preview"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
+      '<div id="sk-exchange-preview" class="sk-exchange-preview" role="status" aria-live="polite"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
     /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
        Truthful by construction: if the provider has no native voice endpoint we say so rather than
        offering choices that would do nothing, and the note about WHEN a change takes effect is shown
@@ -2720,7 +2740,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const active = skills.filter(s => s.enabled && s.available).length;
     const agentName = (present[sel] && present[sel].name) || agentId;
     const groups = groupSkillsByState(skills);
-    let html = '<div class="sk-lib-sum">' + skills.length + ' recipe' + (skills.length === 1 ? '' : 's') +
+    let html = '<div class="sk-lib-sum">' + skills.length + ' skill' + (skills.length === 1 ? '' : 's') +
       ' · <b>' + active + '</b> active for ' + esc(agentName) + '</div>';
     // A pill SWITCH (the user's choice) — reads unambiguously as a control, not a status dot. data-toggle drives the round-trip.
     const switchHTML = (s) =>

@@ -91,7 +91,7 @@
       url: 'https://mcp.apify.com', official: true, homepage: 'https://apify.com',
       blurb: 'Run web-scraping and automation Actors, and pull structured data from the web.' },
     { id: 'composio', name: 'Composio', category: 'Automation', authType: 'apikey', transport: 'http',
-      url: 'https://connect.composio.dev/mcp', official: true, homepage: 'https://composio.dev',
+      url: 'https://connect.composio.dev/mcp', official: true, homepage: 'https://composio.dev', keyHeader: 'x-consumer-api-key',
       aliases: ['google', 'google drive', 'gdrive', 'gmail', 'twitter', 'x', 'slack', 'notion', 'google calendar', 'gsuite', 'g suite'],
       blurb: 'One key bridges 500+ apps — X, Slack, Gmail, Google Drive, Notion, GitHub, and more. The fastest way to reach the platforms that otherwise need their own sign-in.' },
 
@@ -208,7 +208,7 @@
     return {
       id: e.id, name: e.name, category: e.category, authType: e.authType, transport: e.transport,
       url: e.url || '', official: !!e.official, homepage: e.homepage || '', blurb: e.blurb || '',
-      via: e.via || '', installable: isInstallable(e),
+      via: e.via || '', keyHeader: e.keyHeader || '', installable: isInstallable(e),
       // ALIASES — the names a Commander actually TYPES, which are frequently not the row's name and not in
       // its blurb. "google drive" found nothing while a Google Workspace card sat on screen (2026-07-28);
       // relying on a term happening to appear in marketing copy is not a search. Ride into the card's
@@ -271,7 +271,7 @@
   function installConfig(id) {
     const e = get(id);
     if (!e || !e.installable) return null;
-    return { id: e.id, transport: e.transport, url: e.url, label: e.name, enabled: true };
+    return { id: e.id, transport: e.transport, url: e.url, label: e.name, keyHeader: e.keyHeader || '', enabled: true };
   }
 
   return {
