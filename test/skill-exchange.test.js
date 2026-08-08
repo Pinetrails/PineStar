@@ -38,7 +38,7 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   const preview = await exchange.inspect({ url: 'https://skills.example/Release/SKILL.md' });
   A.eq(preview.name, 'Release Review', 'inspect parses the open SKILL.md shape');
   A.eq(preview.scan.verdict, 'safe', 'inspect reports the guard verdict');
-  A.eq(preview.sourceDigest, hash(remote), 'inspect fingerprints the exact source bytes');
+  A.eq(preview.sourceDigest, preview.packageDigest, 'inspect reports one digest for the complete package');
 
   // A source changing after inspection cannot change what install persists (no review/fetch TOCTOU).
   remote = doc('Release Review', 'UNREVIEWED NEW BYTES');
@@ -48,6 +48,7 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   A.ok(!/UNREVIEWED/.test(skills.view('a', installed.skill.id, { bump: false }).body), 'install does not re-fetch changed bytes');
   A.eq(skills.list('a')[0].sourceUrl, 'https://skills.example/Release/SKILL.md', 'installed metadata preserves source URL');
   A.eq(skills.list('a')[0].sourceDigest, preview.sourceDigest, 'installed metadata preserves source digest');
+  A.eq(skills.list('a')[0].packageFileCount, 1, 'installed metadata preserves the complete package manifest');
 
   // The same JSONL event stream rebuilds provenance after a process restart.
   skills = store(io);
@@ -111,5 +112,38 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   const longPreview = await longExchange.inspect({ url: 'https://skills.example/long/SKILL.md' });
   const longInstalled = longExchange.install({ agentId: 'a', inspectionId: longPreview.inspectionId });
   A.eq(longStore.view('a', longInstalled.skill.id, { bump: false }).body, longBody.trim(), 'accepted long source bytes round-trip without truncation');
+
+  // A multi-file package is frozen, installed, exported, and re-imported without changing
+  // text line endings or binary assets. A prior generation remains available offline.
+  let packageVersion = 1;
+  const pkgIo = durableIo(); const pkgStore = store(pkgIo);
+  const snapshots = [];
+  const packageStore = {
+    snapshot(skill) { snapshots.push(JSON.parse(JSON.stringify(skill))); },
+    generations() { return snapshots.map(s => ({ digest: s.packageDigest })); },
+    readGeneration(_skill, wanted) {
+      const s = snapshots.find(x => x.packageDigest === wanted);
+      return { format: 'open-agent-skill-package/v1', digest: s.packageDigest, files: s.packageFiles };
+    }
+  };
+  const pkgExchange = makeSkillExchange({
+    fetchPackage: async url => ({ url, files: [
+      { path: 'SKILL.md', content: doc('Package Review', 'Read references/guide.md.', 'version: "' + packageVersion + '.0.0"\n') },
+      { path: 'references/guide.md', content: 'line one\r\nline two\n' },
+      { path: 'assets/pixel.bin', encoding: 'base64', content: Buffer.from([0, 255, packageVersion]).toString('base64') }
+    ] }), skillStore: pkgStore, packageStore, guard, hash, now: () => 6000 + packageVersion, makeId: () => 'pkg-' + packageVersion
+  });
+  const p1 = await pkgExchange.inspect({ url: 'https://packages.example/demo/SKILL.md' });
+  A.eq(p1.files.length, 3, 'inspection freezes every package file');
+  const i1 = pkgExchange.install({ agentId: 'p', inspectionId: p1.inspectionId });
+  const exported = pkgExchange.exportPackage({ agentId: 'p', id: i1.skill.id });
+  const imported = await pkgExchange.inspectEnvelope({ envelope: exported.envelope });
+  A.eq(imported.packageDigest, p1.packageDigest, 'export and re-import preserve the package digest');
+  packageVersion = 2;
+  const p2 = await pkgExchange.check({ agentId: 'p', id: i1.skill.id });
+  pkgExchange.install({ agentId: 'p', inspectionId: p2.inspectionId });
+  A.eq(pkgExchange.generations({ agentId: 'p', id: i1.skill.id }).generations[0].digest, p1.packageDigest, 'update snapshots the prior complete generation');
+  const rolled = pkgExchange.rollback({ agentId: 'p', id: i1.skill.id, digest: p1.packageDigest });
+  A.eq(rolled.digest, p1.packageDigest, 'offline rollback restores the selected package generation');
   A.report('skill-exchange.test.js');
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });

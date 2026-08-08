@@ -9,6 +9,7 @@
 'use strict';
 
 const catalog = require('./catalog.js');
+const packageFormat = require('./package-format.js');
 
 const MAX_DOCUMENT_BYTES = 256000;
 const DEFAULT_STAGE_TTL_MS = 10 * 60 * 1000;
@@ -83,7 +84,9 @@ function cleanScan(scan) {
 function makeSkillExchange(deps) {
   deps = deps || {};
   const fetchDocument = deps.fetchDocument;
+  const fetchPackage = deps.fetchPackage;
   const skillStore = deps.skillStore;
+  const packageStore = deps.packageStore;
   const guard = deps.guard;
   const hash = deps.hash;
   const now = typeof deps.now === 'function' ? deps.now : () => 0;
@@ -108,24 +111,38 @@ function makeSkillExchange(deps) {
       sourceDigest: stage.sourceDigest, name: d.name, summary: d.summary, category: d.category,
       requires: d.requires.slice(), platforms: d.platforms.slice(), version: d.sourceVersion,
       author: d.sourceAuthor, license: d.sourceLicense, body: d.body, scan: cleanScan(stage.scan),
-      guardAction: stage.guardAction
+      guardAction: stage.guardAction, packageDigest: stage.pkg.digest, packageBytes: stage.pkg.bytes,
+      files: stage.pkg.files.map(f => ({
+        path: f.path, bytes: f.bytes, sha256: f.sha256,
+        encoding: f.path === 'SKILL.md' || /\.(?:md|txt|json|ya?ml|js|mjs|cjs|ts|tsx|jsx|py|sh|ps1|html|css|xml|csv)$/i.test(f.path) ? 'utf8' : 'binary',
+        content: f.path === 'SKILL.md' || /\.(?:md|txt|json|ya?ml|js|mjs|cjs|ts|tsx|jsx|py|sh|ps1|html|css|xml|csv)$/i.test(f.path)
+          ? Buffer.from(f.content, 'base64').toString('utf8') : ''
+      }))
     };
   }
   async function inspect(input) {
-    if (typeof fetchDocument !== 'function') throw new Error('skill fetching is unavailable');
+    if (typeof fetchDocument !== 'function' && typeof fetchPackage !== 'function') throw new Error('skill fetching is unavailable');
     const sourceUrl = normalizeSourceUrl(input && input.url);
-    const fetched = await fetchDocument(sourceUrl);
+    const fetched = typeof fetchPackage === 'function' ? await fetchPackage(sourceUrl) : await fetchDocument(sourceUrl);
     const finalUrl = normalizeSourceUrl((fetched && fetched.url) || sourceUrl);
-    const raw = str(fetched && fetched.text);
+    const pkg = packageFormat.canonicalize(Array.isArray(fetched && fetched.files) ? fetched.files : [{ path: 'SKILL.md', content: str(fetched && fetched.text) }]);
+    const main = pkg.files.find(f => f.path === 'SKILL.md');
+    const rawBytes = Buffer.from(main.content, 'base64');
+    const raw = rawBytes.toString('utf8');
+    if (!Buffer.from(raw, 'utf8').equals(rawBytes)) throw new Error('SKILL.md must be valid UTF-8');
     const document = parseDocument(raw, finalUrl);
-    const projected = Object.assign({}, document, { setup: '', files: [], createdBy: 'community' });
+    const projected = Object.assign({}, document, {
+      setup: '', createdBy: 'community', files: pkg.files.filter(f => f.path !== 'SKILL.md').map(f => ({
+        path: f.path, content: Buffer.from(f.content, 'base64').toString('utf8')
+      }))
+    });
     const scan = guard && typeof guard.scanSkillRecord === 'function'
       ? guard.scanSkillRecord(projected, { source: 'community' }) : { verdict: 'safe', findings: [], summary: 'safe' };
     const policy = guard && typeof guard.shouldAllow === 'function'
       ? guard.shouldAllow(scan, { allowAsk: true }) : { action: 'allow' };
     sweep();
     const id = str(makeId());
-    const stage = { id, createdAt: now(), expiresAt: now() + ttlMs, sourceDigest: digest(raw), raw, document, scan, guardAction: str(policy.action || 'allow') };
+    const stage = { id, createdAt: now(), expiresAt: now() + ttlMs, sourceDigest: pkg.digest, raw, pkg, document, scan, guardAction: str(policy.action || 'allow') };
     stages.set(id, stage);
     return previewOf(stage);
   }
@@ -153,8 +170,14 @@ function makeSkillExchange(deps) {
       agentId, name: d.name, summary: d.summary, description: d.description, body: d.body,
       category: d.category, requires: d.requires, platforms: d.platforms, createdBy: 'community',
       sourceUrl: d.sourceUrl, sourceDigest: stage.sourceDigest, sourceFetchedAt: now(),
-      sourceVersion: d.sourceVersion, sourceAuthor: d.sourceAuthor, sourceLicense: d.sourceLicense
+      sourceVersion: d.sourceVersion, sourceAuthor: d.sourceAuthor, sourceLicense: d.sourceLicense,
+      packageDigest: stage.pkg.digest, packageBytes: stage.pkg.bytes, packageFiles: stage.pkg.files, packageDiverged: false,
+      files: stage.pkg.files.filter(f => f.path !== 'SKILL.md').map(f => ({ path: f.path, encoding: 'base64', content: f.content }))
     };
+    if (bySource && packageStore && typeof packageStore.snapshot === 'function') {
+      const current = skillStore.view(agentId, bySource.id, { includeArchived: true, bump: false });
+      if (current) packageStore.snapshot(current);
+    }
     const result = bySource
       ? skillStore.manage(Object.assign({}, common, { action: 'edit', target: bySource.id }))
       : skillStore.manage(Object.assign({}, common, { action: 'create' }));
@@ -175,7 +198,58 @@ function makeSkillExchange(deps) {
     });
   }
 
-  return { inspect, install, check, normalizeSourceUrl, parseDocument, _stages: stages };
+  function exportPackage(input) {
+    const agentId = str(input && input.agentId) || 'agent';
+    const current = skillStore && skillStore.view(agentId, str(input && input.id), { includeArchived: true, bump: false });
+    if (!current) throw new Error('no such installed skill');
+    if (!current.packageDigest || !Array.isArray(current.packageFiles) || !current.packageFiles.length || current.packageDiverged) {
+      throw new Error('this skill has local changes; export requires a complete sealed package generation');
+    }
+    const pkg = packageFormat.fromEnvelope({ format: packageFormat.FORMAT, digest: current.packageDigest, files: current.packageFiles });
+    return { filename: (current.id || 'skill') + '.starnet-skill.json', digest: pkg.digest, envelope: packageFormat.toEnvelope(pkg, {
+      name: current.name, sourceUrl: current.sourceUrl || '', sourceVersion: current.sourceVersion || ''
+    }) };
+  }
+  async function inspectEnvelope(input) {
+    const pkg = packageFormat.fromEnvelope(input && input.envelope);
+    const main = packageFormat.fileBuffer(pkg, 'SKILL.md');
+    const sourceUrl = 'package://import/' + pkg.digest;
+    const document = parseDocument(main.toString('utf8'), sourceUrl);
+    const projected = Object.assign({}, document, { setup: '', createdBy: 'community', files: [] });
+    const scan = guard && typeof guard.scanSkillRecord === 'function'
+      ? guard.scanSkillRecord(projected, { source: 'community' }) : { verdict: 'safe', findings: [], summary: 'safe' };
+    const policy = guard && typeof guard.shouldAllow === 'function' ? guard.shouldAllow(scan, { allowAsk: true }) : { action: 'allow' };
+    sweep(); const id = str(makeId());
+    const stage = { id, createdAt: now(), expiresAt: now() + ttlMs, sourceDigest: pkg.digest, raw: main.toString('utf8'), pkg, document, scan, guardAction: str(policy.action || 'allow') };
+    stages.set(id, stage); return previewOf(stage);
+  }
+  function generations(input) {
+    const agentId = str(input && input.agentId) || 'agent';
+    const current = skillStore && skillStore.view(agentId, str(input && input.id), { includeArchived: true, bump: false });
+    if (!current) throw new Error('no such installed skill');
+    const prior = packageStore && typeof packageStore.generations === 'function' ? packageStore.generations(current) : [];
+    return { current: current.packageDigest || '', diverged: !!current.packageDiverged, generations: prior };
+  }
+  function rollback(input) {
+    const agentId = str(input && input.agentId) || 'agent';
+    const current = skillStore && skillStore.view(agentId, str(input && input.id), { includeArchived: true, bump: false });
+    if (!current) throw new Error('no such installed skill');
+    if (!packageStore || typeof packageStore.readGeneration !== 'function') throw new Error('offline generations are unavailable');
+    if (typeof packageStore.snapshot === 'function') packageStore.snapshot(current);
+    const pkg = packageStore.readGeneration(current, str(input && input.digest));
+    const raw = packageFormat.fileBuffer(pkg, 'SKILL.md').toString('utf8');
+    const d = parseDocument(raw, current.sourceUrl || ('package://rollback/' + pkg.digest));
+    const result = skillStore.manage(Object.assign({}, d, {
+      action: 'edit', target: current.id, agentId, name: current.name, createdBy: 'user', force: true,
+      sourceDigest: pkg.digest, sourceFetchedAt: now(), packageDigest: pkg.digest, packageBytes: pkg.bytes,
+      packageFiles: pkg.files, packageDiverged: false,
+      files: pkg.files.filter(f => f.path !== 'SKILL.md').map(f => ({ path: f.path, encoding: 'base64', content: f.content }))
+    }));
+    if (!result || !result.ok) throw new Error((result && result.error) || 'could not roll back the skill');
+    return { ok: true, action: 'rollback', digest: pkg.digest, skill: result.skill };
+  }
+
+  return { inspect, inspectEnvelope, install, check, exportPackage, generations, rollback, normalizeSourceUrl, parseDocument, _stages: stages };
 }
 
 module.exports = { makeSkillExchange, normalizeSourceUrl, parseDocument, MAX_DOCUMENT_BYTES };
