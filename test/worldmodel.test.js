@@ -692,4 +692,34 @@ A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ 
   A.eq(plan.reach.coder, true, 'branch bay reachable through the junction');
 }
 
+/* ---- A STATION HAS A DURABLE IDENTITY (2026-08-07 conveyor audit) ----
+   `meta.createdAt` is the id every per-station REFIT one-shot namespaces its localStorage on (the first
+   ride, the ORDERS dismissal, the finish-the-line registry — build.js stationKeyOf). Nothing ever stamped
+   it: freshDoc wrote `createdAt || 0` and no caller passed one, so the key was the constant 'default' and
+   every "per-station" latch was in fact GLOBAL — a brand-new station inherited the first one's
+   dismissals, never saw its first ride, and had its first line retired before the card was ever shown. */
+{
+  const a = WM.defaultDoc();
+  A.ok(a.meta.createdAt > 0, 'a new station is stamped with a real id, never 0');
+  const b = WM.defaultDoc();
+  A.ok(b.meta.createdAt >= a.meta.createdAt, 'the stamp is a monotonic clock reading');
+  A.eq(WM.defaultDoc(12345).meta.createdAt, 12345, 'an explicit id is honoured (deterministic for importers/tests)');
+
+  // the id SURVIVES the persistence seam — that is the whole point of it
+  const st = WM.create();
+  const id = st.serialize().meta.createdAt;
+  A.ok(id > 0, 'a live station carries its id');
+  A.eq(WM.deserialize(st.serialize()).serialize().meta.createdAt, id, 'and a save/load round-trip keeps it EXACTLY (never re-rolls)');
+
+  // legacy docs are backfilled ONCE, non-destructively — an existing stamp is never overwritten
+  const legacy = st.serialize(); legacy.meta.createdAt = 0;
+  const healed = WM.deserialize(legacy).serialize().meta.createdAt;
+  A.ok(healed > 0, 'a doc saved before station identity existed is backfilled on migrate');
+  const stamped = st.serialize(); stamped.meta.createdAt = 777;
+  A.eq(WM.deserialize(stamped).serialize().meta.createdAt, 777, '…and a doc that already has one keeps it untouched');
+
+  // two stations must not answer the same id, or the latches collide exactly as before
+  A.ok(WM.defaultDoc(1).meta.createdAt !== WM.defaultDoc(2).meta.createdAt, 'two stations are distinguishable');
+}
+
 A.report('worldmodel');

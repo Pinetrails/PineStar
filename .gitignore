@@ -151,3 +151,7 @@ dev/.shots-abilities/
 # LINE PLACEMENT lane visual-proof screenshots (headless capture output; never committed)
 dev/.shots-line-placement/
 dev/.shots-ux-walk/
+
+# CONVEYOR CORRECTNESS lane visual-proof screenshots + claim log (headless capture output; never committed)
+dev/.shots-conveyor-correctness/
+dev/.shots-conveyor-correctness.log
