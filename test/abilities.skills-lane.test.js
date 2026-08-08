@@ -30,5 +30,8 @@ A.ok(/function\s+scanFindingText\s*\(/.test(source), 'Skill Exchange scan findin
 A.ok(/function\s+renderSkillExchangePreview\s*\(/.test(source), 'Skill Exchange preview renderer is defined');
 A.ok(/function\s+wireSkillExchange\s*\(/.test(source), 'Skill Exchange controls are wired');
 A.ok(/window\.AbilityLanes\.push\(abilitySkillsLane\)/.test(source), 'the Skills lane registers with ABILITIES');
+A.ok(source.includes("skills.length + ' skill'"), 'the library count calls these procedures skills, not launchable recipes');
+A.ok(/id="sk-exchange-preview"[^>]*role="status"[^>]*aria-live="polite"/.test(source),
+  'Skill Exchange inspection and validation feedback is announced');
 
 A.report('abilities.skills-lane.test');

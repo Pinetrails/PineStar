@@ -154,5 +154,9 @@
     "kokoro-js": "^1.2.1",
     "node-pty": "^1.1.0",
     "ogg-opus-decoder": "^1.7.3"
+  },
+  "overrides": {
+    "adm-zip": "0.6.0",
+    "sharp": "0.35.3"
   }
 }
