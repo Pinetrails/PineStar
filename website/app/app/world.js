@@ -5345,12 +5345,14 @@ const World = (() => {
      didn't run, never hide a run that did. */
   const dockLineWork = new Map();   // agentId -> lineId of the work-item most recently placed at this dock (or absent)
   function intakeMessage(payload) {
+    const p = payload || {};
+    /* THE HANDOFF ARRIVED — so the producing dock's own crate must NOT also ship (see shipProductCrate:
+       the wait exists precisely because this may never come). This runs FIRST, ahead of every early
+       return below: cancelling is bookkeeping about a run that already happened, and it must not depend
+       on whether this floor currently has a conveyor to draw the arriving crate on. */
+    if (p.kind === 'chain' && p.from) cancelDeferredShip(String(p.from));
     if (!convey) return;
     // tag the box with its content kind (the same getTag the sidecar routes by) so a FILTER sorts it visibly
-    const p = payload || {};
-    // THE HANDOFF ARRIVED — so the producing dock's own crate must NOT also ship (see shipProductCrate's
-    // note: the wait exists precisely because this may never come).
-    if (p.kind === 'chain' && p.from) cancelDeferredShip(String(p.from));
     if (p.agentId) { if (p.lineId) dockLineWork.set(p.agentId, String(p.lineId)); else dockLineWork.delete(p.agentId); }
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
     // ride inbound work as ORE — a UNIFORM raw chunk: every incoming request is one identical piece of raw
