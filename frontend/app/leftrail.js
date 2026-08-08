@@ -48,7 +48,11 @@
   // visual px, like --crew-w / --chat-w: the grid holds the cabinet at its designed size at every
   // TEXT SIZE (app.css `#screen-game.active` counter-zooms every frame dimension), so a dragged
   // width means the same thing at HUGE as it does at NORMAL.
-  const PAD = 11, GAP = 9, WMIN = 200, WMAX = 400, STAGE_MIN = 220, CHAT_DEFAULT = 360;
+  // WMIN is the rail's DESIGNED width, not an arbitrary floor: the ask was "move the left panel
+  // farther", i.e. more room, and every fixed label in the rail (the SESSIONS/PROJECTS + NEW strip
+  // most of all) was laid out against 232. Letting the drag go under it only bought a squeezed
+  // rail — so the seam widens and returns, and never narrows past the design.
+  const PAD = 11, GAP = 9, WMIN = 232, WMAX = 400, STAGE_MIN = 220, CHAT_DEFAULT = 360;
   function maxWidth() {
     const chat = parseInt(getComputedStyle(game).getPropertyValue('--chat-w'), 10) || CHAT_DEFAULT;
     const room = window.innerWidth - (PAD * 2) - (GAP * 2) - chat - STAGE_MIN;

@@ -2160,12 +2160,19 @@ body.col-resizing .col-resizer-grip {
   opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
 }
 /* ---------- CREW / stage divider: drag right to widen the crew rail (leftrail.js) ----------
-   The mirror of the COMMS seam, with one difference forced by the geometry: #stage-wrap clips
-   (overflow:hidden — it is the tube casing), so a handle hung in the grid gap at left:-10px would
-   be cut away entirely. It rides the tube's own left edge instead, exactly like the ▸ CREW drawer
-   tab (.crew-show) already does. Same invisible-until-hovered grip vocabulary as .col-resizer. */
+   THE HIT ZONE MUST SIT ON THE SEAM THE EYE SEES. #comms-resizer is a child of its panel at
+   left:-10px, so it straddles the 9px grid gap. The same trick on the left is impossible from
+   inside #stage-wrap — the tube casing is overflow:hidden and cuts away anything outside it —
+   and the first pass put the handle INSIDE the tube at left:0 instead. It worked, but the
+   cursor only turned to ↔ once you were already past the seam; Andrew: "it's a bit misaligned
+   when u put your mouse in between."
+   So it is a GRID CHILD sharing the centre area with the tube: justify-self pins it to the
+   stage's left edge, the negative margin walks it back over the gap. No arithmetic against
+   padding/gap/row heights — the grid places it, so it follows every breakpoint for free.
+   Same invisible-until-hovered grip vocabulary as .col-resizer. */
 .crew-resizer {
-  position: absolute; top: 0; bottom: 0; left: 0; width: 11px; z-index: 25;
+  grid-area: center; justify-self: start; align-self: stretch;
+  position: relative; margin-left: -10px; width: 12px; z-index: 25;
   cursor: col-resize; display: flex; align-items: center; justify-content: center;
   touch-action: none; background: transparent; border: 0; padding: 0;
 }
@@ -2632,14 +2639,27 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* ---------- WORKSTREAMS rail (left) ---------- */
 /* takes the left rail's slack (see the RAIL SPACE SPLIT note on #crew in style.css) */
 #ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+/* THE STRIP MAY NARROW, IT MAY NOT FOLD. SESSIONS/PROJECTS + NEW is three fixed labels in a
+   column the grid can make 200px wide (the ≤1120px breakpoint) and that the CREW seam can now
+   land anywhere in — and a squeezed flex item wraps its OWN text before the row ever admits it
+   is out of room: "+ NEW" broke across two lines, doubling the strip's height and blowing it
+   out of the molded head. Andrew: "it condenses horrendously." nowrap on the labels makes the
+   overflow HONEST (a strip that stays one line and tightens) instead of a folded button, and
+   the tabs give up their padding first because a view switcher survives being snug — the
+   action button does not survive being two lines. */
 .ws-head {
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: nowrap; gap: 6px; min-width: 0;
   color: var(--ink); background: var(--ph); padding: 3px 10px; letter-spacing: 1px;
   font-size: 14px; border-radius: 6px 6px 0 0;
 }
+.ws-head .ws-view { flex: 0 1 auto; min-width: 0; }
+.ws-head .ws-head-acts { flex: 0 0 auto; }
+.ws-head .ws-tab, .ws-head .ws-head-acts > button { white-space: nowrap; }
 #ws-new {
   font-family: inherit; font-size: 12px; letter-spacing: 1px; color: var(--ink);
   background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
+  white-space: nowrap; flex: 0 0 auto;
 }
 #ws-new:hover { background: rgba(0,0,0,.2); }
 /* RAIL SEARCH — search lives ON the rail (the SESSION TOOLS window is retired; its .ws-tools-* CSS is
