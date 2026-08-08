@@ -91,6 +91,8 @@ async function main() {
       return {
         heads: [...document.querySelectorAll('#con-pane-permissions .ms-h, .con-pane .ms-h')]
           .map(h => h.textContent.trim().split(' — ')[0]).filter(t => /^[0-9] · /.test(t)),
+        // the four sections must still EXIST inside the fold — dropping the numbers must not drop a section
+        foldSections: [...document.querySelectorAll('#perm-finetune .ms-h')].map(h => h.textContent.trim().split(' — ')[0].trim()),
         glance: (q('#perm-glance .pg-line') || {}).textContent,
         glanceReach: (q('#perm-glance .pg-reach') || {}).textContent,
         glanceFloor: !!q('#perm-glance .pg-floor'),
@@ -113,10 +115,18 @@ async function main() {
       };
     })()`);
     console.log(JSON.stringify(shape, null, 1));
-    check('four numbered blocks', shape.heads.length === 4, shape.heads);
+    // the numbered blocks are GONE — a newcomer no longer walks four of them in order, and nothing
+    // cross-references 'block 2' any more. What must survive is the four SECTIONS inside the fold.
+    check('no numbered blocks survive', shape.heads.length === 0, shape.heads);
+    check('all four sections still exist inside the fold',
+      ['EACH CREW MEMBER', 'SKIP EVERY PROMPT', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS']
+        .every(h => shape.foldSections.includes(h)), shape.foldSections);
     check('one crew row per agent', shape.rows === shape.agents && shape.rows > 0, [shape.rows, shape.agents]);
     check('the two old crew lists are gone', shape.deadLists.every(x => x === false), shape.deadLists);
-    check('every row asks both questions', shape.perRow.every(r => r.questions.join('|') === 'CAN REACH|ASKS FIRST'));
+    // the ASKS FIRST question carries an '— OVERRIDDEN BY …' suffix whenever the master switch is on
+    // (this seed forces it on), so match the question STEM, never the whole decorated label.
+    check('every row asks both questions', shape.perRow.every(r =>
+      r.questions.length === 2 && /^CAN REACH$/.test(r.questions[0]) && /^ASKS FIRST/.test(r.questions[1])), shape.perRow.map(r => r.questions));
     check('every row offers 5 reach chips + 2 ask chips', shape.perRow.every(r => r.reachChips.length === 5 && r.askChips.length === 2));
     check('exactly one reach chip and one ask chip is selected', shape.perRow.every(r => r.reachSel && r.askSel));
     check('the routing truth line survives', shape.perRow.every(r => /routes next command to/.test(r.truth || '')));
@@ -149,7 +159,7 @@ async function main() {
       return out;
     })()`);
     console.log(JSON.stringify(glanceProbe, null, 1));
-    check('the override branch says the override is ON, loudly', /override in block 2 is ON/.test(glanceProbe.envPinned) && glanceProbe.envLoud, glanceProbe);
+    check('the override branch says the override is ON, loudly', /the SKIP EVERY PROMPT switch is ON/.test(glanceProbe.envPinned) && glanceProbe.envLoud, glanceProbe);
     check('with the override off the sentence COUNTS the roster',
       /asks? you before anything risky/.test(glanceProbe.allAsk) && glanceProbe.allAsk !== glanceProbe.envPinned, glanceProbe);
     check('flipping the crew changes the counted sentence', glanceProbe.allFull !== glanceProbe.allAsk, glanceProbe);
