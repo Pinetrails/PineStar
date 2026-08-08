@@ -550,6 +550,7 @@ test/terminal-position.test.js
 test/poweruser-shell-repairs.test.js
 test/terminal-sessions.test.js
 test/terminal-tools.test.js
+test/terminal-output-boundary.test.js
 test/release-bump.test.js
 test/release-cut.test.js
 test/opensource-readiness.test.js
