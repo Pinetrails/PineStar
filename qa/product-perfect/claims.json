@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "373cb94c1254c83ee9b2fb7e39be247249ddd687",
+    "sourceCommit": "6ae1f852476d79dcb4369e55e58816858df9eecc",
     "pathSetSha256": "1149d0e2e420dfdf56d9fdae886481ec4d54779bbf9ac01a84a761848732b4e7",
     "files": [
       {
@@ -333,8 +333,8 @@
       },
       {
         "path": "frontend/app/lifecycle.js",
-        "bytes": 3024,
-        "sha256": "a5e4dde18f6c1dbf34a54eb59ba7343e159fc5c46549a9da905987d5699dec3d"
+        "bytes": 4133,
+        "sha256": "071eed9f31af8d5493feed678ee21ee5b9996b6ea2560077d46a6ce297d715ce"
       },
       {
         "path": "frontend/app/logoclip.js",
@@ -523,8 +523,8 @@
       },
       {
         "path": "frontend/app/quitguard.js",
-        "bytes": 6182,
-        "sha256": "782c518fa3e2923451ca9de686595593036181d52b6c6cc34e760b0f836e1866"
+        "bytes": 7007,
+        "sha256": "629dc5a44fecd97e3855566dbe97b23d4a4a6a8fcd352712f23a75a22ab286ba"
       },
       {
         "path": "frontend/app/recipe-catalog/business.js",
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 543837,
-        "sha256": "fb8fc274ca1560eb24404972ea9eb9292b95e30f6f18659b21d73913beebd275"
+        "bytes": 545874,
+        "sha256": "911c3f75e7ccbea5d744e1322c490c97b077e8f6180eff75dff45a90e019b91a"
       },
       {
         "path": "frontend/app/study.js",
