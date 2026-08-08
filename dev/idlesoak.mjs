@@ -97,11 +97,15 @@ try {
   ({ proc } = launchChrome({ cdpPort: CDP_PORT, win: '1440,900', profileDir: join(OUT, '_profile') }));
   cdp = await connectCDP(CDP_PORT);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
-  // Throttle rAF BEFORE boot: a software-rendered station canvas at full tilt starves every
-  // Runtime.evaluate (the documented headless gotcha). ~20fps still advances the idle engine
-  // correctly — every timer in it is wall-clock (performance.now), not frame-counted.
+  /* Throttle rAF BEFORE boot: a software-rendered station canvas at full tilt starves every
+     Runtime.evaluate (the documented headless gotcha). 10fps is deliberate and costs nothing in
+     fidelity — every timer in the idle engine is WALL-CLOCK (performance.now), not frame-counted,
+     so behaviour advances at the same rate either way; the frames we skip are only redraws. The
+     cheaper draw loop is what keeps the sampler responsive when the machine is busy (see the
+     starvation guard at the end: a starved run reports INCONCLUSIVE, never a green nothing). */
+  const FRAME_MS = Number(arg('--frame-ms', '100'));
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-    source: 'window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 50); window.cancelAnimationFrame = (id) => clearTimeout(id);',
+    source: `window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), ${FRAME_MS}); window.cancelAnimationFrame = (id) => clearTimeout(id);`,
   });
   await cdp.send('Page.navigate', { url: APP_URL });
   if (!(await waitDevReady(cdp, evalJS, { tries: 30, url: APP_URL }))) throw new Error('never reached the in-game floor');
@@ -229,6 +233,7 @@ try {
       goals: r.goals, quirks: r.quirks, useKinds: r.useKinds, emoteSamples: r.emotes, talkingSamples: r.talking, drawnGesture: r.posesGesture, drawnTalk: r.posesTalk,
     });
   }
+  report.samplesPerMin = +(report.samples / MINUTES).toFixed(1);   // stamped BEFORE the write, or the saved report lies about its own health
   writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
   console.log('\n=== IDLE SOAK ===');
   console.log(JSON.stringify(report, null, 2));
@@ -239,8 +244,7 @@ try {
      same 6 minutes when it was not. A starved run is NOT a green run — the beats simply never got
      the CPU to happen — so it must report INCONCLUSIVE rather than let a wall-stare rate of 0% over
      nine idle bodies-worth of nothing read as proof. */
-  const rate = report.samples / MINUTES;
-  report.samplesPerMin = +rate.toFixed(1);
+  const rate = report.samplesPerMin;
   if (rate < 25) {
     console.log(`\nINCONCLUSIVE: ${report.samplesPerMin} samples/min (healthy is 60+). The page was starved — the world barely ticked, so an empty report means nothing. Re-run when the machine is free.`);
     process.exit(4);
