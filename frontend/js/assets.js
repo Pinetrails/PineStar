@@ -46,6 +46,15 @@ const SPRITES = (() => {
   function drawScaleFor(setName) {
     return SCALE[setName] || (DATA.SKINS[setName] && DATA.SKINS[setName].scale) || 2 / 3;
   }
+  /* The set drawBody will resolve for this body, and the scale it will draw at. Exported (bodyScale)
+     because a surface that wants the master at its NATIVE resolution — the dossier portrait, which is a
+     still, not a floor body — has to cancel this scale out exactly. Re-deriving it in the UI would drift
+     the moment ULTRON, a new set, or the DATA.SKINS fallback changed; asking the engine cannot. */
+  function setForBody(b) {
+    return (b && b.id === 'ULTRON') ? 'ultron'
+      : ((DATA.SKINS[b && b.skin] && DATA.SKINS[b.skin].set) || DATA.SKINS[DATA.DEFAULT_SKIN].set);
+  }
+  function bodyScale(b) { return drawScaleFor(setForBody(b)); }
 
   /* foot-line measurement — every PixelLab master leaves transparent padding BELOW the feet
      (the crew sets all sit ~23px up from the 92px canvas bottom). The contact shadow is drawn
@@ -518,5 +527,5 @@ const SPRITES = (() => {
     } catch (e) { console.warn('[SPRITES] manifest missing — procedural fallback', e); }
   }
 
-  return { init, drawBody, groundShadow, ensureSkin, isSkinReady, get ready() { return ready; } };
+  return { init, drawBody, groundShadow, ensureSkin, isSkinReady, bodyScale, get ready() { return ready; } };
 })();

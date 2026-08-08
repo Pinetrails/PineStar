@@ -35,3 +35,8 @@ a5d72b7232f29e7c2d3ccf81a91d27217bc69559:test/openai-compat.e2e.test.js:generic-
 # reproduction. Exact fingerprints only; future findings in either file still fail.
 9ce703b633d1ed2a97149828809a1882ca257bf4:test/agent-eval.test.js:generic-api-key:26
 183a238dd36444e2d712b5585bdf0e00317ef529:qa/bugs/14d4f234-the-keys-tab-unattended-grant-is-enforced-only-a.md:generic-api-key:21
+
+# Reviewed 2026-08-07: deterministic fake provider/redaction values added by the live-doctor
+# test lane. Exact commit/file/rule/line fingerprints only; future findings still fail.
+14e256ba326e6445756403f12f236b038fecdc9d:test/live-doctor.e2e.test.js:generic-api-key:36
+14e256ba326e6445756403f12f236b038fecdc9d:test/live-doctor.test.js:generic-api-key:32

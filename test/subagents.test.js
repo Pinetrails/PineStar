@@ -35,6 +35,26 @@ function tick() { return new Promise(resolve => setImmediate(resolve)); }
     A.ok(emitted.some(e => e.name === 'task' && e.p.status === 'running'), 'start emits existing task running event');
     A.ok(emitted.some(e => e.name === 'task' && e.p.status === 'done'), 'completion emits existing task done event');
 
+    // Reconnect truth: a queued record is not yet WORKING; run.start confirms it; run.end clears it
+    // immediately even if the runner promise has not completed its final registry patch yet.
+    let liveHandle = null, releaseLive = null;
+    const live = mgr.start({ leadId: 'lead', agentId: 'worker', prompt: 'reconnect truth', runId: 'run_live' }, async (h) => {
+      liveHandle = h;
+      await new Promise(resolve => { releaseLive = resolve; });
+      return { status: 'done', reason: 'done', result: 'live done', usd: 0 };
+    });
+    await tick();
+    A.eq(mgr.activeRuns(), [], 'queued background record is not active before agent.run.start confirms it');
+    liveHandle.emit('agent.run.start', { agentId: 'worker', runId: live.runId, trigger: 'directive', model: 'm' });
+    const active = mgr.activeRuns();
+    A.eq(active.length, 1, 'confirmed background worker is exposed to reconnect snapshots');
+    A.eq({ runId: active[0].runId, agentId: active[0].agentId, source: active[0].source },
+      { runId: live.runId, agentId: 'worker', source: 'subagent' }, 'reconnect activity keeps the exact run and agent identity');
+    A.ok(active[0].startedAt > 0, 'reconnect activity carries the confirmed start time');
+    liveHandle.emit('agent.run.end', { agentId: 'worker', runId: live.runId, reason: 'done', turns: 1, usd: 0 });
+    A.eq(mgr.activeRuns(), [], 'agent.run.end clears reconnect activity before final registry settlement');
+    releaseLive(); await tick(); await tick();
+
     // interrupt aborts the live controller and leaves a resumable durable record.
     let captured = null;
     const hold = mgr.start({ leadId: 'lead', agentId: 'worker', prompt: 'hold' }, async (h) => {

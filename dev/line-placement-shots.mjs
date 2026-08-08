@@ -5,7 +5,8 @@
  *   1. "where is this even legal?"  → 03-candidate-wash    (the dim candidate field under the ghost)
  *   2. "I clicked and got red"      → 04-snapped-ghost + 05-roughly-there-stamp
  *   3. "I can't see the whole line" → 06-autofit-frame     (zoom before/after, printed)
- *   plus 01/02  the START A WORK LINE invitation on an empty floor, and the click that arms LINES
+ *   plus 01/02  STATION ORDERS on a bare floor is the ONLY thing inviting a line (no canvas
+ *               invitation any more — retired 2026-08-07), and its ④ arms LINES
  *   plus 07     shelf honesty: a blueprint the deck cannot hold says so
  *   plus 08     ONE COMBINED SCENE — wash + ghost + nags + finish card at once (no text soup)
  *   plus 09     the frame-loop guard: a throwing draw layer must not blank the canvas
@@ -32,16 +33,31 @@ const OPEN_REFIT = `(() => {
   return Build.isOpen() ? 'open' : 'failed';
 })()`;
 
-/* A GENUINELY FRESH STATION HAS NEVER CARRIED A LINE. The dev seed ships one, and the invite's
-   retire latch is permanent by design (delete your line, it does not come back). Clearing the
-   floor therefore is not enough to reproduce first-run — the latch must be cleared with it. */
+/* A GENUINELY FRESH STATION HAS NEVER CARRIED A LINE. The dev seed ships one, so the floor is
+   stripped back to bare deck — and STATION ORDERS' dismiss latch is cleared with it, since a
+   dismissed checklist would hide the very guidance these first two scenes are about. */
 const FRESH_FLOOR = `(() => {
   const st = Build.__test__.station();
   for (const b of st.belts()) st.removeBelt(b.x, b.y);
   const WF = { intake:1, bay:1, outbox:1, filter:1, splitter:1, merger:1 };
   for (const p of st.props().slice()) if (WF[p.t]) st.removeProp(p.id);
-  localStorage.removeItem('starnet.refit.lineinvited');
+  localStorage.removeItem('starnet.refit.orders.dis');
   return { belts: st.belts().length, lineParts: st.props().filter(p => WF[p.t]).length };
+})()`;
+
+// what the shared guidance card slot is showing right now — ORDERS (before any line) or FINISH
+// THE LINE (after one). ONE VOICE: `cards` must never exceed 1.
+const CARD_SLOT = `(() => {
+  const el = document.querySelector('.refit-finline');
+  return {
+    cards: document.querySelectorAll('.refit-finline').length,
+    orders: !!(el && el.classList.contains('refit-orders')),
+    title: el ? (el.querySelector('.fl-title') || {}).textContent : null,
+    count: el ? ((el.querySelector('.fl-count') || {}).textContent || null) : null,
+    steps: el ? [...el.querySelectorAll('.fl-step')].map(b => ({
+      ord: b.dataset.ord || null, txt: b.textContent.trim(), done: b.classList.contains('done') })) : [],
+    canvasInvite: typeof Build.__test__.lineInvite,   // 'undefined' = the standalone invite is gone
+  };
 })()`;
 
 const clickTile = (tx, ty) => `(() => {
@@ -106,28 +122,28 @@ async function main() {
     proof.freshFloor = await J(cdp, FRESH_FLOOR);
     await sleep(1200);
 
-    // ---- 1. THE INVITATION on an empty floor (SELECT, nothing armed) ----
-    proof.inviteAtRest = await J(cdp, `Build.__test__.lineInvite()`);
-    shots.push(await capture(cdp, OUT, '01-empty-floor-invite'));
-    if (!proof.inviteAtRest.active) throw new Error('the first-line invitation is not active on an empty floor');
-    if (!proof.inviteAtRest.painted) throw new Error('the arbiter never granted the invitation a voice');
+    /* ---- 1. STATION ORDERS is the ONLY invitation on a bare floor ----
+       The standalone canvas prompt was retired (2026-08-07): two voices asking for the same act
+       is exactly what the one-voice law forbids, and leading with the line read as "build mode is
+       about conveyors". ORDERS sequences the whole mode and its ④ is the line's one invitation. */
+    proof.ordersAtRest = await J(cdp, CARD_SLOT);
+    shots.push(await capture(cdp, OUT, '01-empty-floor-orders'));
+    if (proof.ordersAtRest.canvasInvite !== 'undefined') throw new Error('the retired canvas invitation is still wired: ' + proof.ordersAtRest.canvasInvite);
+    if (!proof.ordersAtRest.orders) throw new Error('STATION ORDERS is not in the card slot on a bare floor: ' + JSON.stringify(proof.ordersAtRest));
+    if (proof.ordersAtRest.cards !== 1) throw new Error('one voice: expected exactly one guidance card, got ' + proof.ordersAtRest.cards);
+    if (!proof.ordersAtRest.steps.some(s => s.ord === 'line' && !s.done)) throw new Error('ORDERS is not offering ④ STAMP A WORK LINE: ' + JSON.stringify(proof.ordersAtRest.steps));
 
-    // ---- 2. CLICKING IT ARMS LINES (the same thing key 9 does) ----
-    const hit = proof.inviteAtRest.hit;
-    proof.inviteClick = await J(cdp, `(() => {
-      const cv = document.querySelector('.refit-canvas'), c = Build.__test__.camera();
-      const r = cv.getBoundingClientRect();
-      const wx = ${hit.x + hit.w / 2}, wy = ${hit.y + hit.h / 2};
-      const cx = wx * c.zoom + c.panX, cy = wy * c.zoom + c.panY;
-      const clientX = r.left + cx * (r.width / c.cw), clientY = r.top + cy * (r.height / c.ch);
+    // ---- 2. ITS ④ ARMS LINES (the same thing key 9 does) — and the wash comes with it ----
+    proof.ordersClick = await J(cdp, `(() => {
       const before = Build.__test__.tool();
-      cv.dispatchEvent(new PointerEvent('pointerdown', { clientX, clientY, pointerId: 1, button: 0, bubbles: true }));
-      cv.dispatchEvent(new PointerEvent('pointerup', { clientX, clientY, pointerId: 1, button: 0, bubbles: true }));
+      document.querySelector('.refit-finline [data-ord="line"]').click();
       return { before, after: Build.__test__.tool() };
     })()`);
-    if (proof.inviteClick.after !== 'line') throw new Error('clicking the invitation did not arm LINES: ' + JSON.stringify(proof.inviteClick));
+    if (proof.ordersClick.after !== 'line') throw new Error('ORDERS ④ did not arm LINES: ' + JSON.stringify(proof.ordersClick));
     await sleep(700);
-    shots.push(await capture(cdp, OUT, '02-invite-click-arms-lines'));
+    proof.ordersHandoff = await J(cdp, `Build.__test__.lineField()`);
+    if (!proof.ordersHandoff || !proof.ordersHandoff.count) throw new Error('arming from ORDERS yielded no candidate wash: ' + JSON.stringify(proof.ordersHandoff));
+    shots.push(await capture(cdp, OUT, '02-orders-arms-lines'));
 
     // ---- 3. THE CANDIDATE WASH under an armed blueprint ----
     proof.arm = await J(cdp, armLine('sorting_office'));
@@ -255,11 +271,14 @@ async function main() {
     await sleep(900);
     proof.combinedScene = await J(cdp, `({
       field: Build.__test__.lineField('sorting_office'),
-      invite: Build.__test__.lineInvite(),
+      slot: ${CARD_SLOT},
       fin: !!Build.__test__.finCard(),
       degraded: Build.__test__.degradedLayers(),
     })`);
-    if (proof.combinedScene.invite.painted) throw new Error('the invitation is still speaking while a blueprint is armed (one-voice)');
+    // ONE VOICE, still: a line now exists, so the shared slot has handed ORDERS off to FINISH THE
+    // LINE — one card, and nothing else on the canvas is asking for a line.
+    if (proof.combinedScene.slot.cards !== 1) throw new Error('one voice: ' + proof.combinedScene.slot.cards + ' guidance cards at once');
+    if (proof.combinedScene.slot.orders) throw new Error('STATION ORDERS never handed off after a line was stamped');
     shots.push(await capture(cdp, OUT, '08-combined-scene'));
 
     // ---- 9. THE FRAME-LOOP GUARD: make a draw layer throw, prove the canvas keeps painting ----

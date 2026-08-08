@@ -89,7 +89,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // every save that predates this key merges to the exact look it already had.
   // panelBright (0–100, default 0) is the tube's BRIGHTNESS knob: it lifts the panel glass's black
   // level toward the phosphor colour (never toward white). 0 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, crtGlass: 'full', sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
   // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
   // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
@@ -104,6 +104,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return long <= 1470 ? 115 : long <= 1740 ? 110 : 100;
   }
   function resolveTextScale(v) { const n = Number(v) || 0; return n === 0 ? autoTextScale() : clampN(n, 90, 150, 100); }
+  // CRT LEVEL (value → chip label → the tooltip). Two positions, strongest first.
+  // THERE IS NO "OFF", BY DECISION (Andrew, 2026-08-07): the station is a CRT, and letting a user
+  // switch that off is letting them switch the product's identity off. DULLED thins the glass over
+  // the HTML so the text stops fighting it — the station feed's own tube is untouched at either
+  // position. Also deliberately NOT called "easy read": most people who keep the tube on do not
+  // experience it as a hardship, and a label naming the problem makes the default sound endured.
+  const GLASS_STEPS = [
+    ['full', 'FULL', 'the shipped tube, at full strength'],
+    ['dulled', 'DULLED', 'the same tube, thinned over the panels and COMMS so text sits clearer under it'],
+  ];
+  // Accepts every value this setting has ever stored during the day it was being designed: the
+  // BOOLEAN it shipped as, and the 'easy'/'soft'/'off' ids of the levels that did not survive.
+  // Anyone who had turned the CRT DOWN lands on DULLED — never snapped back up to FULL, which would
+  // silently undo the choice they made, and never left on a level that no longer exists.
+  function resolveGlass(v) {
+    if (v === true || v == null) return 'full';
+    if (v === false || v === 'easy' || v === 'soft' || v === 'off') return 'dulled';
+    return GLASS_STEPS.some(([id]) => id === v) ? v : 'full';
+  }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -234,9 +253,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // Applied here rather than only in the picker so it survives a reload.
     if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
-    // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
-    // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
-    // checks) and is intentionally never driven by settings here.
+    // CRT LEVEL — FULL or DULLED, and nothing turns the tube off. DULLED thins the SCREEN-SPACE
+    // glass over the HTML (style.css body.crt-dull lowers the --scan-* trough alphas and the page
+    // vignette, and tightens the phosphor halo in the prose containers). The station feed is
+    // untouched at either position: its scanlines/curve/aberration are painted in-canvas by
+    // world.js drawCRT/drawCurve, which reads only `no-scan`.
+    // Drives its OWN class: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
+    // flatten the feed for star-pixel checks) and is never written from settings — a toggle() here
+    // would remove it out from under a verification run.
+    document.body.classList.toggle('crt-dull', resolveGlass(s.crtGlass) === 'dulled');
     // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
     // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
     const tz = resolveTextScale(s.textScale);
@@ -1005,7 +1030,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const sw = mkEl('div', 'con-search');
       sw.innerHTML = '<span class="con-search-i" aria-hidden="true">⌕</span>' +
         '<input type="text" class="con-search-in" placeholder="' + esc(opts.searchPlaceholder || 'search settings…') +
-        '" autocomplete="off" spellcheck="false" aria-label="Search ' + esc(key) + '">';
+        '" autocomplete="off" spellcheck="false" aria-label="' + esc(opts.searchLabel || ('Search ' + key)) + '">';
       left.appendChild(sw);
       searchInput = sw.querySelector('.con-search-in');
     }
@@ -1021,13 +1046,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
     // ---- right: the content host (all panes mounted; one visible) ----
     const host = mkEl('div', 'con-pane');
-    // the horizontal tab strip lives at the top of the pane in tabsTop mode; it reuses the tablist role.
-    let topTabs = null;
+    /* tabsTop: the strip is a SIBLING of the scrolling pane, not its first child. It used to live inside
+       .con-pane with position:sticky, and a sticky element inside a scroll container with top padding leaves a
+       live gap above itself — the CONFIG execution-profile chips were visibly scrolling through the band between
+       the window titlebar and the tab row. No amount of background on the strip closes that gap because the
+       content passes ABOVE it. Taking it out of the scrollport removes the failure mode instead of masking it. */
+    let topTabs = null, right = host;
     if (tabsTop) {
       topTabs = mkEl('div', 'con-toptabs');
       topTabs.setAttribute('role', 'tablist');
       topTabs.setAttribute('aria-label', String(key).toUpperCase() + ' sections');
-      host.appendChild(topTabs);
+      right = mkEl('div', 'con-col');
+      right.appendChild(topTabs);
+      right.appendChild(host);
     }
 
     const railItems = {};    // id -> rail/tab button
@@ -1060,8 +1091,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       panes[sec.id] = pane;
     });
 
+    // Search spans every pane, so a zero-hit query needs its own honest result surface. Without this,
+    // every pane is hidden and the console becomes a blank rectangle with no selected tab — visually
+    // indistinguishable from a render failure and silent to assistive technology.
+    const searchEmpty = searchInput ? mkEl('div', 'con-search-empty') : null;
+    if (searchEmpty) {
+      searchEmpty.hidden = true;
+      searchEmpty.setAttribute('role', 'status');
+      searchEmpty.setAttribute('aria-live', 'polite');
+      host.appendChild(searchEmpty);
+    }
+
     body.appendChild(left);
-    body.appendChild(host);
+    body.appendChild(right);   // === host when there is no top strip (the vertical-rail consoles are unchanged)
 
     function selectSection(id, viaClick) {
       if (!panes[id]) return;
@@ -1114,6 +1156,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const q = (searchInput.value || '').trim().toLowerCase();
         body.classList.toggle('con-searching', !!q);
         if (!q) {
+          if (searchEmpty) searchEmpty.hidden = true;
           // restore: show the active section only, clear all row dimming + section flags
           Object.keys(panes).forEach(k => {
             panes[k].classList.remove('con-sec-nomatch', 'con-sec-searchshow');
@@ -1154,7 +1197,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           railItems[sec.id].classList.toggle('con-rail-dim', !secMatch);
           railItems[sec.id].classList.toggle('con-rail-hit', secMatch);
         });
-        setSearchContext(matches[0] || null);
+        if (searchEmpty) {
+          searchEmpty.hidden = matches.length > 0;
+          searchEmpty.textContent = matches.length
+            ? ''
+            : (opts.searchEmptyText || 'No matching results. Try another name, tool, or skill.');
+        }
+        // A tablist must retain one selected tab even when the temporary search context has no hits.
+        // Keep the user's real section selected; clearing search restores its visible panel unchanged.
+        setSearchContext(matches[0] || activeId);
       };
       searchInput.addEventListener('input', doFilter);
       // Esc: first clears a non-empty search (and refocuses), only then lets the window's Esc close it.
@@ -1282,7 +1333,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      system prompt the model runs on, so editing one here re-shapes the agent for real (App's
      applyAgentConfig, injected as access.config.apply). memory.md is the agent's own notebook —
      shown read-only and honestly labelled, because the agent writes it, not the Commander. */
-  // DOSSIER is CONSOLE MODE: the five sub-tabs are console sections (ids brief|growth|memory|skills|config),
+  // DOSSIER is CONSOLE MODE: the five sub-tabs are console sections (ids brief|growth|record|memory|config),
   // so the ACTIVE section lives in consoleSection['agents'] (not a private var). agSection() reads it with a
   // 'brief' fallback; it's the single source of truth for the memory-live guard + the BRIEF-only tick.
   function agSection() { return consoleSection['agents'] || 'brief'; }
@@ -1315,6 +1366,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return ((a && a.name) || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
   }
 
+  /* The dossier portrait frame, in CSS px. NOT a taste number — it is derived from the shipped art.
+     Measured across all 36 skins (dev/skin-bounds.mjs): the drawn character inside each 92×92 master is
+     39–46px tall and 16–43px wide, the largest being pikachu at 43×46. The frame must leave room for the
+     largest character at ×2 (86 × 92) plus 6px of pad on every side, so that EVERY skin lands on the same
+     integer ×2 and the roster reads at one size. Shrink this and the big skins silently drop to ×1,
+     rendering half the height of everyone else. Re-run dev/skin-bounds.mjs before changing it. */
+  const PORTRAIT_W = 100, PORTRAIT_H = 108;
+
   function agHead(a, act) {
     const dn = linkDown();   // E2: link gone → the dossier can't honestly say ONLINE either
     const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
@@ -1326,7 +1385,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="ag-portrait-wrap"><div class="ag-portrait-well">' +
         '<span class="ag-ptick a"></span><span class="ag-ptick b"></span><span class="ag-ptick c"></span><span class="ag-ptick d"></span>' +
         '<span class="ag-psweep" aria-hidden="true"></span>' +
-        '<canvas id="ag-portrait" width="84" height="112"></canvas>' +
+        // size is owned by drawPortrait (DPR-aware backing store); these attrs are only the pre-paint box
+        '<canvas id="ag-portrait" width="' + PORTRAIT_W + '" height="' + PORTRAIT_H + '"></canvas>' +
       '</div></div>' +
       '<div class="ag-info">' +
       // NAME — read-only with a ✎ rename affordance, or an inline editor while agEdit['__name'] is set (wired in wireHead).
@@ -1344,29 +1404,74 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
       ((typeof Specialties !== 'undefined' && a.specialtyId) ? (function () { var s = Specialties.get(a.specialtyId); return s ? '<span class="tag">' + esc(s.emoji + ' ' + s.name) + '</span>' : ''; })() : '') +
       // MODEL tag doubles as the shortcut into CONFIG › model (wired in wireHead) so "change the model" is one click from anywhere.
-      '<span class="tag model" data-goconfig="1" role="button" tabindex="0" title="change this agent’s model">' + esc(a.model || '—') + '</span>' +
-      '</div></div></div>';
+      '<span class="tag model" data-goconfig="ag-model-card" role="button" tabindex="0" title="change this agent’s model">' + esc(a.model || '—') + '</span>' +
+      '</div>' +
+      // the three stat wells ride INSIDE the hero's info column rather than as a full-width band beneath it.
+      // The hero previously used 88px of a 780px pane and left the rest empty while the stats claimed their own
+      // row — costing ~90px of vertical budget on the landing tab for no gain. Same wells, same numbers, one row.
+      agStats(a) +
+      '</div></div>';
+  }
+
+  // the three per-agent counters (never station totals wearing an agent label): RUNS from the Xp ledger's own
+  // attempt counter, LEVEL from the pure Xp engine, KUDOS = positive feedback. The full readout is GROWTH.
+  function agStats(a) {
+    const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
+    const runs = (a.stats && a.stats.counters && a.stats.counters.runs) || 0;
+    return '<div class="stat-grid">' +
+      '<div class="stat-cell"><div class="stat-val">' + runs + '</div><div class="stat-lbl">RUNS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val">' + (g ? g.level : '—') + '</div><div class="stat-lbl">LEVEL</div></div>' +
+      '<div class="stat-cell"><div class="stat-val pos">' + (g ? g.positiveFeedback : 0) + '</div><div class="stat-lbl">KUDOS</div></div>' +
+      '</div>';
+  }
+
+  /* SETUP STRIP (BRIEF). The five per-agent decisions that actually change how this unit behaves — model,
+     personality, approval posture, execution profile, and the away shift — each rendered as its CURRENT VALUE,
+     not as a link labelled "settings". They all live in CONFIG, which the live measurement found to be a flat
+     1565px scroll of nine cards and 62 controls: reaching "what model is this thing on?" meant a tab hop plus a
+     hunt. A value you can READ on the landing tab answers the question outright; clicking it jumps to the card
+     that owns it (data-goconfig = the target card's element id, wired in wireHead). Read-only by design — one
+     editor per setting, and it is the CONFIG card. */
+  function agSetupStrip(a) {
+    const pin = (a && a.model) ? String(a.model) : '';
+    const persona = (typeof Personas !== 'undefined' && Personas.get)
+      ? (Personas.get(Personas.resolve ? Personas.resolve((a && a.personaId) || Personas.DEFAULT_ID) : (a && a.personaId)) || {}).name
+      : '';
+    // executionProfileOf resolves the fallback by DEFAULT ID, never by array index: the array is ordered
+    // safest→broadest, so its first entry is the NARROWEST profile rather than the default. An index-based
+    // fallback would silently relabel an unknown profile as "safe cell" on the one surface whose whole job is
+    // stating this plainly. (test/permissions-ui.test.js greps the SOURCE for the index form — so this comment
+    // must not spell it out either; a locked grep is a contract on the text, not just on the behaviour.)
+    const prof = executionProfileOf(executionProfileId(a));
+    const rows = [
+      { lbl: 'MODEL',     val: pin || 'station default', dim: !pin,                 go: 'ag-model-card' },
+      { lbl: 'VOICE',     val: persona || '—',           dim: !persona,             go: 'ag-persona-card' },
+      { lbl: 'APPROVAL',  val: (a && a.approvalMode === 'full') ? 'full access' : 'asks first', dim: false, go: 'ag-approval-card' },
+      { lbl: 'RUNS IN',   val: prof.label.toLowerCase(),  dim: false,               go: 'ag-execution-card' },
+      { lbl: 'AWAY WORK', val: (a && a.workshop) ? 'on'  : 'off', dim: !(a && a.workshop), go: 'ag-workshop-card' }
+    ];
+    return '<div class="ag-setup" role="group" aria-label="How this agent is set up">' +
+      rows.map(r =>
+        '<button type="button" class="ag-setup-row" data-goconfig="' + r.go + '" title="change this in CONFIG">' +
+          '<span class="ag-setup-lbl">' + r.lbl + '</span>' +
+          '<span class="ag-setup-val' + (r.dim ? ' dim' : '') + '">' + esc(r.val) + '</span>' +
+          '<span class="ag-setup-go" aria-hidden="true">›</span></button>').join('') +
+      '</div>';
   }
 
   function agBrief(a) {
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
-    // BRIEF stat wells — compact 3-up readout, all THREE per-agent (no station totals wearing an agent label):
-    // RUNS (this agent's own attempt counter from the Xp ledger), LEVEL (pure Xp engine), KUDOS (positive
-    // feedback). The full Level/XP/Satisfaction/milestone readout still lives in the GROWTH tab.
-    const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
-    const lvl = g ? g.level : '—';
-    const kudos = g ? g.positiveFeedback : 0;
-    const runs = (a.stats && a.stats.counters && a.stats.counters.runs) || 0;   // per-agent run count (agent.run.end folds here)
-    return '<div class="stat-grid">' +
-      '<div class="stat-cell"><div class="stat-val">' + runs + '</div><div class="stat-lbl">RUNS</div></div>' +
-      '<div class="stat-cell"><div class="stat-val">' + lvl + '</div><div class="stat-lbl">LEVEL</div></div>' +
-      '<div class="stat-cell"><div class="stat-val pos">' + kudos + '</div><div class="stat-lbl">KUDOS</div></div>' +
-      '</div>' +
-      '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
+    // (the stat wells moved into agHead's info column — see agStats)
+    return '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
       (a.purpose
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
         : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
+      // the two questions the landing tab used to answer with 39 words of nothing: how is it set up, and what can it do.
+      '<div class="sec ag-brief-sec"><span class="sec-l">SET UP AS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      agSetupStrip(a) +
+      '<div class="sec ag-brief-sec"><span class="sec-l">CAN DO</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      agSkills(a && a.id) +
       '<div class="ag-foot-row">on station since <b>' + since + '</b></div>';
   }
 
@@ -1426,7 +1531,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
     const progression =
       '<div>' +
-      '<div class="gx-sec"><span class="gx-ref">A</span><span class="gx-title">Progression</span><span class="gx-tag">LV ' + g.level + '&rarr;' + (g.level + 1) + '</span></div>' +
+      '<div class="gx-sec"><span class="gx-ref">▣</span><span class="gx-title">Progression</span><span class="gx-tag">LV ' + g.level + '&rarr;' + (g.level + 1) + '</span></div>' +
       '<div class="gx-row" style="margin-bottom:6px;"><span class="gx-lbl">This level</span>' +
         '<span class="gx-val" style="font-size:15px;">' + g.inLevel + ' <span class="gx-dim">/</span> ' + g.span + ' <span class="gx-dim" style="font-size:11px;">XP</span></span></div>' +
       '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + g.pct + '%;"></div><div class="gx-mark" style="left:' + g.pct + '%;"></div></div>' +
@@ -1444,7 +1549,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div>';
     const confidence =
       '<div>' +
-      '<div class="gx-sec"><span class="gx-ref">B</span><span class="gx-title">Satisfaction</span><span class="gx-tag">' + (g.known ? 'average of your recent ratings (' + Xp.MIN_SAMPLES + '+ ratings)' : 'calibrating &middot; ' + g.samples + ' of ' + Xp.MIN_SAMPLES + ' ratings so far') + '</span></div>' +
+      '<div class="gx-sec"><span class="gx-ref">★</span><span class="gx-title">Satisfaction</span><span class="gx-tag">' + (g.known ? 'average of your recent ratings (' + Xp.MIN_SAMPLES + '+ ratings)' : 'calibrating &middot; ' + g.samples + ' of ' + Xp.MIN_SAMPLES + ' ratings so far') + '</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
         '<span class="gx-confnum' + (g.known ? '' : ' cal') + '">' + confnum + '</span>' +
         '<span class="gx-band' + (g.known ? '' : ' cal') + '">' + (g.known ? g.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
@@ -1467,7 +1572,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const reliabilityBlk = !rl ? '' :
       // spans both columns of the existing .gx-2 grid (no CSS change; still correct under the 1-col media query)
       '<div style="grid-column:1/-1;">' +
-      '<div class="gx-sec"><span class="gx-ref">B2</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
+      '<div class="gx-sec"><span class="gx-ref">◉</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
         (rl.known ? 'runs it finished, of the runs it owned (' + Xp.MIN_RUNS + '+ runs)' : 'calibrating &middot; ' + rl.attempted + ' of ' + Xp.MIN_RUNS + ' attributable runs so far') + '</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
         '<span class="gx-confnum' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.pct + '<span style="font-size:18px;color:var(--ph-dim);">%</span>' : '—') + '</span>' +
@@ -1486,7 +1591,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        never a zero: an unread skillbase is not an empty one. */
     const practiceBlk =
       '<div id="gx-practice" style="grid-column:1/-1;">' +
-      '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+      '<div class="gx-sec"><span class="gx-ref">◇</span><span class="gx-title">Practice</span>' +
       '<span class="gx-tag">reading the skillbase&hellip;</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
       '<span class="gx-band cal">READING</span></div></div>';
@@ -1496,7 +1601,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (m.earned ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + m.label + '</span></div>' +
       '<div class="sub">' + (m.earned ? 'EARNED' : '&#9656; ' + m.hint) + '</div></div>').join('');
     const trophies =
-      '<div class="gx-trohead"><div class="gx-sec" style="flex:1;margin:0;border:0;height:auto;"><span class="gx-ref">C</span><span class="gx-title">Trophy case</span></div>' +
+      '<div class="gx-trohead"><div class="gx-sec" style="flex:1;margin:0;border:0;height:auto;"><span class="gx-ref">▦</span><span class="gx-title">Trophy case</span></div>' +
       '<span class="gx-tag">' + pad2(earned) + ' earned &middot; ' + pad2(locked) + ' locked</span></div>' +
       '<div class="gx-tros">' + tros + '</div>';
 
@@ -1505,7 +1610,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const nAg = present.length || 1;
     const station = s ? (
       '<div class="gx-station" style="margin-top:18px;">' +
-      '<div class="hd"><span class="badge">D</span><span class="ttl">Station prestige</span><span class="agents">&Sigma; ' + nAg + ' AGENT' + (nAg === 1 ? '' : 'S') + '</span></div>' +
+      '<div class="hd"><span class="badge">●</span><span class="ttl">Station prestige</span><span class="agents">&Sigma; ' + nAg + ' AGENT' + (nAg === 1 ? '' : 'S') + '</span></div>' +
       '<div class="body">' +
         '<div class="lv"><div class="gx-lbl" style="font-size:9px;">STATION</div><div class="n">' + s.level + '</div><div class="gx-lbl" style="font-size:9px;">LEVEL</div></div>' +
         '<div style="flex:1;">' +
@@ -1517,9 +1622,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div></div>'
     ) : '';
 
+    /* The old gx-head said "AGENT DOSSIER // GROWTH READOUT" + the agent's name + "CLEARANCE LEVEL 04" — inside a
+       window titled AGENT DOSSIER, on a tab labelled GROWTH, with the agent selected and named in the left rail,
+       and with LEVEL already one of BRIEF's three stat wells. Four restatements of context the user already had,
+       occupying the top of the pane. The level chip survives (it belongs beside a level bar); the rest is gone. */
     return '<div class="gx">' +
-      '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // GROWTH READOUT</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
-      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">CLEARANCE</div><span class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></span></div></div>' +
+      '<div class="gx-head"><div class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></div></div>' +
       '<div class="gx-2">' + progression + confidence + reliabilityBlk + practiceBlk + '</div>' +
       trophies + station +
       '</div>';
@@ -1534,7 +1642,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!host || typeof Xp === 'undefined' || !Xp.practice) return;
     const fail = (why) => {
       const h = $('#gx-practice'); if (!h) return;
-      h.innerHTML = '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+      h.innerHTML = '<div class="gx-sec"><span class="gx-ref">◇</span><span class="gx-title">Practice</span>' +
         '<span class="gx-tag">' + why + '</span></div>' +
         '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
         '<span class="gx-band cal">UNREAD</span></div>';
@@ -1552,7 +1660,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (p.idle) aside.push(p.idle + ' written but never used yet');
       if (p.given) aside.push(p.given + ' you wrote yourself');
       h.innerHTML =
-        '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span><span class="gx-tag">' +
+        '<div class="gx-sec"><span class="gx-ref">◇</span><span class="gx-title">Practice</span><span class="gx-tag">' +
           (p.count ? 'procedures it worked out and has actually used' : 'nothing distilled from real work yet') + '</span></div>' +
         '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
           '<span class="gx-confnum' + (p.count ? '' : ' cal') + '">' + p.count + '</span>' +
@@ -1573,8 +1681,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // missing gear and deep-links into REFIT (data-perk-cap → placeGearForSkill, wired in
     // buildAgents), and the toolset-off honesty pass dims families switched off in ABILITIES.
     const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
-    return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
-      '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
+    // NAV CONDENSE 3: this grid folds into BRIEF (its own tab was 411px of read-only content the Commander had
+    // to go looking for), so the standalone <h4> heading is gone — the count rides the one-line chain below it,
+    // under BRIEF's own "CAN DO" rule. No duplicate title stacked on a title.
+    return '<div class="sk-chain"><b>' + on + ' live</b> &middot; OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
       '<div class="perk-grid">' +
       skills.map((s, i) => {
         const lockable = !s.on && s.cap;
@@ -1589,11 +1699,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
       }).join('') +
       '</div>' +
+      /* one note, not two: the facts were previously spread across two stacked paragraphs of identical weight.
+         The consent sentence is NOT editorial — "File writes and commands pause for one-click approval in COMMS"
+         is a locked advertised claim (qa/product-perfect/claims.json → one-click-mutation-approval), and this
+         node is its surface locator. Reword the surrounding prose freely; that clause stays verbatim. */
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
-      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
-      '<b>notebook</b> saves freely.</p>' +
-      '<p class="sk-note">This view is <b>read-only</b> — the on/off switches for these tool families, and the ' +
-      'station’s <b>skill library</b>, live in <b>⇄ ABILITIES</b> on the bottom bar.</p>';
+      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the ' +
+      'private <b>notebook</b> saves freely. Read-only here: the on/off switches and the station’s skill ' +
+      'library live in <b>⇄ ABILITIES</b> on the bottom bar.</p>';
   }
 
   function fileCard(a, f) {
@@ -1624,9 +1737,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const MEM_KIND = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
 
   function agMemory(a) {
+    // same de-duplication as GROWTH: the window is already titled AGENT DOSSIER, the tab is already MEMORY, and
+    // the rail already names the agent. "PROVENANCE / TRACED ✓" is the one claim the header made that the pane
+    // does not otherwise state up front, and it earns its keep — the rest is dropped.
     return '<div class="gx">' +
-      '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // MEMORY CORE</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
-      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">PROVENANCE</div><span class="gx-clear"><span class="k">TRACED</span><span class="v">&#10003;</span></span></div></div>' +
+      '<div class="gx-head"><div class="gx-clear"><span class="k">TRACED</span><span class="v">&#10003;</span></div></div>' +
       // P1-10 REFLECTION controls — the master on/off + the cooldown, both HONORED live at the reflect gate in the
       // sidecar (station-wide, not per-agent — the reflect loop is a station engine). Plus a plain scope note.
       '<div class="gx-sec"><span class="gx-ref">◈</span><span class="gx-title">Reflection</span></div>' +
@@ -1640,7 +1755,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="gx-sec" id="mc-pending-sec" style="display:none;"><span class="gx-ref gold">?</span><span class="gx-title">Awaiting your decision</span><span class="gx-tag" id="mc-pending-count"></span></div>' +
       '<div class="mc-note" id="mc-pending-note" style="display:none;">Sensitive beliefs raised while you were away — <b>nothing here is remembered yet</b>. <b>Keep</b> to save one &middot; <b>Discard</b> to reject it for good.</div>' +
       '<div id="mc-pending-list" class="mc-list"></div>' +
-      '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
+      // ▤ not "M": the ref chip is a marker, and every other one in the dossier is a glyph. A bare letter reads as
+      // a code the reader is expected to already know (which is exactly what GROWTH's retired A/B/B2/B3 were).
+      '<div class="gx-sec"><span class="gx-ref gold">▤</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
       '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">reading memory core&hellip;</span></div>' +
       // observability: the permanent reject-list (Discarded proposals never re-proposed). Hidden until non-empty.
@@ -1892,14 +2009,42 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
   }
 
+  /* CONFIG — GROUPED (2026-08-07 dossier UX pass). Measured before this change: 1565px of scroll, nine cards,
+     62 controls, 1945 words, in one flat undifferentiated column. Nine cards is not the problem; nine cards with
+     no stated relationship is. They answer three different questions, so they now sit under three rules:
+
+       WHAT IT KNOWS  — the four markdown files that literally compose the system prompt.
+       HOW IT BEHAVES — the runtime decisions: voice, model, where it runs, whether it asks, the away shift.
+       THE UNIT       — appearance and deletion. Last, because it is the rarest and the most destructive.
+
+     The per-card "PER-AGENT" badge is retired with the grouping. It appeared on five of nine cards inside a
+     window whose title is AGENT DOSSIER and whose left rail names the selected agent — it carried no
+     information the surrounding chrome did not already carry, and it read as a warning label.
+     Card ids (ag-*-card) are the anchor targets BRIEF's setup strip jumps to. */
+  const CF_GROUPS = [
+    { id: 'cf-grp-knows',  label: 'WHAT IT KNOWS' },
+    { id: 'cf-grp-behaves', label: 'HOW IT BEHAVES' },
+    { id: 'cf-grp-unit',   label: 'THE UNIT' }
+  ];
   function agConfig(a) {
-    return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
+    const grp = (i, note) => '<div class="sec cf-grp" id="' + CF_GROUPS[i].id + '"><span class="sec-l">' + CF_GROUPS[i].label + '</span>' +
+      '<span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      (note ? '<p class="cf-grp-note">' + note + '</p>' : '');
+    // CONFIG is the one pane that is legitimately long (measured 1741px — it is the editor). Grouping tells you
+    // what is down there; this row lets you GO there without a scroll hunt. Wired in wireConfig.
+    const nav = '<div class="cf-nav" role="group" aria-label="Jump to a config group">' +
+      CF_GROUPS.map(g => '<button type="button" class="cf-nav-b" data-cfjump="' + g.id + '">' + g.label + '</button>').join('') +
+      '</div>';
+    return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' + nav +
+      grp(0, 'These four files ARE the system prompt. Edit one and the agent changes on its very next run.') +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
+      grp(1, 'Runtime posture — none of this changes what the agent knows, only how it works.') +
       personaCard(a) +
       modelCard(a) +
       executionProfileCard(a) +
       approvalCard(a) +
       workshopCard(a) +
+      grp(2, '') +
       agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
   }
 
@@ -1910,8 +2055,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // truth (wireConfig fills #ag-ws-live async); the static shell asserts nothing it can't prove.
   function workshopCard(a) {
     const on = !!(a && a.workshop);
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">◈ while you’re away</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-workshop-card">' +
+      '<div class="cf-head"><span class="cf-file">◈ while you’re away</span></div>' +
       '<label class="set-row" style="align-items:flex-start;gap:8px;">' +
         '<input type="checkbox" id="ag-workshop-on"' + (on ? ' checked' : '') + ' aria-label="Build things while I am away">' +
         '<span><b>Build things while I’m away</b>' +
@@ -1927,25 +2072,40 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // changeable any time — until now the ONLY post-create path was the /yolo slash command in COMMS, which most
   // Commanders never find (a creation-time picker with no live-app twin — the codex-sign-in escape class).
   // Applies via access.config.setApproval → pushRoster, so the sidecar's per-run consent gate flips with it.
+  // Ordered SAFEST → BROADEST, and each rung carries the two things a first-time reader actually needs:
+  // `reach` (1–4, drawn as a meter so the ladder is visible without reading five labels) and `plain` —
+  // one ordinary sentence naming what of YOUR computer this profile can touch. The technical columns
+  // (backend/files/tools/desktop) stay exactly as they were; they are the truth line, not the teaching line.
+  // The array order IS the display order everywhere, so the dossier chips and the Settings chips agree.
+  const EXECUTION_PROFILE_DEFAULT = 'station-gear';
   const EXECUTION_PROFILES = [
-    { id: 'station-gear', label: 'STATION GEAR', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
-    { id: 'safe-cell', label: 'SAFE CELL', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
-    { id: 'remote-ssh', label: 'REMOTE SSH', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
-    { id: 'trusted-project', label: 'TRUSTED PROJECT', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
-    { id: 'this-computer', label: 'THIS COMPUTER', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
+    { id: 'safe-cell', label: 'SAFE CELL', reach: 1, plain: 'None of your files. It works inside a sealed container that only holds its own workspace.', short: 'works in a sealed box', backend: 'docker', files: 'agent workspace only', tools: 'terminal + files', desktop: 'never', desc: 'isolated workspace; connected services still follow placed station gear' },
+    { id: 'remote-ssh', label: 'REMOTE SSH', reach: 1, plain: 'None of your files. Commands run on a different machine you point it at below.', short: 'works on another machine', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
+    { id: 'station-gear', label: 'STATION GEAR', reach: 2, plain: 'Only what you placed on the station floor, plus project folders you approved. The default.', short: 'uses only the gear you placed', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
+    { id: 'trusted-project', label: 'TRUSTED PROJECT', reach: 3, plain: 'Its own workspace plus the project folders you approved — nothing else on this computer.', short: 'reaches your approved project folders', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
+    { id: 'this-computer', label: 'THIS COMPUTER', reach: 4, plain: 'Almost any file on this computer. Protected files (.env, .git) stay blocked no matter what.', short: 'reaches almost everything on this computer', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
   ];
+  const EXECUTION_PROFILE_MAX_REACH = 4;
+  // the fallback is the DEFAULT profile by id, never EXECUTION_PROFILES[0] — the array is ordered by reach,
+  // so an index-based fallback would silently relabel an unknown profile as the narrowest one.
+  const executionProfileOf = (id) => EXECUTION_PROFILES.find(x => x.id === id) ||
+    EXECUTION_PROFILES.find(x => x.id === EXECUTION_PROFILE_DEFAULT);
+  // the reach meter: filled rungs up to `reach`, hollow after. Pure decoration for screen readers.
+  const reachMeter = (n) => '<span class="pc-dots" aria-hidden="true">' +
+    Array.from({ length: EXECUTION_PROFILE_MAX_REACH }, (_, i) => (i < n ? '●' : '○')).join('') + '</span>';
   function executionProfileId(a) {
     const id = String((a && a.executionProfile) || '');
-    return EXECUTION_PROFILES.some(p => p.id === id) ? id : 'station-gear';
+    return EXECUTION_PROFILES.some(p => p.id === id) ? id : EXECUTION_PROFILE_DEFAULT;
   }
   function executionProfileCard(a) {
     const current = executionProfileId(a);
-    const p = EXECUTION_PROFILES.find(x => x.id === current) || EXECUTION_PROFILES[0];
-    const chips = EXECUTION_PROFILES.map(x => '<button type="button" class="ov-vchip' + (x.id === current ? ' sel' : '') + '" data-execution-profile="' + x.id + '" data-name="' + esc(x.label) + '" title="' + esc(x.desc) + '" aria-pressed="' + (x.id === current ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('');
+    const p = executionProfileOf(current);
+    const chips = EXECUTION_PROFILES.map(x => '<button type="button" class="ov-vchip' + (x.id === current ? ' sel' : '') + '" data-execution-profile="' + x.id + '" data-name="' + esc(x.label) + '" data-reach="' + x.reach + '" title="' + esc(x.plain) + '" aria-pressed="' + (x.id === current ? 'true' : 'false') + '">' + reachMeter(x.reach) + esc(x.label) + '</button>').join('');
     return '<div class="cf-card" id="ag-execution-card">' +
-      '<div class="cf-head"><span class="cf-file">▣ execution profile</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-head"><span class="cf-file">▣ execution profile</span></div>' +
       '<div class="cf-desc">Where this agent runs and what scope it receives. This is separate from approval prompts and never grants real mouse, keyboard, or screen control.</div>' +
       '<div class="ov-vchips" id="ag-execution-chips">' + chips + '</div>' +
+      '<div class="cf-desc pc-plain" id="ag-execution-plain">' + esc(p.plain) + '</div>' +
       '<div class="mc-hint" id="ag-execution-truth">ROUTES NEXT COMMAND TO <b>' + esc(p.backend.toUpperCase()) + '</b> · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop) + ' · checking availability…</div>' +
       '<div id="ag-execution-msg" class="msg"></div>' +
     '</div>';
@@ -1955,8 +2115,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const full = !!(a && a.approvalMode === 'full');
     const chip = (id, label, desc, sel) =>
       '<button type="button" class="ov-vchip' + (sel ? ' sel' : '') + '" data-approval="' + id + '" data-name="' + esc(label) + '" title="' + esc(desc) + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' + esc(label) + '</button>';
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">✋ approval prompts</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-approval-card">' +
+      '<div class="cf-head"><span class="cf-file">✋ approval prompts</span></div>' +
       '<div class="cf-desc">Whether risky calls pause for your answer. This does not add tools, widen filesystem scope, choose a runtime, or grant real desktop control. <code>/yolo</code> remains the shortcut for the zero-prompt posture.</div>' +
       '<div class="ov-vchips" id="ag-approval-chips">' +
         chip('ask', 'ASK FOR APPROVAL', 'stops to check with you before it writes, runs, or reaches out', !full) +
@@ -1978,8 +2138,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const p = Personas.get ? Personas.get(cur) : null;
     const chips = Personas.list().map(x =>
       '<button type="button" class="ov-vchip' + (x.id === cur ? ' sel' : '') + '" data-persona="' + esc(x.id) + '" data-name="' + esc(x.name) + '" title="' + esc(x.vibe || '') + '" aria-pressed="' + (x.id === cur ? 'true' : 'false') + '">' + esc(x.name) + '</button>').join('');
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">◉ personality</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-persona-card">' +
+      '<div class="cf-head"><span class="cf-file">◉ personality</span></div>' +
       '<div class="cf-desc">How this agent talks — in chat, delivered work, and its ambient lines on the floor. Changes the delivery only, never the work (or the station voice). Pick one to apply it immediately.</div>' +
       '<div class="ov-vchips" id="ag-persona-chips">' + chips + '</div>' +
       // sample-reply preview REMOVED (Andrew, 2026-07-20) — the sel chip + vibe tooltip carry the choice.
@@ -2003,8 +2163,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       ? '<div class="set-row mc-pick-row"><label for="ag-model-pick-model">MODEL</label>' +
           '<div class="mc-pick" id="ag-model-pick">' + ModelPicker.shellHTML({ id: 'ag-model-pick', inheritLabel: 'Follow station default', ariaLabel: 'Agent model', effort: true }) + '</div></div>'
       : '';
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">▣ model</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-model-card">' +
+      '<div class="cf-head"><span class="cf-file">▣ model</span></div>' +
       '<div class="cf-desc">What this agent runs on. Pick a model to run this agent on it everywhere — chat, delegated work, scheduled routines — independent of the station default in the COMMS dock. “Follow station default” clears the pin.</div>' +
       picker +
       '<details class="mc-adv"' + ((pinned && !hasPicker) ? ' open' : '') + '><summary>advanced — type a model id</summary>' +
@@ -2025,6 +2185,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // .md save wiring on purpose: that handler used to omit the id, so a doc edit landed on the focused agent
     // instead of this one (see App.applyAgentConfig's targeting note).
     const a = present[sel];
+    // CONFIG group jump-nav: scroll the pane so the chosen rule sits at the top. Same landing math as BRIEF's
+    // setup-strip jump (offsetTop delta, not scrollIntoView — the minimum scroll leaves the target at the bottom
+    // edge, which reads as "nothing happened"), and it does NOT rerender: the pane is already the right one.
+    body.querySelectorAll('[data-cfjump]').forEach(b => b.addEventListener('click', () => {
+      const w = open.agents; if (!w) return;
+      const target = w.querySelector('#' + b.dataset.cfjump), pane = w.querySelector('.con-pane');
+      if (!target || !pane) return;
+      sfx('click');
+      pane.scrollTop = Math.max(0, target.offsetTop - pane.offsetTop - 8);
+    }));
     body.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
       agEdit[b.dataset.edit] = true; sfx('click'); rerender('agents');
     }));
@@ -2110,7 +2280,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const epTruth = body.querySelector('#ag-execution-truth');
       const currentId = executionProfileId(a);
       const paintBackendTruth = (row) => {
-        const p = EXECUTION_PROFILES.find(x => x.id === executionProfileId(a)) || EXECUTION_PROFILES[0];
+        const p = executionProfileOf(executionProfileId(a));
         const routed = String((row && row.profile && row.profile.effectiveBackend) || 'unknown').toUpperCase();
         const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
         if (epTruth) epTruth.innerHTML = 'ROUTES NEXT COMMAND TO <b>' + esc(routed) + '</b> · AVAILABILITY <b>' + esc(availability) + '</b>' +
@@ -2118,12 +2288,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       };
       Harness.api.get('/api/execution-profiles').then(j => paintBackendTruth((j && j.agents || []).find(x => x.agentId === (a && a.id)))).catch(() => paintBackendTruth(null));
       let epArmed = null;
-      const epDisarm = () => { if (epArmed) { epArmed.textContent = epArmed.dataset.name; epArmed.classList.remove('arm'); epArmed = null; } };
+      // a chip's rest face is METER + LABEL — restoring `dataset.name` alone would silently strip the
+      // reach meter off whichever chip was last armed (an arm/disarm must be a no-op on the face).
+      const epFace = (chip) => reachMeter(Number(chip.dataset.reach) || 0) + esc(chip.dataset.name || '');
+      const epDisarm = () => { if (epArmed) { epArmed.innerHTML = epFace(epArmed); epArmed.classList.remove('arm'); epArmed = null; } };
       epWrap.querySelectorAll('[data-execution-profile]').forEach(chip => chip.addEventListener('click', () => {
         const id = chip.dataset.executionProfile;
         if (!id || id === currentId) { epDisarm(); return; }
         if (id === 'this-computer' && epArmed !== chip) {
-          epDisarm(); epArmed = chip; chip.classList.add('arm'); chip.textContent = 'THIS COMPUTER — SURE? broad host paths'; sfx('click'); return;
+          epDisarm(); epArmed = chip; chip.classList.add('arm'); chip.textContent = 'SURE? IT COULD READ ANY FILE HERE'; sfx('click'); return;
         }
         epDisarm();
         if (!(access.config && access.config.setExecutionProfile)) { notify('execution profile change unavailable', 'bad'); sfx('bad'); return; }
@@ -2288,13 +2461,30 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // and the "model tag → CONFIG" shortcut. access.config.setName renames; a missing setName degrades to a notice.
   function wireHead(body) {
     const a = present[sel];
-    const goCfg = body.querySelector('.ag-tags .tag.model[data-goconfig]');
-    if (goCfg) {
-      // console mode: "jump to CONFIG" = land the rail on the config section, then rerender (mountConsole reads consoleSection).
-      const jump = () => { consoleSection['agents'] = 'config'; sfx('click'); rerender('agents'); };
-      goCfg.addEventListener('click', jump);
-      goCfg.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); jump(); } });
-    }
+    /* "jump to CONFIG" = land the rail on the config section, then rerender (mountConsole reads consoleSection).
+       Every element carrying data-goconfig opts in: the hero's MODEL tag (value '1' — the section, no anchor) and
+       BRIEF's setup rows (value = the target card's id). The anchor scroll runs AFTER the rerender has rebuilt the
+       pane, so it must re-query the live DOM rather than close over a node the rerender has already thrown away —
+       and it lands the card at the TOP of the pane rather than merely "into view", because a 1565px column
+       scrolled the minimum distance leaves the card you asked for hugging the bottom edge. */
+    const jumpToConfig = (anchor) => {
+      consoleSection['agents'] = 'config'; sfx('click'); rerender('agents');
+      if (!anchor || anchor === '1') return;
+      requestAnimationFrame(() => {
+        const w = open.agents; if (!w) return;
+        const card = w.querySelector('#' + anchor), pane = w.querySelector('.con-pane');
+        if (!card || !pane) return;
+        pane.scrollTop = Math.max(0, card.offsetTop - pane.offsetTop - 8);
+        card.classList.add('cf-jumped');
+        setTimeout(() => { try { card.classList.remove('cf-jumped'); } catch (_) {} }, 1400);
+      });
+    };
+    body.querySelectorAll('[data-goconfig]').forEach(el => {
+      const go = () => jumpToConfig(el.dataset.goconfig);
+      el.addEventListener('click', go);
+      // a real <button> already fires click on Enter/Space — only the faux-button span (the hero MODEL tag) needs this.
+      if (el.tagName !== 'BUTTON') el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
+    });
     const rn = body.querySelector('#ag-rename-btn');
     if (rn) rn.addEventListener('click', () => { agEdit['__name'] = true; sfx('click'); rerender('agents'); });
     const commit = () => {
@@ -2402,19 +2592,82 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // onto window.DossierLanes at load time, and every rerender rebuilds them against the CURRENT
     // selected agent (they read H.present/H.sel), so the roster rail drives them like any other tab.
     const lanes = (window.DossierLanes || []).map(fn => { try { return fn(body); } catch (_) { return null; } }).filter(l => l && Array.isArray(l.sections));
+    /* NAV CONDENSE 3 (2026-08-07 dossier UX pass) — SEVEN tabs became FIVE, because the measurement said the
+       split was doing no work: BRIEF held 39 words and one control, SKILLS 411px of read-only grid, RESTORE 243px
+       of empty state, while CONFIG carried 1565px / 9 cards / 62 controls on its own. Tabs are supposed to divide
+       a large surface; six of seven were dividing nothing.
+         · SKILLS  → folds into BRIEF ("CAN DO") — it is read-only capability, part of who this unit is.
+         · RESTORE → folds into RECORD, next to the run history it rolls back. One lane for "what it did".
+       Lane sections (windows/logbook.js, windows/rewind.js) are still built + wired by their own modules; only
+       the MOUNT POINT changed, so both keep their live agent binding and their wire() pass below. `laneSec(id)`
+       looks a lane up by its declared id and returns its build fn, so a lane that fails to register degrades to a
+       missing block rather than a thrown render. */
+    const laneSec = (id) => {
+      for (const l of lanes) for (const s of l.sections) if (s.id === id) return s;
+      return null;
+    };
+    /* Build a jump row from the `.sec` block headers a pane ALREADY rendered, and prepend it. Reading the DOM
+       instead of taking a list means the contents can never drift from the contents page — the failure this
+       exists to prevent is a block being present but unreachable, which is exactly what folding LOGBOOK and
+       RESTORE into one lane risked. Stamps an id on each header so the click has something to scroll to; the
+       scroll math matches CONFIG's (offsetTop delta, never scrollIntoView). No-ops below two blocks — a table
+       of contents for one thing is noise. */
+    const addSectionJumpNav = (elx) => {
+      const heads = Array.from(elx.querySelectorAll(':scope > .sec, :scope > .con-lane > .sec'));
+      if (heads.length < 2) return;
+      const items = heads.map((h, i) => {
+        const id = 'rec-blk-' + i;
+        h.id = id;
+        const l = h.querySelector('.sec-l');
+        return { id, label: (l ? l.textContent : '').trim() };
+      }).filter(it => it.label);
+      if (items.length < 2) return;
+      const nav = mkEl('div', 'cf-nav',
+        items.map(it => '<button type="button" class="cf-nav-b" data-secjump="' + it.id + '">' + esc(it.label) + '</button>').join(''));
+      elx.insertBefore(nav, elx.firstChild);
+      nav.querySelectorAll('[data-secjump]').forEach(b => b.addEventListener('click', () => {
+        const target = elx.querySelector('#' + b.dataset.secjump);
+        const pane = elx.closest('.con-pane');
+        if (!target || !pane) return;
+        sfx('click');
+        pane.scrollTop = Math.max(0, target.offsetTop - pane.offsetTop - 8);
+      }));
+    };
+    const mountLane = (id) => (elx) => {
+      const s = laneSec(id);
+      if (!s) { elx.innerHTML = ''; return; }
+      const sub = mkEl('div', 'con-lane', '');
+      elx.appendChild(sub);
+      try { s.build(sub); } catch (_) { sub.innerHTML = ''; }
+    };
     const host = mountConsole(body, 'agents', [
-      { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is right now — identity, level, purpose, and live status.',
+      /* TAB ORDER (Andrew, 2026-08-07): BRIEF · GROWTH · RECORD · MEMORY · CONFIG. GROWTH sits second,
+         directly after BRIEF, because the two answer the same question at different depths — BRIEF states
+         the level and kudos, GROWTH is the readout behind those numbers. Putting RECORD between them split
+         a pair. Read as a sentence: who it is → how it's doing → what it did → what it knows → how to
+         change it. This is the array order and mountConsole renders it verbatim; there is no other list. */
+      { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is, how it is set up, and what it can do.',
         build: frag(agHead(a, act) + agBrief(a)) },
       { id: 'growth', label: 'GROWTH', glyph: '★', desc: 'XP ladder, satisfaction gauge, trophy case, and station prestige.',
         build: frag(agGrowth(a)) },
+      { id: 'record', label: 'RECORD', glyph: '▦', desc: 'What this agent has actually done — run history, dead-run post-mortems, and workspace restore points.',
+        build: (elx) => {
+          mountLane('logbook')(elx);
+          elx.insertAdjacentHTML('beforeend', '<div class="sec"><span class="sec-l">RESTORE POINTS</span><span class="sec-r"></span><span class="sec-nd"></span></div>');
+          mountLane('restore')(elx);
+          /* RECORD merges what were two separate tabs, and it measures 808px inside a 720px pane — so RESTORE
+             POINTS, a whole former tab, landed just under the fold with nothing on screen saying it exists.
+             Folding a tab away is only allowed if what it held stays FINDABLE. Same jump row CONFIG carries,
+             built by reading the block headers this pane actually rendered (rather than a hardcoded list) so a
+             lane that adds or renames a block cannot silently fall out of its own contents. */
+          addSectionJumpNav(elx);
+        } },
       { id: 'memory', label: 'MEMORY', glyph: '◈', desc: 'Every belief this agent has kept, traced to the run that earned it.',
         build: frag(agMemory(a)) },
-      { id: 'skills', label: 'SKILLS', glyph: '◇', desc: 'The capabilities granted by the objects at this agent’s workstation.',
-        build: frag(agSkills(a && a.id)) },
-      { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'The markdown files that compose this agent’s prompt, plus its per-agent model pin.',
+      { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'Everything you can change about this agent — its prompt files, how it behaves, and how it looks.',
         build: frag(agConfig(a)) }
-    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), {
-      // tabsTop: the five section tabs (BRIEF/GROWTH/MEMORY/SKILLS/CONFIG) render as a horizontal strip at the
+    ], {
+      // tabsTop: the five section tabs (BRIEF/GROWTH/RECORD/MEMORY/CONFIG) render as a horizontal strip at the
       // top of the right pane; the left rail becomes the agent roster full-height (railTop below).
       tabsTop: true,
       search: true, searchPlaceholder: 'search dossier…',
@@ -2471,6 +2724,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   function drawPortrait(cv, a) {
     if (!cv) return;
+    /* DPR-aware backing store. The canvas used to be a fixed 84×112 bitmap inside an 88×112 CSS box — a
+       1.048× browser stretch even at DPR 1, and on a HiDPI screen the whole thing was upscaled again. The
+       backing store now matches the CSS box times an INTEGER device factor, so the browser never resamples
+       and every scale in this function stays a whole number of device pixels. */
+    const dev = Math.max(1, Math.min(3, Math.round((typeof window !== 'undefined' && window.devicePixelRatio) || 1)));
+    if (cv.width !== PORTRAIT_W * dev || cv.height !== PORTRAIT_H * dev) {
+      cv.width = PORTRAIT_W * dev; cv.height = PORTRAIT_H * dev;
+    }
+    cv.style.width = PORTRAIT_W + 'px'; cv.style.height = PORTRAIT_H + 'px';
     const pctx = cv.getContext('2d');
     pctx.clearRect(0, 0, cv.width, cv.height);
     if (!(typeof SPRITES === 'object' && SPRITES.ready) || !SPRITES.isSkinReady(a.skin)) {
@@ -2483,19 +2745,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       }
       return;
     }
-    // drawBody sizes sprites for the FLOOR: each skin at its own small footprint scale (ULTRON ~0.6, most
-    // skins ~0.37) on a 92px master that's mostly transparent — reused as-is the body lands tiny and adrift
-    // in the frame, and DIFFERENTLY sized per skin. For the portrait we want every agent to FILL the frame
-    // the same, independent of how small it walks on the floor. So: render the body once to an offscreen
-    // buffer (real skin, noShadow), crop to its actual non-transparent bounds, then blit it in scaled to
-    // fill — preserving aspect and foot-anchoring to the bottom. (3× master in the buffer keeps detail.)
+    /* PORTRAIT RESOLUTION CHAIN (rebuilt 2026-08-07 — the old one produced a white blob).
+       Measured, not guessed: every one of the 36 shipped skins is a 92×92 sheet containing a character only
+       39–46px tall (median 43) — the sheet is mostly transparent padding. The old pipeline resampled that
+       character TWICE, both times fractionally and both times with smoothing on: drawBody drew it at the
+       FLOOR scale (~0.385) inside a 3× buffer, then the blit stretched the crop ~1.96× to fill the frame.
+       Net ≈2.3× bilinear upscale of a 43px pixel-art sprite: 26.6% of its opaque pixels came out as soft
+       anti-aliased edge, and the visor, eyes and suit detail dissolved.
+
+       Two rules, and they are opposites — which is why the old code got it wrong by applying one everywhere:
+         · DOWNSCALE → smooth. That is the floor draw's law (drawBody resampling the 92px master down to a
+           ~35px footprint); never NN-crush it, that is what mushed the crew before.
+         · UPSCALE → nearest-neighbour, at an INTEGER factor. Blowing pixel art up with interpolation is
+           precisely what destroys it. Chunky pixels are the intended look, not an artefact to smooth away.
+       So: cancel drawBody's floor scale (SPRITES.bodyScale — asked of the engine, never re-derived) to land
+       the master 1:1 in the buffer, then integer-NN it into the frame. The frame is sized so the largest
+       shipped character (43×46, pikachu) still clears ×2, which means EVERY skin lands on exactly ×2 — the
+       roster reads at one consistent size instead of each skin finding its own fractional fit. */
     const buf = drawPortrait._buf || (drawPortrait._buf = document.createElement('canvas'));
-    const BW = 200, BH = 200; buf.width = BW; buf.height = BH;
+    const BW = 220, BH = 220; buf.width = BW; buf.height = BH;
     const bctx = buf.getContext('2d');
     bctx.clearRect(0, 0, BW, BH);
+    bctx.imageSmoothingEnabled = false;   // the blit below is 1:1; keep it exact
     bctx.save();
-    bctx.translate(BW / 2, BH - 14);
-    bctx.scale(3, 3);
+    bctx.translate(BW / 2, BH - 40);
+    // 1/sc makes drawBody's own `dw = frame.width * sc` resolve to frame.width — an exact, unresampled
+    // 1:1 blit of the master. A missing/zero scale falls back to the old 3× rather than dividing by zero.
+    const sc = (typeof SPRITES.bodyScale === 'function') ? SPRITES.bodyScale({ id: a.id, skin: a.skin }) : 0;
+    bctx.scale(sc > 0 ? 1 / sc : 3, sc > 0 ? 1 / sc : 3);
     SPRITES.drawBody(bctx, { id: a.id, skin: a.skin, px: 0, py: 0, dir: 'south', color: a.color, state: 'idle', sitting: false, working: false, phase: 0, noShadow: true }, performance.now());
     bctx.restore();
     // measure the drawn body's real bounds (alpha > 16), so the fit ignores the master's transparent padding
@@ -2506,13 +2783,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     if (!any) return;
     const sw = maxX - minX + 1, sh = maxY - minY + 1;
-    // fit into the frame with a small margin, aspect preserved, feet to the bottom
-    const padX = 8, padTop = 8, padBot = 6;
-    const k = Math.min((cv.width - padX * 2) / sw, (cv.height - padTop - padBot) / sh);
+    // INTEGER fit, floored at 1× — a fractional k is the whole defect, and 1× (native) is always honest.
+    // Pads are device px so the fit math and the drawn result share one coordinate space.
+    const padX = 6 * dev, padTop = 6 * dev, padBot = 6 * dev;
+    const kFit = Math.min((cv.width - padX * 2) / sw, (cv.height - padTop - padBot) / sh);
+    const k = Math.max(1, Math.floor(kFit));
     const dw = sw * k, dh = sh * k;
-    pctx.imageSmoothingEnabled = true;
-    if ('imageSmoothingQuality' in pctx) pctx.imageSmoothingQuality = 'high';
-    pctx.drawImage(buf, minX, minY, sw, sh, (cv.width - dw) / 2, cv.height - padBot - dh, dw, dh);
+    pctx.imageSmoothingEnabled = false;   // NN: preserve the artist's pixels instead of interpolating them away
+    // integer destination origin too — a half-pixel offset reintroduces the blur the NN flag just removed
+    pctx.drawImage(buf, minX, minY, sw, sh,
+      Math.round((cv.width - dw) / 2), Math.round(cv.height - padBot - dh), dw, dh);
   }
   // BRIEF live telemetry, painted in place (no DOM rebuild → open CONFIG/MEMORY editors are never wiped).
   // Touches only: the hero status dot + role line (agHead), and the roster idle/working hints (railTop). Every
@@ -2543,7 +2823,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       st.classList.toggle('working', live);
     });
   }
-  function openAgent(i) { sel = i; if (open.agents) { if (minimized.agents) restoreTerm('agents'); rerender('agents'); } else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { console: true, feature: true }); }
+  /* className 'dossier' pins the shell to a STEADY height (.term.console.dossier in app.css). Without it the
+     console is height:auto AND CSS-centred, so every tab whose content is a different length re-centres the whole
+     window: measured live, the tab strip you just clicked moved between y=236 (CONFIG) and y=387 (RESTORE) — up to
+     151px out from under the cursor, on the control you are actively using. The pane scrolls; the chrome holds still. */
+  function openAgent(i) { sel = i; if (open.agents) { if (minimized.agents) restoreTerm('agents'); rerender('agents'); } else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { console: true, feature: true, className: 'dossier' }); }
 
   /* ============== SKILLS — capability readout (mirrors the sidecar CAP_REGISTRY) ==============
      The agent's real tools come from the OBJECTS at its workstation (object = capability — see
@@ -2595,7 +2879,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="sk-exchange-form"><label for="sk-exchange-url">SKILL.MD SOURCE</label>' +
         '<div class="sk-exchange-row"><input id="sk-exchange-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/blob/main/SKILL.md">' +
         '<button id="sk-exchange-inspect" class="consent-btn" type="button">INSPECT</button></div></div>' +
-      '<div id="sk-exchange-preview" class="sk-exchange-preview"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
+      '<div id="sk-exchange-preview" class="sk-exchange-preview" role="status" aria-live="polite"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
     /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
        Truthful by construction: if the provider has no native voice endpoint we say so rather than
        offering choices that would do nothing, and the note about WHEN a change takes effect is shown
@@ -2720,7 +3004,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const active = skills.filter(s => s.enabled && s.available).length;
     const agentName = (present[sel] && present[sel].name) || agentId;
     const groups = groupSkillsByState(skills);
-    let html = '<div class="sk-lib-sum">' + skills.length + ' recipe' + (skills.length === 1 ? '' : 's') +
+    let html = '<div class="sk-lib-sum">' + skills.length + ' skill' + (skills.length === 1 ? '' : 's') +
       ' · <b>' + active + '</b> active for ' + esc(agentName) + '</div>';
     // A pill SWITCH (the user's choice) — reads unambiguously as a control, not a status dot. data-toggle drives the round-trip.
     const switchHTML = (s) =>
@@ -4515,6 +4799,42 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
       });
     });
+
+    // LIVE DOCTOR: explicit second consent, then one bounded host request. Results stay visible and copyable;
+    // textContent is used throughout so a provider/transport error can never become markup.
+    const liveBtn = body.querySelector('#diag-live-run');
+    const liveConsent = body.querySelector('#diag-live-consent');
+    const liveMsg = body.querySelector('#diag-live-msg');
+    const liveOut = body.querySelector('#diag-live-out');
+    const liveCopy = body.querySelector('#diag-live-copy');
+    if (liveBtn) liveBtn.addEventListener('click', () => {
+      if (!liveConsent || !liveConsent.checked) {
+        if (liveMsg) { liveMsg.textContent = 'check the live-probe consent first'; liveMsg.className = 'msg'; }
+        return;
+      }
+      if (typeof Diag === 'undefined' || typeof Diag.runLive !== 'function') {
+        if (liveMsg) liveMsg.textContent = 'live doctor unavailable';
+        return;
+      }
+      liveBtn.disabled = true; liveConsent.disabled = true;
+      if (liveMsg) { liveMsg.textContent = 'running bounded live probes…'; liveMsg.className = 'msg'; }
+      if (liveOut) { liveOut.hidden = true; liveOut.textContent = ''; }
+      if (liveCopy) liveCopy.hidden = true;
+      Diag.runLive({ confirmed: true }).then(result => {
+        if (liveMsg) { liveMsg.textContent = 'live doctor finished — receipt is ready'; liveMsg.className = 'msg ok'; }
+        if (liveOut) { liveOut.textContent = result.text; liveOut.hidden = false; }
+        if (liveCopy) { liveCopy.hidden = false; liveCopy.dataset.receipt = result.text; }
+      }).catch(e => {
+        if (liveMsg) { liveMsg.textContent = String((e && e.message) || 'live doctor failed'); liveMsg.className = 'msg'; }
+      }).finally(() => {
+        liveBtn.disabled = false; liveConsent.disabled = false; liveConsent.checked = false;
+      });
+    });
+    if (liveCopy) liveCopy.addEventListener('click', () => {
+      const text = String(liveCopy.dataset.receipt || '');
+      if (!text || typeof Diag === 'undefined' || typeof Diag.copyText !== 'function') return;
+      Diag.copyText(text).then(ok => { liveCopy.textContent = ok ? '✓ RECEIPT COPIED' : 'SELECT THE RECEIPT TO COPY'; });
+    });
   }
 
   function wireBackup(body) {
@@ -4529,7 +4849,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         theme: store.settings.theme, themeHue: store.settings.themeHue,
         themeSat: store.settings.themeSat, themeGlow: store.settings.themeGlow,
         panelBright: store.settings.panelBright,
-        flicker: store.settings.flicker,
+        flicker: store.settings.flicker, crtGlass: store.settings.crtGlass,
         sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
@@ -4688,34 +5008,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
       '<div id="ns-report"></div>';
     const secPermissions =
-      // PERMISSIONS — reorganized (2026-08-05): ONE pane answers the three questions users kept hunting across
-      // surfaces. 1 · WHO asks first — the per-agent ASK/FULL ACCESS switch (previously reachable only via each
-      // dossier CONFIG card or /yolo) plus a whole-station switch. 2 · HOW FAR it may go unattended — the
-      // WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here). 3 · WHAT is pre-blessed — the standing-grant
-      // ledger. No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
-      // ── 0 · FULL BYPASS — the master switch, above everything it outranks. Its own CARD (not a
-      // key-list row): it outranks every control below it, so it carries the visual weight of one.
-      '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
-      // ── 1 · EXECUTION PROFILE ──
-      '<h4 class="ms-h">1 · EXECUTION PROFILE <span class="dim">— where it runs and what scope it receives</span></h4>' +
-      '<p class="set-about perm-lede">Safe Cell, Remote SSH, Trusted Project, and This Computer set runtime, filesystem reach, and the baseline terminal/files/connector tools. None grants real mouse, keyboard, or screen control.</p>' +
-      '<div class="perm-list" id="perm-execution"></div>' +
-      // ── 2 · APPROVAL ──
-      '<h4 class="ms-h">2 · APPROVAL PROMPTS <span class="dim">— whether risky calls pause for you</span></h4>' +
-      '<p class="set-about perm-lede">Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>. This posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. <code>/yolo</code> remains the shortcut.</p>' +
-      '<div class="perm-list" id="perm-approval"></div>' +
+      // PERMISSIONS — the plain-language pass (2026-08-07). The pane was correct and unreadable: four numbered
+      // blocks of in-house vocabulary, two separate crew tables, no summary, and the most advanced control in
+      // the pane (Docker housekeeping) sitting where the primary content belongs. It now reads as one ordinary
+      // sentence and four questions, in the order a person actually asks them:
+      //   AT A GLANCE  — what is my station allowed to do right now, counted from the live roster.
+      //   1 · YOUR CREW      — ONE row per agent: what it CAN REACH, and whether it ASKS FIRST.
+      //   2 · SKIP EVERY PROMPT — the master override of the ASKS FIRST column, sitting under what it overrides.
+      //   3 · WHILE YOU'RE AWAY — the WAIT→FREE ladder (the SAME dial as AUTONOMY, mirrored here).
+      //   4 · STANDING APPROVALS — the pre-blessed ledger.
+      //   ADVANCED     — idle Safe Cell cleanup, closed by default.
+      // No inner "PERMISSIONS" h4 — the console section head already prints it (the PROVIDERS rule).
+      // ── AT A GLANCE — the pane's answer to "what is my station allowed to do RIGHT NOW", in one
+      // ordinary sentence, computed from the live roster + the server's bypass truth. Beginners opened
+      // this pane and met four numbered blocks of vocabulary with no summary; this is the summary. It
+      // asserts nothing the harness can't prove — every clause counts real agent records.
+      '<div id="perm-glance" class="perm-glance"><p class="pg-line">reading your crew…</p></div>' +
+      // ── 1 · YOUR CREW — ONE row per agent carrying BOTH per-agent axes.
+      // These used to be two separate lists, ~40 rows apart, each re-listing the whole crew: to set up one
+      // agent you scrolled between two tables and matched names by eye. They are independent settings but
+      // they belong to the SAME subject, so they belong in the same row.
+      '<h4 class="ms-h">1 · YOUR CREW <span class="dim">— what each one can reach, and whether it asks you first</span></h4>' +
+      '<p class="set-about perm-lede">Two separate questions per crew member. <b>CAN REACH</b> is how much of this computer it may touch — the dots run from sealed-off to almost-everything. <b>ASKS FIRST</b> is whether risky calls stop and wait for your yes. Neither one adds tools, and neither grants real mouse, keyboard, or screen control. <code>/yolo</code> is the shortcut for the no-prompts posture.</p>' +
+      '<div class="perm-list" id="perm-crew"></div>' +
       '<div class="mc-acts perm-allacts">' +
-        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
         '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
+        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
       '</div>' +
-      '<div class="mc-hint">The zero-prompt posture applies watched or unattended, within each agent’s execution profile. Protected host actions remain blocked automatically.</div>' +
-      // ── 2 · UNATTENDED LEVEL ──
+      '<div class="mc-hint">These two buttons change the ASKS FIRST column only — nobody’s reach changes.</div>' +
+      '<div class="mc-hint">Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. Protected host actions remain blocked automatically.</div>' +
+      // ── 2 · SKIP EVERY PROMPT — the master switch. It sits directly UNDER the column it overrides
+      // (the ASKS FIRST column above), because that is the only thing it does; floating unlabelled at
+      // the very top of the pane it read like a fifth unrelated concept.
+      '<h4 class="ms-h">2 · SKIP EVERY PROMPT <span class="dim">— one switch that overrides the ASKS FIRST column above</span></h4>' +
+      '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
+      // ── 3 · UNATTENDED LEVEL ──
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
       // (test-pinned, and it says the stakes plainly).
-      '<h4 class="ms-h">3 · UNATTENDED LEVEL <span class="dim">— how far it may go while you’re away</span></h4>' +
-      '<p class="set-about perm-lede">The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
+      '<h4 class="ms-h">3 · WHILE YOU’RE AWAY <span class="dim">— how much the station starts on its own, unattended</span></h4>' +
+      '<p class="set-about perm-lede">Blocks 1 and 2 answer <i>what</i> it may do when it acts. This answers <i>whether it starts anything at all</i> when you are not here. The same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY — change it in either place.</p>' +
       '<p class="set-about perm-lede" id="perm-desc"></p>' +
       '<p class="set-about perm-lede" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       '<div class="set-themes" id="perm-level">' +
@@ -4724,10 +5057,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
-      // ── 3 · STANDING APPROVALS ──
-      '<h4 class="ms-h">4 · STANDING APPROVALS <span class="dim">— what it may already do unattended</span></h4>' +
+      // ── 4 · STANDING APPROVALS ──
+      '<h4 class="ms-h">4 · STANDING APPROVALS <span class="dim">— the things you already said yes to, for good</span></h4>' +
+      // (the "answer ALWAYS and it lands here" teaching is the ledger's own empty state — repeating it in
+      // the lede printed the same sentence twice, one line apart, on a fresh station)
       '<p class="set-about perm-lede">Every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time).</p>' +
-      '<div class="key-list perm-grants" id="perm-grants"></div>';
+      '<div class="key-list perm-grants" id="perm-grants"></div>' +
+      // ── ADVANCED — the station-wide Docker housekeeping policy. It used to be the FIRST thing under
+      // the execution-profile header, above every agent: the most advanced control in the pane sitting
+      // where the primary content belongs. It is a maintenance knob, so it lives at the bottom, closed.
+      '<details class="mc-adv perm-adv" id="perm-advanced">' +
+        '<summary>ADVANCED — idle Safe Cell cleanup</summary>' +
+        '<div id="perm-exec-policy"></div>' +
+      '</details>';
     const secBudget =
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
       // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
@@ -4828,6 +5170,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + title + '">' + name + '</button>';
       }).join('') +
       '</div>' +
+      // CRT — its own section, and a LEVEL rather than a named mode. Framing this as an
+      // accessibility fix ("easy read") tells the people who like the tube that they are enduring
+      // something, which is not what most of them report. There is no OFF: the station is a CRT.
+      // SCREEN FLICKER lives here too — it is a CRT effect, not a display one.
+      '<h4 class="ms-h">CRT <span class="dim">— how strong the tube reads</span></h4>' +
+      '<div class="set-row"><span class="dim">DULLED thins the glass over the panels &amp; COMMS so text sits clearer under it. The station keeps its tube either way.</span></div>' +
+      '<div class="set-themes" id="set-crtglass">' +
+      GLASS_STEPS.map(([v, name, why]) => {
+        const cur = resolveGlass(s.crtGlass);
+        return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-glass="' + v + '" title="' + why + '">' + name + '</button>';
+      }).join('') +
+      '</div>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
       '<h4 class="ms-h">SOUND</h4>' +
@@ -4851,11 +5205,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // "POWER" — this header held only KEEP COMPUTER AWAKE, so "SCHEDULED TASKS" mislabelled it.
       '<h4 class="ms-h">POWER</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">— ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
-      // Lane 4D — LAUNCH AT LOGIN (opt-in, default OFF) + the honest background-lifecycle explainer. Both are
-      // desktop-only; the checkbox is disabled and the line names the browser reality otherwise. The explainer
+      // Lane 4D — native startup/tray choices + the honest background-lifecycle explainer. All controls are
+      // desktop-only; they stay disabled and the line names the browser reality otherwise. The explainer
       // is filled live from the tray supervisor's REAL armed state (wireLifecycle) so it never over-claims.
       '<label class="set-row"><input type="checkbox" id="set-autostart" disabled> LAUNCH AT LOGIN <span class="dim">— ' + (lifecycleDesktop ? 'start StarNet automatically when you sign in' : 'desktop app only') + '</span></label>' +
-      '<p class="set-about" id="lifecycle-desc">' + (lifecycleDesktop ? 'Checking what runs in the background…' : 'In the desktop app, closing the window keeps the station running only when armed work (routines, connected channels, or the night shift) needs it — otherwise closing fully quits. This browser tab has no background process.') + '</p>' +
+      '<label class="set-row"><input type="checkbox" id="set-start-minimized" disabled> START MINIMIZED TO TRAY <span class="dim">— ' + (lifecycleDesktop ? 'begin each launch hidden; open from the tray icon' : 'desktop app only') + '</span></label>' +
+      '<label class="set-row"><input type="checkbox" id="set-close-to-tray" disabled> CLOSE WINDOW TO TRAY <span class="dim">— ' + (lifecycleDesktop ? 'X hides StarNet; tray Quit stops it' : 'desktop app only') + '</span></label>' +
+      '<p class="set-about" id="lifecycle-desc">' + (lifecycleDesktop ? 'Checking what runs in the background…' : 'The desktop app can stay supervised in the system tray. This browser tab has no background process.') + '</p>' +
       // ADVANCED — env-only runtime knobs, now editable + persisted server-side (P1-9). PRECEDENCE is spelled out
       // in the card: an explicit environment variable ALWAYS wins over a value saved here (a deploy stays in control).
       '<h4 class="ms-h">ADVANCED <span class="dim">— runtime limits (usually leave these alone)</span></h4>' +
@@ -4890,6 +5246,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       })()) +
       '<div class="set-save"><button class="bb sm" id="diag-copy">⧉ COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
+      '<h4 class="ms-h">LIVE DOCTOR <span class="dim">— opt-in runtime proof</span></h4>' +
+      '<p class="set-about">Runs one tiny response through the selected model, a harmless sentinel through the effective execution profile, an initialize/list round-trip for each enabled MCP server, and safe authentication/status checks for messaging channels. It sends no channel messages and exports no secrets.</p>' +
+      '<label class="set-check"><input type="checkbox" id="diag-live-consent"> I understand this performs real network and execution probes and may spend one tiny model response.</label>' +
+      '<div class="set-save"><button class="bb sm" id="diag-live-run">RUN LIVE DOCTOR</button><button class="bb sm" id="diag-live-copy" hidden>⧉ COPY RECEIPT</button></div>' +
+      '<div id="diag-live-msg" class="msg"></div>' +
+      '<pre id="diag-live-out" class="diag-pre" tabindex="0" hidden style="white-space:pre-wrap;overflow:auto;max-height:40vh"></pre>' +
       // P1.5 build provenance — the git commit this desktop binary was compiled from. Hidden until resolved (and
       // stays hidden in a plain browser, where there is no binary to prove). Populated in wireDiagnostics().
       '<div id="diag-build" class="dim" style="margin-top:6px;font-size:11px" hidden></div>' +
@@ -4935,7 +5297,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
       { id: 'nightshift', label: 'NIGHT SHIFT', glyph: '☾', desc: 'What the station is doing unattended right now, and its recent decision trail.', build: frag(secNightShift) },
-      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'Who asks first, how far it may go unattended, and every standing approval.', build: frag(secPermissions) },
+      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'What each crew member can reach, whether it asks you first, how far it goes while you’re away, and everything you’ve already approved.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
       // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
@@ -5001,6 +5363,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireSlider(brightIn, v => { s.panelBright = clampN(v, 0, 100, 0); sliderVal('#set-bright-val', s.panelBright + '%'); });
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
     bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    // CRT GLASS chips — same instant-apply + persist idiom as TEXT SIZE below.
+    const glChips = host.querySelectorAll('#set-crtglass [data-glass]');
+    const syncGlass = () => glChips.forEach(x => {
+      const on = x.dataset.glass === resolveGlass(s.crtGlass);
+      x.classList.toggle('sel', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    glChips.forEach(b => b.addEventListener('click', () => {
+      s.crtGlass = resolveGlass(b.dataset.glass);
+      applySettings(); save(); sfx('click');
+      syncGlass(); flashSaved(appMsg());
+    }));
     // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
     const tsChips = host.querySelectorAll('#set-textsize [data-ts]');
     const syncTextSize = () => tsChips.forEach(x => {
@@ -5064,10 +5438,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('bad');
       });
     });
-    // Lane 4D — LAUNCH AT LOGIN toggle + live background-lifecycle explainer. Desktop-only; both read REAL state
-    // (the OS autostart registration and the tray supervisor's armed truth), so neither line ever over-claims.
+    // Native startup/tray choices + live background explainer. The OS registration, persisted preferences, and
+    // armed-work snapshot are all read back from the desktop shell before controls claim a state.
     if (typeof Lifecycle !== 'undefined' && Lifecycle.isDesktop && Lifecycle.isDesktop()) {
       const autostartToggle = host.querySelector('#set-autostart');
+      const startMinimizedToggle = host.querySelector('#set-start-minimized');
+      const closeToTrayToggle = host.querySelector('#set-close-to-tray');
       const lifeDesc = host.querySelector('#lifecycle-desc');
       // Reflect the real OS autostart state onto the checkbox (default OFF; opt-in).
       Lifecycle.autostartStatus().then(st => {
@@ -5080,7 +5456,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!lifeDesc) return;
         Lifecycle.status().then(v => {
           if (!v || !v.supervised) { lifeDesc.textContent = 'Closing the window keeps the station running only when armed work needs it — otherwise it fully quits.'; return; }
-          if (v.armed) {
+          if (startMinimizedToggle) { startMinimizedToggle.disabled = false; startMinimizedToggle.checked = !!v.startMinimized; }
+          if (closeToTrayToggle) { closeToTrayToggle.disabled = false; closeToTrayToggle.checked = !!v.closeToTray; }
+          if (v.closeToTray) {
+            lifeDesc.textContent = 'Closing the window hides StarNet in the tray and keeps the station running. Use Quit StarNet in the tray menu to stop it.';
+          } else if (v.armed) {
             const why = (v.reasons && v.reasons.length) ? v.reasons.join(', ') : 'armed background work';
             lifeDesc.textContent = 'Right now, closing the window KEEPS the station running in the background (' + why + '). Quit fully from the tray icon. Otherwise closing would fully quit.';
           } else {
@@ -5103,6 +5483,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           sfx('bad');
         });
       });
+      const wireLifecyclePreference = (toggle, setter, label, field) => {
+        if (!toggle) return;
+        toggle.addEventListener('change', ev => {
+          const desired = !!ev.target.checked;
+          ev.target.disabled = true;
+          sfx('click');
+          setter(desired).then(st => {
+            const real = !!(st && st[field]);
+            ev.target.checked = real;
+            ev.target.disabled = false;
+            if (real !== desired) notify(label + ' could not be ' + (desired ? 'enabled' : 'disabled') + ' on this system.', 'warn');
+            else flashSaved(appMsg());
+            paintLife();
+          }).catch(err => {
+            ev.target.checked = !desired;
+            ev.target.disabled = false;
+            notify(label + ' failed: ' + ((err && err.message) || err), 'warn');
+            sfx('bad');
+          });
+        });
+      };
+      wireLifecyclePreference(startMinimizedToggle, Lifecycle.setStartMinimized, 'Start minimized', 'startMinimized');
+      wireLifecyclePreference(closeToTrayToggle, Lifecycle.setCloseToTray, 'Close to tray', 'closeToTray');
     }
     // PERMISSIONS panel repaint hook — set by the permissions block below; called whenever the granular dial
     // changes so the level highlight + #perm-desc stay in sync with the posture. No-op until that block wires it.
@@ -5546,21 +5949,93 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         return rows.join('');
       };
-      /* ── 1 · EXECUTION PROFILE rows — a real capability/runtime/filesystem envelope, independent of approval.
-         Each choice writes the same roster field consumed by runOnce's capability projection. */
-      const epList = host.querySelector('#perm-execution');
-      const paintExecutionProfiles = (truth) => {
-        if (!epList) return;
-        if (!present.length) { epList.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
-        const can = !!(access.config && access.config.setExecutionProfile);
+      /* ── 1 · YOUR CREW — ONE row per agent carrying BOTH per-agent axes: CAN REACH (the execution profile
+         — a real runtime/filesystem/tool envelope) and ASKS FIRST (the approval posture). They stay two
+         independent settings on two independent write paths (access.config.setExecutionProfile /
+         setApproval — the same paths the dossier cards and /yolo use); what changed is only that they are
+         rendered together, because they describe the SAME crew member. Split across two lists forty rows
+         apart, setting up one agent meant scrolling between two tables and matching names by eye.
+         `lastTruth` caches the sidecar's /api/execution-profiles answer so an APPROVAL flip can repaint the
+         row without knocking its routing line back to "checking…" (the row would otherwise lie downward). */
+      const crewList = host.querySelector('#perm-crew');
+      const policyHost = host.querySelector('#perm-exec-policy');
+      const glanceWrap = host.querySelector('#perm-glance');
+      let lastTruth = null;
+      /* IDLE SAFE CELLS — station-wide Docker housekeeping. It used to be the first row under the
+         execution-profile header, ABOVE every agent; it is maintenance, so it now lives in the closed
+         ADVANCED disclosure at the foot of the pane. */
+      const paintPolicy = (truth) => {
+        if (!policyHost) return;
         const idleMinutes = Number(truth && truth.policy && truth.policy.idleCleanupMinutes);
-        const policy = '<div class="perm-agent exec-policy"><span class="pa-name">IDLE SAFE CELLS</span><span class="pa-mode">STOP, NEVER DELETE</span>' +
-          '<span class="pa-state">Stops owned inactive Docker cells after the selected idle time. Active or background work is refused; the writable container layer remains.</span>' +
-          '<div class="set-row"><label for="exec-idle-min">MINUTES</label><input id="exec-idle-min" class="key-input" type="number" min="0" max="1440" step="1" value="' + esc(String(Number.isFinite(idleMinutes) ? idleMinutes : 60)) + '"><button class="bb sm" data-exec-policy-save>SAVE POLICY</button></div>' +
-          '<div class="mc-hint">0 disables automatic cleanup. STOP IDLE CELL uses the same active-work refusal.</div></div>';
-        epList.innerHTML = policy + present.map(a => {
+        policyHost.innerHTML =
+          '<p class="set-about perm-lede">A crew member on SAFE CELL runs inside a Docker container. This stops the containers that have been sitting idle — it <b>never deletes</b> them and it refuses to touch one that is still working, so nothing in them is lost.</p>' +
+          '<div class="set-row perm-policy-row"><label for="exec-idle-min">STOP AFTER (MINUTES)</label>' +
+            '<input id="exec-idle-min" class="key-input" type="number" min="0" max="1440" step="1" value="' + esc(String(Number.isFinite(idleMinutes) ? idleMinutes : 60)) + '">' +
+            '<button class="bb sm" data-exec-policy-save>SAVE POLICY</button></div>' +
+          '<div class="mc-hint">0 disables automatic cleanup. The STOP IDLE CELL button on a Safe Cell crew row uses the same active-work refusal.</div>';
+        const policySave = policyHost.querySelector('[data-exec-policy-save]');
+        if (policySave) policySave.addEventListener('click', () => {
+          const input = policyHost.querySelector('#exec-idle-min');
+          policySave.disabled = true;
+          Harness.api.post('/api/execution/policy', { idleCleanupMinutes: Number(input && input.value) }).then(j => {
+            notify(j && j.ok ? 'idle-cell cleanup policy saved' : ((j && j.error) || 'could not save cleanup policy'), j && j.ok ? 'good' : 'bad');
+            refreshExecutionProfiles();
+          }).catch(() => { notify('could not save cleanup policy', 'bad'); refreshExecutionProfiles(); });
+        });
+      };
+      /* AT A GLANCE — the plain-sentence summary, counted from the SAME live records the rows render, so it
+         can never claim a posture the roster does not hold. The standing floor is stated here once, in
+         ordinary words, because "what can it never do to me" is the first thing a beginner wants answered. */
+      const paintGlance = () => {
+        if (!glanceWrap) return;
+        const snap = PermissionsStore.snapshot() || {};
+        const bypassOn = !!(snap.loaded && (snap.masterBypass || snap.envFullAccess));
+        const n = present.length;
+        const noPrompt = present.filter(a => a && a.approvalMode === 'full').length;
+        const asks = n - noPrompt;
+        const broadest = present.reduce((best, a) => {
+          const p = executionProfileOf(executionProfileId(a));
+          return (!best || p.reach > best.p.reach) ? { p: p, a: a } : best;
+        }, null);
+        // Whole sentences per branch rather than glued fragments — a concatenated subject and verb
+        // disagree the moment the crew count is 1 ("Your one crew member stops and ask you").
+        const everyone = (verbSingular, verbPlural) => n === 1
+          ? 'Your one crew member ' + verbSingular
+          : 'All ' + n + ' of your crew ' + verbPlural;
+        let head;
+        if (!n) head = 'No crew on the station yet. Nothing can run until you summon someone.';
+        else if (bypassOn) head = everyone('runs', 'run') + ' without stopping to ask you — the override in block 2 is ON.';
+        else if (!noPrompt) head = everyone('stops and asks', 'stop and ask') + ' you before anything risky.';
+        else if (!asks) head = everyone('runs', 'run') + ' without stopping to ask you.';
+        else head = asks + ' of your ' + n + ' crew ask before anything risky; ' + noPrompt + ' run' + (noPrompt === 1 ? 's' : '') + ' without asking.';
+        const reachLine = broadest
+          ? 'Furthest reach on the station: <b>' + esc(broadest.p.label) + '</b> (' + esc(broadest.a.name || broadest.a.id) + ') — ' + esc(broadest.p.plain)
+          : '';
+        glanceWrap.classList.toggle('loud', bypassOn);
+        glanceWrap.innerHTML =
+          '<p class="pg-line">' + esc(head) + '</p>' +
+          (reachLine ? '<p class="pg-reach">' + reachLine + '</p>' : '') +
+          '<p class="pg-floor">No setting on this page can change these: protected files (<code>.env</code>, <code>.git</code>) are never writable, and nothing moves your real mouse or sees your real screen unless you pair a desktop lease by hand.</p>';
+      };
+      const paintCrew = () => {
+        if (!crewList) return;
+        paintGlance();
+        if (!present.length) { crewList.innerHTML = '<p class="set-about">No crew yet — summon an agent and it will appear here with its own two settings.</p>'; return; }
+        const can = !!(access.config && access.config.setExecutionProfile);
+        const canAsk = !!(access.config && access.config.setApproval);
+        const truth = lastTruth;
+        /* The block-2 override outranks every per-agent ASKS FIRST setting. A row that keeps printing
+           "ASKS" while the switch is ON is the app asserting a state the harness will not honour — the
+           exact truthful-telemetry violation this pane exists to avoid. So the ROW reports the EFFECTIVE
+           posture, and the stored setting stays visible (and editable) underneath, named as what it will
+           do once the override is off. Never one without the other: hiding the stored value would make
+           the chips lie in the other direction. */
+        const snap = PermissionsStore.snapshot() || {};
+        const overridden = !!(snap.loaded && (snap.masterBypass || snap.envFullAccess));
+        crewList.innerHTML = present.map(a => {
           const id = executionProfileId(a);
-          const p = EXECUTION_PROFILES.find(x => x.id === id) || EXECUTION_PROFILES[0];
+          const p = executionProfileOf(id);
+          const full = !!(a && a.approvalMode === 'full');
           const row = ((truth && truth.agents) || []).find(x => x.agentId === a.id);
           const routed = String((row && row.profile && row.profile.effectiveBackend) || 'checking…').toUpperCase();
           const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
@@ -5579,24 +6054,51 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               (sshConfigured ? '<button class="bb sm" data-ssh-sync="push">PUSH NOW</button><button class="bb sm" data-ssh-sync="pull">PULL NOW</button><button class="bb xs danger" data-ssh-clear>CLEAR TARGET</button>' : '') +
             '</div></details>';
           const cell = id === 'safe-cell' ? '<div class="mc-acts"><button class="bb sm" data-cell-stop="' + esc(String(a.id)) + '">STOP IDLE CELL</button></div>' : '';
-          return '<div class="perm-agent" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
-            '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-            '<span class="pa-mode">' + esc(p.label) + '</span>' +
-            '<span class="pa-state">routes next command to ' + esc(routed) + ' · availability ' + esc(availability) + ' · ' + esc(p.files) + ' · ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</span>' +
-            (can ? '<div class="ov-vchips">' + EXECUTION_PROFILES.map(x => '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + esc(x.label) + '</button>').join('') + '</div>' : '') +
-            cell + ssh +
+          // CAN REACH — the ladder, safest first, each chip wearing its own reach meter so the ordering is
+          // legible without reading five labels. THIS COMPUTER arms before it applies (see wireCrew).
+          const reachChips = EXECUTION_PROFILES.map(x =>
+            '<button class="ov-vchip' + (x.id === id ? ' sel' : '') + '" data-perm-profile-agent="' + esc(String(a.id)) + '" data-perm-profile="' + x.id + '" data-name="' + esc(x.label) + '" data-reach="' + x.reach + '" title="' + esc(x.plain) + '" aria-pressed="' + (x.id === id ? 'true' : 'false') + '">' + reachMeter(x.reach) + esc(x.label) + '</button>').join('');
+          // ASKS FIRST — a two-chip segmented control in the same grammar as the reach ladder above it. It
+          // replaced a single button whose label named the TARGET state ("RUN WITHOUT PROMPTS") while the tag
+          // beside it named the CURRENT one ("ASKS") — two opposite words on one row, read as a contradiction.
+          const askChips =
+            '<button class="ov-vchip' + (full ? '' : ' sel') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="ask" data-name="YES — ASK ME" aria-pressed="' + (full ? 'false' : 'true') + '">YES — ASK ME</button>' +
+            '<button class="ov-vchip' + (full ? ' sel' : '') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="full" data-name="NO — JUST DO IT" aria-pressed="' + (full ? 'true' : 'false') + '">NO — JUST DO IT</button>';
+          // the EFFECTIVE posture — what this agent will actually do on its next risky call
+          const effFull = full || overridden;
+          return '<div class="perm-agent perm-crew-row' + (effFull ? ' full' : '') + (overridden ? ' overridden' : '') + '" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
+            '<div class="pc-head">' +
+              '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
+              '<span class="pa-mode">' + (effFull ? 'NO PROMPTS' : 'ASKS') + '</span>' +
+              '<span class="pa-state">' + esc(p.short) + ' · ' + (effFull ? 'never stops to ask you' : 'stops before it writes, runs, or reaches out') + '</span>' +
+            '</div>' +
+            '<div class="pc-axis">' +
+              '<span class="pc-q">CAN REACH</span>' +
+              (can ? '<div class="ov-vchips pc-chips">' + reachChips + '</div>' : '<span class="pc-plain">' + esc(p.label) + '</span>') +
+              '<p class="pc-plain">' + esc(p.plain) + '</p>' +
+              '<p class="mc-hint pc-truth">routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
+            '</div>' +
+            '<div class="pc-axis pc-ask-axis">' +
+              '<span class="pc-q">ASKS FIRST' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY BLOCK 2</span>' : '') + '</span>' +
+              (canAsk ? '<div class="ov-vchips pc-chips">' + askChips + '</div>' : '') +
+              '<p class="pc-plain">' + (overridden
+                ? 'The switch in block 2 is ON, so this agent is not asking about anything right now. ' + (full
+                  ? 'It is also set to run without prompts on its own.'
+                  : 'Turn that switch off and it goes back to stopping for your yes, as selected here.')
+                : full
+                  ? 'It writes files, runs commands and reaches out on its own, without pausing — inside the reach above, and nowhere wider.'
+                  : 'Before it writes a file, runs a command, or reaches outside, it stops and waits for your yes.') + '</p>' +
+            '</div>' +
+            (cell || ssh ? '<div class="pc-more">' + cell + ssh + '</div>' : '') +
             '</div>';
         }).join('');
-        const policySave = epList.querySelector('[data-exec-policy-save]');
-        if (policySave) policySave.addEventListener('click', () => {
-          const input = epList.querySelector('#exec-idle-min');
-          policySave.disabled = true;
-          Harness.api.post('/api/execution/policy', { idleCleanupMinutes: Number(input && input.value) }).then(j => {
-            notify(j && j.ok ? 'idle-cell cleanup policy saved' : ((j && j.error) || 'could not save cleanup policy'), j && j.ok ? 'good' : 'bad');
-            refreshExecutionProfiles();
-          }).catch(() => { notify('could not save cleanup policy', 'bad'); refreshExecutionProfiles(); });
-        });
-        epList.querySelectorAll('[data-ssh-save]').forEach(button => button.addEventListener('click', () => {
+        wireCrew();
+      };
+      // Wiring is its own pass so paintCrew stays a pure template; every handler is re-bound against THIS
+      // paint's DOM (the rows are replaced wholesale on every repaint, so nothing survives to leak).
+      const wireCrew = () => {
+        if (!crewList) return;
+        crewList.querySelectorAll('[data-ssh-save]').forEach(button => button.addEventListener('click', () => {
           const box = button.closest('[data-exec-agent]'); if (!box) return;
           button.disabled = true;
           const payload = { agentId: box.getAttribute('data-exec-agent'), host: (box.querySelector('[data-ssh-host]') || {}).value || '', user: (box.querySelector('[data-ssh-user]') || {}).value || '', port: Number((box.querySelector('[data-ssh-port]') || {}).value || 22), remoteRoot: (box.querySelector('[data-ssh-root]') || {}).value || '/workspace' };
@@ -5605,7 +6107,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             refreshExecutionProfiles();
           }).catch(() => { notify('could not save SSH target', 'bad'); refreshExecutionProfiles(); });
         }));
-        epList.querySelectorAll('[data-ssh-sync]').forEach(button => button.addEventListener('click', () => {
+        crewList.querySelectorAll('[data-ssh-sync]').forEach(button => button.addEventListener('click', () => {
           const box = button.closest('[data-exec-agent]'); if (!box) return;
           button.disabled = true;
           Harness.api.post('/api/execution/sync', { agentId: box.getAttribute('data-exec-agent'), direction: button.getAttribute('data-ssh-sync') }).then(j => {
@@ -5613,22 +6115,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             refreshExecutionProfiles();
           }).catch(() => { notify('workspace sync failed', 'bad'); refreshExecutionProfiles(); });
         }));
-        epList.querySelectorAll('[data-ssh-clear]').forEach(button => ArmConfirm.wire(button, { armedLabel: 'SURE? CLEAR TARGET', restLabel: 'CLEAR TARGET', timeoutMs: 4000, onConfirm: () => {
+        crewList.querySelectorAll('[data-ssh-clear]').forEach(button => ArmConfirm.wire(button, { armedLabel: 'SURE? CLEAR TARGET', restLabel: 'CLEAR TARGET', timeoutMs: 4000, onConfirm: () => {
           const box = button.closest('[data-exec-agent]'); if (!box) return;
           Harness.api.post('/api/execution/ssh', { agentId: box.getAttribute('data-exec-agent'), clear: true }).then(() => { notify('SSH target cleared', 'good'); refreshExecutionProfiles(); }).catch(() => { notify('could not clear SSH target', 'bad'); refreshExecutionProfiles(); });
         } }));
-        epList.querySelectorAll('[data-cell-stop]').forEach(button => button.addEventListener('click', () => {
+        crewList.querySelectorAll('[data-cell-stop]').forEach(button => button.addEventListener('click', () => {
           button.disabled = true;
           Harness.api.post('/api/execution/cleanup', { agentId: button.getAttribute('data-cell-stop') }).then(j => {
             notify(j && j.ok ? 'idle Safe Cell stopped — container preserved' : ((j && (j.reason || j.error)) || 'cell is active or unavailable'), j && j.ok ? 'good' : 'bad');
             refreshExecutionProfiles();
           }).catch(() => { notify('could not stop Safe Cell', 'bad'); refreshExecutionProfiles(); });
         }));
-        epList.querySelectorAll('[data-perm-profile]').forEach(b => {
+        /* CAN REACH chips. A chip's rest face is METER + LABEL, so the escalation to THIS COMPUTER arms
+           with a bespoke innerHTML swap rather than ArmConfirm (whose textContent swap would flatten the
+           meter span — the same reason the context-menu rows keep bespoke logic). One press must ARM
+           WITHOUT GRANTING; a second within the window applies. */
+        let epArmed = null;
+        const epFace = (chip) => reachMeter(Number(chip.dataset.reach) || 0) + esc(chip.dataset.name || '');
+        const epDisarm = () => { if (epArmed) { epArmed.innerHTML = epFace(epArmed); epArmed.classList.remove('armed'); delete epArmed.dataset.armed; epArmed = null; } };
+        crewList.querySelectorAll('[data-perm-profile]').forEach(b => {
           const apply = () => {
             const parent = b.closest('[data-profile-agent]');
             if (b.getAttribute('data-perm-profile') === 'remote-ssh' && (!parent || parent.getAttribute('data-ssh-configured') !== '1')) {
-              notify('save an SSH target before selecting Remote SSH', 'bad'); return;
+              notify('open ADVANCED on this crew member and save an SSH target before choosing REMOTE SSH', 'bad'); return;
             }
             b.disabled = true;
             Promise.resolve(access.config.setExecutionProfile(b.getAttribute('data-perm-profile-agent'), b.getAttribute('data-perm-profile'))).then(ok => {
@@ -5637,52 +6146,40 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               refreshExecutionProfiles();
             }).catch(() => { notify('could not change execution profile — the station kept the prior profile', 'bad'); refreshExecutionProfiles(); });
           };
-          if (b.getAttribute('data-perm-profile') === 'this-computer' && !b.classList.contains('sel')) ArmConfirm.wire(b, { armedLabel: 'SURE? BROAD HOST PATHS', restLabel: 'THIS COMPUTER', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
-          else b.addEventListener('click', () => { sfx('click'); apply(); });
+          const arms = b.getAttribute('data-perm-profile') === 'this-computer' && !b.classList.contains('sel');
+          b.addEventListener('click', () => {
+            if (!arms) { epDisarm(); sfx('click'); apply(); return; }
+            if (epArmed === b) { epDisarm(); sfx('bad'); apply(); return; }
+            epDisarm(); epArmed = b; b.classList.add('armed'); b.dataset.armed = '1';
+            b.textContent = 'SURE? IT COULD READ ANY FILE HERE'; sfx('bad');
+            setTimeout(() => { if (epArmed === b) epDisarm(); }, 4000);
+          });
         });
-      };
-      const refreshExecutionProfiles = () => Harness.api.get('/api/execution-profiles').then(paintExecutionProfiles).catch(() => paintExecutionProfiles(null));
-      paintExecutionProfiles(null);
-      refreshExecutionProfiles();
-
-      /* ── 2 · APPROVAL rows — painted from the LIVE roster objects. `present` holds app.js's own agent records
-         (not copies), so approvalMode read here is the same truth pushRoster ships to the sidecar; a flip goes
-         through access.config.setApproval — the identical path the dossier CONFIG card and /yolo use — so the
-         per-run consent gate follows it. Escalation (→ FULL ACCESS) keeps the house two-press confirm; taking
-         power BACK (→ ask) applies on first click, never armed. */
-      const apWrap = host.querySelector('#perm-approval');
-      const paintApproval = () => {
-        if (!apWrap) return;
-        const can = !!(access.config && access.config.setApproval);
-        if (!present.length) { apWrap.innerHTML = '<p class="set-about">no crew yet — summon an agent first.</p>'; return; }
-        // One row per crew member: name + MODE tag + sentence on the left, the flip button in a
-        // RIGHT-ALIGNED column, so the list reads as one aligned table instead of five ragged inline
-        // sentences with the control jammed against the last word. No glyph column — the state is
-        // already carried by the accent edge, the MODE tag and the sentence; a pictograph in front of
-        // each name was a third telling of the same fact, in an emoji face this app does not speak.
-        apWrap.innerHTML = present.map(a => {
-          const full = !!(a && a.approvalMode === 'full');
-          return '<div class="perm-agent' + (full ? ' full' : '') + '">' +
-            '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-            '<span class="pa-mode">' + (full ? 'NO PROMPTS' : 'ASKS') + '</span>' +
-            '<span class="pa-state">' + (full ? 'uses its current execution profile without pausing' : 'stops before it writes, runs, or reaches out') + '</span>' +
-            (can ? '<button class="bb sm' + (full ? '' : ' danger') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="' + (full ? 'ask' : 'full') + '">' + (full ? 'MAKE IT ASK' : 'RUN WITHOUT PROMPTS') + '</button>' : '') +
-            '</div>';
-        }).join('');
-        apWrap.querySelectorAll('[data-ap-flip]').forEach(b => {
+        /* ASKS FIRST chips — the same two write paths as before (access.config.setApproval, the identical
+           call the dossier CONFIG card and /yolo use), now expressed as a segmented pair rather than one
+           button whose label named the opposite of the tag beside it. Escalation (→ no prompts) keeps the
+           house two-press confirm; taking power BACK (→ ask) applies on the first click, never armed. */
+        crewList.querySelectorAll('[data-ap-flip]').forEach(b => {
           const id = b.getAttribute('data-ap-flip'), to = b.getAttribute('data-ap-to');
+          if (b.classList.contains('sel')) return;   // already the live state — nothing to apply
           // setApproval returns false when the roster no longer holds that id (deleted from another
           // surface while this panel sat open). Repaint either way — the list is what is WRONG in that
-          // case — and say so, rather than leaving a dead button that silently does nothing.
+          // case — and say so, rather than leaving a dead chip that silently does nothing.
           const apply = () => {
             const ok = access.config.setApproval(id, to);
-            paintApproval();
+            paintCrew();
             if (!ok) notify('that agent is no longer on the roster — the list has been refreshed', 'warn');
           };
-          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? NO PROMPTS', restLabel: 'RUN WITHOUT PROMPTS', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? IT WILL NEVER ASK', restLabel: 'NO — JUST DO IT', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
           else b.addEventListener('click', () => { sfx('click'); apply(); });
         });
       };
+      const refreshExecutionProfiles = () => Harness.api.get('/api/execution-profiles')
+        .then(truth => { lastTruth = truth; paintCrew(); paintPolicy(truth); })
+        .catch(() => { paintCrew(); paintPolicy(lastTruth); });
+      paintCrew();
+      paintPolicy(null);
+      refreshExecutionProfiles();
       // WHOLE-STATION switches. Both COUNT what actually changed and report that number: a blanket
       // "whole station on FULL ACCESS" toast over an empty roster, or over a partly-failed sweep, is
       // the app asserting a state the harness never reached (the truthful-telemetry law).
@@ -5690,7 +6187,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!(access.config && access.config.setApproval)) return null;
         let done = 0;
         present.forEach(a => { if (access.config.setApproval(a.id, mode)) done++; });
-        paintApproval();
+        paintCrew();
         return { done: done, of: present.length };
       };
       const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
@@ -5714,8 +6211,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' will ask before risky moves again'
           : 'no crew to change — summon an agent first', r.done ? 'good' : 'bad');
       });
-      paintApproval();
-      repaintPermAgents = paintApproval;   // let a SUMMON / DELETE refresh this list while the panel is open
+      // A SUMMON / DELETE while the panel sits open must refresh this list (a panel painted from the roster
+      // owes a repaint hook — otherwise the pane offers a reach flip for an agent that no longer exists).
+      repaintPermAgents = paintCrew;
       const wireGrants = () => {
         if (!grantsWrap) return;
         grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
@@ -5791,6 +6289,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();
         paintBypass(snap);
+        // The glance sentence AND every crew row name the override state, so both must move WITH the
+        // switch — a flip that repainted only the card left the rows claiming "ASKS" under an ON override.
+        paintCrew();
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
         if (permStatus) {
@@ -6915,8 +7416,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // the old 'caps' section maps to the toolsets home); 'logbook' and 'rewind' are dossier
     // sections of the selected agent. ('updates' is still a real window — no alias needed.)
     skills:   { term: 'connectors', section: 'library', map: { library: 'library', agent: 'agent', caps: 'toolsets' } },
-    logbook:  { term: 'agents',     section: 'logbook', map: { runs: 'logbook', slag: 'logbook', insights: 'logbook' } },
-    rewind:   { term: 'agents',     section: 'restore', map: {} }
+    // NAV CONDENSE 3: LOGBOOK + RESTORE are now ONE dossier lane ('record'), so both retired window keys —
+    // and every section name either used to answer to — resolve to it.
+    logbook:  { term: 'agents',     section: 'record', map: { runs: 'record', slag: 'record', insights: 'record' } },
+    rewind:   { term: 'agents',     section: 'record', map: { restore: 'record' } }
   };
   function openTerm(key, section) {
     const al = TERM_ALIAS[key];

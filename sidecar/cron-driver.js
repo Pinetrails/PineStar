@@ -409,6 +409,13 @@
           Promise.resolve(advanceChain({
             agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''),
             signal: ac.signal, streamId: 'cron-' + runId, key: key, model: model, provider: provider,
+            /* ONLY A ROUTINE THAT BELONGS TO A LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). Read straight
+               off the durable job record — true only for a routine created from a line's own INBOX trigger
+               zone. The seam (index.js) turns it into the lineId the chain gate needs; false/absent means the
+               seam passes none and every dock downstream is terminal, so a routine that predates the workflow
+               keeps buying exactly ONE run. Never inferred from the dock: that is what made a months-old
+               routine start spending three runs the moment its agent was crewed onto a line. */
+            runsLine: job.runsLine === true,
             // skills/workdir/toolsets are the ROUTINE's configuration, deliberately kept on downstream hops for
             // now so multi-stage routines keep working (flagged 2026-08-04: applying a foreign agent's workdir/
             // toolsets to a hop is a misdirection risk — revisit under the narrower-fallback law).
