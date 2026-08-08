@@ -295,41 +295,41 @@ const World = (() => {
      behavior with different pixels behind the body — the props were scenery the agent happened to
      stand near, not things it DID anything with.
 
-     Each row tunes the three dials the beat actually has, keyed by the catalog's `use.kind`:
+     Each row tunes the dials the beat actually has, keyed by the catalog's `use.kind`:
        dwell   [min,max] ms at the prop — how long the thing holds you
        fidget  [min,max] ms between the small look-away flicks (fast = engaged/twitchy, slow = absorbed)
-       ges     0..1 chance of playing the sprite's one-shot GESTURE track on arrival (reaching for
-               it / working it) — the sets ship this art already (35 of 38); see Emote below.
        track   true = while dwelling, keep glancing at the prop's own animation (fish, holo pet,
                the arcade screen) instead of around the room.
      A kind with no row keeps the old generic beat, so adding a `use` row to the catalog never
-     requires touching this table (same contract as USE_LINE). */
-  /* `play: true` = a machine you WORK, not a thing you stand next to. Those props re-fire the
-     gesture track every couple of seconds for the whole dwell, so the body visibly plays the
-     pinball table instead of standing at it like a bollard (Andrew, 2026-08-08: "upgrade the
-     agent's ability to use the arcade machine by adding an animated frame that makes them look
-     like they are interacting with it"). The art is the set's own 9-frame gesture track — the
-     arms move — so it costs no new sprites and degrades to a plain stand on the 3 sets without it. */
+     requires touching this table (same contract as USE_LINE).
+
+     ⛔ NO GESTURE TRACK HERE. A first cut fired the sets' one-shot `gesture` animation on arrival
+     and on a loop at the "active" machines, on the theory that it was a generic arm movement. It is
+     not: that track is an arms-up STRETCH, so what shipped was an agent walking up to the arcade
+     cabinet and stretching in front of it (Andrew, 2026-08-08: "makes 0 sense... it just walks up to
+     the machines and starts stretching"). REUSING AN ANIMATION FOR SOMETHING IT DOES NOT DEPICT
+     READS AS A BUG, NOT AS LIFE. A real "playing the machine" pose is new ART, not a flag in this
+     table — until that art exists the honest beat is: stand at it, face it, and hold. */
   const USE_BEAT = {
-    pinball:   { dwell: [22000, 40000], fidget: [700, 1500],  ges: 0.9, track: true, play: true },   // absorbed, hands busy, eyes on the table
-    arcade:    { dwell: [22000, 40000], fidget: [700, 1500],  ges: 0.9, track: true, play: true },
-    pool:      { dwell: [18000, 32000], fidget: [1600, 3200], ges: 0.85, play: true },  // line up, walk round, line up again
-    poker:     { dwell: [16000, 28000], fidget: [2000, 4000], ges: 0.6, play: true },
-    dj:        { dwell: [14000, 26000], fidget: [1400, 2800], ges: 0.9, play: true },
-    juke:      { dwell: [6000, 12000],  fidget: [1800, 3600], ges: 0.9, play: true },   // pick a track and move on
-    gacha:     { dwell: [8000, 15000],  fidget: [1200, 2400], ges: 0.95, play: true },  // crank, watch, crank
-    vend:      { dwell: [5000, 11000],  fidget: [1400, 2800], ges: 0.85 },
-    fridge:    { dwell: [4000, 8000],   fidget: [1400, 2800], ges: 0.9 },
-    coffee:    { dwell: [4000, 9000],   fidget: [1600, 3200], ges: 0.85 },              // a short stop — the ritual, not the drink
-    locker:    { dwell: [5000, 10000],  fidget: [1600, 3200], ges: 0.8 },
-    bookshelf: { dwell: [18000, 34000], fidget: [3000, 6000], ges: 0.7 },               // the longest, stillest dwell on the floor
-    terra:     { dwell: [12000, 22000], fidget: [2600, 5200], ges: 0.35, track: true },
-    fish:      { dwell: [14000, 26000], fidget: [2600, 5200], ges: 0.2,  track: true },  // restful: it just watches
-    pet:       { dwell: [9000, 18000],  fidget: [1400, 2800], ges: 0.8,  track: true },
-    bar:       { dwell: [12000, 24000], fidget: [1800, 3600], ges: 0.7, play: true },
-    tv:        { dwell: [14000, 26000], fidget: [2600, 5200], ges: 0.1,  track: true },
-    beanbag:   { dwell: [12000, 24000], fidget: [2600, 5200], ges: 0.2 },
-    seat:      { dwell: [12000, 26000], fidget: [2400, 4800], ges: 0.15 },
+    pinball:   { dwell: [22000, 40000], fidget: [700, 1500],  track: true },   // absorbed, hands busy, eyes on the table
+    arcade:    { dwell: [22000, 40000], fidget: [700, 1500],  track: true },
+    pool:      { dwell: [18000, 32000], fidget: [1600, 3200] },                // line up, walk round, line up again
+    poker:     { dwell: [16000, 28000], fidget: [2000, 4000] },
+    dj:        { dwell: [14000, 26000], fidget: [1400, 2800] },
+    juke:      { dwell: [6000, 12000],  fidget: [1800, 3600] },                // pick a track and move on
+    gacha:     { dwell: [8000, 15000],  fidget: [1200, 2400] },                // crank, watch, crank
+    vend:      { dwell: [5000, 11000],  fidget: [1400, 2800] },
+    fridge:    { dwell: [4000, 8000],   fidget: [1400, 2800] },
+    coffee:    { dwell: [4000, 9000],   fidget: [1600, 3200] },                // a short stop — the ritual, not the drink
+    locker:    { dwell: [5000, 10000],  fidget: [1600, 3200] },
+    bookshelf: { dwell: [18000, 34000], fidget: [3000, 6000] },                // the longest, stillest dwell on the floor
+    terra:     { dwell: [12000, 22000], fidget: [2600, 5200], track: true },
+    fish:      { dwell: [14000, 26000], fidget: [2600, 5200], track: true },   // restful: it just watches
+    pet:       { dwell: [9000, 18000],  fidget: [1400, 2800], track: true },
+    bar:       { dwell: [12000, 24000], fidget: [1800, 3600] },
+    tv:        { dwell: [14000, 26000], fidget: [2600, 5200], track: true },
+    beanbag:   { dwell: [12000, 24000], fidget: [2600, 5200] },
+    seat:      { dwell: [12000, 26000], fidget: [2400, 4800] },
   };
   /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
@@ -1390,13 +1390,12 @@ const World = (() => {
     if (self.goal === 'work') { if (self === agent && seat) { const f = seatFoot(seat); self.px = f.x; self.py = f.y; } self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
     else if (self.goal === 'use') {
       self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle';
-      // W2: the prop decides what using it looks like (dwell / fidget cadence / a reach-for-it
-      // gesture / whether the eyes stay ON the thing). No row = the old generic beat.
+      // W2: the prop decides what using it looks like (how long it holds you, how the gaze behaves).
+      // No row = the old generic beat. NO gesture here — see the USE_BEAT header.
       const beat = USE_BEAT[useKindOf(self.usingProp)] || null;
       self.useUntil = now + (beat ? U.irnd(beat.dwell[0], beat.dwell[1]) : U.irnd(10000, 22000));
       self.useBeat = beat; self.glanceCd = 0;
       self.nextFidget = now + (beat ? U.irnd(beat.fidget[0], beat.fidget[1]) : U.irnd(2000, 4000));
-      if (beat && beat.ges && !self.useSit && U.chance(beat.ges)) emote(self, now);   // reaches for it / works it — the set's own one-shot gesture art
       takeSeat();
       // the prop-specific thought wins over the generic "resting" one — it says something true about
       // WHERE the body is, which the bare rest line cannot. Falls back when the kind has no entry.
@@ -1432,11 +1431,9 @@ const World = (() => {
       else if (self.goal === 'gaze') { self.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
       else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, self.useFace); }
       else {
-        // INSPECT: it walked over to a machine to look at it. W2 — a study is now something the body
-        // DOES (a reach / a poke at the panel via the set's gesture art), not a stand-and-stare, and
-        // a FIRST look at a novel thing almost always gets one.
+        // INSPECT: it walked over to a machine to look at it — a study, held, with the settle-scan.
+        // (No gesture: the only track available is an arms-up stretch, which is not "examining".)
         self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now);
-        if (U.chance(self.inspectNovel ? 0.85 : 0.45 * famK)) emote(self, now);
         if (U.chance(0.55)) scanThen(now, self.useFace);
       }
     }
@@ -1738,7 +1735,6 @@ const World = (() => {
       // above own the facing + lifecycle; this branch just STOPS the fall-through to decideIdle (which would stomp it).
       self.state = 'idle';
     } else if (self.goal === 'use') {
-      stepPlay(self, now);   // W2 round 2: keep working the machine for the whole dwell (arcade/pinball/pool/bar)
       if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.useBeat = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
     } else if (self.goal === 'lounge') {
       if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
@@ -1917,7 +1913,7 @@ const World = (() => {
     if (b.seatKey) occupiedSeats.delete(b.seatKey);
     b.seatKey = null; b.seated = false; b.pendSeat = null;
     b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
-    b.useBeat = null; b.emote = null; setTalking(b, false);   // W2/W4: a seized body is not mid-gesture and is not talking to anyone
+    b.useBeat = null; setTalking(b, false);   // a seized body is not mid-leisure and is not talking to anyone
     b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
     if (chaseId === b.agentId) chaseId = null; b.chase = null; b.mimic = null;   // TIER D · D4: a summon seizes the body → drop any live chase/mimic + free the station chaser lock (G2)
   }
@@ -2261,31 +2257,17 @@ const World = (() => {
   }
 
   function setGlance(dir, ms, now) { if (self) self.glance = { dir, until: now + ms }; }
-  /* THE PLAY LOOP — while a body is at a `play` prop (see USE_BEAT), re-fire its gesture track
-     every couple of seconds so it visibly WORKS the machine for the whole dwell instead of
-     standing at it. Called from the per-tick 'use' branch of both engines. Seated bodies are
-     skipped (the gesture art is a standing pose), so a stool at the bar keeps its sit. */
-  function stepPlay(b, now) {
-    const beat = b && b.useBeat;
-    if (!beat || !beat.play || b.sitting || b.state === 'walk') return;
-    if (now < (b.playAt || 0)) return;
-    b.playAt = now + U.irnd(1500, 3000);
-    emote(b, now);
-  }
-  /* EMOTE (2026-08-08) — play the sprite set's one-shot `gesture` track NOW (a reach / a work-the-
-     controls arm movement). The art already ships on 35 of 38 sets and until today only ever fired
-     on a blind ~90-minute clock in assets.js, so it was effectively invisible: a body could use a
-     pinball table for twenty seconds without moving a limb. assets.js owns playback (it knows the
-     frame count) and simply ignores an emote once the track has run out, so `until` is only this
-     module's own "don't re-fire" bound. Sets without the art render the normal pose — no fallback
-     needed, exactly like the blink. */
-  function emote(body, now, kind) {
-    const b = body || self; if (!b) return false;
-    if (reduceMotion()) return false;                                 // a 1.1s arm animation is motion; one gate here covers every caller
-    if (b.sitting || b.working || b.state === 'walk') return false;   // standing beats only — the gesture art is a standing pose
-    b.emote = { kind: kind || 'gesture', start: now, until: now + 1600 };
-    return true;
-  }
+  /* ⛔ THERE IS NO ON-DEMAND EMOTE, ON PURPOSE (2026-08-08).
+     A first cut of this pass added one: fire the sprite sets' one-shot `gesture` track when
+     something happened — reaching for a prop on arrival, a loop at the arcade/pinball so the body
+     "worked" the machine, a greeting and parting wave, a hand raised at someone walking past. It
+     shipped and it was wrong, because that track is an ARMS-UP STRETCH and nothing else: what you
+     actually saw was an agent walk up to the arcade cabinet and stretch at it (Andrew: "makes 0
+     sense"). AN ANIMATION REUSED FOR SOMETHING IT DOES NOT DEPICT READS AS A BUG, NOT AS LIFE —
+     four call sites, one piece of art, four wrong readings. Playing a machine and waving each need
+     their OWN frames; until those exist the honest beat is stance, facing and dwell, which is what
+     this engine now does. The ambient once-per-~90-minutes stretch in assets.js is untouched: there
+     the art is fired as exactly what it is. */
 
   /* ================= Tier C (cross-agent awareness) — C0 plumbing =================
      INVIOLABLE RULE: perceive across zones, ACT (move) only within your own. These two helpers are the
@@ -2434,7 +2416,6 @@ const World = (() => {
       const dur = U.irnd(700, 1200);
       glanceAt(me, other, dur, now);                                       // me === self → setGlance
       glanceAt(other, me, dur, now);                                       // the passer looks back (direct glance write, K2)
-      emote(me, now);                                                      // ...and raises a hand
       me.idleUntil = Math.max(me.idleUntil || 0, now + dur + U.irnd(200, 500));   // hold the beat, exactly as the mutual glance does
       return true;
     }
@@ -2482,12 +2463,11 @@ const World = (() => {
        stamped once by the coordinator) and its own side of the pair (a === first speaker). Reading
        a shared READ-ONLY origin, not writing shared turn state, is what keeps K2 intact.
 
-       WAVING — the one-shot `gesture` track (35 of 38 sets), fired via emote() as a GREETING when
-       the two settle in front of each other and as a PARTING when the encounter ends.
+     (A greeting/parting WAVE was built here too and then removed — the only gesture art in the
+     project is an arms-up stretch, and a stretch is not a wave. See the emote() note above.)
 
      Only the two-sided kinds (huddle/border) talk: a 'watch' subject is working and a 'follow'
-     never completes, so neither is a conversation. reduceMotion suppresses the gesture (the talk
-     pose is a bob, not travel, so it stays). */
+     never completes, so neither is a conversation. */
   const TALK_SLOT_MS = 1700;                // one speaking turn + the beat of silence after it
   const TALK_SPEAK_MS = 1150;               // how much of a turn is actually mouth-moving
   const ACK_RADIUS = 2.4;                   // tiles — a passing acknowledgement is arm's length, not across the room
@@ -2528,12 +2508,9 @@ const World = (() => {
       // at nobody is exactly the kind of state this project calls a lie.
       if (body && !body.social) setTalking(body, false);
       if (!body || !body.social) continue;
-      // W4: a PARTING wave, then drop the conversation pose. The wave is only owed on a beat that
-      // actually became a conversation (a two-sided HOLD) — an encounter torn down mid-walk, or one
-      // a summon seized, ends with nothing, which is the honest reading of what happened.
-      const talked = (s.kind === 'huddle' || s.kind === 'border') && body.social.phase === 'hold' && !body.working;
+      // W4: drop the conversation pose as the encounter ends. (The parting WAVE was removed with
+      // the rest of the gesture-track misuse — see the emote() header: that art is a stretch.)
       setTalking(body, false);
-      if (talked && !reduceMotion()) emote(body, now);
       body.social = null;
       if (body.goal === 'social') { body.goal = null; body.state = 'idle'; body.pathPts = null; body.target = null; body.idleUntil = Math.max(body.idleUntil || 0, now + U.irnd(300, 900)); }
     }
@@ -2682,10 +2659,9 @@ const World = (() => {
     pl.phase = 'hold'; pl.until = now + U.irnd(SOCIAL_HOLD_MIN, SOCIAL_HOLD_MAX);
     pl.holdAt = now;                                    // W4: THIS body has arrived (the turn PHASE comes from socialBeat.startedAt — see talkTurn)
     self.pathPts = null; self.target = null; self.state = 'idle'; self.goal = 'social';
-    // W4 GREETING: it settles in front of the other and raises a hand. Two-sided kinds only — you
-    // do not wave at the back of someone who is working ('watch'), or at someone you gave up
-    // following. Each body fires its OWN greeting as it arrives, so they land a beat apart.
-    if ((pl.kind === 'huddle' || pl.kind === 'border') && !reduceMotion()) emote(self, now);
+    // (The GREETING wave that used to fire here is gone with the rest of the gesture-track misuse:
+    // the only such art in the project is an arms-up stretch, and a stretch is not a wave. What
+    // remains is what the bodies actually do — turn to face each other and take turns.)
   }
 
   /* stepSocialGuard — called every tick for a body whose goal==='social', BEFORE stepSocial. Enforces the two
@@ -4070,7 +4046,6 @@ const World = (() => {
       }
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
-      stepPlay(agent, now);   // W2 round 2: the hero works the machine too
       if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.useBeat = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'lounge') {
       // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
@@ -7240,7 +7215,7 @@ const World = (() => {
           wallDirs: wallDirsAt(b),                                      // control: how many of the 4 cardinals here ARE wall (a blind pick would hit wall wallDirs/4 of the time)
           quirkKind: b.quirkKind || null,
           useKind: b.usingProp ? useKindOf(b.usingProp) : null,         // WHICH prop it is using (the per-kind beat)
-          emote: !!(b.emote && b.emote.until > fnow),                   // playing the one-shot gesture track (a wave / a reach)
+          emote: !!(b.emote && b.emote.until > fnow),                   // the ambient stretch is playing (assets.js owns it; nothing in the idle engine fires it)
           talking: !!b.talking,                                         // W4: taking its turn in a silent exchange
           pose: b._pose || null,                                        // the sprite track it was LAST DRAWN in (assets.js records it) — render truth, not a re-derivation
           socialKind: (b.social && b.social.kind) || null,              // which encounter it is in, and

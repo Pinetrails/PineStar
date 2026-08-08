@@ -361,26 +361,12 @@ const SPRITES = (() => {
     // agent like the blink so the crew never moves in unison. The index is derived from the
     // window's own progress (fixedIdx), NOT the free-running clock — a clock index would enter
     // the animation mid-cycle. Sets without a gesture track skip this entirely.
+    /* This track is a STRETCH. It is fired here, on its own slow ambient clock, and nowhere else:
+       an attempt to reuse it on demand (reaching for a prop, working an arcade cabinet, waving)
+       was removed 2026-08-08 because a stretch played at those moments reads as a glitch. New
+       meanings need new frames, not this one re-labelled. */
     let fixedIdx = null;
-    /* ON-DEMAND EMOTE (world.js `emote()`, 2026-08-08) — the SAME art, played because something
-       happened: a body reaching for the thing it walked over to use, a greeting as two agents
-       settle in front of each other, a wave at someone passing. It is resolved BEFORE (and
-       independently of) the ambient stretch below, because the two guards differ in ways that
-       silently ate it: the stretch requires a `.rot.` pose and `!b.speaking`, so a body playing
-       the TALK pose — i.e. exactly a body mid-conversation — could never render its own wave, and
-       on the five sets that ship a talk track the key isn't `.rot.` at all. Keyed off the game's
-       4-value facing (the gesture art is cardinal-only) and it simply stops applying once the
-       track runs out: no cleanup, no held final frame. */
-    const em = b.emote;
-    if (em && em.kind === 'gesture' && em.start != null && b.state !== 'walk' && !b.working && !b.sitting && !meeting) {
-      const gk = frames[set + '.gesture.' + dir] ? set + '.gesture.' + dir : null;
-      if (gk) {
-        const GFPS = 8, glen = frames[gk].length, gdur = glen * (1000 / GFPS);
-        const et = nowMs - em.start;
-        if (et >= 0 && et < gdur) { key = gk; fixedIdx = Math.min(glen - 1, Math.floor(et / (1000 / GFPS))); bob = 0; }
-      }
-    }
-    if (fixedIdx == null && key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
+    if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
         && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
       // EXACT direction only — never fall back to another facing. Most sets ship the stretch
       // on the 4 cardinals alone (the diagonals would cost 4 more generations each and are
