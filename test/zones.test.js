@@ -228,6 +228,86 @@ A.eq(Z.inZone(COUCH_ZONE, 27, 3), true, 'rightmost in-wall cushion (col 27) is i
 A.eq(Z.inZone(COUCH_ZONE, 28, 3), false, 'a cushion column past the east wall is OUT-of-zone (cushion sx,sy must be gated, not the corner)');
 A.eq(Z.inZone(COUCH_ZONE, 28, 3), false, 'the EAST approach (sx+1) of the rightmost cushion is OUT-of-zone (approach ax,ay must be gated too)');
 
+// ---- ROAM RADIUS (2026-08-08): home room + a Chebyshev radius around the DESK ----
+// The idle-life pass: a body caged to its assigned room read as furniture. With `roamR` it may
+// cross a threshold into a NEIGHBOURING room while still leashed to its own desk. Opt-in only —
+// every assertion above passes NO roamR and must therefore be unchanged (the room and nothing else).
+A.ok(Z.ROAM_RADIUS > 0, 'exports a ROAM_RADIUS default');
+A.eq(zMain.roam, undefined, 'a zone computed WITHOUT roamR carries no roam field (original caging preserved)');
+A.eq(Z.inZone(zMain, 25, 2), false, 'and without roamR a tile in the NEXT room stays out-of-zone');
+
+// a2's desk sits at (8,6) in the big room; the side room starts at x:22 — far outside a radius of 9
+const zRoamFar = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a2', anchorTile: { x: 8, y: 6 }, roamR: 9 });
+A.eq(zRoamFar.kind, 'room', 'a roam zone is still kind:room — zoneRect()/border-meeting consumers keep working');
+A.eq(zRoamFar.rect, { x1: 0, y1: 0, x2: 20, y2: 12 }, 'the home room rect is unchanged by roamR');
+A.eq(zRoamFar.roam, { cx: 8, cy: 6, r: 9 }, 'roam is centered on the DESK anchor, not the room');
+A.eq(Z.inZone(zRoamFar, 20, 12), true, 'every tile of the home room is still in-zone');
+A.eq(Z.inZone(zRoamFar, 25, 2), false, 'a room 14 tiles from the desk is still OUT of reach (the leash is real)');
+
+// a1's bay sits at (24,3) in the SIDE room; the big room's east wall is x:20 — 4 tiles away
+const zRoamNear = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 }, roamR: 9 });
+A.eq(Z.inZone(zRoamNear, 24, 3), true, 'the body stands in-zone on its own desk tile');
+A.eq(Z.inZone(zRoamNear, 27, 5), true, 'its whole home room is in-zone');
+A.eq(Z.inZone(zRoamNear, 18, 3), true, 'a tile in the NEIGHBOURING room within the radius IS in-zone (it may walk next door)');
+A.eq(Z.inZone(zRoamNear, 15, 3), true, 'the radius reaches exactly ROAM tiles west of the desk (24-9=15)');
+A.eq(Z.inZone(zRoamNear, 14, 3), false, 'one tile past the radius is out — the desk still leashes it');
+A.eq(Z.inZone(zRoamNear, 24, 12), true, 'the radius reaches south too (Y branch)');
+A.eq(Z.inZone(zRoamNear, 24, 13), false, 'one tile past the radius to the south is out (both axes gate the roam)');
+A.eq(Z.inZone(zRoamNear, 15, 13), false, 'in-range X but out-of-range Y is out (both axes required)');
+
+// the radius is NOT clipped to room rects — an off-floor tile inside the radius reports in-zone and
+// is rejected later by walkability/pathing, exactly like the leash zone has always behaved.
+A.eq(Z.inZone(zRoamNear, 21, 3), true, 'a tile between rooms (a wall/threshold column) is admitted by the radius — pathing, not the zone, decides reachability');
+
+// ---- SPILL: a body may step through ITS OWN doorway, whatever the size of its room ----
+// The desk radius alone does not deliver "it can walk next door": measured live, a desk in the
+// middle of an 18x11 room put the neighbouring room outside a 9-tile radius, so nothing changed.
+// The spill band is anchored on the thresholds of the body's OWN room, so room size cannot defeat it.
+// RECTS: big room x:[0..20], side room x:[22..27] — they do NOT abut, so use a purpose-built pair.
+const ABUT = [
+  { z: 0, x1: 0,  y1: 0, x2: 17, y2: 10 },   // home
+  { z: 1, x1: 18, y1: 0, x2: 27, y2: 10 },   // next door, sharing the x=17|18 seam
+];
+const DOORS = [[17, 4, 18, 4], [17, 5, 18, 5], [3, 10, 3, 11]];   // two seam tiles east + one unrelated seam south
+const zSpill = Z.computeZone({ rects: ABUT, anchorTile: { x: 4, y: 5 }, roamR: 9, doors: DOORS, spillR: 6 });
+A.eq(zSpill.roam, { cx: 4, cy: 5, r: 9 }, 'the desk radius is still there');
+A.eq(zSpill.spill.pts, [{ x: 18, y: 4 }, { x: 18, y: 5 }, { x: 3, y: 11 }], 'spill points are the OUTSIDE tile of each threshold on the home room border');
+A.eq(Z.inZone(zSpill, 13, 5), true, 'the desk radius alone reaches 9 tiles east (13,5)');
+A.eq(Z.inZone(zSpill, 20, 5), true, 'a tile NEXT DOOR, past the desk radius but inside the doorway band, is in-zone');
+A.eq(Z.inZone(zSpill, 24, 5), true, 'the band reaches SPILL tiles past the threshold (18+6=24)');
+A.eq(Z.inZone(zSpill, 25, 5), false, 'one tile further is out — next door, not the whole station');
+A.eq(Z.inZone(zSpill, 3, 16), true, 'the band also opens the south threshold (11+6=17 > 16)');
+A.eq(Z.inZone(zSpill, 3, 18), false, 'and closes again past it');
+// the spill is NOT transitive: it is computed from the HOME room's doors only
+const zSpillNext = Z.computeZone({ rects: ABUT, anchorTile: { x: 24, y: 5 }, roamR: 9, doors: DOORS, spillR: 6 });
+A.eq(zSpillNext.spill.pts, [{ x: 17, y: 4 }, { x: 17, y: 5 }], 'a body in the OTHER room spills the other way (its own doors only)');
+// a seam whose BOTH tiles are inside the room is not a threshold out of it
+A.eq(Z.spillPoints({ x1: 0, y1: 0, x2: 17, y2: 10 }, [[4, 4, 5, 4]]), [], 'a seam wholly inside the room yields no spill point');
+A.eq(Z.spillPoints({ x1: 0, y1: 0, x2: 17, y2: 10 }, [[30, 4, 31, 4]]), [], 'a seam wholly outside the room yields no spill point either');
+A.eq(Z.spillPoints({ x1: 0, y1: 0, x2: 17, y2: 10 }, [[17, 4, 18, 4], [18, 4, 17, 4]]), [{ x: 18, y: 4 }], 'the same threshold from both directions dedupes to ONE point');
+A.eq(Z.spillPoints({ x1: 0, y1: 0, x2: 3, y2: 3 }, null), [], 'no doors -> no spill points');
+A.ok(Z.SPILL_RADIUS > 0, 'exports a SPILL_RADIUS default');
+A.eq(Z.computeZone({ rects: ABUT, anchorTile: { x: 4, y: 5 }, roamR: 9, doors: DOORS }).spill.r, Z.SPILL_RADIUS, 'spillR defaults to SPILL_RADIUS');
+// no roamR -> no spill either (opt-in as a whole: an un-widened zone is the room and nothing else)
+A.eq(Z.computeZone({ rects: ABUT, anchorTile: { x: 4, y: 5 }, doors: DOORS }).spill, undefined, 'without roamR a zone carries no spill band');
+
+// guards: a non-positive / fractional roamR
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 }, roamR: 0 }).roam, undefined, 'roamR:0 adds no roam field');
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 }, roamR: -4 }).roam, undefined, 'a negative roamR adds no roam field');
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 }, roamR: 6.9 }).roam.r, 6, 'a fractional roamR is floored to whole tiles');
+
+// an OFF-ROOM anchor with roamR widens the leash instead (same distance from the desk either way)
+const zRoamLeash = Z.computeZone({ rects: RECTS, anchorTile: { x: 40, y: 40 }, roamR: 9 });
+A.eq(zRoamLeash.kind, 'leash', 'an anchor outside every room is still a leash zone');
+A.eq(zRoamLeash.r, 9, 'roamR widens the open-floor leash to the same roam distance');
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 40, y: 40 }, leashR: 12, roamR: 9 }).r, 12, 'an explicitly LARGER leashR wins over roamR (max, never a downgrade)');
+
+// roamR never grants a zone to an unplaced agent, and never alters the solo whole-floor zone
+A.eq(Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'ghost', roamR: 9 }), null, 'roamR does NOT grant a zone to an unanchored agent');
+const zSoloRoam = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 }, solo: true, roamR: 9 });
+A.eq(zSoloRoam.kind, 'multi', 'the sole owner keeps its whole-floor multi zone (roamR would only ever narrow it)');
+A.eq(zSoloRoam.roam, undefined, 'and carries no roam field');
+
 // ---- inZone: leash membership (Chebyshev square) ----
 const lz = { kind: 'leash', cx: 10, cy: 10, r: 3 };
 A.eq(Z.inZone(lz, 10, 10), true, 'leash center is in-zone');

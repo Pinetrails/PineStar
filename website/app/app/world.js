@@ -172,6 +172,18 @@ const World = (() => {
   const NOVELTY_MAX = 4;
   let lastSelfTalk = -1e9;          // global self-talk cooldown — bubbles stay rare, honest thoughts (never a monologue)
   const seenCount = new Map();      // habituation: how many times a prop-id / belt-tile has been studied (novel -> familiar)
+  /* ...and how it FADES again (2026-08-08 idle-life pass). Habituation only ever climbed, and planPOI
+     drops any prop studied 4+ times, so after ~10 minutes of watching, every machine on the floor was
+     permanently "furniture" and the ambient-curiosity beat had nothing left to pick — the station went
+     inert exactly when a viewer had settled in to watch it. Interest now decays one step every
+     FORGET_MS, so a thing ignored for a while becomes worth a second look. */
+  const FORGET_MS = 150000;
+  let forgetAt = 0;
+  function decayHabits(now) {
+    if (now < forgetAt) return;
+    forgetAt = now + FORGET_MS;
+    for (const [k, v] of seenCount) { if (v <= 1) seenCount.delete(k); else seenCount.set(k, v - 1); }
+  }
   /* THE COMMANDER'S PRESENCE — the agent's sense of "where you are." lastCursor is the cursor's world
      position (cached on mousemove); userReturnUntil is a brief window after you return to the tab; deepLocks
      budgets the rare long "deep lock" to ~1 per session. These feed THE LOOK-UP + the cursor gaze-drift:
@@ -275,6 +287,42 @@ const World = (() => {
     beanbag: ['this is undignified', 'it holds the shape of the last one', 'nobody sat here in a while', 'acceptable'],
     pinball: ['tilt', 'the ball obeys physics, not me', 'high score is mine', 'one more ball'],
     seat: ['taking the weight off', 'a seat is a seat', 'i will sit a moment', 'this one is mine for now'],   // stool/chair: the ONE prop a body actually sits on
+  };
+  /* ---------- USE_BEAT: what USING a prop actually looks like (2026-08-08 idle-life pass) ----------
+     Every leisure prop used to resolve to the SAME beat: stand (or sit) on the approach tile, hold
+     for a flat 10-22s, fidget on the generic cadence. A pinball table and a bookshelf were the same
+     behavior with different pixels behind the body — the props were scenery the agent happened to
+     stand near, not things it DID anything with.
+
+     Each row tunes the three dials the beat actually has, keyed by the catalog's `use.kind`:
+       dwell   [min,max] ms at the prop — how long the thing holds you
+       fidget  [min,max] ms between the small look-away flicks (fast = engaged/twitchy, slow = absorbed)
+       ges     0..1 chance of playing the sprite's one-shot GESTURE track on arrival (reaching for
+               it / working it) — the sets ship this art already (35 of 38); see Emote below.
+       track   true = while dwelling, keep glancing at the prop's own animation (fish, holo pet,
+               the arcade screen) instead of around the room.
+     A kind with no row keeps the old generic beat, so adding a `use` row to the catalog never
+     requires touching this table (same contract as USE_LINE). */
+  const USE_BEAT = {
+    pinball:   { dwell: [16000, 30000], fidget: [700, 1500],  ges: 0.9, track: true },   // absorbed, hands busy, eyes on the table
+    arcade:    { dwell: [16000, 30000], fidget: [700, 1500],  ges: 0.9, track: true },
+    pool:      { dwell: [12000, 24000], fidget: [1600, 3200], ges: 0.85 },              // line up, walk round, line up again
+    poker:     { dwell: [12000, 22000], fidget: [2000, 4000], ges: 0.6 },
+    dj:        { dwell: [10000, 20000], fidget: [1400, 2800], ges: 0.9 },
+    juke:      { dwell: [5000, 10000],  fidget: [1800, 3600], ges: 0.9 },               // pick a track and move on
+    gacha:     { dwell: [6000, 12000],  fidget: [1200, 2400], ges: 0.95 },              // crank, watch, crank
+    vend:      { dwell: [5000, 11000],  fidget: [1400, 2800], ges: 0.85 },
+    fridge:    { dwell: [4000, 8000],   fidget: [1400, 2800], ges: 0.9 },
+    coffee:    { dwell: [4000, 9000],   fidget: [1600, 3200], ges: 0.85 },              // a short stop — the ritual, not the drink
+    locker:    { dwell: [5000, 10000],  fidget: [1600, 3200], ges: 0.8 },
+    bookshelf: { dwell: [18000, 34000], fidget: [3000, 6000], ges: 0.7 },               // the longest, stillest dwell on the floor
+    terra:     { dwell: [12000, 22000], fidget: [2600, 5200], ges: 0.35, track: true },
+    fish:      { dwell: [14000, 26000], fidget: [2600, 5200], ges: 0.2,  track: true },  // restful: it just watches
+    pet:       { dwell: [9000, 18000],  fidget: [1400, 2800], ges: 0.8,  track: true },
+    bar:       { dwell: [8000, 16000],  fidget: [1800, 3600], ges: 0.7 },
+    tv:        { dwell: [14000, 26000], fidget: [2600, 5200], ges: 0.1,  track: true },
+    beanbag:   { dwell: [12000, 24000], fidget: [2600, 5200], ges: 0.2 },
+    seat:      { dwell: [12000, 26000], fidget: [2400, 4800], ges: 0.15 },
   };
   /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
@@ -1335,7 +1383,14 @@ const World = (() => {
     if (self.goal === 'work') { if (self === agent && seat) { const f = seatFoot(seat); self.px = f.x; self.py = f.y; } self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
     else if (self.goal === 'use') {
       self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle';
-      self.useUntil = now + U.irnd(10000, 22000); takeSeat();
+      // W2: the prop decides what using it looks like (dwell / fidget cadence / a reach-for-it
+      // gesture / whether the eyes stay ON the thing). No row = the old generic beat.
+      const beat = USE_BEAT[useKindOf(self.usingProp)] || null;
+      self.useUntil = now + (beat ? U.irnd(beat.dwell[0], beat.dwell[1]) : U.irnd(10000, 22000));
+      self.useBeat = beat; self.glanceCd = 0;
+      self.nextFidget = now + (beat ? U.irnd(beat.fidget[0], beat.fidget[1]) : U.irnd(2000, 4000));
+      if (beat && beat.ges && !self.useSit && U.chance(beat.ges)) emote(self, now);   // reaches for it / works it — the set's own one-shot gesture art
+      takeSeat();
       // the prop-specific thought wins over the generic "resting" one — it says something true about
       // WHERE the body is, which the bare rest line cannot. Falls back when the kind has no entry.
       const line = USE_LINE[useKindOf(self.usingProp)];
@@ -1369,7 +1424,14 @@ const World = (() => {
       if (self.goal === 'tend') { self.studyUntil = now + offbeat(now, U.irnd(3500, 8000)); curiositySay(self.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
       else if (self.goal === 'gaze') { self.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
       else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, self.useFace); }
-      else { self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, self.useFace); }
+      else {
+        // INSPECT: it walked over to a machine to look at it. W2 — a study is now something the body
+        // DOES (a reach / a poke at the panel via the set's gesture art), not a stand-and-stare, and
+        // a FIRST look at a novel thing almost always gets one.
+        self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now);
+        if (U.chance(self.inspectNovel ? 0.85 : 0.45 * famK)) emote(self, now);
+        if (U.chance(0.55)) scanThen(now, self.useFace);
+      }
     }
     else if (self.goal === 'rounds') {
       // a stop on the caretaker lap — face it, a brief ownership beat, then tick advances to the next stop.
@@ -1404,7 +1466,13 @@ const World = (() => {
     }
     else if (self.goal === 'social') { self.state = 'idle'; self.target = null; self.pathPts = null; }   // TIER D · D3: reached a social waypoint — stay on goal='social'; stepSocial enters the hold next tick
     else if (self.goal === 'chase') { self.state = 'idle'; self.target = null; self.pathPts = null; }    // TIER D · D4: reached a pursuit leg — stay on goal='chase'; stepChase repaths (or enters the stare) next tick
-    else { self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600); }
+    else {
+      // a plain stroll (wander/pace) with no goal at the end of it. The walk HEADING used to survive
+      // as the facing, so a stroll that ended one tile short of a wall left the body nose to the
+      // plaster for the whole dwell. Arriving anywhere is a reason to look around.
+      self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600);
+      if (!self.goal && !self.sitting) { const d = lookDir(self); self.dir = d; setGlance(d, U.irnd(500, 900), now); }
+    }
   }
   /* ---------- CONTINUITY OF ATTENTION (the anti-aimlessness fix) ----------
      `wander` samples a UNIFORMLY RANDOM tile of the whole zone, and every idle decision re-rolls from
@@ -1488,13 +1556,18 @@ const World = (() => {
      anchorFor(body): the body's own workstation/bay foot tile — its STABLE home (never its transient
      px/py, so the zone doesn't drift as it walks). Hero falls back to the module `seat` (its synthetic
      desk) when it has no placed workstation prop; crew resolve purely via deskPropFor/bay (P2/P3). */
+  /* The returned tile carries `assigned` — true when it came from a REAL posting (a bound
+     workstation, a bay, or the hero's own desk), false for the A2 fallback below (a placed body
+     with nowhere of its own yet). Only an ASSIGNED body earns the ROAM RADIUS: "how far from MY
+     DESK may I wander" is meaningless for a body that has no desk, and widening the deskless
+     fallback would just undo the bounded-spawn leash A2 exists to provide. */
   function anchorFor(body) {
     if (!geo) return null;
     const aid = body && body.id;
     const dp = aid && deskPropFor(aid);
-    if (dp) return { x: dp.x, y: dp.y };
-    if (aid && geo.props) { const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid); if (bay) return { x: bay.x, y: bay.y }; }
-    if (body === agent && seat) return { x: seat.tx, y: seat.ty };   // hero on the synthetic auto-desk
+    if (dp) return { x: dp.x, y: dp.y, assigned: true };
+    if (aid && geo.props) { const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid); if (bay) return { x: bay.x, y: bay.y, assigned: true }; }
+    if (body === agent && seat) return { x: seat.tx, y: seat.ty, assigned: true };   // hero on the synthetic auto-desk
     // A2 leash fallback: a PLACED crew body with no workstation/bay (the common freshly-summoned worker
     // before the user assigns it a PC) anchors on its OWN foot tile, so zoneFor yields a bounded leash
     // around its spawn spot instead of null — keeping it alive (BR-4 'summoned agents move') without
@@ -1514,9 +1587,21 @@ const World = (() => {
     if (agent && agent.unplaced) return false;        // an unplaced hero owns nothing
     return crew.every(b => b && b.unplaced);          // no OTHER placed body shares the station
   }
+  /* ROAM RADIUS (2026-08-08 idle-life pass). A body assigned to a room used to be caged to that
+     room's rect, which is why the station read as a set of terrariums: an agent could NEVER be
+     seen anywhere but its own box. It now roams its home room PLUS Zones.ROAM_RADIUS tiles around
+     its own DESK, so it pops next door and comes back — still leashed to its posting, never free
+     to cross the whole floor. Nothing else changes: every picker already filters through
+     tileInZone, so they all widen together, and the solo/null/deskless cases are untouched. */
   function zoneFor(body) {
     if (typeof Zones === 'undefined' || !geo) return null;
-    return Zones.computeZone({ rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: anchorFor(body), solo: soleOwner(body) });
+    const a = anchorFor(body);
+    return Zones.computeZone({
+      rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: a,
+      roamR: (a && a.assigned) ? Zones.ROAM_RADIUS : 0,
+      doors: geo.doorDefs,                    // ...and a band past its OWN room's thresholds (Zones.SPILL_RADIUS)
+      solo: soleOwner(body),
+    });
   }
   // membership shorthands — a null zone admits NOTHING (the body has no roam area → fall through to
   // an in-place beat). When Zones is absent the wrapper returns null; treat that as "uncaged" so a
@@ -1642,7 +1727,7 @@ const World = (() => {
       // above own the facing + lifecycle; this branch just STOPS the fall-through to decideIdle (which would stomp it).
       self.state = 'idle';
     } else if (self.goal === 'use') {
-      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.useBeat = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
     } else if (self.goal === 'lounge') {
       if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
     } else if (self.goal === 'rounds') {
@@ -2035,6 +2120,19 @@ const World = (() => {
   }
 
   function setGlance(dir, ms, now) { if (self) self.glance = { dir, until: now + ms }; }
+  /* EMOTE (2026-08-08) — play the sprite set's one-shot `gesture` track NOW (a reach / a work-the-
+     controls arm movement). The art already ships on 35 of 38 sets and until today only ever fired
+     on a blind ~90-minute clock in assets.js, so it was effectively invisible: a body could use a
+     pinball table for twenty seconds without moving a limb. assets.js owns playback (it knows the
+     frame count) and simply ignores an emote once the track has run out, so `until` is only this
+     module's own "don't re-fire" bound. Sets without the art render the normal pose — no fallback
+     needed, exactly like the blink. */
+  function emote(body, now, kind) {
+    const b = body || self; if (!b) return false;
+    if (b.sitting || b.working || b.state === 'walk') return false;   // standing beats only — the gesture art is a standing pose
+    b.emote = { kind: kind || 'gesture', start: now, until: now + 1600 };
+    return true;
+  }
 
   /* ================= Tier C (cross-agent awareness) — C0 plumbing =================
      INVIOLABLE RULE: perceive across zones, ACT (move) only within your own. These two helpers are the
@@ -2694,7 +2792,135 @@ const World = (() => {
       self.cursorGazeCd = now + U.irnd(20000, 45000);
       return dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
     }
-    return U.pick(['east', 'west', 'south', 'north']);
+    return lookDir(self);   // LOOK AT SOMETHING (see lookDirFrom) — never a blind cardinal into a wall
+  }
+
+  /* ================= SUBJECT-FACING (2026-08-08 idle-life pass) =================
+     THE DEFECT: every ambient facing in this engine was `U.pick(['east','west','south','north'])`
+     — a blind cardinal. In a walled station with no windows, roughly half of those point the body
+     at bare wall a tile from its nose, and the "eerie contemplation" beats (gaze-out at the room
+     EDGE facing OUTWARD, face-a-wall, the vigil) pointed at wall BY CONSTRUCTION. Andrew's read
+     was the correct one: it isn't contemplative, it's a character with nothing to look at.
+
+     THE RULE: a body may hold any pose it likes, but it must be looking AT something. lookDirFrom
+     ray-marches each cardinal from a stand tile and scores what the line of sight actually
+     contains — depth of open floor, a prop the ray runs into, a conveyor belt, another body, a
+     doorway through to the next room. A direction whose very first tile is wall scores ~zero and
+     effectively never wins. The winner is drawn WEIGHTED-random from the scores, so the choice
+     stays unpredictable (the engine's whole character) while never being blind.
+
+     Pure-ish: reads geo + bodies, mutates nothing, draws one U.rnd. Degrades to the old blind pick
+     when geo is missing, so a boot-order gap can never freeze a body's head. */
+  const LOOK_REACH = 10;                       // how far down a line of sight we care to look (tiles)
+  const LOOK_DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
+  // the prop occupying a tile, or null (props are blockers, so this answers "did my line of sight
+  // stop at a THING or at bare wall" — the whole distinction this pass turns on)
+  function propAtTile(tx, ty) {
+    const props = (geo && geo.props) || [];
+    for (const p of props) {
+      const w = p.w || 1, h = p.h || 1;
+      if (tx >= p.x && tx < p.x + w && ty >= p.y && ty < p.y + h) return p;
+    }
+    return null;
+  }
+  function beltAtTile(tx, ty) {
+    const belts = (geo && geo.belts) || [];
+    for (const b of belts) if (b.x === tx && b.y === ty) return b;
+    return null;
+  }
+  function bodyAtTile(tx, ty, except) {
+    for (const b of allBodies()) {
+      if (!b || b === except || b.unplaced) continue;
+      const t = tileOf(b.px, b.py);
+      if (t.x === tx && t.y === ty) return b;
+    }
+    return null;
+  }
+  /* score one cardinal from (tx,ty): how much is there to see this way?
+     A wall at range 1 scores 0.15 (never quite impossible — a body CAN turn to a wall, it just
+     stops being the default), and every subject found along the ray adds, discounted by distance
+     so the near thing wins over the far one. */
+  function lookScore(tx, ty, dx, dy, except) {
+    let score = 0, x = tx, y = ty;
+    for (let d = 1; d <= LOOK_REACH; d++) {
+      x += dx; y += dy;
+      const walk = geo.walkable(x, y, blocked);
+      const near = 1 / (1 + d * 0.35);                       // near things dominate far ones
+      const body = bodyAtTile(x, y, except);
+      if (body) score += 4.0 * near;                          // ANOTHER AGENT is the best thing to look at
+      if (beltAtTile(x, y)) score += 2.2 * near;              // cargo moving past
+      if (!walk) {
+        const p = propAtTile(x, y);
+        if (p) score += 2.6 * near;                           // the ray ran into a THING — that's a subject
+        else if (d === 1) return 0.15;                        // bare wall right at the nose — the defect this pass exists to kill
+        else score += 0.15;                                   // bare wall further off: the room simply ends here
+        return score + Math.min(d, 6) * 0.28;                 // + credit for the open floor it looked across
+      }
+      score += 0.28;                                          // open floor: depth is itself worth looking down
+      if (geo.doorDefs && isDoorTile(x, y)) score += 2.4 * near;   // a threshold — looking THROUGH to the next room
+    }
+    return score;
+  }
+  // is this tile part of a threshold (a doorway between two zones)? doorDefs are [x1,y1,x2,y2] seam pairs.
+  function isDoorTile(tx, ty) {
+    const defs = (geo && geo.doorDefs) || [];
+    for (const d of defs) if ((d[0] === tx && d[1] === ty) || (d[2] === tx && d[3] === ty)) return true;
+    return false;
+  }
+  /* the facing to adopt from a stand tile: weighted-random over the four scored cardinals.
+     opts.exclude — a direction to leave out (e.g. don't just look back the way you came).
+     opts.away    — bias AWAY from the Commander (the 'ponder'/'turn your back' flavor) by halving
+                    the south score, WITHOUT ever letting the body pick a wall instead. */
+  function lookDirFrom(tx, ty, opts) {
+    opts = opts || {};
+    if (!geo || typeof geo.walkable !== 'function') return U.pick(['east', 'west', 'south', 'north']);
+    const scored = [];
+    let total = 0;
+    for (const [dir, dx, dy] of LOOK_DIRS) {
+      if (opts.exclude === dir) continue;
+      let s = lookScore(tx, ty, dx, dy, opts.except || null);
+      if (opts.away && dir === 'south') s *= 0.35;
+      scored.push({ dir, s }); total += s;
+    }
+    if (!scored.length || total <= 0) return U.pick(['east', 'west', 'south', 'north']);
+    let roll = U.rnd(0, total);
+    for (const c of scored) { roll -= c.s; if (roll <= 0) return c.dir; }
+    return scored[scored.length - 1].dir;
+  }
+  /* WHAT IS ACTUALLY IN FRONT OF A BODY — one tile ahead of its live facing:
+     'body' | 'belt' | 'open' | 'prop' | 'wall'. This is the metric the whole W1 pass turns on, so
+     it is exposed read-only through bodies() and measured in a live soak: an idle body reading
+     'wall' is a body with its nose against the plaster, which is the thing we removed. */
+  function subjectAt(b, x, y) {
+    if (bodyAtTile(x, y, b)) return 'body';
+    if (beltAtTile(x, y)) return 'belt';
+    if (geo.walkable(x, y, blocked)) return 'open';
+    return propAtTile(x, y) ? 'prop' : 'wall';
+  }
+  function facingSubject(b) {
+    if (!geo || !b || typeof geo.walkable !== 'function') return null;
+    const t = tileOf(b.px, b.py);
+    const d = (b.glance && b.glance.until > fnow) ? b.glance.dir : (b.dir || 'south');
+    const v = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] }[d] || [0, 1];
+    return subjectAt(b, t.x + v[0], t.y + v[1]);
+  }
+  /* THE CONTROL for that metric: how many of the FOUR cardinals from where this body stands are
+     bare wall. A blind `U.pick` of a cardinal — which is exactly what this engine used to do — would
+     face wall at wallDirs/4. Sampled alongside `facing`, it gives the soak an in-sample baseline to
+     compare the real facing rate against, instead of an unfalsifiable "looks better now". */
+  function wallDirsAt(b) {
+    if (!geo || !b || typeof geo.walkable !== 'function') return null;
+    const t = tileOf(b.px, b.py);
+    let n = 0;
+    for (const [, dx, dy] of LOOK_DIRS) if (subjectAt(b, t.x + dx, t.y + dy) === 'wall') n++;
+    return n;
+  }
+  // shorthand: what should THIS body be looking at from where it stands
+  function lookDir(body, opts) {
+    const b = body || self;
+    if (!b) return 'south';
+    const t = tileOf(b.px, b.py);
+    return lookDirFrom(t.x, t.y, Object.assign({ except: b }, opts || {}));
   }
 
   // go inspect the freshest queued placement (pops the queue; tries each until one is reachable)
@@ -2726,6 +2952,8 @@ const World = (() => {
     if (inBelts.length) { const b = inBelts[U.irnd(0, inBelts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
     // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation); in-zone only
+    // non-leisure kit it has not worn out yet. The 4-look cap is now a fading one (decayHabits), so a
+    // machine ignored for a few minutes climbs back onto this list instead of being furniture forever.
     const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y); });
     if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', key: p.id, foot: p, extra: blocked }); }
     if (cands.length === 2 && U.chance(0.5)) cands.reverse();
@@ -2892,19 +3120,39 @@ const World = (() => {
     }
     return false;
   }
-  // deep downtime → walk to the station edge and contemplate the void (faces outward, long quiet dwell)
-  function planGazeOut(now) {
+  /* deep downtime → take up a VANTAGE and look out over the station (long quiet dwell).
+     WAS planGazeOut: it walked to the outermost EDGE tile of the zone and faced OUTWARD — i.e. it
+     walked to a wall and stared at it, which in a windowless station is exactly what it looked
+     like. Same beat, same goal ('gaze'), same dwell: the body now walks to a tile with a real LINE
+     OF SIGHT (a doorway it can look through, a long open run, a machine, the belt) and faces the
+     thing. The contemplation survives; the drywall doesn't. */
+  function planVantage(now) {
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
-    const zone = zoneFor(self);   // P1: gaze at the OWN-ZONE edge — clamped, not the whole-station edge (a solo whole-station zone keeps the true edge)
-    const cx = geo.COLS / 2, cy = geo.ROWS / 2, cands = [];
-    for (const r of geo.allRects) {
-      cands.push({ tx: r.x1, ty: (r.y1 + r.y2) >> 1, face: 'west' }); cands.push({ tx: r.x2, ty: (r.y1 + r.y2) >> 1, face: 'east' });
-      cands.push({ tx: (r.x1 + r.x2) >> 1, ty: r.y1, face: 'north' }); cands.push({ tx: (r.x1 + r.x2) >> 1, ty: r.y2, face: 'south' });
+    const zone = zoneFor(self);   // P1: a vantage inside the OWN zone — clamped, exactly as the edge-gaze was
+    const cur = tileOf(self.px, self.py);
+    const seen = new Set(), cands = [];
+    const add = (tx, ty) => {
+      const k = tx + ',' + ty;
+      if (seen.has(k)) return; seen.add(k);
+      if (!tileInZone(zone, tx, ty) || !geo.walkable(tx, ty, blocked)) return;
+      if (tx === cur.x && ty === cur.y) return;                  // a vantage you are already standing on is not a walk
+      let best = 0, face = 'south';
+      for (const [dir, dx, dy] of LOOK_DIRS) { const s = lookScore(tx, ty, dx, dy, self); if (s > best) { best = s; face = dir; } }
+      cands.push({ tx, ty, face, s: best });
+    };
+    // the standing spots BESIDE each threshold — the honest "looking through into the next room"
+    for (const d of (geo.doorDefs || [])) { add(d[0], d[1]); add(d[2], d[3]); }
+    // plus a sample of open floor, so the vantage isn't always the same doorway
+    for (let i = 0; i < 22; i++) {
+      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
+      add(U.irnd(r.x1, r.x2), U.irnd(r.y1, r.y2));
     }
-    cands.sort((a, b) => ((b.tx - cx) ** 2 + (b.ty - cy) ** 2) - ((a.tx - cx) ** 2 + (a.ty - cy) ** 2));   // furthest-out first
-    for (const c of cands) {
-      if (!tileInZone(zone, c.tx, c.ty)) continue;   // only the edges of the agent's own zone
-      if (geo.walkable(c.tx, c.ty, blocked) && setPathTo({ x: c.tx, y: c.ty })) { self.goal = 'gaze'; self.useFace = c.face; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
+    if (!cands.length) return false;
+    cands.sort((a, b) => b.s - a.s);
+    const top = cands.slice(0, 5);                               // the best few, then one at random — a favourite spot, not THE spot
+    for (let i = top.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = top[i]; top[i] = top[j]; top[j] = t; }
+    for (const c of top) {
+      if (setPathTo({ x: c.tx, y: c.ty })) { self.goal = 'gaze'; self.useFace = c.face; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
     }
     return false;
   }
@@ -2946,8 +3194,8 @@ const World = (() => {
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
     if (r < 520) return quirkScan(now);      // 20% — a slow, deliberate sweep of the room
     if (r < 680) return quirkPonder(now);    // 16% — stops, faces away, lost in thought
-    if (r < 790) return planGazeOut(now);    // 11% — drifts to the edge and stares into the void
-    if (r < 870) return quirkFaceWall(now);  //  8% — walks to a wall and just faces it (unexplained)
+    if (r < 790) return planVantage(now);    // 11% — drifts to a vantage and looks out over the station
+    if (r < 870) return quirkDoorway(now) || quirkScan(now);  //  8% — stands in a doorway looking through into the next room (unexplained); a station with no thresholds falls back to the sweep
     if (r < 945 && quirkVigil(now)) return true;   // ~7.5% — the VIGIL: dead-center, faces one wall, holds (falls through to the stare if no center is free)
     return quirkStare(now);                  // ~5.5% — the long stare straight at YOU (rarest, eeriest)
   }
@@ -2957,33 +3205,40 @@ const World = (() => {
     if (face) { self.dir = face; setGlance(face, U.irnd(300, 600), now); }
     return true;
   }
-  function quirkListen(now) { const d = U.pick(['east', 'west', 'south', 'north']); startQuirk(now, 'listen', U.irnd(2200, 4500), d); setGlance(d, 260, now); curiositySay(Q_LISTEN, 0.22, now); return true; }
+  function quirkListen(now) { const d = lookDir(self); startQuirk(now, 'listen', U.irnd(2200, 4500), d); setGlance(d, 260, now); curiositySay(Q_LISTEN, 0.22, now); return true; }   // it snaps toward a sound — down a line of sight, not into the wall behind it
   function quirkScan(now) {
     startQuirk(now, 'scan', U.irnd(3200, 4600), 'north');
     const body = self;   // B1: capture the scheduling body — the deferred sweep must turn THIS body, not whatever `self` points to at fire time
     ['north', 'east', 'south', 'west'].forEach((d, i) => setTimeout(() => { if (body && body.goal === 'quirk' && body.quirkKind === 'scan') { body.dir = d; body.glance = { dir: d, until: performance.now() + 900 }; } }, i * 850));
     return true;
   }
-  function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), U.pick(['north', 'east', 'west'])); curiositySay(Q_PONDER, 0.4, now); return true; }
-  function quirkFaceWall(now) {   // walks to a wall and just... faces it. no explanation. (uses arrive's quirk dwell)
-    if (!geo || !geo.allRects || !geo.allRects.length) return false;
-    const zone = zoneFor(self);   // P1: face a wall WITHIN the zone, not a wall across the station
-    const DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
-    for (let tries = 0; tries < 30; tries++) {
-      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
-      const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
-      if (!tileInZone(zone, tx, ty)) continue;
-      if (!geo.walkable(tx, ty, blocked)) continue;
-      const walls = DIRS.filter(([d, dx, dy]) => !geo.walkable(tx + dx, ty + dy, blocked));
-      if (!walls.length) continue;
-      if (!setPathTo({ x: tx, y: ty })) continue;
-      self.goal = 'quirk'; self.quirkKind = 'wall'; self.useFace = U.pick(walls)[0]; self.usingProp = null; self.studyKey = null;
+  function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), lookDir(self, { away: true })); curiositySay(Q_PONDER, 0.4, now); return true; }   // lost in thought, turned away from you — but turned toward SOMETHING
+  /* WAS quirkFaceWall — "walks to a wall and just faces it, no explanation". The unexplained detour
+     is good; the wall was the problem (it read as a broken pathfind, not an inner life). It now
+     walks to a THRESHOLD and stands in the doorway looking through into the next room — the same
+     unexplained, silent, held beat, aimed at somewhere it isn't. */
+  function quirkDoorway(now) {
+    if (!geo || !geo.doorDefs || !geo.doorDefs.length) return false;
+    const zone = zoneFor(self), cur = tileOf(self.px, self.py);
+    const spots = [];
+    for (const d of geo.doorDefs) {
+      for (const [tx, ty, ox, oy] of [[d[0], d[1], d[2], d[3]], [d[2], d[3], d[0], d[1]]]) {
+        if (!tileInZone(zone, tx, ty) || !geo.walkable(tx, ty, blocked)) continue;
+        if (tx === cur.x && ty === cur.y) continue;
+        spots.push({ tx, ty, face: dirToward((tx + 0.5) * T, (ty + 0.5) * T, (ox + 0.5) * T, (oy + 0.5) * T) });   // stand this side, look THROUGH
+      }
+    }
+    if (!spots.length) return false;
+    for (let i = spots.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = spots[i]; spots[i] = spots[j]; spots[j] = t; }
+    for (const s of spots.slice(0, 6)) {
+      if (!setPathTo({ x: s.tx, y: s.ty })) continue;
+      self.goal = 'quirk'; self.quirkKind = 'doorway'; self.useFace = s.face; self.usingProp = null; self.studyKey = null;
       if (!self.target) arrive(now);
       return true;
     }
     return false;
   }
-  function quirkVigil(now) {   // walks to a room's center, faces ONE cardinal, holds dead still — the held emptiness (silent)
+  function quirkVigil(now) {   // walks to a room's center, holds dead still — the held emptiness (silent)
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
     const zone = zoneFor(self);   // P1: the vigil stands at a rect-center INSIDE the zone (a solo whole-station zone admits every center)
     for (let t = 0; t < 24; t++) {
@@ -2992,7 +3247,7 @@ const World = (() => {
       if (!tileInZone(zone, tx, ty)) continue;
       if (!geo.walkable(tx, ty, blocked)) continue;
       if (!setPathTo({ x: tx, y: ty })) continue;
-      self.goal = 'quirk'; self.quirkKind = 'vigil'; self.useFace = U.pick(['north', 'south', 'east', 'west']); self.usingProp = null; self.studyKey = null;
+      self.goal = 'quirk'; self.quirkKind = 'vigil'; self.useFace = lookDirFrom(tx, ty, { except: self }); self.usingProp = null; self.studyKey = null;   // the stillness is the beat; it still has to be LOOKING at something
       if (!self.target) arrive(now);
       return true;
     }
@@ -3186,7 +3441,7 @@ const World = (() => {
     const cur = tileOf(self.px, self.py);
     if (cur.x === f.x && cur.y === f.y) { self.revisitCd = now + U.irnd(40000, 80000); return false; }
     if (!geo.walkable(f.x, f.y, blocked) || !setPathTo({ x: f.x, y: f.y })) return false;
-    self.goal = 'revisit'; self.useFace = U.pick(['south', 'north', 'east', 'west']); self.usingProp = null; self.studyKey = null;
+    self.goal = 'revisit'; self.useFace = lookDirFrom(f.x, f.y, { except: self }); self.usingProp = null; self.studyKey = null;   // back at the haunt, looking at whatever made it a haunt
     self.revisitCd = now + U.irnd(60000, 120000);
     armBeat(now);   // D2 (G5): a haunt-revisit walk is a noticeable beat — count it against the station budget
     if (!self.target) arrive(now);
@@ -3289,7 +3544,7 @@ const World = (() => {
       const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.45 : 0.3;
       if (U.chance(roundsBias) && maybeRounds(now)) return;                             //   do a deliberate caretaker lap (purpose, not aimless)
       if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
-      if (idleAge > 30000 && U.chance(0.35) && planGazeOut(now)) return;               //   long quiet -> contemplate the void
+      if (idleAge > 30000 && U.chance(0.35) && planVantage(now)) return;               //   long quiet -> take up a vantage and look out over the station
       if (p.restless * ph.restless > 1.0 && pace(now)) return;                          //   antsy -> pace in place
     }
     // graceful fallbacks so it never freezes
@@ -3352,7 +3607,7 @@ const World = (() => {
     }
     // lounging on the couch: eyes settle on the TV (base facing), with the odd glance around the room
     if (agent.goal === 'lounge') {
-      if (U.chance(0.25)) { setGlance(U.pick(['east', 'west', 'south']), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(2600, 5200); }
+      if (U.chance(0.25)) { setGlance(lookDir(agent, { exclude: agent.useFace }), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(2600, 5200); }   // eyes off the screen for a beat — at something, not at the wall behind the couch
       else agent.glanceCd = now + U.irnd(1200, 2400);
       return;
     }
@@ -3371,8 +3626,19 @@ const World = (() => {
     // a quirk in progress: scan pans itself (timed); the others mostly hold their pose with a rare flick
     if (agent.goal === 'quirk') {
       if (agent.quirkKind === 'vigil') { agent.glanceCd = now + 6000; return; }   // the VIGIL holds dead still — zero head-turns, the held emptiness
-      if (agent.quirkKind !== 'scan' && U.chance(0.3)) setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(400, 800), now);
+      if (agent.quirkKind !== 'scan' && U.chance(0.3)) setGlance(lookDir(agent), U.irnd(400, 800), now);
       agent.glanceCd = now + U.irnd(1200, 2600);
+      return;
+    }
+    // AT A PROP (W2): the prop's own fidget cadence. An absorbing thing with something moving on it
+    // (a tank, a screen, a holo pet) holds the gaze and is only rarely looked away from; everything
+    // else gets the busier "using it while taking the room in" rhythm. The look-away always has a
+    // subject (lookDir), and never doubles back onto the prop the body is already facing.
+    if (agent.goal === 'use') {
+      const b = agent.useBeat, span = b ? b.fidget : [2000, 4000];
+      if (now < (agent.nextFidget || 0)) return;
+      agent.nextFidget = now + U.irnd(span[0], span[1]);
+      if (U.chance(b && b.track ? 0.28 : 0.72)) { setGlance(lookDir(agent, { exclude: agent.useFace }), U.irnd(450, 900), now); agent.glanceCd = now + 600; }
       return;
     }
     // working at the desk: glance at a freshly placed thing nearby, else fidget-look up from the screen
@@ -3416,7 +3682,8 @@ const World = (() => {
     // endEncounter is idempotent; this is the belt-and-suspenders that makes the slot un-leakable.
     if (socialBeat && (now >= socialBeat.until || encounterBroken(now))) endEncounter(now);
     sweepChase(now);                                              // TIER D · D4: station-level chase sweep (G4) — a seized/despawned/chat-focused chaser ALWAYS frees the lock same-tick, independent of its own stepper
-    tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
+    decayHabits(now);                                             // habituation fades (see FORGET_MS) — a floor watched for an hour must not run out of things worth looking at
+    tickNeeds(dt);                                              // the inner meters drain/refill by what it is doing
     if (!agent.sitting && !agent.seated) ensureAgentValid();       // CONTAINMENT BACKSTOP (2026-07-12): a standing hero off the floor re-homes NOW, not at the next refit (rederive was the only caller — any missed frame-shift left it adrift until then)
     stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
     const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
@@ -3512,7 +3779,7 @@ const World = (() => {
       }
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
-      if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.useBeat = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'lounge') {
       // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
       if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
@@ -6636,7 +6903,14 @@ const World = (() => {
           say: (b.say && b.say.text && b.say.until > fnow) ? b.say.text : null,
           target: b.target ? { tile: tileOf(b.target.x, b.target.y), x: Math.round(b.target.x), y: Math.round(b.target.y) } : null,
           glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
-          zone: z, inOwnZone: tileInZone(z, t.x, t.y)
+          zone: z, inOwnZone: tileInZone(z, t.x, t.y),
+          // idle-life (2026-08-08) instrumentation — read-only, no side effects:
+          facing: facingSubject(b),                                     // what is one tile ahead of its nose ('wall' is the defect)
+          wallDirs: wallDirsAt(b),                                      // control: how many of the 4 cardinals here ARE wall (a blind pick would hit wall wallDirs/4 of the time)
+          quirkKind: b.quirkKind || null,
+          useKind: b.usingProp ? useKindOf(b.usingProp) : null,         // WHICH prop it is using (the per-kind beat)
+          emote: !!(b.emote && b.emote.until > fnow),                   // playing the one-shot gesture track
+          inHomeRoom: !!(z && z.kind === 'room' && typeof Zones !== 'undefined' && Zones.rectHas(z.rect, t.x, t.y))   // false + inOwnZone = it walked into another room on its roam radius
         };
       };
       return [snap(agent, true), ...crew.map((b) => snap(b, false))].filter(Boolean);
