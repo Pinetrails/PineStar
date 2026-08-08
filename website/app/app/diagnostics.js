@@ -71,6 +71,21 @@
       .catch(() => '');
   }
 
+  // Opt-in LIVE doctor. This is intentionally separate from fetchText(): it performs real provider/execution/
+  // connector/channel I/O and may spend one tiny model response. The host independently requires the boolean,
+  // so a caller cannot trigger live probes with an accidental GET or an omitted body.
+  function runLive(opts) {
+    opts = opts || {};
+    return fetch('/api/diagnostics/live', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmedLiveProbes: opts.confirmed === true, agentId: String(opts.agentId || '') })
+    }).then(async r => {
+      let j = null; try { j = await r.json(); } catch (_) {}
+      if (!r.ok || !j || !j.report || typeof j.text !== 'string') throw new Error((j && j.error) || 'live doctor failed');
+      return j;
+    });
+  }
+
   function notify(msg, kind) {
     try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(msg, kind || 'good'); } catch (_) {}
   }
@@ -254,5 +269,5 @@
     return fetchText().then(paint).catch(() => paint(''));
   }
 
-  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, copy, showBlock, buildLine, localReport, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER, formatBuild, tauriCore, localRedact, apiOrigin } };
+  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, runLive, copy, showBlock, buildLine, localReport, copyText: copyToClipboard, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER, formatBuild, tauriCore, localRedact, apiOrigin } };
 });

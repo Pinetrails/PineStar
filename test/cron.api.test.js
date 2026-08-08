@@ -205,6 +205,9 @@ function boot(port, workspaces, attemptsLeft) {
     const interrupted = makeRunJournal({ dir: path.join(ws, '.run-journal') });
     interrupted.begin({ runId: 'interrupted-cron-run', agentId: 'cron_brief', streamId: 'cron-interrupted-cron-run', trigger: 'schedule', cronJobId: 'routine-recovery-proof', cronJobName: 'Recovery proof' });
     interrupted.checkpoint('interrupted-cron-run', { phase: 'assistant', turn: 1, messages: [{ role: 'assistant', content: 'partial safe checkpoint' }] });
+    interrupted.begin({ runId: 'uncertain-cron-run', agentId: 'cron_brief', streamId: 'cron-uncertain-cron-run', trigger: 'schedule', cronJobId: 'routine-uncertain-proof', cronJobName: 'Uncertain proof' });
+    interrupted.checkpoint('uncertain-cron-run', { phase: 'assistant', turn: 1, messages: [{ role: 'assistant', content: 'about to update the external system' }] });
+    interrupted.toolIntent('uncertain-cron-run', { callId: 'mutating-call-1', name: 'connector.update', mutating: true });
     try { child.kill(); } catch (_) {} await sleep(200);
     booted = await boot(port + 100, ws, 20); child = booted.child; port = booted.port;
     await refreshToken();
@@ -220,6 +223,49 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(interruptedCron.cronJobId, 'routine-recovery-proof', 'recovery truth identifies the originating routine');
     A.eq(interruptedCron.cronJobName, 'Recovery proof', 'recovery truth carries the human routine name');
     A.eq(interruptedCron.status, 'resumable', 'a checkpoint without an uncertain mutation is honestly resumable');
+    const uncertainCron = (recoveries.body.recoveries || []).find(row => row.runId === 'uncertain-cron-run');
+    A.eq(uncertainCron.status, 'needs_review', 'an unmatched mutating call is visibly review-required');
+    A.eq(uncertainCron.uncertain, [{ callId: 'mutating-call-1', name: 'connector.update' }], 'the operator sees bounded uncertainty without tool arguments');
+    A.ok(uncertainCron.recoveryToken, 'the read snapshot carries a stale-decision guard');
+    const unauthorizedResolution = await fetch(B() + '/api/run-recoveries/resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        runId: 'uncertain-cron-run', agentId: 'cron_brief', resolutionId: 'api-resolution-1', recoveryToken: uncertainCron.recoveryToken,
+        confirmedNoReplay: true, outcomes: [{ callId: 'mutating-call-1', outcome: 'happened' }]
+      })
+    });
+    A.eq(unauthorizedResolution.status, 403, 'an unauthenticated local request cannot resolve preserved work');
+    const wrongOwner = await j('POST', '/api/run-recoveries/resolve', {
+      runId: 'uncertain-cron-run', agentId: 'agent', resolutionId: 'api-resolution-1', recoveryToken: uncertainCron.recoveryToken,
+      confirmedNoReplay: true, outcomes: [{ callId: 'mutating-call-1', outcome: 'happened' }]
+    });
+    A.eq(wrongOwner.status, 403, 'a caller cannot resolve a run under a different agent owner');
+    const incomplete = await j('POST', '/api/run-recoveries/resolve', {
+      runId: 'uncertain-cron-run', agentId: 'cron_brief', resolutionId: 'api-resolution-1', recoveryToken: uncertainCron.recoveryToken,
+      confirmedNoReplay: true, outcomes: []
+    });
+    A.eq(incomplete.status, 409, 'resolution must account for every uncertain call');
+    const noConsent = await j('POST', '/api/run-recoveries/resolve', {
+      runId: 'uncertain-cron-run', agentId: 'cron_brief', resolutionId: 'api-resolution-1', recoveryToken: uncertainCron.recoveryToken,
+      outcomes: [{ callId: 'mutating-call-1', outcome: 'happened' }]
+    });
+    A.eq(noConsent.status, 400, 'resolution requires explicit no-replay acknowledgement');
+    const resolveUncertain = await j('POST', '/api/run-recoveries/resolve', {
+      runId: 'uncertain-cron-run', agentId: 'cron_brief', resolutionId: 'api-resolution-1', recoveryToken: uncertainCron.recoveryToken,
+      confirmedNoReplay: true, outcomes: [{ callId: 'mutating-call-1', outcome: 'happened' }], note: 'verified in destination audit log'
+    });
+    A.eq(resolveUncertain.status, 200, 'an explicit complete operator verdict resolves the preserved run');
+    A.eq(resolveUncertain.body.recovery.status, 'resolved', 'the response is truthful about the non-replayed resolution');
+    A.eq(resolveUncertain.body.recovery.resolution.outcomes[0].outcome, 'happened', 'the response includes the audited outcome');
+    const retryResolution = await j('POST', '/api/run-recoveries/resolve', {
+      runId: 'uncertain-cron-run', agentId: 'cron_brief', resolutionId: 'api-resolution-1', recoveryToken: uncertainCron.recoveryToken,
+      confirmedNoReplay: true, outcomes: [{ callId: 'mutating-call-1', outcome: 'happened' }], note: 'verified in destination audit log'
+    });
+    A.eq(retryResolution.status, 200, 'retrying an accepted resolution id is idempotent even with its original snapshot token');
+    const overwriteResolution = await j('POST', '/api/run-recoveries/resolve', {
+      runId: 'uncertain-cron-run', agentId: 'cron_brief', resolutionId: 'api-resolution-2', recoveryToken: uncertainCron.recoveryToken,
+      confirmedNoReplay: true, outcomes: [{ callId: 'mutating-call-1', outcome: 'did_not_happen' }]
+    });
+    A.eq(overwriteResolution.status, 409, 'a later conflicting verdict cannot overwrite the audit record');
     const restartedScriptTranscript = await j('GET', '/api/transcript?agent=cron_brief&stream=' + encodeURIComponent('cron-' + scriptJob.lastRunId) + '&limit=20');
     A.ok((restartedScriptTranscript.body.turns || []).some(t => t.role === 'assistant' && t.content === 'script-only result'), 'completed routine output remains retrievable from durable history after host restart');
 
@@ -237,6 +283,11 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(recovered.body.jobs.length, 3, 'torn cron.jobs.json recovered from .bak on boot');
     A.ok(recovered.body.jobs.some(job => job.name === 'Renamed brief'), 'recovered routine keeps the edited name');
     A.ok(recovered.body.jobs.some(job => job.schedule && job.schedule.kind === 'cron'), 'recovered routine keeps the cron schedule');
+    const recoveriesAfterReboot = await j('GET', '/api/run-recoveries');
+    const durableResolution = (recoveriesAfterReboot.body.recoveries || []).find(row => row.runId === 'uncertain-cron-run');
+    A.eq(durableResolution.status, 'resolved', 'the operator resolution survives a second host boot');
+    A.eq(durableResolution.resolution.note, 'verified in destination audit log', 'the audit note survives restart');
+    A.eq(durableResolution.canResolve, false, 'a resolved journal cannot be decided again after restart');
 
     // ---- remove: delete then confirm gone ----
     const rm = await j('POST', '/api/cron/remove', { id });

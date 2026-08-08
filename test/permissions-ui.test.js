@@ -13,12 +13,59 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 // (no duplicated inner h4 for the SECTION — the PROVIDERS rule), topped by the master FULL BYPASS switch.
 // Each block header is a real .ms-h (the shared divider-rule idiom), not body-weight .set-row prose —
 // that flatness is exactly what made the pane unreadable before the 08-05 spacing pass.
-ok(/<h4 class="ms-h">1 · EXECUTION PROFILE/.test(src), 'block 1: execution profile is a real section header');
-ok(/<h4 class="ms-h">2 · APPROVAL PROMPTS/.test(src), 'block 2: approval posture is a real section header');
-ok(/<h4 class="ms-h">3 · UNATTENDED LEVEL/.test(src), 'block 3: unattended-level header is a real section header');
+ok(/<h4 class="ms-h">1 · YOUR CREW/.test(src), 'block 1: the crew list is a real section header');
+ok(/<h4 class="ms-h">2 · SKIP EVERY PROMPT/.test(src), 'block 2: the master override is a real section header');
+ok(/<h4 class="ms-h">3 · WHILE YOU’RE AWAY/.test(src), 'block 3: unattended-level header is a real section header');
 ok(/<h4 class="ms-h">4 · STANDING APPROVALS/.test(src), 'block 4: standing-approvals header is a real section header');
 // the flip button may never go back to sitting inline after the row's sentence (the collision bug)
 ok(/class="perm-agent/.test(src) && /class="pa-state"/.test(src), 'agent rows are structured (name/state/button), not one inline sentence');
+
+// ── the plain-language pass (2026-08-07) ──
+// AT A GLANCE: the pane opens with ONE ordinary sentence about the station's real posture, counted from
+// the same live records the rows render — never a fixed string, never a claim the roster can't back.
+ok(/id="perm-glance"/.test(src), 'the pane opens with an AT A GLANCE summary card');
+ok(/const paintGlance = \(\) =>/.test(src) && /present\.filter\(a => a && a\.approvalMode === 'full'\)\.length/.test(src),
+  'the glance sentence COUNTS the live roster rather than asserting a posture');
+// paintCrew() opens by repainting the glance, and repaintPerm() calls paintCrew() right after the
+// bypass card — so ONE flip moves the card, every row, and the summary together.
+ok(/const paintCrew = \(\) => \{\s*if \(!crewList\) return;\s*paintGlance\(\);/.test(src),
+  'the glance repaints with the crew (summary and rows can never disagree)');
+ok(/protected files \(<code>\.env<\/code>, <code>\.git<\/code>\) are never writable/.test(src),
+  'the glance states the standing floor in plain words');
+// ONE crew row per agent carrying BOTH axes — the two-tables-forty-rows-apart layout is the defect this
+// lane closed, so a future split has to break this lock deliberately.
+ok(/id="perm-crew"/.test(src), '#perm-crew is the single merged crew list');
+ok(!/id="perm-execution"/.test(src) && !/id="perm-approval"/.test(src),
+  'reach and approval are NOT two separate crew lists any more');
+ok(/data-perm-profile=/.test(src) && /data-ap-flip=/.test(src) && /class="perm-agent perm-crew-row/.test(src),
+  'one row carries both the reach chips and the asks-first chips');
+ok(/<span class="pc-q">CAN REACH<\/span>/.test(src) && /<span class="pc-q">ASKS FIRST'/.test(src),
+  'each control is preceded by the plain question it answers');
+// the reach ladder must stay ORDERED and self-describing: a meter plus one ordinary sentence per rung.
+ok(/const reachMeter = \(n\) =>/.test(src) && /class="pc-dots"/.test(src), 'each reach chip wears a reach meter');
+ok(/id: 'safe-cell'[\s\S]{0,900}id: 'remote-ssh'[\s\S]{0,900}id: 'station-gear'[\s\S]{0,900}id: 'trusted-project'[\s\S]{0,900}id: 'this-computer'/.test(src),
+  'EXECUTION_PROFILES is ordered safest → broadest (the array order IS the chip order)');
+ok(/reach: 1,[\s\S]{0,900}reach: 1,[\s\S]{0,900}reach: 2,[\s\S]{0,900}reach: 3,[\s\S]{0,900}reach: 4,/.test(src),
+  'the reach meter never decreases down the ladder');
+ok(/EXECUTION_PROFILE_DEFAULT = 'station-gear'/.test(src) && !/\|\| EXECUTION_PROFILES\[0\]/.test(src),
+  'the profile fallback is the DEFAULT by id, never an index into the reach-ordered array');
+ok(/plain: 'None of your files\./.test(src) && /plain: 'Almost any file on this computer/.test(src),
+  'every rung carries a plain-English sentence about what it can touch');
+// The block-2 override outranks the per-agent ASKS FIRST axis. A row that still printed "ASKS" under an
+// ON override was the app asserting a posture the harness will not honour — the row must report the
+// EFFECTIVE state, keep the stored setting visible, and repaint WITH the switch.
+ok(/const effFull = full \|\| overridden;/.test(src), 'the row reports the EFFECTIVE approval posture, not the stored one alone');
+ok(/const overridden = !!\(snap\.loaded && \(snap\.masterBypass \|\| snap\.envFullAccess\)\);/.test(src),
+  'the override state is read from SERVER truth, never guessed locally');
+ok(/OVERRIDDEN BY BLOCK 2/.test(src) && /The switch in block 2 is ON, so this agent is not asking/.test(src),
+  'an overridden row says so in plain words instead of contradicting the glance');
+ok(/Turn that switch off and it goes back to stopping for your yes/.test(src),
+  'the stored setting stays visible as what it returns to (never hidden)');
+ok(/paintBypass\(snap\);[\s\S]{0,220}paintCrew\(\);/.test(src),
+  'flipping the master switch repaints every crew row, not just the card');
+// the advanced Docker housekeeping is no longer the first thing under the crew header
+ok(/id="perm-advanced"/.test(src) && /ADVANCED — idle Safe Cell cleanup/.test(src),
+  'the idle-cell policy lives in a closed ADVANCED disclosure, not above the crew');
 ok(/id="perm-bypass" class="perm-master"/.test(src), 'the master switch is a CARD, not a key-list row');
 ok(/class="perm-m-act"/.test(src), 'the bypass control sits on its own line, never inside the prose');
 ok(/id="perm-desc"/.test(src), '#perm-desc combined-level blurb element present');
@@ -35,9 +82,10 @@ ok(/ArmConfirm\.wire\(onBtn/.test(src), 'turning FULL BYPASS ON keeps the two-pr
 ok(/snap\.envFullAccess/.test(src), 'an env-forced bypass is explained (pinned switch), never a dead toggle');
 ok(/protected-file floor/.test(src), 'the bypass copy names the floors that still stand (truthful telemetry)');
 
-// ── 1 · per-agent APPROVAL rows ──
-ok(/id="perm-approval"/.test(src), '#perm-approval per-agent list present');
+// ── 1 · per-agent APPROVAL chips ──
 ok(/setApproval/.test(src), 'rows apply through access.config.setApproval (the dossier/-yolo path)');
+ok(/ArmConfirm\.wire\(b, \{ armedLabel: 'SURE\? IT WILL NEVER ASK'/.test(src),
+  'escalating one agent to no-prompts keeps the two-press confirm');
 ok(/id="perm-full-all"/.test(src) && /id="perm-ask-all"/.test(src), 'whole-station FULL ACCESS + everyone-asks switches present');
 ok(/ArmConfirm\.wire\(fullAll/.test(src), 'whole-station FULL ACCESS keeps the two-press confirm');
 

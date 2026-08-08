@@ -262,6 +262,15 @@
     // TASK BRIEF v2 (additive dep): read the durable brief so the channel fallback can carry the host-validated
     // recommendation. Optional — a hub built without it renders the plain numbered choices exactly as before.
     const briefFor = typeof o.briefFor === 'function' ? o.briefFor : null;
+    /* UNADDRESSED BY CONSTRUCTION (bindChats:false — the sample proof, 2026-08-07). A real channel chat REMEMBERS
+       which agent it talks to: the hub saves the resolution onto any unbound chat so the autonomous notifier knows
+       where to ping. For a hub whose "chat" is not a conversation at all — the POST /api/routing/sample proof crate,
+       which exists to prove the floor sorts UNADDRESSED work — that bookkeeping is fatal: sample #1 saved a binding,
+       so sample #2 took resolveTarget's ADDRESSED branch and rode straight to the remembered dock, bypassing the
+       FILTER/SPLITTER the route claims it exercises. The proof quietly stopped proving anything from its second run
+       on. With bindChats:false the hub neither READS nor WRITES a binding for this chat, so every dispatch is
+       genuinely unaddressed — including on a station whose store already holds a stale 'sample' record. */
+    const bindChats = o.bindChats !== false;
     const groundedFor = typeof o.groundedFor === 'function' ? o.groundedFor : null;
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
     // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
@@ -295,6 +304,10 @@
     // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
     // byte-identical to the behaviour before work lines existed.
     const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
+    /* WORK BELONGS TO A LINE (2026-08-07): lineOriginFor(agentId) -> the lineId work ARRIVING at this dock
+       belongs to, or null when nothing triggered a workflow. Injected (index.js passes router.lineOriginFor)
+       so the compiled plan alone decides; absent -> null -> the chain never advances, the safe default. */
+    const lineOriginFor = typeof o.lineOriginFor === 'function' ? o.lineOriginFor : null;
     // Target-agent runtime identity for downstream work-line hops. The connection's own secrets belong only
     // to stage one; reusing them would silently run every later dock on the upstream model/provider.
     const resolveRunConfig = typeof o.resolveRunConfig === 'function' ? o.resolveRunConfig : null;
@@ -1225,7 +1238,7 @@
       // The chat's own persisted binding (set by /talk) — the user's explicit choice of which roster agent this
       // chat talks to. Read it once here so both command handling (below) and run resolution can honor it.
       let boundRec = null;
-      try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
+      try { if (bindChats && typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
       let ownerTrusted = false;
       try { ownerTrusted = ownerTrustedFor(msg) === true; } catch (_) { ownerTrusted = false; }
@@ -1302,7 +1315,8 @@
       // belt-routed message used to silently rebind the whole chat to whatever bay the belts picked, so /whoami,
       // /model and the notifier all started asserting an agent the user never chose. Persist only when the chat is
       // unbound or the resolution agrees with the binding.
-      try { if (typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
+      // (bindChats:false — an ephemeral proof chat never becomes addressed; see the option note above.)
+      try { if (bindChats && typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
 
       // announce the SINGLE resolution to the host (workitem crate + queue HUD attribution — one truth).
       // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only
@@ -1313,7 +1327,17 @@
       // exist. (The belt crate + onResolved fire here, before the audio is downloaded, so a spoken directive
       // still visualizes as talk — visualization only; the RUN gets the right prompt.)
       let isTask = !!classify(msg.text);
-      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask };
+      /* THE WORK'S ORIGIN LINE, or null (work belongs to a line, 2026-08-07 — Andrew's ruling). A channel
+         message is OUTSIDE work arriving at the station, so if the dock that will run it is one a line's
+         own INBOX feeds, this IS that line running and its drawn stages may follow. Asked of the FINAL
+         agentId — however it was resolved — because the per-agent bots deliberately hard-lock stage one to
+         their bound agent and never consult floor routing; keying this on the resolution would have said
+         "no line" for exactly the floor the Commander drew. The seam is injected (router.lineOriginFor) so
+         the compiled plan stays the only authority; absent -> null -> every dock terminal, which is the
+         safe direction. It rides `resolvedInfo` (so the host stamps the crate with it) and the chain seed
+         below (so the gate can read it). */
+      const lineId = lineOriginFor ? (lineOriginFor(agentId) || null) : null;
+      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask, lineId: lineId };
       if (onResolved) { try { onResolved(resolvedInfo); } catch (_) {} }
       if (intake && typeof intake.onResolved === 'function') { try { intake.onResolved(resolvedInfo); } catch (_) {} }
 
@@ -1555,6 +1579,9 @@
       if (chain && !state.errMsg && !myRec.superseded && String(state.buf || '').trim()) {
         const line = await chain.advance({
           agentId: agentId, text: state.buf, originalText: msg.text,
+          // WORK BELONGS TO A LINE: only work the floor routed in through this line's own INBOX advances it.
+          // A /talk-bound or fallback-resolved message carries no lineId and stops at the dock that answered.
+          lineId: lineId,
           signal: myRec.abort ? myRec.abort.signal : null,
           runAgent: async function (h) {
             // a hop is a plain autonomous run of ANOTHER agent: its OWN composed persona (never this channel's

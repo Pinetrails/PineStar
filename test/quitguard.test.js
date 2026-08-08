@@ -50,6 +50,25 @@ function fakeDeps(busy, extra) {
     A.eq(calls.destroys, 1, 'CLOSE ANYWAY invokes the real teardown');
   }
 
+  // Native supervisor proves the close only hides to tray → no destructive-close warning, even while busy.
+  {
+    const ev = fakeEvent();
+    const { deps, calls } = fakeDeps(2, { keepsRunning: async () => true });
+    await Q.handleCloseRequested(ev, deps);
+    A.eq(ev.prevented, false, 'tray-supervised close is allowed to reach the native hide path');
+    A.eq(calls.drains, 1, 'tray-supervised close flushes state before hiding');
+    A.eq(calls.shows.length, 0, 'tray-supervised close never claims it will kill live runs');
+  }
+
+  // A failed native status probe does not assume background safety; the existing busy guard remains conservative.
+  {
+    const ev = fakeEvent();
+    const { deps, calls } = fakeDeps(2, { keepsRunning: async () => { throw new Error('ipc down'); } });
+    await Q.handleCloseRequested(ev, deps);
+    A.eq(ev.prevented, true, 'unknown native close behavior keeps the live-run guard');
+    A.eq(calls.shows.join(','), '2', 'unknown native close behavior still names the live run count');
+  }
+
   // already confirmed → close proceeds regardless of busy count, drained first
   {
     const ev = fakeEvent();

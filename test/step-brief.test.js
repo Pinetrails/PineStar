@@ -79,20 +79,26 @@ const lineGeo = withBriefs => ({
 {
   const plain = P.compileRoutingPlan(lineGeo(false));
   const briefed = P.compileRoutingPlan(lineGeo(true));
-  A.eq(briefed.bays.find(b => b.agentId === 'researcher').brief, BRIEF, 'the compiled plan carries the dock brief (bays)');
-  A.eq(briefed.dockBays.find(b => b.agentId === 'researcher').brief, BRIEF, 'and on dockBays (a lone dock briefs too)');
-  A.ok(!('brief' in plain.bays[0]), 'no brief -> no field (older plans stay byte-identical)');
-  A.ok(plain.hash !== briefed.hash, 'a belt-hooked brief moves the plan hash (the poster re-arms the sidecar copy)');
+  A.eq(briefed.dockBays.find(b => b.agentId === 'researcher').brief, BRIEF, 'the compiled plan carries the dock brief (dockBays — a lone dock briefs too)');
+  A.ok(!('brief' in plain.bays[0]) && !('brief' in briefed.bays[0]), 'and NEVER on the hashed dispatch record');
+  /* PROMPT TEXT MAY NOT MOVE THE DISPATCH HASH (2026-08-07). The brief used to ride `bays`, which is a hash
+     input, so typing one word into this editor moved plan.hash → forced a re-post → reset the router's
+     splitter round-robin. An edit to what an agent is TOLD must not perturb which agent work is SENT to. */
+  A.eq(plain.hash, briefed.hash, 'a brief does NOT move the plan hash — it is prompt text, not dispatch topology');
 
   // ROUTING NEUTRALITY (the mandate's explicit assertion): same resolveTarget, same chainNext.
   A.eq(P.resolveTarget(plain, { tag: 'general' }), P.resolveTarget(briefed, { tag: 'general' }), 'resolveTarget is identical with and without briefs');
   A.eq(P.resolveTarget(briefed, { tag: 'general' }), 'researcher', '(and it is the drawn entry dock)');
-  A.eq(P.chainNext(plain, 'researcher', {}), P.chainNext(briefed, 'researcher', {}), 'chainNext is identical with and without briefs');
-  A.eq(P.chainNext(briefed, 'researcher', {}), 'writer', '(and it is the drawn downstream dock)');
+  // ctx carries the LINE the work entered on (work belongs to a line, 2026-08-07) — a brief must not
+  // change that either: same line, same answer, briefed or not.
+  const ctxP = { lineId: P.lineOf(plain, 'researcher') }, ctxB = { lineId: P.lineOf(briefed, 'researcher') };
+  A.eq(ctxP.lineId, ctxB.lineId, 'a brief does not move the dock to another line');
+  A.eq(P.chainNext(plain, 'researcher', ctxP), P.chainNext(briefed, 'researcher', ctxB), 'chainNext is identical with and without briefs');
+  A.eq(P.chainNext(briefed, 'researcher', ctxB), 'writer', '(and it is the drawn downstream dock)');
 
   // an over-long brief is bounded AT COMPILE (no surface can post an unbounded blob)
   const geo = lineGeo(true); geo.props[1].brief = 'z'.repeat(9000);
-  A.eq(P.compileRoutingPlan(geo).bays.find(b => b.agentId === 'researcher').brief.length, 2000, 'the compiler bounds a brief at 2000 chars');
+  A.eq(P.compileRoutingPlan(geo).dockBays.find(b => b.agentId === 'researcher').brief.length, 2000, 'the compiler bounds a brief at 2000 chars');
 }
 
 /* ================= the shared handoff turn ================= */

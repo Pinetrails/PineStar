@@ -2598,6 +2598,10 @@ const App = (() => {
         return s ? { mount: s.mount || null, stack: !!s.stack, surface: !!s.surface } : null;
       });
     }
+    // STATION IDENTITY: did the save we are loading already carry one? (worldmodel stamps meta.createdAt
+    // at create AND backfills it on migrate — a stamp that is never SAVED would re-roll on every reload,
+    // and every per-station REFIT latch keyed on it would be lost. Read before deserialize mutates it.)
+    const hadStationId = !!(pendingStationDoc && pendingStationDoc.meta && pendingStationDoc.meta.createdAt);
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
     // THE OVERSEER'S DESK IS A REAL PROP: materialize the starter workstation the world used to merely
@@ -2607,7 +2611,9 @@ const App = (() => {
     // only for the pathological no-space floor.
     if (agent && agent.id && typeof station.ensureWorkstation === 'function') {
       const seeded = station.ensureWorkstation(agent.id);
-      if (seeded && seeded.ok && !seeded.existing) persist();   // a real floor change — save it like any placement
+      // a real floor change, OR a save that just received its station id — either way the doc on disk is
+      // now behind the doc in memory, and the id in particular MUST be durable (see hadStationId above).
+      if (!hadStationId || (seeded && seeded.ok && !seeded.existing)) persist();
     }
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
     // give resumed summoned crew their real floor bodies now that the station/geo is loaded (no-op for a

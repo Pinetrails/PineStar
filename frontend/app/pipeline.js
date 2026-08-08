@@ -172,9 +172,10 @@
       }
       // EVERY bound bay is a working dock (legibility list; NOT the dispatch `bays` — router semantics untouched).
       // A LONE assigned bay is a COMPLETE build: work addressed to its agent arrives at the dock, no belts needed.
-      // `brief` (step editor, 2026-08-05) rides both dock lists: the Commander's standing job brief for this
-      // station, PROMPT TEXT ONLY — it never touches routing (resolveTarget/chainNext ignore it) or capability
-      // (stationFor reads objects, never brief). Bounded here so no surface can post an unbounded blob.
+      // `brief` (step editor, 2026-08-05) rides THIS list only — the Commander's standing job brief for this
+      // station, PROMPT TEXT ONLY: it never touches routing (resolveTarget/chainNext ignore it) or capability
+      // (stationFor reads objects, never brief), and `dockBays` is outside the hash so it cannot move dispatch
+      // either. Bounded here so no surface can post an unbounded blob.
       const brief = (typeof p.brief === 'string' && p.brief.trim()) ? p.brief.trim().slice(0, 2000) : null;
       const dockRec = { propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 };
       if (brief) dockRec.brief = brief;
@@ -195,9 +196,12 @@
       for (let yy = p.y - 1; yy <= p.y + bh; yy++)
         for (let xx = p.x - 1; xx <= p.x + bw; xx++)
           if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
-      const bayRec = { agentId: p.agentId, propId: p.id, tile: t, tiles };
-      if (brief) bayRec.brief = brief;   // hash includes `bays`, so a brief edit re-arms the sidecar's copy
-      bays.push(bayRec);
+      // NO BRIEF ON THE DISPATCH RECORD. `bays` is a HASH INPUT, and prompt text is not dispatch topology:
+      // carrying the brief here made typing one word into a step editor move plan.hash, which re-posts the
+      // plan, which resets the router's splitter round-robin balance — an edit to what an agent is TOLD
+      // perturbing which agent work is SENT to. The brief still reaches the sidecar on `dockBays` (the
+      // legibility list, outside the hash) and router.stageBrief reads it from there (2026-08-07).
+      bays.push({ agentId: p.agentId, propId: p.id, tile: t, tiles });
       for (const ht of tiles) bayTileToAgent[key(ht.x, ht.y)] = p.agentId;
     }
 
@@ -260,8 +264,79 @@
       errors.push(onLoop ? { code: 'CHAIN_CYCLE', agents: cc, propId: onLoop.propId } : { code: 'CHAIN_CYCLE', agents: cc });
     }
 
-    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes the legibility extras: same dispatch topology, same hash
+    /* ---------- LINE IDENTITY — WORK BELONGS TO A LINE (2026-08-07, Andrew's ruling) ----------
+       "each conveyor system built has a purpose and a different workflow — the conveyor system should
+       visually run ONLY when the specific workflow is running."
+
+       Every belt machine on a floor belongs to exactly ONE physical line (lineComponents: the connected
+       component over belt tiles, plus every machine touching it through its footprint + 1-tile ring).
+       `lineId` names that line. It is computed HERE, on the compiled plan, so the browser and the sidecar
+       answer "which line does this dock belong to?" from the SAME artifact — the one-compiler law. There
+       is no second derivation anywhere.
+
+       DERIVATION: lineId === the component's key === the OLDEST member PROP id, ordered by the numeric
+       suffix of the minted id and NOT by string order (propIdCmp — 'p9' is older than 'p10'). Prop ids are
+       stable in the save doc, so a line keeps its identity across reloads and across every edit that keeps
+       THE KEYING PROP; deleting that prop re-keys the line to its next-oldest machine (work already in
+       flight then carries a lineId that no longer names it, and the gate stops it — that is the honest
+       cost of identity-by-member). Pure: no clock, no RNG, no iteration luck (components are sorted by
+       key, bays within a component by propId, and an agent takes the FIRST line that claims it).
+
+       Attached AFTER the hash inputs are fixed, and only onto the LEGIBILITY list (`dockBays`) plus these
+       lookup maps — the dispatch topology is unchanged, so the same floor keeps the same plan.hash it had
+       before line identity existed and no station needlessly re-arms on upgrade. */
+    const lines = [], lineOfProp = {}, lineOfAgent = {};
+    for (const c of lineComponents(geo)) {
+      const lineId = c.key, rec = { lineId, propIds: c.props.slice(), intakes: c.intakes.slice(), outboxes: c.outboxes.slice(), agents: [] };
+      for (const pid of c.props) lineOfProp[pid] = lineId;
+      for (const b of c.bays) if (b.agentId && !lineOfAgent[b.agentId]) { lineOfAgent[b.agentId] = lineId; rec.agents.push(b.agentId); }
+      rec.agents.sort();
+      lines.push(rec);
+    }
+    plan.lines = lines;
+    plan.lineOfProp = lineOfProp;     // propId  -> lineId
+    plan.lineOfAgent = lineOfAgent;   // agentId -> the lineId of the dock it crews
+    for (const d of dockBays) { const l = lineOfProp[d.propId]; if (l) d.lineId = l; }
+
+    // THE HASH IS DISPATCH TOPOLOGY, NOTHING ELSE — sources, dispatch bays, junctions, belts. Every legibility
+    // extra (dockBays + their briefs, unboundBays, outs, reach, chains, lines) is OUTSIDE it, so the same floor
+    // keeps the same hash and no station needlessly re-arms: typing a job brief, naming a line or upgrading to
+    // line identity moves nothing here. Verified by test/pipeline.test.js ("a brief edit does not move the hash").
+    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));
     return plan;
+  }
+
+  /* lineOf(plan, agentId) -> the lineId of the dock this agent crews, or null. The ONE reader every
+     surface uses (router.lineOfAgent, the gate below, the floor's crate honesty) so "which line is this"
+     can never be answered two different ways. A plan compiled before line identity existed answers null,
+     which the gate reads as TERMINAL — see chainNext. */
+  function lineOf(plan, agentId) {
+    if (!plan || !agentId || !plan.lineOfAgent) return null;
+    return plan.lineOfAgent[agentId] || null;
+  }
+
+  /* lineOriginOf(plan, agentId) -> the lineId that work ARRIVING FROM OUTSIDE at this dock belongs to, or
+     null. Asked of the agent that actually RUNS, never of how the message was addressed — the per-agent
+     channel bots deliberately hard-lock stage one to their bound agent and consult no floor routing at all,
+     so a resolution-flavoured answer would have said "no line" for exactly the case the belts were drawn for.
+
+     WHAT COUNTS AS "THE LINE'S OWN TRIGGER" is the station's existing law, not a new idea: **work handed
+     over in person skips the ride in.** The REFIT flow strip has said so since belt-teach — "COMMS orders
+     skip the ride in — you gave them in person" — and world.js already refuses to spawn an INTAKE crate for
+     a kind:'directive' work-item. So the test is "did it ride in through this line's front door?": the dock
+     must be one the plan's INBOX sources actually REACH. A dock no door feeds — a lone dock, or a MID-LINE
+     stage a message merely named — was not triggered by anything, so its work is terminal and buys nothing
+     downstream.
+
+     Deliberately NOT keyed on a chat's agent binding. That binding cannot distinguish the Commander's
+     explicit /talk from the hub's own bookkeeping — hub.js auto-saves the floor's pick onto any previously
+     unbound chat (as a notifier index), so every channel chat looks "bound" from its second message on.
+     Denying the line on that silently stopped channels from driving their lines after one message, which
+     test/routing.sample.e2e.test.js reproduces exactly. An in-app COMMS directive stays terminal by a much
+     stronger route than any heuristic: chat.js sends no lineId at all. */
+  function lineOriginOf(plan, agentId) {
+    if (!plan || !agentId || !plan.reach || !plan.reach[agentId]) return null;
+    return lineOf(plan, agentId);
   }
 
   /* ---------- the chain layer: a dock's OUTPUT is another dock's INPUT ----------
@@ -343,9 +418,27 @@
      a fan-out to every lane): follows the belt from the ship tile, a FILTER branches on the OUTPUT's tag (this is
      how you draw "route the result by what it turned out to be"), a SPLIT round-robins through `pick`, own-dock
      hookups are ridden through, the first foreign dock consumes. null = the handoff ships out / dead-ends, i.e.
-     this dock is a terminal stage and its reply is the pipeline's answer. */
+     this dock is a terminal stage and its reply is the pipeline's answer.
+
+     THE GATE (work belongs to a line, 2026-08-07 — Andrew's ruling). A dock's output advances the work
+     line ONLY when the run carries the lineId of THIS dock's line, i.e. only when the work entered
+     through that line's own trigger (its INBOX / a channel routed down its belts / one of its routines /
+     its sample job). A run with no lineId — a direct COMMS order, a /talk task, any ad-hoc job — is
+     TERMINAL: the agent answers, and nothing downstream fires or spends. Living HERE, in the one module
+     every surface already loads, is what makes the rule un-drift-able: the browser's COMMS line, the
+     channel hub, cron and run-now all ask this same function, so no surface can disagree.
+
+     OLD PLANS DEGRADE TO TERMINAL, ON PURPOSE. A plan compiled before line identity existed (one restored
+     from disk at boot, say) has no lineOfAgent, so `own` is null and every dock is terminal until the app
+     posts a fresh plan. That is the SAFER of the two defaults: the failure mode is "a line did not run",
+     which the Commander can see and re-trigger, versus "money was spent on stages the user never asked
+     for", which is silent and unrefundable. It is also self-healing — world.js re-posts the compiled plan
+     on the first floor change after the app opens. */
   function chainNext(plan, agentId, ctx, pick) {
     if (!plan || !plan.chains || !plan.belts) return null;
+    const carried = (ctx && ctx.lineId != null && String(ctx.lineId)) || null;
+    const own = lineOf(plan, agentId);
+    if (!carried || !own || carried !== own) return null;
     const rec = plan.chains[agentId];
     if (!rec || !rec.tile || !rec.next.length) return null;
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
@@ -530,6 +623,7 @@
 
   // round-robin picker so autonomous dispatch genuinely SPREADS splitter work across agents, matching the
   // engine's load-balance intent instead of always running the first lane.
+
   function resolveTarget(plan, ctx, pick) {
     if (!plan) return null;
     // ADDRESSED WORK GOES TO ITS ADDRESSEE (2026-07-05, Andrew's consistency ruling): when the message is
@@ -610,8 +704,26 @@
      ring — the exact hookup semantics compileRoutingPlan's passes use. Pure + deterministic
      (no RNG, no clock, inputs unmutated); the finish-the-line card derives its checklist from
      these against the compiled plan, and the delivery-retirement hook hit-tests `tiles`.
-     `key` = the lexicographically smallest member PROP id: prop ids are stable in the save doc,
-     so a line keeps its identity across reloads and across edits that keep that prop. */
+     `key` = the OLDEST member PROP id — oldest by the monotonic counter the save doc mints ids from
+     (`p1`, `p2`, … `p10`), NOT by string order. See propIdCmp: a default string sort puts 'p10'
+     BEFORE 'p9', so the tenth prop on a line would silently steal the key from the ninth and rename
+     the whole line. Prop ids are stable in the save doc, so a line keeps its identity across reloads
+     and across every edit that keeps THE KEYING PROP. It does NOT survive deleting that prop: the
+     line then re-keys to its next-oldest member, and anything latched on the old key (a lineId a
+     run is carrying, a localStorage entry) no longer names it. That is the real behaviour — a line's
+     identity is its oldest surviving machine, not the line itself. */
+  /* PROP-ID ORDER (2026-08-07 conveyor audit). Ids come from worldmodel's monotonic `_nid` as
+     'p' + N, so numeric order IS creation order. Compare the suffix numerically; anything that is
+     not 'p<N>' (a legacy/hand-authored id) falls back to a plain string compare and sorts AFTER the
+     minted ids, so the answer stays total and deterministic on any doc. */
+  const PROP_ID_N = /^p(\d+)$/;
+  function propIdCmp(a, b) {
+    const ma = PROP_ID_N.exec(a), mb = PROP_ID_N.exec(b);
+    if (ma && mb) { const d = (+ma[1]) - (+mb[1]); return d || (a < b ? -1 : a > b ? 1 : 0); }
+    if (ma) return -1;
+    if (mb) return 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
   function lineComponents(geo) {
     const props = (geo && geo.props) || [];
     const map = buildBeltMap(geo && geo.belts);
@@ -659,13 +771,13 @@
     for (const r in byRoot) {
       const c = byRoot[r];
       if (!c.props.length) continue;              // bare belt scribbles are not a line
-      c.props.sort(); c.key = c.props[0];
-      c.bays.sort((a, b) => (a.propId < b.propId ? -1 : a.propId > b.propId ? 1 : 0));
+      c.props.sort(propIdCmp); c.key = c.props[0];
+      c.bays.sort((a, b) => propIdCmp(a.propId, b.propId));
       out.push(c);
     }
-    out.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    out.sort((a, b) => propIdCmp(a.key, b.key));
     return out;
   }
 
-  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
+  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom, propIdCmp } };
 });
