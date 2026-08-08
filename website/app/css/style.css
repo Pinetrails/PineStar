@@ -216,14 +216,18 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
   --cz: var(--sn-unzoom, 1);
   /* BEAM scanlines: a soft dark trough between bright line-cores (graded stops,
      not a hard 1px bar) so it reads as an electron beam, not venetian blinds —
-     and the soft edges alias far less on fractional-DPI displays. 3px pitch. */
+     and the soft edges alias far less on fractional-DPI displays. 3px pitch.
+     The two trough alphas are var()s with the SHIPPED numbers as their fallbacks, so FULL is these
+     exact values and the CRT dial has one place to turn them down (see body.crt-dull below). The
+     geometry — pitch, stop positions, the graded shoulder — is deliberately NOT parameterised:
+     widening the pitch is what turns a beam into venetian blinds, so the dial changes depth only. */
   background:
     repeating-linear-gradient(0deg,
       rgba(0,0,0,0) 0px,
       rgba(0,0,0,0) calc(1px * var(--cz)),
-      rgba(0,0,0,0.13) calc(1.5px * var(--cz)),
-      rgba(0,0,0,0.30) calc(2px * var(--cz)),
-      rgba(0,0,0,0.13) calc(2.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(1.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-core, 0.30)) calc(2px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.5px * var(--cz)),
       rgba(0,0,0,0) calc(3px * var(--cz))),
     repeating-linear-gradient(90deg,
       rgba(255,80,40,0.03) 0 calc(1px * var(--cz)),
@@ -238,9 +242,9 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
       repeating-linear-gradient(0deg,
         rgba(0,0,0,0) 0px,
         rgba(0,0,0,0) calc(1.5px * var(--cz)),
-        rgba(0,0,0,0.13) calc(2.2px * var(--cz)),
-        rgba(0,0,0,0.28) calc(3px * var(--cz)),
-        rgba(0,0,0,0.13) calc(3.8px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.2px * var(--cz)),
+        rgba(0,0,0,var(--scan-core-hi, 0.28)) calc(3px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(3.8px * var(--cz)),
         rgba(0,0,0,0) calc(4.5px * var(--cz))),
       repeating-linear-gradient(90deg,
         rgba(255,80,40,0.03) 0 calc(1.5px * var(--cz)),
@@ -249,10 +253,29 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
   }
 }
 body.no-scan::after { display: none; }
+/* CRT DULLED (Appearance → CRT) — the tube TURNED DOWN, never turned off.
+   A SEPARATE class from `no-scan` on purpose: no-scan is the internal verification flag
+   (scripts/verify-stars2.mjs sets it directly to flatten the feed for star-pixel checks) and must
+   never be driven by, or clobbered by, a user setting.
+
+   There is no level that removes the CRT — the station is a tube, and that is not a preference.
+   What this does is thin the SCREEN-SPACE glass so the text underneath stops fighting it: the
+   trough depth drops to roughly 45% of shipped and the page vignette lightens. The pitch, the stop
+   positions and the graded shoulder are untouched, so it still reads as an electron beam at a
+   glance — it just stops carving ~2.6 troughs of 0.30 alpha through the body of every 14px VT323
+   glyph. (Contrast was never the problem: COMMS copy measures 5.7:1, past AA. The complaint is
+   interference at the glyph's own scale.) The station feed is not touched by any of this at all —
+   its scanlines, curve and aberration are painted IN-CANVAS by world.js drawCRT/drawCurve. */
+body.crt-dull {
+  --scan-shoulder: 0.06;   /* was 0.13 */
+  --scan-core: 0.14;       /* was 0.30 — the trough that was crossing every glyph */
+  --scan-core-hi: 0.13;    /* was 0.28, the hi-DPI variant's deeper core */
+  --page-vignette: 0.24;   /* was 0.42 — corner darkening over the rail and the dock */
+}
 body::before { /* curved-glass vignette + corner darkening */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 940;
   background:
-    radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.42) 100%),
+    radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,var(--page-vignette, 0.42)) 100%),
     radial-gradient(ellipse 60% 40% at 50% 0%, var(--ph-glow2), transparent 70%);
   mix-blend-mode: normal;
 }
@@ -461,6 +484,18 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
   mix-blend-mode: multiply;
 }
 body.no-scan .crt-scan { display: none; }
+body.crt-dull .crt-scan { opacity: 0.45; }
+
+/* DULLED — the phosphor halo TIGHTENED on the prose you actually read, and nowhere else.
+   Not removed: the glow is the phosphor, and killing it makes the copy read as flat web text in a
+   pixel-art station. Halving the blur is what buys the stems back — a 4px halo around a glyph whose
+   strokes are ~2px is a soft edge on every one of them; at 2px the same colour sits tight to the
+   letterform. `text-shadow` is an INHERITED property and the halo comes from the `body` rule above,
+   so naming the four prose containers is enough: descendants inherit the tighter value, while every
+   chip, button and heading that declares its own glow keeps it untouched. That is why there is no
+   `*` selector and no !important here — a blanket sweep would flatten the chrome's identity along
+   with the copy, and the identity is not the part that is hard to read. */
+body.crt-dull #chat-log, body.crt-dull .term-body, body.crt-dull #left, body.crt-dull #bottombar { text-shadow: 0 0 2px var(--ph-glow2); }
 .crt-vignette {
   position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 56%, rgba(0,0,0,0.6) 100%);
@@ -944,6 +979,23 @@ body.no-scan .crt-scan { display: none; }
 .cf-card .ov-vchips { margin: 2px 0 4px; }
 .cf-card .msg:empty { display: none; }
 .cf-card .set-row { margin: 6px 0; }
+/* GROUP RULES (dossier UX pass): CONFIG's nine cards now sit under three named rules instead of running as one
+   1565px column. First rule sheds its top margin — it lands directly under the station:// path line. */
+.cf-grp { margin: 20px 0 0; scroll-margin-top: 8px; }
+.cf-nav + .cf-grp { margin-top: 8px; }
+/* the group jump row — three flat chips, matte, no lift. It is a table of contents, not a control panel. */
+.cf-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
+.cf-nav-b {
+  font: inherit; font-size: 10px; letter-spacing: 1.6px; color: var(--ph-dim);
+  background: rgba(0,0,0,.28); border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  padding: 4px 9px; cursor: pointer;
+}
+.cf-nav-b:hover, .cf-nav-b:focus-visible { color: var(--ph-bright); border-color: var(--ph-dim); background: var(--ph-faint); }
+.cf-nav-b:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+.cf-grp-note { font-size: 11px; color: var(--ph-dim); line-height: 1.45; margin: 5px 0 9px; max-width: 78ch; }
+/* the landing flash for a card reached from BRIEF's setup strip — without it the pane simply teleports and the
+   Commander has to re-find the row they clicked. Fades out on its own (class dropped after 1.4s). */
+.cf-card.cf-jumped { border-left-color: var(--ph-bright); box-shadow: 0 0 14px var(--ph-glow2); }
 .cf-file { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; }
 .cf-name { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; }
 .cf-badge { font-size: 10px; letter-spacing: 1px; border: 1px solid var(--ph-dim); padding: 0 5px; }

@@ -144,8 +144,25 @@ const Build = (() => {
   // an exterior has no deck to match, and STATION's own follow-tone is the shell grey it always was.
   let hullMat = 'station', hullStyle = 'follow';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
+  /* THE CAPTURED POINTER (2026-08-07 conveyor audit). onDown setPointerCapture()s the canvas so a drag
+     that leaves the element keeps tracking. Only onUp released it — every OTHER way a drag ends (ESC,
+     right-click, pointercancel, window blur) dropped `drag` and left the capture ON, and a captured
+     canvas swallows its own pointerleave/hover until the next click. Remember the id so every exit
+     releases it; endDrag() is the ONE way a drag is dropped. */
+  let dragPid = null;
+  function releaseDrag() {
+    if (dragPid != null && cv) { try { cv.releasePointerCapture(dragPid); } catch (e) {} }
+    dragPid = null; drag = null;
+  }
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let lineType = 'research_line';   // LINES tool: the armed starter-line blueprint (WorldModel.BLUEPRINTS id)
+  /* WHERE CAN THIS GO — the candidate field (2026-08-07). Arming a blueprint used to answer
+     "where is this legal?" with nothing but a red ghost, so the only way to find a spot was to
+     wave the pointer until the red went green. lineFields caches, PER BLUEPRINT, the full set of
+     legal cursor tiles for the CURRENT floor; it is computed at most once per (blueprint, edit)
+     and NEVER inside the frame loop's hot path (a full scan is ~thousands of checkBlueprint calls
+     — per frame it would melt). station.onChange drops the whole map; that is the only invalidation. */
+  const lineFields = Object.create(null);   // bpId -> { set:Set('tx,ty'), list:[{tx,ty}], runs:[…], edges:[…] }
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let ghost = null;                     // GHOST PROJECTION (Phase 3): dedicated engine — never mixes with convey
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
@@ -161,12 +178,22 @@ const Build = (() => {
     if (running) return;
     station = opts.getStation();
     if (!station) return;
-    spaceHeld = false; drag = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
+    spaceHeld = false; drag = null; dragPid = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
+    /* SESSION-SCOPED UI STATE (2026-08-07 conveyor audit). Everything here outlived close() and lied on the
+       next open. The load-bearing one is `layerFailed`: renderDegraded is a TRUTHFUL-TELEMETRY readout —
+       "a draw layer is currently failing" — and one transient throw in a session two hours ago had it
+       asserting degradation forever, a state the harness could no longer prove. The rest are staleness:
+       propCardKey made re-hovering the same prop after a reopen paint an EMPTY card (the key matched, so
+       the body was never rebuilt), ordersSeenDone chimed completion for steps finished while REFIT was
+       shut, and propQuery reopened the palette silently filtered by a search the Commander can't see. */
+    for (const k in layerFailed) delete layerFailed[k];
+    propCardKey = null; ordersSeenDone = null; propQuery = ''; lastTier = '';
     tool = 'select';   // SELECT is the default mode — a fresh REFIT session never opens with a placement tool armed
     ridePending = false;   // the auto first-ride re-arms from THIS session's compile, never a stale one
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
     finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
     for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
+    clearLineFields();   // a fresh session never inherits a prior floor's "where can this go" answers
     probeSampleSeam();
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
@@ -174,6 +201,7 @@ const Build = (() => {
     updateSafetyClearance();
     unsub = station.onChange(p => {
       bakeDirty = true; planDirty = true;   // a real floor edit — the compiled plan is stale
+      clearLineFields();   // …and so is every cached "where can this blueprint go" answer
       /* A GLOBAL EDIT CANNOT BE INVALIDATED BY A RECTANGLE. The bake is cached in CHUNKS here, and
          `bakeDirtyRects` re-bakes only the chunks a rect touches — right for a deck or a prop, and
          WRONG for the shell, whose skin grouping and skirt ownership are station-wide. Drop the
@@ -751,7 +779,17 @@ const Build = (() => {
         const why = document.createElement('span'); why.className = 'refit-linetile-why';
         why.textContent = LINE_PURPOSE[bp.id] || '';
         b.appendChild(why);
-        b.onclick = () => { lineType = bp.id; renderPalette(); setHint(); sfx('click'); };
+        /* DECK-FIT HONESTY. Offering a line the current floor has nowhere to put it is an offer the
+           deck cannot keep — the user aims, gets red everywhere, and learns nothing. The card says
+           so up front, from the SAME canPlaceBlueprint scan the ghost snaps to. It stays selectable
+           (sandbox law: never gate) — arming it just shows an empty field and this reason. */
+        if (!lineFits(bp.id)) {
+          b.classList.add('nofit');
+          const nf = document.createElement('span'); nf.className = 'refit-linetile-nofit';
+          nf.textContent = 'NO ROOM ON THIS DECK — NEEDS ' + bp.w + '×' + bp.h + ' OF CLEAR FLOOR';
+          b.appendChild(nf);
+        }
+        b.onclick = () => { lineType = bp.id; renderPalette(); setHint(); frameBlueprint(); sfx('click'); };
         grid.appendChild(b);
       }
       pal.appendChild(grid);
@@ -1061,19 +1099,82 @@ const Build = (() => {
     }
     return c;
   }
+  /* ---------- THE CANDIDATE FIELD: "where can this line go?" ----------
+     A blueprint is 17 tiles wide; a beginner arming one got a red ghost and no map, so finding a
+     legal spot was a hunt. The field answers the question up front: every CURSOR tile whose stamp
+     the model accepts, washed dim over the deck, and the ghost SNAPS to the nearest one so
+     "click roughly there" lands.
+
+     COST + DETERMINISM. One scan is (bounds + FIELD_MARGIN)² checkBlueprint calls — far too much
+     for a frame. It runs lazily on first ask per blueprint and is cached until station.onChange
+     drops it (clearLineFields). No RNG, no time input: the same floor always yields the same field.
+     The scan is also bounded to the DECK's neighbourhood — every blueprint tile must sit on a room,
+     so a legal anchor can never be more than half a footprint outside the station bounds. */
+  const FIELD_MARGIN = 2;   // tiles of slack around the bounds — a centred footprint may hang its anchor just outside
+  const SNAP_R = 3;         // "roughly there" = within this many tiles of a legal anchor
+  function clearLineFields() { for (const k of Object.keys(lineFields)) delete lineFields[k]; }
+  function lineField(bpId) {
+    const bp = blueprintOf(bpId);
+    if (!bp || !station) return null;
+    if (lineFields[bpId]) return lineFields[bpId];
+    const b = station.bounds();
+    const hw = bp.w >> 1, hh = bp.h >> 1;
+    const x0 = b.minTx + hw - FIELD_MARGIN, x1 = b.maxTx + hw + FIELD_MARGIN;
+    const y0 = b.minTy + hh - FIELD_MARGIN, y1 = b.maxTy + hh + FIELD_MARGIN;
+    const set = new Set(), list = [];
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      if (!station.canPlaceBlueprint(bp.id, tx - hw, ty - hh).ok) continue;
+      set.add(tx + ',' + ty); list.push({ tx, ty });
+    }
+    // pre-merge the wash into horizontal RUNS and its outline into EDGE segments, once. The frame
+    // then paints tens of rects instead of thousands, and the boundary reads as one shape.
+    const runs = [], edges = [];
+    for (const c of list) {
+      const last = runs[runs.length - 1];
+      if (last && last.ty === c.ty && last.x2 === c.tx - 1) last.x2 = c.tx;
+      else runs.push({ ty: c.ty, x1: c.tx, x2: c.tx });
+      if (!set.has((c.tx - 1) + ',' + c.ty)) edges.push([c.tx, c.ty, c.tx, c.ty + 1]);
+      if (!set.has((c.tx + 1) + ',' + c.ty)) edges.push([c.tx + 1, c.ty, c.tx + 1, c.ty + 1]);
+      if (!set.has(c.tx + ',' + (c.ty - 1))) edges.push([c.tx, c.ty, c.tx + 1, c.ty]);
+      if (!set.has(c.tx + ',' + (c.ty + 1))) edges.push([c.tx, c.ty + 1, c.tx + 1, c.ty + 1]);
+    }
+    return (lineFields[bpId] = { set, list, runs, edges });
+  }
+  // does this blueprint fit ANYWHERE on the current deck? (shelf honesty — see renderPalette)
+  const lineFits = bpId => { const f = lineField(bpId); return !!(f && f.list.length); };
+  /* SNAP: the ghost follows the cursor but lands on the nearest legal anchor within SNAP_R, so a
+     click "roughly there" places the line. Beyond that radius the cursor tile is used raw and the
+     ghost stays RED — a genuinely-nowhere-near aim must still be told no, not silently teleported
+     across the deck. Ties break by (dy, dx) scan order, never by distance alone, so the snap is
+     deterministic: the same pointer tile always resolves to the same anchor. */
+  function lineSnap(tx, ty) {
+    const f = lineField(lineType);
+    if (!f || !f.list.length) return { tx, ty, snapped: false };
+    if (f.set.has(tx + ',' + ty)) return { tx, ty, snapped: false };
+    let best = null, bestD = Infinity;
+    for (const c of f.list) {
+      const dx = c.tx - tx, dy = c.ty - ty, d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    if (!best || bestD > SNAP_R * SNAP_R) return { tx, ty, snapped: false };
+    return { tx: best.tx, ty: best.ty, snapped: true };
+  }
   // the ghost's rect set + validity at a cursor tile — same {rects, v} contract every ghost uses
   function lineGhost(tx, ty) {
     const bp = blueprintOf(lineType);
     if (!bp) return null;
-    const o = lineOrigin(bp, tx, ty);
+    const s = lineSnap(tx, ty);
+    const o = lineOrigin(bp, s.tx, s.ty);
     const rects = bp.props.map(p => ({ x1: o.x + p.x, y1: o.y + p.y, x2: o.x + p.x + p.w - 1, y2: o.y + p.y + p.h - 1 }))
       .concat(bp.belts.map(b => ({ x1: o.x + b.x, y1: o.y + b.y, x2: o.x + b.x, y2: o.y + b.y })));
-    return { rects, v: station.canPlaceBlueprint(bp.id, o.x, o.y), kind: 'line', label: bp.label };
+    return { rects, v: station.canPlaceBlueprint(bp.id, o.x, o.y), kind: 'line', label: bp.label, snapped: s.snapped };
   }
   function stampLine(w, ev) {
     const bp = blueprintOf(lineType);
     if (!bp) return;
-    const o = lineOrigin(bp, w.tx, w.ty);
+    // the SAME snap the ghost showed — the click commits exactly what was on screen, never the raw tile
+    const s = lineSnap(w.tx, w.ty);
+    const o = lineOrigin(bp, s.tx, s.ty);
     const res = station.stampBlueprint(bp.id, o.x, o.y);   // ONE undoable action — see worldmodel.stampBlueprint
     if (res && res.ok) {
       lastStampIds = res.ids || null;   // the finish-the-line card adopts this line on the next recompile
@@ -1097,6 +1198,14 @@ const Build = (() => {
     }
   }
 
+  /* NO STANDALONE CANVAS INVITATION (2026-08-07). A floating "START A WORK LINE HERE" prompt used
+     to live here, painted on an empty deck. It was retired: STATION ORDERS (renderOrders) already
+     sequences build mode — ① a second space → ② a deck → ③ a workstation → ④ STAMP A WORK LINE —
+     and its step ④ arms this very tool. Two invitations to the same act is exactly the stacking the
+     one-voice law forbids, and leading with the line reframed the whole mode as conveyor-first.
+     The guidance path is: ORDERS invites → the tool arms → the candidate wash + snap below help
+     you land it. Do not reinstate a second voice for the same step. */
+
   function selectTool(id, o) {
     tool = id; drag = null; connectFrom = null; dupe = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
@@ -1105,7 +1214,23 @@ const Build = (() => {
       b.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     renderPalette(); repaintIcons(); setHint(); setCursor();
+    if (id === 'line') frameBlueprint();   // a footprint you cannot see whole cannot be aimed
     if (!(o && o.silent)) sfx('click');
+  }
+  /* FRAME THE GHOST. At the entering zoom a 17-tile line is wider than the glass, so half the
+     footprint you are placing is off-screen. Arming a blueprint that does not fit the viewport
+     pulls the camera back — through fitCamera(), the SAME framer the ⊹ FIT button runs (framing
+     the station bounds necessarily frames any legal placement inside them; a second camera fitter
+     would be a second set of insets/clamps to keep in sync). A blueprint that already fits is left
+     alone: re-framing on every arm would yank the camera away from where the user was looking. */
+  function frameBlueprint() {
+    const bp = blueprintOf(lineType);
+    if (!bp || !cv || !station) return;
+    const t = T(), ins = viewInsets();
+    const vw = Math.max(1, cv.width - ins.l), vh = Math.max(1, cv.height - ins.t - ins.b);
+    // a tile of breathing room each side: a footprint flush against the glass still cannot be read
+    if ((bp.w + 2) * t * zoom <= vw && (bp.h + 2) * t * zoom <= vh) return;
+    fitCamera();
   }
   // every "drop whatever is armed" gesture (ESC, right-click, post-stamp) lands here
   function deselectTool(o) { if (tool !== 'select') selectTool('select', o); }
@@ -1194,6 +1319,39 @@ const Build = (() => {
     }
   }
 
+  /* ---------- THE CARD STACK (2026-08-07 conveyor audit) ----------
+     Every modal card in REFIT — the first-run guide, the step editor, the workstation picker, the flow /
+     belt / junction / connector / room / door cards — mounts as `.refit-guide` + its own marker class, and
+     each one owns a `closeP` that does the work closing it OWES: the step card saves the job brief, the
+     flow card saves the line name, the room card saves the rename. Nothing outside those closures could
+     reach them, so two callers took a shortcut and paid for it:
+       • ESC matched `.refit-guide` — the class they ALL share — then markSeen()'d and removeChild()'d
+         directly. Pressing ESC over a step card threw away an unsaved job brief AND permanently marked
+         the build-mode guide seen, for a card that was not the guide. The law was even written down two
+         hundred lines below ("gate on `.refit-firstrun`, NEVER `.refit-guide`") and broken here.
+       • Every opener bailed out (`if (already mounted) return`) instead of replacing, so FINISH ① CREW
+         and the live world's NO AGENT nag did NOTHING while any other dock's card was open.
+     So: a card REGISTERS its own close path on its element, and both callers route through it. Closing is
+     always the card's own closing; opening always replaces whatever is up. */
+  function cardRegister(el, closeFn) { el._refitClose = closeFn; return el; }
+  // topmost = last mounted (DOM order); these cards are appended, never re-ordered
+  function cardTop() {
+    if (!root) return null;
+    const all = root.querySelectorAll('.refit-guide');
+    return all.length ? all[all.length - 1] : null;
+  }
+  // close ONE card through its own path (which is what saves what that card saves)
+  function cardClose(el) {
+    if (!el) return false;
+    const fn = el._refitClose;
+    el._refitClose = null;             // a close path that re-enters must not run twice
+    if (typeof fn === 'function') { try { fn(); } catch (e) { console.warn('[refit] card close path threw', e); } }
+    if (el.parentNode) el.parentNode.removeChild(el);   // backstop: every closeP already removes itself
+    return true;
+  }
+  // an opener calls this FIRST: whatever is up closes properly, then the new card takes the surface.
+  function cardCloseAll() { for (let i = 0; i < 16; i++) { const el = cardTop(); if (!el) break; cardClose(el); } }
+
   /* ---------- first-use guide ---------- */
   function hasSeen() { try { return !!localStorage.getItem(SEEN_KEY); } catch (e) { return false; } }
   function markSeen() { try { localStorage.setItem(SEEN_KEY, '1'); } catch (e) {} }
@@ -1247,6 +1405,7 @@ const Build = (() => {
     });
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const dismiss = () => { markSeen(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, dismiss);   // ESC on THIS card (and only this one) is what marks the guide seen
     g.querySelector('#refit-guide-go').onclick = dismiss;
     g.addEventListener('click', e => { if (e.target === g) dismiss(); });
   }
@@ -1308,8 +1467,9 @@ const Build = (() => {
     chain: "Work arrives here as the previous station's output. This is your station's job — your part of every run that reaches you."
   };
   function openStepCard(bayId, ev) {
-    if (!root || root.querySelector('.refit-step-card')) return;
+    if (!root) return;
     const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
+    cardCloseAll();   // this card REPLACES whatever was up (FINISH ① CREW / the world's NO AGENT nag land here)
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const roleInfo = (p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
     const canSummon = !!(roleInfo && typeof App !== 'undefined' && App.summonAgent);
@@ -1323,6 +1483,20 @@ const Build = (() => {
     const stepTxt = roleInfo
       ? 'THIS STEP WANTS A <b>' + esc(p.role) + '</b> — ' + esc(roleInfo.desc)
       : 'a dock — work routed here runs as its agent';
+    /* WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07): "each conveyor system built has a purpose and
+       a different workflow — the conveyor system should visually run ONLY when the specific workflow is
+       running." So the dock has to SAY what makes its line distinct and when it runs. Both facts are read
+       off the compiled plan, never guessed: whether this line has a front door of its own (comp.intakes)
+       and whether there is anything downstream of this dock at all (valPlan.chains). Plain language only —
+       no ids, no "lineId", no belt vocabulary. */
+    const handsOn = !!(cur && valPlan && valPlan.chains && valPlan.chains[cur] && (valPlan.chains[cur].next || []).length);
+    const runsTxt = !comp ? null
+      : comp.intakes.length
+      ? 'IT RUNS when work arrives at this line’s <b>INBOX</b> — or when one of its routines fires.'
+      : 'IT RUNS when one of this line’s routines fires at a dock on it.';
+    const restTxt = (comp && (handsOn || comp.bays.length > 1))
+      ? 'A job you hand this agent yourself is answered right here and stops here — it does not run the rest of the line.'
+      : null;
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
     const briefPh0 = 'what this step does with arriving work' + (roleInfo ? ' — e.g. ' + roleInfo.desc : '');
     const briefPh = BRIEF_PH[stepPositionOf(cur)] || briefPh0;
@@ -1336,6 +1510,8 @@ const Build = (() => {
         <div class="refit-sec">THE STEP</div>
         <div class="step-fact">${stepTxt}</div>
         <div class="step-fact">${lineTxt}</div>
+        ${runsTxt ? '<div class="step-fact">' + runsTxt + '</div>' : ''}
+        ${restTxt ? '<div class="refit-note">' + esc(restTxt) + '</div>' : ''}
         <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(cur) : 'uncrewed'}</span></div>
         ${canSummon ? '<button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
         ${agents.length ? '<div class="refit-agents refit-bay-agents" id="step-rows">' + rows + '</div>' : ''}
@@ -1360,6 +1536,7 @@ const Build = (() => {
     const boundEl = g.querySelector('#step-bound');
     const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { saveBrief(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the job brief is saved and never discarded
     // a bind/unbind UPDATES the card in place (the brief draft must survive crewing the dock) — the
     // one-surface law: configure the whole step here, close once.
     const refreshBinding = () => {
@@ -1419,8 +1596,9 @@ const Build = (() => {
      when it's given a task it walks over and sits at this desk. The host/model is already chosen when the agent
      was created, so this is a single "pick an agent" step. Opens on place + on click (PROP_EDITABLE). */
   function openWorkstationPicker(propId, ev) {
-    if (!root || root.querySelector('.refit-ws-picker')) return;
+    if (!root) return;
     const p = station.propById(propId); if (!p || !WORKSTATION_TYPES[p.t]) return;
+    cardCloseAll();
     const cur = p.agentId || '';
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const rows = agents.map(a => `<button type="button" class="bb sm ws-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}${a.model ? ' <span class="ws-model">' + esc(a.model) + '</span>' : ''}</button>`).join('');
@@ -1450,6 +1628,7 @@ const Build = (() => {
     const input = g.querySelector('#ws-aid');
     const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     // ONE CLICK: choosing a roster agent IS the assignment (mirrors the BAY picker — see the note there)
     g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => {
       const res = station.assignPropAgent(propId, b.dataset.aid);
@@ -1511,8 +1690,9 @@ const Build = (() => {
       + '</div><div class="flow-note">outside work rides IN to an agent’s dock · they work it at their desk · the finished result rides OUT. (COMMS orders skip the ride in — you gave them in person.)</div></div>';
   }
   function openFlowCard(propId) {
-    if (!root || root.querySelector('.refit-flow-card')) return;
+    if (!root) return;
     const p = station.propById(propId); if (!p) return;
+    cardCloseAll();
     const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
     const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE' };
     const LINE = {
@@ -1558,6 +1738,10 @@ const Build = (() => {
     const TRG_PRESETS = [['EVERY 30M', 'every 30m'], ['EVERY 1H', 'every 1h'], ['DAILY 9:00', '0 9 * * *']];
     const trgHtml = isIntake
       ? '<div class="refit-sec">TRIGGERS — WHY THIS LINE RUNS</div>'
+        // WORK BELONGS TO A LINE (2026-08-07): the trigger zone is where the Commander decides WHY this line
+        // runs, so it is where the rule belongs — only work that comes in through one of these triggers runs
+        // the whole line. Plain language; the same fact the STEP card states from the dock's side.
+        + '<div class="refit-note">Only work that comes in one of these ways runs this whole line. A job you hand an agent yourself is answered at its own dock and stops there.</div>'
         + '<div class="step-fact" id="trg-feed">checking the wires…</div>'
         + '<div id="trg-routines" class="trg-list"></div>'
         + '<button type="button" class="bb sm refit-primary refit-summon" id="trg-new">⊕ NEW ROUTINE FOR THIS LINE</button>'
@@ -1604,6 +1788,7 @@ const Build = (() => {
       });
     }
     const closeP = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name is saved and never discarded
     /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
     if (isIntake) {
       const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');
@@ -1667,14 +1852,20 @@ const Build = (() => {
         if (!prompt || !schedule) { sfx('bad'); say('a task and a schedule are required', true); return; }
         if (!trgDock) { sfx('bad'); say('crew a dock first — a routine fires at an agent', true); return; }
         const btn = g.querySelector('#trg-create'); btn.disabled = true; say('saving…');
-        // the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
-        // provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
-        // the defaults the AUTOMATION window's untouched form would give).
+        /* the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
+           provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
+           the defaults the AUTOMATION window's untouched form would give)…
+           …plus ONE field only this door may set. `runsLine` is what makes a routine THIS LINE'S OWN
+           trigger: the work it fires carries the line's id, so the chain gate lets it run the whole line.
+           It is created here, on the INBOX card, under a button that literally says FOR THIS LINE — that
+           is the Commander asking for the line to run. A routine minted anywhere else omits it and stays
+           terminal (absent/false = the dock answers and nothing downstream spends), which is the safe
+           default: no run the Commander did not ask for. */
         const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (e) { return undefined; } })();
         const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
         const lname2 = lineNameOf(comp);
         const name = (lname2 ? lname2 + ' — ' : '') + (prompt.length > 48 ? prompt.slice(0, 45) + '…' : prompt);
-        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz }) })
+        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz, runsLine: true }) })
           .then(r => r.json()).then(r => {
             btn.disabled = false;
             if (r && r.error) { sfx('bad'); say('✕ ' + r.error, true); return; }
@@ -1699,7 +1890,8 @@ const Build = (() => {
      dispatch wouldn't reach. Plan coords are LOCAL (valPlan compiles from cacheGeo) → rebase the
      clicked WORLD tile by cacheGeo.origin before asking. */
   function openBeltCard(tx, ty, ev) {
-    if (!root || root.querySelector('.refit-belt-card')) return;
+    if (!root) return;
+    cardCloseAll();
     const dir = station.beltAt(tx, ty);
     if (!dir) return;
     const o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
@@ -1722,16 +1914,19 @@ const Build = (() => {
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     g.querySelector('#belt-ok').onclick = () => { sfx('click'); closeP(); };
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
   }
 
   function openJunctionEditor(propId, ev) {
-    if (!root || root.querySelector('.refit-junction-editor')) return;
+    if (!root) return;
+    cardCloseAll();
     const p = station.propById(propId); if (!p || p.t !== 'filter') return;
     const g = document.createElement('div');
     g.className = 'refit-guide refit-junction-editor';
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
 
     {
       // resolve lanes at the tile the COMPILER attaches this junction to (own tile OR ring — see
@@ -1777,11 +1972,13 @@ const Build = (() => {
      is what bayObjects emits for the bay, so the agent in this room gains that server's live tools. The list is
      the live /api/connectors set; a state dot mirrors the panel. Opens on place/click, like the junction editor. */
   function openConnectorEditor(propId, ev) {
-    if (!root || root.querySelector('.refit-connector-editor')) return;
+    if (!root) return;
+    cardCloseAll();
     const p = station.propById(propId); if (!p || p.t !== 'connector_portal') return;
     const g = document.createElement('div');
     g.className = 'refit-guide refit-connector-editor';
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     g.innerHTML = '<div class="refit-guide-card"><h3>▮ CONNECTOR PORTAL — bind an MCP server</h3>'
       + '<ul><li>This gateway grants its bay\'s agent the <b>live tools</b> of ONE configured connector.</li>'
       + '<li>Bind it below — the portal then rides that server\'s state and pulses when its tools fire.</li></ul>'
@@ -1907,6 +2104,12 @@ const Build = (() => {
      stays false until an agent is truly bound. */
   // one per-station localStorage key root, shared by the first-ride flag and the finish-the-line
   // registry (same doc.meta.createdAt derivation — a UI one-shot never rides the save schema).
+  /* THE STATION'S OWN NAMESPACE. Every one-shot below (first ride, ORDERS dismissal, the finish-the-line
+     registry) is per-STATION, so it must hang off a durable per-station id — `doc.meta.createdAt`, stamped
+     once at creation and backfilled once on migrate (worldmodel.js stationId). Before 2026-08-07 nothing
+     ever stamped it, so this always answered 'default' and every "per-station" latch was in fact global:
+     a brand-new station inherited the first one's dismissals, never saw its first ride, and had its first
+     line retired before the card was ever shown. 'default' survives only as the storage-broken fallback. */
   function stationKeyOf(st) {
     let k = 'default';
     try { const d = st && st.doc && st.doc(); if (d && d.meta && d.meta.createdAt) k = String(d.meta.createdAt); } catch (e) {}
@@ -2020,10 +2223,80 @@ const Build = (() => {
     if (next) finKeySel = next.key;
     return next;
   }
+  /* ---------- STATION ORDERS (2026-08-07 round 3) ----------
+     FINISH THE LINE only appears once a work line already compiles — so the Commander who most
+     needs a next step, the one standing on a bare starter HAB, was the one shown nothing. ORDERS
+     is the stage before it, in the SAME card slot (never a second floating panel — the one-voice
+     law), handing off the moment a line exists.
+
+     Every step is a live projection of the model, and every step ARMS THE TOOL that does it —
+     the checklist is the control, not a description of one. It gates NOTHING: this is the station
+     arc vocabulary quests.js already ships ("honest-loot… like everything here it gates nothing"),
+     brought to where the work happens. Dismissable forever. */
+  // PER STATION, like every other one-shot here (stationKeyOf) — this shipped with no suffix at all, so
+  // dismissing ORDERS on one station silently dismissed it on every station the Commander ever builds.
+  const ORDERS_KEY = () => 'starnet.refit.orders.dis.' + stationKeyOf(station);
+  const ordersDismissed = () => { try { return !!localStorage.getItem(ORDERS_KEY()); } catch (e) { return false; } };
+  let ordersSeenDone = null;   // which steps were already done last render (so a NEW completion can chime)
+
+  function ordersSteps() {
+    const rooms = station.rooms(), props = station.props();
+    const kinds = station.ROOM_KINDS || {};
+    const spaces = rooms.length;
+    // "dressed" = the Commander made an explicit surface choice somewhere. A room carries null on
+    // every surface field until they do, so this can never read true off a fresh station.
+    const dressed = rooms.some(r => r.floorMat || r.wallMat || r.hullMat || r.wallStyle || r.hullStyle
+      || (r.floorPaint && Object.keys(r.floorPaint).length)
+      || (r.floorStyle && kinds[r.kind] && r.floorStyle !== kinds[r.kind].floor));
+    const desk = props.some(p => WORKSTATION_TYPES[p.t]);
+    const line = props.some(p => p.t === 'intake') && props.some(p => p.t === 'bay');
+    return [
+      { id: 'grow', done: spaces >= 2, label: 'ADD A SECOND SPACE', tool: 'room', tip: 'a room or a hallway — your agent walks what you build' },
+      { id: 'dress', done: dressed, label: 'LAY A DECK YOU LIKE', tool: 'paint', tip: 'pick a material and a colour, then click a room' },
+      { id: 'desk', done: desk, label: 'PUT DOWN A WORKSTATION', tool: 'prop', tip: 'an agent walks to its desk to do real work' },
+      { id: 'line', done: line, label: 'STAMP A WORK LINE', tool: 'line', tip: 'a whole working layout in one click — yours to edit' },
+    ];
+  }
+
+  function renderOrders() {
+    if (ordersDismissed()) {
+      if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl);
+      finCardEl = null; finComp = null; finSig = '';
+      return;
+    }
+    const steps = ordersSteps();
+    const done = steps.filter(s => s.done).length;
+    const sig = 'orders|' + steps.map(s => (s.done ? 1 : 0)).join('');
+    if (!finCardEl) {
+      finCardEl = document.createElement('div');
+      finCardEl.className = 'refit-finline refit-orders';
+      root.appendChild(finCardEl);
+    } else if (sig === finSig) return;
+    // a step that flipped to done SINCE the last render earns the cue — never on the first paint,
+    // or every reopened session would replay the whole checklist at you
+    if (ordersSeenDone) { for (const s of steps) if (s.done && !ordersSeenDone[s.id]) { sfx('quest'); break; } }
+    ordersSeenDone = {}; for (const s of steps) if (s.done) ordersSeenDone[s.id] = 1;
+    finSig = sig; finComp = null;
+    finCardEl.className = 'refit-finline refit-orders';
+    finCardEl.innerHTML = '<div class="fl-head"><span class="fl-title">▸ STATION ORDERS</span>'
+      + '<span class="fl-count">' + done + '/' + steps.length + '</span>'
+      + '<button type="button" class="bb sm fl-x" title="dismiss — you know the controls">✕</button></div>'
+      + steps.map((s, i) => '<button type="button" class="bb fl-step' + (s.done ? ' done' : '') + '" data-ord="' + s.id + '"'
+        + ' title="' + esc(s.tip) + '">' + (s.done ? '✓ ' : '①②③④'[i] + ' ') + esc(s.label) + '</button>').join('');
+    finCardEl.querySelector('.fl-x').onclick = () => {
+      try { localStorage.setItem(ORDERS_KEY(), '1'); } catch (e) {}
+      sfx('click'); renderOrders();
+    };
+    finCardEl.querySelectorAll('[data-ord]').forEach(b => {
+      const s = steps.find(x => x.id === b.dataset.ord);
+      b.onclick = () => { if (s) { selectTool(s.tool); flashTip(null, s.tip, true); } };
+    });
+  }
+
   function renderFinCard() {
     if (!root || !running) return;
     const c = finPick();
-    if (!c) { if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl); finCardEl = null; finComp = null; finSig = ''; return; }
+    if (!c) { renderOrders(); return; }   // no line yet → the stage BEFORE it, in the same slot
     finComp = c;
     const st = finState(c);
     // the card is titled with the LINE'S NAME (the intake's saved label — line naming); unnamed lines
@@ -2032,9 +2305,12 @@ const Build = (() => {
     const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || ''].join('|');
     if (!finCardEl) {
       finCardEl = document.createElement('div');
-      finCardEl.className = 'refit-finline';
       root.appendChild(finCardEl);
     } else if (sig === finSig) return;
+    // ...and always restate the class: this element is SHARED with STATION ORDERS (the stage before
+    // a line exists), so handing off from orders to the line card has to shed `refit-orders` or the
+    // card keeps orders' styling — and positionFinCard keys its top-right parking on that class.
+    finCardEl.className = 'refit-finline';
     finSig = sig;
     const crewDone = st.crewLeft === 0;
     const crewTxt = crewDone ? '✓ DOCKS CREWED' : '① CREW THE DOCKS — ' + st.crewLeft + ' TO GO';
@@ -2093,6 +2369,19 @@ const Build = (() => {
     if (!finCardEl) return;
     if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) { finCardEl.style.display = 'none'; return; }
     const c = finComp;
+    /* ORDERS mode has no line to anchor to (that is the whole point of it), so it parks in the top
+       right of the glass — clear of the left dock and of the action deck above. FINISH THE LINE
+       still tracks its own line's bbox below. */
+    if (!c && finCardEl.classList.contains('refit-orders')) {
+      if (!cv) return;
+      finCardEl.style.display = '';
+      const r0 = cv.getBoundingClientRect();
+      if (!r0.width) return;
+      const z = U.uiZoom(), cr0 = finCardEl.getBoundingClientRect();
+      finCardEl.style.left = Math.round((r0.right - (cr0.width || 236 * z) - 14 * z) / z) + 'px';
+      finCardEl.style.top = Math.round((r0.top + 58 * z) / z) + 'px';
+      return;
+    }
     if (!c || !c.bbox || !cacheGeo || !cv) return;
     finCardEl.style.display = '';
     const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
@@ -2122,7 +2411,13 @@ const Build = (() => {
      at an outbox mouth. Works with REFIT closed: resolves the station via opts and maps the tile to
      its line in a fresh geometry frame. First delivery wins; done is forever (per station+line). */
   function noteLineDelivered(wtx, wty) {
-    const st = station || (opts && typeof opts.getStation === 'function' ? opts.getStation() : null);
+    /* THE LIVE STATION WINS. This hook fires from world.js with REFIT CLOSED, and close() never nulls the
+       module-level `station` — so preferring it meant the retirement was booked against whatever station
+       the last REFIT session held. Load a different save and the first real delivery retired a line on the
+       station you are no longer standing in. opts.getStation() is the app's live station; the stale
+       module field is only the fallback for a harness that injected no getter. */
+    const live = (opts && typeof opts.getStation === 'function') ? opts.getStation() : null;
+    const st = live || station;
     if (!st || typeof Pipeline === 'undefined' || !Pipeline.lineComponents) return;
     let geo = null;
     try { geo = st.projectGeometry(); } catch (e) { return; }
@@ -2149,8 +2444,9 @@ const Build = (() => {
      that already existed (rename · re-deck · delete), each routed through the same mutation API the
      tools use — no new model surface, no state of its own. */
   function openRoomCard(roomId, ev) {
-    if (!root || root.querySelector('.refit-room-card')) return;
+    if (!root) return;
     const rm = station.roomById(roomId); if (!rm) return;
+    cardCloseAll();
     const isSpawn = roomId === station.spawnRoomId();
     const kd = station.ROOM_KINDS[rm.kind] || {};
     const matId = station.matOfRoom ? station.matOfRoom(roomId) : (rm.floorMat || kd.mat);
@@ -2183,14 +2479,18 @@ const Build = (() => {
       </div>`;
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));
-    const closeC = () => { if (g.parentNode) g.parentNode.removeChild(g); };
     const nameEl = g.querySelector('#room-name');
+    // the rename is saved by CLOSING, like the step card's brief and the flow card's line name — removing a
+    // focused input does not reliably fire blur, so ESC/✕ used to drop a typed name on the floor.
+    let savedName = rm.name || '';
     const saveName = () => {
       const v = (nameEl.value || '').trim();
-      if (v === (rm.name || '')) return;
+      if (v === savedName) return;
       const res = station.renameRoom(roomId, v);
-      if (res && res.ok) { sfx('click'); flashTip(ev, 'renamed', true); } else sfx('bad');
+      if (res && res.ok) { savedName = v; sfx('click'); flashTip(ev, 'renamed', true); } else sfx('bad');
     };
+    const closeC = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeC);
     nameEl.onkeydown = e => { if (e.key === 'Enter') { saveName(); closeC(); } };
     nameEl.onblur = saveName;
     // the two verbs that are TOOLS: arm the tool on this room rather than duplicating its behaviour
@@ -2216,8 +2516,9 @@ const Build = (() => {
   }
 
   function openDoorPicker(propId, ev) {
-    if (!root || root.querySelector('.refit-door-picker')) return;
+    if (!root) return;
     const p = station.propById(propId); if (!p || p.t !== 'airlock') return;
+    cardCloseAll();
     const cur = p.door || 'open';
     const room = station.roomAt(p.x, p.y);
     const isTrunk = !!(room && typeof station.doc === 'function' && station.doc().meta.trunkRoomId === room);
@@ -2244,6 +2545,7 @@ const Build = (() => {
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     g.querySelectorAll('.door-state').forEach(b => b.onclick = () => {
       const res = station.setDoorState(propId, b.dataset.st);
       if (res && res.ok) { sfx('click'); flashTip(ev, 'airlock → ' + res.door, true); closeP(); }
@@ -2267,6 +2569,12 @@ const Build = (() => {
   // the chrome-occluded margins of the canvas (device px): the build panel (left sidebar on
   // desktop, bottom sheet on narrow screens) + the top bar — so FIT frames the station in the
   // VISIBLE viewport instead of centering half of it behind the panel.
+  /* viewInsets reads three getBoundingClientRects — cheap once, but it is now consulted from the
+     draw loop (the gesture badge and the invitation clamp to the VISIBLE glass, not the raw
+     canvas), and three forced layouts per frame is exactly how a canvas app starts stuttering.
+     The measurement cannot change within a frame, so memoize it for the frame; frame() drops it. */
+  let insMemo = null;
+  const viewInsetsFrame = () => (insMemo || (insMemo = viewInsets()));
   function viewInsets() {
     const out = { l: 0, t: 0, b: 0 };
     if (!cv || !root) return out;
@@ -2322,8 +2630,8 @@ const Build = (() => {
     // right-button cancels an in-progress edit (and never starts one) — then DROPS the armed tool
     // back to SELECT. The browser context menu is already suppressed on the canvas (contextmenu
     // preventDefault in buildDOM), so right-click is a pure deselect gesture.
-    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } if (dupe) { dupe = null; hideTip(); setHint(); } deselectTool(); return; }
-    try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
+    if (ev.button === 2) { if (drag) { releaseDrag(); hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } if (dupe) { dupe = null; hideTip(); setHint(); } deselectTool(); return; }
+    try { cv.setPointerCapture(ev.pointerId); dragPid = ev.pointerId; } catch (e) { dragPid = null; }
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
@@ -2405,7 +2713,7 @@ const Build = (() => {
     }
     const w = toWorldTile(ev);
     if (drag) {
-      if (w.tx !== drag.cur.tx || w.ty !== drag.cur.ty) drag.moved = true;
+      if (w.tx !== drag.cur.tx || w.ty !== drag.cur.ty) { drag.moved = true; snapTick(drag.mode); }
       if (drag.mode === 'paint' || drag.mode === 'reclaim') rasterTo(drag, w);   // accumulate every tile the brush crosses
       drag.cur = w;
     } else {
@@ -2422,6 +2730,7 @@ const Build = (() => {
 
   function onUp(ev) {
     try { cv.releasePointerCapture(ev.pointerId); } catch (e) {}
+    dragPid = null;
     if (!drag) return;
     const d = drag; drag = null;
     setCursor();
@@ -2434,8 +2743,12 @@ const Build = (() => {
     if (d.mode === 'paint') return commitPaint(d, ev);
     if (d.mode === 'reclaim') return commitReclaim(d, ev);
   }
-  function onCancel() { if (drag) { drag = null; hideTip(); setCursor(); } }
-  function onBlur() { spaceHeld = false; if (drag && drag.mode === 'pan') drag = null; setCursor(); }
+  function onCancel() { if (drag || dragPid != null) { releaseDrag(); hideTip(); setCursor(); } }
+  /* ALT-TAB DROPS THE WHOLE GESTURE, not just a pan. This cancelled `pan` only, so tabbing away mid
+     draw/belt/paint left a live drag with a frozen ghost pinned to the last tile the pointer touched —
+     and the pointer that would have ended it is now somewhere else entirely. A gesture you cannot see
+     is a gesture you cannot finish: end it, release the capture, and let the floor go quiet. */
+  function onBlur() { spaceHeld = false; if (drag || dragPid != null) { releaseDrag(); hideTip(); } setCursor(); }
 
   // add every tile on the segment from drag.cur to w (so a fast brush stroke skips nothing)
   function rasterTo(d, w) {
@@ -2738,22 +3051,50 @@ const Build = (() => {
     const machines = station.props().length;
     const sig = rooms + '/' + halls + '/' + tiles + '/' + machines;
     if (sig === statSig) return;   // the sub is re-read every frame; only touch the DOM when it moved
+    const first = statSig === '';
     statSig = sig;
     const bits = [rooms + (rooms === 1 ? ' ROOM' : ' ROOMS')];
     if (halls) bits.push(halls + (halls === 1 ? ' HALL' : ' HALLS'));
     bits.push(tiles + ' TILES');
     if (machines) bits.push(machines + (machines === 1 ? ' MACHINE' : ' MACHINES'));
-    sub.textContent = bits.join(' · ');
+    /* THE STATION'S OWN NAME FOR ITS SIZE. A pure LABEL on a number already shown — no gauge, no
+       gate, nothing unlocks at a threshold (sandbox law); crossing one is simply the floor earning
+       a bigger word, which is the whole point of building. Announced once, when it happens. */
+    const tier = tierFor(tiles);
+    if (!first && tier !== lastTier) { sfx('milestone'); announceTier(tier); }
+    lastTier = tier;
+    sub.innerHTML = '<span class="refit-tier">' + esc(tier) + '</span>' + esc(' · ' + bits.join(' · '));
+  }
+  // deck tiles → the station's size word. Thresholds are round numbers, not tuned: they exist to
+  // give a growing floor a few named landmarks, and every one is reachable from minute one.
+  const TIER_STEPS = [[3000, 'CITADEL'], [1200, 'COMPLEX'], [400, 'STATION'], [0, 'OUTPOST']];
+  const tierFor = tiles => (TIER_STEPS.find(s => tiles >= s[0]) || TIER_STEPS[TIER_STEPS.length - 1])[1];
+  let lastTier = '';
+  function announceTier(tier) {
+    if (!root) return;
+    const el = root.querySelector('.refit-tier');
+    const el2 = root.querySelector('.refit-title');
+    [el, el2].forEach(n => { if (!n) return; n.classList.remove('refit-levelup'); void n.offsetWidth; n.classList.add('refit-levelup'); });
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Your station is now a ' + tier, 'gold');
   }
 
   function onKey(ev) {
     const a = ev.target;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    /* A MOUNTED CARD OWNS THE KEYBOARD (2026-08-07 conveyor audit). These shortcuts drive the FLOOR, and
+       the floor is not what you are looking at while a card is up: with the STEP editor open, `9` armed
+       LINES and yanked the camera out from under the card, and Ctrl+Z undid the very stamp that created
+       the bay being edited. Only ESC crosses a card — and it closes THAT card (below), never the floor. */
+    const modal = cardTop();
+    if (modal && ev.key !== 'Escape') return;
     if (ev.key === ' ') { ev.preventDefault(); spaceHeld = true; setCursor(); return; }
     if (ev.key === 'Escape') {
-      const card = root && root.querySelector('.refit-guide');
-      if (card) { markSeen(); card.parentNode.removeChild(card); return; }
-      if (drag) { drag = null; hideTip(); setCursor(); return; }         // cancel an in-progress edit first
+      // close the TOPMOST card through ITS OWN close path (which saves what that card saves — an unsaved
+      // job brief / line name / room rename). markSeen() belongs to the first-run card ALONE, and that
+      // card's own registered path is what does it: `.refit-guide` is shared by eight cards, so matching
+      // on it here is what used to mark the guide seen from a step editor and throw the brief away.
+      if (modal) { cardClose(modal); return; }
+      if (drag) { releaseDrag(); hideTip(); setCursor(); return; }       // cancel an in-progress edit first
       if (connectFrom) { connectFrom = null; hideTip(); return; }        // then a half-made connection
       if (dupe) { dupe = null; hideTip(); setHint(); return; }           // then the armed copy
       if (tool !== 'select') { deselectTool(); return; }                 // then the armed tool → SELECT
@@ -2938,9 +3279,46 @@ const Build = (() => {
     try { resize(); fitCamera(); } catch (_) {}
   }
 
+  /* ---------- ONE BAD LAYER MUST NOT BLANK THE CANVAS ----------
+     The frame used to be a single try/catch: any draw dependency that threw skipped EVERY layer
+     after it and then had its bake discarded and retried forever, so REFIT read as a black overlay.
+     A real case: a refused sidecar (the page's token dies when the sidecar restarts under it) left
+     prop data undefined and PropSprites threw out of drawProps — the light layer, the ghost and
+     every label after it never ran, on a loop.
+
+     Each layer now paints inside its own guard. A failure costs THAT layer and nothing else; the
+     rest of the frame paints. It is reported (one console.warn per layer per session — not
+     silenced, and never papered over with fake state) and stamped on the overlay's dataset so a
+     harness can read the degradation instead of guessing at a dark screenshot.
+
+     STATE HYGIENE: a layer that throws mid-draw leaves the 2D context wherever it died — an
+     unbalanced save(), a stray globalAlpha, a clip. The guard brackets the layer with its own
+     save() and unwinds to exactly that depth afterwards, detected with a sentinel miterLimit
+     (the 2D API exposes no stack depth). Without the unwind, one throwing layer per frame would
+     leak the context state stack forever. */
+  const LAYER_MITER = 10, LAYER_SENTINEL = 7.3125;   // an ordinary value nothing in this file sets
+  const layerFailed = Object.create(null);
+  function drawLayer(name, fn) {
+    ctx.miterLimit = LAYER_MITER;
+    ctx.save();
+    ctx.miterLimit = LAYER_SENTINEL;   // everything the layer pushes inherits this mark
+    try {
+      fn();
+    } catch (err) {
+      if (!layerFailed[name]) {
+        layerFailed[name] = 1;
+        console.warn('[refit] draw layer "' + name + '" failed — the rest of the frame still paints', err);
+      }
+      if (root) root.dataset.renderDegraded = Object.keys(layerFailed).join(',');
+    }
+    // pop back to (and including) our own save, whatever depth the layer left behind
+    for (let i = 0; i < 64 && ctx.miterLimit === LAYER_SENTINEL; i++) ctx.restore();
+  }
+
   function frame(now) {
     if (!running) return;
     let failed = false;
+    insMemo = null;   // one layout measurement per frame at most (viewInsetsFrame)
     try {
     const visibleRect = cacheGeo ? visibleBakeRect(cacheGeo) : null;
     if (visibleRect && cache && StationBake.missingVisibleChunks && StationBake.missingVisibleChunks(cache, visibleRect).length) {
@@ -2987,23 +3365,28 @@ const Build = (() => {
     if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy, drawVisibleRect);
     else ctx.drawImage(cache.baseCv, ox, oy);
     voiceBegin();   // one-voice law: every text layer below REGISTERS; the arbiter paints at the end
-    drawGrid(t);
-    drawConveyor(now, t);   // belts (floor) → props → boxes ride on top
-    drawProps(now);
-    drawConveyorBoxes(now, t);
-    if (StationBake.drawLight) StationBake.drawLight(ctx, cache, ox, oy, drawVisibleRect);
-    else ctx.drawImage(cache.lightCv, ox, oy);
-    drawGlows(now);
-    drawFlashes(now, t);
-    drawRoutingValidation(t, now);   // plain-words callouts on any broken piece, IN build mode (cost-safety + guidance)
-    drawBeltEndpointGlow(t, now);    // BELT tool armed → INTAKE glows FROM, BAY/OUTBOX glow TO (what connects to what)
-    drawCrosshair(t);   // the aim instrument — ABOVE the light layer, or the deck swallows it
-    drawHover(t);
-    drawAgentTag(t);   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
-    drawGhost(t, now);
+    drawLayer('grid', () => drawGrid(t));
+    drawLayer('conveyor', () => drawConveyor(now, t));   // belts (floor) → props → boxes ride on top
+    drawLayer('props', () => drawProps(now));
+    drawLayer('boxes', () => drawConveyorBoxes(now, t));
+    drawLayer('light', () => {
+      if (StationBake.drawLight) StationBake.drawLight(ctx, cache, ox, oy, drawVisibleRect);
+      else ctx.drawImage(cache.lightCv, ox, oy);
+    });
+    drawLayer('glows', () => drawGlows(now));
+    drawLayer('flashes', () => drawFlashes(now, t));
+    drawLayer('validation', () => drawRoutingValidation(t, now));   // plain-words callouts on any broken piece, IN build mode (cost-safety + guidance)
+    drawLayer('beltEndpoints', () => drawBeltEndpointGlow(t, now)); // BELT tool armed → INTAKE glows FROM, BAY/OUTBOX glow TO (what connects to what)
+    // the candidate field is an INSTRUMENT — above the light with the crosshair, or the deck swallows it
+    drawLayer('lineField', () => drawLineField(t));
+    drawLayer('crosshair', () => drawCrosshair(t));   // the aim instrument — ABOVE the light layer, or the deck swallows it
+    drawLayer('hover', () => drawHover(t));
+    drawLayer('agentTag', () => drawAgentTag(t));   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
+    drawLayer('ghost', () => drawGhost(t, now));
     // every voice has registered — the arbiter now paints AT MOST one label per anchor region.
     // overFloor: the pointer is on the station (or a gesture is live) → the projection stays quiet.
-    voiceFlush(!!drag || !!(hoverRoomId || hoverPropId || (hoverTile && station.beltAt(hoverTile.tx, hoverTile.ty))));
+    // guarded too: the registered labels PAINT here, so a throwing caption would otherwise take the frame
+    drawLayer('voices', () => voiceFlush(!!drag || !!(hoverRoomId || hoverPropId || (hoverTile && station.beltAt(hoverTile.tx, hoverTile.ty)))));
     // animate the prop-palette preview gallery (~25fps is plenty + cheap). Runs LAST: it hijacks PropSprites'
     // ctx for the offscreen tiles, and the next frame re-points it at the main canvas in drawProps().
     if (tool === 'prop' && propThumbs.length && now - lastThumbTs >= 40) { paintThumbs(now); lastThumbTs = now; }
@@ -3146,15 +3529,62 @@ const Build = (() => {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  // place/delete confirmation flashes — a quick bright pulse that fades over ~500ms
+  /* ---------- PLACEMENT JUICE (2026-08-07 round 3) ----------
+     A placement used to answer with a flat colour wash that faded in half a second — the same mark
+     for building a room and for tearing one down, and nothing that felt like the station DID
+     something. It now reads as fabrication: a phosphor SCAN sweeps the footprint (left→right as
+     structure materializes, right→left as it is stripped), a RING pushes out past the edge and
+     fades, and the body glow decays under both. Eerie, not cute — it is the same construction
+     vocabulary the bake and the CRT already speak, no particles and no confetti. */
+  const FLASH_MS = 620;
   function drawFlashes(now, t) {
     for (let i = flashes.length - 1; i >= 0; i--) {
-      const fl = flashes[i], k = (now - fl.t0) / 500;
+      const fl = flashes[i], k = (now - fl.t0) / FLASH_MS;
       if (k >= 1) { flashes.splice(i, 1); continue; }
-      const a = (1 - k) * 0.5;
-      ctx.fillStyle = fl.bad ? 'rgba(255,110,90,' + a + ')' : 'rgba(170,255,210,' + a + ')';
-      for (const r of fl.rects) ctx.fillRect(r.x1 * t, r.y1 * t, (r.x2 - r.x1 + 1) * t, (r.y2 - r.y1 + 1) * t);
+      const ease = 1 - (1 - k) * (1 - k);         // fast out — the sweep leads, the glow trails
+      const body = (1 - k) * (fl.bad ? 0.34 : 0.30);
+      const hue = fl.bad ? '255,110,90' : '170,255,210';
+      for (const r of fl.rects) {
+        const X = r.x1 * t, Y = r.y1 * t, W = (r.x2 - r.x1 + 1) * t, H = (r.y2 - r.y1 + 1) * t;
+        ctx.fillStyle = 'rgba(' + hue + ',' + body.toFixed(3) + ')';
+        ctx.fillRect(X, Y, W, H);
+        // THE SCAN — a bright band crossing the footprint once
+        const band = Math.max(t * 0.9, W * 0.14);
+        const head = fl.bad ? (X + W - ease * (W + band)) : (X - band + ease * (W + band));
+        const bx0 = Math.max(X, head), bx1 = Math.min(X + W, head + band);
+        if (bx1 > bx0) {
+          const g = ctx.createLinearGradient(head, 0, head + band, 0);
+          const peak = (0.55 * (1 - k * 0.5)).toFixed(3);
+          g.addColorStop(0, 'rgba(' + hue + ',0)');
+          g.addColorStop(0.5, 'rgba(' + hue + ',' + peak + ')');
+          g.addColorStop(1, 'rgba(' + hue + ',0)');
+          ctx.fillStyle = g; ctx.fillRect(bx0, Y, bx1 - bx0, H);
+        }
+        // THE RING — the footprint's own outline pushing outward as it settles
+        const grow = ease * t * 0.9, ra = (1 - ease) * 0.85;
+        if (ra > 0.02) {
+          ctx.lineWidth = 2 / zoom;
+          ctx.strokeStyle = 'rgba(' + hue + ',' + ra.toFixed(3) + ')';
+          ctx.strokeRect(X - grow, Y - grow, W + grow * 2, H + grow * 2);
+        }
+      }
     }
+  }
+
+  /* THE SNAP TICK. Sizing a footprint is the core gesture of build mode and it was silent: the
+     ghost changed by a tile and nothing marked it, so a drag felt like moving a rectangle instead
+     of laying out a room. Every tile the gesture snaps through now ticks. Rate-limited, because a
+     fast drag crosses tiles faster than a cue can decay, and restricted to gestures where the SNAP
+     is the point — the paint and delete brushes raster whole runs of tiles per frame and would
+     machine-gun it. */
+  let lastTick = 0;
+  const SNAP_GESTURES = { draw: 1, beltrun: 1, move: 1, propmove: 1, propstamp: 1 };
+  function snapTick(mode) {
+    if (!SNAP_GESTURES[mode]) return;
+    const n = performance.now();
+    if (n - lastTick < 55) return;
+    lastTick = n;
+    sfx('tick');
   }
 
   // placeable props — drawn in WORLD tile coords (camera maps world*t, the bake is origin-shifted
@@ -3489,9 +3919,28 @@ const Build = (() => {
     ctx.lineWidth = 1.5 / zoom;
     ctx.strokeStyle = protectedSpawn ? 'rgba(255,200,80,0.95)' : (tool === 'reclaim' ? 'rgba(255,92,77,0.95)' : 'rgba(120,220,255,0.95)');
     for (const r of rm.rects) ctx.strokeRect(r.x1 * t + 1, r.y1 * t + 1, (r.x2 - r.x1 + 1) * t - 2, (r.y2 - r.y1 + 1) * t - 2);
-    if (protectedSpawn) { // a small lock badge so the block is predictable, not surprising
-      const z = rm.rects[0]; ctx.fillStyle = 'rgba(255,200,80,0.95)'; ctx.font = (10 / zoom) + "px 'VT323','Courier New',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('⌂', (z.x1 + 0.5) * t, (z.y1 + 0.5) * t);
+    if (protectedSpawn) {
+      /* THE SPAWN-ROOM LOCK BADGE. Two laws were broken by one line here:
+         • '⌂' (U+2302) is NOT in VT323 — the browser silently fell back to another face for that one
+           glyph, so the badge rendered at foreign metrics (symbol-glyph law);
+         • it was painted with a bare ctx.fillText, OUTSIDE the one-voice arbiter, so it could print on
+           top of a hover nameplate or a validation callout claiming the same tile.
+         Now it is a DRAWN padlock — no font, no fallback, nothing to mis-measure — registered on the
+         `hover` layer (it is a fact about the room under the pointer) so the arbiter mutes it exactly
+         like every other voice when something louder is speaking at that anchor. */
+      const z = rm.rects[0];
+      const box = { x: z.x1 * t, y: z.y1 * t, w: t, h: t };
+      voiceSay('hover', box, box, (c) => {
+        const cx = (z.x1 + 0.5) * t, cy = (z.y1 + 0.5) * t, s = Math.max(3, 7 / zoom);
+        c.save();
+        c.strokeStyle = c.fillStyle = 'rgba(255,200,80,0.95)';
+        c.lineWidth = Math.max(0.6, 1.2 / zoom);
+        c.fillRect(cx - s / 2, cy - s * 0.1, s, s * 0.6);                       // the body
+        c.beginPath();                                                          // the shackle
+        c.arc(cx, cy - s * 0.1, s * 0.28, Math.PI, 0);
+        c.stroke();
+        c.restore();
+      });
     }
   }
 
@@ -3509,14 +3958,16 @@ const Build = (() => {
     let wMax = 0;
     for (const s of lines) wMax = Math.max(wMax, ctx.measureText(s).width);
     const bw = wMax + pad * 2, bh = lh * lines.length + pad * 1.6;
+    /* CLAMP TO THE VISIBLE GLASS — the canvas runs UNDER the build dock and the top bar, so
+       clamping to the canvas edge is not clamping to anything the user can read. A ghost near the
+       left of the floor put its badge behind the dock and you lost the first words of the readout
+       ("…SEARCH LINE — CLICK TO STAMP"). viewInsets is the same measurement fitCamera frames by. */
+    const ins = viewInsetsFrame();
+    const topWorld = (ins.t - panY) / zoom;
     // above the ghost by default; flip below when that would land off the top of the glass
     const above = rect.y1 * t - bh - fs * 0.35;
-    const topWorld = (-panY) / zoom;
     const by = above > topWorld + fs ? above : (rect.y2 + 1) * t + fs * 0.35;
-    /* CLAMP TO THE GLASS. Drag a footprint against the right edge of the screen and a badge centred
-       on the ghost runs straight off it — you lose the half of the readout that carries the reason.
-       The badge slides along the ghost instead of vanishing with it. */
-    const leftWorld = (-panX) / zoom, rightWorld = (cv.width - panX) / zoom, m = 4 / zoom;
+    const leftWorld = (ins.l - panX) / zoom, rightWorld = (cv.width - panX) / zoom, m = 4 / zoom;
     let bx = (rect.x1 + rect.x2 + 1) / 2 * t - bw / 2;
     bx = clamp(bx, leftWorld + m, Math.max(leftWorld + m, rightWorld - bw - m));
     const cx = bx + bw / 2;
@@ -3568,6 +4019,29 @@ const Build = (() => {
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
     for (const k of cells) { const p = k.split(','), x = +p[0], y = +p[1]; if (x < x1) x1 = x; if (y < y1) y1 = y; if (x > x2) x2 = x; if (y > y2) y2 = y; }
     return x2 < x1 ? null : { x1, y1, x2, y2 };
+  }
+
+  /* ---------- THE CANDIDATE WASH: where this line CAN go ----------
+     Painted from the cached field (lineField) — the frame does zero model work here, it fills the
+     pre-merged runs and strokes the pre-merged boundary. Matte and dim on purpose: this is ground
+     being described, not a control. It speaks the GRID's phosphor (the same rgba(120,200,255) the
+     apron uses) so it reads as "buildable floor", never as a second ghost.
+
+     It draws ABOVE the light layer with the crosshair: an instrument painted before
+     StationBake.drawLight is swallowed by the deck it is supposed to be describing. */
+  function drawLineField(t) {
+    if (tool !== 'line') return;
+    const f = lineField(lineType);
+    if (!f || !f.runs.length) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(120,200,255,0.075)';
+    for (const r of f.runs) ctx.fillRect(r.x1 * t, r.ty * t, (r.x2 - r.x1 + 1) * t, t);
+    ctx.strokeStyle = 'rgba(120,200,255,0.34)';
+    ctx.lineWidth = 1 / zoom;
+    ctx.beginPath();
+    for (const e of f.edges) { ctx.moveTo(e[0] * t, e[1] * t); ctx.lineTo(e[2] * t, e[3] * t); }
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawGhost(t, now) {
@@ -3796,6 +4270,19 @@ const Build = (() => {
       })),
     } : null),
     finRegistry: () => finRead(station),
+    /* PLACEMENT readouts for CDP proof scripts — the EXACT state the wash and the snap run on.
+       lineField reports the cached candidate set (count + a bounded sample, never the whole list);
+       lineSnapAt answers what a click at a tile would actually commit. */
+    lineField: (bpId) => {
+      const f = lineField(bpId || lineType);
+      return f ? { bp: bpId || lineType, count: f.list.length, runs: f.runs.length, sample: f.list.slice(0, 8) } : null;
+    },
+    lineFits: (bpId) => lineFits(bpId || lineType),
+    lineSnapAt: (tx, ty) => lineSnap(tx, ty),
+    // which draw layers have failed this session (empty = every layer is painting)
+    degradedLayers: () => Object.keys(layerFailed),
+    // camera + the dock/top insets, so a harness can assert framing against the VISIBLE glass
+    camera: () => ({ zoom, panX, panY, cw: cv ? cv.width : 0, ch: cv ? cv.height : 0, tile: T(), ins: viewInsets() }),
     // ghost-projection readout (Phase 3) — the EXACT state the projection runs on (boxes/captions/log)
     ghost: () => (ghost ? ghost.peek() : null),
     // run the REAL hover path over a tile and report what the reclaim highlight would target

@@ -261,6 +261,77 @@ async function run() {
     A.eq(saves[0], { chatId: '777', rec: { agentId: 'researcher', channel: 'telegram' } }, 'unbound chat records the resolved agent');
   }
 
+  /* ---- J4. WORK BELONGS TO A LINE (Andrew's ruling, 2026-08-07) ----
+     "each conveyor system built has a purpose and a different workflow — the conveyor system should
+     visually run ONLY when the specific workflow is running."
+
+     Wired with the REAL router + the REAL chain runner over a REAL compiled THREE-stage floor, because the
+     whole point is that one compiled plan decides for every surface. Two messages:
+       · one the FLOOR routed in through the line's INBOX  -> the whole line runs;
+       · one BOUND to a MID-LINE dock the door does not feed -> nothing triggered that workflow, so it
+         answers there and stops, and the provider is never called for the stage after it (asserted by run
+         count, not by absence of text).
+     The origin test is "did it ride in through this line's door?", never "was it addressed?" — see the
+     lineOriginOf note in pipeline.js for why a chat's persisted binding cannot answer that question. */
+  {
+    const Pipeline = require('../frontend/app/pipeline.js');
+    const { makeRouter } = require('../sidecar/routing/router.js');
+    const { makeChainRunner } = require('../sidecar/routing/chain.js');
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const plan = Pipeline.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' },
+              { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer' },
+              { id: 'b3', t: 'bay', x: 10, y: 0, w: 1, h: 1, agentId: 'editor' },
+              { id: 'o', t: 'outbox', x: 13, y: 0, w: 1, h: 1 }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'),
+              belt(8, 0, 'E'), belt(9, 0, 'E'), belt(11, 0, 'E'), belt(12, 0, 'E')]
+    });
+    const router = makeRouter();
+    A.ok(router.setPlan(plan).ok, 'the three-stage floor deploys');
+    A.eq(plan.reach.researcher, true, 'the INBOX feeds the entry dock');
+    A.ok(!plan.reach.writer, 'and does NOT feed the mid-line dock — only the researcher hands work to it');
+
+    const ranAgents = [];   // EVERY provider-buying run, entry dock and hops alike
+    const runOnce = async (o) => {
+      ranAgents.push(o.agentId);
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: o.agentId + ' output' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const chain = makeChainRunner({ nextAgent: (a, ctx) => router.chainNext(a, ctx), now: () => 0 });
+    const store = fakeStore();
+    store.saveChatRecord = () => {};
+    store.recs.set('bound', { agentId: 'writer', channel: 'telegram' });   // a chat addressed at a MID-LINE stage
+    const sends = [];
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push({ c, t }); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => true, newId: idGen(),
+      resolveAgent: (ctx) => router.resolveTarget(ctx), chain: chain,
+      lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // the EXACT seam index.js injects into every hub
+      resolveRunConfig: () => ({ key: 'k', model: 'm', ok: true })
+    });
+
+    // (a) the LINE'S OWN TRIGGER: a channel message the belts walk from the INBOX to the entry dock
+    await hub.onInbound(dm('research the competitors', 'open'));
+    A.eq(ranAgents, ['researcher', 'writer', 'editor'], 'work that rode in through the door runs the WHOLE line');
+    A.ok(/editor output/.test(sends[sends.length - 1].t), "and the LAST stage's answer is what leaves the station");
+
+    // (a2) the SAME chat again, now carrying the binding the hub auto-saved: still the line's own work
+    ranAgents.length = 0;
+    store.recs.set('open', { agentId: 'researcher', channel: 'telegram' });
+    await hub.onInbound(dm('research the competitors', 'open'));
+    A.eq(ranAgents, ['researcher', 'writer', 'editor'], "the hub's own bookkeeping binding must not stop a channel driving its line");
+
+    // (b) A MID-LINE STAGE, ADDRESSED DIRECTLY: no door feeds it, so nothing triggered that workflow
+    ranAgents.length = 0;
+    await hub.onInbound(dm('research the competitors', 'bound'));
+    A.eq(ranAgents, ['writer'], 'an order aimed at a mid-line dock runs EXACTLY ONE run — nothing downstream');
+    A.eq(ranAgents.indexOf('editor'), -1, 'PROVIDER CALLS for the later dock: zero — no money spent past the agent asked');
+    A.ok(/writer output/.test(sends[sends.length - 1].t), "and the agent's own answer is what leaves");
+    A.ok(!/work line stopped/.test(sends[sends.length - 1].t), 'no "the line stopped early" note — it was never a line run');
+  }
+
   // ---- K. two chats routed to the SAME agent do NOT cross-cancel (supersede keyed by chatId, not agentId) ----
   {
     const store = fakeStore(); const sends = []; const parks = {};

@@ -76,15 +76,46 @@ const REDIRECT = 'http://127.0.0.1:8787/api/connectors/oauth/callback';
   A.eq(d.registrationEndpoint, '', 'no registration_endpoint → empty (caller must handle no-DCR)');
 }
 
+// ---- B3. RFC 8414 inserts metadata before a pathful authorization-server issuer ----
+{
+  const f = fakeFetch([
+    ['/.well-known/oauth-protected-resource/mcp', { json: { authorization_servers: ['https://auth.monday.com/mcp'] } }],
+    ['https://auth.monday.com/.well-known/oauth-authorization-server/mcp', { json: {
+      authorization_endpoint: 'https://auth.monday.com/oauth2/authorize',
+      token_endpoint: 'https://auth.monday.com/oauth_ms/oauth/token',
+      registration_endpoint: 'https://auth.monday.com/oauth_ms/oauth/register',
+      token_endpoint_auth_methods_supported: ['client_secret_post'],
+      code_challenge_methods_supported: ['S256']
+    } }]
+  ]);
+  const d = await O.discover({ fetchImpl: f, serverUrl: 'https://mcp.monday.com/mcp' });
+  A.eq(d.authorizationEndpoint, 'https://auth.monday.com/oauth2/authorize', 'pathful issuer uses the RFC 8414 metadata location');
+  A.eq(d.registrationEndpoint, 'https://auth.monday.com/oauth_ms/oauth/register', 'pathful issuer discovery retains DCR');
+  A.eq(O.chooseTokenEndpointAuthMethod(d.tokenEndpointAuthMethods), 'client_secret_post', 'metadata selects the provider-supported confidential token method');
+  A.throws(() => O.chooseTokenEndpointAuthMethod(['private_key_jwt']),
+    'unsupported confidential methods fail before opening a consent flow that cannot complete');
+}
+
 // ---- C. dynamic client registration (RFC 7591): public client, PKCE, our loopback redirect ----
 {
   let seen = null;
   const f = fakeFetch([['/register', (url, opts) => { seen = JSON.parse(opts.body); return { json: { client_id: 'dcr-abc-123' } }; }]]);
   const r = await O.registerClient({ fetchImpl: f, registrationEndpoint: 'https://mcp.notion.com/register', redirectUri: REDIRECT, clientName: 'StarNet' });
   A.eq(r.clientId, 'dcr-abc-123', 'registration returns a client_id');
+  A.eq(r.tokenEndpointAuthMethod, 'none', 'registration defaults to a public PKCE client');
   A.eq(seen.token_endpoint_auth_method, 'none', 'registers as a PUBLIC client (no secret)');
   A.eq(seen.redirect_uris[0], REDIRECT, 'registers our loopback redirect');
   A.ok(seen.grant_types.indexOf('refresh_token') >= 0, 'requests refresh_token grant');
+}
+
+// ---- C2. confidential DCR clients retain the issued secret and selected token method ----
+{
+  let seen = null;
+  const f = fakeFetch([['/register', (url, opts) => { seen = JSON.parse(opts.body); return { json: { client_id: 'conf-client', client_secret: 'conf-secret' } }; }]]);
+  const r = await O.registerClient({ fetchImpl: f, registrationEndpoint: 'https://auth.monday.com/register', redirectUri: REDIRECT, tokenEndpointAuthMethod: 'client_secret_post' });
+  A.eq(seen.token_endpoint_auth_method, 'client_secret_post', 'DCR asks for the metadata-selected confidential method');
+  A.eq(r.clientSecret, 'conf-secret', 'DCR returns the issued client secret to the protected persistence seam');
+  A.eq(r.tokenEndpointAuthMethod, 'client_secret_post', 'DCR retains the requested method when the server omits it from the response');
 }
 
 // ---- D. PKCE + authorize URL (deterministic verifier/challenge, resource indicator, S256) ----
@@ -122,6 +153,23 @@ const REDIRECT = 'http://127.0.0.1:8787/api/connectors/oauth/callback';
   A.eq(tok.accessToken, 'at-2', 'refresh returns a new access token');
   A.eq(tok.refreshToken, 'rt-1', 'refresh KEEPS the prior refresh_token when the AS omits one');
   A.eq(tok.expiresAt, 5000 + 1800 * 1000, 'refresh recomputes expiry from injected now');
+}
+
+// ---- F2. confidential clients authenticate code exchange + refresh without leaking the secret ----
+{
+  let exchangeBody = '', refreshHeaders = null;
+  const post = fakeFetch([['/token', (url, opts) => {
+    if (String(opts.body).indexOf('grant_type=authorization_code') >= 0) exchangeBody = opts.body;
+    else refreshHeaders = opts.headers;
+    return { json: { access_token: 'at-conf', refresh_token: 'rt-conf', expires_in: 60 } };
+  }]]);
+  await O.exchangeCode({ fetchImpl: post, tokenEndpoint: 'https://auth.example/token', code: 'code', redirectUri: REDIRECT,
+    clientId: 'conf-client', clientSecret: 'post-secret', tokenEndpointAuthMethod: 'client_secret_post', verifier: 'verifier' });
+  A.ok(/client_secret=post-secret/.test(exchangeBody), 'client_secret_post sends the DCR secret in the token form');
+  await O.refreshTokens({ fetchImpl: post, tokenEndpoint: 'https://auth.example/token', refreshToken: 'rt-conf',
+    clientId: 'basic-client', clientSecret: 'basic-secret', tokenEndpointAuthMethod: 'client_secret_basic' });
+  A.ok(/^Basic /.test(refreshHeaders.Authorization || ''), 'client_secret_basic sends HTTP Basic authorization');
+  A.eq(String(refreshHeaders.Authorization).indexOf('basic-secret'), -1, 'the raw client secret is not exposed in the Basic header');
 }
 
 // ---- G. needsRefresh: skew-aware expiry ----

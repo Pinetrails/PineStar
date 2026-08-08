@@ -1,5 +1,101 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
+
+Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have
+independent top-right, keyboard-labelled copy controls that copy only the exact code text. Success renders
+`Copied` / ✓; failure renders `Copy failed` / ! and leaves truthful manual-selection guidance. The existing
+whole-message copy action uses the same feedback path, and the packaged website mirror is synchronized.
+
+Live seeded proof clicked `Copy code block` on a response containing prose plus `console.log("hello");`; the
+browser clipboard contained exactly `console.log("hello");`, excluding the prose. The new regression contributes
+20 multi-block/XSS/accessibility assertions. After a mid-ritual trunk reset, the lane was reconstructed from the
+current trunk with only its own commits so dropped artifact work was not silently reintroduced. Product-perfect
+claims were re-locked for 205 surface files. Full `npm run test:fast` was **574/574 GREEN** both before merge and
+again on the exact merged trunk. Frontend-only: `test:http` was not required.
+
+## 2026-08-07 — STARNET 0.10 FINAL HERMES PARITY MAP (`agent/hermes-final-gap-audit`)
+
+G0 AND G2 LANE COMPLETE; G1 PACKAGED BASELINE PARTIAL; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
+`origin/main` at `10a2b3d7` (2026-08-07), rather than the stale July Hermes checkout. The full evidence map and
+observable exit tests live in `docs/HARNESS_GAP_2026-08-07.md`.
+
+The 0.10 release-confidence gates are: **G0** operator-visible crash review plus safe resume, **G1** packaged
+Windows/macOS background-lifecycle proof, **G2** a unified opt-in live doctor/support receipt, **G3** MCP
+schema-cache/lazy-start/recycle/orphan lifecycle, and **G4** complete multi-file skill distribution with
+discovery, update generations, rollback, and lossless export/re-import. G0 is implemented in lane commit
+`65b90b78`: authenticated operator resolution, complete-known-outcome continuation, one-shot durable consume,
+provider-valid recovered history, and a host replay barrier that runs before consent or dispatch. The in-app
+fixture proved `happened` -> continuation `done`, the deterministic counter remained exactly one, finished linkage
+survived a second sidecar boot without a retry control, unknown remained non-continuable, and corrupt repair stayed
+forensic-only. Focused recovery coverage is 190 assertions; the current-tree fast gate has a complete 574-step green
+receipt, and the post-live-fix rerun stopped only on a timing-sensitive browser assertion that then passed 293/293
+isolated. HTTP recovery is 26/26; the standard HTTP wrapper timed out with all shown assertions green, its one later
+loop-check timing failure passed 33/33 isolated, and every remaining 38 HTTP entries passed in order. This lane is
+not trunk capability until merged.
+
+G2 is implemented in lane commits `14e256ba` + `712b0de0`. Static diagnostics remain an inert GET; the new live
+doctor is an authenticated POST behind a second explicit checkbox and a server-side consent bit. One bounded action
+runs independent probes concurrently for the selected model, the agent's effective execution backend, every enabled
+MCP server, and every supported/configured channel. Receipts use only `not-configured`, `refused`, `unreachable`,
+`authenticated`, and `round-trip-proven`, include per-row timestamps/latency, redact credential shapes, and contain no
+prompts, transcripts, command output, or message content. The doctor never sends a channel message; a channel only
+earns delivery round-trip from a real prior successful delivery receipt. The live app proof refused the unchecked
+button, then rendered a receipt with provider + local execution round-trip proven, reset the checkbox, exposed copy,
+and logged zero browser warnings/errors. The real-host proof additionally enabled a fake HTTP MCP server and Telegram
+adapter: MCP re-initialized/listed, Telegram re-authenticated but remained only `authenticated`, and zero messages were
+sent. Focused coverage is 8/8; `sidecar.http.test` is 471 assertions; website mirror is 3,883 + 2 embed-only green. The
+canonical fast gate passed all new doctor tests, then stopped at the existing candidate-bound claims seal at step
+228/576 (10 problems / 54 ok); this isolated lane did not rewrite shared release claims.
+
+G1 now has a cryptographically verified **0.9.0 baseline**, not a completed lifecycle matrix. Receipt
+`C:\Users\andro\gen-trees\release-090-final\.dogfood\g1-packaged-lifecycle\20260807T175943\g1-packaged-lifecycle-receipt.json`
+has SHA-256 `827D9A5C11290293EA845D58547F834CEF7B6D03260F96AA46AD79D3E3425C57` and status `partial_blocked`.
+The public installer digest matches GitHub, Authenticode and detached updater signatures pass, extraction and embedded
+binary/runtime signatures pass, and live Windows + both macOS update assets are reachable and version-pinned. The
+seven interactive Windows lifecycle cases were not run because the same installed identity/path/canonical workspace
+is owned by the healthy 48-hour provider soak; macOS runtime remains unverified without a Mac. This evidence is
+explicitly baseline-only and cannot authorize the eventual 0.10 candidate.
+
+The remaining parity lanes are cross-surface session handoff plus authenticated relay/webhooks (G5), live
+subagent steering and structured result contracts (G6), config-blocked/hash-suppressed autonomous monitors
+(G7), remote execution continuity/checkpoints/conflict-aware sync (G8), and recoverable full-output plus verified
+workspace-mutation receipts (G9). Serverless backend breadth, additional push channels, enterprise-native
+provider auth, A2A/MoA, wake word, bulk-corpus learning, and portable profiles require explicit build/defer/
+do-not-claim decisions; they are not automatic 0.10 blockers.
+
+Do not reopen the old generic claims that StarNet lacks a serious core loop, tool breadth, compaction/caching,
+approvals, durable schedules, background delegation, session management, checkpoints, execution profiles,
+MCP OAuth/stdio, skills authoring, or provider breadth. Those are now confirmed peer capabilities. No row turns
+green from unit tests alone: final authority is a packaged live or fault-injection receipt at the exact release
+candidate SHA.
+
+## 2026-08-07 — USER-SELECTABLE TRAY START/CLOSE (`agent/tray-background`)
+
+READY TO MERGE. The existing Lane 4D tray supervisor now has two independent, opt-in desktop preferences:
+START MINIMIZED TO TRAY and CLOSE WINDOW TO TRAY. Both default off, persist through a versioned native JSON
+record with exact read-back and backup recovery, and surface verified native state in Settings. Enabling
+close-to-tray keeps the one supervised shell/sidecar alive even while idle; disabling it preserves the prior
+armed-work safety decision. Browser preview stays disabled and makes no native lifecycle claim. Tray Quit
+remains the explicit drain/kill/full-exit path.
+
+The first native live pass exposed a real Tauri seam: preventing `CloseRequested` alone did not prevent the
+event loop from exiting. The final implementation pairs that window event with one atomic pending-close flag
+and prevents only its corresponding user exit request. Programmatic exits, updater exit, OS exit, and the
+short-lived second-instance reveal process are not trapped. An isolated Windows debug build under identifier
+`ai.skynet.harness.traytest` persisted `{startMinimized:true,closeToTray:true}` through real Tauri IPC; a real
+window close logged `close_to_tray=true`, hid StarNet, and left the exact shell and sidecar alive. On restart,
+Win32 top-level-title inspection saw no visible `StarNet` window; a second launch exited 0, revealed `StarNet`,
+and left the primary alive. The existing tray Open/Quit handlers were compiled and covered by the focused
+seam but were not mouse-clicked in this isolated proof. The disposable test profile and WebView data were
+moved to the Recycle Bin; the installed StarNet process/data were never touched.
+
+Verification: `npm run test:fast` is **573/573 GREEN**; desktop lifecycle preference coverage is 14 assertions,
+quitguard is 27, claims authority is 64, and native preference tests are 3/3. The isolated Tauri debug build
+completed successfully. `test:http` was not run because this slice changes no sidecar route or HTTP contract.
+No shared event/schema edit, integration-tree edit, external message, provider spend, push, PR, deploy, tag,
+installer, or publication occurred.
+
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that
@@ -2584,3 +2680,99 @@ sync: 8 assertions; `test:fast`: 539/539 steps green. Installed-desktop verifica
   workspace back afterward using exact `scp` argv. Sync never deletes either side, reports its real state/error,
   and fails the tool call when outputs cannot be returned. Remote checkpointing is disabled through the backend
   capability flag rather than snapshotting an unrelated local tree.
+
+# DONE 2026-08-07 — SAVED ARTIFACT NATIVE OPEN (`agent/artifact-open-actions`)
+
+Commit `b5854dba` makes a saved file's name open that file through the desktop OS association instead of
+opening the jailed preview in the default browser. The folder control now reveals/selects the exact artifact
+rather than the default workspace root, and a separate copy-path action preserves the useful clipboard flow.
+Plain-browser builds truthfully label the filesystem action `copy path` and copy the resolved absolute path.
+
+The native boundary canonicalizes every requested path, confines relative paths to the owning agent workspace,
+allows absolute paths only below the workspace, user home, or a standing `path:<root>` grant, and rejects UNC,
+missing, `.env`, `.git`, executable, and script targets before shelling out. Focused frontend contracts are
+12/12 green; Rust resolver/security tests are 2/2 green; recap and website-sync suites are green; and
+`npm run test:fast` was 573/573 green at the original handoff. A seeded live run wrote
+`KaloDataCredentialHandoff.md`, rendered the saved row plus `copy path`, copied the exact per-agent absolute path,
+and produced no browser warnings/errors.
+
+Integration was attempted twice from clean trunk snapshot `46b54c10` and rolled back both times under the
+mandatory merge ritual. Attempt 1 failed at fast-gate step 150/573 when `boot-security.test.js` exceeded its
+9-second sidecar boot ceiling; the same test then passed on clean trunk and three consecutive times on this
+branch. Attempt 2 passed `boot-security` and every executed test but the overall fast gate exceeded its
+600-second process ceiling after roughly 350/573 steps. The branch's own complete fast gate remains 573/573
+green, but trunk is intentionally unmerged because neither integration run produced the required full green
+receipt. No installed candidate was built or clicked from an unmerged SHA.
+
+Heartbeat retry 2026-08-07 used current trunk snapshot `f7ecaa40`. The trunk boot preflight passed 16/16,
+but the merged candidate failed at fast-gate step 224/574 with nine
+`qa-product-perfect-claims.test.js` planning-authority assertions. After rollback, that same test passed
+64/64 on unchanged trunk, proving the failure is introduced by the candidate's changed tracked release
+surface. `qa/STATUS.md` already documents this authority model: a descendant that changes source-locked
+public files requires a W0 claims-ledger re-stamp. The lane therefore needs that reviewed re-stamp before
+another merge attempt; retrying unchanged bytes cannot turn this deterministic gate green.
+
+Closure: trunk was synchronized into the lane without rebasing, the reviewed 37-claim inventory was preserved,
+and the mechanical W0 surface was re-locked at `9367569c` over 205 files. Focused authority passed 64/64,
+the native-open contract passed 12/12, Rust passed 34 tests with one intentional ignore, and both the exact
+synced lane and post-merge trunk gates passed 575/575. The branch landed through public-safe merge `4d5356a5`
+from snapshot `c683b59e`; the required digest is `223f8c06`. No push or publication occurred.
+
+Installed proof is bound to clean merged candidate `223f8c063de807efea0d6a4e2ab6e753d064ffc5` and installed
+executable SHA-256 `b1276cfcec428b0a7e4a798e27a1f4f6326f22c7c4cbf0d961d31115cbbe6a5`.
+`qa:smoke:installed` returned GREEN. In that running installed Tauri UI, a disposable agent-workspace artifact
+`native-open-proof-223f8c06.md` rendered through the real saved-deliverable callback. One CDP-dispatched left
+click on its filename launched Windows Notepad with the exact full path on the process command line and the
+window title `native-open-proof-223f8c06.md - Notepad`. The folder control opened Explorer with that exact file
+both focused and selected, and copy-path placed the exact 95-character absolute path on the clipboard. The
+temporary session, artifact, proof-specific Notepad process, and Explorer window were then removed; the prior
+clipboard text was restored.
+
+# IN PROGRESS 2026-08-07 — CONNECTORS & ABILITIES AUDIT (`agent/connector-abilities-audit-0807`)
+
+The ABILITIES console now gives a truthful, announced zero-result state instead of turning into a
+blank window and clearing the selected tab; its search is named for abilities rather than only
+connectors. Catalog setup filters expose their pressed state, connector/key/extension/Spotify and
+Skill Exchange feedback use polite live regions, and the procedure count says skills rather than
+colliding with the separate RECIPES product. MCP removal now uses the shared two-click armed
+confirmation before deleting the endpoint and its stored credential. The website mirror is synced.
+
+The connector audit also closed three provider-specific authentication defects. RFC 8414 discovery now
+handles pathful issuers such as monday.com's `/mcp` issuer. Dynamic registration preserves the protected
+client secret and advertised token-endpoint method for confidential clients (currently Supabase and
+monday.com), and uses them for both code exchange and refresh after restart. Composio keys now travel in
+the provider-required `x-consumer-api-key` header, including verified migration of an already-saved Bearer
+token; the catalog and KEYS UI describe that header truthfully instead of calling it a Bearer token.
+
+Live provider proof: all 15 directly sign-in-able OAuth catalog entries completed resource/authorization
+server discovery, S256 validation, and dynamic registration; 13 registered public clients and Supabase +
+monday.com registered confidential `client_secret_post` clients. Seeded `/oauth/start` flows for both
+confidential providers saved their client id, secret, and method in the protected envelope and retained
+them after sidecar restart. All 9 no-auth catalog endpoints initialized through the MCP manager (including
+their real tool/resource/prompt inventories). All advertised API-key endpoints were reachable and refused
+the deliberately invalid probes with authentication responses rather than transport/discovery failures.
+No third-party user consent or valid paid-service API key was supplied during this audit, so those
+account-specific consent screens and post-auth tool calls remain release-candidate acceptance work.
+
+Live seeded UI proof at `localhost:8897`: all eight sections and six intent routes opened; empty form
+validation, catalog filtering, search/Escape, tool inventories, placement deep-link, and native-control
+paint were exercised without browser warnings/errors. AWS Knowledge installed as a connected MCP with
+5 tools, reloaded, survived restart, required arm + confirm to remove, and stayed removed after a second
+restart. A Composio probe saved only the custom header, appeared under KEYS as `HEADER SAVED`, survived a
+restart with its value redacted from API output, reported the expected 401 instead of claiming connection,
+and was removed afterward. WEB & BROWSER and 1-3-1 Decision Framework switches each survived changed and
+restored-state restarts.
+
+Focused connector gates are 764 assertions green; the affected-domain slice is 26/26; `qa:journeys` is
+129/129 and the UI-only Beginner Run passed. The post-sync `npm run test:fast` is 573/573 green. Every
+one of the 68 HTTP integration files passed during this audit, including
+`sidecar.http` (468 assertions) and the live MCP connector E2E (87), but the canonical seven-minute
+`npm run test:http` wrapper timed out twice under sustained shared-host CPU pressure before it could run
+the whole list in one process. The omitted 12-file tail passed separately (374 assertions).
+
+NOT READY TO MERGE OR RELEASE: the canonical HTTP gate does not have one uninterrupted green receipt;
+Guardian did not complete before its ten-minute invocation
+ceiling; and installed-exe smoke is truthfully BLOCKED because no exact candidate SHA/artifact was supplied
+and no installed candidate was listening on CDP. `qa:ready` must remain NOT READY until those receipts are
+green. No production account, valid third-party credential, merge to trunk, push, PR, deployment, or
+publication was performed.

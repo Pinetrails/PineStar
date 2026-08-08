@@ -313,10 +313,18 @@ const WorldModel = (() => {
   const clone = o => JSON.parse(JSON.stringify(o));
   const pad2 = n => String(n).padStart(2, '0');
 
+  /* STATION IDENTITY (2026-08-07 conveyor audit). `meta.createdAt` is the station's DURABLE ID: the
+     REFIT one-shots (first ride, ORDERS, the finish-the-line registry) namespace their localStorage
+     keys on it, so a second station must not inherit the first one's dismissals. It used to be
+     stamped 0 by every path — no caller ever passed one — which made that namespace the constant
+     string 'default' and every "per-station" latch global. Stamped once at creation, backfilled once
+     on migrate for docs saved before this existed, and never touched again. Injectable so tests and
+     any future importer stay deterministic. */
+  function stationId() { return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 1; }
   function freshDoc(createdAt) {
     const doc = {
       schema: 'starnet.station', version: 1, _nid: 1,
-      meta: { name: 'STARNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null, trunkRoomId: null },
+      meta: { name: 'STARNET STATION', createdAt: createdAt || stationId(), tier: 0, spawnRoomId: null, trunkRoomId: null },
       rooms: {}, order: [], props: [], belts: {}, edges: []
     };
     // seed the shabby starter HAB (18×11 floor — the v7 / world.js starter room), so a new
@@ -1608,6 +1616,13 @@ const WorldModel = (() => {
     if (!Array.isArray(doc.edges)) doc.edges = [];
     doc.edges = doc.edges.map(cleanPipelineEdge).filter(Boolean);
     if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'STARNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
+    /* ONE-TIME, NON-DESTRUCTIVE BACKFILL of the station id (see freshDoc's note). A doc saved before
+       station identity existed carries createdAt 0/absent; give it one now so its per-station latches
+       stop colliding with every other station's. It must be SAVED on the same load that stamps it —
+       app.js persists immediately when the incoming doc had none — or the stamp would re-roll every
+       reload and the latches it keys would be lost instead of merely shared. Never overwrites a
+       stamp that is already there. */
+    if (!doc.meta.createdAt) doc.meta.createdAt = stationId();
     if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
     for (const p of doc.props) if (!p.id) p.id = 'p' + (doc._nid++);   // backfill ids for legacy/partial props
     // spawnRoomId must point at a live non-corridor room (or null) so removeRoom's guard stays meaningful
