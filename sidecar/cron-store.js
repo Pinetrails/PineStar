@@ -57,7 +57,7 @@
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
   // fields a user may edit via updateJob. `id`, timestamps, run-state and counters are NOT editable here.
-  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'scriptTimeoutMs', 'workdir', 'contextFrom', 'misfire', 'unattendedGrants', 'noAgent', 'enabledToolsets', 'attachToSession', 'origin'];
+  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'scriptTimeoutMs', 'workdir', 'contextFrom', 'misfire', 'unattendedGrants', 'noAgent', 'enabledToolsets', 'attachToSession', 'origin', 'runsLine'];
 
   /* UNATTENDED CAPABILITY GRANT (2026-07-25) — the capability families the Commander explicitly approved for
      THIS routine to use with nobody watching. Default EMPTY: a routine grants nothing extra unless the user
@@ -184,6 +184,18 @@
       workdir: spec.workdir != null ? String(spec.workdir) : null,
       contextFrom: spec.contextFrom == null ? null : normList(spec.contextFrom, 8, ID_RE),
       noAgent: spec.noAgent === true,
+      /* ONLY A ROUTINE THAT BELONGS TO A LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). A routine fires AT
+         a dock; if the floor draws stages past that dock, running them buys a provider call per stage. Deciding
+         that from the dock alone made every PRE-EXISTING routine buy a whole work line the instant its agent was
+         crewed onto one — money the Commander never asked for, and a delivered answer that was the LAST stage's
+         instead of the routine's. So the intent is DURABLE and OPT-IN: true only for a routine created from a
+         line's own INBOX trigger zone (which posts runsLine:true to /api/cron). Absent/false — every routine
+         that predates this, every routine made in AUTOMATION, by the routine.* tools, by a recipe or a slash
+         command — is TERMINAL: one run, its own answer, nothing downstream spends.
+         Deliberately a FLAG, not a stored lineId: which line a dock belongs to is the compiled plan's single
+         answer (router.lineOfAgent), and a second copy on disk would be a second derivation that drifts the
+         first time the Commander edits the floor. The flag records the INTENT; the line is looked up live. */
+      runsLine: spec.runsLine === true,
       enabledToolsets: spec.enabledToolsets == null ? null : normList(spec.enabledToolsets, 16, /^[A-Za-z0-9:_-]{1,80}$/),
       attachToSession: spec.attachToSession === true,
       // ADDITIVE provenance (Recipe Marketplace R3): a sibling `meta` bag for caller-supplied provenance, e.g.
@@ -235,6 +247,9 @@
       if (Object.prototype.hasOwnProperty.call(patch, 'unattendedGrants')) next.unattendedGrants = normGrants(patch.unattendedGrants);
       if (Object.prototype.hasOwnProperty.call(patch, 'origin')) next.origin = normOrigin(patch.origin);
       if (Object.prototype.hasOwnProperty.call(patch, 'noAgent')) next.noAgent = patch.noAgent === true;
+      // re-normalize through the same === true rule as creation: a patch may never persist a truthy-ish value
+      // that later reads as "this routine may buy a whole line" (see the runsLine note in makeJob).
+      if (Object.prototype.hasOwnProperty.call(patch, 'runsLine')) next.runsLine = patch.runsLine === true;
       if (Object.prototype.hasOwnProperty.call(patch, 'attachToSession')) next.attachToSession = patch.attachToSession === true;
       if (Object.prototype.hasOwnProperty.call(patch, 'scriptTimeoutMs')) next.scriptTimeoutMs = Math.min(120000, Math.max(1000, parseInt(patch.scriptTimeoutMs, 10) || 30000));
       if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolsets')) next.enabledToolsets = Array.isArray(patch.enabledToolsets) ? patch.enabledToolsets.slice() : null;
