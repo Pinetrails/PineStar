@@ -2,7 +2,7 @@
 
 ## 2026-08-07 — TERMINAL OUTPUT + REAL CHECK RECOVERY (`agent/hermes-starnet-benchmark-0807`)
 
-READY TO MERGE. Provider prose emitted before a later tool call is now treated as chronological narration,
+BLOCKED AT INTEGRATION GATE. Provider prose emitted before a later tool call is now treated as chronological narration,
 not part of the terminal assistant answer. Browser COMMS, routines, channels, cron/LOOP drivers, ACP, the
 OpenAI-compatible accumulator, internal work lines, and campaign capture all reset their final-output buffer
 at the authoritative `agent.tool_call` boundary; live narration can remain visible without being persisted or
@@ -33,6 +33,13 @@ green. `node dev/seed.js --keep` then served this dirty branch live on isolated 
 `v0.9.0-91-g96c90254-dirty`, the station document returned HTTP 200 with StarNet content, and the spawned processes
 were stopped. No integration-tree edit, merge, push, PR, deployment, publication, or installed-candidate claim
 occurred.
+
+Integration attempt `53bf12c8` on trunk snapshot `cdd9704e` was rolled back on 2026-08-07 after the mandatory
+exact-merged-tree `npm run test:fast` gate failed at step **254/581**, `node test/browser.test.js`: **1 problem / 292 ok**,
+on the load-sensitive assertion â€œan already-quiet page returns well inside the old 900ms blind wait.â€ A concurrent
+claims refresh (`7a3f7aeb`) landed above the merge while the gate ran, so recovery used targeted revert commits
+`013a0d43` and `1b675d0a` instead of erasing concurrent history; the recovered trunk tree hash was verified byte-for-byte
+equal to snapshot `cdd9704e`. This lane remains unmerged at `ef974965` pending a fresh green integration attempt.
 
 ## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
