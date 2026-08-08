@@ -41,6 +41,20 @@ claims refresh (`7a3f7aeb`) landed above the merge while the gate ran, so recove
 `013a0d43` and `1b675d0a` instead of erasing concurrent history; the recovered trunk tree hash was verified byte-for-byte
 equal to snapshot `cdd9704e`. This lane remains unmerged at `ef974965` pending a fresh green integration attempt.
 
+Follow-on output-reliability comparison (2026-08-08): five scenarios were run three times per harness against
+the same `openai-codex / gpt-5.6-luna` model. An initial 30-row wave exposed a real StarNet policy interaction:
+generic external actions triggered verify-on-stop, but the only read-back exposed fixture setup, so correct
+pre-verification answers were replaced by truthful but false-negative terminal warnings. After adding one
+authoritative `fixture_status` read-back available to both harnesses, StarNet passed **14/15** and Hermes
+**13/15**. StarNet's one miss duplicated `RESULT=PASS-731` inside one terminal answer. Hermes made an unrequested
+`fixture_deliver` call to `job-731` in two of three cancellation attempts; one of those outputs also omitted
+`RESUMED-731`. Both passed malformed-result recovery, timeout honesty, and real out-of-order worker attribution
+3/3. No driver error, fixture mutation, duplicate mutation, or authority escape occurred. Observed mean latency
+was 9.32s StarNet versus 12.32s Hermes, but three attempts per task are not a durable performance estimate.
+Ignored raw evidence and the two-wave analysis live under `.dogfood/eval-runtime/campaign/output-reliability/`;
+temporary copied OAuth envelopes were deleted after capture. This is source-runtime comparison evidence, not
+installed-desktop or release-candidate proof.
+
 ## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
 Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have

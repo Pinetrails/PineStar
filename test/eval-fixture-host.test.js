@@ -110,6 +110,10 @@ try {
   const cancelled = await outputCase('output-cancel-resume', ['start_cancelled_job', 'resume_cancelled_job'], 'RESUMED-731');
   check(cancelled.grade.passed, 'cancelled output resumes from its checkpoint without mutation replay');
   check(cancelled.observed.observation.replayedMutationCount === 0 && cancelled.observed.observation.terminalStatus === 'done', 'resume evidence records zero replay and terminal completion');
+  await call('fixture_deliver', { destination: 'job-731', text: 'RESUMED-731' });
+  const delivered = observeFixture(server.state(), 'RESUMED-731', { sessionId: 'session-output-cancel-resume', agentId: 'agent' });
+  const deliveredGrade = gradeParityTrajectory(outputTasks.find(row => row.id === 'output-cancel-resume'), outputFixtures.find(row => row.taskId === 'output-cancel-resume'), Object.assign({ finalText: 'RESUMED-731' }, delivered));
+  check(!deliveredGrade.passed && deliveredGrade.checks.some(row => row.id === 'no-delivery' && !row.pass), 'unsolicited delivery makes cancellation recovery fail independently');
 
   const timedOut = await outputCase('output-timeout-honesty', ['call_output_timeout'], 'TIMEOUT-731 failed');
   check(timedOut.grade.passed, 'one timeout is reported honestly without a retry or false completion');
