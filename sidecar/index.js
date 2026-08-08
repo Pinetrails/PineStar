@@ -12655,7 +12655,13 @@ async function runOnce(o) {
         await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
         const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
         const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
-        await fsp.writeFile(path.join(ws, rel), String(content), 'utf8');
+        const full = String(content);
+        const abs = path.join(ws, rel);
+        await fsp.writeFile(abs, full, 'utf8');
+        // A path is evidence only after byte-for-byte read-back. If storage returned short/corrupt bytes, the
+        // caller falls back to an honest unpreserved-output receipt instead of pointing at an unproved file.
+        const readBack = await fsp.readFile(abs, 'utf8');
+        if (readBack !== full) return null;
         return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
       } catch (_) { return null; }
     },
@@ -13109,7 +13115,16 @@ async function runOnce(o) {
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
     if (!internalBriefControl) try { execution.observeArtifact({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
-    // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
+    // The registry parks a result only when that ONE result crosses its cap. The run-wide cap can still clip a
+    // perfectly ordinary later command after earlier calls used the allowance, so preserve that result here too.
+    // This happens before clipping and the parker returns a path only after byte-identical read-back.
+    if (execution.willBoundToolResult(r, CAPS.maxToolBytes) && r && typeof r.content === 'string' && !r.parkedPath) {
+      const parked = await capCtx.parkOutput(r.content, { tool: c.name, reason: 'run-output-budget' });
+      if (parked && parked.path) r = Object.assign({}, r, { parkedPath: parked.path, outputChars: r.content.length });
+    }
+    // Bound the TOTAL model-visible tool output across a run so a few big fetches/reads cannot blow context.
+    // A clipped result still carries its durable path and authoritative tool summary (for example `exit 0` or
+    // `verify passed`), so the model can report the outcome instead of exposing a mysterious internal cap.
     r = execution.boundToolResult(r, CAPS.maxToolBytes, {
       omitted: '[tool output omitted — this run hit its ' + Math.round(CAPS.maxToolBytes / 1000) + 'KB tool-output budget; finish with what you already have]'
     });
