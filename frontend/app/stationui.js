@@ -1308,7 +1308,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      system prompt the model runs on, so editing one here re-shapes the agent for real (App's
      applyAgentConfig, injected as access.config.apply). memory.md is the agent's own notebook —
      shown read-only and honestly labelled, because the agent writes it, not the Commander. */
-  // DOSSIER is CONSOLE MODE: the five sub-tabs are console sections (ids brief|growth|memory|skills|config),
+  // DOSSIER is CONSOLE MODE: the five sub-tabs are console sections (ids brief|growth|record|memory|config),
   // so the ACTIVE section lives in consoleSection['agents'] (not a private var). agSection() reads it with a
   // 'brief' fallback; it's the single source of truth for the memory-live guard + the BRIEF-only tick.
   function agSection() { return consoleSection['agents'] || 'brief'; }
@@ -2611,8 +2611,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       try { s.build(sub); } catch (_) { sub.innerHTML = ''; }
     };
     const host = mountConsole(body, 'agents', [
+      /* TAB ORDER (Andrew, 2026-08-07): BRIEF · GROWTH · RECORD · MEMORY · CONFIG. GROWTH sits second,
+         directly after BRIEF, because the two answer the same question at different depths — BRIEF states
+         the level and kudos, GROWTH is the readout behind those numbers. Putting RECORD between them split
+         a pair. Read as a sentence: who it is → how it's doing → what it did → what it knows → how to
+         change it. This is the array order and mountConsole renders it verbatim; there is no other list. */
       { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is, how it is set up, and what it can do.',
         build: frag(agHead(a, act) + agBrief(a)) },
+      { id: 'growth', label: 'GROWTH', glyph: '★', desc: 'XP ladder, satisfaction gauge, trophy case, and station prestige.',
+        build: frag(agGrowth(a)) },
       { id: 'record', label: 'RECORD', glyph: '▦', desc: 'What this agent has actually done — run history, dead-run post-mortems, and workspace restore points.',
         build: (elx) => {
           mountLane('logbook')(elx);
@@ -2627,12 +2634,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         } },
       { id: 'memory', label: 'MEMORY', glyph: '◈', desc: 'Every belief this agent has kept, traced to the run that earned it.',
         build: frag(agMemory(a)) },
-      { id: 'growth', label: 'GROWTH', glyph: '★', desc: 'XP ladder, satisfaction gauge, trophy case, and station prestige.',
-        build: frag(agGrowth(a)) },
       { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'Everything you can change about this agent — its prompt files, how it behaves, and how it looks.',
         build: frag(agConfig(a)) }
     ], {
-      // tabsTop: the five section tabs (BRIEF/RECORD/MEMORY/GROWTH/CONFIG) render as a horizontal strip at the
+      // tabsTop: the five section tabs (BRIEF/GROWTH/RECORD/MEMORY/CONFIG) render as a horizontal strip at the
       // top of the right pane; the left rail becomes the agent roster full-height (railTop below).
       tabsTop: true,
       search: true, searchPlaceholder: 'search dossier…',

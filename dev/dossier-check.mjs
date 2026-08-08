@@ -12,7 +12,7 @@ const PORT = process.env.SKYNET_SHOT_PORT || '9620';
 const CDP_PORT = Number(process.env.SKYNET_CDP_PORT || 9621);
 const URL = `http://127.0.0.1:${PORT}/`;
 const OUT = join(process.cwd(), 'dev', '.shots-dossier-check');
-const TABS = ['brief', 'record', 'memory', 'growth', 'config'];
+const TABS = ['brief', 'growth', 'record', 'memory', 'config'];
 
 function seedCrew(wsDir) {
   const p = join(wsDir, 'agent.save.json');
@@ -69,6 +69,12 @@ async function main() {
     mkdirSync(OUT, { recursive: true });
     await evalJS(cdp, `StationUI.openAgent(0)`);
     await sleep(1600);
+
+    // TAB ORDER is a deliberate choice (Andrew: GROWTH belongs right after BRIEF), so assert the RENDERED
+    // order rather than assuming the array reached the DOM — this reads the strip, not the source.
+    const order = await evalJS(cdp, `[...${WIN}.querySelectorAll('.con-toptab')].map(t => t.dataset.section)`);
+    console.log('TAB ORDER:', JSON.stringify(order), 'expected', JSON.stringify(TABS),
+      JSON.stringify(order) === JSON.stringify(TABS) ? 'OK' : '*** MISMATCH ***');
 
     const rows = [];
     for (const id of TABS) { await evalJS(cdp, pick(id)); await sleep(800); rows.push({ tab: id, ...(await evalJS(cdp, MEASURE)) }); }
