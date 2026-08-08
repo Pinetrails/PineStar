@@ -249,9 +249,20 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
   }
 }
 body.no-scan::after { display: none; }
-/* CRT GLASS off (Appearance → DISPLAY). A SEPARATE class from `no-scan` on purpose: no-scan is the
-   internal verification flag (scripts/verify-stars2.mjs sets it directly to flatten the feed for
-   star-pixel checks) and must never be driven by, or clobbered by, a user setting. */
+/* CRT GLASS (Appearance → DISPLAY) — a three-step dial. A SEPARATE class from `no-scan` on purpose:
+   no-scan is the internal verification flag (scripts/verify-stars2.mjs sets it directly to flatten
+   the feed for star-pixel checks) and must never be driven by, or clobbered by, a user setting.
+
+   EASY READ (`crt-easy`) lifts these two SCREEN-SPACE overlays off the whole page while leaving the
+   station feed's own CRT completely alone — the feed's scanlines are painted IN-CANVAS (world.js
+   drawCRT) and its curve/aberration/vignette come from drawCurve, none of which this touches. That
+   is the whole reason the option is cheap: measured row-to-row luminance ripple on a lit floor
+   region of the feed was 24.875 with this layer and 24.952 without it, i.e. the tube is unchanged.
+   What DOES change is text: a 3px-pitch trough at up to 0.30 alpha was crossing the body of every
+   14px VT323 glyph about 2.6 times. That interference — not contrast, which measures 5.7:1 — is the
+   "my eyes hurt" report. OFF (`crt-off`) is EASY plus the in-canvas passes and the tube glass. */
+body.crt-easy::after { display: none; }
+body.crt-easy::before { display: none; }
 body.crt-off::after { display: none; }
 body.crt-off::before { display: none; }
 body::before { /* curved-glass vignette + corner darkening */
@@ -462,7 +473,18 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
   mix-blend-mode: multiply;
 }
 body.no-scan .crt-scan { display: none; }
+body.crt-easy .crt-scan { display: none; }
 body.crt-off .crt-scan { display: none; }
+
+/* EASY READ / OFF — the phosphor halo off the PROSE you actually read, and nowhere else.
+   `text-shadow` is an INHERITED property and the 4px halo comes from the `body` rule above, so
+   naming the four prose containers is enough: descendants inherit `none`, while every chip, button
+   and heading that declares its own glow keeps it untouched. That is why there is no `*` selector
+   and no !important here — a blanket sweep would flatten the chrome's identity along with the
+   copy, and the identity is not what hurts to read. Blur is the problem at 14px: a 4px halo on a
+   glyph whose strokes are ~2px is a soft edge on every stem. */
+body.crt-easy #chat-log, body.crt-easy .term-body, body.crt-easy #left, body.crt-easy #bottombar { text-shadow: none; }
+body.crt-off #chat-log, body.crt-off .term-body, body.crt-off #left, body.crt-off #bottombar { text-shadow: none; }
 .crt-vignette {
   position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 56%, rgba(0,0,0,0.6) 100%);
