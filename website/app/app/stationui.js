@@ -2910,7 +2910,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="sk-exchange-form"><label for="sk-registry-url">REGISTRY / TEAM TAP</label>' +
         '<div class="sk-exchange-row"><input id="sk-registry-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/skills/index.json">' +
         '<input id="sk-registry-query" type="search" autocomplete="off" placeholder="search or browse all">' +
-        '<button id="sk-registry-search" class="consent-btn" type="button">BROWSE</button></div><div id="sk-registry-results"></div></div>' +
+        '<button id="sk-registry-search" class="consent-btn" type="button">BROWSE</button>' +
+        '<button id="sk-registry-discover" class="consent-btn" type="button">DISCOVER SITE</button>' +
+        '<button id="sk-registry-save" class="consent-btn" type="button">SAVE TAP</button></div><div id="sk-registry-sources"></div><div id="sk-registry-results"></div></div>' +
       '<div id="sk-exchange-preview" class="sk-exchange-preview" role="status" aria-live="polite"><div class="sk-loading">Paste a source to inspect its instructions, provenance, and guard verdict.</div></div>';
     /* Fill the LIVE VOICE section from the sidecar's real voice list and persist the pick.
        Truthful by construction: if the provider has no native voice endpoint we say so rather than
@@ -3114,6 +3116,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!host || !preview) return;
     const blocked = preview.guardAction === 'block';
     const asks = preview.guardAction === 'ask';
+    const unchanged = !!opts.update && preview.updateAvailable === false;
+    const updateLocked = !!opts.update && !!preview.updateLocked;
+    const canInstall = !blocked && !unchanged && !updateLocked;
     const source = preview.sourceUrl || '';
     const verdict = blocked ? 'BLOCKED' : (asks ? 'REVIEW + APPROVAL' : 'CLEAR');
     const packageFiles = Array.isArray(preview.files) ? preview.files : [];
@@ -3137,12 +3142,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           '<pre>' + esc(preview.body || '') + '</pre>' +
           '<div class="sk-package-files">' + filesHtml + '</div>' +
           '<div class="sk-exchange-note ' + (blocked ? 'bad' : (asks ? 'warn' : 'ok')) + '">' +
-            (blocked ? 'Install is disabled. The source contains dangerous instructions.' :
+            (blocked ? 'Install is disabled. The source contains dangerous instructions.' : updateLocked ?
+              'This skill is pinned. Unpin it before applying an upstream update.' : unchanged ?
+              'The installed package already matches these exact upstream bytes.' :
               (asks ? 'This can be installed, but it stays withheld from the agent until you approve these exact bytes in Agent Skills.' :
                 'This document passed the static guard. Install will preserve this source and digest.')) +
+            (preview.packageDiverged ? ' Local changes are present; applying the reviewed update will replace that fork after preserving its sealed predecessor.' : '') +
             ' Install consumes this frozen complete package; it does not fetch again.' + '</div>' +
           '<div class="consent-btns mc-acts">' +
-            (blocked ? '' : '<button class="consent-btn" data-exchange-install type="button">' + (opts.update ? 'INSTALL UPDATE' : 'INSTALL SKILL') + '</button>') +
+            (canInstall ? '<button class="consent-btn" data-exchange-install type="button">' + (opts.update ? 'INSTALL UPDATE' : 'INSTALL SKILL') + '</button>' : '') +
           '</div>' +
         '</div>' +
       '</div>';
@@ -3188,6 +3196,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       else host.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'That package could not be inspected.') + '</div>';
     });
     const registryUrl = $('#sk-registry-url'), registryQuery = $('#sk-registry-query'), registryButton = $('#sk-registry-search'), registryResults = $('#sk-registry-results');
+    const registrySave = $('#sk-registry-save'), registryDiscover = $('#sk-registry-discover'), registrySources = $('#sk-registry-sources');
+    const renderSources = sources => {
+      if (!registrySources) return;
+      registrySources.innerHTML = (sources || []).map((source, i) => '<button class="consent-btn" data-tap-use="' + i + '">' + esc(source.label || source.url) + ' · COMMUNITY</button><button class="consent-btn" data-tap-remove="' + i + '">×</button>').join('');
+      registrySources.querySelectorAll('[data-tap-use]').forEach(b => b.addEventListener('click', () => { registryUrl.value = sources[Number(b.dataset.tapUse)].url; }));
+      registrySources.querySelectorAll('[data-tap-remove]').forEach(b => b.addEventListener('click', async () => {
+        const source = sources[Number(b.dataset.tapRemove)]; const r = await Harness.skillExchangeRegistries({ action: 'remove', url: source.url }); if (r && r.ok) renderSources(r.sources);
+      }));
+    };
+    if (Harness.skillExchangeRegistries) Harness.skillExchangeRegistries().then(r => { if (r && r.ok) renderSources(r.sources); });
+    if (registrySave && Harness.skillExchangeRegistries) registrySave.addEventListener('click', async () => {
+      const r = await Harness.skillExchangeRegistries({ action: 'add', url: registryUrl.value });
+      if (r && r.ok) { renderSources(r.sources); notify('Saved community registry tap.', 'good'); }
+      else notify((r && r.error) || 'Registry tap could not be saved.', 'warn');
+    });
     if (registryUrl && registryButton && registryResults && Harness.skillExchangeRegistry) registryButton.addEventListener('click', async () => {
       registryButton.classList.add('busy'); registryResults.innerHTML = '<div class="sk-loading">searching registry…</div>';
       const r = await Harness.skillExchangeRegistry({ url: registryUrl.value, query: registryQuery && registryQuery.value });
@@ -3199,6 +3222,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const entry = r.entries[Number(entryButton.dataset.registryEntry)]; if (!entry) return;
         input.value = entry.sourceUrl; inspect();
       }));
+    });
+    if (registryDiscover && registryResults && Harness.skillExchangeDiscover) registryDiscover.addEventListener('click', async () => {
+      registryDiscover.classList.add('busy');
+      const r = await Harness.skillExchangeDiscover({ site: registryUrl.value, query: registryQuery && registryQuery.value });
+      registryDiscover.classList.remove('busy');
+      if (r && r.ok) { registryUrl.value = r.registryUrl; registryButton.click(); }
+      else registryResults.innerHTML = '<div class="sk-exchange-note bad">' + esc((r && r.error) || 'Well-known discovery failed.') + '</div>';
     });
   }
 
@@ -3251,6 +3281,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const packageButtons = s.packageDigest
         ? '<button class="consent-btn" data-ag-act="check">Check update</button>' +
           '<button class="consent-btn" data-ag-act="export"' + (s.packageDiverged ? ' disabled' : '') + '>Export</button>' +
+          '<button class="consent-btn" data-ag-act="publish"' + (s.packageDiverged ? ' disabled' : '') + '>Share handoff</button>' +
           '<button class="consent-btn" data-ag-act="generations">Generations</button>' : '';
       html +=
         '<div class="sk-card ' + state + (held ? ' held' : '') + '" data-agent-skill="' + esc(s.id) + '">' +
@@ -3290,7 +3321,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const r = await Harness.skillExchangeCheck({ agentId, id: skill.id }); btn.classList.remove('busy');
         const previewHost = $('#sk-exchange-preview');
         if (r && r.ok && r.preview && previewHost) {
-          renderSkillExchangePreview(previewHost, r.preview, agentId, { update: !!r.preview.updateAvailable });
+          renderSkillExchangePreview(previewHost, r.preview, agentId, { update: true });
           previewHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } else notify((r && r.error) || 'Update check was refused.', 'warn');
         return;
@@ -3302,6 +3333,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const a = document.createElement('a'); a.href = url; a.download = r.filename || (skill.id + '.starnet-skill.json'); a.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000); notify('Exported sealed package ' + String(r.digest || '').slice(0, 12), 'good');
         } else notify((r && r.error) || 'Export was refused.', 'warn');
+        return;
+      }
+      if (act === 'publish') {
+        btn.classList.add('busy'); const r = await Harness.skillExchangePublishHandoff({ agentId, id: skill.id }); btn.classList.remove('busy');
+        if (r && r.ok && r.handoff) {
+          const text = JSON.stringify(r.handoff, null, 2) + '\n'; const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+          const a = document.createElement('a'); a.href = url; a.download = skill.id + '.publish-handoff.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+          notify('Prepared local publish handoff; nothing was uploaded.', 'good');
+        } else notify((r && r.error) || 'Publish handoff was refused.', 'warn');
         return;
       }
       if (act === 'generations') {

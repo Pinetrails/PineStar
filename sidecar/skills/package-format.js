@@ -72,13 +72,14 @@ function fromEnvelope(input, opts) {
   if (!envelope || envelope.format !== FORMAT) throw new Error('unsupported skill package format');
   const pkg = canonicalize(envelope.files, opts);
   if (envelope.digest && str(envelope.digest) !== pkg.digest) throw new Error('skill package digest does not match its files');
+  pkg.metadata = envelope.metadata && typeof envelope.metadata === 'object' ? JSON.parse(JSON.stringify(envelope.metadata)) : {};
   return pkg;
 }
 function toEnvelope(pkg, metadata) {
   const checked = fromEnvelope(pkg);
   return JSON.stringify({
     format: FORMAT, digest: checked.digest, bytes: checked.bytes,
-    metadata: metadata && typeof metadata === 'object' ? metadata : {}, files: checked.files
+    metadata: metadata && typeof metadata === 'object' ? metadata : (checked.metadata || {}), files: checked.files
   }, null, 2) + '\n';
 }
 function fileBuffer(pkg, path) {

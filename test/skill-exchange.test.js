@@ -150,8 +150,13 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   A.eq(p1.files.length, 3, 'inspection freezes every package file');
   const i1 = pkgExchange.install({ agentId: 'p', inspectionId: p1.inspectionId });
   const exported = pkgExchange.exportPackage({ agentId: 'p', id: i1.skill.id });
+  const handoff = pkgExchange.publishHandoff({ agentId: 'p', id: i1.skill.id });
+  A.eq(handoff.uploaded, false, 'publish/share handoff never uploads implicitly');
+  A.eq(handoff.registryEntry.digest, p1.packageDigest, 'publish handoff binds the registry entry to exact package bytes');
   const imported = await pkgExchange.inspectEnvelope({ envelope: exported.envelope });
   A.eq(imported.packageDigest, p1.packageDigest, 'export and re-import preserve the package digest');
+  A.eq(imported.sourceUrl, p1.sourceUrl, 'export and re-import preserve upstream provenance');
+  A.eq(imported.version, '1.0.0', 'export and re-import preserve source version metadata');
   packageVersion = 2;
   const p2 = await pkgExchange.check({ agentId: 'p', id: i1.skill.id });
   pkgExchange.install({ agentId: 'p', inspectionId: p2.inspectionId });

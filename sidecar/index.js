@@ -242,6 +242,7 @@ const { makeSkillGate, digestOf: skillDigestOf } = require('./skills/gate.js'); 
 const { makeSkillExchange } = require('./skills/exchange.js');
 const { makeSkillDocumentFetcher, makeSkillPackageFetcher } = require('./skills/exchange-fetch.js');
 const { makeSkillRegistry } = require('./skills/registry.js');
+const { makeSkillMetrics } = require('./skills/metrics.js');
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
@@ -1068,6 +1069,24 @@ const fetchSkillDocument = makeSkillDocumentFetcher({
 });
 const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument });
 const skillRegistry = makeSkillRegistry({ fetchDocument: fetchSkillDocument });
+const SKILL_REGISTRIES_FILE = path.join(WORKSPACES, 'skill-registries.json');
+let skillRegistrySources = [];
+try {
+  const saved = loadResilient(SKILL_REGISTRIES_FILE, 'skill registries');
+  skillRegistrySources = Array.isArray(saved && saved.sources) ? saved.sources.filter(s => s && /^https:\/\//.test(String(s.url || ''))).slice(0, 20) : [];
+} catch (_) { skillRegistrySources = []; }
+function saveSkillRegistrySources(next) {
+  const value = { version: 1, sources: next.slice(0, 20), updatedAt: Date.now() };
+  saveResilient(SKILL_REGISTRIES_FILE, value);
+  const proven = loadResilient(SKILL_REGISTRIES_FILE, 'skill registries');
+  if (JSON.stringify(proven && proven.sources) !== JSON.stringify(value.sources)) throw new Error('registry source read-back did not match');
+  skillRegistrySources = value.sources; return value.sources;
+}
+const SKILL_METRICS_FILE = path.join(WORKSPACES, 'skill-exchange-metrics.json');
+const skillMetrics = makeSkillMetrics({
+  load: () => loadResilient(SKILL_METRICS_FILE, 'skill exchange metrics'),
+  save: value => saveResilient(SKILL_METRICS_FILE, value), now: () => Date.now()
+});
 const skillExchange = makeSkillExchange({
   fetchDocument: fetchSkillDocument, fetchPackage: fetchSkillPackage, skillStore, packageStore: skillPackageStore, guard: skillGuard,
   hash: (text) => crypto.createHash('sha256').update(String(text), 'utf8').digest('hex'),
@@ -7731,10 +7750,15 @@ const ROUTES = [
   { m: 'POST', exact: '/api/skills/toggle', h: handleSkillToggle },
   { m: 'POST', exact: '/api/skill-exchange/inspect', h: handleSkillExchangeInspect },
   { m: 'POST', exact: '/api/skill-exchange/registry', h: handleSkillExchangeRegistry },
+  { m: 'POST', exact: '/api/skill-exchange/discover', h: handleSkillExchangeDiscover },
+  { m: 'GET', exact: '/api/skill-exchange/registries', h: serveSkillExchangeRegistries },
+  { m: 'GET', exact: '/api/skill-exchange/metrics', h: serveSkillExchangeMetrics },
+  { m: 'POST', exact: '/api/skill-exchange/registries', h: handleSkillExchangeRegistries },
   { m: 'POST', exact: '/api/skill-exchange/import', h: handleSkillExchangeImport },
   { m: 'POST', exact: '/api/skill-exchange/install', h: handleSkillExchangeInstall },
   { m: 'POST', exact: '/api/skill-exchange/check', h: handleSkillExchangeCheck },
   { m: 'POST', exact: '/api/skill-exchange/export', h: handleSkillExchangeExport },
+  { m: 'POST', exact: '/api/skill-exchange/publish-handoff', h: handleSkillExchangePublishHandoff },
   { m: 'POST', exact: '/api/skill-exchange/generations', h: handleSkillExchangeGenerations },
   { m: 'POST', exact: '/api/skill-exchange/rollback', h: handleSkillExchangeRollback },
   { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
@@ -11644,21 +11668,49 @@ async function handleSkillExchangeInspect(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   const body = await readJsonBody(req, readBody, 1 << 16, res);
   if (!body) return;
-  try { return json(200, { ok: true, preview: await skillExchange.inspect({ url: body.url }) }); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not inspect that skill' }); }
+  try { const preview = await skillExchange.inspect({ url: body.url }); skillMetrics.record('inspect', 'success', { guardAction: preview.guardAction, fileCount: preview.files.length, bytes: preview.packageBytes }); return json(200, { ok: true, preview }); }
+  catch (e) { skillMetrics.record('inspect', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not inspect that skill' }); }
 }
 async function handleSkillExchangeRegistry(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
-  try { return json(200, Object.assign({ ok: true }, await skillRegistry.search({ url: body.url, query: body.query }))); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not search that registry' }); }
+  try { const result = await skillRegistry.search({ url: body.url, query: body.query }); skillMetrics.record('registry', 'success', {}); return json(200, Object.assign({ ok: true }, result)); }
+  catch (e) { skillMetrics.record('registry', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not search that registry' }); }
+}
+async function handleSkillExchangeDiscover(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  try { const result = await skillRegistry.discover({ site: body.site, query: body.query }); skillMetrics.record('discover', 'success', {}); return json(200, Object.assign({ ok: true }, result)); }
+  catch (e) { skillMetrics.record('discover', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not discover that site registry' }); }
+}
+function serveSkillExchangeMetrics(req, res) {
+  return respondJson(res, 200, { ok: true, metrics: skillMetrics.summary(skillStore.all()) });
+}
+function serveSkillExchangeRegistries(req, res) {
+  return respondJson(res, 200, { ok: true, sources: skillRegistrySources.slice() });
+}
+async function handleSkillExchangeRegistries(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const action = String(body.action || 'add').toLowerCase();
+  let url; try { url = new URL(String(body.url || '')); } catch (_) { return json(400, { ok: false, error: 'enter a public HTTPS registry URL' }); }
+  if (url.protocol !== 'https:' || url.username || url.password) return json(400, { ok: false, error: 'skill registries must use public HTTPS' });
+  url.hash = ''; const href = url.href;
+  let next = skillRegistrySources.slice();
+  if (action === 'remove') next = next.filter(s => s.url !== href);
+  else if (!next.some(s => s.url === href)) {
+    if (next.length >= 20) return json(400, { ok: false, error: 'registry source limit reached' });
+    next.push({ url: href, label: String(body.label || url.hostname).trim().slice(0, 80), trust: 'community', addedAt: Date.now() });
+  }
+  try { return json(200, { ok: true, sources: saveSkillRegistrySources(next) }); }
+  catch (e) { return json(500, { ok: false, error: (e && e.message) || 'could not save registry sources' }); }
 }
 async function handleSkillExchangeImport(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   const body = await readJsonBody(req, readBody, 2 << 20, res);
   if (!body) return;
-  try { return json(200, { ok: true, preview: await skillExchange.inspectEnvelope({ envelope: body.envelope }) }); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not inspect that package' }); }
+  try { const preview = await skillExchange.inspectEnvelope({ envelope: body.envelope }); skillMetrics.record('import', 'success', { guardAction: preview.guardAction, fileCount: preview.files.length, bytes: preview.packageBytes }); return json(200, { ok: true, preview }); }
+  catch (e) { skillMetrics.record('import', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not inspect that package' }); }
 }
 async function handleSkillExchangeInstall(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
@@ -11672,9 +11724,10 @@ async function handleSkillExchangeInstall(req, res) {
     });
     const live = skillStore.view(agentId, result.skill.id, { includeArchived: true, bump: false }) || result.skill;
     result.skill = skillGate.annotate([live], { verify: true })[0];
+    skillMetrics.record(result.action === 'update' ? 'update' : 'install', 'success', { guardAction: result.guardAction, fileCount: result.skill.packageFileCount, bytes: result.skill.packageBytes });
     chanEmit('deliverable', { id: result.skill.id, agentId, kind: 'skill', title: result.skill.name });
     return json(200, result);
-  } catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not install that skill' }); }
+  } catch (e) { skillMetrics.record('install', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not install that skill' }); }
 }
 async function handleSkillExchangeCheck(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
@@ -11682,15 +11735,22 @@ async function handleSkillExchangeCheck(req, res) {
   if (!body) return;
   const agentId = String(body.agentId || 'agent');
   if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
-  try { return json(200, { ok: true, preview: await skillExchange.check({ agentId, id: body.id }) }); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not check for updates' }); }
+  try { const preview = await skillExchange.check({ agentId, id: body.id }); skillMetrics.record('check', 'success', {}); return json(200, { ok: true, preview }); }
+  catch (e) { skillMetrics.record('check', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not check for updates' }); }
 }
 async function handleSkillExchangeExport(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
   const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
-  try { return json(200, Object.assign({ ok: true }, skillExchange.exportPackage({ agentId, id: body.id }))); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not export that skill' }); }
+  try { const result = skillExchange.exportPackage({ agentId, id: body.id }); skillMetrics.record('export', 'success', {}); return json(200, Object.assign({ ok: true }, result)); }
+  catch (e) { skillMetrics.record('export', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not export that skill' }); }
+}
+async function handleSkillExchangePublishHandoff(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
+  const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
+  try { return json(200, { ok: true, handoff: skillExchange.publishHandoff({ agentId, id: body.id }) }); }
+  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not prepare a publish handoff' }); }
 }
 async function handleSkillExchangeGenerations(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
@@ -11703,8 +11763,8 @@ async function handleSkillExchangeRollback(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);
   const body = await readJsonBody(req, readBody, 1 << 16, res); if (!body) return;
   const agentId = String(body.agentId || 'agent'); if (!isAgentId(agentId)) return json(403, { ok: false, error: 'forbidden' });
-  try { return json(200, skillExchange.rollback({ agentId, id: body.id, digest: body.digest })); }
-  catch (e) { return json(400, { ok: false, error: (e && e.message) || 'could not roll back that skill' }); }
+  try { const result = skillExchange.rollback({ agentId, id: body.id, digest: body.digest }); skillMetrics.record('rollback', 'success', {}); return json(200, result); }
+  catch (e) { skillMetrics.record('rollback', 'failed', { error: e && e.message }); return json(400, { ok: false, error: (e && e.message) || 'could not roll back that skill' }); }
 }
 
 // GET /api/agent-skills?agent=<id>&archived=1&body=1 - runtime-created skills for the selected agent.

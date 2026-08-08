@@ -978,10 +978,17 @@ const Harness = (() => {
   }
   function skillExchangeInspect(url) { return skillExchangePost('inspect', { url }); }
   function skillExchangeRegistry(o) { return skillExchangePost('registry', o); }
+  function skillExchangeDiscover(o) { return skillExchangePost('discover', o); }
+  async function skillExchangeRegistries(o) {
+    if (o) return skillExchangePost('registries', o);
+    try { const r = await fetch('/api/skill-exchange/registries', { cache: 'no-store' }); return r.ok ? await r.json() : { ok: false }; }
+    catch (_) { return { ok: false, error: 'the station did not answer' }; }
+  }
   function skillExchangeImport(envelope) { return skillExchangePost('import', { envelope }); }
   function skillExchangeInstall(o) { return skillExchangePost('install', o); }
   function skillExchangeCheck(o) { return skillExchangePost('check', o); }
   function skillExchangeExport(o) { return skillExchangePost('export', o); }
+  function skillExchangePublishHandoff(o) { return skillExchangePost('publish-handoff', o); }
   function skillExchangeGenerations(o) { return skillExchangePost('generations', o); }
   function skillExchangeRollback(o) { return skillExchangePost('rollback', o); }
 
@@ -1099,8 +1106,8 @@ const Harness = (() => {
     studyProposals,
     threadProposals, threadTurnin,
     agentSkills, agentSkillsRead, agentSkillManage, agentSkillAllow,
-    skillExchangeInspect, skillExchangeRegistry, skillExchangeImport, skillExchangeInstall, skillExchangeCheck,
-    skillExchangeExport, skillExchangeGenerations, skillExchangeRollback,
+    skillExchangeInspect, skillExchangeRegistry, skillExchangeDiscover, skillExchangeRegistries, skillExchangeImport, skillExchangeInstall, skillExchangeCheck,
+    skillExchangeExport, skillExchangePublishHandoff, skillExchangeGenerations, skillExchangeRollback,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

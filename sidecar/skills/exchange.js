@@ -205,7 +205,8 @@ function makeSkillExchange(deps) {
     const preview = await inspect({ url: current.sourceUrl });
     return Object.assign({}, preview, {
       installedId: current.id, installedDigest: current.sourceDigest || '',
-      updateAvailable: preview.sourceDigest !== str(current.sourceDigest)
+      updateAvailable: preview.sourceDigest !== str(current.sourceDigest), updateLocked: !!current.pinned,
+      packageDiverged: !!current.packageDiverged
     });
   }
 
@@ -218,16 +219,44 @@ function makeSkillExchange(deps) {
     }
     const pkg = packageFormat.fromEnvelope({ format: packageFormat.FORMAT, digest: current.packageDigest, files: current.packageFiles });
     return { filename: (current.id || 'skill') + '.starnet-skill.json', digest: pkg.digest, envelope: packageFormat.toEnvelope(pkg, {
-      name: current.name, sourceUrl: current.sourceUrl || '', sourceVersion: current.sourceVersion || ''
+      name: current.name, summary: current.summary || '', category: current.category || '', requires: current.requires || [], platforms: current.platforms || [],
+      sourceUrl: current.sourceUrl || '', sourceDigest: current.sourceDigest || '', sourceFetchedAt: current.sourceFetchedAt || 0,
+      sourceVersion: current.sourceVersion || '', sourceAuthor: current.sourceAuthor || '', sourceLicense: current.sourceLicense || ''
     }) };
+  }
+  function publishHandoff(input) {
+    const exported = exportPackage(input);
+    const envelope = JSON.parse(exported.envelope);
+    const meta = envelope.metadata || {};
+    return {
+      package: exported,
+      registryEntry: {
+        name: str(meta.name), description: str(meta.summary), version: str(meta.sourceVersion),
+        author: str(meta.sourceAuthor), license: str(meta.sourceLicense), digest: exported.digest,
+        sourceUrl: '<HTTPS URL TO SKILL.md>'
+      },
+      instructions: [
+        'Extract the standard skill folder represented by the package and host it without changing bytes.',
+        'Set sourceUrl to the public HTTPS URL of SKILL.md and add the registry entry to a starnet-skill-registry/v1 index.',
+        'Inspect the hosted URL in StarNet and confirm its package SHA-256 is ' + exported.digest + ' before sharing.'
+      ],
+      uploaded: false
+    };
   }
   async function inspectEnvelope(input) {
     const pkg = packageFormat.fromEnvelope(input && input.envelope);
     const decoded = decodedPackageFiles(pkg);
     const main = packageFormat.fileBuffer(pkg, 'SKILL.md');
     if (!Buffer.from(main.toString('utf8'), 'utf8').equals(main)) throw new Error('SKILL.md must be valid UTF-8');
-    const sourceUrl = 'package://import/' + pkg.digest;
+    const meta = pkg.metadata || {};
+    const sourceUrl = /^https:\/\//.test(str(meta.sourceUrl)) ? str(meta.sourceUrl) : ('package://import/' + pkg.digest);
     const document = parseDocument(main.toString('utf8'), sourceUrl);
+    if (meta.sourceVersion) document.sourceVersion = str(meta.sourceVersion).slice(0, 80);
+    if (meta.sourceAuthor) document.sourceAuthor = str(meta.sourceAuthor).slice(0, 160);
+    if (meta.sourceLicense) document.sourceLicense = str(meta.sourceLicense).slice(0, 80);
+    if (meta.category) document.category = str(meta.category).slice(0, 80);
+    if (Array.isArray(meta.requires)) document.requires = list(meta.requires);
+    if (Array.isArray(meta.platforms)) document.platforms = list(meta.platforms);
     const projected = Object.assign({}, document, { setup: '', createdBy: 'community', files: decoded.filter(f => f.path !== 'SKILL.md').map(f => ({
       path: f.path, content: f.text == null ? '[binary asset: ' + f.bytes.length + ' bytes]' : f.text
     })) });
@@ -264,7 +293,7 @@ function makeSkillExchange(deps) {
     return { ok: true, action: 'rollback', digest: pkg.digest, skill: result.skill };
   }
 
-  return { inspect, inspectEnvelope, install, check, exportPackage, generations, rollback, normalizeSourceUrl, parseDocument, _stages: stages };
+  return { inspect, inspectEnvelope, install, check, exportPackage, publishHandoff, generations, rollback, normalizeSourceUrl, parseDocument, _stages: stages };
 }
 
 module.exports = { makeSkillExchange, normalizeSourceUrl, parseDocument, MAX_DOCUMENT_BYTES };
