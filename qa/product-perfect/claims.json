@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f431a0ebc7ee342e5ba80273b448e88ccbbf2ad8",
+    "sourceCommit": "0255c20ee3397931b9cd59a14dd02798cdd043bc",
     "pathSetSha256": "1149d0e2e420dfdf56d9fdae886481ec4d54779bbf9ac01a84a761848732b4e7",
     "files": [
       {
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 521427,
-        "sha256": "d0be9426017ae2b4f99a3e814dc877617aa47506e73f41a9d8c29fb96c701c91"
+        "bytes": 540251,
+        "sha256": "39f1f0c10d2f83aad8dff78f4f22f08d4bff9f7dbd42d5caa2e5ee4b82aecc72"
       },
       {
         "path": "frontend/app/study.js",
@@ -883,8 +883,8 @@
       },
       {
         "path": "frontend/app/windows/rewind.js",
-        "bytes": 6653,
-        "sha256": "0d09b8bb206ea159b966d7c6ce9c9cf4f31fcb45aa0bb4060c1e71c635e10f5b"
+        "bytes": 6864,
+        "sha256": "6b22120843709ce549c57c45b62e2ccc188611d0b59c1b85c307967e42dfa825"
       },
       {
         "path": "frontend/app/windows/routines.js",
@@ -953,8 +953,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 319375,
-        "sha256": "70d86d7dc5f3b8a078c2f05f715defb3a7c8492d8bb01392c87c6365bd68689f"
+        "bytes": 322580,
+        "sha256": "6454d2a9b4e0a83632b5c62b265e035c2f932ba9b328fed4a6e5d60b5ba9585e"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -993,8 +993,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 96525,
-        "sha256": "e64fa4d76165a101238fe323a5f75146f9fdcc938bb8d4baa48a032468a8e684"
+        "bytes": 97882,
+        "sha256": "02c162d7e7be9390281a0e386a3af3a39ac354d3a73d472c09f9bfcf188debbf"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -1033,8 +1033,8 @@
       },
       {
         "path": "frontend/js/assets.js",
-        "bytes": 30139,
-        "sha256": "1f9252ab9d37cc7087e0daf7e21bf227e83e622e073f9de9ec33b10568b8604a"
+        "bytes": 30809,
+        "sha256": "458bb78290e47ae9f70a60703992afbc77fd3a0b2a1eb04b3290c65f6c14ed7d"
       },
       {
         "path": "frontend/js/audio.js",
