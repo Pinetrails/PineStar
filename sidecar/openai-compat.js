@@ -261,7 +261,6 @@ function makeOpenAiCompat(deps) {
       const p = payload || {};
       if (name === 'agent.run.start') acc.runId = p.runId || acc.runId;
       else if (name === 'agent.token') { const dlt = p.delta || ''; if (dlt) { acc.buf += dlt; if (o.onDelta) { try { o.onDelta(dlt); } catch (_) {} } } }
-      else if (name === 'agent.tool_call') acc.buf = '';
       else if (name === 'agent.cost') { acc.tokensIn += (p.tokensIn || 0); acc.tokensOut += (p.tokensOut || 0); }
       else if (name === 'agent.run.error') { acc.errMsg = p.message || 'run error'; acc.transient = !!p.transient; }
       else if (name === 'capdenied') { acc.errMsg = acc.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || '')); }

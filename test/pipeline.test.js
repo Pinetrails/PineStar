@@ -623,4 +623,83 @@ const onLine = (plan, aid, extra) => Object.assign({ lineId: P.lineOf(plan, aid)
   A.ok(!clean.errors.some(e => e.code === 'BELT_BURIED'), 'junctions on the line and block-less legacy props never read as buried');
 }
 
+/* ---- PROMPT TEXT MAY NOT MOVE THE DISPATCH HASH (2026-08-07) ----
+   `bays` is a hash input and the hash is what the sidecar dedupes re-posts on; router.setPlan resets the
+   splitter round-robin whenever the topology changes. Carrying a dock's standing BRIEF on the hashed record
+   meant typing one word into a step editor moved plan.hash, forced a re-post, and wiped dispatch balance —
+   an edit to what an agent is TOLD perturbing which agent work is SENT to. The brief must still reach the
+   sidecar (router.stageBrief injects it into entry runs and handoffs), so it rides `dockBays` instead. */
+{
+  const props = brief => [
+    { id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+    { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'coder', brief: brief },
+    { id: 'o1', t: 'outbox', x: 7, y: 0, w: 1, h: 1 }
+  ];
+  const belts = [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E')];
+  const bare = P.compileRoutingPlan(geo(props(undefined), belts));
+  const withBrief = P.compileRoutingPlan(geo(props('Answer in press style, three sentences.'), belts));
+  const edited = P.compileRoutingPlan(geo(props('Answer in press style, five sentences, cite sources.'), belts));
+  A.eq(withBrief.hash, bare.hash, 'ADDING a job brief does not move plan.hash — prompt text is not dispatch topology');
+  A.eq(edited.hash, bare.hash, 'and EDITING it does not either');
+  A.ok(bare.bays.every(b => b.brief === undefined), 'no brief on the HASHED dispatch records');
+  A.ok(withBrief.bays.every(b => b.brief === undefined), '…not even when the dock has one');
+  A.eq(withBrief.dockBays.find(d => d.propId === 'b1').brief, 'Answer in press style, three sentences.',
+    'the brief still reaches the sidecar on dockBays (outside the hash) — legibility, never routing');
+  A.eq(edited.dockBays.find(d => d.propId === 'b1').brief, 'Answer in press style, five sentences, cite sources.',
+    '…and an edit is really carried, it is not being dropped to keep the hash still');
+  // and the sidecar's reader finds it there
+  const { makeRouter } = require('../sidecar/routing/router.js');
+  const r = makeRouter();
+  A.ok(r.setPlan(withBrief).ok, 'the briefed floor deploys');
+  A.eq(r.stageBrief('coder'), 'Answer in press style, three sentences.', 'router.stageBrief reads the brief off dockBays');
+  // a real topology edit STILL moves the hash — the point is precision, not deafness
+  const moved = P.compileRoutingPlan(geo(props('Answer in press style, three sentences.'), belts.concat([belt(7, 1, 'E')])));
+  A.ok(moved.hash !== bare.hash, 'laying a belt DOES move the hash — only prompt text is excluded');
+}
+
+/* ---- LINE IDENTITY SURVIVES THE TENTH PROP (2026-08-07 conveyor audit) ----
+   A line's key is its OLDEST member prop id, and prop ids are minted 'p1','p2',… from a monotonic
+   counter. `props.sort()` — the JS default — sorts them as STRINGS, where 'p10' < 'p9'. So the moment a
+   line grew past nine props the key jumped to the newest one and the whole line was renamed underneath
+   the running system: work already in flight carried the old lineId, failed Pipeline.chainNext's gate and
+   stopped after stage one, and every localStorage latch keyed on the lineId (first ride, the
+   finish-the-line registry) silently re-keyed. The line here is deliberately built so the string order and
+   the creation order disagree. */
+{
+  const props = [
+    { id: 'p3', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+    { id: 'p5', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'coder' },
+    { id: 'p7', t: 'filter', x: 2, y: 0, w: 1, h: 1 },
+    { id: 'p9', t: 'outbox', x: 6, y: 0, w: 1, h: 1 },
+  ];
+  const belts = [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E')];
+  const before = P.lineComponents(geo(props, belts));
+  A.eq(before.length, 1, 'the four machines form ONE line');
+  A.eq(before[0].key, 'p3', 'keyed by its oldest prop');
+
+  // the tenth prop joins the SAME line — this is the exact edit the string sort broke
+  const after = P.lineComponents(geo(props.concat([{ id: 'p10', t: 'bay', x: 4, y: 2, w: 1, h: 1, agentId: 'writer' }]),
+                                     belts.concat([belt(4, 1, 'S')])));
+  A.eq(after.length, 1, 'p10 joins the same line');
+  A.eq(after[0].key, 'p3', "…and the line KEEPS its identity ('p10' must not out-sort 'p3')");
+  A.eq(after[0].props.indexOf('p9') < after[0].props.indexOf('p10'), true, 'members are in creation order, p9 before p10');
+  A.eq(after[0].bays[0].propId, 'p5', 'bays too — the oldest dock is first, not the string-smallest');
+
+  // and the compiled plan agrees: lineOf is the same id before and after
+  const planA = P.compileRoutingPlan(geo(props, belts));
+  const planB = P.compileRoutingPlan(geo(props.concat([{ id: 'p10', t: 'bay', x: 4, y: 2, w: 1, h: 1, agentId: 'writer' }]),
+                                         belts.concat([belt(4, 1, 'S')])));
+  A.eq(P.lineOf(planA, 'coder'), 'p3', 'the compiled plan names the line p3');
+  A.eq(P.lineOf(planB, 'coder'), 'p3', '…and still does once the tenth prop lands (work in flight keeps passing the gate)');
+}
+
+/* ---- the comparator itself: numeric on minted ids, total on anything else ---- */
+{
+  const cmp = P._internals.propIdCmp;
+  A.eq(['p10', 'p9', 'p1'].slice().sort(cmp).join(','), 'p1,p9,p10', 'minted ids sort by number, not by string');
+  A.eq(['p2', 'legacy', 'p10'].slice().sort(cmp).join(','), 'p2,p10,legacy', 'a non-p<N> id sorts after the minted ones, deterministically');
+  A.eq(cmp('zeta', 'alpha') > 0, true, 'two foreign ids fall back to string order');
+  A.eq(cmp('p4', 'p4'), 0, 'and the comparator is reflexive');
+}
+
 A.report('pipeline');

@@ -207,11 +207,13 @@ let T = 0; const clock = () => (T += 10);
     A.eq(log.length, 0, 'PROVIDER CALLS: zero — one line can never spend on another');
   }
 
-  /* ---- AN OLD PLAN (compiled before line identity) DEGRADES TO TERMINAL, NOT TO TODAY'S BEHAVIOUR ----
-     The sidecar restores the last accepted plan from disk at boot, so a plan without lineOfAgent is real.
-     TERMINAL is the safer of the two defaults: "a line did not run" is visible and re-triggerable; "money
-     was spent on stages the Commander never asked for" is silent and unrefundable. Self-healing — the app
-     re-posts a freshly compiled plan on its first floor change. */
+  /* ---- AN OLD PLAN (compiled before line identity) SELF-HEALS AT LOAD, IT DOES NOT STAY DEAF ----
+     The sidecar restores the last accepted plan from disk at boot, so a plan without lineOfAgent is real —
+     and on a HEADLESS/service sidecar taking Telegram + routine traffic, no browser ever comes along to
+     re-post a fresh one. Leaving those docks terminal meant every multi-stage line silently ran stage one
+     only, forever. router.setPlan now derives the missing line map from the plan's OWN geometry
+     (sidecar/routing/planlines.js), so a restored plan runs its lines with no browser. The safer-default
+     (terminal) is kept for what is genuinely underivable: a dock the derivation puts on no line at all. */
   {
     const belt = (x, y, dir) => ({ x, y, dir });
     const plan = P.compileRoutingPlan({
@@ -227,16 +229,41 @@ let T = 0; const clock = () => (T += 10);
     for (const d of (old.dockBays || [])) delete d.lineId;
     const router = makeRouter();
     A.ok(router.setPlan(old).ok, 'an older-shaped plan is still accepted (no contract break)');
-    A.eq(router.lineOfAgent('researcher'), null, 'it can name no line for its docks');
+    A.eq(router.lineOfAgent('researcher'), lineId, 'and the missing line map is DERIVED from its own geometry');
+    A.eq(router.lineOfAgent('writer'), lineId, 'both docks of the one physical line heal onto that line');
     const log = [];
     const c = makeChainRunner({ nextAgent: (a, ctx) => router.chainNext(a, ctx), runAgent: harness({ writer: { text: 'x' } }, log), now: clock });
     const res = await c.advance({ agentId: 'researcher', text: 'findings', lineId: lineId });
-    A.eq(res.hops.length, 0, 'every dock on a pre-line-identity plan is TERMINAL');
-    A.eq(log.length, 0, 'PROVIDER CALLS: zero — the safe default never spends on an unprovable origin');
-    // and it heals the moment the app posts the real compiled plan
+    A.eq(res.agentId, 'writer', 'a restored pre-arc plan advances its multi-stage line with no browser open');
+    A.eq(log.length, 1, 'exactly ONE downstream provider call — the drawn stage, nothing more');
+    // healing widens NOTHING: the gate still refuses work that did not enter through this line
+    log.length = 0;
+    const adhoc = await c.advance({ agentId: 'researcher', text: 'findings' });
+    A.eq(adhoc.hops.length, 0, 'a direct order at the same dock is still terminal on a healed plan');
+    const foreign = await c.advance({ agentId: 'researcher', text: 'findings', lineId: 'some-other-line' });
+    A.eq(foreign.hops.length, 0, 'and a foreign line id still buys nothing');
+    A.eq(log.length, 0, 'PROVIDER CALLS: zero — the heal fills a hole, it does not open a door');
+    // the freshly compiled plan still wins outright (the compiler is the authority whenever it has spoken)
     A.ok(router.setPlan(plan).ok, 'the freshly compiled plan re-arms routing');
     const healed = await c.advance({ agentId: 'researcher', text: 'findings', lineId: lineId });
-    A.eq(healed.agentId, 'writer', 'and the line runs again — the degrade is temporary, not a one-way door');
+    A.eq(healed.agentId, 'writer', 'and the compiled plan agrees with the derived one on this floor');
+  }
+
+  /* ---- A DERIVED LINE MAP NEVER OVERWRITES A COMPILED ONE ----
+     A plan that already answers lineOfAgent is returned untouched by the heal, including the deliberate
+     empty answer of a floor whose only dock is beltless (on no line, therefore terminal). */
+  {
+    const { healPlan } = require('../sidecar/routing/planlines.js');
+    const compiled = P.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'bA', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' }],
+      belts: [{ x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }]
+    });
+    A.eq(healPlan(compiled), compiled, 'a compiled plan is returned by identity — nothing is re-derived');
+    const lone = P.compileRoutingPlan({ props: [{ id: 'bZ', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'solo' }], belts: [] });
+    const stripped = JSON.parse(JSON.stringify(lone));
+    delete stripped.lines; delete stripped.lineOfProp; delete stripped.lineOfAgent;
+    A.eq(healPlan(stripped).lineOfAgent, {}, 'a beltless dock is on NO line even after healing — genuinely underivable stays terminal');
   }
 
   /* ---- THE LINE ID SURVIVES A PLAN RE-POST (the same floor recompiles to the same id) ---- */
@@ -279,6 +306,51 @@ let T = 0; const clock = () => (T += 10);
     A.ok(!r.ok, 'the sidecar refuses a looping work line');
     A.ok(r.codes.indexOf('CHAIN_CYCLE') >= 0, 'naming CHAIN_CYCLE as the reason');
     A.eq(router.chainNext('ping', {}), null, 'and no chain edge is served from a refused plan');
+  }
+
+  /* ---- A BLOCKED HANDOFF IS NOT A FINISHED LINE (2026-08-07 conveyor audit) ----
+     `if (!target) return out` left stopped:null for BOTH "this dock is the end of the line" and "the line
+     gate refused this work" — so a line truncated by a stale lineId reported itself as having run to its
+     end, breaking this file's first law (every stop carries an honest note). The refusal is only
+     detectable with the line fact, so `lineOfAgent` is injected exactly like nextAgent; without it the
+     runner must stay silent rather than guess. */
+  {
+    // the floor: researcher -> writer, both on line 'p3'. nextAgent mirrors Pipeline.chainNext's gate.
+    const own = { researcher: 'p3', writer: 'p3' };
+    const gated = (a, ctx) => (own[a] && ctx && ctx.lineId === own[a] && a === 'researcher') ? 'writer' : null;
+    const mk = extra => makeChainRunner(Object.assign({
+      nextAgent: gated, runAgent: harness({ writer: { text: 'the polished draft' } }), now: clock
+    }, extra || {}));
+
+    // (a) the gate refuses — the run carries a lineId that is no longer this dock's line
+    const withLine = mk({ lineOfAgent: a => own[a] || null });
+    const refused = await withLine.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p10' });
+    A.eq(refused.hops.length, 0, 'a refused line runs no downstream stage');
+    A.eq(refused.text, 'raw findings', "…and still delivers the last good output (a chain never gates the reply)");
+    A.ok(refused.stopped, 'THE STOP IS REPORTED — a truncated line no longer claims it finished');
+    A.ok(/did not come in through this line/.test(refused.stopped), '…in plain language about the door it came in');
+    A.ok(!/lineId|p10|belt/.test(refused.stopped), '…with no ids and no belt vocabulary in it');
+
+    // (b) a genuinely terminal dock stays silent — the common case must not grow a spurious note
+    const terminal = await withLine.advance({ agentId: 'writer', text: 'the polished draft', lineId: 'p3' });
+    A.eq(terminal.stopped, null, 'the LAST dock of a line is terminal by design — no note');
+    const passes = await withLine.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p3' });
+    A.eq(passes.hops.length, 1, 'and work that DID come in through this line still runs the line');
+    A.eq(passes.stopped, null, '…reporting no stop');
+
+    // (c) a direct order (no lineId) is the designed contract, not a failed line
+    const direct = await withLine.advance({ agentId: 'researcher', text: 'raw findings' });
+    A.eq(direct.stopped, null, 'a direct order answers at its dock and says nothing about lines');
+
+    // (d) the seam is OPTIONAL: unwired, the runner claims nothing it cannot prove
+    const blind = mk();
+    const quiet = await blind.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p10' });
+    A.eq(quiet.stopped, null, 'without the line fact injected the runner never invents a refusal');
+    // …and a lineOfAgent that throws is treated exactly like one that is absent
+    const angry = mk({ lineOfAgent: () => { throw new Error('plan gone'); } });
+    const safe = await angry.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p10' });
+    A.eq(safe.stopped, null, 'a throwing seam degrades to silence, never to a crash or a guess');
+    A.eq(safe.text, 'raw findings', '…and the reply survives it');
   }
 
   A.report('chain');

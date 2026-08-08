@@ -615,6 +615,24 @@ const Voice = (() => {
   function localVoiceId() {
     try { return String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) { return ''; }
   }
+  // A Live Voice room has ONE speaker. Snapshot the selected identity when it opens, then pin whichever
+  // engine actually serves the first audible chunk (Kokoro or its mapped Edge floor). Without both locks,
+  // every streamed sentence independently reread Settings and retried the ladder, so one transient model
+  // failure could make the same reply alternate between two people. A locked engine may miss a chunk, but
+  // it may never impersonate another speaker mid-session.
+  let sessionLocalVoiceId = '';
+  let sessionVoiceEngine = '';
+  function setLocalTts(value) {
+    const next = !!value;
+    if (next && !preferLocalTts) {
+      sessionLocalVoiceId = localVoiceId();
+      sessionVoiceEngine = '';
+    } else if (!next) {
+      sessionLocalVoiceId = '';
+      sessionVoiceEngine = '';
+    }
+    preferLocalTts = next;
+  }
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -642,9 +660,21 @@ const Voice = (() => {
       body: JSON.stringify({
         key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
         text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
-        local: preferLocalTts, localVoice: localVoiceId(), speed: cfg.speed
+        local: preferLocalTts,
+        localVoice: preferLocalTts ? sessionLocalVoiceId : localVoiceId(),
+        localEngine: preferLocalTts ? sessionVoiceEngine : '',
+        speed: cfg.speed
       })
     }).then(async r => {
+      if (preferLocalTts && job.seq === speakSeq && !sessionVoiceEngine) {
+        const servedBy = String(r.headers.get('X-Voice-Provider') || '').toLowerCase();
+        const engine = servedBy === 'local-kokoro' ? 'local-kokoro' : (servedBy.indexOf('edge:') === 0 ? 'edge' : '');
+        if (engine) {
+          sessionVoiceEngine = engine;
+          // The first request runs alone until it establishes the speaker. Resume normal prefetch now.
+          pumpSynth();
+        }
+      }
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
       let reason = 'http ' + r.status;
@@ -685,7 +715,10 @@ const Voice = (() => {
         return { kind: 'silent' };
       });
   }
-  function pumpSynth() { while (synthIdx < jobs.length && (synthIdx - playIdx) < MAX_INFLIGHT) startSynth(jobs[synthIdx++]); }
+  function pumpSynth() {
+    const limit = preferLocalTts && !sessionVoiceEngine ? 1 : MAX_INFLIGHT;
+    while (synthIdx < jobs.length && (synthIdx - playIdx) < limit) startSynth(jobs[synthIdx++]);
+  }
 
   function pumpPlay() {
     if (playing) return;
@@ -982,9 +1015,12 @@ const Voice = (() => {
   const GUM_TIMEOUT_MS = 12000;
   const recorderProvider = (() => {
     let stream = null, mr = null, chunks = [], ac = null, analyser = null, rafId = null;
-    let pcmProcessor = null, pcmSink = null, pcmFrames = [], pcmRate = 0, takeSttMode = 'cloud';
+    let pcmProcessor = null, pcmSink = null, pcmFrames = [], pcmSamples = 0, pcmRate = 0, takeSttMode = 'cloud';
+    let previewPending = false, previewAbort = null, previewSeq = 0, previewLastAt = 0;
     let cb = null, mime = '', startedAt = 0, floor = null, lastVoiceAt = 0, calibrateUntil = 0, silenceTimer = null;
     let aborted = false, delivered = false, hardCapTimer = null;
+    const LOCAL_PREVIEW_MIN_MS = 650;
+    const LOCAL_PREVIEW_INTERVAL_MS = 900;
 
     function pickMime() {
       const prefs = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
@@ -1005,6 +1041,8 @@ const Voice = (() => {
       try { if (pcmProcessor) pcmProcessor.disconnect(); } catch (_) {}
       try { if (pcmSink) pcmSink.disconnect(); } catch (_) {}
       pcmProcessor = pcmSink = null;
+      if (previewAbort) { try { previewAbort.abort(); } catch (_) {} previewAbort = null; }
+      previewPending = false;
       if (ac) { try { ac.close(); } catch (_) {} ac = null; }
       analyser = null;
       if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (_) {} stream = null; }
@@ -1028,8 +1066,6 @@ const Voice = (() => {
           // never-voiced take → give up early instead of sitting hot until HARD_CAP (see REC.NOSPEECH_MS)
           if (!lastVoiceAt && (now - startedAt) > REC.NOSPEECH_MS) { stop(); return; }
         }
-        // surface a coarse "still listening" pulse (no real interim text on this path) — dots by elapsed seconds
-        if (cb && cb.onInterim) { const secs = Math.floor((now - startedAt) / 1000); cb.onInterim(secs > 0 ? '·'.repeat(Math.min(secs, 8)) : ''); }
         rafId = requestAnimationFrame(tick);
       };
       rafId = requestAnimationFrame(tick);
@@ -1052,16 +1088,40 @@ const Voice = (() => {
       }
       return output;
     }
-    async function transcribeLocalPcm() {
-      const pcm = mono16k(pcmFrames, pcmRate || 48000);
-      pcmFrames = [];
+    async function transcribeLocalFrames(frames, signal) {
+      const pcm = mono16k(frames, pcmRate || 48000);
       if (!pcm.length) return { text: '', reason: 'local microphone capture produced no audio', failed: true };
       const r = await fetch('/api/local-voice/transcribe', {
-        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: pcm.buffer
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: pcm.buffer, signal
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return { text: '', reason: (j && (j.error || j.reason)) || ('local transcription unreachable (HTTP ' + r.status + ')'), failed: true };
       return { text: String((j && j.text) || ''), reason: j && (j.error || j.reason) };
+    }
+    async function transcribeLocalPcm() {
+      const frames = pcmFrames.slice();
+      pcmFrames = []; pcmSamples = 0;
+      return transcribeLocalFrames(frames);
+    }
+    function requestLocalPreview() {
+      if (takeSttMode !== 'local' || previewPending || delivered || aborted || !cb || !cb.onInterim) return;
+      const capturedMs = pcmSamples / Math.max(1, pcmRate || 48000) * 1000;
+      const now = Date.now();
+      if (capturedMs < LOCAL_PREVIEW_MIN_MS || (previewLastAt && now - previewLastAt < LOCAL_PREVIEW_INTERVAL_MS)) return;
+      previewLastAt = now;
+      previewPending = true;
+      const seq = previewSeq;
+      const ac = new AbortController();
+      previewAbort = ac;
+      transcribeLocalFrames(pcmFrames.slice(), ac.signal).then(({ text }) => {
+        if (!text || ac.signal.aborted || seq !== previewSeq || delivered || aborted) return;
+        cb && cb.onInterim && cb.onInterim(String(text).trim());
+      }).catch(error => {
+        if (!error || error.name !== 'AbortError') console.warn('[voice] local preview failed:', (error && error.message) || error);
+      }).finally(() => {
+        if (previewAbort === ac) previewAbort = null;
+        previewPending = false;
+      });
     }
     async function transcribe(blob) {
       // The bundled macOS/local engine consumes mono Float32 PCM. MediaRecorder emits WebM/MP4, so sending
@@ -1114,7 +1174,8 @@ const Voice = (() => {
       });
     }
     async function start(cbs) {
-      cb = cbs; chunks = []; pcmFrames = []; pcmRate = 0; takeSttMode = classicSttMode;
+      cb = cbs; chunks = []; pcmFrames = []; pcmSamples = 0; pcmRate = 0; takeSttMode = classicSttMode;
+      previewSeq++; previewPending = false; previewAbort = null; previewLastAt = 0;
       aborted = false; delivered = false; floor = null; lastVoiceAt = 0;
       try {
         // DEAD-BUTTON GUARD: getUserMedia can hang forever if the mic-permission prompt is DISMISSED (not
@@ -1156,7 +1217,11 @@ const Voice = (() => {
             pcmSink = ac.createGain(); pcmSink.gain.value = 0;
             pcmProcessor.onaudioprocess = e => {
               const samples = e && e.inputBuffer && e.inputBuffer.getChannelData(0);
-              if (samples && samples.length) pcmFrames.push(new Float32Array(samples));
+              if (samples && samples.length) {
+                pcmFrames.push(new Float32Array(samples));
+                pcmSamples += samples.length;
+                requestLocalPreview();
+              }
             };
             src.connect(pcmProcessor); pcmProcessor.connect(pcmSink); pcmSink.connect(ac.destination);
             pcmRate = ac.sampleRate || 48000;
@@ -1539,7 +1604,7 @@ const Voice = (() => {
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
     canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
-    setLocalTts: value => { preferLocalTts = !!value; },
+    setLocalTts,
     /* LIVE VOICE MUST ARRIVE AUDIBLE. Opening a hands-free session with the speaker muted is a room where you
        talk and nothing answers — the Commander then has to find a toggle to make the feature work at all.
        Classic voice mode already force-enables the speaker in toggleVoiceMode(); the Local Live panel does not

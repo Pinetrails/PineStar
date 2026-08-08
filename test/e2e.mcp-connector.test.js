@@ -521,6 +521,19 @@ async function readNdjson(res) {
     const removedDisk = JSON.parse(fs.readFileSync(connectorFile, 'utf8'));
     A.ok(!(removedDisk.configs || []).some(c => c.id === 'demo'), 'connector removal read-back has no matching config');
     A.ok(!(removedDisk.oauth && removedDisk.oauth.byId && removedDisk.oauth.byId.demo), 'connector removal read-back has no matching OAuth credential');
+    const removalCopies = fs.readFileSync(connectorFile, 'utf8') + fs.readFileSync(connectorFile + '.bak', 'utf8');
+    A.ok(removalCopies.indexOf('mcp-secret-token') < 0, 'connector removal scrubs the token from both main and resilient backup');
+
+    // Reset is the bulk credential-deletion surface; prove it also cannot leave a recovery-file copy behind.
+    const readd = await fetch(B + '/api/connectors', {
+      method: 'POST', headers,
+      body: JSON.stringify({ id: 'demo', label: 'Demo MCP', transport: 'http', url: mcp.url, token: 'mcp-secret-token' })
+    });
+    A.eq(readd.status, 200, 'connector can be re-added before section reset');
+    const reset = await fetch(B + '/api/config/reset', { method: 'POST', headers, body: JSON.stringify({ section: 'connectors' }) });
+    A.eq(reset.status, 200, 'connector section reset -> 200');
+    const resetCopies = fs.readFileSync(connectorFile, 'utf8') + fs.readFileSync(connectorFile + '.bak', 'utf8');
+    A.ok(resetCopies.indexOf('mcp-secret-token') < 0, 'connector reset scrubs the token from both main and resilient backup');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

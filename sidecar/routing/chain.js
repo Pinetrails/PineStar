@@ -56,6 +56,40 @@ function makeChainRunner(o) {
   // handoff turn below and can never change which agent runs (nextAgent alone decides that).
   const stageBrief = typeof o.stageBrief === 'function' ? o.stageBrief : null;
 
+  /* lineOfAgent(agentId) -> the lineId of the line this dock crews, or null. OPTIONAL, injected exactly
+     like nextAgent (router.lineOfAgent is the production implementation; the runner never reads the plan).
+
+     WHY IT EXISTS (2026-08-07 conveyor audit). nextAgent() answers null for two completely different
+     situations and this module could not tell them apart:
+       (a) THIS DOCK IS THE END OF ITS LINE — its reply IS the answer. Correct, silent, the common case.
+       (b) THE LINE REFUSED THE WORK — Pipeline.chainNext's gate found the run carrying a lineId that is
+           not this dock's line (a stale id: the floor was edited mid-run and the line re-keyed; or work
+           that entered somewhere else entirely). The line does not run and nothing downstream spends.
+     Both returned `{ stopped: null }` — i.e. "the line ran to its end", which in case (b) is a lie, and
+     this file's FIRST law says every stop delivers an honest note saying where the line stopped. A
+     silently-truncated work line is the single hardest thing to diagnose from the outside: the Commander
+     drew four stages, paid for one, and every surface told them it finished.
+
+     CONSERVATIVE BY CONSTRUCTION — it may only turn a KNOWN refusal into a note:
+       • not injected, or it throws          -> no note (we cannot prove a refusal; never invent one)
+       • the dock crews no line on the plan  -> no note (terminal — same degradation Pipeline documents
+                                                for plans compiled before line identity existed)
+       • the run's line IS this dock's line  -> no note (the gate passed; null means genuinely terminal)
+       • the two lines DISAGREE              -> the note. Proven: the gate is the only thing that could
+                                                have stopped it.
+     A DIRECT ORDER (no lineId at all) stays silent on purpose: "a job you hand this agent yourself is
+     answered right here and stops here" is the designed contract (Andrew's ruling, 2026-08-07) and the
+     step editor says so on the floor — it is not a line that failed to run. */
+  const lineOfAgent = typeof o.lineOfAgent === 'function' ? o.lineOfAgent : null;
+  function refusalNote(dock, lineId) {
+    if (!lineOfAgent || !lineId) return null;
+    let own = null;
+    try { own = lineOfAgent(dock); } catch (_) { return null; }
+    if (!own || String(own) === String(lineId)) return null;
+    // plain language, no ids, no belt vocabulary — the same voice the floor speaks (build.js step card)
+    return 'this job did not come in through this line’s door, so the line did not run past ' + dock;
+  }
+
   const preview = s => String(s || '').replace(/\s+/g, ' ').slice(0, PREVIEW);
 
   /* advance({ agentId, text, originalText, signal, runAgent }) — run every downstream stage of the line that
@@ -83,7 +117,9 @@ function makeChainRunner(o) {
       // of a dock a real branch on the result rather than a re-read of the original message.
       let target = null;
       try { target = nextAgent(cur, { tag: getTag(out.text), lineId: lineId }); } catch (_) { target = null; }
-      if (!target) return out;                                   // terminal stage: its reply IS the answer
+      // no target = EITHER a terminal stage (its reply IS the answer — silent, correct) OR the line gate
+      // refusing this work. refusalNote tells the two apart, and only speaks when it can prove the second.
+      if (!target) { out.stopped = refusalNote(cur, lineId); return out; }
       if (visited[target]) { out.stopped = 'the line loops back to ' + target; return out; }
       if (hop > maxHops) { out.stopped = 'the line is longer than ' + maxHops + ' stages'; return out; }
       if (out.usd >= maxUsd) { out.stopped = 'the line reached its $' + maxUsd.toFixed(2) + ' limit'; return out; }

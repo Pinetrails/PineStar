@@ -57,6 +57,11 @@ const XpStore = (() => {
     return a || null;
   }
 
+  function growthEpoch() {
+    const hero = resolveAgent('agent');
+    return Math.max(1, Math.floor(Number(hero && hero.createdAt) || 1));
+  }
+
   function pushToWorld(a) {
     if (typeof World === 'undefined' || !World.setXp || typeof Xp === 'undefined') return;
     World.setXp(a && a.id ? a.id : 'agent', a && a.stats ? Xp.compute(a.stats) : null);   // station headline now rides the top-bar chip (pushTopbar)
@@ -120,10 +125,11 @@ const XpStore = (() => {
   }
 
   // fold one real event into BOTH the agent's stats and the station rollup (same engine, same path).
-  function onEvent(name, payload) {
+  function onEvent(name, payload, opts) {
+    opts = opts || {};
     const agentId = eventAgentId(payload);
     const a = resolveAgent(agentId);
-    if (!a || typeof Xp === 'undefined') return;
+    if (!a || typeof Xp === 'undefined') return { applied: false, credentialChanged: false };
     if (!a.stats) a.stats = Xp.fresh();
     if (!station) station = Xp.fresh();
     const ev = { name, payload: payload || {} };
@@ -137,19 +143,29 @@ const XpStore = (() => {
     const rs = Xp.applyEvent(station, ev); station = rs.stats;
     if (Xp.credential) {
       const credAfter = Xp.credential(a.stats).key;
-      if (credAfter !== credBefore) { try { credentialFn(a.id || agentId, credAfter); } catch (_) {} }
+      const credentialChanged = credAfter !== credBefore;
+      if (credentialChanged && !opts.silent) { try { credentialFn(a.id || agentId, credAfter); } catch (_) {} }
+      opts.credentialChanged = credentialChanged;
     }
 
-    pushToWorld(a);
-    pushTopbar();
+    if (!opts.silent) {
+      pushToWorld(a);
+      pushTopbar();
 
-    if (ra.awards.levelUp) { refreshCrewLevel(); celebrateAgent(a, ra.awards.levelTo); }
-    for (const id of ra.awards.milestones) announceMilestone(id);   // agent-scoped milestones
-    if (rs.awards.levelUp) celebrateStation(rs.awards.levelTo);
+      if (ra.awards.levelUp) { refreshCrewLevel(); celebrateAgent(a, ra.awards.levelTo); }
+      for (const id of ra.awards.milestones) announceMilestone(id);   // agent-scoped milestones
+      if (rs.awards.levelUp) celebrateStation(rs.awards.levelTo);
+    }
 
     // persist at run end (captures counters) and on explicit user turn-in feedback/level-up/milestone. Feedback can
     // arrive after the run stream has closed, so it must persist on its own even when it does not level up.
-    if (name === 'agent.run.end' || isSatisfactionFeedback(name, payload) || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length || rs.awards.milestones.length) { try { persistFn(); } catch (_) {} }
+    if (!opts.noPersist && (name === 'agent.run.end' || isSatisfactionFeedback(name, payload) || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length || rs.awards.milestones.length)) { try { persistFn(); } catch (_) {} }
+    return {
+      applied: !(ra.awards.duplicate && rs.awards.duplicate),
+      agentApplied: !ra.awards.duplicate,
+      credentialChanged: !!opts.credentialChanged,
+      agentId: a.id || agentId
+    };
   }
 
   /* S4 — BACKFILL the trophy case at boot. A save written before a badge existed already holds the record that
@@ -165,6 +181,150 @@ const XpStore = (() => {
     if (!list.length) { const hero = resolveAgent('agent'); if (hero) list = [hero]; }   // no roster hook → at least the hero
     for (const ag of list) { if (ag && ag.stats) { try { ag.stats = Xp.reconcile(ag.stats).stats; } catch (_) {} } }
     if (station) { try { station = Xp.reconcile(station).stats; } catch (_) {} }
+  }
+
+  // Read a stable, paged snapshot of the durable sidecar run log. `through` freezes the first page's
+  // server-clock horizon, while `beforeRunId` walks backward without losing runs beyond the API page cap.
+  async function loadRunHistory(since, fetchFn) {
+    const get = fetchFn || (typeof fetch === 'function' ? fetch : null);
+    if (!get) throw new Error('run history fetch unavailable');
+    const rows = [];
+    let cursor = '', snapshotAt = 0;
+    for (let page = 0; page < 20; page++) {
+      let url = '/api/runs?agent=*&limit=500&since=' + encodeURIComponent(String(since || 0));
+      if (cursor) url += '&beforeRunId=' + encodeURIComponent(cursor) + '&through=' + encodeURIComponent(String(snapshotAt));
+      const res = await get(url, { cache: 'no-store' });
+      if (!res || !res.ok) throw new Error('run history HTTP ' + (res && res.status));
+      const body = await res.json();
+      if (!body || !Array.isArray(body.runs) || !Number.isFinite(body.snapshotAt)) throw new Error('invalid run history response');
+      if (!snapshotAt) snapshotAt = body.snapshotAt;
+      rows.push(...body.runs);
+      const next = typeof body.nextCursor === 'string' ? body.nextCursor : '';
+      if (!next) return { runs: rows, snapshotAt };
+      if (next === cursor) throw new Error('run history cursor did not advance');
+      cursor = next;
+    }
+    throw new Error('run history exceeded pagination bound');
+  }
+
+  async function syncRunHistory(since, loader) {
+    let snapshot;
+    try { snapshot = await (loader ? loader(since) : loadRunHistory(since)); }
+    catch (e) { console.warn('[xp] run history catch-up', e); return { applied: 0, failed: true }; }
+    const rows = snapshot && Array.isArray(snapshot.runs) ? snapshot.runs.slice() : [];
+    const snapshotAt = snapshot && Number.isFinite(snapshot.snapshotAt) ? snapshot.snapshotAt : 0;
+    if (!snapshotAt) return { applied: 0, failed: true };
+    rows.sort((a, b) => (Number(a && a.ts) || 0) - (Number(b && b.ts) || 0));
+    let applied = 0, credentialChanged = false;
+    const touched = new Set();
+    for (const row of rows) {
+      if (!row || isInternalRun(row) || !row.runId || !row.agentId) continue;
+      const result = onEvent('agent.run.end', {
+        agentId: String(row.agentId), runId: String(row.runId), reason: row.clarifying ? 'clarifying' : String(row.reason || 'error'),
+        turns: Number(row.turns) || 0, tokens: Number(row.tokens) || 0, usd: Number(row.usd) || 0,
+        _historyToolsOk: Math.max(0, Number(row.toolsOk) || 0)
+      }, { silent: true, noPersist: true });
+      if (!result || !result.applied) continue;
+      applied++;
+      credentialChanged = credentialChanged || result.credentialChanged;
+      touched.add(result.agentId);
+    }
+    // Everything in this frozen snapshot now sits behind the watermark, so its run receipts are no longer
+    // needed for future boots. Retain only receipts for concurrent live runs that were not in the snapshot.
+    const checkpointed = new Set(rows.filter(r => r && r.runId).map(r => String(r.runId)));
+    const compact = stats => {
+      if (stats && stats.receipts && Array.isArray(stats.receipts.runs)) {
+        stats.receipts.runs = stats.receipts.runs.filter(id => !checkpointed.has(String(id)));
+      }
+    };
+    compact(station);
+    let roster = [];
+    try { roster = (allAgents ? allAgents() : null) || []; } catch (_) { roster = []; }
+    for (const a of roster) compact(a && a.stats);
+    station.runSyncAt = snapshotAt;
+    for (const id of touched) { const a = resolveAgent(id); if (a) pushToWorld(a); }
+    pushTopbar();
+    if (touched.size) refreshCrewLevel();
+    if (credentialChanged) { try { credentialFn(); } catch (_) {} }
+    try { persistFn(); } catch (_) {}
+    return { applied, snapshotAt };
+  }
+
+  function isInternalRun(row) {
+    if (!row) return false;
+    if (row.internal) return true;
+    const streamId = String(row.streamId || '');
+    return ['nightshift-', 'nightshift-act-', 'cron-', 'workshop-'].some(prefix => streamId.indexOf(prefix) === 0);
+  }
+
+  // Rating history mirrors run-history pagination, but carries the server-canonical feedback entries.
+  async function loadRatingHistory(since, fetchFn) {
+    const get = fetchFn || (typeof fetch === 'function' ? fetch : null);
+    if (!get) throw new Error('rating history fetch unavailable');
+    const rows = [];
+    let cursor = '', snapshotAt = 0;
+    for (let page = 0; page < 20; page++) {
+      let url = '/api/growth/ratings?limit=500&since=' + encodeURIComponent(String(since || 0)) + '&epoch=' + encodeURIComponent(String(growthEpoch()));
+      if (cursor) url += '&beforeRunId=' + encodeURIComponent(cursor) + '&through=' + encodeURIComponent(String(snapshotAt));
+      const res = await get(url, { cache: 'no-store' });
+      if (!res || !res.ok) throw new Error('rating history HTTP ' + (res && res.status));
+      const body = await res.json();
+      if (!body || !Array.isArray(body.ratings) || !Number.isFinite(body.snapshotAt)) throw new Error('invalid rating history response');
+      if (!snapshotAt) snapshotAt = body.snapshotAt;
+      rows.push(...body.ratings);
+      const next = typeof body.nextCursor === 'string' ? body.nextCursor : '';
+      if (!next) return { ratings: rows, snapshotAt };
+      if (next === cursor) throw new Error('rating history cursor did not advance');
+      cursor = next;
+    }
+    throw new Error('rating history exceeded pagination bound');
+  }
+
+  async function syncRatingHistory(since, loader) {
+    let snapshot;
+    try { snapshot = await (loader ? loader(since) : loadRatingHistory(since)); }
+    catch (e) { console.warn('[xp] rating history catch-up', e); return { applied: 0, failed: true }; }
+    const ratings = snapshot && Array.isArray(snapshot.ratings) ? snapshot.ratings.slice() : [];
+    const snapshotAt = snapshot && Number.isFinite(snapshot.snapshotAt) ? snapshot.snapshotAt : 0;
+    if (!snapshotAt) return { applied: 0, failed: true };
+    ratings.sort((a, b) => (Number(a && a.ts) || 0) - (Number(b && b.ts) || 0));
+    let applied = 0, credentialChanged = false;
+    const touched = new Set();
+    for (const rating of ratings) for (const entry of ((rating && rating.entries) || [])) {
+      const result = onEvent('memory.feedback', entry, { silent: true, noPersist: true });
+      if (!result || !result.applied) continue;
+      applied++; credentialChanged = credentialChanged || result.credentialChanged; touched.add(result.agentId);
+    }
+    station.ratingSyncAt = snapshotAt;
+    for (const id of touched) { const a = resolveAgent(id); if (a) pushToWorld(a); }
+    pushTopbar();
+    if (touched.size) refreshCrewLevel();
+    if (credentialChanged) { try { credentialFn(); } catch (_) {} }
+    try { persistFn(); } catch (_) {}
+    return { applied, snapshotAt };
+  }
+
+  // Persist the verdict first, then fold only the server-returned canonical entries. A duplicate may still
+  // repair a browser projection that missed the original acknowledgement; Xp receipts make that replay safe.
+  async function recordWorkRating(rating, fetchFn) {
+    const post = fetchFn || (typeof fetch === 'function' ? fetch : null);
+    if (!post) return { ok: false, error: 'rating service unavailable' };
+    let res, body;
+    try {
+      res = await post('/api/growth/ratings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, rating || {}, { epoch: growthEpoch() }))
+      });
+      body = res && res.ok ? await res.json() : null;
+    } catch (_) { body = null; }
+    if (!body || !body.ok || !body.rating || !Array.isArray(body.rating.entries)) return { ok: false, error: (body && body.error) || 'rating was not saved' };
+    let applied = false;
+    for (const entry of body.rating.entries) {
+      const result = onEvent('memory.feedback', entry, { noPersist: true });
+      applied = !!(result && result.applied) || applied;
+    }
+    station.ratingSyncAt = Math.max(Number(station.ratingSyncAt) || 0, Number(body.rating.ts) || 0);
+    try { persistFn(); } catch (_) {}
+    return { ok: true, duplicate: !!body.duplicate, applied, rating: body.rating };
   }
 
   function init(opts) {
@@ -185,12 +345,23 @@ const XpStore = (() => {
       for (const n of FEED) U.bus.on(n, p => { try { onEvent(n, p); } catch (e) { console.warn('[xp]', n, e); } });
       wired = true;
     }
+    const since = Number(opts.syncSince);
+    const ratingSince = Number(opts.syncRatingsSince);
+    if (station && Number.isFinite(since) && since > 0 && !Number.isFinite(Number(station.runSyncAt))) station.runSyncAt = since;
+    if (station && Number.isFinite(ratingSince) && ratingSince > 0 && !Number.isFinite(Number(station.ratingSyncAt))) station.ratingSyncAt = ratingSince;
+    const runSync = Number.isFinite(since) && since > 0 ? syncRunHistory(since, opts.loadRuns) : Promise.resolve({ applied: 0, skipped: true });
+    return runSync.then(run => {
+      const ratingSync = Number.isFinite(ratingSince) && ratingSince > 0
+        ? syncRatingHistory(ratingSince, opts.loadRatings)
+        : Promise.resolve({ applied: 0, skipped: true });
+      return ratingSync.then(ratings => ({ applied: (run.applied || 0) + (ratings.applied || 0), run, ratings, failed: !!(run.failed || ratings.failed) }));
+    });
   }
 
   // the station-wide rollup, included in the save envelope by App.persist()
   function stationStats() { return station; }
 
-  return { init, stationStats, onEvent };
+  return { init, stationStats, onEvent, loadRunHistory, syncRunHistory, loadRatingHistory, syncRatingHistory, recordWorkRating };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { XpStore };

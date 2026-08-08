@@ -68,8 +68,11 @@
   /* parkedPath is RETURNED, not just baked into the note text, because the loop's per-turn budget may clamp
      this same content again — and a second head+tail cut can eat the note that says where the full output
      went. The re-clamp has to be able to rewrite that pointer itself. */
-  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null });
-  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null });
+  // Preserve the pre-clamp character count alongside the model-visible preview. A later aggregate/run cap may
+  // have to shorten this result again; without the original count it can only say "some output was omitted",
+  // which is both unhelpful and impossible to audit against the parked file.
+  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
+  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
 
   // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
   // means we fall back to the plain clamp — losing the tail must never also lose the answer.

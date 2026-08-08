@@ -313,10 +313,18 @@ const WorldModel = (() => {
   const clone = o => JSON.parse(JSON.stringify(o));
   const pad2 = n => String(n).padStart(2, '0');
 
+  /* STATION IDENTITY (2026-08-07 conveyor audit). `meta.createdAt` is the station's DURABLE ID: the
+     REFIT one-shots (first ride, ORDERS, the finish-the-line registry) namespace their localStorage
+     keys on it, so a second station must not inherit the first one's dismissals. It used to be
+     stamped 0 by every path — no caller ever passed one — which made that namespace the constant
+     string 'default' and every "per-station" latch global. Stamped once at creation, backfilled once
+     on migrate for docs saved before this existed, and never touched again. Injectable so tests and
+     any future importer stay deterministic. */
+  function stationId() { return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 1; }
   function freshDoc(createdAt) {
     const doc = {
       schema: 'starnet.station', version: 1, _nid: 1,
-      meta: { name: 'STARNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null, trunkRoomId: null },
+      meta: { name: 'STARNET STATION', createdAt: createdAt || stationId(), tier: 0, spawnRoomId: null, trunkRoomId: null },
       rooms: {}, order: [], props: [], belts: {}, edges: []
     };
     // seed the shabby starter HAB (18×11 floor — the v7 / world.js starter room), so a new
@@ -431,25 +439,79 @@ const WorldModel = (() => {
       }
     }
 
-    function roomAt(tx, ty) {
+    /* ---------- roomAt, indexed (2026-08-08 perf pass) ----------
+       roomAt is the single most-called query in the model: every prop placement check, every belt
+       check, bayObjects (three times over the whole prop list), the blueprint candidate scan, and
+       REFIT's per-frame validation layer all bottom out here. The linear form below scanned every
+       room × every rect on EVERY call, so a 40-room floor turned each of REFIT's per-frame
+       bayObjects() calls into thousands of rect tests.
+
+       The index is a tile -> roomId map with EXACTLY the linear scan's semantics: doc.order is
+       walked in order and the FIRST room to claim a tile keeps it, so an overlapping rect resolves
+       identically either way. It is built lazily (a floor that is never queried never pays) and
+       dropped by BOTH snapshot() and emit() — snapshot() runs immediately before every doc
+       mutation, so a read taken mid-mutation rebuilds against the doc as it stands, which is what
+       the linear scan did. Nothing else may write doc.rooms/doc.order without going through one of
+       those two. */
+    let roomIdx = null, propIdx = null, propIdIdx = null;
+    function dropRoomIdx() { roomIdx = null; propIdx = null; propIdIdx = null; }
+    function roomIndex() {
+      if (roomIdx) return roomIdx;
+      const m = new Map();
       for (const id of doc.order) {
         const rm = doc.rooms[id];
-        for (const r of rm.rects) if (inRect(r, tx, ty)) return id;
+        if (!rm || !rm.rects) continue;
+        for (const r of rm.rects) {
+          for (let y = r.y1; y <= r.y2; y++) {
+            for (let x = r.x1; x <= r.x2; x++) {
+              const k = x + ',' + y;
+              if (!m.has(k)) m.set(k, id);   // first room in doc.order wins — same as the scan's early return
+            }
+          }
+        }
       }
-      return null;
+      return (roomIdx = m);
+    }
+    function roomAt(tx, ty) {
+      const v = roomIndex().get(Math.floor(tx) + ',' + Math.floor(ty));
+      return v === undefined ? null : v;
     }
 
     /* ---------- props (furniture) ---------- */
     const props = () => doc.props;
-    const propById = id => doc.props.find(p => p.id === id) || null;
+    /* PROP INDEXES (2026-08-08 perf pass) — same lifetime and the same two drop points as roomIdx.
+       Both are built in doc.props order, so "last entry = topmost" and "first id wins" match the
+       array scans they replace EXACTLY; a prop covering a tile is registered on every tile of its
+       footprint, which is precisely the rectsHit relation the overlap test asks about. Motivation:
+       a blueprint candidate scan is thousands of checkProp calls and each one walked the whole prop
+       list, so REFIT's candidate field went quadratic in props. */
+    function propIndex() {
+      if (propIdx) return propIdx;
+      const m = new Map();
+      for (const p of doc.props) {
+        const w = p.w || 1, h = p.h || 1;
+        for (let y = p.y; y < p.y + h; y++) {
+          for (let x = p.x; x < p.x + w; x++) {
+            const k = x + ',' + y, a = m.get(k);
+            if (a) a.push(p); else m.set(k, [p]);
+          }
+        }
+      }
+      return (propIdx = m);
+    }
+    const propsAtTile = (x, y) => propIndex().get(Math.floor(x) + ',' + Math.floor(y)) || null;
+    function propIdIndex() {
+      if (propIdIdx) return propIdIdx;
+      const m = new Map();
+      for (const p of doc.props) if (!m.has(p.id)) m.set(p.id, p);   // first wins — same as Array.find
+      return (propIdIdx = m);
+    }
+    const propById = id => propIdIndex().get(id) || null;
     const propFootprint = p => ({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 });
     // topmost prop occupying a tile (last in array = drawn last = on top)
     function propAt(tx, ty) {
-      for (let i = doc.props.length - 1; i >= 0; i--) {
-        const p = doc.props[i];
-        if (inRect(propFootprint(p), tx, ty)) return p.id;
-      }
-      return null;
+      const at = propsAtTile(tx, ty);
+      return at ? at[at.length - 1].id : null;
     }
 
     /* ---------- belts (conveyor) ----------
@@ -508,14 +570,17 @@ const WorldModel = (() => {
 
     /* ---------- history (snapshot-based — small docs, correct by construction) ---------- */
     const snap = () => clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid, props: doc.props, belts: doc.belts, edges: doc.edges });
-    function snapshot() { undoStack.push(snap()); if (undoStack.length > 120) undoStack.shift(); redoStack.length = 0; }
-    function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; doc.belts = s.belts || {}; doc.edges = s.edges || []; }
+    // snapshot() runs immediately BEFORE every doc mutation, so dropping the roomAt index here is
+    // what keeps a mid-mutation read honest (it rebuilds against the doc as it currently stands).
+    function snapshot() { dropRoomIdx(); undoStack.push(snap()); if (undoStack.length > 120) undoStack.shift(); redoStack.length = 0; }
+    function restore(s) { dropRoomIdx(); doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; doc.belts = s.belts || {}; doc.edges = s.edges || []; }
     /* `global: true` means THIS EDIT CANNOT BE INVALIDATED BY A RECTANGLE — a listener holding a
        tile-cached render must throw the whole cache away, not just the chunks the rects touch.
        Additive: the field is simply absent on every other mutation, and a listener that ignores it
        behaves exactly as before. The one edit that needs it today is the HULL — see setHull. */
     function emit(dirtyRects, opts) {
       seq++;
+      dropRoomIdx();   // the floor just moved — the tile->room index is the derived state that must not survive it
       const patch = { seq, dirtyRects: dirtyRects || [] };
       if (opts && opts.global) patch.global = true;
       subs.forEach(fn => { try { fn(patch); } catch (e) { /* a listener must never break a mutation */ } });
@@ -737,9 +802,15 @@ const WorldModel = (() => {
        to it is dead code that still has to be reasoned about on every read of this function. */
     const ruleOf = (t) => (propRules && t) ? (propRules(t) || {}) : {};
     // the single surface prop wholly covering `foot`, or null
+    /* A host must WHOLLY contain `foot`, so it necessarily covers foot's top-left tile — the index
+       list for that one tile is therefore a superset of every possible host, and walking it topmost-
+       first picks the same prop the full reverse scan did (the restricted walk is a subsequence of
+       the full one, and both take the first match). */
     function surfaceHostFor(foot, ignoreId) {
-      for (let i = doc.props.length - 1; i >= 0; i--) {
-        const p = doc.props[i];
+      const at = propsAtTile(foot.x1, foot.y1);
+      if (!at) return null;
+      for (let i = at.length - 1; i >= 0; i--) {
+        const p = at[i];
         if (p.id === ignoreId) continue;
         if (!ruleOf(p.t).surface) continue;
         const f = propFootprint(p);
@@ -760,10 +831,18 @@ const WorldModel = (() => {
       } else if (rule.stack) {
         host = surfaceHostFor(foot, ignoreId);   // optional: on a table if there is one, else plain deck
       }
-      for (const p of doc.props) {
-        if (p.id === ignoreId) continue;
-        if (host && p.id === host.id) continue;             // its own table is not an obstacle
-        if (rectsHit(foot, propFootprint(p))) return fail('OVERLAP', 'overlaps a prop');
+      // two integer rects hit iff they share a tile, so only the props REGISTERED on foot's tiles can
+      // collide — the index turns this from a walk of the whole prop list into a walk of the footprint
+      for (let y = foot.y1; y <= foot.y2; y++) {
+        for (let x = foot.x1; x <= foot.x2; x++) {
+          const at = propsAtTile(x, y);
+          if (!at) continue;
+          for (const p of at) {
+            if (p.id === ignoreId) continue;
+            if (host && p.id === host.id) continue;         // its own table is not an obstacle
+            return fail('OVERLAP', 'overlaps a prop');
+          }
+        }
       }
       return { ok: true, host: host ? host.id : null };
     }
@@ -1608,6 +1687,13 @@ const WorldModel = (() => {
     if (!Array.isArray(doc.edges)) doc.edges = [];
     doc.edges = doc.edges.map(cleanPipelineEdge).filter(Boolean);
     if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'STARNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
+    /* ONE-TIME, NON-DESTRUCTIVE BACKFILL of the station id (see freshDoc's note). A doc saved before
+       station identity existed carries createdAt 0/absent; give it one now so its per-station latches
+       stop colliding with every other station's. It must be SAVED on the same load that stamps it —
+       app.js persists immediately when the incoming doc had none — or the stamp would re-roll every
+       reload and the latches it keys would be lost instead of merely shared. Never overwrites a
+       stamp that is already there. */
+    if (!doc.meta.createdAt) doc.meta.createdAt = stationId();
     if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
     for (const p of doc.props) if (!p.id) p.id = 'p' + (doc._nid++);   // backfill ids for legacy/partial props
     // spawnRoomId must point at a live non-corridor room (or null) so removeRoom's guard stays meaningful

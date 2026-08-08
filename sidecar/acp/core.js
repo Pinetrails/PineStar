@@ -406,7 +406,6 @@
         }
 
         if (name === 'agent.tool_call') {
-          answer = '';   // prose before a tool call is chronological narration, not the terminal ACP answer
           const callId = str(q.callId) || ('call_' + seen.size);
           const args = parseArgs(q.argsSummary);
           seen.set(callId, { name: str(q.name), args: args });

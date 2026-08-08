@@ -34,9 +34,9 @@ A.eq(rows.map(r => r.runId).join(','), 'z', 'only clean (done) runs digest — s
 A.eq(R.unattended(s, null).length, 0, 'a missing runs list is tolerated');
 rows = R.unattended(s, [run({ runId: 'long', ts: 2000, title: '  x '.repeat(200) })]);
 A.ok(rows[0].title.length <= 90, 'titles are whitespace-folded + capped');
-// cap: only the newest DIGEST_CAP rows list
+// DIGEST_CAP is presentation-only: every eligible row is returned for durable crating.
 const many = []; for (let i = 0; i < 20; i++) many.push(run({ runId: 'm' + i, ts: 3000 - i }));
-A.eq(R.unattended(s, many).length, R.DIGEST_CAP, 'one digest lists at most DIGEST_CAP rows');
+A.eq(R.unattended(s, many).length, 20, 'the digest engine never truncates rateable rows at the visual cap');
 
 // ---- the explicit away boundary (REGRESSION: caught live by the g2proof driver) ----
 // The store heartbeats to "now" the moment the app opens, THEN composes the digest — so unattended()

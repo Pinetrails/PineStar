@@ -106,6 +106,7 @@ test/model-conformance.test.js
 test/iteration-budget.test.js
 test/updatecore.test.js
 test/quitguard.test.js
+test/desktop-lifecycle-preferences.test.js
 test/cloudsavecore.test.js
 test/cloudsave-refusal.test.js
 test/cloudsave-unknown.test.js
@@ -164,6 +165,10 @@ test/workshop-visibility.test.js
 test/workshop-resolution.test.js
 test/workshop-toggle-ui.test.js
 test/quest-store.test.js
+test/journey-store.test.js
+test/journey.test.js
+test/journeystore.test.js
+test/journey-wiring.test.js
 test/questinject.test.js
 test/quests-tool.test.js
 test/questsweeps.test.js
@@ -399,6 +404,7 @@ test/slaglog.test.js
 test/xp.test.js
 test/xp-crewsplit.test.js
 test/xpstore.test.js
+test/growthratings.test.js
 test/xp-upgrade.test.js
 test/dossier-reliability.test.js
 test/roster-track.test.js
@@ -475,8 +481,11 @@ test/blueprints.test.js
 test/guidedline.test.js
 test/ghostline.test.js
 test/routing.b5.test.js
+test/routing-nag-parity.test.js
+test/crate-honesty.test.js
 test/plan-poster.test.js
 test/chain.test.js
+test/refit-card-stack.test.js
 test/step-brief.test.js
 test/propanchor.test.js
 test/prop-mount.test.js
@@ -533,6 +542,7 @@ test/toolsets.test.js
 test/commander-dossier-css.test.js
 test/dossier-skin-accessibility.test.js
 test/control-floor-theming.test.js
+test/crew-rail-fit.test.js
 test/brand-wordmark-mask.test.js
 test/personalization-authority-wiring.test.js
 test/sprite-loading.test.js
@@ -550,7 +560,6 @@ test/terminal-position.test.js
 test/poweruser-shell-repairs.test.js
 test/terminal-sessions.test.js
 test/terminal-tools.test.js
-test/terminal-output-boundary.test.js
 test/release-bump.test.js
 test/release-cut.test.js
 test/opensource-readiness.test.js

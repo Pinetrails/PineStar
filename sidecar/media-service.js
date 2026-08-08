@@ -393,8 +393,13 @@ function makeMediaService(options) {
     };
 
     if (body && body.local) {
+      const localEngine = String(body.localEngine || '').trim().toLowerCase();
+      const localVoiceId = String(body.localVoice || localVoice.defaultVoice());
+      // Live Voice pins the engine that served its first audible chunk. Once Edge owns the room, do not
+      // probe Kokoro again between sentences; once Kokoro owns it, a transient miss must fail silent rather
+      // than substitute a different speaker for just that chunk.
+      if (localEngine === 'edge') return serveEdge(localVoice.edgeVoiceFor(localVoiceId), '');
       try {
-        const localVoiceId = String(body.localVoice || localVoice.defaultVoice());
         const localSpeed = Number(body.speed) || 1;
         const cacheKey = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
         const cachePath = path.join(voiceCacheDir, `local-${cacheKey}.wav`);
@@ -409,8 +414,9 @@ function makeMediaService(options) {
         return res.end(buf);
       } catch (error) {
         const why = 'local voice engine: ' + ((error && error.message) || error);
+        if (localEngine === 'local-kokoro') return fallback(why);
         logger.error('[tts] local Kokoro failed → edge-mapped floor:', (error && error.message) || error);
-        return serveEdge(localVoice.edgeVoiceFor(body.localVoice), why);
+        return serveEdge(localVoice.edgeVoiceFor(localVoiceId), why);
       }
     }
 

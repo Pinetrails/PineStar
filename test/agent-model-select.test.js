@@ -59,7 +59,11 @@ A.ok(/function setAgentModelPin\(agentId, model, provider, effort\)/.test(appjs)
 A.ok(/arguments\.length >= 4/.test(appjs), 'effort is only written when the 4th arg is passed (back-compatible)');
 
 // ---- DOSSIER rename ----
-A.ok(/data-goconfig="1"/.test(ui), 'the model tag is a one-click shortcut into CONFIG');
+// data-goconfig now carries the TARGET CARD's id rather than a bare "1" (dossier UX pass 2026-08-07): the same
+// attribute drives BRIEF's setup strip, and every one of those rows lands on the card that owns the setting.
+// Locked as "the model tag points at the model card", not as a literal — the literal was the weaker claim.
+A.ok(/class="tag model" data-goconfig="ag-model-card"/.test(ui), 'the model tag is a one-click shortcut to the CONFIG model card');
+A.ok(/id="ag-model-card"/.test(ui), 'the model card carries the id the shortcut targets');
 A.ok(/id="ag-rename-btn"/.test(ui) && /id="ag-rename-in"/.test(ui), 'the dossier header has a rename affordance + inline editor');
 A.ok(/function wireHead\(/.test(ui) && /wireHead\(body\)/.test(ui), 'wireHead is defined and called for every tab');
 A.ok(/access\.config\.setName/.test(ui), 'rename persists through config.setName');

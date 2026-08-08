@@ -315,7 +315,6 @@
           }
         }
         if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // accumulated here; never teed out
-        if (name === 'agent.tool_call') state.buf = '';
         if (name === 'agent.run.error') state.errMsg = p.message || 'run error';
         else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
         else if (name === 'agent.run.end') {
