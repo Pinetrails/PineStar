@@ -1,5 +1,33 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-07 — VOICE TURN BOUNDARIES + LIVE DICTATION (`agent/voice-realtime-boundaries`)
+
+IMPLEMENTATION READY; MERGE GATE PENDING HOST CAPACITY. Conversation mode now keeps a 900 ms pre-roll, uses a quieter-room-safe
+speech threshold, permits utterances up to 60 seconds, and exposes a persistent TURN END
+control with 1.2, 1.8, and 2.6 second pause choices. Transcription mode now renders genuine
+local speech-recognition previews in the composer while the user is still speaking; the
+synthetic bullet/dot progress text is gone, and typed drafts remain protected.
+
+Conversation mode also fixes one speaker identity for the full Live Voice session. It snapshots
+the selected voice when the room opens, lets the first audible chunk choose the bundled Kokoro
+engine or its mapped Edge floor, and pins that engine for later chunks and turns. A transient
+failure can no longer substitute a different-sounding voice mid-conversation; changing the voice
+picker now truthfully applies to the next Live Voice session.
+
+Verification: focused live-voice, voice-button, and draft-guard suites are green; mirrored
+website assets are exact; JavaScript syntax checks are green; and the pre-extension baseline
+`npm run test:fast` was **572/572 GREEN**. The additive stable-speaker tests are green (86 client
+assertions and 34 media-service assertions). Two full reruns passed all changed voice/media tests,
+then stopped at unchanged step 150 because `boot-security.test.js` could not start its sidecar
+inside nine seconds while the shared host was at 100% CPU with about 1 GB free RAM; that test is
+16/16 green in isolation. The canonical full gate must be rerun when host capacity returns before
+merge. In the real seeded app, the TURN END control rendered with the persisted
+NORMAL 1.8S value after closing and reopening Local Live, using the station-native dark skin.
+The in-app browser denied microphone capture, so real acoustic boundary/transcript proof
+remains for an installed-desktop pass; production callback behavior is covered deterministically.
+No route, sidecar, shared-contract, integration-tree, external-service, push, PR, or deploy
+change occurred.
+
 ## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
 Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have
