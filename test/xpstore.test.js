@@ -174,7 +174,7 @@ const catchup = XpStore.init({
       { runId: 'closed-1', agentId: 'scribe', reason: 'done', toolsOk: 4, ts: 200 },
       { runId: 'closed-2', agentId: 'scribe', reason: 'max_iters', toolsOk: 2, ts: 300 },
       { runId: 'closed-3', agentId: 'scribe', reason: 'error', toolsOk: 0, ts: 400 },
-      { runId: 'closed-4', agentId: 'scribe', reason: 'clarifying', toolsOk: 0, ts: 500 },
+      { runId: 'closed-4', agentId: 'scribe', reason: 'done', clarifying: true, toolsOk: 0, ts: 500 },
       { runId: 'closed-internal', agentId: 'scribe', reason: 'done', toolsOk: 9, internal: true, ts: 600 },
       { runId: 'closed-legacy-internal', agentId: 'scribe', reason: 'done', toolsOk: 9, streamId: 'cron-old-row', ts: 700 },
       { runId: 'closed-1', agentId: 'scribe', reason: 'done', toolsOk: 4, ts: 200 }

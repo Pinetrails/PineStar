@@ -22,9 +22,10 @@ const clock = { now: () => clk };
   const e = s.record({ runId: 'r1', agentId: 'agent', reason: 'done', turns: 3, tokens: 500, usd: 0.02, title: 'fix the bug' });
   A.eq(e.runId, 'r1', 'runId recorded');
   A.eq(e.reason, 'done', 'reason recorded');
+  A.eq(s.record({ runId: 'r2', reason: 'done', clarifying: true }).clarifying, true, 'clarification outcome is stored separately from the execution terminal');
   A.eq(e.ts, 1111, 'ts stamped from injected clock');
-  A.eq(s.count(), 1, 'one row');
-  A.eq(io.lines.length, 1, 'appended to io');
+  A.eq(s.count(), 2, 'both rows recorded');
+  A.eq(io.lines.length, 2, 'both rows appended to io');
 }
 
 // ---- B. reason clamped to the known enum; unknown -> 'done' ----

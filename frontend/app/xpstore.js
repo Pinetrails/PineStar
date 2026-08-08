@@ -220,7 +220,7 @@ const XpStore = (() => {
     for (const row of rows) {
       if (!row || isInternalRun(row) || !row.runId || !row.agentId) continue;
       const result = onEvent('agent.run.end', {
-        agentId: String(row.agentId), runId: String(row.runId), reason: String(row.reason || 'error'),
+        agentId: String(row.agentId), runId: String(row.runId), reason: row.clarifying ? 'clarifying' : String(row.reason || 'error'),
         turns: Number(row.turns) || 0, tokens: Number(row.tokens) || 0, usd: Number(row.usd) || 0,
         _historyToolsOk: Math.max(0, Number(row.toolsOk) || 0)
       }, { silent: true, noPersist: true });

@@ -127,6 +127,7 @@
         toolsOk: num(e.toolsOk),                // crate-honesty (additive): successful tool results — proven work, not just talk. Old rows default 0.
         identityFallback: !!e.identityFallback, // P1.2 (additive): TRUE when this run's agentId was MISSING from the roster and it ran on the station-persona/default-model fallback — an honest marker that it was NOT the named specialist. Old rows lack it and default false.
         internal: !!e.internal,                 // progression catch-up excludes harness self-talk from agent work
+        clarifying: !!e.clarifying,             // additive outcome truth; `reason` remains the execution terminal
         toolTrace: toolTraceList(e.toolTrace),
         startedAt: nonnegative(e.startedAt), endedAt: nonnegative(e.endedAt), durationMs: nonnegative(e.durationMs),
         ts: num(e.ts) || clock.now()
