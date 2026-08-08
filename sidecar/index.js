@@ -13992,7 +13992,7 @@ async function runOnce(o) {
         credPool.penalize(credKey, ttlMs);
       },
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
-      steer: () => drainSteer(runId),   // LIVE STEERING: fold any mid-run /steer notes into the next model call
+      steer: typeof o.steer === 'function' ? o.steer : () => drainSteer(runId),   // live parent or generation-bound worker steering
       signal: signal, clock: { now: () => Date.now() },
       onCheckpoint: execution.journalStarted() ? ({ phase, messages: checkpointMessages, turn }) => {
         // Initial prompt messages carry transcriptStore's non-enumerable PERSISTED marker. Everything without it
