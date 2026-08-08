@@ -1412,7 +1412,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const persona = (typeof Personas !== 'undefined' && Personas.get)
       ? (Personas.get(Personas.resolve ? Personas.resolve((a && a.personaId) || Personas.DEFAULT_ID) : (a && a.personaId)) || {}).name
       : '';
-    const prof = EXECUTION_PROFILES.find(p => p.id === executionProfileId(a)) || EXECUTION_PROFILES[0];
+    // executionProfileOf resolves the fallback by DEFAULT ID, never by array index: the array is ordered
+    // safest→broadest, so its first entry is the NARROWEST profile rather than the default. An index-based
+    // fallback would silently relabel an unknown profile as "safe cell" on the one surface whose whole job is
+    // stating this plainly. (test/permissions-ui.test.js greps the SOURCE for the index form — so this comment
+    // must not spell it out either; a locked grep is a contract on the text, not just on the behaviour.)
+    const prof = executionProfileOf(executionProfileId(a));
     const rows = [
       { lbl: 'MODEL',     val: pin || 'station default', dim: !pin,                 go: 'ag-model-card' },
       { lbl: 'VOICE',     val: persona || '—',           dim: !persona,             go: 'ag-persona-card' },
