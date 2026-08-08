@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0d8f4728d6457fda09fd47dc6e135cf089b1512a",
+    "sourceCommit": "5ec50aed897b1b5d0bd8df3985da23ec392ef2e3",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -283,8 +283,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 71865,
-        "sha256": "3b32bf59c80f5a60b65b52cf0dae8091c5947e90fa1b9bb782fd294543715cc1"
+        "bytes": 72975,
+        "sha256": "a91a2735b0a3a76715c3952eda24113c154d406d4879affadb84c7b6f3a714d2"
       },
       {
         "path": "frontend/app/hint.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 564655,
-        "sha256": "f84b21d752fe5ffda7549542a87a1e82dc90705e4bb2f336e7eb7b0415bd7ed2"
+        "bytes": 575240,
+        "sha256": "76c55f31eea6b9183507c25985309c19fdf177d0c32417acc309b8ff8cc61eda"
       },
       {
         "path": "frontend/app/study.js",
