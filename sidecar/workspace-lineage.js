@@ -1,7 +1,9 @@
 /* sidecar/workspace-lineage.js — bounded evidence that this machine had StarNet state before this boot. */
 'use strict';
 
-const INFRA = /^(?:\.starnet-workspace-owner\.json|\.schema-version\.json(?:\.bak)?|\.migrated|cron\.lock|proc-ledger\.json|liveprices\.cache\.json)$/i;
+// The desktop migration transaction seals even an empty first-run generation with a receipt. The receipt is
+// bookkeeping, not user state; any files it actually migrated are scanned independently below.
+const INFRA = /^(?:\.starnet-workspace-owner\.json|\.schema-version\.json(?:\.bak)?|\.migrated|\.migration-receipt\.json|cron\.lock|proc-ledger\.json|liveprices\.cache\.json)$/i;
 
 function meaningfulEntries(fs, path, root) {
   try {
