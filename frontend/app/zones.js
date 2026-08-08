@@ -170,14 +170,16 @@
     const multi = soloMulti(rects, opts.solo);
     if (multi) return multi;
 
-    // 4) enclosing room (+ the optional roam radius around the desk / spill past its own doors)
+    // 4) enclosing room (+ optional widening into rooms joined DIRECTLY to it by a doorway)
     const room = smallestEnclosing(rects, a.x, a.y);
     if (room) {
       const z = { kind: 'room', rect: room };
       if (roamR > 0) {
-        z.roam = { cx: a.x, cy: a.y, r: roamR };
-        const pts = spillPoints(room, opts.doors);
-        if (pts.length) z.spill = { pts, r: spillR };
+        const connected = doorwayRegions(room, rects, opts.doors);
+        z.roam = { cx: a.x, cy: a.y, r: roamR, rects: connected.rects };
+        if (connected.regions.length) {
+          z.spill = { pts: connected.regions.map(p => ({ x: p.x, y: p.y })), regions: connected.regions, r: spillR };
+        }
       }
       return z;
     }
@@ -217,6 +219,31 @@
     return out;
   }
 
+  /* Bind each outside doorway tile to the room rect on the OTHER side of that exact seam. This is
+     the topology guard: distance can widen a home room into its immediate neighbour, but it cannot
+     jump across a narrow neighbour into a third room (or diagonally into an unrelated room). */
+  function doorwayRegions(rect, rects, doors) {
+    if (!isRect(rect) || !Array.isArray(rects) || !Array.isArray(doors)) return { regions: [], rects: [] };
+    const regions = [], neighbours = [], seenRegion = new Set(), seenRect = new Set();
+    for (const d of doors) {
+      if (!d || d.length < 4) continue;
+      const aIn = rectHas(rect, d[0], d[1]), bIn = rectHas(rect, d[2], d[3]);
+      if (aIn === bIn) continue;
+      const ix = aIn ? d[0] : d[2], iy = aIn ? d[1] : d[3];
+      const ox = aIn ? d[2] : d[0], oy = aIn ? d[3] : d[1];
+      for (const raw of rects) {
+        if (!isRect(raw)) continue;
+        const next = normRect(raw);
+        if (!rectHas(next, ox, oy) || rectHas(next, ix, iy)) continue;
+        const rk = [next.x1, next.y1, next.x2, next.y2].join(',');
+        const pk = ox + ',' + oy + '|' + rk;
+        if (!seenRegion.has(pk)) { seenRegion.add(pk); regions.push({ x: ox, y: oy, rect: next }); }
+        if (!seenRect.has(rk)) { seenRect.add(rk); neighbours.push(next); }
+      }
+    }
+    return { regions, rects: neighbours };
+  }
+
   // ---- membership test ----
   // inZone(null, ..) -> false (an agent with no zone roams nowhere). For a room zone: inclusive
   // rect contains. For a leash zone: Chebyshev (square) radius around the center.
@@ -225,15 +252,20 @@
     if (!Number.isFinite(tx) || !Number.isFinite(ty)) return false;
     if (zone.kind === 'room') {
       if (rectHas(zone.rect, tx, ty)) return true;
-      // ROAM: the home room PLUS a Chebyshev radius around the desk. The radius is NOT clipped to
-      // the room rects — a tile it reaches in the next room over is in-zone, which is the whole
-      // point (pathing still decides reachability, and doors still gate it).
+      // ROAM: a Chebyshev radius around the desk, clipped to rooms directly connected to HOME.
+      // Distance alone never grants authority to enter a third or unrelated room.
       const rm = zone.roam;
-      if (rm && Math.abs(tx - rm.cx) <= rm.r && Math.abs(ty - rm.cy) <= rm.r) return true;
+      if (rm && Math.abs(tx - rm.cx) <= rm.r && Math.abs(ty - rm.cy) <= rm.r && Array.isArray(rm.rects)) {
+        for (const r of rm.rects) if (rectHas(r, tx, ty)) return true;
+      }
       // ...and the band just past its own doorways (see SPILL_RADIUS): this is the clause that
       // actually delivers "it can walk into the next room" when the desk sits deep in a big room.
       const sp = zone.spill;
-      if (sp && sp.pts) for (const p of sp.pts) if (Math.abs(tx - p.x) <= sp.r && Math.abs(ty - p.y) <= sp.r) return true;
+      if (sp && Array.isArray(sp.regions)) {
+        for (const p of sp.regions) {
+          if (rectHas(p.rect, tx, ty) && Math.abs(tx - p.x) <= sp.r && Math.abs(ty - p.y) <= sp.r) return true;
+        }
+      }
       return false;
     }
     if (zone.kind === 'leash') {
@@ -266,7 +298,7 @@
   return {
     computeZone, inZone, clampPickable,
     // exposed for tests / reuse — pure geometry helpers
-    rectHas, rectArea, smallestEnclosing, anchorFromProps, spillPoints,
+    rectHas, rectArea, smallestEnclosing, anchorFromProps, spillPoints, doorwayRegions,
     DEFAULT_LEASH, ROAM_RADIUS, SPILL_RADIUS,
   };
 });

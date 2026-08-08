@@ -236,28 +236,25 @@ A.ok(Z.ROAM_RADIUS > 0, 'exports a ROAM_RADIUS default');
 A.eq(zMain.roam, undefined, 'a zone computed WITHOUT roamR carries no roam field (original caging preserved)');
 A.eq(Z.inZone(zMain, 25, 2), false, 'and without roamR a tile in the NEXT room stays out-of-zone');
 
-// a2's desk sits at (8,6) in the big room; the side room starts at x:22 — far outside a radius of 9
+// Distance alone never grants another room: without an authored doorway, even a nearby rect is out.
 const zRoamFar = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a2', anchorTile: { x: 8, y: 6 }, roamR: 9 });
 A.eq(zRoamFar.kind, 'room', 'a roam zone is still kind:room — zoneRect()/border-meeting consumers keep working');
 A.eq(zRoamFar.rect, { x1: 0, y1: 0, x2: 20, y2: 12 }, 'the home room rect is unchanged by roamR');
-A.eq(zRoamFar.roam, { cx: 8, cy: 6, r: 9 }, 'roam is centered on the DESK anchor, not the room');
+A.eq(zRoamFar.roam, { cx: 8, cy: 6, r: 9, rects: [] }, 'roam is centered on the DESK and has no unauthored neighbour rects');
 A.eq(Z.inZone(zRoamFar, 20, 12), true, 'every tile of the home room is still in-zone');
 A.eq(Z.inZone(zRoamFar, 25, 2), false, 'a room 14 tiles from the desk is still OUT of reach (the leash is real)');
 
-// a1's bay sits at (24,3) in the SIDE room; the big room's east wall is x:20 — 4 tiles away
+// a1's bay is close enough to the big room geometrically, but the two rects do not share a doorway.
 const zRoamNear = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 }, roamR: 9 });
 A.eq(Z.inZone(zRoamNear, 24, 3), true, 'the body stands in-zone on its own desk tile');
 A.eq(Z.inZone(zRoamNear, 27, 5), true, 'its whole home room is in-zone');
-A.eq(Z.inZone(zRoamNear, 18, 3), true, 'a tile in the NEIGHBOURING room within the radius IS in-zone (it may walk next door)');
-A.eq(Z.inZone(zRoamNear, 15, 3), true, 'the radius reaches exactly ROAM tiles west of the desk (24-9=15)');
+A.eq(Z.inZone(zRoamNear, 18, 3), false, 'a nearby room without a doorway is OUT-of-zone');
+A.eq(Z.inZone(zRoamNear, 15, 3), false, 'raw distance never punches through room topology');
 A.eq(Z.inZone(zRoamNear, 14, 3), false, 'one tile past the radius is out — the desk still leashes it');
-A.eq(Z.inZone(zRoamNear, 24, 12), true, 'the radius reaches south too (Y branch)');
+A.eq(Z.inZone(zRoamNear, 24, 12), false, 'off-room floor is not admitted merely because it is close');
 A.eq(Z.inZone(zRoamNear, 24, 13), false, 'one tile past the radius to the south is out (both axes gate the roam)');
 A.eq(Z.inZone(zRoamNear, 15, 13), false, 'in-range X but out-of-range Y is out (both axes required)');
-
-// the radius is NOT clipped to room rects — an off-floor tile inside the radius reports in-zone and
-// is rejected later by walkability/pathing, exactly like the leash zone has always behaved.
-A.eq(Z.inZone(zRoamNear, 21, 3), true, 'a tile between rooms (a wall/threshold column) is admitted by the radius — pathing, not the zone, decides reachability');
+A.eq(Z.inZone(zRoamNear, 21, 3), false, 'a gap/wall between rooms is never part of a room zone');
 
 // ---- SPILL: a body may step through ITS OWN doorway, whatever the size of its room ----
 // The desk radius alone does not deliver "it can walk next door": measured live, a desk in the
@@ -270,17 +267,30 @@ const ABUT = [
 ];
 const DOORS = [[17, 4, 18, 4], [17, 5, 18, 5], [3, 10, 3, 11]];   // two seam tiles east + one unrelated seam south
 const zSpill = Z.computeZone({ rects: ABUT, anchorTile: { x: 4, y: 5 }, roamR: 9, doors: DOORS, spillR: 6 });
-A.eq(zSpill.roam, { cx: 4, cy: 5, r: 9 }, 'the desk radius is still there');
-A.eq(zSpill.spill.pts, [{ x: 18, y: 4 }, { x: 18, y: 5 }, { x: 3, y: 11 }], 'spill points are the OUTSIDE tile of each threshold on the home room border');
-A.eq(Z.inZone(zSpill, 13, 5), true, 'the desk radius alone reaches 9 tiles east (13,5)');
+A.eq(zSpill.roam, { cx: 4, cy: 5, r: 9, rects: [{ x1: 18, y1: 0, x2: 27, y2: 10 }] }, 'the desk radius is clipped to the directly connected neighbour');
+A.eq(zSpill.spill.pts, [{ x: 18, y: 4 }, { x: 18, y: 5 }], 'spill keeps only thresholds whose outside tile belongs to a neighbour room');
+A.eq(Z.inZone(zSpill, 13, 5), true, 'the home room remains wholly in-zone independent of the radius');
 A.eq(Z.inZone(zSpill, 20, 5), true, 'a tile NEXT DOOR, past the desk radius but inside the doorway band, is in-zone');
 A.eq(Z.inZone(zSpill, 24, 5), true, 'the band reaches SPILL tiles past the threshold (18+6=24)');
 A.eq(Z.inZone(zSpill, 25, 5), false, 'one tile further is out — next door, not the whole station');
-A.eq(Z.inZone(zSpill, 3, 16), true, 'the band also opens the south threshold (11+6=17 > 16)');
-A.eq(Z.inZone(zSpill, 3, 18), false, 'and closes again past it');
+A.eq(Z.inZone(zSpill, 3, 11), false, 'a doorway into no authored room grants no open-floor spill');
 // the spill is NOT transitive: it is computed from the HOME room's doors only
 const zSpillNext = Z.computeZone({ rects: ABUT, anchorTile: { x: 24, y: 5 }, roamR: 9, doors: DOORS, spillR: 6 });
 A.eq(zSpillNext.spill.pts, [{ x: 17, y: 4 }, { x: 17, y: 5 }], 'a body in the OTHER room spills the other way (its own doors only)');
+
+// Regression: a six-tile-wide next room used to let a spillR:6 square reach the THIRD room.
+const NARROW_CHAIN = [
+  { x1: 0, y1: 0, x2: 17, y2: 10 },
+  { x1: 18, y1: 0, x2: 23, y2: 10 },
+  { x1: 24, y1: 0, x2: 33, y2: 10 },
+  { x1: 18, y1: 11, x2: 23, y2: 16 },
+];
+const CHAIN_DOORS = [[17, 5, 18, 5], [23, 5, 24, 5], [20, 10, 20, 11]];
+const zChain = Z.computeZone({ rects: NARROW_CHAIN, anchorTile: { x: 4, y: 5 }, roamR: 30, doors: CHAIN_DOORS, spillR: 6 });
+A.eq(Z.inZone(zChain, 18, 5), true, 'the directly connected next room is admitted');
+A.eq(Z.inZone(zChain, 23, 5), true, 'the whole narrow next room remains eligible when within the configured widening');
+A.eq(Z.inZone(zChain, 24, 5), false, 'the third room is excluded even though it is only six tiles past the home doorway');
+A.eq(Z.inZone(zChain, 20, 12), false, 'a diagonal/branch room connected to the neighbour, not HOME, is excluded');
 // a seam whose BOTH tiles are inside the room is not a threshold out of it
 A.eq(Z.spillPoints({ x1: 0, y1: 0, x2: 17, y2: 10 }, [[4, 4, 5, 4]]), [], 'a seam wholly inside the room yields no spill point');
 A.eq(Z.spillPoints({ x1: 0, y1: 0, x2: 17, y2: 10 }, [[30, 4, 31, 4]]), [], 'a seam wholly outside the room yields no spill point either');

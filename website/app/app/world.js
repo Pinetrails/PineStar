@@ -866,6 +866,7 @@ const World = (() => {
       // SAME 100ms boundaries (the crew animated in visible lockstep). A fractional offset de-syncs them.
       phase: U.hash(a.id) % 6, aph: (U.hash(a.id) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
+      lastFun: null, lastFunUntil: 0,   // hard recent-choice exclusion; prevents a lone couch becoming permanent parking
       watchProp: null,   // lounge: the TV the couch-sitter is watching (kept lit while it watches)
       // seat-on-couch: logical pos stays on the approach tile, but it RENDERS at seat{Px,Py} ON the couch
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
@@ -2007,15 +2008,18 @@ const World = (() => {
      DJ booth. Derived live from adjacency (nothing in the catalog pairs a stool with a bar), and
      deliberately allows 'north' — sitting at a bar means showing the camera your back. */
   const COUNTER_KINDS = { bar: 1, pool: 1, poker: 1, dj: 1 };
+  function isCounterProp(p) {
+    if (!p) return false;
+    const u = propUse(p);
+    return !!((u && COUNTER_KINDS[u.kind]) || p.t === 'longtable');
+  }
   function counterFace(seat) {
     if (!geo || !geo.props || !seat) return null;
     const sx = seat.x + 0.5, sy = seat.y + 0.5;
     let best = null;
     for (const p of geo.props) {
       if (p === seat || p.id === seat.id) continue;
-      const u = propUse(p);
-      const counter = (u && COUNTER_KINDS[u.kind]) || p.t === 'longtable';   // longtable has no `use` row but is exactly this
-      if (!counter) continue;
+      if (!isCounterProp(p)) continue;   // longtable has no `use` row but is exactly this
       const w = p.w || 1, h = p.h || 1;
       // nearest point of the prop's footprint to the seat — a 4-wide bar is close along its whole run
       const nx = Math.max(p.x, Math.min(sx, p.x + w)), ny = Math.max(p.y, Math.min(sy, p.y + h));
@@ -2029,12 +2033,13 @@ const World = (() => {
   /* couch + a TV nearby → dwell at the couch and watch it. The pairing is derived live (gen has no
      authored couch/TV pairs): for each couch, the nearest TV within range, faced from the couch. */
   function tryLounge(now) {
+    if (funBlocked('lounge', now)) return false;
     const zone = zoneFor(self);   // P1: only lounge on a couch INSIDE the body's zone (the body sits there)
     const pair = loungePair(zone);   // the couch/TV resolution now lives in ONE place (planPlay weighs the same pairing)
     if (!pair) return false;
     if (pair.couch && !tileInZone(zone, pair.couch.x, pair.couch.y)) return false;
     if (!planCouchSit(now, pair.couch, pair.tvId, pair.face, zone)) return false;
-    self.lastFun = 'lounge';   // so the entertainment picker doesn't immediately re-choose the couch
+    rememberFun('lounge', now);
     return true;
   }
 
@@ -2060,6 +2065,18 @@ const World = (() => {
      the couch for 58% of the run and not one visit to the arcade, the pinball table or the bar. It
      is a candidate here, not a shortcut. */
   const FUN_W = { arcade: 3, pinball: 3, pool: 2.5, poker: 2, dj: 2, juke: 1.5, bar: 2.5, gacha: 1.5, fish: 1.5, lounge: 2.5 };
+  const FUN_REPEAT_MIN = 90000, FUN_REPEAT_MAX = 150000;
+  /* FUN-REPEAT-PURE-BEGIN — a recent choice is unavailable, not merely less likely. A weak weight
+     cannot prevent parking when the couch is the only candidate. Kept pure for the regression test. */
+  function funRecentlyUsed(lastKey, lastUntil, key, now) {
+    return !!key && lastKey === key && Number.isFinite(lastUntil) && now < lastUntil;
+  }
+  /* FUN-REPEAT-PURE-END */
+  function funBlocked(key, now) { return funRecentlyUsed(self.lastFun, self.lastFunUntil, key, now); }
+  function rememberFun(key, now) {
+    self.lastFun = key;
+    self.lastFunUntil = now + U.irnd(FUN_REPEAT_MIN, FUN_REPEAT_MAX);
+  }
   // the couch/TV pairing (the v7 lounge), resolved as DATA so planPlay can weigh it against the rest
   function loungePair(zone) {
     if (!geo || !geo.props) return null;
@@ -2103,7 +2120,7 @@ const World = (() => {
      consecutive visits and touched nothing else in the room. So: the couch, unless it just got off
      that couch, in which case anything else fun will do. */
   function planRest(now) {
-    if (self.lastFun !== 'lounge' && tryLounge(now)) return true;
+    if (tryLounge(now)) return true;
     if (planPlay(now)) return true;
     return planProp(now);
   }
@@ -2111,18 +2128,16 @@ const World = (() => {
     if (!geo || !geo.props || !geo.props.length) return false;
     const zone = zoneFor(self), cands = [];
     const lounge = loungePair(zone);
-    if (lounge) cands.push({ key: 'lounge', w: FUN_W.lounge, lounge });
+    if (lounge && !funBlocked('lounge', now)) cands.push({ key: 'lounge', w: FUN_W.lounge, lounge });
     for (const p of geo.props) {
       const u = propUse(p);
       if (!u || !FUN_KINDS[u.kind]) continue;
       if (!mayTouchProp(self.id, p)) continue;
       if (!tileInZone(zone, p.x, p.y)) continue;
+      if (funBlocked(p.id, now)) continue;
       cands.push({ key: p.id, w: FUN_W[u.kind] || 2, prop: p, kind: u.kind });
     }
     if (!cands.length) return false;                       // nothing fun placed → the bored branch carries on as before
-    // WHATEVER IT JUST DID IS THE LEAST INTERESTING THING IN THE ROOM. Without this a body re-picks
-    // its favourite every re-decide and parks there for the whole session.
-    for (const c of cands) if (c.key === self.lastFun) c.w *= 0.12;
     let total = 0; for (const c of cands) total += c.w;
     // draw one, then fall through the rest in a rotated order so an unreachable pick never wastes the beat
     let roll = U.rnd(0, total), start = 0;
@@ -2130,18 +2145,18 @@ const World = (() => {
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
       if (c.lounge) {
-        if (planCouchSit(now, c.lounge.couch, c.lounge.tvId, c.lounge.face, zone)) { self.lastFun = 'lounge'; return true; }
+        if (planCouchSit(now, c.lounge.couch, c.lounge.tvId, c.lounge.face, zone)) { rememberFun('lounge', now); return true; }
         continue;
       }
       // a counter you SIT at: take a stool pulled up to it if one is free (counterFace turns the
       // body to the bar), else stand at the counter itself
       if (c.kind === 'bar' || c.kind === 'pool' || c.kind === 'poker') {
         const stool = stoolAt(c.prop, zone);
-        if (stool && planSeat(now, stool, zone)) { self.lastFun = c.key; return true; }
+        if (stool && planSeat(now, stool, zone)) { rememberFun(c.key, now); return true; }
       }
       const a = PropAnchor.deriveAnchor(c.prop, geo, { approach: (propUse(c.prop) || {}).approach || 'south', extra: blocked });
       if (!a || !tileInZone(zone, a.tx, a.ty) || !setPathTo({ x: a.tx, y: a.ty })) continue;
-      self.goal = 'use'; self.usingProp = c.prop.id; self.useFace = a.face; self.useSit = false; self.lastFun = c.key;
+      self.goal = 'use'; self.usingProp = c.prop.id; self.useFace = a.face; self.useSit = false; rememberFun(c.key, now);
       if (!self.target) arrive(now);
       return true;
     }
@@ -2157,7 +2172,7 @@ const World = (() => {
     const cands = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') { cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
+      if (use.kind === 'couch') { if (!funBlocked('lounge', now)) cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
       if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // SEAT LAW: a stool/chair is claimed + rendered ON by planSeat, not approached
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
@@ -2166,7 +2181,7 @@ const World = (() => {
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
-      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) return true; continue; }   // lone couch → stand at it facing UP (back to the viewer)
+      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) { rememberFun('lounge', now); return true; } continue; }   // lone couch → stand at it facing UP (back to the viewer)
       if (c.seat) { if (planSeat(now, c.seat, zone)) return true; continue; }                        // stool/chair → the one honest sit
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         self.goal = 'use'; self.usingProp = c.id; self.useFace = c.a.face; self.useSit = c.a.sit;
@@ -3152,12 +3167,13 @@ const World = (() => {
     if (geo.walkable(x, y, blocked)) return 'open';
     return propAtTile(x, y) ? 'prop' : 'wall';
   }
-  function facingSubject(b) {
+  function facingDetail(b) {
     if (!geo || !b || typeof geo.walkable !== 'function') return null;
-    const t = tileOf(b.px, b.py);
+    const t = tileOf(bodyPosX(b), bodyPosY(b));
     const d = (b.glance && b.glance.until > fnow) ? b.glance.dir : (b.dir || 'south');
     const v = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] }[d] || [0, 1];
-    return subjectAt(b, t.x + v[0], t.y + v[1]);
+    const x = t.x + v[0], y = t.y + v[1];
+    return { subject: subjectAt(b, x, y), prop: propAtTile(x, y), tile: { x, y } };
   }
   /* THE CONTROL for that metric: how many of the FOUR cardinals from where this body stands are
      bare wall. A blind `U.pick` of a cardinal — which is exactly what this engine used to do — would
@@ -3165,7 +3181,7 @@ const World = (() => {
      compare the real facing rate against, instead of an unfalsifiable "looks better now". */
   function wallDirsAt(b) {
     if (!geo || !b || typeof geo.walkable !== 'function') return null;
-    const t = tileOf(b.px, b.py);
+    const t = tileOf(bodyPosX(b), bodyPosY(b));
     let n = 0;
     for (const [, dx, dy] of LOOK_DIRS) if (subjectAt(b, t.x + dx, t.y + dy) === 'wall') n++;
     return n;
@@ -3174,7 +3190,7 @@ const World = (() => {
   function lookDir(body, opts) {
     const b = body || self;
     if (!b) return 'south';
-    const t = tileOf(b.px, b.py);
+    const t = tileOf(bodyPosX(b), bodyPosY(b));
     return lookDirFrom(t.x, t.y, Object.assign({ except: b }, opts || {}));
   }
 
@@ -6113,6 +6129,7 @@ const World = (() => {
       // `phase` stays an INTEGER (phaseOf indexes PHASES[] with it); `aph` is the FLOAT sprite offset — see the hero's note.
       phase: U.hash('' + aid) % 6, aph: (U.hash('' + aid) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
+      lastFun: null, lastFunUntil: 0,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
@@ -7207,10 +7224,12 @@ const World = (() => {
       const snap = (b, hero) => {
         if (!b) return null;
         const t = tileOf(b.px, b.py);
+        const rt = tileOf(bodyPosX(b), bodyPosY(b));
         const z = zoneFor(b);
+        const fd = facingDetail(b), fp = fd && fd.prop;
         return {
           id: b.id, name: b.name, hero: !!hero,
-          tile: t, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
+          tile: t, renderTile: rt, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
           goal: b.goal || null, moving: !!b.target, working: !!b.working, sitting: !!b.sitting,
           seated: !!b.seated, unplaced: !!b.unplaced, summoned: !!b.summoned,   // summoned = carries the idle inner life (roster bodies must, post-relaunch too)
           visTopPy: (b.visTopPy != null) ? Math.round(b.visTopPy) : null,       // drawn head-top (world px) — the overlay anchor drawBubble/drawNameplate use
@@ -7219,7 +7238,9 @@ const World = (() => {
           glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
           zone: z, inOwnZone: tileInZone(z, t.x, t.y),
           // idle-life (2026-08-08) instrumentation — read-only, no side effects:
-          facing: facingSubject(b),                                     // what is one tile ahead of its nose ('wall' is the defect)
+          facing: fd ? fd.subject : null,                               // what is one tile ahead of its RENDERED position ('wall' is the defect)
+          facingProp: fp ? { id: fp.id, type: fp.t, useKind: (propUse(fp) || {}).kind || null } : null,
+          facingCounter: !!(fp && isCounterProp(fp)),                   // truthful bar-stool proof: the actual prop in front is counter-ish
           wallDirs: wallDirsAt(b),                                      // control: how many of the 4 cardinals here ARE wall (a blind pick would hit wall wallDirs/4 of the time)
           quirkKind: b.quirkKind || null,
           useKind: b.usingProp ? useKindOf(b.usingProp) : null,         // WHICH prop it is using (the per-kind beat)

@@ -72,11 +72,15 @@ const BUILD = `(() => { try {
   const LOUNGE = [['couch',5,1],['tv',3,1],['arcade',1,2],['pinball',1,2],['longtable',3,1],['chair',1,1]];   // bar + its stools are placed adjacently below
   const MIXED = [['bookshelf',2,1],['arcade',1,2],['fishtank',2,1],['coffee',1,1],['jukebox',1,2],['pinball',1,2],['terrarium',1,1],['quarters_vending',1,2]];
   const KIT = KIT_NAME === 'lounge' ? LOUNGE : MIXED;
+  const spotGroups = [r0, out.added && out.added.x1 != null ? out.added : null].filter(Boolean).map(rr => {
+    const group = [];
+    for (let i = 0; i < 8; i++) group.push({ x: rr.x1 + 2 + ((i * 3) % Math.max(1, rr.x2 - rr.x1 - 3)), y: rr.y1 + 1 + (i % Math.max(1, rr.y2 - rr.y1 - 1)) });
+    return group;
+  });
+  // Interleave rooms. The old room-major list put all eight MIXED props in the first room, so its
+  // supposedly cross-room soak could pass without a single attractive destination next door.
   const spots = [];
-  for (const rr of [r0, out.added && out.added.x1 != null ? out.added : null]) {
-    if (!rr) continue;
-    for (let i = 0; i < 8; i++) spots.push({ x: rr.x1 + 2 + ((i * 3) % Math.max(1, rr.x2 - rr.x1 - 3)), y: rr.y1 + 1 + (i % Math.max(1, rr.y2 - rr.y1 - 1)) });
-  }
+  for (let i = 0; i < 8; i++) for (const group of spotGroups) spots.push(group[i]);
   let si = 0;
   // the LOUNGE kit lays its stools directly against the bar, the way a person actually builds a bar
   // — that adjacency is what routes an agent to SIT at it (stoolAt/counterFace) rather than stand.
@@ -105,10 +109,12 @@ const BUILD = `(() => { try {
 
 const pct = (n, d) => (d ? +(100 * n / d).toFixed(1) : 0);
 
-let proc = null, side = null, cdp = null;
+class SoakExit extends Error { constructor(code, message) { super(message); this.code = code; } }
+const stop = (code, message) => { throw new SoakExit(code, message); };
+let proc = null, side = null, cdp = null, builtFloor = null, exitCode = null;
 const fail = [];
 try {
-  if (await isUp(APP_URL)) { console.error(`[idlesoak] ${APP_URL} already answers — someone else owns that port; pick another (--port)`); process.exit(2); }
+  if (await isUp(APP_URL)) stop(2, `[idlesoak] ${APP_URL} already answers — someone else owns that port; pick another (--port)`);
   rmSync(SCRATCH, { recursive: true, force: true });
   materializeSeedWorkspace(SCRATCH);
   side = bootSeededSidecar({ port: PORT, scratchDir: SCRATCH });
@@ -133,16 +139,18 @@ try {
 
   const marker = await evalJS(cdp, MARKER);
   if (!marker || !marker.roam || !marker.facing) {
-    console.error('[idlesoak] BUILD MARKER MISSING — this page is not the idle-life build:', JSON.stringify(marker));
-    process.exit(3);
+    stop(3, '[idlesoak] BUILD MARKER MISSING — this page is not the idle-life build: ' + JSON.stringify(marker));
   }
   console.log(`[idlesoak] build marker ok (Zones.ROAM_RADIUS=${marker.roam}, bodies().facing present)`);
 
   // lay a real floor (a second room + leisure kit) unless told not to
   if (process.argv.indexOf('--no-build') < 0) {
-    const built = await evalJS(cdp, BUILD);
-    console.log('[idlesoak] floor:', JSON.stringify(built));
-    if (!built || built.err) throw new Error('floor build failed: ' + JSON.stringify(built));
+    builtFloor = await evalJS(cdp, BUILD);
+    console.log('[idlesoak] floor:', JSON.stringify(builtFloor));
+    if (!builtFloor || builtFloor.err) throw new Error('floor build failed: ' + JSON.stringify(builtFloor));
+    if (KITNAME !== 'lounge' && !(builtFloor.added && builtFloor.added.x1 != null)) {
+      throw new Error('mixed soak requires a real second room: ' + JSON.stringify(builtFloor.added));
+    }
     await sleep(2500);
   }
 
@@ -211,7 +219,7 @@ try {
     if (!inIt.length || timeline.length >= 80) continue;
     timeline.push({
       t: s.t,
-      who: inIt.map(b => `${b.name}:${b.socialKind}/${b.socialPhase}${b.talking ? ' TALKING' : ''}${b.emote ? ' WAVE' : ''} ${(b.pose || '').replace(/^[^.]+\./, '')}`),
+      who: inIt.map(b => `${b.name}:${b.socialKind}/${b.socialPhase}${b.talking ? ' TALKING' : ''} ${(b.pose || '').replace(/^[^.]+\./, '')}`),
     });
   }
 
@@ -221,7 +229,7 @@ try {
       if (!b || b.unplaced) continue;
       b.__t = s.t;
       let r = per.get(b.id);
-      if (!r) { r = { id: b.id, name: b.name, n: 0, still: 0, wallDirSum: 0, facing: {}, goals: {}, quirks: {}, useKinds: {}, emotes: 0, talking: 0, posesGesture: 0, posesTalk: 0, visits: {}, dwellMs: {}, prevUse: null, visitStart: null, seatSamples: 0, seatFacingProp: 0, outZone: 0, nextDoor: 0, tiles: new Set() }; per.set(b.id, r); }
+      if (!r) { r = { id: b.id, name: b.name, n: 0, still: 0, wallDirSum: 0, facing: {}, goals: {}, quirks: {}, useKinds: {}, emotes: 0, talking: 0, posesGesture: 0, posesTalk: 0, visits: {}, dwellMs: {}, prevUse: null, visitStart: null, seatSamples: 0, seatFacingCounter: 0, outZone: 0, nextDoor: 0, tiles: new Set() }; per.set(b.id, r); }
       r.n++;
       r.tiles.add(b.tile.x + ',' + b.tile.y);
       if (!b.inOwnZone) r.outZone++;
@@ -245,7 +253,7 @@ try {
       }
       r.prevUse = curK;
       // a body sitting AT a counter (stool) with the counter in front of it — the bar-stool proof
-      if (b.useKind === 'seat' && b.sitting) { r.seatSamples++; if (b.facing === 'prop') r.seatFacingProp++; }
+      if (b.useKind === 'seat' && b.sitting) { r.seatSamples++; if (b.facingCounter) r.seatFacingCounter++; }
       // FACING is only meaningful for a body STANDING STILL and not working: a walker's facing is
       // its heading, and a seated worker faces its own desk by design (out of scope for this pass).
       if (!b.moving && b.state !== 'walk' && !b.working && !b.sitting && b.facing) {
@@ -255,7 +263,7 @@ try {
     }
   }
 
-  const report = { minutes: MINUTES, samples: samples.length, encounters, encounterTimeline: timeline, bodies: [] };
+  const report = { minutes: MINUTES, samples: samples.length, floor: builtFloor, encounters, encounterTimeline: timeline, bodies: [] };
   for (const r of per.values()) {
     report.bodies.push({
       id: r.id, name: r.name, samples: r.n, stillSamples: r.still,
@@ -265,7 +273,7 @@ try {
       distinctTiles: r.tiles.size, outOfZone: r.outZone, nextDoorSamples: r.nextDoor,
       goals: r.goals, quirks: r.quirks, useKinds: r.useKinds, emoteSamples: r.emotes, talkingSamples: r.talking, drawnGesture: r.posesGesture, drawnTalk: r.posesTalk,
         visits: r.visits, meanDwellSec: Object.fromEntries(Object.entries(r.dwellMs).map(([k,v]) => [k, +(v/1000/Math.max(1,r.visits[k]||1)).toFixed(1)])),
-        seatSamples: r.seatSamples, seatFacingCounter: r.seatFacingProp,
+        seatSamples: r.seatSamples, seatFacingCounter: r.seatFacingCounter,
     });
   }
   report.samplesPerMin = +(report.samples / MINUTES).toFixed(1);   // stamped BEFORE the write, or the saved report lies about its own health
@@ -282,24 +290,29 @@ try {
   const rate = report.samplesPerMin;
   if (rate < 25) {
     console.log(`\nINCONCLUSIVE: ${report.samplesPerMin} samples/min (healthy is 60+). The page was starved — the world barely ticked, so an empty report means nothing. Re-run when the machine is free.`);
-    process.exit(4);
+    exitCode = 4;
+  } else {
+    for (const b of report.bodies) {
+      if (b.outOfZone > 0) fail.push(`${b.name}: ${b.outOfZone} samples OUT of its zone (containment)`);
+      if (b.stillSamples >= 20 && b.wallPct > 12) fail.push(`${b.name}: ${b.wallPct}% of still samples nose-to-wall (bar: <=12%)`);
+    }
+    if (KITNAME !== 'lounge' && builtFloor && builtFloor.added && !report.bodies.some(b => b.nextDoorSamples > 0)) {
+      fail.push('mixed two-room soak observed no body cross into the directly connected room (W3 unproven)');
+    }
+    // W4/W5 bars — only meaningful on a multi-body floor of a decent length
+    if (CREW >= 2 && MINUTES >= 5) {
+      if (!encounters.total) fail.push('no social encounter fired at all in ' + MINUTES + ' minutes on a ' + (CREW + 1) + '-body floor');
+      const talked = report.bodies.reduce((n, b) => n + b.talkingSamples, 0);
+      if (encounters.conversations > 0 && !talked) fail.push('a two-sided encounter reached its hold but NOBODY ever took a turn (the talk pose never fired)');
+    }
   }
-  for (const b of report.bodies) {
-    if (b.outOfZone > 0) fail.push(`${b.name}: ${b.outOfZone} samples OUT of its zone (containment)`);
-    if (b.stillSamples >= 20 && b.wallPct > 12) fail.push(`${b.name}: ${b.wallPct}% of still samples nose-to-wall (bar: <=12%)`);
-  }
-  // W4/W5 bars — only meaningful on a multi-body floor of a decent length
-  if (CREW >= 2 && MINUTES >= 5) {
-    if (!encounters.total) fail.push('no social encounter fired at all in ' + MINUTES + ' minutes on a ' + (CREW + 1) + '-body floor');
-    const talked = report.bodies.reduce((n, b) => n + b.talkingSamples, 0);
-    if (encounters.conversations > 0 && !talked) fail.push('a two-sided encounter reached its hold but NOBODY ever took a turn (the talk pose never fired)');
-  }
-  console.log(fail.length ? `\nFAIL:\n - ${fail.join('\n - ')}` : '\nPASS: no containment breaks, wall-stare under the bar');
+  if (exitCode == null) console.log(fail.length ? `\nFAIL:\n - ${fail.join('\n - ')}` : '\nPASS: no containment breaks, wall-stare under the bar');
 } catch (e) {
-  console.error('[idlesoak]', e);
-  fail.push(String(e && e.message || e));
+  console.error(e instanceof SoakExit ? e.message : '[idlesoak]', e instanceof SoakExit ? '' : e);
+  if (e instanceof SoakExit) exitCode = e.code;
+  else fail.push(String(e && e.message || e));
 } finally {
   try { if (proc) proc.kill(); } catch { }
   try { if (side) side.kill(); } catch { }
 }
-process.exit(fail.length ? 1 : 0);
+process.exit(exitCode != null ? exitCode : (fail.length ? 1 : 0));
