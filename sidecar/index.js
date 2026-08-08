@@ -3241,6 +3241,10 @@ const router = makeRouter();
 const chainRunner = makeChainRunner({
   nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
   stageBrief: (agentId) => router.stageBrief(agentId),   // the RECEIVING dock's standing brief rides each handoff turn (prompt text only)
+  // the line a dock belongs to, so the runner can tell "this dock is terminal by design" from "this line
+  // REFUSED this work" and say so honestly. Without it chain.js stays silent rather than guess (never a
+  // false note) — which is exactly why the refusal was invisible before.
+  lineOfAgent: (agentId) => router.lineOfAgent(agentId),
   emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
   newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
   now: () => Date.now(),

@@ -308,5 +308,50 @@ let T = 0; const clock = () => (T += 10);
     A.eq(router.chainNext('ping', {}), null, 'and no chain edge is served from a refused plan');
   }
 
+  /* ---- A BLOCKED HANDOFF IS NOT A FINISHED LINE (2026-08-07 conveyor audit) ----
+     `if (!target) return out` left stopped:null for BOTH "this dock is the end of the line" and "the line
+     gate refused this work" — so a line truncated by a stale lineId reported itself as having run to its
+     end, breaking this file's first law (every stop carries an honest note). The refusal is only
+     detectable with the line fact, so `lineOfAgent` is injected exactly like nextAgent; without it the
+     runner must stay silent rather than guess. */
+  {
+    // the floor: researcher -> writer, both on line 'p3'. nextAgent mirrors Pipeline.chainNext's gate.
+    const own = { researcher: 'p3', writer: 'p3' };
+    const gated = (a, ctx) => (own[a] && ctx && ctx.lineId === own[a] && a === 'researcher') ? 'writer' : null;
+    const mk = extra => makeChainRunner(Object.assign({
+      nextAgent: gated, runAgent: harness({ writer: { text: 'the polished draft' } }), now: clock
+    }, extra || {}));
+
+    // (a) the gate refuses — the run carries a lineId that is no longer this dock's line
+    const withLine = mk({ lineOfAgent: a => own[a] || null });
+    const refused = await withLine.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p10' });
+    A.eq(refused.hops.length, 0, 'a refused line runs no downstream stage');
+    A.eq(refused.text, 'raw findings', "…and still delivers the last good output (a chain never gates the reply)");
+    A.ok(refused.stopped, 'THE STOP IS REPORTED — a truncated line no longer claims it finished');
+    A.ok(/did not come in through this line/.test(refused.stopped), '…in plain language about the door it came in');
+    A.ok(!/lineId|p10|belt/.test(refused.stopped), '…with no ids and no belt vocabulary in it');
+
+    // (b) a genuinely terminal dock stays silent — the common case must not grow a spurious note
+    const terminal = await withLine.advance({ agentId: 'writer', text: 'the polished draft', lineId: 'p3' });
+    A.eq(terminal.stopped, null, 'the LAST dock of a line is terminal by design — no note');
+    const passes = await withLine.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p3' });
+    A.eq(passes.hops.length, 1, 'and work that DID come in through this line still runs the line');
+    A.eq(passes.stopped, null, '…reporting no stop');
+
+    // (c) a direct order (no lineId) is the designed contract, not a failed line
+    const direct = await withLine.advance({ agentId: 'researcher', text: 'raw findings' });
+    A.eq(direct.stopped, null, 'a direct order answers at its dock and says nothing about lines');
+
+    // (d) the seam is OPTIONAL: unwired, the runner claims nothing it cannot prove
+    const blind = mk();
+    const quiet = await blind.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p10' });
+    A.eq(quiet.stopped, null, 'without the line fact injected the runner never invents a refusal');
+    // …and a lineOfAgent that throws is treated exactly like one that is absent
+    const angry = mk({ lineOfAgent: () => { throw new Error('plan gone'); } });
+    const safe = await angry.advance({ agentId: 'researcher', text: 'raw findings', lineId: 'p10' });
+    A.eq(safe.stopped, null, 'a throwing seam degrades to silence, never to a crash or a guess');
+    A.eq(safe.text, 'raw findings', '…and the reply survives it');
+  }
+
   A.report('chain');
 })();
