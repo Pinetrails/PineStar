@@ -91,6 +91,7 @@ const World = (() => {
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   let floodAt = 0, floodEndAt = 0, floodStreams = null;        // THE FLOOD: screen-space data-cascade — start / collapse-trigger / seeded streams
   let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
+  let floorLiveAt = 0;                                         // when this page's world started running — the boot-quiet window the spawn WELCOME waits out (a roster replay spawns every body at once)
   let kindleArmed = false, kindleP = 0, kindleHolding = false, kindlePeak = 0, kindleDone = null;   // THE KINDLING: the user HOLDS to wake the dormant mind; their attention fills kindleP (0..1) → ignition
   // THE VOID backdrop (dense parallax starfield + nebulas) lives in spacebg.js (SpaceBG.draw),
   // shared with REFIT (build.js) so entering/exiting build mode never jumps the sky.
@@ -303,14 +304,20 @@ const World = (() => {
                the arcade screen) instead of around the room.
      A kind with no row keeps the old generic beat, so adding a `use` row to the catalog never
      requires touching this table (same contract as USE_LINE). */
+  /* `play: true` = a machine you WORK, not a thing you stand next to. Those props re-fire the
+     gesture track every couple of seconds for the whole dwell, so the body visibly plays the
+     pinball table instead of standing at it like a bollard (Andrew, 2026-08-08: "upgrade the
+     agent's ability to use the arcade machine by adding an animated frame that makes them look
+     like they are interacting with it"). The art is the set's own 9-frame gesture track — the
+     arms move — so it costs no new sprites and degrades to a plain stand on the 3 sets without it. */
   const USE_BEAT = {
-    pinball:   { dwell: [16000, 30000], fidget: [700, 1500],  ges: 0.9, track: true },   // absorbed, hands busy, eyes on the table
-    arcade:    { dwell: [16000, 30000], fidget: [700, 1500],  ges: 0.9, track: true },
-    pool:      { dwell: [12000, 24000], fidget: [1600, 3200], ges: 0.85 },              // line up, walk round, line up again
-    poker:     { dwell: [12000, 22000], fidget: [2000, 4000], ges: 0.6 },
-    dj:        { dwell: [10000, 20000], fidget: [1400, 2800], ges: 0.9 },
-    juke:      { dwell: [5000, 10000],  fidget: [1800, 3600], ges: 0.9 },               // pick a track and move on
-    gacha:     { dwell: [6000, 12000],  fidget: [1200, 2400], ges: 0.95 },              // crank, watch, crank
+    pinball:   { dwell: [22000, 40000], fidget: [700, 1500],  ges: 0.9, track: true, play: true },   // absorbed, hands busy, eyes on the table
+    arcade:    { dwell: [22000, 40000], fidget: [700, 1500],  ges: 0.9, track: true, play: true },
+    pool:      { dwell: [18000, 32000], fidget: [1600, 3200], ges: 0.85, play: true },  // line up, walk round, line up again
+    poker:     { dwell: [16000, 28000], fidget: [2000, 4000], ges: 0.6, play: true },
+    dj:        { dwell: [14000, 26000], fidget: [1400, 2800], ges: 0.9, play: true },
+    juke:      { dwell: [6000, 12000],  fidget: [1800, 3600], ges: 0.9, play: true },   // pick a track and move on
+    gacha:     { dwell: [8000, 15000],  fidget: [1200, 2400], ges: 0.95, play: true },  // crank, watch, crank
     vend:      { dwell: [5000, 11000],  fidget: [1400, 2800], ges: 0.85 },
     fridge:    { dwell: [4000, 8000],   fidget: [1400, 2800], ges: 0.9 },
     coffee:    { dwell: [4000, 9000],   fidget: [1600, 3200], ges: 0.85 },              // a short stop — the ritual, not the drink
@@ -319,7 +326,7 @@ const World = (() => {
     terra:     { dwell: [12000, 22000], fidget: [2600, 5200], ges: 0.35, track: true },
     fish:      { dwell: [14000, 26000], fidget: [2600, 5200], ges: 0.2,  track: true },  // restful: it just watches
     pet:       { dwell: [9000, 18000],  fidget: [1400, 2800], ges: 0.8,  track: true },
-    bar:       { dwell: [8000, 16000],  fidget: [1800, 3600], ges: 0.7 },
+    bar:       { dwell: [12000, 24000], fidget: [1800, 3600], ges: 0.7, play: true },
     tv:        { dwell: [14000, 26000], fidget: [2600, 5200], ges: 0.1,  track: true },
     beanbag:   { dwell: [12000, 24000], fidget: [2600, 5200], ges: 0.2 },
     seat:      { dwell: [12000, 26000], fidget: [2400, 4800], ges: 0.15 },
@@ -1033,7 +1040,7 @@ const World = (() => {
     frame(performance.now());
   }
 
-  function start() { if (running) return; running = true; last = performance.now(); frame(last); }
+  function start() { if (running) return; running = true; last = performance.now(); if (!floorLiveAt) floorLiveAt = last; frame(last); }
   function stop() { running = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } }
   function wakeIn() { wakeAt = performance.now(); }
 
@@ -1731,6 +1738,7 @@ const World = (() => {
       // above own the facing + lifecycle; this branch just STOPS the fall-through to decideIdle (which would stomp it).
       self.state = 'idle';
     } else if (self.goal === 'use') {
+      stepPlay(self, now);   // W2 round 2: keep working the machine for the whole dwell (arcade/pinball/pool/bar)
       if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.useBeat = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
     } else if (self.goal === 'lounge') {
       if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
@@ -1985,33 +1993,161 @@ const World = (() => {
       // and the draw pass sorts the seat art just BEHIND this body so the body sits IN it, not under it.
       self.pendSeat = { px: (p.x + 0.5) * T, py: (p.y + 1) * T - 1 };
       self.goal = 'use'; self.usingProp = p.id; self.watchProp = null;
-      self.useSit = true; self.useFace = 'south';             // a stool has no front — face the viewer
+      // A STOOL PULLED UP TO SOMETHING FACES IT (2026-08-08, Andrew: "agents should sit on stools
+      // facing the opposite direction, so they can sit at the bar"). A stool has no front of its
+      // own, so 'south' was a fine default for a stool standing alone — but a stool set against a
+      // BAR is furniture for the bar, and a body sitting with its back to the counter it is sitting
+      // at reads as a bug. If a counter-ish prop is adjacent, face THAT, even when that means
+      // turning its back to the camera.
+      self.useSit = true; self.useFace = counterFace(p) || 'south';
       if (!self.target) arrive(now);                          // already adjacent → sit immediately
       return true;
     }
     return false;
   }
 
+  /* The direction from a seat toward the COUNTER it is pulled up to, or null if it stands alone.
+     "Counter" = the props you sit AT rather than on: a bar, a long table, a pool/poker table, the
+     DJ booth. Derived live from adjacency (nothing in the catalog pairs a stool with a bar), and
+     deliberately allows 'north' — sitting at a bar means showing the camera your back. */
+  const COUNTER_KINDS = { bar: 1, pool: 1, poker: 1, dj: 1 };
+  function counterFace(seat) {
+    if (!geo || !geo.props || !seat) return null;
+    const sx = seat.x + 0.5, sy = seat.y + 0.5;
+    let best = null;
+    for (const p of geo.props) {
+      if (p === seat || p.id === seat.id) continue;
+      const u = propUse(p);
+      const counter = (u && COUNTER_KINDS[u.kind]) || p.t === 'longtable';   // longtable has no `use` row but is exactly this
+      if (!counter) continue;
+      const w = p.w || 1, h = p.h || 1;
+      // nearest point of the prop's footprint to the seat — a 4-wide bar is close along its whole run
+      const nx = Math.max(p.x, Math.min(sx, p.x + w)), ny = Math.max(p.y, Math.min(sy, p.y + h));
+      const d = Math.abs(nx - sx) + Math.abs(ny - sy);
+      if (d > 1.8) continue;                                  // pulled UP to it, not merely in the same room
+      if (!best || d < best.d) best = { d, nx, ny };
+    }
+    return best ? dirToward(sx * T, sy * T, best.nx * T, best.ny * T) : null;
+  }
+
   /* couch + a TV nearby → dwell at the couch and watch it. The pairing is derived live (gen has no
      authored couch/TV pairs): for each couch, the nearest TV within range, faced from the couch. */
   function tryLounge(now) {
     const zone = zoneFor(self);   // P1: only lounge on a couch INSIDE the body's zone (the body sits there)
+    const pair = loungePair(zone);   // the couch/TV resolution now lives in ONE place (planPlay weighs the same pairing)
+    if (!pair) return false;
+    if (pair.couch && !tileInZone(zone, pair.couch.x, pair.couch.y)) return false;
+    if (!planCouchSit(now, pair.couch, pair.tvId, pair.face, zone)) return false;
+    self.lastFun = 'lounge';   // so the entertainment picker doesn't immediately re-choose the couch
+    return true;
+  }
+
+  /* ---------- ENTERTAINMENT: what a BORED agent does (2026-08-08) ----------
+     THE DEFECT Andrew reported after living with the floor: "I don't see it interacting with the
+     couch and TV I placed." He was right, and it is a gating bug, not a missing feature. planProp
+     — the ONLY route to a couch, an arcade, a pinball table, the bar — hung off the REST drive
+     (`top === wRest`), i.e. an agent only ever went near the entertainment when it was TIRED. A
+     BORED agent (the stim drive, which is what idle downtime actually accumulates) went on a
+     caretaker lap, studied a machine, or paced. So a station kitted out as a games room was
+     furniture the agent walked past.
+
+     planPlay is the missing pull: when there is something FUN in reach, being bored is a reason to
+     go and play with it. It is deliberately a thin wrapper over the existing planProp/tryLounge
+     machinery (no new movement, no new goals, no new state) — the only new thing is that leisure is
+     now reachable from the drive that actually fires. FUN_KINDS is what "entertainment" means: the
+     things a person crosses a room for, as opposed to a coffee machine or a bookshelf, which stay
+     where they were (planProp still reaches everything). */
+  const FUN_KINDS = { arcade: 1, pinball: 1, pool: 1, poker: 1, juke: 1, dj: 1, bar: 1, gacha: 1, fish: 1 };
+  /* Relative pull. The couch+TV lounge is the single most comfortable thing in the room and it also
+     holds the longest dwell, so left equal-weighted it swallows the floor: the first build of this
+     just called planProp, whose tryLounge short-circuit meant the measured result was BOTH bodies on
+     the couch for 58% of the run and not one visit to the arcade, the pinball table or the bar. It
+     is a candidate here, not a shortcut. */
+  const FUN_W = { arcade: 3, pinball: 3, pool: 2.5, poker: 2, dj: 2, juke: 1.5, bar: 2.5, gacha: 1.5, fish: 1.5, lounge: 2.5 };
+  // the couch/TV pairing (the v7 lounge), resolved as DATA so planPlay can weigh it against the rest
+  function loungePair(zone) {
+    if (!geo || !geo.props) return null;
     const couches = [], tvs = [];
     for (const p of geo.props) {
-      const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') { couches.push(p); }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
-      else if (use.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });   // the TV is only WATCHED from the couch (no walk) — may sit anywhere in view
+      const u = propUse(p); if (!u) continue;
+      if (u.kind === 'couch') couches.push(p);
+      else if (u.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });
     }
-    if (!couches.length || !tvs.length) return false;
-    const order = U.irnd(0, couches.length - 1);   // don't always favour the same couch
+    if (!couches.length || !tvs.length) return null;
+    const order = U.irnd(0, couches.length - 1);
     for (let k = 0; k < couches.length; k++) {
       const couch = couches[(order + k) % couches.length];
       const cx = couch.x + (couch.w || 1) / 2, cy = couch.y + (couch.h || 1) / 2;
       let best = null;
       for (const tv of tvs) { const d = Math.hypot(tv.cx - cx, tv.cy - cy); if (d <= LOUNGE_MAXT && (!best || d < best.d)) best = { tv, d }; }
       if (!best) continue;
-      const face = dirToward(cx, cy, best.tv.cx, best.tv.cy);   // turn to the TV from the couch
-      if (planCouchSit(now, couch, best.tv.p.id, face, zone)) return true;
+      if (zone && !tileInZone(zone, couch.x, couch.y)) continue;
+      return { couch, tvId: best.tv.p.id, face: dirToward(cx, cy, best.tv.cx, best.tv.cy) };
+    }
+    return null;
+  }
+  // a FREE stool/chair pulled up to this counter (bar / pool / table), or null — so "go to the bar"
+  // means SITTING at it, which is what a bar is for (and what counterFace turns the body toward)
+  function stoolAt(counter, zone) {
+    if (!geo || !geo.props) return null;
+    for (const p of geo.props) {
+      const u = propUse(p); if (!u || u.kind !== 'seat') continue;
+      if (occupiedSeats.has(p.id + ':0')) continue;
+      if (zone && !tileInZone(zone, p.x, p.y)) continue;
+      const w = counter.w || 1, h = counter.h || 1;
+      const nx = Math.max(counter.x, Math.min(p.x + 0.5, counter.x + w));
+      const ny = Math.max(counter.y, Math.min(p.y + 0.5, counter.y + h));
+      if (Math.abs(nx - (p.x + 0.5)) + Math.abs(ny - (p.y + 0.5)) <= 1.8) return p;
+    }
+    return null;
+  }
+  /* TIRED. The couch is the right answer and stays the first one — but "tired" is the drive that
+     refills WHILE you rest, so a body whose rest need re-tops the moment it stands up will re-pick
+     the same couch forever: measured, a crew body spent 252 of 457 samples on one couch across 8
+     consecutive visits and touched nothing else in the room. So: the couch, unless it just got off
+     that couch, in which case anything else fun will do. */
+  function planRest(now) {
+    if (self.lastFun !== 'lounge' && tryLounge(now)) return true;
+    if (planPlay(now)) return true;
+    return planProp(now);
+  }
+  function planPlay(now) {
+    if (!geo || !geo.props || !geo.props.length) return false;
+    const zone = zoneFor(self), cands = [];
+    const lounge = loungePair(zone);
+    if (lounge) cands.push({ key: 'lounge', w: FUN_W.lounge, lounge });
+    for (const p of geo.props) {
+      const u = propUse(p);
+      if (!u || !FUN_KINDS[u.kind]) continue;
+      if (!mayTouchProp(self.id, p)) continue;
+      if (!tileInZone(zone, p.x, p.y)) continue;
+      cands.push({ key: p.id, w: FUN_W[u.kind] || 2, prop: p, kind: u.kind });
+    }
+    if (!cands.length) return false;                       // nothing fun placed → the bored branch carries on as before
+    // WHATEVER IT JUST DID IS THE LEAST INTERESTING THING IN THE ROOM. Without this a body re-picks
+    // its favourite every re-decide and parks there for the whole session.
+    for (const c of cands) if (c.key === self.lastFun) c.w *= 0.12;
+    let total = 0; for (const c of cands) total += c.w;
+    // draw one, then fall through the rest in a rotated order so an unreachable pick never wastes the beat
+    let roll = U.rnd(0, total), start = 0;
+    for (let i = 0; i < cands.length; i++) { roll -= cands[i].w; if (roll <= 0) { start = i; break; } }
+    for (let k = 0; k < cands.length; k++) {
+      const c = cands[(start + k) % cands.length];
+      if (c.lounge) {
+        if (planCouchSit(now, c.lounge.couch, c.lounge.tvId, c.lounge.face, zone)) { self.lastFun = 'lounge'; return true; }
+        continue;
+      }
+      // a counter you SIT at: take a stool pulled up to it if one is free (counterFace turns the
+      // body to the bar), else stand at the counter itself
+      if (c.kind === 'bar' || c.kind === 'pool' || c.kind === 'poker') {
+        const stool = stoolAt(c.prop, zone);
+        if (stool && planSeat(now, stool, zone)) { self.lastFun = c.key; return true; }
+      }
+      const a = PropAnchor.deriveAnchor(c.prop, geo, { approach: (propUse(c.prop) || {}).approach || 'south', extra: blocked });
+      if (!a || !tileInZone(zone, a.tx, a.ty) || !setPathTo({ x: a.tx, y: a.ty })) continue;
+      self.goal = 'use'; self.usingProp = c.prop.id; self.useFace = a.face; self.useSit = false; self.lastFun = c.key;
+      if (!self.target) arrive(now);
+      return true;
     }
     return false;
   }
@@ -2125,6 +2261,17 @@ const World = (() => {
   }
 
   function setGlance(dir, ms, now) { if (self) self.glance = { dir, until: now + ms }; }
+  /* THE PLAY LOOP — while a body is at a `play` prop (see USE_BEAT), re-fire its gesture track
+     every couple of seconds so it visibly WORKS the machine for the whole dwell instead of
+     standing at it. Called from the per-tick 'use' branch of both engines. Seated bodies are
+     skipped (the gesture art is a standing pose), so a stool at the bar keeps its sit. */
+  function stepPlay(b, now) {
+    const beat = b && b.useBeat;
+    if (!beat || !beat.play || b.sitting || b.state === 'walk') return;
+    if (now < (b.playAt || 0)) return;
+    b.playAt = now + U.irnd(1500, 3000);
+    emote(b, now);
+  }
   /* EMOTE (2026-08-08) — play the sprite set's one-shot `gesture` track NOW (a reach / a work-the-
      controls arm movement). The art already ships on 35 of 38 sets and until today only ever fired
      on a blind ~90-minute clock in assets.js, so it was effectively invisible: a body could use a
@@ -3665,7 +3812,7 @@ const World = (() => {
     // ladder's own precedence below (rest > soc > stim) so the two can never disagree about who won.
     const win = top === wRest ? 'rest' : top === wSoc ? 'soc' : 'stim';
     if (win !== held) { self.drive = win; self.driveUntil = now + U.irnd(12000, 22000); }
-    if (top === wRest) { if (planProp(now)) return; }                                  // tired -> lounge / couch
+    if (top === wRest) { if (planRest(now)) return; }                                  // tired -> lounge / couch (but not the SAME couch on a loop — see planRest)
     else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
     else {                                                                             // bored / restless
       // TIER D · D5 beat 3 — QUEUE-AWARE IDLE BIAS: while the visible task/mission queue is non-empty, the OVERSEER
@@ -3673,10 +3820,19 @@ const World = (() => {
       // work-adjacent points) rather than an aimless beat — a WEIGHT shift (x1.5, never absolute), not new movement.
       // The multiplier derives from missionPinCounts (cached, no RNG) so the U.chance draw count is UNCHANGED; a
       // no-queue floor keeps the exact 0.3 (byte-identical), and crew (self!==agent) always use 0.3.
+      // ENTERTAINMENT FIRST (2026-08-08). Bored, and there is a games room in reach? Go and play.
+      // This is the branch idle downtime actually lands in, and until now it could not reach a
+      // single leisure prop (see planPlay) — the whole reason a station full of arcade machines
+      // read as scenery. Ahead of the caretaker lap on purpose: a lap is what you do when there is
+      // nothing better, and the Commander placing a pinball table is them saying there is.
+      if (U.chance(0.7) && planPlay(now)) return;                                       //   bored + something fun placed -> play with it
       const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.45 : 0.3;
       if (U.chance(roundsBias) && maybeRounds(now)) return;                             //   do a deliberate caretaker lap (purpose, not aimless)
       if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
-      if (idleAge > 30000 && U.chance(0.35) && planVantage(now)) return;               //   long quiet -> take up a vantage and look out over the station
+      // the vantage beat is a PUNCTUATION MARK, not a pastime. At 0.35 after 30s it became the most
+      // common thing the hero did (measured: 98 of 259 idle samples) and the floor read as a body
+      // wandering off to stare at nothing every few seconds. Rarer, and only after a long quiet.
+      if (idleAge > 60000 && U.chance(0.12) && planVantage(now)) return;                //   long quiet -> take up a vantage and look out over the station
       if (p.restless * ph.restless > 1.0 && pace(now)) return;                          //   antsy -> pace in place
     }
     // graceful fallbacks so it never freezes
@@ -3914,6 +4070,7 @@ const World = (() => {
       }
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
+      stepPlay(agent, now);   // W2 round 2: the hero works the machine too
       if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.useBeat = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'lounge') {
       // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
@@ -6116,6 +6273,42 @@ const World = (() => {
     b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
     b.idleUntil = fnow + U.irnd(1400, 3200);                              // hold a beat after materializing, then it strolls
     crew.push(b);
+    greetNewcomer(b, fnow);                                               // somebody on the floor goes over to say hello
+  }
+  /* THE WELCOME (2026-08-08, Andrew: "agents should greet one another when a new one is spawned,
+     perhaps they will walk up to one another and wave"). A body materializing on the floor is an
+     EVENT, so this fires off the event rather than waiting for the ambient social lane — the same
+     shape as the Tier C summon-glance, which also fires off an event instead of a dice roll.
+
+     It reuses the D3 huddle wholesale: the greeter walks over, both wave as they settle, they take
+     turns in the silent exchange, and they part with a wave. So it costs one function, inherits
+     every existing safety property (one encounter station-wide, zone-clamped targets, work seizes
+     instantly, the hard timeout), and CANNOT stack — if an encounter is already live, the newcomer
+     simply arrives unremarked, which is honest. The station LANE cooldown is deliberately bypassed
+     (a welcome is not ambient chatter) but the fired encounter still arms it, so a burst of spawns
+     produces ONE welcome, not one per body. */
+  function greetNewcomer(newBody, now) {
+    if (!newBody || newBody.unplaced || !geo || socialBeat || reduceMotion()) return false;
+    // Not during BOOT: replaying a saved roster spawns every body at once, and nobody welcomes a
+    // floor that is still materializing. (This deliberately does NOT key on firstWakeDone — that
+    // latch only ever fires for a brand-new agent's awakening ceremony, so on every resumed save it
+    // stays false forever and would have silently disabled the welcome for good.)
+    if (!agent || agent.unplaced || agent.goal === 'firstwake') return false;
+    if (!floorLiveAt || (now - floorLiveAt) < 8000) return false;
+    const keep = self;
+    try {
+      let best = null;
+      for (const other of allBodies()) {
+        if (!other || other === newBody || other.unplaced) continue;
+        self = other;                                                     // socialEligible/zoneFor read the CURRENT body
+        if (!socialEligible(other, now)) continue;
+        const d = Math.hypot(other.px - newBody.px, other.py - newBody.py);
+        if (!best || d < best.d) best = { body: other, d };
+      }
+      if (!best) return false;
+      self = best.body;
+      return planHuddle(best.body, newBody, now);                         // walks, waves, exchanges turns, parts
+    } finally { self = keep; }                                            // MANDATORY restore (B1) — spawnAgent runs outside the engine loop
   }
   // rename a placed body (hero or crew) so its floor nameplate follows a dossier rename. DISPLAY-ONLY: the
   // agentId that keys crew/anchors/engine-state never changes, so this can't disturb any body's identity.

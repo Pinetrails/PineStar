@@ -27,6 +27,7 @@ const CDP_PORT = Number(arg('--cdp', '9341'));
 const MINUTES = Number(arg('--minutes', '4'));
 const CREW = Number(arg('--crew', '2'));
 const OUT = arg('--out', join(process.cwd(), '.idlesoak'));
+const KITNAME = arg('--kit', 'mixed');   // 'lounge' = Andrew's own layout (one room; couch+tv, arcade, pinball, bar+stools)
 const APP_URL = `http://127.0.0.1:${PORT}/`;
 const SCRATCH = join(OUT, '_seed-workspace');
 mkdirSync(OUT, { recursive: true });
@@ -50,6 +51,7 @@ const MARKER = `(() => { try {
    model auto-opens a threshold on any zone seam) and scatters real catalog props through both,
    through the SAME validated mutation API the REFIT editor uses. */
 const BUILD = `(() => { try {
+  const KIT_NAME = ${JSON.stringify(KITNAME)};
   const st = (typeof Build !== 'undefined' && Build.__test__ && Build.__test__.station && Build.__test__.station()) || null;
   if (!st) return { err: 'no station' };
   const rooms = st.rooms();
@@ -58,19 +60,37 @@ const BUILD = `(() => { try {
   const out = { home: r0, added: null, props: [] };
   // a second room to the EAST, same height, 10 wide — sharing r0's east edge so a door opens
   const nx1 = r0.x2 + 1, nx2 = r0.x2 + 10;
-  const can = st.canPlaceRoom ? st.canPlaceRoom([{ x1: nx1, y1: r0.y1, x2: nx2, y2: r0.y2 }], 'hab') : { ok: true };
+  const oneRoom = KIT_NAME === 'lounge';   // Andrew's station is ONE room — don't add a second one for that case
+  const can = oneRoom ? { ok: false } : st.canPlaceRoom ? st.canPlaceRoom([{ x1: nx1, y1: r0.y1, x2: nx2, y2: r0.y2 }], 'hab') : { ok: true };
   if (can && can.ok !== false) {
     const res = st.addRoom({ kind: 'hab', rect: { x1: nx1, y1: r0.y1, x2: nx2, y2: r0.y2 } });
     out.added = res && res.ok ? { x1: nx1, y1: r0.y1, x2: nx2, y2: r0.y2 } : (res && res.reason) || 'addRoom failed';
   } else out.added = 'canPlaceRoom: ' + JSON.stringify(can);
-  // leisure kit, spread over BOTH rooms (each entry: type, w, h)
-  const KIT = [['bookshelf',2,1],['arcade',1,2],['fishtank',2,1],['coffee',1,1],['jukebox',1,2],['pinball',1,2],['terrarium',1,1],['quarters_vending',1,2]];
+  // leisure kit, spread over BOTH rooms (each entry: type, w, h). KIT=lounge mirrors Andrew's own
+  // station (2026-08-08): one room, couch+tv, arcade, pinball, bar + stools — the layout the
+  // "they never use my lounge" report came from, so the measurement is of HIS case, not a fixture's.
+  const LOUNGE = [['couch',5,1],['tv',3,1],['arcade',1,2],['pinball',1,2],['longtable',3,1],['chair',1,1]];   // bar + its stools are placed adjacently below
+  const MIXED = [['bookshelf',2,1],['arcade',1,2],['fishtank',2,1],['coffee',1,1],['jukebox',1,2],['pinball',1,2],['terrarium',1,1],['quarters_vending',1,2]];
+  const KIT = KIT_NAME === 'lounge' ? LOUNGE : MIXED;
   const spots = [];
   for (const rr of [r0, out.added && out.added.x1 != null ? out.added : null]) {
     if (!rr) continue;
     for (let i = 0; i < 8; i++) spots.push({ x: rr.x1 + 2 + ((i * 3) % Math.max(1, rr.x2 - rr.x1 - 3)), y: rr.y1 + 1 + (i % Math.max(1, rr.y2 - rr.y1 - 1)) });
   }
   let si = 0;
+  // the LOUNGE kit lays its stools directly against the bar, the way a person actually builds a bar
+  // — that adjacency is what routes an agent to SIT at it (stoolAt/counterFace) rather than stand.
+  if (KIT_NAME === 'lounge') {
+    const bx = r0.x1 + 3, by = r0.y1 + 1;
+    if (st.addProp({ t: 'bar', x: bx, y: by, w: 4, h: 1, block: true }).ok) {
+      out.props.push('bar@' + bx + ',' + by);
+      for (let i = 0; i < 3; i++) {
+        const sx = bx + i, sy = by + 1;
+        const ok = st.canPlaceProp ? st.canPlaceProp('stool', sx, sy, 1, 1) : { ok: true };
+        if (ok && ok.ok !== false && st.addProp({ t: 'stool', x: sx, y: sy, w: 1, h: 1, block: true }).ok) out.props.push('stool@' + sx + ',' + sy);
+      }
+    }
+  }
   for (const [t, w, h] of KIT) {
     for (let tries = 0; tries < spots.length; tries++) {
       const s = spots[(si++) % spots.length];
@@ -199,8 +219,9 @@ try {
   for (const s of samples) {
     for (const b of s.bodies) {
       if (!b || b.unplaced) continue;
+      b.__t = s.t;
       let r = per.get(b.id);
-      if (!r) { r = { id: b.id, name: b.name, n: 0, still: 0, wallDirSum: 0, facing: {}, goals: {}, quirks: {}, useKinds: {}, emotes: 0, talking: 0, posesGesture: 0, posesTalk: 0, outZone: 0, nextDoor: 0, tiles: new Set() }; per.set(b.id, r); }
+      if (!r) { r = { id: b.id, name: b.name, n: 0, still: 0, wallDirSum: 0, facing: {}, goals: {}, quirks: {}, useKinds: {}, emotes: 0, talking: 0, posesGesture: 0, posesTalk: 0, visits: {}, dwellMs: {}, prevUse: null, visitStart: null, seatSamples: 0, seatFacingProp: 0, outZone: 0, nextDoor: 0, tiles: new Set() }; per.set(b.id, r); }
       r.n++;
       r.tiles.add(b.tile.x + ',' + b.tile.y);
       if (!b.inOwnZone) r.outZone++;
@@ -213,6 +234,18 @@ try {
       if (b.goal) r.goals[b.goal] = (r.goals[b.goal] || 0) + 1;
       if (b.quirkKind) r.quirks[b.quirkKind] = (r.quirks[b.quirkKind] || 0) + 1;
       if (b.useKind) r.useKinds[b.useKind] = (r.useKinds[b.useKind] || 0) + 1;
+      // VISITS, not samples: "does it stay at the arcade for more than five seconds" is a question
+      // about one visit, and a sample count conflates ten short visits with one long one.
+      const prevK = r.prevUse || null, curK = b.useKind || null;
+      if (curK && curK !== prevK) { r.visits[curK] = (r.visits[curK] || 0) + 1; r.visitStart = b.__t; }
+      if (prevK && curK !== prevK && r.visitStart != null) {
+        const ms = (b.__t - r.visitStart);
+        if (ms > 0) { r.dwellMs[prevK] = (r.dwellMs[prevK] || 0) + ms; }
+        r.visitStart = curK ? b.__t : null;
+      }
+      r.prevUse = curK;
+      // a body sitting AT a counter (stool) with the counter in front of it — the bar-stool proof
+      if (b.useKind === 'seat' && b.sitting) { r.seatSamples++; if (b.facing === 'prop') r.seatFacingProp++; }
       // FACING is only meaningful for a body STANDING STILL and not working: a walker's facing is
       // its heading, and a seated worker faces its own desk by design (out of scope for this pass).
       if (!b.moving && b.state !== 'walk' && !b.working && !b.sitting && b.facing) {
@@ -231,6 +264,8 @@ try {
       facing: r.facing,
       distinctTiles: r.tiles.size, outOfZone: r.outZone, nextDoorSamples: r.nextDoor,
       goals: r.goals, quirks: r.quirks, useKinds: r.useKinds, emoteSamples: r.emotes, talkingSamples: r.talking, drawnGesture: r.posesGesture, drawnTalk: r.posesTalk,
+        visits: r.visits, meanDwellSec: Object.fromEntries(Object.entries(r.dwellMs).map(([k,v]) => [k, +(v/1000/Math.max(1,r.visits[k]||1)).toFixed(1)])),
+        seatSamples: r.seatSamples, seatFacingCounter: r.seatFacingProp,
     });
   }
   report.samplesPerMin = +(report.samples / MINUTES).toFixed(1);   // stamped BEFORE the write, or the saved report lies about its own health
