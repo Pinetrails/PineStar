@@ -660,6 +660,27 @@ function loadResilient(file, tag) {
 }
 // durable single-file write: fsync-before-rename + snapshot the prior good value to <file>.bak.
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
+// Explicit credential deletion has a stricter contract than an ordinary resilient update. The normal writer
+// intentionally snapshots the old main into .bak; during remove/reset that old value is exactly the credential
+// the user asked us to forget. Write the sanitized envelope to BOTH copies directly and read both back before
+// callers adopt the deletion in memory. A crash between the two durable replaces can only recover the sanitized
+// copy (deletion is conservative); it can never resurrect the removed secret from the recovery file.
+function saveCredentialRemovalVerified(file, value, proof, tag) {
+  const check = (typeof proof === 'function') ? proof : raw => JSON.stringify(raw) === JSON.stringify(value);
+  const loadOne = target => JSON.parse(fs.readFileSync(target, 'utf8'));
+  const r = saveJsonVerified({
+    mkdir: () => fs.mkdirSync(path.dirname(file), { recursive: true }),
+    save: () => {
+      const data = JSON.stringify(value);
+      writeFileDurable({ fs: fs, path: path }, file + '.bak', data);
+      writeFileDurable({ fs: fs, path: path }, file, data);
+    },
+    load: () => ({ main: loadOne(file), bak: loadOne(file + '.bak') }),
+    proof: copies => !!copies && check(copies.main) && check(copies.bak)
+  });
+  if (!r.ok) console.warn('[' + (tag || 'credentials') + '] removal persist UNVERIFIED after retry (' + (r.error || '?') + ')');
+  return r.ok;
+}
 function reportDomainStoreIssue(tag) {
   return function onDomainStoreIssue(status, detail) {
     const file = detail && detail.file;
@@ -3313,6 +3334,15 @@ function persistConnectorState(nextConfigs, nextOauth) {
   if (!r.ok) console.warn('[connectors] transactional persist UNVERIFIED after retry (' + (r.error || '?') + ')');
   return r.ok;
 }
+function persistConnectorRemoval(nextConfigs, nextOauth) {
+  const intended = connectorStateMod.envelope(nextConfigs, nextOauth);
+  return saveCredentialRemovalVerified(
+    CONNECTORS_STATE_FILE,
+    intended,
+    raw => connectorStateMod.same(raw, intended),
+    'connectors'
+  );
+}
 function adoptConnectorState(next) {
   connectorState = connectorStateMod.normalize(next);
   connectorConfigs = connectorState.configs;
@@ -3366,6 +3396,15 @@ function saveServiceKeys() {
   });
   if (!r.ok) console.warn('[servicekeys] persist UNVERIFIED after retry (' + (r.error || '?') + ')');
   return r.ok;
+}
+function saveServiceKeyRemoval(nextKeys) {
+  const intended = { version: 1, keys: nextKeys };
+  return saveCredentialRemovalVerified(
+    SERVICEKEYS_FILE,
+    intended,
+    raw => JSON.stringify(raw) === JSON.stringify(intended),
+    'servicekeys'
+  );
 }
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => {
@@ -8496,13 +8535,18 @@ async function handleConfigReset(req, res) {
     }
     case 'connectors': {
       const next = connectorStateMod.envelope([], { byId: {}, clients: {} });
-      if (!persistConnectorState(next.configs, next.oauth)) return json(500, { ok: false, section, error: 'connector reset could not be verified on disk; existing connectors were left unchanged' });
+      if (!persistConnectorRemoval(next.configs, next.oauth)) return json(500, { ok: false, section, error: 'connector reset could not be verified in both protected recovery copies; active connectors were left unchanged' });
       const oldIds = connectorConfigs.map(c => c && c.id).filter(Boolean);
       adoptConnectorState(next);
       for (const id of oldIds) { try { await connectors.remove(id); } catch (_) {} }
       break;
     }
-    case 'servicekeys': serviceKeys = []; applyServiceKeysEnv(); saveServiceKeys(); break;   // scrubs the injected env vars too
+    case 'servicekeys': {
+      if (!saveServiceKeyRemoval([])) return json(500, { ok: false, section, error: 'service-key reset could not be verified in both protected recovery copies; active keys were left unchanged' });
+      serviceKeys = [];
+      applyServiceKeysEnv();   // scrubs the injected env vars only after both disk copies prove the reset
+      break;
+    }
     default: return json(400, { error: 'unknown or non-resettable section: ' + (section || '(empty)') });
   }
   return json(200, { ok: true, section });
@@ -8780,10 +8824,11 @@ async function handleServiceKeyRemove(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const r = serviceKeysMod.remove(serviceKeys, body.id);
   if (r.error) return json(404, { error: r.error });
+  const saved = saveServiceKeyRemoval(r.list);
+  if (!saved) return json(500, { ok: false, saved: false, removed: false, error: 'key removal could not be verified in both protected recovery copies; the active key was left unchanged' });
   serviceKeys = r.list;
   applyServiceKeysEnv();   // scrubs the owned env var so the very next run no longer sees it
-  const saved = saveServiceKeys();
-  return json(saved ? 200 : 500, { ok: saved, saved, removed: String(body.id || '') });
+  return json(200, { ok: true, saved: true, removed: String(body.id || '') });
 }
 /* GET /api/connectors/catalog — the curated one-click catalog (pure data). Annotated with `installed`
    by cross-referencing the live connector configs (by id), so the browse panel can show what's already
@@ -8908,8 +8953,8 @@ async function handleConnectorRemove(req, res) {
   const id = String(body.id || '').trim();
   if (!id) return json(400, { error: 'connector id is required' });
   const next = connectorStateMod.removeConnector(connectorStateMod.envelope(connectorConfigs, connectorOauth), id);
-  if (!persistConnectorState(next.configs, next.oauth)) {
-    return json(500, { ok: false, saved: false, removed: false, error: 'connector removal could not be verified on disk; the existing connector was left unchanged' });
+  if (!persistConnectorRemoval(next.configs, next.oauth)) {
+    return json(500, { ok: false, saved: false, removed: false, error: 'connector removal could not be verified in both protected recovery copies; the active connector was left unchanged' });
   }
   adoptConnectorState(next);
   for (const [attemptId, a] of connectorOauthAttempts) {
