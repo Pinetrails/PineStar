@@ -39,9 +39,12 @@ const MEASURE = `(() => {
   const left = document.getElementById('left');
   const stage = document.getElementById('stage-wrap');
   const seam = document.getElementById('crew-resizer');
+  const comms = document.getElementById('comms-resizer');
+  const chat = document.getElementById('chat-panel');
   const game = document.getElementById('screen-game');
   const lr = left.getBoundingClientRect(), sr = stage.getBoundingClientRect();
   const seamR = seam ? seam.getBoundingClientRect() : null;
+  const cmR = comms ? comms.getBoundingClientRect() : null, chR = chat.getBoundingClientRect();
   let stored = null; try { stored = localStorage.getItem('starnet.crewrail.w'); } catch (_) {}
   return {
     innerWidth: window.innerWidth,
@@ -49,12 +52,52 @@ const MEASURE = `(() => {
     seamPresent: !!seam,
     seamCursor: seam ? getComputedStyle(seam).cursor : null,
     seamDisplay: seam ? getComputedStyle(seam).display : null,
-    seamLeft: seamR ? Math.round(seamR.left) : null,
     railW: Math.round(lr.width), railRight: Math.round(lr.right),
     stageLeft: Math.round(sr.left), stageW: Math.round(sr.width),
+    // THE ALIGNMENT CHECK: the gap the eye reads is railRight..stageLeft. Both numbers are the
+    // handle's offset from the panel edge it belongs to — CREW's must match COMMS's exactly.
+    seamStart: seamR ? Math.round(seamR.left - sr.left) : null,      // want -10, like COMMS
+    seamEnd: seamR ? Math.round(seamR.right - sr.left) : null,       // want +2
+    seamCoversGap: seamR ? (seamR.left <= lr.right + 0.5 && seamR.right >= sr.left - 0.5) : null,
+    commsStart: cmR ? Math.round(cmR.left - chR.left) : null,
+    commsEnd: cmR ? Math.round(cmR.right - chR.left) : null,
     crewVar: game.style.getPropertyValue('--crew-w') || '(unset)',
     stored,
   };
+})()`;
+
+/* THE RAIL HEAD under a squeeze. Forces the rail to the narrowest width the shipped app can
+   produce (200px — the ≤1120px breakpoint) by writing --crew-w directly, past the drag clamp,
+   then measures the SESSIONS/PROJECTS + NEW strip. The before/after is taken in ONE eval by
+   appending a <style> that restores the pre-fix wrapping behaviour, reading, and removing it
+   (the panel-UX law: rAF-wrapped measurement hangs the eval; synchronous A-B does not). */
+const MEASURE_HEAD = `(() => {
+  const game = document.getElementById('screen-game');
+  const prev = game.style.getPropertyValue('--crew-w');
+  game.style.setProperty('--crew-w', '200px');
+  const read = () => {
+    const head = document.querySelector('.ws-head');
+    const nu = document.getElementById('ws-new');
+    const view = document.querySelector('.ws-view');
+    const hr = head.getBoundingClientRect(), nr = nu.getBoundingClientRect(), vr = view.getBoundingClientRect();
+    return {
+      headH: head.offsetHeight,                       // offsetHeight, not the rect (panel-UX law)
+      newH: Math.round(nr.height), newW: Math.round(nr.width),
+      newLines: Math.round(nr.height / parseFloat(getComputedStyle(nu).lineHeight || 16)),
+      newInsideHead: nr.bottom <= hr.bottom + 0.5 && nr.top >= hr.top - 0.5,
+      viewRight: Math.round(vr.right), newLeft: Math.round(nr.left),
+      overlaps: vr.right > nr.left + 0.5,
+      headBottomVsRow: Math.round(hr.bottom),
+    };
+  };
+  const after = read();
+  const s = document.createElement('style');
+  s.textContent = '.ws-head{flex-wrap:wrap!important;gap:0!important}#ws-new{white-space:normal!important;flex:0 1 auto!important}.ws-head .ws-tab,.ws-head .ws-head-acts>button{white-space:normal!important}';
+  document.head.appendChild(s);
+  const before = read();
+  s.remove();
+  if (prev) game.style.setProperty('--crew-w', prev); else game.style.removeProperty('--crew-w');
+  return { railWidth: 200, before, after };
 })()`;
 
 // a real pointer drag on the seam: down → move → up, all dispatched on the handle itself
@@ -112,10 +155,14 @@ async function main() {
       R.afterMaxDrag = await evalJS(cdp, MEASURE);
       await capture(cdp, OUT, `${LABEL}-${tag}-3-maxed`);
 
-      // 3 · past the near cap
+      // 3 · past the near cap — the floor is the DESIGNED width, the rail never narrows past it
       await evalJS(cdp, drag(40));
       await sleep(300);
       R.afterMinDrag = await evalJS(cdp, MEASURE);
+
+      // 3b · the rail head under the tightest squeeze the shipped app can produce
+      R.head = await evalJS(cdp, MEASURE_HEAD);
+      await sleep(200);
 
       // 4 · persistence across a reload
       await evalJS(cdp, drag(340));
